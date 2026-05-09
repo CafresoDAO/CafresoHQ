@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#3b2e2a"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="CafresoAI"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxODAgMTgwJz48cmVjdCB3aWR0aD0nMTgwJyBoZWlnaHQ9JzE4MCcgcng9JzQwJyBmaWxsPScjZmZmOGVlJy8+PHRleHQgeD0nOTAnIHk9JzEyMicgZm9udC1zaXplPScxMDUnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnPvCfpps8L3RleHQ+PC9zdmc+"/>
+<title>CafresoAI · Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=6"/>
+<script>
+  if ('serviceWorker' in navigator) {
+    // Unregister stale SW on dev; re-enable for production
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+</script>
+</head>
+<body data-screen-label="01 Agent Office">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx?v=6"></script>
+<script type="text/babel" src="sprites.jsx?v=6"></script>
+<script type="text/babel" src="claude-client.jsx?v=6"></script>
+<script type="text/babel" src="mock-data.jsx?v=6"></script>
+<script type="text/babel" src="ui.jsx?v=6"></script>
+<script type="text/babel" src="modals.jsx?v=6"></script>
+<script type="text/babel" src="features.jsx?v=6"></script>
+<script type="text/babel" src="views.jsx?v=6"></script>
+<script type="text/babel" src="missions.jsx?v=6"></script>
+<script type="text/babel" src="agent_runner.jsx?v=6"></script>
+<script type="text/babel" src="app.jsx?v=6"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "CafresoAI",
+  "short_name": "CafresoAI",
+  "description": "Pixel-CRT command desk for your AI agent team.",
+  "start_url": "/hq.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fff8ee",
+  "theme_color": "#3b2e2a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%23fff8ee'/><text x='96' y='126' font-size='110' text-anchor='middle' font-family='monospace'>🦞</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23fff8ee'/><text x='256' y='340' font-size='300' text-anchor='middle' font-family='monospace'>🦞</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"]
+}

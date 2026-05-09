@@ -1,0 +1,55 @@
+# ── CafresoAI — OCI Fleet local test stack ───────────────────────────────────
+# Runs serve.py in the same Docker image used in production OCI Container Instances.
+# Uses 'fs' vault backend with a local volume (no real OCI credentials needed).
+#
+# Usage:
+#   cd openclawhq
+#   docker-compose -f oci-fleet/docker-compose.yml up --build
+#
+# Then open:  http://localhost:8787/hq.html
+
+version: '3.9'
+
+services:
+  cafresoai:
+    build:
+      context: ..                          # repo root (so COPY serve.py works)
+      dockerfile: oci-fleet/Dockerfile
+    image: cafresoai-serve:dev
+    container_name: cafresoai_dev
+    ports:
+      - "8787:8787"
+    environment:
+      # ── Switch to 'oci' + fill OCI_* vars to test the real OCI vault ──────
+      OPENCLAW_FLEET_MODE:    "cafresoai-local-docker"
+      OPENCLAW_VAULT_BACKEND: "fs"          # change to 'oci' for OCI vault test
+      OPENCLAW_HQ_STATE_DIR:  "/data/hq-state"
+      OPENCLAW_VAULT:         "/data/vault"
+      USER_PRINCIPAL:         "test-local-principal"
+
+      # ── Uncomment and fill to test OCI vault backend ─────────────────────
+      # OPENCLAW_VAULT_BACKEND: "oci"
+      # OCI_VAULT_NAMESPACE:    "your-tenancy-namespace"
+      # OCI_VAULT_BUCKET:       "cafresoai-fleet-vault"
+      # OCI_VAULT_PREFIX:       "test-principal/"
+
+      # ── Agent CLI keys ────────────────────────────────────────────────────
+      # Pass-through from host shell or .env file.
+      # Blank = users must supply their own via HQ Settings (BYOK).
+      # Set one or both to enable server-wide CLI auth for all container users.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"   # claude CLI (claude-code)
+      OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"       # codex CLI (OpenAI direct)
+      OCA_API_KEY:       "${OCA_API_KEY:-}"          # codex CLI (Oracle OCA)
+    volumes:
+      # Persist local state between docker restarts
+      - ./data/hq-state:/data/hq-state
+      - ./data/vault:/data/vault
+      # Mount ~/.oci so instance-principal fallback isn't needed locally
+      - ${USERPROFILE}/.oci:/root/.oci:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

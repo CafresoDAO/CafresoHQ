@@ -1,0 +1,4 @@
+# Python deps for serve.py running inside OCI Fleet containers.
+# Installed in the Docker image at build time.
+# serve.py itself uses only stdlib; this adds the OCI vault backend.
+oci>=2.126.0

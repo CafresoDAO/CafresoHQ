@@ -1,0 +1,15 @@
+service : {
+  cycle_balance: () -> (nat) query;
+  key_config: () -> (record {
+                       context: blob;
+                       key_name: text;
+                     }) query;
+  /// Returns the caller's vault master key, encrypted under their transport
+  /// public key. Caller MUST be authenticated (no anonymous principals).
+  /// Cycle cost is paid by this canister out of its own balance.
+  vault_encrypted_key: (blob) -> (blob);
+  /// Returns the canister's vetKD public key for the vault derivation path.
+  /// Used by clients to verify decrypted master keys. Free + uncached
+  /// (cheap to recompute, but clients should cache for the session).
+  vault_public_key: () -> (blob);
+}

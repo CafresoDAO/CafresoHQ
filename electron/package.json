@@ -1,0 +1,67 @@
+{
+  "name": "cafresoai",
+  "productName": "CafresoAI",
+  "version": "1.0.0",
+  "description": "CafresoAI — AI Agent Command Center",
+  "main": "main.js",
+  "author": "Cafreso",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.cafreso.ai",
+    "productName": "CafresoAI",
+    "copyright": "Copyright © 2026 Cafreso",
+    "directories": {
+      "output": "../dist"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CafresoAI",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "license": null
+    },
+    "files": ["main.js", "build/icon.png"],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "app-files",
+        "filter": [
+          "serve.py",
+          "hq.html",
+          "styles.css",
+          "app.jsx",
+          "ui.jsx",
+          "views.jsx",
+          "modals.jsx",
+          "features.jsx",
+          "missions.jsx",
+          "agent_runner.jsx",
+          "claude-client.jsx",
+          "sprites.jsx",
+          "tweaks-panel.jsx",
+          "mock-data.jsx",
+          "sw.js",
+          "manifest.webmanifest"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

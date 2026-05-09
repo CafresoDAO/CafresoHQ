@@ -1,0 +1,53 @@
+#cloud-config
+# Bootstrap script for the Cafreso TLS gateway VM (Caddy on always-free A1.Flex).
+# Runs once on first boot via cloud-init.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - debian-keyring
+  - debian-archive-keyring
+  - apt-transport-https
+  - curl
+  - jq
+
+runcmd:
+  # ── Install Caddy from the official Cloudsmith repo ────────────────────────
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - apt-get install -y caddy
+
+  # ── Open the firewall (Ubuntu's UFW + iptables for OCI) ────────────────────
+  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80  -j ACCEPT
+  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+  - netfilter-persistent save || true
+
+  # ── Drop a placeholder Caddyfile until fleet-manager pushes the real one ──
+  - |
+    cat > /etc/caddy/Caddyfile <<'EOF'
+    # Placeholder — fleet-manager populates this on each provision.
+    # Listens on port 80 only until DNS is pointed at this VM.
+    :80 {
+      respond / "CafresoAI TLS gateway — awaiting fleet sync" 200
+      respond /healthz "ok" 200
+    }
+    EOF
+
+  - systemctl enable caddy
+  - systemctl restart caddy
+
+  # ── Useful niceties for the operator ──────────────────────────────────────
+  - mkdir -p /opt/cafreso
+  - chown ubuntu:ubuntu /opt/cafreso
+  - echo 'PS1="\\[\\e[32m\\]cafreso-tls\\[\\e[0m\\]:\\w\\$ "' >> /home/ubuntu/.bashrc
+
+write_files:
+  - path: /etc/caddy/.gitignore
+    content: |
+      # ignore everything — Caddyfile is generated remotely
+      *
+    permissions: '0644'
+
+final_message: "CafresoAI TLS gateway ready. Caddy running on :80. Sync fleet config to /etc/caddy/Caddyfile + caddy reload."

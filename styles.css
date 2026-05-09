@@ -1,0 +1,5959 @@
+/* ========================================================================
+   CafresoAI — pixel office command center
+   Warm pastel palette, Stardew-adjacent. Business-polished typography.
+   ======================================================================== */
+
+:root {
+  /* ────────────────────────────────────────────────────────────────────
+     Design Tokens (Session 1, 2026-05-01)
+     Source of truth for spacing, type, radius, shadow, z-index, motion.
+     New code MUST use these. Migrate hardcoded values opportunistically.
+     ──────────────────────────────────────────────────────────────────── */
+
+  /* Spacing scale — 4px base, geometric step around 1.5x for breathing room. */
+  --sp-1:  2px;   /* hairline gap */
+  --sp-2:  4px;   /* tight inline */
+  --sp-3:  6px;   /* compact pad */
+  --sp-4:  8px;   /* default gap */
+  --sp-5: 12px;   /* card pad */
+  --sp-6: 16px;   /* section pad */
+  --sp-7: 24px;   /* group separator */
+  --sp-8: 32px;   /* major separator */
+  --sp-9: 48px;   /* hero spacing */
+
+  /* Type scale — sized in absolute px so the pixel-art aesthetic stays crisp. */
+  --text-9:  9px;    /* micro: badge counts, captions */
+  --text-10: 10px;   /* tiny: meta info, tag labels */
+  --text-11: 11px;   /* small: tabs, nav, pill buttons */
+  --text-12: 12px;   /* default body for compact UIs */
+  --text-13: 13px;   /* body — file tree, code editor, nav text */
+  --text-15: 15px;   /* prominent body / form input */
+  --text-18: 18px;   /* H3 — section headings */
+  --text-22: 22px;   /* H2 — view titles */
+  --text-28: 28px;   /* H1 — modal/page titles */
+  --lh-tight:  1.25;
+  --lh-normal: 1.5;
+  --lh-loose:  1.7;
+
+  /* Radii — the brand tilts square, so most things stay 0–6px. Pill is for badges. */
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 6px;
+  --radius-4: 8px;
+  --radius-pill: 999px;
+
+  /* Shadows — elevation steps. Day-mode values; night-mode redefines below. */
+  --shadow-1: 0 1px 2px  rgba(0,0,0,0.10);  /* hairline raise (cards) */
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.18);  /* dropdown / popover */
+  --shadow-3: 0 8px 22px rgba(0,0,0,0.22);  /* floating window */
+  --shadow-4: 0 12px 36px rgba(0,0,0,0.28); /* modal */
+
+  /* Z-index registry — never use raw numbers in JS or CSS, always reference these.
+     If you need a new layer, ADD it here. */
+  --z-base:     1;
+  --z-dropdown: 50;
+  --z-overlay:  100;   /* drawer overlays, lasso rect */
+  --z-toast:    200;   /* status messages */
+  --z-window:   320;   /* floating chat window, popouts */
+  --z-modal:    400;   /* HireModal, SettingsModal, etc. */
+  --z-tooltip:  500;   /* hover tooltips, last in front */
+
+  /* Motion — entry/exit animations and hover transitions. */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+  --ease-out:   cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in:    cubic-bezier(0.4, 0,   1,   1);
+  --ease-inout: cubic-bezier(0.4, 0,   0.2, 1);
+
+  /* ──────────────────────────────────────────────────────────────────── */
+
+  /* Warm pastel world */
+  --bg:          #f5ead6;   /* cream wall */
+  --bg-2:        #ede0c3;   /* darker cream */
+  --paper:       #fffaf0;   /* paper / panels */
+  --paper-2:     #f5ead6;   /* secondary cream panel */
+  --ink:         #3b2e2a;   /* deep warm ink */
+  --ink-2:       #6b5b54;   /* secondary ink */
+  --ink-3:       #9a8a80;   /* tertiary */
+  --rule:        #d9c8a8;   /* hairline rule */
+  --rule-2:      #c8b48c;
+
+  /* Floors / rooms */
+  --carpet:      #c8d5b0;   /* sage */
+  --carpet-dk:   #a8bc8c;
+  --wood:        #d9b897;
+  --wood-dk:     #b89472;
+  --tile:        #e7dcc0;
+
+  /* Accents (same chroma-ish, different hues) */
+  --accent-rose: #e8a9a9;
+  --accent-lav:  #c9b8e0;
+  --accent-teal: #7db5b5;
+  --accent-sun:  #f0c674;
+  --accent-leaf: #8bb98a;
+
+  /* Vault-graph tag colors (read by views.jsx → resolveTagColor).
+     Muted pastels for cream paper. */
+  --tag-project: #5fa3a3;
+  --tag-person:  #b09bd1;
+  --tag-moc:     #d9b35c;
+  --tag-idea:    #d68585;
+  --tag-daily:   #8bb98a;
+  --tag-archive: #8d8678;
+
+  /* Status */
+  --live:        #6fa86f;
+  --warn:        #d99858;
+  --error:       #c97070;
+
+  /* CEO / CafresoAI brand (deep plum → warm) */
+  --ceo:         #8a5a9b;
+  --ceo-dk:      #5e3e6c;
+
+  --shadow: 0 2px 0 0 rgba(59,46,42,0.12), 0 4px 14px -6px rgba(59,46,42,0.18);
+  --shadow-hard: 2px 2px 0 0 var(--ink);
+
+  /* ── Office skin tokens ─────────────────────────────────────────────── */
+  --office-wall-top:    #fff6e0;
+  --office-wall-mid:    #f3e6c6;
+  --office-wall-bot:    #e4d2a6;
+  --office-wall-base:   #ddc99a;
+  --office-ceo-bg:      #f3e9f6;
+  --office-ceo-int:     #e4d6ea;
+  --office-ceo-glow:    rgba(255,240,200,0.7);
+  --office-monitor:     #2b2b2b;
+  --office-screen-top:  #bfe2f0;
+  --office-screen-bot:  #89c8e0;
+  --office-sky-top:     #cfe7f5;
+  --office-sky-mid:     #a9d0e4;
+  --office-land-top:    #e2d7a2;
+  --office-land-bot:    #d5c48e;
+  --office-cork:        #cf9f6c;
+  --office-cork-border: #7a4f2c;
+  --office-ticker-bg:   var(--ink);
+  --office-ticker-text: #fff8ee;
+  --office-ambient:     none;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+
+body {
+  font-family: 'VT323', ui-monospace, monospace;
+  font-size: clamp(16px, 4.5vw, 20px);
+  line-height: 1.25;
+  min-height: 100vh;
+  overflow: auto;
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(255,240,200,0.7), transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(201,184,224,0.25), transparent 50%);
+  background-color: var(--bg);
+}
+
+/* Subtle CRT scanlines — very soft */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(59,46,42,0.035) 0px,
+    rgba(59,46,42,0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 9999;
+  mix-blend-mode: multiply;
+  opacity: 0.6;
+}
+
+.no-scanlines body::after,
+body.no-scanlines::after { display: none; }
+
+img, canvas, .pixel { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* Typographic roles */
+.t-pixel { font-family: 'Press Start 2P', monospace; letter-spacing: 0.02em; }
+.t-body  { font-family: 'VT323', monospace; }
+.t-ui    { font-family: 'Inter', system-ui, sans-serif; letter-spacing: -0.005em; }
+
+h1,h2,h3,h4 { margin: 0; font-weight: 600; }
+
+/* Pixel chrome helpers */
+.px-panel {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  border-radius: 0;
+}
+
+.px-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 10px 14px;
+  background: var(--accent-sun);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+  cursor: pointer;
+  transition: transform 80ms, box-shadow 80ms;
+  text-transform: uppercase;
+}
+.px-btn:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.px-btn:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 0 var(--ink); }
+.px-btn.secondary { background: var(--paper); }
+.px-btn.primary   { background: var(--ceo); color: #fff8ee; }
+.px-btn.danger    { background: var(--error); color: #fff8ee; }
+.px-btn.ghost     { background: transparent; box-shadow: none; border-color: var(--rule-2); color: var(--ink-2); }
+
+/* Sizes — apply alongside the variant class. */
+.px-btn.sz-sm { padding: var(--sp-2) var(--sp-4); font-size: var(--text-9); }
+.px-btn.sz-md { padding: var(--sp-3) var(--sp-5); font-size: var(--text-10); }
+.px-btn.sz-lg { padding: var(--sp-4) var(--sp-6); font-size: var(--text-12); }
+
+/* States — applied through the <Btn> component's class composition. */
+.px-btn[disabled],
+.px-btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.px-btn.is-loading {
+  cursor: progress;
+  position: relative;
+  color: transparent !important;
+}
+.px-btn.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  color: var(--ink);
+  animation: oc-btn-spin var(--motion-slow) linear infinite;
+}
+.px-btn.primary.is-loading::after,
+.px-btn.danger.is-loading::after  { color: #fff8ee; }
+@keyframes oc-btn-spin { to { transform: rotate(360deg); } }
+.px-btn.full { width: 100%; }
+.px-btn .btn-icon { display: inline-block; margin-right: var(--sp-2); }
+.px-btn .btn-icon-after { display: inline-block; margin-left: var(--sp-2); }
+
+/* ─── <Card> ──────────────────────────────────────────────────────
+   Reusable card primitive. Variants tweak depth + border emphasis.
+   Sizes control inner padding.
+   Header/footer slots get visual separators automatically.
+   ─────────────────────────────────────────────────────────────── */
+.oc-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-3);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink);
+}
+.oc-card.oc-card--default { box-shadow: var(--shadow-1); }
+.oc-card.oc-card--raised  { box-shadow: var(--shadow-2); }
+.oc-card.oc-card--inset   { background: var(--paper-2); box-shadow: none; }
+.oc-card.oc-card--outline { box-shadow: none; border: 1px solid var(--rule); }
+.oc-card.oc-card--interactive {
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out),
+              box-shadow var(--motion-fast) var(--ease-out);
+}
+.oc-card.oc-card--interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+  border-color: var(--rule-2);
+}
+.oc-card.oc-card--interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-1);
+}
+.oc-card.oc-card--selected {
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+}
+
+.oc-card-pad-sm { padding: var(--sp-3); }
+.oc-card-pad-md { padding: var(--sp-5); }
+.oc-card-pad-lg { padding: var(--sp-6); }
+
+.oc-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+  font-size: var(--text-11);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.oc-card-head-actions { margin-left: auto; display: flex; gap: var(--sp-2); align-items: center; }
+
+.oc-card-body { flex: 1; min-height: 0; }
+
+.oc-card-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+  font-size: var(--text-10);
+  color: var(--ink-2);
+}
+
+body.night .oc-card { background: var(--paper); border-color: var(--rule); }
+body.night .oc-card.oc-card--inset { background: var(--paper-2); }
+body.night .oc-card-head,
+body.night .oc-card-foot { background: var(--paper-2); }
+
+/* ─── Input primitives ────────────────────────────────────────────
+   <TextField>, <TextArea>, <Select>, <Checkbox>, <Toggle>,
+   <SearchField> all share a common label/hint/error structure. */
+.oc-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+  min-width: 0;
+}
+.oc-field-label {
+  font-size: var(--text-10);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.oc-field-required { color: var(--error); margin-left: 2px; }
+.oc-field-hint  { font-size: var(--text-10); color: var(--ink-3); line-height: var(--lh-tight); }
+.oc-field-error {
+  font-size: var(--text-10);
+  color: var(--error);
+  font-weight: 600;
+  display: flex; gap: 4px; align-items: center;
+}
+
+/* Base input — used by TextField, TextArea, Select. */
+.oc-input {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: var(--text-13);
+  line-height: var(--lh-normal);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-2);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color var(--motion-fast) var(--ease-out),
+              box-shadow var(--motion-fast) var(--ease-out);
+}
+.oc-input::placeholder { color: var(--ink-3); }
+.oc-input:hover:not(:disabled) { border-color: var(--rule-2); }
+.oc-input:focus,
+.oc-input:focus-visible {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--accent-sun);
+}
+.oc-input:disabled {
+  background: var(--paper-2);
+  color: var(--ink-3);
+  cursor: not-allowed;
+  border-color: var(--rule);
+  opacity: 0.65;
+}
+.oc-input.oc-input--error {
+  border-color: var(--error);
+}
+.oc-input.oc-input--error:focus {
+  box-shadow: 0 0 0 2px rgba(201, 112, 112, 0.30);
+}
+
+/* Sizes for inputs */
+.oc-input.sz-sm { font-size: var(--text-11); padding: var(--sp-2) var(--sp-3); }
+.oc-input.sz-md { font-size: var(--text-13); padding: var(--sp-3) var(--sp-4); }
+.oc-input.sz-lg { font-size: var(--text-15); padding: var(--sp-4) var(--sp-5); }
+
+/* TextArea-specific */
+textarea.oc-input {
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  line-height: var(--lh-normal);
+}
+textarea.oc-input.oc-input--mono {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: var(--text-12);
+}
+textarea.oc-input.resize-none { resize: none; }
+
+/* Select — appearance:none + a custom chevron via background image */
+select.oc-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><polyline points='0,0 5,5 10,0' fill='none' stroke='%233b2e2a' stroke-width='1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  cursor: pointer;
+}
+body.night select.oc-input {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><polyline points='0,0 5,5 10,0' fill='none' stroke='%23f3e8ff' stroke-width='1.5'/></svg>");
+}
+
+/* Input wrapper for icon-prefixed/suffixed inputs */
+.oc-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.oc-input-wrap .oc-input { flex: 1; }
+.oc-input-wrap.has-icon-l .oc-input { padding-left: 32px; }
+.oc-input-wrap.has-icon-r .oc-input { padding-right: 32px; }
+.oc-input-icon {
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  color: var(--ink-3);
+  font-size: var(--text-13);
+  line-height: 1;
+}
+.oc-input-icon.left  { left: var(--sp-3); }
+.oc-input-icon.right { right: var(--sp-3); }
+.oc-input-icon.clickable { pointer-events: auto; cursor: pointer; }
+.oc-input-icon.clickable:hover { color: var(--ink); }
+
+/* Checkbox & Toggle */
+.oc-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--text-12);
+  color: var(--ink);
+  line-height: var(--lh-tight);
+}
+.oc-check input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.oc-check input[type="checkbox"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-sun);
+}
+.oc-check input[type="checkbox"]:checked {
+  background: var(--accent-sun);
+}
+.oc-check input[type="checkbox"]:checked::after {
+  content: '✓';
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+}
+.oc-check input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.oc-check.is-disabled { cursor: not-allowed; opacity: 0.65; }
+
+/* Toggle — pixel-art switch (reuses the existing .pxswitch styling concept
+   but with explicit class names so JS can target it). */
+.oc-toggle {
+  position: relative;
+  width: 36px; height: 18px;
+  background: var(--paper-2);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.oc-toggle .oc-toggle-knob {
+  position: absolute;
+  top: 1px; left: 1px;
+  width: 14px; height: 14px;
+  background: var(--ink);
+  border-radius: 50%;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.oc-toggle.is-on { background: var(--accent-sun); }
+.oc-toggle.is-on .oc-toggle-knob { transform: translateX(18px); }
+.oc-toggle:focus-visible { box-shadow: 0 0 0 2px var(--accent-sun); }
+.oc-toggle.is-disabled { cursor: not-allowed; opacity: 0.5; }
+
+.oc-toggle-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+}
+.oc-toggle-row .oc-toggle-label {
+  font-size: var(--text-12);
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+
+/* SearchField — TextField + magnifier icon + optional clear button */
+.oc-search-clear {
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: var(--text-13);
+  padding: 0;
+  line-height: 1;
+}
+.oc-search-clear:hover { color: var(--ink); }
+
+/* ─── <Tabs> ───────────────────────────────────────────────────── */
+.oc-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.oc-tabs.is-stretched { width: 100%; }
+.oc-tabs.is-stretched .oc-tab { flex: 1; justify-content: center; }
+
+.oc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-11);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--motion-fast) var(--ease-out),
+              color var(--motion-fast) var(--ease-out),
+              border-color var(--motion-fast) var(--ease-out);
+}
+.oc-tab:hover { background: var(--paper-2); color: var(--ink); }
+.oc-tab:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: 2px; }
+.oc-tab.is-active {
+  background: var(--paper);
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 1px 1px 0 0 var(--ink);
+}
+.oc-tab.is-disabled { opacity: 0.45; cursor: not-allowed; }
+
+.oc-tab-badge {
+  font-size: var(--text-9);
+  font-weight: 700;
+  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--rule);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+}
+.oc-tab.is-active .oc-tab-badge { background: var(--accent-sun); }
+
+/* Underline variant — flatter look for in-modal tab strips */
+.oc-tabs.variant-underline { gap: 0; border-bottom: 1px solid var(--rule); }
+.oc-tabs.variant-underline .oc-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--sp-3) var(--sp-5);
+  background: transparent;
+}
+.oc-tabs.variant-underline .oc-tab.is-active {
+  border-bottom-color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Pill variant — tighter, for header bars */
+.oc-tabs.variant-pill .oc-tab { border-radius: var(--radius-pill); padding: var(--sp-2) var(--sp-4); }
+.oc-tabs.variant-pill .oc-tab.is-active { box-shadow: none; }
+
+/* ─── Toast / status system ──────────────────────────────────────
+   <ToastProvider> mounts at app root, exposes useToast() hook.
+   Stacks bottom-center, max 3 visible; older queued.
+   Kinds: info | success | warn | error | action
+   ─────────────────────────────────────────────────────────────── */
+.oc-toast-stack {
+  position: fixed;
+  bottom: var(--sp-7);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--sp-3);
+  pointer-events: none;
+  max-width: min(560px, calc(100vw - var(--sp-6) * 2));
+  width: max-content;
+}
+.oc-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: var(--text-12);
+  line-height: var(--lh-tight);
+  min-width: 240px;
+  max-width: 100%;
+  animation: oc-toast-in var(--motion-base) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+.oc-toast.is-leaving { animation: oc-toast-out var(--motion-base) var(--ease-in) forwards; }
+.oc-toast .oc-toast-icon {
+  flex-shrink: 0;
+  font-size: var(--text-15);
+  line-height: 1;
+  margin-top: 1px;
+}
+.oc-toast .oc-toast-body { flex: 1; min-width: 0; }
+.oc-toast .oc-toast-title { font-weight: 600; }
+.oc-toast .oc-toast-detail {
+  font-size: var(--text-10);
+  color: var(--ink-3);
+  margin-top: 2px;
+  word-break: break-word;
+}
+.oc-toast .oc-toast-action {
+  background: transparent;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--text-10);
+  font-weight: 600;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.oc-toast .oc-toast-action:hover { background: var(--paper-2); }
+.oc-toast .oc-toast-close {
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-13);
+  align-self: flex-start;
+  line-height: 1;
+}
+.oc-toast .oc-toast-close:hover { color: var(--ink); }
+
+/* Kind-specific accents — left border stripe + icon color */
+.oc-toast.kind-info    { border-left: 6px solid var(--accent-teal); }
+.oc-toast.kind-success { border-left: 6px solid var(--live); }
+.oc-toast.kind-warn    {
+  border-left: 6px solid var(--warn);
+  background: linear-gradient(90deg, rgba(217,152,88,0.10), var(--paper) 60%);
+}
+.oc-toast.kind-error   {
+  border-left: 6px solid var(--error);
+  background: linear-gradient(90deg, rgba(201,112,112,0.12), var(--paper) 60%);
+}
+.oc-toast.kind-action  { border-left: 6px solid var(--accent-sun); }
+
+/* Subtle countdown bar at the bottom — visualizes auto-dismiss timer. */
+.oc-toast .oc-toast-progress {
+  position: absolute;
+  bottom: 0; left: 0; height: 2px;
+  background: var(--rule);
+  width: 100%;
+  transform-origin: left center;
+  animation: oc-toast-countdown linear forwards;
+}
+/* Hover pauses both the auto-dismiss timer (set in JS) AND the visual
+   countdown — keeps them in sync. */
+.oc-toast.is-paused .oc-toast-progress { animation-play-state: paused; }
+
+@keyframes oc-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes oc-toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(8px); }
+}
+@keyframes oc-toast-countdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+body.night .oc-toast { background: var(--paper); }
+body.night .oc-toast.kind-warn  { background: linear-gradient(90deg, rgba(217,152,88,0.20), var(--paper) 60%); }
+body.night .oc-toast.kind-error { background: linear-gradient(90deg, rgba(201,112,112,0.22), var(--paper) 60%); }
+
+/* ─── <CommandPalette> ────────────────────────────────────────────
+   Global Cmd/Ctrl-K palette. Slides down from top with animated entry.
+   Sections group commands by source (Navigation / View / Agents …).
+   Selected row gets a yellow highlight; arrows + Enter to navigate. */
+.oc-palette-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20, 14, 10, 0.30);
+  z-index: var(--z-modal);
+  animation: oc-fade-in var(--motion-fast) var(--ease-out);
+}
+body.night .oc-palette-backdrop { background: rgba(0, 0, 0, 0.55); }
+
+.oc-palette {
+  position: fixed;
+  top: 80px; left: 50%;
+  transform: translateX(-50%);
+  width: min(580px, calc(100vw - var(--sp-6) * 2));
+  max-height: calc(100vh - 160px);
+  z-index: calc(var(--z-modal) + 1);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: oc-palette-in var(--motion-base) var(--ease-out);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+@keyframes oc-palette-in {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.985); }
+  to   { opacity: 1; transform: translate(-50%, 0)    scale(1); }
+}
+@keyframes oc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.oc-palette-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1.5px solid var(--rule);
+  flex-shrink: 0;
+}
+.oc-palette-input {
+  font-family: inherit;
+  font-size: var(--text-15);
+  padding: var(--sp-5) var(--sp-6);
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.oc-palette-input::placeholder { color: var(--ink-3); }
+.oc-palette-close {
+  display: none;
+  width: 40px; height: 40px;
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-right: var(--sp-3);
+}
+
+.oc-palette-list {
+  overflow-y: auto;
+  padding: var(--sp-2) 0;
+  flex: 1;
+  min-height: 0;
+}
+.oc-palette-section {
+  font-size: var(--text-9);
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: var(--sp-3) var(--sp-6) var(--sp-2);
+}
+.oc-palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  font-size: var(--text-13);
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  border-left: 3px solid transparent;
+}
+.oc-palette-row:hover { background: var(--paper-2); }
+.oc-palette-row.is-selected {
+  background: var(--paper-2);
+  border-left-color: var(--accent-sun);
+}
+.oc-palette-row .oc-palette-icon {
+  width: 18px; flex-shrink: 0; opacity: 0.8;
+  font-size: var(--text-13); line-height: 1;
+}
+.oc-palette-row .oc-palette-label {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.oc-palette-row .oc-palette-detail {
+  font-size: var(--text-10);
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.oc-palette-row .oc-palette-shortcut {
+  display: inline-flex; gap: 2px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: var(--text-9);
+  color: var(--ink-2);
+}
+.oc-palette-row .oc-palette-shortcut kbd {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-1);
+  padding: 1px 4px;
+  font-family: inherit;
+}
+.oc-palette-empty {
+  padding: var(--sp-7) var(--sp-6);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--text-12);
+  font-style: italic;
+}
+.oc-palette-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-6);
+  border-top: 1.5px solid var(--rule);
+  background: var(--paper-2);
+  font-size: var(--text-10);
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.oc-palette-foot kbd {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-1);
+  padding: 1px 4px;
+  margin: 0 2px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: var(--text-9);
+}
+
+/* ── Palette FAB (mobile only) ── */
+.palette-fab { display: none; }
+
+@media (max-width: 768px) {
+  .palette-fab {
+    display: flex;
+    position: fixed;
+    right: 14px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    z-index: 140;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: var(--accent-sun);
+    border: 2px solid var(--ink);
+    box-shadow: var(--shadow-hard), 0 3px 10px rgba(0,0,0,0.25);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--motion-fast) var(--ease-out);
+  }
+  .palette-fab:active { transform: scale(0.9); }
+  .palette-fab svg { width: 22px; height: 22px; }
+
+  /* Full-screen palette on mobile */
+  .oc-palette {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-bottom: 2px solid var(--ink) !important;
+    transform: none !important;
+    animation: oc-palette-mobile-in var(--motion-base) var(--ease-out) !important;
+  }
+  @keyframes oc-palette-mobile-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .oc-palette-input {
+    font-size: var(--text-17, 17px);
+    padding: var(--sp-5) var(--sp-5);
+    border-bottom: 2px solid var(--rule);
+  }
+
+  .oc-palette-list {
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .oc-palette-row {
+    padding: var(--sp-4) var(--sp-5);
+    min-height: 48px;
+    font-size: var(--text-15, 15px);
+    border-left: 4px solid transparent;
+  }
+  .oc-palette-row.is-selected {
+    border-left-color: var(--accent-sun);
+  }
+
+  .oc-palette-section {
+    padding: var(--sp-4) var(--sp-5) var(--sp-2);
+    font-size: var(--text-10);
+  }
+
+  .oc-palette-foot {
+    padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  }
+  .oc-palette-foot span:first-child { display: none; }
+
+  .oc-palette-close { display: flex; align-items: center; justify-content: center; }
+
+  .oc-palette-header {
+    border-bottom: 2px solid var(--rule);
+  }
+}
+
+/* ─── Density modes ──────────────────────────────────────────────
+   Three densities scale only spacing tokens — type stays constant
+   so reading remains comfortable. Body class targets the :root
+   block by overriding the spacing var values.
+   Compact ≈ 0.75× spacing, Spacious ≈ 1.25×.
+   ─────────────────────────────────────────────────────────────── */
+body.density-compact {
+  --sp-1: 1px;  --sp-2: 3px;  --sp-3: 4px;  --sp-4: 6px;
+  --sp-5: 9px;  --sp-6: 12px; --sp-7: 18px; --sp-8: 24px;
+  --sp-9: 36px;
+}
+body.density-spacious {
+  --sp-1: 3px;  --sp-2: 5px;  --sp-3: 8px;  --sp-4: 10px;
+  --sp-5: 15px; --sp-6: 20px; --sp-7: 30px; --sp-8: 40px;
+  --sp-9: 60px;
+}
+
+/* ─── Theme variants ────────────────────────────────────────────
+   Alternative palettes layered on top of the default warm-pastel theme.
+   Set via body.theme-*. body.night still controls light/dark within
+   each theme, but the named themes set their own ink/paper directly.
+   ─────────────────────────────────────────────────────────────── */
+
+/* Sepia — warm aged-paper feel, lighter than default. Day-mode oriented. */
+body.theme-sepia {
+  --bg:          #f5ecd6;
+  --bg-2:        #e8dcb8;
+  --paper:       #fbf3df;
+  --paper-2:     #efe2bd;
+  --ink:         #4a3520;
+  --ink-2:       #6e503a;
+  --ink-3:       #9d8061;
+  --rule:        #d4c096;
+  --rule-2:      #b89c66;
+  --accent-rose: #c97a5e;
+  --accent-lav:  #b39ac9;
+  --accent-teal: #6a9595;
+  --accent-sun:  #d9a83f;
+  --accent-leaf: #7ea566;
+  --tag-project: #5a8a8a;
+  --tag-person:  #9e87b7;
+  --tag-moc:     #c79a3d;
+  --tag-idea:    #c97070;
+  --tag-daily:   #7da467;
+  --tag-archive: #948465;
+}
+
+/* Solarized — Ethan Schoonover's classic. Matches the dev-tool aesthetic.
+   Day variant (no body.night). */
+body.theme-solarized {
+  --bg:          #fdf6e3;   /* base3 */
+  --bg-2:        #eee8d5;   /* base2 */
+  --paper:       #fdf6e3;
+  --paper-2:     #eee8d5;
+  --ink:         #073642;   /* base02 */
+  --ink-2:       #586e75;   /* base01 */
+  --ink-3:       #93a1a1;   /* base1 */
+  --rule:        #d8d2bd;
+  --rule-2:      #b5b09b;
+  --accent-rose: #dc322f;   /* red */
+  --accent-lav:  #6c71c4;   /* violet */
+  --accent-teal: #2aa198;   /* cyan */
+  --accent-sun:  #b58900;   /* yellow */
+  --accent-leaf: #859900;   /* green */
+  --tag-project: #2aa198;
+  --tag-person:  #6c71c4;
+  --tag-moc:     #b58900;
+  --tag-idea:    #dc322f;
+  --tag-daily:   #859900;
+  --tag-archive: #93a1a1;
+}
+
+/* Dracula — high-contrast purple/pink dark theme. Implies night mode. */
+body.theme-dracula {
+  --bg:          #282a36;
+  --bg-2:        #1e1f29;
+  --paper:       #282a36;
+  --paper-2:     #1e1f29;
+  --ink:         #f8f8f2;
+  --ink-2:       #c4c4be;
+  --ink-3:       #6272a4;
+  --rule:        #44475a;
+  --rule-2:      #6272a4;
+  --accent-rose: #ff5555;   /* red */
+  --accent-lav:  #bd93f9;   /* purple */
+  --accent-teal: #8be9fd;   /* cyan */
+  --accent-sun:  #f1fa8c;   /* yellow */
+  --accent-leaf: #50fa7b;   /* green */
+  --tag-project: #8be9fd;
+  --tag-person:  #ff79c6;
+  --tag-moc:     #f1fa8c;
+  --tag-idea:    #ff5555;
+  --tag-daily:   #50fa7b;
+  --tag-archive: #6272a4;
+  --shadow-1: 0 1px 2px  rgba(0,0,0,0.40);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.55);
+  --shadow-3: 0 8px 22px rgba(0,0,0,0.60);
+  --shadow-4: 0 12px 36px rgba(0,0,0,0.65);
+}
+
+/* High-contrast — accessibility-first. Black/white with bold yellow accent. */
+body.theme-highcontrast {
+  --bg:          #000000;
+  --bg-2:        #1a1a1a;
+  --paper:       #ffffff;
+  --paper-2:     #f0f0f0;
+  --ink:         #000000;
+  --ink-2:       #1a1a1a;
+  --ink-3:       #404040;
+  --rule:        #000000;
+  --rule-2:      #1a1a1a;
+  --accent-rose: #d00000;
+  --accent-lav:  #6020c0;
+  --accent-teal: #006080;
+  --accent-sun:  #ffd000;
+  --accent-leaf: #007020;
+  --tag-project: #006080;
+  --tag-person:  #6020c0;
+  --tag-moc:     #b07000;
+  --tag-idea:    #d00000;
+  --tag-daily:   #007020;
+  --tag-archive: #404040;
+}
+body.theme-highcontrast.night {
+  --bg:          #ffffff;
+  --bg-2:        #f0f0f0;
+  --paper:       #000000;
+  --paper-2:     #1a1a1a;
+  --ink:         #ffffff;
+  --ink-2:       #f0f0f0;
+  --ink-3:       #c0c0c0;
+  --rule:        #ffffff;
+  --rule-2:      #f0f0f0;
+}
+
+/* ─── Coffee Shop theme ────────────────────────────────────────
+   Warm espresso-bar aesthetic. Baristas = agents. Brick + marble + steam. */
+body.theme-coffeeshop {
+  --bg:          #faf3e8;
+  --bg-2:        #f0e5d0;
+  --paper:       #fffbf2;
+  --paper-2:     #f5ebd6;
+  --ink:         #3e2c1e;
+  --ink-2:       #5d4233;
+  --ink-3:       #a08870;
+  --rule:        #dcc8a8;
+  --rule-2:      #c4a87a;
+  --accent-rose: #c4553a;
+  --accent-lav:  #9e7bb5;
+  --accent-teal: #5a8a7a;
+  --accent-sun:  #d4952a;
+  --accent-leaf: #6a9a4a;
+  --tag-project: #5a8a7a;
+  --tag-person:  #9e7bb5;
+  --tag-moc:     #d4952a;
+  --tag-idea:    #c4553a;
+  --tag-daily:   #6a9a4a;
+  --tag-archive: #a08870;
+  --ceo:         #c4553a;
+  --live:        #5a8a7a;
+  --warn:        #d4952a;
+  --error:       #c4553a;
+  --office-wall-top:    #e8d5c0;
+  --office-wall-mid:    #d4b896;
+  --office-wall-bot:    #8b5e3c;
+  --office-wall-base:   #6d4428;
+  --office-ceo-bg:      #f5ebe0;
+  --office-ceo-int:     #ece0d0;
+  --office-ceo-glow:    rgba(255,200,120,0.35);
+  --office-monitor:     #2a1f16;
+  --office-screen-top:  #d4a06a;
+  --office-screen-bot:  #b8843e;
+  --office-sky-top:     #d8c8b0;
+  --office-sky-mid:     #c4a880;
+  --office-land-top:    #a08060;
+  --office-land-bot:    #8a6a48;
+  --office-cork:        #b87842;
+  --office-cork-border: #6d4428;
+  --office-ticker-bg:   #3e2c1e;
+  --office-ticker-text: #faf3e8;
+  --office-ambient:     none;
+  --wood:        #8b5e3c;
+  --wood-dk:     #6d4428;
+  --tile:        #f0e5d0;
+  --carpet:      #e8d5c0;
+}
+body.theme-coffeeshop.night {
+  --bg:          #1e1410;
+  --bg-2:        #150e0a;
+  --paper:       #2a1e16;
+  --paper-2:     #221812;
+  --ink:         #e8d5c0;
+  --ink-2:       #c4a880;
+  --ink-3:       #7a6048;
+  --rule:        #4a3528;
+  --rule-2:      #5d4233;
+  --accent-rose: #e07050;
+  --accent-lav:  #b89ad0;
+  --accent-teal: #70b098;
+  --accent-sun:  #e8b04a;
+  --accent-leaf: #80b060;
+  --tag-project: #70b098;
+  --tag-person:  #b89ad0;
+  --tag-moc:     #e8b04a;
+  --tag-idea:    #e07050;
+  --tag-daily:   #80b060;
+  --tag-archive: #7a6048;
+  --ceo:         #e07050;
+  --live:        #70b098;
+  --warn:        #e8b04a;
+  --error:       #e07050;
+  --office-wall-top:    #2a1e16;
+  --office-wall-mid:    #221812;
+  --office-wall-bot:    #4a3020;
+  --office-wall-base:   #3a2218;
+  --office-ceo-bg:      #352820;
+  --office-ceo-int:     #2a2018;
+  --office-ceo-glow:    rgba(200,140,60,0.12);
+  --office-monitor:     #1a1210;
+  --office-screen-top:  #6a4a2a;
+  --office-screen-bot:  #4a3520;
+  --office-sky-top:     #1a1210;
+  --office-sky-mid:     #2a1e16;
+  --office-land-top:    #3a2a1a;
+  --office-land-bot:    #2a1e14;
+  --office-cork:        #5a3e28;
+  --office-cork-border: #3a2218;
+  --office-ticker-bg:   #150e0a;
+  --office-ticker-text: #d4a06a;
+  --wood:        #4a3020;
+  --wood-dk:     #3a2218;
+  --tile:        #221812;
+  --carpet:      #2a1e16;
+}
+
+/* ─── Wolf of Wall Street theme ────────────────────────────────
+   Bloomberg terminals, mahogany + gold, NYC trading floor. */
+body.theme-wallstreet {
+  --bg:          #1a1a2e;
+  --bg-2:        #14142a;
+  --paper:       #222240;
+  --paper-2:     #1c1c36;
+  --ink:         #e8e4d0;
+  --ink-2:       #c0b890;
+  --ink-3:       #6a6450;
+  --rule:        #3a3a5a;
+  --rule-2:      #4a4a6a;
+  --accent-rose: #ff4444;
+  --accent-lav:  #8a7aff;
+  --accent-teal: #00e0a0;
+  --accent-sun:  #ffd700;
+  --accent-leaf: #00cc66;
+  --tag-project: #00e0a0;
+  --tag-person:  #8a7aff;
+  --tag-moc:     #ffd700;
+  --tag-idea:    #ff4444;
+  --tag-daily:   #00cc66;
+  --tag-archive: #6a6450;
+  --ceo:         #ffd700;
+  --live:        #00e0a0;
+  --warn:        #ffa500;
+  --error:       #ff4444;
+  --office-wall-top:    #2a2a4a;
+  --office-wall-mid:    #222240;
+  --office-wall-bot:    #1a1a30;
+  --office-wall-base:   #14142a;
+  --office-ceo-bg:      #2e2a1a;
+  --office-ceo-int:     #28240e;
+  --office-ceo-glow:    rgba(255,215,0,0.15);
+  --office-monitor:     #0a0a1a;
+  --office-screen-top:  #00aa66;
+  --office-screen-bot:  #006644;
+  --office-sky-top:     #0e1a3a;
+  --office-sky-mid:     #1a2a4a;
+  --office-land-top:    #2a2a3a;
+  --office-land-bot:    #1e1e2c;
+  --office-cork:        #3a3020;
+  --office-cork-border: #2a2010;
+  --office-ticker-bg:   #0a0a1a;
+  --office-ticker-text: #00e0a0;
+  --office-ambient:     wall-street-rain;
+  --wood:        #3a2a1a;
+  --wood-dk:     #2a1e10;
+  --tile:        #1c1c36;
+  --carpet:      #222240;
+  --shadow-1: 0 1px 2px  rgba(0,0,0,0.50);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.60);
+  --shadow-3: 0 8px 22px rgba(0,0,0,0.70);
+  --shadow-4: 0 12px 36px rgba(0,0,0,0.75);
+}
+body.theme-wallstreet.night {
+  --bg:          #0a0a14;
+  --bg-2:        #06060e;
+  --paper:       #12122a;
+  --paper-2:     #0e0e20;
+  --ink:         #d0ccb8;
+  --ink-2:       #a0986a;
+  --ink-3:       #5a5440;
+  --rule:        #2a2a4a;
+  --rule-2:      #3a3a5a;
+  --accent-rose: #ff3333;
+  --accent-teal: #00ff88;
+  --accent-sun:  #ffe033;
+  --accent-leaf: #00ff55;
+  --office-wall-top:    #141428;
+  --office-wall-mid:    #101020;
+  --office-wall-bot:    #0c0c18;
+  --office-wall-base:   #080812;
+  --office-ceo-bg:      #1e1a0a;
+  --office-ceo-int:     #181408;
+  --office-ceo-glow:    rgba(255,215,0,0.08);
+  --office-monitor:     #060610;
+  --office-screen-top:  #008844;
+  --office-screen-bot:  #005530;
+  --office-sky-top:     #060610;
+  --office-sky-mid:     #0e0e20;
+  --office-land-top:    #1a1a2a;
+  --office-land-bot:    #101018;
+  --office-cork:        #2a2010;
+  --office-cork-border: #1a1408;
+  --office-ticker-bg:   #060610;
+  --office-ticker-text: #00ff88;
+  --wood:        #2a1e10;
+  --wood-dk:     #1a1408;
+  --tile:        #0e0e20;
+  --carpet:      #12122a;
+}
+
+/* Cash rain animation for Wall Street theme */
+@keyframes cashFall {
+  0%   { transform: translateY(-10px) rotate(0deg); opacity: 0; }
+  10%  { opacity: 0.7; }
+  90%  { opacity: 0.5; }
+  100% { transform: translateY(calc(100vh)) rotate(360deg); opacity: 0; }
+}
+body.theme-wallstreet .office::before {
+  content: '$  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: rgba(0,224,160,0.12);
+  word-spacing: 20px;
+  line-height: 28px;
+  overflow: hidden;
+  animation: cashScroll 12s linear infinite;
+}
+@keyframes cashScroll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+
+/* Wall Street ticker gets green terminal styling */
+body.theme-wallstreet .ticker {
+  border-color: #00e0a0;
+  box-shadow: 0 0 8px rgba(0,224,160,0.15), var(--shadow-hard);
+}
+body.theme-wallstreet .ticker .badge {
+  background: #00e0a0;
+  color: #0a0a1a;
+}
+body.theme-wallstreet .ticker-track .line .kw {
+  color: #ffd700;
+}
+body.theme-wallstreet .ticker-track .line .sep {
+  color: #00e0a060;
+}
+
+/* Wall Street monitor screens get Bloomberg green */
+body.theme-wallstreet .desk::after {
+  box-shadow: inset 0 2px 0 0 rgba(0,224,160,0.2), 0 0 6px rgba(0,224,160,0.15);
+}
+
+/* Coffee Shop warm glow on monitors */
+body.theme-coffeeshop .desk::after {
+  box-shadow: inset 0 2px 0 0 rgba(255,200,120,0.25);
+}
+
+/* ─── Notification Center ────────────────────────────────────────
+   🔔 bell button in topbar with unread badge.
+   Click → side panel slides in from the right with the combined feed.
+   Replaces the bottom-right collision (ReceiptsTray + chat pill + status pill). */
+.oc-notif-bell {
+  position: relative;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: var(--text-13);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  line-height: 1;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.oc-notif-bell:hover { transform: translateY(-1px); }
+.oc-notif-bell .oc-notif-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  background: var(--error); color: #fff8ee;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  padding: 2px 4px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-pill);
+  min-width: 16px;
+  text-align: center;
+  line-height: 1;
+}
+
+.oc-notif-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20, 14, 10, 0.20);
+  z-index: var(--z-overlay);
+  animation: oc-fade-in var(--motion-fast) var(--ease-out);
+}
+.oc-notif-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: min(420px, 92vw);
+  z-index: calc(var(--z-overlay) + 1);
+  background: var(--paper);
+  border-left: 2px solid var(--ink);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  animation: oc-notif-slide var(--motion-base) var(--ease-out);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+@keyframes oc-notif-slide {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.oc-notif-head {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper-2);
+  flex-shrink: 0;
+}
+.oc-notif-head .oc-notif-title {
+  font-size: var(--text-13); font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: 1;
+}
+.oc-notif-filters {
+  display: flex; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.oc-notif-filter {
+  background: transparent; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--radius-pill);
+  font-size: var(--text-10); padding: var(--sp-2) var(--sp-3);
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.oc-notif-filter.is-active {
+  background: var(--accent-sun);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.oc-notif-list { flex: 1; overflow-y: auto; padding: var(--sp-3) 0; }
+.oc-notif-empty {
+  padding: var(--sp-7) var(--sp-5);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--text-11);
+  font-style: italic;
+}
+.oc-notif-row {
+  display: flex; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.oc-notif-row:hover { background: var(--paper-2); }
+.oc-notif-row.is-unread { border-left-color: var(--accent-sun); }
+.oc-notif-row .oc-notif-icon {
+  font-size: var(--text-15);
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.oc-notif-row .oc-notif-body { flex: 1; min-width: 0; }
+.oc-notif-row .oc-notif-msg {
+  font-size: var(--text-12);
+  color: var(--ink);
+  font-weight: 500;
+}
+.oc-notif-row .oc-notif-meta {
+  font-size: var(--text-9);
+  color: var(--ink-3);
+  margin-top: 2px;
+  display: flex;
+  gap: var(--sp-2);
+}
+.oc-notif-foot {
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: var(--text-10);
+  color: var(--ink-3);
+}
+
+/* ─── Onboarding Tour ───────────────────────────────────────────
+   Center-stage card (no anchored arrow yet — keeps it simple and
+   robust against layout changes). Backdrop dims the page; the
+   highlighted area gets a yellow halo via the spotlight ring. */
+.oc-tour-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20, 14, 10, 0.55);
+  z-index: var(--z-modal);
+  animation: oc-fade-in var(--motion-base) var(--ease-out);
+}
+.oc-tour-card {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 1);
+  width: min(420px, calc(100vw - var(--sp-6) * 2));
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-4);
+  padding: var(--sp-5) var(--sp-6);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+  animation: oc-tour-in var(--motion-base) var(--ease-out);
+}
+@keyframes oc-tour-in {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.oc-tour-card.is-anchored { animation: none; }
+.oc-tour-step {
+  font-size: var(--text-9);
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: var(--sp-2);
+}
+.oc-tour-title {
+  font-size: var(--text-18);
+  font-weight: 700;
+  margin-bottom: var(--sp-3);
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.oc-tour-body {
+  font-size: var(--text-12);
+  line-height: var(--lh-normal);
+  color: var(--ink-2);
+  margin-bottom: var(--sp-5);
+}
+.oc-tour-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  padding-top: var(--sp-4);
+}
+.oc-tour-progress {
+  display: flex;
+  gap: var(--sp-2);
+  flex: 1;
+}
+.oc-tour-progress span {
+  width: 8px; height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--rule);
+}
+.oc-tour-progress span.is-active { background: var(--accent-sun); }
+.oc-tour-progress span.is-done   { background: var(--ink-3); }
+
+/* Spotlight ring around the highlighted element (set via inline style). */
+.oc-tour-spotlight {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 0.5);
+  pointer-events: none;
+  border: 3px solid var(--accent-sun);
+  border-radius: var(--radius-3);
+  box-shadow: 0 0 0 9999px rgba(20, 14, 10, 0.55), 0 0 20px var(--accent-sun);
+  transition: all var(--motion-base) var(--ease-out);
+}
+
+.hr { height: 2px; background: var(--ink); opacity: 0.15; border: 0; }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-2); }
+::-webkit-scrollbar-thumb { background: var(--rule-2); border: 2px solid var(--bg-2); }
+
+/* ==============================
+   App shell
+   ============================== */
+.app {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  height: 100vh;
+  width: 100vw;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 200px minmax(0, 1fr); }
+}
+
+/* Left rail */
+.rail {
+  background: var(--paper);
+  border-right: 2px solid var(--ink);
+  display: flex; flex-direction: column;
+  padding: 16px 14px;
+  gap: 10px;
+  position: relative;
+}
+.rail .brand {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 12px 8px 14px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(180deg, #fff6e0 0%, #f5ead6 100%);
+  box-shadow: var(--shadow-hard);
+}
+.rail .brand .title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.4;
+}
+.rail .brand .sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.rail .brand .dot {
+  width: 8px; height: 8px; background: var(--live);
+  box-shadow: 0 0 0 2px rgba(111,168,111,0.25);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.5; } }
+
+.rail nav { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.rail nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  font-family: 'VT323', monospace;
+  font-size: 19px;
+  color: var(--ink);
+  text-decoration: none;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.rail nav a:hover { background: var(--bg-2); }
+.rail nav a.active {
+  background: var(--accent-sun);
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+}
+.rail nav a .ico { width: 20px; height: 20px; }
+
+.rail .me {
+  margin-top: auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-top: 2px dashed var(--rule-2);
+}
+.rail .me .avatar {
+  width: 28px; height: 28px; background: var(--accent-rose);
+  border: 2px solid var(--ink);
+  display: grid; place-items: center;
+  font-family: 'Press Start 2P'; font-size: 10px;
+}
+
+/* ─── Collapsed rail ────────────────────────────────────────────── */
+.app.rail-collapsed { grid-template-columns: 56px minmax(0, 1fr); }
+.rail.collapsed { padding: 16px 4px; gap: 6px; }
+.rail.collapsed .brand { padding: 6px 4px 8px; }
+.rail.collapsed nav a {
+  justify-content: center;
+  padding: 8px 4px;
+  gap: 0;
+}
+.rail.collapsed nav a .ico { width: 22px; height: 22px; }
+.rail.collapsed .door-btn { padding: 6px 4px; }
+.rail.collapsed .me { padding: 6px 4px; justify-content: center; }
+
+.rail-toggle {
+  position: absolute; top: 8px; right: -13px;
+  width: 26px; height: 26px;
+  background: var(--paper); color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  cursor: pointer; z-index: 10;
+  display: grid; place-items: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px; line-height: 1;
+  box-shadow: 2px 2px 0 0 var(--ink);
+  transition: transform 0.12s ease;
+}
+.rail-toggle:hover { transform: scale(1.06); }
+body.night .rail-toggle { background: var(--paper); color: var(--ink); }
+
+/* ==============================
+   Main area
+   ============================== */
+.main {
+  display: grid;
+  grid-template-rows: 52px minmax(0,1fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.topbar .crumbs {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+}
+.topbar .crumbs .sep { color: var(--ink-3); }
+.topbar .status {
+  display: flex; align-items: center; gap: 18px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+}
+.topbar .status .chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--rule-2);
+  background: var(--bg);
+}
+.topbar .status .chip .dot { width: 6px; height: 6px; background: var(--live); }
+
+/* Content split */
+.content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.75fr);
+  gap: 18px;
+  padding: 18px;
+  min-height: 0; min-width: 0;
+  overflow: auto;
+}
+@media (max-width: 1180px) {
+  .content {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .office-wrap { min-height: 520px; }
+  .right-col { min-height: 560px; }
+}
+
+/* ==============================
+   Office cross-section
+   ============================== */
+.office-wrap {
+  display: flex; flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+}
+
+
+.office {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  border: 2px solid var(--ink);
+  background:
+    linear-gradient(180deg, var(--office-wall-top) 0%, var(--office-wall-mid) 72%, var(--office-wall-bot) 72%, var(--office-wall-base) 100%);
+  box-shadow: var(--shadow-hard);
+  overflow: hidden;
+}
+.office .floor {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 28%;
+  background:
+    repeating-linear-gradient(90deg, var(--wood) 0, var(--wood) 24px, var(--wood-dk) 24px, var(--wood-dk) 25px),
+    var(--wood);
+  border-top: 2px solid var(--ink);
+}
+.office .wall-line {
+  position: absolute; left: 0; right: 0; top: 72%; height: 2px; background: var(--ink); opacity: 0.25;
+}
+
+/* Room = one office cell */
+.rooms {
+  position: absolute; inset: 12px 12px 32% 12px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  grid-auto-rows: minmax(130px, 1fr);
+  gap: 10px;
+}
+@media (max-width: 1320px) {
+  .rooms {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+@media (max-width: 900px) {
+  .rooms {
+    grid-template-columns: 1fr 1fr;
+  }
+  .room.ceo { grid-column: 1 / -1; grid-row: auto; }
+}
+
+.room {
+  position: relative;
+  border: 2px solid var(--ink);
+  background: var(--tile);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.room .nameplate {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  padding: 5px 8px;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+  display: flex; justify-content: space-between; align-items: center;
+  letter-spacing: 0.04em;
+}
+.room .nameplate .pip {
+  width: 6px; height: 6px; background: var(--live);
+}
+.room .nameplate .pip.idle { background: var(--ink-3); }
+.room .nameplate .pip.busy { background: var(--warn); animation: pulse 0.9s infinite; }
+
+.room .interior {
+  position: relative;
+  flex: 1;
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.04) 0 6px, transparent 6px 12px),
+    var(--carpet);
+  overflow: hidden;
+}
+
+.room.ceo {
+  background: var(--office-ceo-bg);
+  grid-row: span 2;
+}
+.room.ceo .interior {
+  background:
+    radial-gradient(circle at 70% 30%, var(--office-ceo-glow), transparent 50%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 6px, transparent 6px 12px),
+    var(--office-ceo-int);
+}
+
+/* Desk is a pixel rectangle pinned inside the interior */
+.desk {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  width: 78%;
+  height: 28px;
+  background: var(--wood);
+  border: 2px solid var(--ink);
+  box-shadow: inset 0 -4px 0 0 var(--wood-dk);
+}
+.desk::before {
+  content: '';
+  position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
+  width: 34%; height: 10px;
+  background: var(--office-monitor);
+  border: 2px solid var(--ink);
+  border-bottom: 0;
+}
+.desk::after {
+  content: '';
+  position: absolute; left: 50%; top: -20px; transform: translateX(-50%);
+  width: 28%; height: 12px;
+  background: linear-gradient(180deg, var(--office-screen-top) 0%, var(--office-screen-bot) 100%);
+  border: 2px solid var(--ink);
+  box-shadow: inset 0 2px 0 0 rgba(255,255,255,0.3);
+}
+
+/* Window */
+.window {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 38%; height: 40%;
+  background:
+    linear-gradient(180deg, var(--office-sky-top) 0%, var(--office-sky-mid) 60%, var(--office-land-top) 60%, var(--office-land-bot) 100%);
+  border: 2px solid var(--ink);
+}
+.window::before, .window::after {
+  content: ''; position: absolute; background: var(--ink);
+}
+.window::before { left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-1px); }
+.window::after  { top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-1px); }
+
+.plant {
+  position: absolute;
+  left: 8px; bottom: 12px;
+  width: 14px; height: 22px;
+  background: var(--accent-leaf);
+  border: 2px solid var(--ink);
+  border-radius: 2px 2px 0 0;
+}
+.plant::after {
+  content: '';
+  position: absolute; left: -2px; right: -2px; bottom: -8px; height: 8px;
+  background: var(--wood-dk); border: 2px solid var(--ink);
+}
+
+.filing {
+  position: absolute;
+  right: 8px; bottom: 10px;
+  width: 22px; height: 34px;
+  background: var(--ink-2);
+  border: 2px solid var(--ink);
+  display: flex; flex-direction: column; justify-content: space-evenly; padding: 3px 4px;
+  cursor: pointer;
+}
+.filing span {
+  display: block; height: 2px; background: var(--accent-sun);
+}
+.filing:hover { background: var(--ceo); }
+
+/* Corkboard on wall */
+.corkboard {
+  position: absolute;
+  left: 10px; top: 10px;
+  width: 42%; height: 30%;
+  background: var(--office-cork);
+  border: 3px solid var(--office-cork-border);
+  padding: 4px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+}
+.corkboard .note {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  position: relative;
+}
+.corkboard .note::before {
+  content: ''; position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; background: var(--error); border: 1px solid var(--ink);
+}
+
+/* Sprite placement in rooms */
+.sprite-slot {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  z-index: 2;
+}
+.sprite-slot .bubble {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 2px 6px;
+  white-space: nowrap;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+  position: relative;
+  box-shadow: 2px 2px 0 rgba(59,46,42,0.15);
+}
+.sprite-slot .bubble::after {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: -6px; width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 6px solid var(--ink);
+}
+.sprite-slot .bubble::before {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: -4px; width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid var(--paper);
+  z-index: 1;
+}
+
+.room.empty {
+  background: repeating-linear-gradient(45deg, var(--bg-2) 0 8px, var(--tile) 8px 16px);
+}
+.room.empty .interior {
+  display: grid; place-items: center;
+}
+.room.empty .hire {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  text-align: center;
+  padding: 10px;
+}
+.room.empty .hire .plus {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  background: var(--paper);
+  border: 2px dashed var(--ink);
+  font-family: 'Press Start 2P'; font-size: 18px;
+  color: var(--ink-2);
+}
+.room.empty .hire .label {
+  font-family: 'Press Start 2P'; font-size: 8px;
+  color: var(--ink-2);
+  letter-spacing: 0.06em;
+}
+
+/* ---- Subordinate / assistant background desks ---- */
+.subord-bg {
+  position: absolute;
+  top: 4px; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 2px 0 0 10px;
+  pointer-events: none;
+  z-index: 0;
+}
+.subord-desk {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  position: relative;
+  transform: scale(0.82);
+  transform-origin: top center;
+  opacity: 0.55;
+  transition: opacity 0.25s, transform 0.25s;
+}
+.subord-desk:hover {
+  opacity: 1;
+  transform: scale(0.9);
+}
+.subord-desk.transient {
+  opacity: 0.4;
+}
+.subord-desk.transient:hover {
+  opacity: 0.75;
+}
+.subord-sprite-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+  z-index: 1;
+}
+.subord-bubble {
+  font-family: 'VT323', monospace;
+  font-size: 9px;
+  background: var(--paper, #f5f0e6);
+  border: 1px solid var(--ink, #3b2e2a);
+  border-radius: 3px;
+  padding: 0px 4px;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+  margin-bottom: 0;
+  opacity: 0.8;
+}
+.subord-mini-desk {
+  width: 46px;
+  height: 10px;
+  background: var(--wood, #b8956a);
+  border: 2px solid var(--ink, #3b2e2a);
+  border-radius: 1px;
+  position: relative;
+  box-shadow: inset 0 -3px 0 0 var(--wood-dk, #8a6b45);
+  margin-top: -2px;
+}
+.subord-mini-desk::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: -7px; transform: translateX(-50%);
+  width: 26px; height: 7px;
+  background: var(--paper-2, #e8e0d0);
+  border: 1.5px solid var(--ink, #3b2e2a);
+  border-bottom: 0;
+  border-radius: 1px 1px 0 0;
+}
+.subord-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  line-height: 1;
+  color: var(--ink, #3b2e2a);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+.subord-name .pip {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--live, #00c853);
+  flex-shrink: 0;
+}
+.subord-name .pip.idle { background: var(--ink-3, #c5b9ae); }
+.subord-name .pip.busy { background: var(--warn, #f0a830); animation: pulse 0.9s infinite; }
+
+/* night mode overrides */
+body.night .subord-desk { filter: brightness(0.85); }
+body.night .subord-desk:hover { filter: brightness(1); }
+body.night .subord-bubble {
+  background: rgba(20, 23, 40, 0.85);
+  border-color: rgba(0, 212, 181, 0.3);
+  color: var(--accent-teal, #00d4b5);
+}
+body.night .subord-mini-desk {
+  background: #1a1d35;
+  border-color: rgba(0, 212, 181, 0.25);
+  box-shadow: inset 0 -2px 0 0 rgba(0, 212, 181, 0.1);
+}
+body.night .subord-mini-desk::before {
+  background: #0d0d1e;
+  border-color: rgba(0, 212, 181, 0.2);
+}
+body.night .subord-name { color: var(--accent-teal, #00d4b5); }
+
+/* Walking animation overlay */
+.walker {
+  position: absolute;
+  bottom: 4%;
+  left: -10%;
+  z-index: 40;
+  animation: walkIn 1.6s cubic-bezier(.4,.7,.5,1) forwards;
+}
+@keyframes walkIn {
+  0% { left: -10%; }
+  100% { left: var(--dest-x, 50%); }
+}
+
+/* ==============================
+   Ticker
+   ============================== */
+.ticker {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  background: var(--office-ticker-bg);
+  color: var(--office-ticker-text);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  font-family: 'VT323', monospace;
+  font-size: 17px;
+  overflow: hidden;
+}
+.ticker .badge {
+  font-family: 'Press Start 2P'; font-size: 9px;
+  background: var(--accent-sun); color: var(--ink);
+  padding: 3px 6px; letter-spacing: 0.1em;
+}
+.ticker-track { flex: 1; overflow: hidden; position: relative; height: 22px; }
+.ticker-track .line {
+  display: flex; gap: 22px;
+  position: absolute; white-space: nowrap;
+  animation: scroll 60s linear infinite;
+}
+.ticker-track .line span { display: inline-flex; align-items: center; gap: 6px; }
+.ticker-track .line .sep { color: var(--ink-3); }
+.ticker-track .line .kw { color: var(--accent-sun); }
+@keyframes scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ==============================
+   Right column: Chat + cards
+   ============================== */
+.right-col {
+  display: grid;
+  grid-template-rows: minmax(0,1fr) auto;
+  gap: 14px;
+  min-height: 0;
+}
+
+/* Chat monitor frame — looks like a pixel CRT monitor on a desk */
+/* ==============================
+   Thread tabs below the chat monitor
+   ============================== */
+.thread-tabs {
+  display: flex; gap: 4px;
+  padding: 0 6px 6px 6px;
+  background: var(--paper-2);
+  border: 2px solid var(--ink); border-top: none;
+}
+.thread-tab {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px 4px;
+  background: transparent;
+  border: 2px solid transparent;
+  border-bottom: none;
+  font-family: 'Press Start 2P'; font-size: 8px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  color: var(--ink-2);
+  -webkit-tap-highlight-color: transparent;
+}
+.thread-tab:hover { background: rgba(240, 198, 116, 0.25); }
+.thread-tab.active {
+  background: var(--paper);
+  border-color: var(--ink);
+  color: var(--ink);
+  position: relative; z-index: 1;
+  margin-bottom: -2px;        /* sit above the bezel border so it looks attached */
+}
+.tt-icon { font-size: 11px; }
+.tt-label { white-space: nowrap; }
+.tt-count {
+  font-family: 'Inter'; font-size: 9px;
+  background: var(--accent-sun);
+  border: 1px solid var(--ink);
+  padding: 0 4px;
+  margin-left: 2px;
+}
+.thread-tab.active .tt-count { background: var(--accent-rose); }
+.thread-empty {
+  padding: 24px 18px;
+  font-family: 'VT323'; font-size: 15px;
+  color: var(--ink-3);
+  text-align: center; line-height: 1.4;
+}
+.thread-empty code {
+  font-family: ui-monospace, monospace; font-size: 12px;
+  background: rgba(59,46,42,0.08); padding: 1px 4px;
+}
+.thread-readonly {
+  padding: 10px 14px;
+  font-family: 'VT323'; font-size: 14px;
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border: 2px solid var(--ink); border-top: none;
+  text-align: center;
+}
+
+.monitor {
+  position: relative;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.monitor .bezel {
+  background: #2b2b2b;
+  padding: 10px 10px 4px 10px;
+  border-bottom: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: space-between;
+  color: #ffe9b8;
+  font-family: 'Press Start 2P'; font-size: 10px;
+}
+.monitor .bezel .left { display: flex; align-items: center; gap: 10px; }
+.monitor .bezel .avatar-mini {
+  width: 22px; height: 22px;
+}
+.monitor .bezel .ceo-label {
+  color: #ffe9b8;
+  line-height: 1.3;
+}
+.monitor .bezel .ceo-label .sub {
+  font-family: 'Inter'; font-size: 10px; color: #b8a98a; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.monitor .bezel .dots { display: flex; gap: 5px; }
+.monitor .bezel .dots span { width: 8px; height: 8px; background: var(--ink-3); border: 1px solid #000; }
+.monitor .bezel .dots span.on { background: var(--accent-sun); }
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  background:
+    radial-gradient(ellipse at center, #f7eed4 0%, #e9dab5 100%);
+  padding: 14px 16px;
+  overflow-y: auto;
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  position: relative;
+}
+.screen::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0,0,0,0.04) 0 1px, transparent 1px 3px);
+}
+
+.msg { margin: 0 0 14px 0; display: flex; gap: 10px; }
+.msg .who {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+}
+.msg .bubble {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 6px 10px;
+  max-width: 78%;
+  position: relative;
+  box-shadow: 2px 2px 0 0 rgba(59,46,42,0.15);
+}
+.msg .bubble .name {
+  font-family: 'Press Start 2P'; font-size: 8px; letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin-bottom: 3px;
+}
+.msg .bubble p { margin: 0; white-space: pre-wrap; }
+.msg.user { flex-direction: row-reverse; }
+.msg.user .bubble { background: var(--accent-sun); }
+.msg.ceo .bubble { background: #f3e9f6; }
+.msg.agent .bubble { background: #e4efd8; }
+.msg.pinned .bubble { box-shadow: 0 0 0 2px var(--accent-sun); }
+.msg-pinned-badge { margin-left: 6px; font-size: 11px; }
+.msg-actions {
+  display: flex; gap: 4px; margin-top: 6px;
+  opacity: 0; transition: opacity 80ms ease-out;
+}
+.msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+.msg-actions button {
+  background: rgba(255,255,255,0.7); border: 1px solid var(--ink-3);
+  border-radius: var(--radius-1); padding: 2px 6px;
+  font-size: 11px; line-height: 1; cursor: pointer; min-height: 22px; min-width: 26px;
+}
+.msg-actions button:hover { background: #fff; border-color: var(--ink); }
+@media (max-width: 768px) {
+  .msg-actions { opacity: 1; } /* always visible on mobile (no hover) */
+  .msg-actions button { min-height: 32px; min-width: 36px; padding: 4px 8px; }
+}
+
+/* Add Project modal */
+.addproj-modal { display: grid; grid-template-rows: auto auto 1fr; }
+.addproj-tabs { display: flex; border-bottom: 2px solid var(--ink); }
+.addproj-tab {
+  flex: 1; padding: 10px 14px; background: var(--paper-2);
+  border: 0; border-right: 1px solid var(--rule); cursor: pointer;
+  font-family: 'Inter'; font-size: 12px; font-weight: 600;
+  color: var(--ink-2);
+}
+.addproj-tab:last-child { border-right: 0; }
+.addproj-tab.active { background: var(--paper); color: var(--ink); border-bottom: 2px solid var(--accent-sun); margin-bottom: -2px; }
+.addproj-form { display: flex; flex-direction: column; gap: 10px; }
+.addproj-form label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.addproj-form input[type="text"], .addproj-form input:not([type]) {
+  border: 1.5px solid var(--ink); padding: 8px 10px; font-size: 13px;
+  font-family: 'Inter'; background: var(--paper);
+}
+.addproj-form .checkbox-row { flex-direction: row; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; }
+.addproj-form small { color: var(--ink-3); font-size: 11px; }
+.addproj-form code { background: var(--paper-2); padding: 1px 4px; border-radius: 2px; font-size: 11px; }
+.addproj-err {
+  background: #fde2e2; border: 1.5px solid #c0392b; color: #6f1c14;
+  padding: 8px 10px; font-size: 12px; border-radius: 2px;
+}
+.addproj-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+.typing {
+  display: inline-flex; gap: 3px; align-items: center;
+  padding: 2px 0;
+}
+.typing span {
+  width: 6px; height: 6px; background: var(--ink);
+  animation: blink 1s infinite;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes blink { 0%, 60%, 100% { opacity: 0.2; } 30% { opacity: 1; } }
+
+.composer {
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+  padding: 10px;
+  display: flex; gap: 10px; align-items: center;
+}
+.composer textarea {
+  flex: 1;
+  resize: none;
+  height: 40px;
+  border: 2px solid var(--ink);
+  padding: 8px 10px;
+  font-family: 'VT323', monospace;
+  font-size: 19px;
+  background: #fffaf0;
+  outline: none;
+}
+.composer textarea:focus { background: #fff6e0; }
+.composer .actions { display: flex; gap: 8px; }
+
+/* Agent status cards */
+.agents-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.agent-card {
+  position: relative;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 4px 10px;
+  cursor: pointer;
+}
+.agent-card:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.agent-card .sprite-box {
+  grid-row: span 3;
+  width: 44px; height: 44px;
+  background: var(--bg-2);
+  border: 2px solid var(--ink);
+  display: grid; place-items: center;
+}
+.agent-card .name {
+  font-family: 'Press Start 2P'; font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.agent-card .role {
+  font-family: 'Inter', sans-serif; font-size: 10px;
+  color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.1em;
+}
+.agent-card .meta {
+  font-family: 'VT323'; font-size: 15px;
+  color: var(--ink-2);
+  display: flex; gap: 8px; align-items: center;
+}
+.agent-card .meta .dot { width: 6px; height: 6px; }
+.agent-card .status-pill {
+  position: absolute; top: -6px; right: 8px;
+  font-family: 'Press Start 2P'; font-size: 8px;
+  background: var(--accent-leaf); color: var(--ink);
+  padding: 3px 6px;
+  border: 2px solid var(--ink);
+}
+.agent-card .status-pill.idle { background: var(--bg-2); color: var(--ink-2); }
+.agent-card .status-pill.busy { background: var(--accent-sun); }
+.agent-card .status-pill.away { background: var(--accent-rose); }
+
+.agent-card .add-new {
+  grid-column: span 2;
+  display: grid; place-items: center;
+  padding: 16px;
+  border: 2px dashed var(--ink);
+  font-family: 'Press Start 2P'; font-size: 10px;
+  color: var(--ink-2);
+}
+
+.hire-tile {
+  background: repeating-linear-gradient(45deg, var(--bg) 0 8px, var(--bg-2) 8px 16px);
+  border: 2px dashed var(--ink);
+  box-shadow: none;
+  display: grid; place-items: center;
+  cursor: pointer;
+  min-height: 82px;
+}
+.hire-tile:hover { background: var(--accent-sun); }
+.hire-tile .plus {
+  font-family: 'Press Start 2P'; font-size: 11px;
+  text-align: center; line-height: 1.5;
+}
+
+/* ==============================
+   Modal (hiring / settings)
+   ============================== */
+.backdrop {
+  position: fixed; inset: 0;
+  background: rgba(59,46,42,0.55);
+  backdrop-filter: blur(2px);
+  display: grid; place-items: center;
+  z-index: 200;
+  padding: 20px;
+}
+.modal {
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  width: min(820px, 100%);
+  max-height: 90vh; overflow: hidden;
+  display: grid; grid-template-rows: auto 1fr auto;
+}
+.modal-head {
+  background: var(--ceo);
+  color: #fff8ee;
+  padding: 12px 16px;
+  border-bottom: 3px solid var(--ink);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-head .title { font-family: 'Press Start 2P'; font-size: 14px; letter-spacing: 0.04em; }
+.modal-head .sub { font-family: 'Inter'; font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255,248,238,0.7); }
+.modal-body { padding: 18px 20px; overflow-y: auto; }
+.modal-foot {
+  padding: 12px 16px;
+  border-top: 2px solid var(--ink);
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg-2);
+}
+.modal-foot .hint { font-family: 'VT323'; font-size: 16px; color: var(--ink-2); }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+.form-row { display: flex; flex-direction: column; gap: 5px; }
+.form-row.full { grid-column: 1 / -1; }
+.form-row label {
+  font-family: 'Press Start 2P'; font-size: 9px;
+  letter-spacing: 0.06em; color: var(--ink-2);
+}
+.form-row input, .form-row textarea, .form-row select {
+  border: 2px solid var(--ink);
+  background: #fffaf0;
+  padding: 8px 10px;
+  font-family: 'VT323'; font-size: 18px;
+  outline: none;
+}
+.form-row input:focus, .form-row textarea:focus, .form-row select:focus { background: #fff6e0; }
+.form-row .hint { font-family: 'Inter'; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+.tool-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px;
+}
+.tool-chk {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 2px solid var(--rule-2);
+  cursor: pointer;
+  font-family: 'VT323'; font-size: 17px;
+}
+.tool-chk.on { background: var(--accent-sun); border-color: var(--ink); }
+.tool-chk .box {
+  width: 14px; height: 14px; border: 2px solid var(--ink); background: var(--paper);
+  display: grid; place-items: center;
+}
+.tool-chk.on .box::after {
+  content: '✕'; font-family: 'Press Start 2P'; font-size: 10px; color: var(--ink);
+}
+
+.avatar-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.avatar-picker .slot {
+  width: 52px; height: 52px;
+  border: 2px solid var(--ink);
+  background: var(--bg-2);
+  display: grid; place-items: center;
+  cursor: pointer;
+}
+.avatar-picker .slot.selected {
+  background: var(--accent-sun);
+  box-shadow: 2px 2px 0 0 var(--ink);
+}
+
+/* Control board (settings) */
+.control-board {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.cb-panel {
+  border: 2px solid var(--ink);
+  background: var(--bg);
+  padding: 12px;
+}
+.cb-panel h4 {
+  font-family: 'Press Start 2P'; font-size: 10px; margin-bottom: 10px;
+  letter-spacing: 0.04em;
+}
+.row-knob {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--rule-2);
+  font-family: 'VT323'; font-size: 18px;
+}
+.row-knob:last-child { border-bottom: 0; }
+.row-knob .lbl { color: var(--ink); }
+.row-knob .sub { font-family: 'Inter'; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* Pixel toggle switch */
+.pxswitch {
+  position: relative;
+  width: 44px; height: 22px;
+  background: var(--bg-2);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+}
+.pxswitch .nub {
+  position: absolute; top: 0; left: 0;
+  width: 18px; height: 18px;
+  background: var(--accent-rose);
+  border-right: 2px solid var(--ink);
+  transition: transform 120ms;
+}
+.pxswitch.on { background: var(--accent-leaf); }
+.pxswitch.on .nub { transform: translateX(22px); background: var(--accent-sun); }
+
+/* Pixel slider */
+.pxslider {
+  width: 100%;
+  -webkit-appearance: none; appearance: none;
+  background: transparent;
+}
+.pxslider::-webkit-slider-runnable-track { height: 8px; background: var(--bg-2); border: 2px solid var(--ink); }
+.pxslider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 18px; margin-top: -7px;
+  background: var(--accent-sun); border: 2px solid var(--ink); cursor: pointer;
+}
+
+/* Door icon (settings button) */
+.door-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'Press Start 2P'; font-size: 10px;
+  padding: 8px 10px; background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+  cursor: pointer;
+}
+.door-btn:hover { background: var(--accent-sun); }
+
+/* Delegate popover */
+.delegate-pop {
+  position: absolute; bottom: 56px; right: 10px;
+  background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 8px;
+  z-index: 20;
+  min-width: 200px;
+}
+.delegate-pop .title {
+  font-family: 'Press Start 2P'; font-size: 9px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+.delegate-pop .item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px;
+  font-family: 'VT323'; font-size: 17px;
+  cursor: pointer;
+}
+.delegate-pop .item:hover { background: var(--bg-2); }
+
+/* Break-room bulletin board area (small chip in ticker for now) */
+.note-card {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fffaf0;
+  border: 2px solid var(--ink);
+  padding: 3px 6px;
+  font-family: 'VT323'; font-size: 16px;
+}
+
+/* Small utilities */
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.row   { display: flex; align-items: center; gap: 8px; }
+.grow  { flex: 1; }
+.muted { color: var(--ink-2); }
+.tiny  { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-3); }
+
+/* ==========================================================================
+   V2 features: Task board, memory shelf, meeting room, focus mode, stamps
+   ========================================================================== */
+
+/* ---- Task board (clipboard-like) ---- */
+.task-board {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.clipboard-head {
+  position: relative;
+  background: var(--accent-sun);
+  border-bottom: 2px solid var(--ink);
+  padding: 8px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.clipboard-head .clip {
+  position: absolute; left: 50%; top: -8px; transform: translateX(-50%);
+  width: 38px; height: 14px; background: var(--ink-2); border: 2px solid var(--ink);
+}
+.clipboard-head .title { font-family: 'Press Start 2P'; font-size: 10px; letter-spacing: 0.06em; }
+
+.tb-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+.tb-col { border-right: 2px dashed var(--rule-2); min-height: 160px; }
+.tb-col:last-child { border-right: 0; }
+.tb-col-head {
+  font-family: 'Press Start 2P'; font-size: 9px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--rule-2);
+  letter-spacing: 0.06em;
+}
+.tb-col-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 110px; }
+.tb-empty { font-family: 'VT323'; font-size: 16px; color: var(--ink-3); text-align: center; padding: 18px 0; }
+
+.task-card {
+  background: #fffaf0;
+  border: 2px solid var(--ink);
+  padding: 7px 9px;
+  font-family: 'VT323'; font-size: 16px;
+  cursor: grab;
+  box-shadow: 2px 2px 0 0 rgba(59,46,42,0.15);
+  position: relative;
+}
+.task-card:active { cursor: grabbing; transform: translate(1px,1px); box-shadow: 1px 1px 0 0 rgba(59,46,42,0.2); }
+.task-card.pri-high { border-left: 6px solid var(--error); }
+.task-card.pri-med  { border-left: 6px solid var(--accent-sun); }
+.task-card.pri-low  { border-left: 6px solid var(--accent-leaf); }
+.tc-delete {
+  position: absolute; top: 4px; right: 4px;
+  width: 18px; height: 18px;
+  background: var(--paper); border: 1px solid var(--ink);
+  font-family: 'Press Start 2P'; font-size: 8px;
+  cursor: pointer; padding: 0;
+  opacity: 0;
+  transition: opacity 0.08s, background 0.08s;
+}
+.task-card:hover .tc-delete { opacity: 1; }
+.tc-delete:hover { background: var(--error); color: #fff8ee; }
+.tc-title { font-family: 'Press Start 2P'; font-size: 9px; line-height: 1.4; margin-bottom: 4px; padding-right: 22px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.tc-detail { color: var(--ink-2); font-size: 15px; line-height: 1.2; margin-bottom: 5px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.task-card.expanded .tc-title,
+.task-card.expanded .tc-detail { -webkit-line-clamp: unset; }
+.tc-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.tc-assigned { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; color: var(--ink); }
+.tc-unassigned { color: var(--ink-3); font-size: 14px; font-style: italic; }
+.pri { font-family: 'Press Start 2P'; font-size: 7px; padding: 2px 4px; border: 1px solid var(--ink); }
+.pri.pri-high { background: var(--error); color: #fff8ee; }
+.pri.pri-med { background: var(--accent-sun); }
+.pri.pri-low { background: var(--accent-leaf); }
+
+/* Drop-highlight on desks */
+.room.drop-target { outline: 3px dashed var(--accent-sun); outline-offset: -3px; }
+.room.drop-target .interior { background-color: #fff6d6 !important; }
+
+/* ---- Guest chair in CEO office ---- */
+.guest-chair {
+  position: absolute;
+  left: 12px; bottom: 34px;
+  width: 22px; height: 26px;
+  background: var(--wood);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  z-index: 4;
+}
+.guest-chair::before {
+  content: ''; position: absolute; left: -3px; right: -3px; top: -4px; height: 8px;
+  background: var(--wood-dk); border: 2px solid var(--ink);
+}
+.guest-chair:hover { background: var(--accent-sun); }
+.guest-chair-label {
+  position: absolute; left: 40px; bottom: 38px;
+  font-family: 'Press Start 2P'; font-size: 7px;
+  color: var(--ink-2); letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Filing cabinet clickable feedback */
+.filing.clickable { position: absolute; }
+.filing.clickable:hover { background: var(--ceo); }
+.filing .tag {
+  position: absolute; top: -12px; left: -4px;
+  font-family: 'Press Start 2P'; font-size: 6px;
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--ink); padding: 1px 3px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.filing:hover .tag { opacity: 1; }
+
+/* Meeting room door */
+.meeting-door {
+  position: absolute;
+  right: 10px; bottom: 38px;
+  width: 28px; height: 40px;
+  background: var(--wood-dk);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  z-index: 3;
+  display: grid; place-items: center;
+}
+.meeting-door::after {
+  content: ''; width: 4px; height: 4px; background: var(--accent-sun); border: 1px solid var(--ink);
+  align-self: center; justify-self: end; margin-right: 3px;
+}
+.meeting-door:hover { background: var(--ceo); }
+.meeting-door-label {
+  position: absolute; right: 8px; bottom: 82px;
+  font-family: 'Press Start 2P'; font-size: 7px;
+  background: var(--paper); color: var(--ink);
+  border: 2px solid var(--ink); padding: 3px 5px;
+  z-index: 4; white-space: nowrap;
+}
+
+/* ---- Memory shelf ---- */
+.memshelf { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow: auto; padding: 4px; }
+.memrow {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 2px solid var(--rule-2);
+  border-left: 4px solid var(--ceo);
+}
+.memtag { font-family: 'Press Start 2P'; font-size: 8px; padding: 3px 5px; background: var(--paper); border: 1px solid var(--ink); text-align: center; }
+.memtag.tag-pref { background: var(--accent-sun); }
+.memtag.tag-people { background: var(--accent-rose); }
+.memtag.tag-project { background: var(--accent-lav); }
+.memtag.tag-rule { background: var(--error); color: #fff8ee; }
+.memtag.tag-tone { background: var(--accent-teal); color: #fff8ee; }
+.memtext { font-family: 'VT323'; font-size: 17px; line-height: 1.2; }
+.memdate { font-family: 'Inter'; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* ---- Meeting room ---- */
+.meeting-table {
+  background: var(--carpet);
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  border-bottom: 2px solid var(--ink);
+}
+.seat {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 10px 8px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  box-shadow: var(--shadow-hard);
+  position: relative;
+}
+.seat.seat-head { background: #f3e9f6; }
+.seat-name { font-family: 'Press Start 2P'; font-size: 9px; margin-top: 4px; }
+.seat-role { font-family: 'Inter'; font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); }
+.seat-remove {
+  position: absolute; top: 3px; right: 3px;
+  width: 16px; height: 16px;
+  background: var(--error); color: #fff8ee;
+  border: 1px solid var(--ink); cursor: pointer;
+  font-family: 'Press Start 2P'; font-size: 7px;
+}
+.meeting-log { padding: 14px; max-height: 260px; overflow: auto; background: #fdf6e3; }
+.mtg-msg { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
+.mtg-msg.you { flex-direction: row-reverse; }
+.mtg-msg.you .mtg-bubble { background: var(--accent-sun); }
+.mtg-bubble {
+  background: var(--paper); border: 2px solid var(--ink); padding: 5px 9px;
+  font-family: 'VT323'; font-size: 17px; max-width: 75%;
+  box-shadow: 2px 2px 0 0 rgba(59,46,42,0.12);
+}
+.mtg-who { font-family: 'Press Start 2P'; font-size: 8px; color: var(--ink-2); margin-bottom: 2px; }
+
+/* ---- Focus mode overlay ---- */
+.focus-overlay {
+  position: fixed; inset: 0;
+  background: linear-gradient(180deg, #fff6e0 0%, #e4d6ea 100%);
+  z-index: 500;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 24px clamp(24px, 10vw, 180px);
+  animation: focusIn 0.3s ease-out;
+}
+body.night .focus-overlay { background: linear-gradient(180deg, #2a2340 0%, #1e172b 100%); }
+@keyframes focusIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.focus-head {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 20px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+}
+.focus-title { font-family: 'Press Start 2P'; font-size: 14px; letter-spacing: 0.04em; }
+.focus-sub { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-2); margin-top: 4px; }
+.focus-head > div:nth-child(2) { flex: 1; }
+.focus-chat {
+  margin: 16px 0;
+  padding: 20px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+  overflow-y: auto;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.focus-composer {
+  display: flex; gap: 10px;
+  padding: 10px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+}
+.focus-composer textarea {
+  flex: 1; height: 50px; resize: none;
+  border: 2px solid var(--ink); padding: 10px;
+  font-family: 'VT323'; font-size: 20px;
+}
+
+/* ---- Approval tray (corner of CEO desk) ---- */
+.approval-tray {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+  z-index: 140;
+  margin-bottom: 12px;
+}
+.ap-head {
+  font-family: 'Press Start 2P'; font-size: 10px;
+  padding: 8px 10px;
+  background: var(--error); color: #fff8ee;
+  border-bottom: 2px solid var(--ink);
+  letter-spacing: 0.06em;
+}
+.ap-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--rule-2);
+}
+.ap-row:last-child { border-bottom: 0; }
+.ap-title { font-family: 'Press Start 2P'; font-size: 9px; }
+.ap-sub { font-family: 'VT323'; font-size: 15px; color: var(--ink-2); }
+.stamp {
+  font-family: 'Press Start 2P'; font-size: 8px;
+  padding: 6px 7px;
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  transform: rotate(-4deg);
+  letter-spacing: 0.06em;
+  box-shadow: 1px 1px 0 0 var(--ink);
+}
+.stamp.green { background: var(--accent-leaf); color: var(--ink); }
+.stamp.red   { background: var(--error); color: #fff8ee; transform: rotate(3deg); }
+.stamp:hover { transform: scale(1.08) rotate(0deg); }
+
+/* Walking folder animation */
+.folder-walker {
+  position: absolute;
+  width: 18px; height: 14px;
+  background: var(--accent-sun);
+  border: 2px solid var(--ink);
+  z-index: 50;
+  pointer-events: none;
+}
+.folder-walker::before {
+  content: ''; position: absolute; left: 2px; right: 2px; top: -4px; height: 4px;
+  background: var(--accent-sun); border: 2px solid var(--ink); border-bottom: 0;
+}
+
+/* Bob animation for sprites */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+.bob { animation: bob 2.2s ease-in-out infinite; }
+.bob.slow { animation-duration: 3.1s; }
+.bob.fast { animation-duration: 1.6s; }
+
+@keyframes blinkEye {
+  0%, 94%, 100% { opacity: 1; }
+  95%, 98% { opacity: 0; }
+}
+.eye { animation: blinkEye 4.5s infinite; }
+
+/* Scale sprites */
+.sprite { display: grid; gap: 0; }
+.sprite .cell { image-rendering: pixelated; }
+
+/* ==============================
+   New: Day/Night mode
+   ============================== */
+body.night {
+  --bg:       #2e2840;
+  --bg-2:     #3a334f;
+  --paper:    #3f3752;
+  --paper-2:  #4a416a;
+  --ink:      #f3e8ff;
+  --ink-2:    #d0c4e4;
+  --ink-3:    #a898be;
+  --rule:     #5a4d72;
+  --rule-2:   #6b5c85;
+  --carpet:   #3e5a5e;
+  --tile:     #473e5e;
+  --wood:     #6a4f38;
+  --wood-dk:  #4a3624;
+
+  /* Vault-graph tag colors — slightly more vivid against the dark paper. */
+  --tag-project: #7DD3D3;
+  --tag-person:  #D4C2F5;
+  --tag-moc:     #F5C97C;
+  --tag-idea:    #F2A8A8;
+  --tag-daily:   #A5D6A4;
+  --tag-archive: #B8B2A4;
+
+  /* Shadow tokens — semi-transparent black doesn't read on dark paper.
+     Use a deeper, more opaque shadow at every elevation step. */
+  --shadow-1: 0 1px 2px  rgba(0,0,0,0.40);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.55);
+  --shadow-3: 0 8px 22px rgba(0,0,0,0.60);
+  --shadow-4: 0 12px 36px rgba(0,0,0,0.65);
+
+  background-image:
+    radial-gradient(circle at 20% 80%, rgba(201,184,224,0.18), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(240,198,116,0.08), transparent 50%);
+}
+body.night {
+  --office-wall-top:    #3a3250;
+  --office-wall-mid:    #322a45;
+  --office-wall-bot:    #271f38;
+  --office-wall-base:   #1e172b;
+  --office-ceo-bg:      #4a3060;
+  --office-ceo-int:     #3a2848;
+  --office-ceo-glow:    rgba(200,160,255,0.15);
+  --office-monitor:     #1a1a2a;
+  --office-screen-top:  #2a4060;
+  --office-screen-bot:  #1e3050;
+  --office-sky-top:     #1e1f44;
+  --office-sky-mid:     #2b2a5a;
+  --office-land-top:    #2a2a3a;
+  --office-land-bot:    #1e1e2c;
+  --office-cork:        #5a3e28;
+  --office-cork-border: #3a2818;
+  --office-ticker-bg:   #1e172b;
+  --office-ticker-text: #d0c4e4;
+}
+body.night .window::after {
+  content: '';
+  position: absolute; right: 4px; top: 4px;
+  width: 8px; height: 8px; background: #f7eed4; border: 2px solid var(--ink);
+  border-radius: 0;
+  left: auto; transform: none;
+}
+
+/* ===== Night-mode contrast overrides for hard-coded light surfaces =====
+   The vars above remap most things, but a handful of components hardcoded
+   light colors for thematic reasons (CRT cream screen, sticky-note pinks,
+   etc.). Those become unreadable when ink flips to light, so override them
+   explicitly here. Aim is "dim, but obviously legible". */
+body.night .screen {
+  background: radial-gradient(ellipse at center, #2a2138 0%, #1a1428 100%);
+  color: #d8e7c8;
+}
+body.night .screen::before {
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px);
+}
+body.night .msg .bubble {
+  background: #3a3050;
+  color: #f3e8ff;
+  border-color: #7a6d92;
+  box-shadow: 2px 2px 0 0 rgba(0,0,0,0.4);
+}
+body.night .msg.user .bubble  { background: #6a5a2c; color: #fff8ee; border-color: #c79b3c; }
+body.night .msg.ceo .bubble   { background: #5a3a5e; color: #f7e8ff; border-color: #b079b8; }
+body.night .msg.agent .bubble { background: #2f4a35; color: #e7f5d8; border-color: #6ba373; }
+body.night .msg.msg-dm        { background: rgba(201,184,224,0.10); border-color: #7a6d92; color: #d4c8e8; }
+body.night .msg-system        { color: #a89bc2; border-color: #5a4d72; }
+
+body.night .composer { background: #2e2840; }
+body.night .composer textarea {
+  background: #3a3050; color: #f3e8ff; border-color: #7a6d92;
+}
+body.night .composer textarea:focus { background: #44375d; }
+body.night .composer textarea::placeholder { color: #8a7b9f; }
+
+/* Cards on the dark theme */
+body.night .task-card        { background: #3a3050; color: #f3e8ff; }
+body.night .agent-card,
+body.night .team-card,
+body.night .doc-card,
+body.night .post-card,
+body.night .receipt-card     { background: #3a3050; color: #f3e8ff; }
+body.night .receipt-card.approved { background: rgba(125,181,181,0.18); }
+body.night .receipt-card.rejected { background: rgba(232,169,169,0.18); }
+body.night .agent-card.hire-tile,
+body.night .team-card.hire-tile,
+body.night .post-card.hire-tile { background: #312842; color: #c7b9d8; }
+
+/* Modal + control surfaces */
+body.night .modal { background: #2e2840; }
+body.night .modal-body { background: #322940; }
+body.night .cb-panel { background: #3a3050; color: #f3e8ff; }
+body.night input:not([type="range"]),
+body.night select,
+body.night textarea {
+  background: #44375d; color: #f3e8ff; border-color: #7a6d92;
+}
+body.night input::placeholder, body.night textarea::placeholder { color: #8a7b9f; }
+body.night .px-btn.secondary { background: #44375d; color: #f3e8ff; }
+body.night .px-btn.ghost { color: #f3e8ff; }
+body.night .stamp.green { background: #2f4a35; color: #d8e7c8; }
+body.night .stamp.red   { background: #5a2e2e; color: #ffd8d8; }
+
+/* Chat status bar */
+body.night .topbar { background: #2e2840; }
+body.night .crumbs { color: #f3e8ff; }
+body.night .chip { background: #3a3050; color: #f3e8ff; }
+body.night .chip .dot { background: var(--accent-leaf); }
+
+/* Vault tab */
+body.night .vault-tree-pane,
+body.night .vault-edit-pane,
+body.night .vault-graph-pane,
+body.night .graph-stage { background: #2e2840; }
+body.night .vault-toolbar { background: #3a3050; }
+body.night .vault-edit { background: #2a2138; color: #f3e8ff; }
+body.night .vault-preview { background: #2a2138; color: #f3e8ff; }
+body.night .tree-row.active { background: #5a3a5e; }
+body.night .tree-row:hover { background: rgba(240,198,116,0.20); }
+body.night .vi-snippet, body.night .vi-path { color: #a89bc2; }
+body.night .gs-card { background: #3a3050; color: #f3e8ff; }
+body.night .gs-tag  { background: rgba(201,184,224,0.30); color: #f3e8ff; }
+
+/* Memory + ticker + other readables */
+body.night .memrow { background: #3a3050; color: #f3e8ff; }
+body.night .ticker { background: #3a3050; color: #f3e8ff; }
+body.night .ticker .badge { background: var(--error); color: #fff8ee; }
+
+/* Inspect panel */
+body.night .inspect { background: #2e2840; color: #f3e8ff; }
+body.night .inspect .body { background: #322940; }
+body.night .stat { background: #3a3050; color: #f3e8ff; border-color: #5a4d72; }
+body.night .recent { background: #2a2138; color: #d8e7c8; border-color: #5a4d72; }
+body.night .journal .jrow { color: #f3e8ff; border-color: #5a4d72; }
+body.night .jdate { color: #a89bc2; }
+
+/* Approval tray + receipts */
+body.night .approval-tray { background: #3a3050; color: #f3e8ff; }
+body.night .receipt-tray { background: #3a3050; color: #f3e8ff; }
+body.night .rt-paper { background: #2a2138; }
+
+/* Bulletin pins + sticky stack — the bright pastels need a gentler night palette */
+body.night .cork-pin              { background: #3a3050; color: #f3e8ff; border-color: #5a4d72; }
+body.night .cork-pin.kind-memory  { background: rgba(201,184,224,0.35); }
+body.night .cork-pin.kind-receipt { background: rgba(139,185,138,0.30); }
+body.night .cork-pin.kind-note    { background: rgba(240,198,116,0.30); }
+
+/* Toast */
+body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; }
+
+/* ==============================
+   Mood indicator chips
+   ============================== */
+.mood {
+  position: absolute;
+  top: -4px; right: -4px;
+  width: 18px; height: 18px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  display: grid; place-items: center;
+  font-size: 10px;
+  z-index: 2;
+}
+.mood.thinking { background: var(--accent-lav); }
+.mood.stuck    { background: var(--error); color: #fff8ee; }
+.mood.done     { background: var(--accent-leaf); }
+.mood.idle     { background: var(--bg-2); }
+
+/* ==============================
+   Coffee machine
+   ============================== */
+.coffee {
+  position: absolute;
+  left: 10px; bottom: 10px;
+  width: 28px; height: 38px;
+  background: var(--ink-2);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  z-index: 3;
+}
+.coffee:hover { background: var(--ceo); }
+.coffee::before {
+  /* steam */
+  content: '☁';
+  position: absolute; top: -14px; left: 6px;
+  color: var(--ink-3);
+  font-size: 14px;
+  animation: steam 2.4s ease-in-out infinite;
+}
+.coffee::after {
+  /* cup slot */
+  content: '';
+  position: absolute; left: 4px; bottom: 4px; right: 4px; height: 10px;
+  background: #1a1a1a; border: 2px solid var(--ink);
+}
+@keyframes steam {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 0.9; transform: translateY(-4px); }
+}
+.coffee-label {
+  position: absolute; left: 42px; bottom: 14px;
+  font-family: 'Press Start 2P'; font-size: 7px;
+  color: var(--ink-2); letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* Office pet (Maximus the dog) */
+.pet {
+  position: absolute;
+  bottom: 4px;
+  width: 16px; height: 16px;
+  z-index: 4;
+  animation: wander 18s linear infinite;
+  image-rendering: pixelated;
+}
+@keyframes wander {
+  0%   { left: 5%; }
+  25%  { left: 45%; }
+  50%  { left: 85%; }
+  75%  { left: 30%; }
+  100% { left: 5%; }
+}
+
+/* ==============================
+   Sticky notes (on CEO desk)
+   ============================== */
+.sticky-stack {
+  position: absolute; right: 12px; top: 10px;
+  display: flex; flex-direction: column; gap: 6px;
+  z-index: 5;
+  max-width: 120px;
+}
+.sticky {
+  background: var(--accent-sun);
+  border: 2px solid var(--ink);
+  padding: 4px 6px;
+  font-family: 'VT323'; font-size: 14px;
+  box-shadow: 2px 2px 0 0 rgba(59,46,42,0.3);
+  line-height: 1.15;
+  transform: rotate(-1.4deg);
+  cursor: pointer;
+}
+.sticky:nth-child(2n) { background: var(--accent-rose); transform: rotate(1.2deg); }
+.sticky:nth-child(3n) { background: var(--accent-lav); transform: rotate(-0.6deg); }
+.sticky .x {
+  float: right; color: var(--ink); opacity: 0.5; font-family: 'Press Start 2P'; font-size: 7px;
+}
+.add-sticky {
+  border: 2px dashed var(--ink);
+  background: transparent;
+  padding: 4px 6px;
+  font-family: 'Press Start 2P'; font-size: 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: center;
+}
+.add-sticky:hover { background: var(--bg-2); }
+
+/* ==============================
+   Token / cost counter HUD
+   ============================== */
+.token-hud {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 8px;
+  background: var(--ink);
+  color: #fff8ee;
+  border: 2px solid var(--ink);
+  font-family: 'Press Start 2P'; font-size: 9px;
+  letter-spacing: 0.04em;
+}
+.token-hud .bar {
+  width: 60px; height: 8px;
+  background: rgba(255,248,238,0.18);
+  position: relative;
+  border: 1px solid rgba(255,248,238,0.3);
+}
+.token-hud .bar .fill { position: absolute; inset: 0; background: var(--accent-sun); }
+
+/* ==============================
+   Inspect / performance review panel
+   ============================== */
+.inspect {
+  position: fixed;
+  top: 80px; right: 20px;
+  width: 340px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  z-index: 150;
+}
+.inspect .head {
+  background: var(--ceo);
+  color: #fff8ee;
+  padding: 10px 12px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 3px solid var(--ink);
+}
+.inspect .head .title { font-family: 'Press Start 2P'; font-size: 11px; }
+.inspect .head .sub { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(255,248,238,0.7); }
+.inspect .body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.inspect .stat {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'VT323'; font-size: 17px;
+  border-bottom: 1px dashed var(--rule-2);
+  padding-bottom: 5px;
+}
+.inspect .stat .lbl { color: var(--ink-2); font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+.inspect .tools-used { display: flex; flex-wrap: wrap; gap: 4px; }
+.inspect .tools-used span {
+  font-family: 'Press Start 2P'; font-size: 8px;
+  padding: 3px 5px; background: var(--bg-2); border: 1px solid var(--ink);
+}
+.inspect .recent {
+  background: var(--bg); border: 1px solid var(--rule-2);
+  padding: 6px 8px;
+  font-family: 'VT323'; font-size: 15px;
+  max-height: 120px; overflow: auto;
+}
+
+/* Keyboard shortcut tooltip (pixel floppy) */
+.shortcut-hud {
+  position: fixed; bottom: 16px; left: 16px;
+  z-index: 100;
+  display: flex; align-items: center; gap: 8px;
+}
+.floppy-btn {
+  width: 34px; height: 34px;
+  background: var(--accent-lav);
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+  cursor: pointer;
+  display: grid; place-items: center;
+  position: relative;
+}
+.floppy-btn::before {
+  content: ''; position: absolute; inset: 4px 4px 14px 4px; background: var(--paper); border: 1px solid var(--ink);
+}
+.floppy-btn::after {
+  content: ''; position: absolute; left: 8px; right: 8px; bottom: 5px; top: 22px; background: var(--ink-2); border: 1px solid var(--ink);
+}
+.shortcut-panel {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 12px 14px;
+}
+.shortcut-panel h5 { font-family: 'Press Start 2P'; font-size: 10px; margin-bottom: 8px; }
+.shortcut-panel .kbrow {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-family: 'VT323'; font-size: 16px;
+  align-items: center;
+}
+.shortcut-panel kbd {
+  font-family: 'Press Start 2P'; font-size: 9px;
+  padding: 3px 5px; background: var(--bg-2); border: 2px solid var(--ink);
+  box-shadow: 1px 1px 0 0 var(--ink);
+  display: inline-block;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 20px; right: 20px;
+  background: var(--ink);
+  color: #fff8ee;
+  padding: 10px 14px;
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  font-family: 'VT323'; font-size: 17px;
+  z-index: 300;
+  display: flex; align-items: center; gap: 8px;
+  animation: toastIn 0.25s ease-out;
+}
+.toast .kw { color: var(--accent-sun); font-family: 'Press Start 2P'; font-size: 9px; }
+@keyframes toastIn {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Section title */
+.section-title {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Press Start 2P'; font-size: 12px;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.section-title .tag {
+  font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* ==============================
+   View area (sidebar nav surfaces)
+   ============================== */
+.view-area {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  gap: 12px;
+}
+.view-toolbar {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 0;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.view-search {
+  flex: 1 1 200px;
+  border: 2px solid var(--ink);
+  padding: 6px 10px;
+  font-family: 'VT323'; font-size: 17px;
+  background: var(--paper);
+}
+.view-check {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Inter'; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-2);
+  cursor: pointer;
+}
+.empty-state {
+  border: 2px dashed var(--ink-3);
+  padding: 32px 20px;
+  text-align: center;
+  background: var(--paper-2);
+}
+.empty-title {
+  font-family: 'Press Start 2P'; font-size: 11px;
+  color: var(--ink); margin-bottom: 8px;
+}
+.empty-sub {
+  font-family: 'VT323'; font-size: 16px;
+  color: var(--ink-2); max-width: 480px; margin: 0 auto;
+}
+
+/* Memory page */
+.shelf-page { max-height: none; padding: 8px; border: 2px solid var(--ink); background: var(--paper-2); }
+.memtag-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.mem-add {
+  display: flex; gap: 8px; padding: 10px 0; align-items: center;
+  border-top: 2px solid var(--ink); margin-top: 8px;
+}
+.mem-add select, .mem-add input {
+  border: 2px solid var(--ink); padding: 6px 8px;
+  font-family: 'VT323'; font-size: 17px; background: var(--paper);
+}
+.mem-add input { flex: 1; }
+
+/* Team grid */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.team-card {
+  position: relative;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  cursor: pointer;
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+.team-card:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.team-card .status-pill { align-self: flex-start; }
+.team-card .sprite-box { display: flex; justify-content: center; padding: 8px 0; }
+.team-card .name { font-family: 'Press Start 2P'; font-size: 11px; }
+.team-card .role { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); }
+.team-stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px;
+  padding-top: 6px; border-top: 1px dashed var(--ink-3);
+}
+.team-stats > div { display: flex; flex-direction: column; }
+.team-stats .lbl { font-family: 'Inter'; font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); }
+.team-stats .val { font-family: 'VT323'; font-size: 16px; color: var(--ink); }
+.team-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.team-tools span {
+  font-family: 'Press Start 2P'; font-size: 7px;
+  padding: 2px 5px; background: var(--accent-lav); border: 1px solid var(--ink);
+  text-transform: uppercase;
+}
+.team-card.hire-tile {
+  border-style: dashed;
+  display: grid; place-items: center;
+  background: var(--paper-2);
+}
+.team-card.hire-tile .plus {
+  font-family: 'Press Start 2P'; font-size: 14px;
+  text-align: center; color: var(--ink-2);
+}
+
+/* Docs */
+.docs-list { display: flex; flex-direction: column; gap: 12px; }
+.doc-card {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 12px;
+}
+.doc-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-bottom: 8px;
+  border-bottom: 2px solid var(--ink); padding-bottom: 6px;
+}
+.doc-title { font-family: 'Press Start 2P'; font-size: 11px; }
+.doc-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Inter'; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--ink-2);
+}
+.doc-brief {
+  font-family: 'VT323'; font-size: 15px; color: var(--ink-2);
+  font-style: italic; margin-bottom: 8px;
+}
+.doc-body {
+  font-family: 'VT323'; font-size: 17px;
+  white-space: pre-wrap; line-height: 1.3;
+}
+
+/* Calendar */
+.cal-day { margin-bottom: 12px; }
+.cal-day-head {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Press Start 2P'; font-size: 11px;
+  padding: 6px 8px;
+  background: var(--accent-sun);
+  border: 2px solid var(--ink);
+}
+.cal-day-head .cal-count {
+  margin-left: auto;
+  font-family: 'Inter'; font-size: 10px;
+  color: var(--ink-2); letter-spacing: 0.1em;
+}
+.cal-day-body {
+  border-left: 2px solid var(--ink); border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.cal-item {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--ink-3);
+}
+.cal-item:last-child { border-bottom: none; }
+.cal-item.status-done { opacity: 0.7; }
+.cal-time { font-family: 'VT323'; font-size: 16px; color: var(--ink-2); }
+.cal-title { font-family: 'VT323'; font-size: 17px; }
+.cal-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* Coming soon */
+.view-soon { padding-top: 20px; }
+
+/* ==============================
+   Projects tab
+   ============================== */
+.view-projects { display: flex; flex-direction: column; height: calc(100vh - 110px); min-height: 0; }
+.projects-layout { display: grid; grid-template-columns: 240px 1fr; flex: 1; min-height: 0; overflow: hidden; }
+.projects-list-pane {
+  border-right: 2px solid var(--ink); background: var(--paper-2);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.proj-list-items { overflow-y: auto; flex: 1; padding: 4px 0; }
+.proj-card {
+  padding: 8px 10px; cursor: pointer; border-bottom: 1px dashed var(--ink-3);
+}
+.proj-card:hover { background: rgba(240,198,116,0.2); }
+.proj-card.active { background: var(--accent-lav); }
+.proj-card-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.proj-name { font-family: 'Press Start 2P'; font-size: 8px; word-break: break-word; }
+.proj-type-badge {
+  font-size: 7px; padding: 2px 5px; font-family: 'VT323'; letter-spacing: 0.05em;
+  background: var(--ink); color: var(--paper); flex-shrink: 0;
+}
+.proj-type-badge.type-github { background: #1a7f37; color: #fff; }
+.proj-type-badge.type-local  { background: var(--accent-sun); color: var(--ink); }
+.proj-path {
+  font-family: 'Inter'; font-size: 9px; color: var(--ink-3);
+  word-break: break-all; line-height: 1.35; max-height: 26px; overflow: hidden;
+}
+.proj-card-actions { display: flex; gap: 4px; margin-top: 5px; }
+.proj-add-form {
+  padding: 8px; background: var(--paper); border-bottom: 2px solid var(--ink);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.proj-form-row { display: flex; gap: 6px; }
+.proj-input {
+  border: 2px solid var(--ink); padding: 5px 7px;
+  font-family: 'VT323'; font-size: 15px; background: var(--paper);
+  width: 100%; box-sizing: border-box; color: var(--ink);
+}
+.proj-input:focus { outline: none; border-color: var(--accent-sun); }
+.proj-err { font-size: 9px; color: var(--error); line-height: 1.4; }
+.proj-name-input {
+  font-family: 'Press Start 2P'; font-size: 8px;
+  border: none; border-bottom: 1px solid var(--ink);
+  background: transparent; outline: none; width: 100%; color: var(--ink);
+}
+.projects-detail-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.proj-detail-header {
+  padding: 10px 12px; border-bottom: 2px solid var(--ink);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; background: var(--paper-2); flex-shrink: 0;
+}
+.proj-tabs {
+  display: flex; border-bottom: 2px solid var(--ink);
+  background: var(--paper-2); flex-shrink: 0;
+}
+.proj-tab {
+  flex: 1; padding: 7px 4px; font-family: 'Press Start 2P'; font-size: 7px;
+  background: transparent; border: none; border-right: 1px dashed var(--ink-3);
+  cursor: pointer; color: var(--ink-2); text-align: center;
+}
+.proj-tab:last-child { border-right: none; }
+.proj-tab:hover { background: rgba(240,198,116,0.15); color: var(--ink); }
+.proj-tab.active { background: var(--paper); color: var(--ink); }
+.proj-files-layout {
+  display: grid; grid-template-columns: 260px 1fr;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+.proj-tree-pane {
+  border-right: 2px solid var(--ink); background: var(--paper-2);
+  overflow-y: auto; padding: 4px 0;
+}
+.proj-viewer-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.proj-viewer-head {
+  font-family: 'Press Start 2P'; font-size: 8px; padding: 7px 12px;
+  border-bottom: 1px dashed var(--ink-3); background: var(--paper-2); flex-shrink: 0;
+  color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proj-file-content {
+  font-family: 'VT323'; font-size: 14px; overflow: auto; flex: 1;
+  padding: 10px 12px; margin: 0; background: var(--paper); color: var(--ink);
+  line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.proj-file-edit {
+  /* Real coding font stack — VT323 (pixel-art) is great for HUDs, terrible
+     for reading source. Fall back through the common dev-tool monospaces. */
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', ui-monospace,
+               'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+  overflow: auto; flex: 1;
+  padding: 14px 18px; margin: 0;
+  background: var(--paper); color: var(--ink);
+  white-space: pre; word-break: normal;
+  border: none; outline: none; resize: none;
+  width: 100%; box-sizing: border-box;
+  tab-size: 2;
+}
+.proj-file-edit:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+.proj-tab-body { padding: 12px; overflow-y: auto; flex: 1; }
+.proj-tree-err {
+  margin: 8px; padding: 8px 10px; background: rgba(201,112,112,0.1);
+  border: 1px dashed var(--error); font-size: 10px; color: var(--error);
+  line-height: 1.5; font-family: 'Inter';
+}
+
+/* Night mode */
+body.night .projects-list-pane,
+body.night .proj-detail-header,
+body.night .proj-tabs,
+body.night .proj-tree-pane { background: #2e2840; }
+body.night .proj-add-form,
+body.night .proj-viewer-pane { background: #2a2138; }
+body.night .proj-file-content { background: #2a2138; color: #f3e8ff; }
+body.night .proj-file-edit { background: #2a2138; color: #f3e8ff; }
+body.night .proj-card.active { background: #5a3a5e; }
+body.night .proj-card:hover { background: rgba(240,198,116,0.15); }
+body.night .proj-tab.active { background: #2a2138; }
+body.night .proj-type-badge.type-github { background: #1a5c28; }
+body.night .proj-type-badge.type-local  { background: #5a4a10; color: #ffe08a; }
+body.night .proj-input { background: #2a2138; color: #f3e8ff; border-color: #6a5a8a; }
+body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
+
+/* ==============================
+   Receipts
+   ============================== */
+.receipt-tray {
+  position: fixed; bottom: 18px; right: 18px;
+  z-index: 30;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  font-family: 'Press Start 2P'; font-size: 9px;
+  transition: transform 0.06s;
+}
+.receipt-tray:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 0 var(--ink); }
+.rt-stack { position: relative; width: 18px; height: 22px; }
+.rt-paper {
+  position: absolute; width: 16px; height: 18px;
+  background: var(--paper-2); border: 1.5px solid var(--ink);
+}
+.rt-paper:nth-child(1) { top: 0; left: 0; }
+.rt-paper:nth-child(2) { top: 2px; left: 2px; }
+.rt-paper:nth-child(3) { top: 4px; left: 4px; }
+.rt-label { white-space: nowrap; }
+
+.receipts-list { display: flex; flex-direction: column; gap: 8px; }
+.receipt-card {
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  position: relative;
+}
+.receipt-card.rejected { background: rgba(232,169,169,0.18); }
+.receipt-card.approved { background: rgba(139,185,138,0.18); }
+.rc-stamp {
+  font-family: 'Press Start 2P'; font-size: 18px;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+.receipt-card.approved .rc-stamp { color: #4a8c4a; }
+.receipt-card.rejected .rc-stamp { color: var(--error); }
+.rc-body { flex: 1; min-width: 0; }
+.rc-title { font-family: 'VT323'; font-size: 18px; }
+.rc-meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  font-family: 'Inter'; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-3);
+}
+
+/* ==============================
+   Hire templates / job postings
+   ============================== */
+.hire-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 4px;
+}
+.post-card {
+  position: relative;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  cursor: pointer;
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+.post-card:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.post-head { display: flex; align-items: center; gap: 8px; }
+.post-name { font-family: 'Press Start 2P'; font-size: 10px; }
+.post-role {
+  font-family: 'Inter'; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--ink-2);
+}
+.post-meta {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  font-family: 'Inter'; font-size: 9px; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-top: auto; padding-top: 6px;
+  border-top: 1px dashed var(--ink-3);
+}
+.post-remove {
+  position: absolute; top: 4px; right: 4px;
+}
+.post-card.hire-tile {
+  border-style: dashed;
+  display: grid; place-items: center;
+  background: var(--paper-2);
+  min-height: 110px;
+}
+.post-card.hire-tile .plus {
+  font-family: 'Press Start 2P'; font-size: 14px;
+  text-align: center; color: var(--ink-2);
+}
+
+/* ==============================
+   Stand-up modal
+   ============================== */
+.standup-list {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 60vh; overflow: auto; padding-right: 4px;
+}
+.standup-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px; background: var(--paper); border: 2px solid var(--ink);
+}
+.standup-row.error { background: rgba(232,169,169,0.15); }
+.su-body { flex: 1; min-width: 0; }
+.su-name { font-family: 'Press Start 2P'; font-size: 9px; margin-bottom: 4px; }
+.su-name .tiny { font-family: 'Inter'; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.su-text {
+  font-family: 'VT323'; font-size: 17px; line-height: 1.3;
+  white-space: pre-wrap;
+}
+.standup-summary {
+  border: 2px solid var(--ink);
+  background: var(--accent-sun);
+  padding: 12px;
+  margin-top: 4px;
+}
+.standup-preflight {
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  padding: 12px 14px;
+}
+.standup-preflight .warn {
+  color: var(--error);
+  font-weight: 600;
+}
+.standup-row.disabled { opacity: 0.45; }
+.standup-row.disabled .su-name { text-decoration: line-through; }
+.model-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-family: 'Inter'; font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--ink);
+}
+.model-chip.local { background: var(--accent-rose); }
+.model-chip.cloud { background: var(--accent-leaf); }
+
+/* ==============================
+   Bulletin board (real cork pins)
+   ============================== */
+.cork-empty {
+  grid-column: 1 / -1;
+  display: grid; place-items: center;
+  font-family: 'VT323'; font-size: 13px;
+  color: rgba(255,250,240,0.85);
+  text-align: center; padding: 6px;
+  letter-spacing: 0.04em;
+}
+.cork-pin {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 4px 4px 4px 4px;
+  position: relative;
+  display: flex; align-items: flex-start; gap: 2px;
+  font-family: 'VT323'; font-size: 11px;
+  line-height: 1.1;
+  overflow: hidden;
+}
+.cork-pin::before {
+  content: ''; position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; background: var(--error); border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+.cork-pin.kind-memory  { background: var(--accent-lav); }
+.cork-pin.kind-receipt { background: var(--accent-leaf); }
+.cork-pin.kind-note    { background: var(--accent-sun); }
+.cork-pin .cp-text {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; padding-top: 4px;
+  flex: 1; word-break: break-word;
+}
+.cork-pin .cp-x {
+  font-family: 'Press Start 2P'; font-size: 6px;
+  background: transparent; border: none;
+  cursor: pointer; opacity: 0; padding: 0; margin-left: 2px;
+  color: var(--ink);
+}
+.cork-pin:hover .cp-x { opacity: 1; }
+
+/* ==============================
+   Inter-agent DMs + system notes in the chat thread
+   ============================== */
+.msg-system {
+  align-self: center;
+  font-family: 'Inter'; font-size: 10px;
+  color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 4px 10px; margin: 4px 0;
+  border-top: 1px dashed var(--ink-3);
+  border-bottom: 1px dashed var(--ink-3);
+  text-align: center;
+}
+.msg.msg-dm {
+  background: rgba(201, 184, 224, 0.20);  /* lavender wash */
+  border: 1px dashed var(--ink-2);
+  padding: 8px 10px;
+  margin: 4px 14px 4px 32px;  /* indent so it reads as overheard */
+  font-family: 'VT323'; font-size: 14px;
+}
+.msg.msg-dm .dm-head {
+  font-family: 'Press Start 2P'; font-size: 8px;
+  color: var(--ink-2); letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.msg.msg-dm p { margin: 0; line-height: 1.25; }
+.msg-target { color: var(--ink-3); font-weight: normal; margin-left: 4px; font-size: 10px; }
+
+/* ==============================
+   Agent journal in InspectPanel
+   ============================== */
+.journal {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 200px; overflow: auto;
+}
+.jrow {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 4px 6px;
+  border-bottom: 1px dashed var(--ink-3);
+  font-family: 'VT323'; font-size: 13px;
+  line-height: 1.3;
+}
+.jrow:last-child { border-bottom: none; }
+.jdate {
+  font-family: 'Inter'; font-size: 9px;
+  color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em;
+  padding-top: 2px; flex-shrink: 0; width: 64px;
+}
+.jsum { flex: 1; word-break: break-word; }
+
+/* ==============================
+   Research missions
+   ============================== */
+.missions-section-title {
+  font-family: 'Press Start 2P'; font-size: 10px;
+  margin-bottom: 8px; color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.missions-list { display: flex; flex-direction: column; gap: 8px; }
+.mission-card {
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  padding: 10px 12px;
+  position: relative;
+}
+.mission-card.status-running { border-left: 6px solid var(--accent-leaf); }
+.mission-card.status-paused  { border-left: 6px solid var(--accent-sun); }
+.mission-card.status-done    { border-left: 6px solid var(--accent-lav); background: var(--paper-2); }
+.mission-card.status-error   { border-left: 6px solid var(--error); background: rgba(232,169,169,0.1); }
+.mc-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px;
+}
+.mc-title {
+  flex: 1; min-width: 0;
+  font-family: 'Press Start 2P'; font-size: 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-status {
+  font-family: 'Press Start 2P'; font-size: 7px;
+  padding: 2px 6px;
+  border: 1px solid var(--ink);
+}
+.mc-status.status-running { background: var(--accent-leaf); }
+.mc-status.status-paused  { background: var(--accent-sun); }
+.mc-status.status-done    { background: var(--accent-lav); }
+.mc-status.status-error   { background: var(--error); color: #fff8ee; }
+.mc-meta {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-family: 'Inter'; font-size: 10px;
+  color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.mc-next {
+  font-family: 'Inter'; font-size: 11px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+.mc-last {
+  font-family: 'VT323'; font-size: 14px;
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border: 1px dashed var(--ink-3);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.mc-err {
+  font-family: 'VT323'; font-size: 13px;
+  color: var(--error);
+  margin-bottom: 6px;
+}
+.mc-actions { display: flex; gap: 6px; }
+
+/* ==============================
+   Vault view (unified: tree | editor | graph)
+   ============================== */
+/* When the Vault tab is active, the chat+roster column is hidden and the
+   view-area takes the full content width. */
+/* Vault tab takes the entire content area — override the office grid template
+   so the (now removed) right column doesn't reserve empty space. */
+.content.full-width { grid-template-columns: 1fr; padding: 0; gap: 0; overflow: hidden; }
+.content.full-width .view-area { width: 100%; min-width: 0; }
+.content.full-width .view-vault.unified { height: calc(100vh - 110px); }
+
+.view-vault.unified { display: flex; flex-direction: column; min-height: 0; height: calc(100vh - 130px); }
+.vault-layout-3col {
+  display: grid;
+  /* grid-template-columns is set inline by VaultView based on what panes are open */
+  gap: 0;
+  flex: 1;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: var(--shadow-hard);
+  overflow: hidden;
+  min-height: 0;
+}
+.vault-tree-pane,
+.vault-edit-pane,
+.vault-graph-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.vault-tree-pane  { border-right: 2px solid var(--ink); background: var(--paper-2); }
+.vault-graph-pane { border-left: 2px solid var(--ink); background: var(--paper); }
+.vault-graph-pane.fullspan { border-left: none; }
+.vault-busy {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--paper-2); border: 1px solid var(--ink);
+  padding: 4px 8px; font-family: 'VT323'; font-size: 13px;
+  z-index: 5;
+}
+
+.vault-toolbar {
+  display: flex; gap: 6px; padding: 8px;
+  border-bottom: 2px solid var(--ink); background: var(--paper-2);
+}
+.vault-toolbar .view-search {
+  flex: 1; border:2px solid var(--ink); padding:6px 8px;
+  font-family:'VT323'; font-size:16px; background: var(--paper);
+}
+.vault-tree-meta {
+  padding: 4px 10px;
+  font-family: 'Inter'; font-size: 10px;
+  color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px dashed var(--ink-3);
+}
+.tree-scroll { overflow: auto; flex: 1; padding: 4px 0; }
+
+/* ---- Folder tree ---- */
+.tree-root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.tree-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 3px;
+}
+.tree-row:hover { background: rgba(240, 198, 116, 0.30); }
+.tree-row.active { background: var(--accent-lav); }
+.tree-chev { width: 12px; text-align: center; font-size: 10px; color: var(--ink-3); flex-shrink: 0; }
+.tree-icon { font-size: 13px; opacity: 0.95; flex-shrink: 0; }
+.tree-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+  font-weight: 500;
+}
+.tree-folder .tree-name { font-weight: 700; color: var(--ink); }
+.tree-file  .tree-name { font-weight: 400; color: var(--ink-2); }
+.tree-row.active .tree-name { color: var(--ink); font-weight: 600; }
+.tree-tag {
+  margin-left: auto;
+  font-size: 9px; letter-spacing: 0.08em; font-weight: 600;
+  padding: 1px 5px;
+  background: var(--accent-sun); border: 1px solid var(--ink);
+  flex-shrink: 0;
+}
+
+/* ---- Projects view text styling --------------------------------------- */
+.proj-list-name {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px; font-weight: 600;
+  color: var(--ink); line-height: 1.3;
+}
+.proj-list-path {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: 10px; color: var(--ink-3);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.proj-section-head {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-2);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.proj-empty-msg {
+  padding: 18px 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-style: italic;
+}
+.proj-edit-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+  flex-wrap: wrap;
+}
+.proj-edit-path {
+  flex: 1; min-width: 0;
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proj-edit-err {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px; color: var(--danger, #c97070); font-weight: 500;
+}
+.tree-size {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 10px; color: var(--ink-3);
+  flex-shrink: 0; margin-left: 6px;
+}
+
+body.night .proj-list-path { color: var(--ink-3); }
+body.night .tree-size      { color: var(--ink-3); }
+body.night .proj-section-head { background: var(--paper-2); color: var(--ink-2); }
+body.night .proj-edit-head    { background: var(--paper-2); }
+
+/* ---- Editor pane ---- */
+.vault-edit-head {
+  padding: 8px 10px; border-bottom: 2px solid var(--ink); background: var(--paper-2);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.ve-path-wrap { min-width: 0; }
+.ve-crumbs {
+  font-family: 'Inter'; font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--ink-3);
+  display: block;
+}
+.ve-title {
+  font-family: 'Press Start 2P'; font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 3px;
+}
+/* ---- Premium vault editor (dark, JetBrains Mono, always-dark regardless of theme) ---- */
+.vault-editor-wrap {
+  display: flex; flex-direction: column; height: 100%; overflow: hidden;
+  background: #0c0c14;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+}
+.vault-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; min-height: 30px;
+  background: #07070d;
+  border-bottom: 1px solid rgba(124,107,255,0.18);
+  flex-shrink: 0;
+}
+.vault-editor-path {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: rgba(255,255,255,0.38); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.vault-editor-lang {
+  font-family: 'Inter', sans-serif; font-size: 9px; font-weight: 600;
+  letter-spacing: 0.12em; color: #7c6bff;
+  text-transform: uppercase; white-space: nowrap; margin-left: 10px;
+  padding: 2px 6px; border: 1px solid rgba(124,107,255,0.3);
+  border-radius: 3px; background: rgba(124,107,255,0.07);
+}
+.vault-editor-body { display: flex; flex: 1; overflow: hidden; }
+.vault-line-nums {
+  width: 46px; min-width: 46px; overflow-y: hidden;
+  background: #09090f; border-right: 1px solid rgba(124,107,255,0.1);
+  padding: 14px 0; user-select: none; flex-shrink: 0;
+}
+.vault-line-num {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  line-height: 1.65; color: rgba(255,255,255,0.15);
+  text-align: right; padding: 0 10px 0 4px;
+}
+.vault-line-num.active { color: rgba(124,107,255,0.7); }
+.vault-edit {
+  flex: 1; resize: none; border: none; outline: none;
+  padding: 14px 20px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 13px; line-height: 1.65;
+  background: #0c0c14; color: #d4d8e8;
+  caret-color: #7c6bff; tab-size: 2;
+}
+
+/* ---- Premium markdown preview ---- */
+.vault-preview {
+  flex: 1; overflow: auto; padding: 22px 30px 32px;
+  background: #0c0c14; color: #d4d8e8;
+  font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.7;
+  max-width: 740px; align-self: center; width: 100%;
+}
+.md-h { font-family: 'Inter'; font-weight: 700; margin: 22px 0 10px; line-height: 1.2; }
+.md-h:first-child { margin-top: 0; }
+.md-h1 { font-size: 24px; color: #67e8f9; border-bottom: 1px solid rgba(103,232,249,0.18); padding-bottom: 8px; }
+.md-h2 { font-size: 18px; color: #67e8f9; }
+.md-h3 { font-size: 15px; color: #93c5fd; }
+.md-h4, .md-h5, .md-h6 { font-size: 13px; color: #93c5fd; }
+/* fallback for class="md-h md-h1" pattern renderMarkdown uses */
+h1.md-h, div.md-h.md-h1 { font-size: 24px; color: #67e8f9; border-bottom: 1px solid rgba(103,232,249,0.18); padding-bottom: 8px; }
+h2.md-h, div.md-h.md-h2 { font-size: 18px; color: #67e8f9; }
+h3.md-h, div.md-h.md-h3 { font-size: 15px; color: #93c5fd; }
+h4.md-h, h5.md-h, h6.md-h,
+div.md-h.md-h4, div.md-h.md-h5, div.md-h.md-h6 { font-size: 13px; color: #93c5fd; }
+.md-p { margin: 0 0 14px; }
+.md-ul, .md-ol { margin: 0 0 14px; padding-left: 22px; }
+.md-ul li, .md-ol li { margin-bottom: 5px; }
+.md-pre {
+  background: #09090f; border: 1px solid rgba(124,107,255,0.15);
+  padding: 12px 16px; overflow: auto; border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6;
+  color: #4ade80; margin: 0 0 14px;
+}
+.vault-preview code {
+  background: rgba(103,232,249,0.07); color: #67e8f9;
+  padding: 1px 6px; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.vault-preview a { color: #4ade80; text-decoration: underline; }
+.vault-preview a.wikilink { color: #a78bfa; cursor: pointer; }
+.md-tag {
+  display: inline-block; padding: 1px 7px;
+  background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.28);
+  color: #a78bfa; font-size: 11px; border-radius: 3px; margin: 0 2px;
+}
+.md-frontmatter {
+  background: #09090f; border: 1px dashed rgba(124,107,255,0.25);
+  padding: 12px 16px; margin-bottom: 18px; border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #94a3b8;
+}
+.md-fm-label {
+  font-family: 'Inter'; font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.12em; color: rgba(124,107,255,0.7); margin-bottom: 4px;
+  font-weight: 600;
+}
+.md-frontmatter pre { margin: 0; white-space: pre-wrap; }
+/* night-mode override: deeper dark than the base hardcoded values */
+body.night .vault-edit { background: #0c0c14; color: #d4d8e8; }
+body.night .vault-preview { background: #0c0c14; color: #d4d8e8; }
+
+/* ── Vault Editor — Day (light) mode ─────────────────────────────────────
+   The base .vault-edit and .vault-preview rules are hardcoded dark.
+   These overrides restore warm cream paper in day mode across both panes. */
+body:not(.night) .vault-edit {
+  background: #fffaf0;          /* --paper */
+  color: #3b2e2a;               /* --ink */
+  caret-color: #8a5a9b;         /* --ceo plum caret */
+}
+body:not(.night) .vault-preview {
+  background: #fffaf0;
+  color: #3b2e2a;
+}
+
+/* Headings */
+body:not(.night) .md-h1,
+body:not(.night) h1.md-h,
+body:not(.night) div.md-h.md-h1 {
+  color: #5e3e6c;               /* --ceo-dk deep plum */
+  border-bottom-color: rgba(94, 62, 108, 0.20);
+}
+body:not(.night) .md-h2,
+body:not(.night) h2.md-h,
+body:not(.night) div.md-h.md-h2 { color: #5e3e6c; }
+body:not(.night) .md-h3,
+body:not(.night) h3.md-h,
+body:not(.night) div.md-h.md-h3 { color: #3b6b6b; }
+body:not(.night) .md-h4, body:not(.night) .md-h5, body:not(.night) .md-h6,
+body:not(.night) h4.md-h, body:not(.night) h5.md-h, body:not(.night) h6.md-h,
+body:not(.night) div.md-h.md-h4,
+body:not(.night) div.md-h.md-h5,
+body:not(.night) div.md-h.md-h6 { color: #3b6b6b; }
+
+/* Code blocks */
+body:not(.night) .md-pre {
+  background: #ede0c3;          /* --bg-2 warm cream */
+  border-color: #d9c8a8;        /* --rule */
+  color: #3a6a1a;               /* forest green */
+}
+
+/* Inline code */
+body:not(.night) .vault-preview code {
+  background: rgba(94, 62, 108, 0.09);
+  color: #5e3e6c;
+}
+
+/* Links */
+body:not(.night) .vault-preview a { color: #3b6b6b; }
+body:not(.night) .vault-preview a.wikilink { color: #8a5a9b; }
+
+/* Tags */
+body:not(.night) .md-tag {
+  background: rgba(138, 90, 155, 0.10);
+  border-color: rgba(138, 90, 155, 0.30);
+  color: #8a5a9b;
+}
+
+/* Frontmatter block */
+body:not(.night) .md-frontmatter {
+  background: #f0ebe0;
+  border-color: rgba(94, 62, 108, 0.25);
+  color: #6b5b54;               /* --ink-2 */
+}
+body:not(.night) .md-fm-label { color: rgba(94, 62, 108, 0.65); }
+
+/* Active line number accent */
+body:not(.night) .vault-line-num.active { color: rgba(94, 62, 108, 0.65); }
+
+.vault-err {
+  margin: 8px; padding: 8px;
+  background: rgba(232,169,169,0.3); border: 1px solid var(--error);
+  font-family: 'VT323'; font-size: 14px;
+}
+
+/* ==============================
+   Vault graph (canvas)
+   ============================== */
+.view-graph { display: flex; flex-direction: column; min-height: 600px; height: 100%; }
+.graph-toolbar {
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 4px;
+}
+.graph-layout-solo {
+  flex: 1; border: 2px solid var(--ink); background: var(--paper);
+  box-shadow: var(--shadow-hard); overflow: hidden;
+}
+
+/* Embedded inside the Vault unified tab */
+.graph-embed { flex: 1; min-height: 0; display: flex; }
+.graph-embed .graph-stage { flex: 1; }
+
+.graph-stage {
+  position: relative;
+  user-select: none;
+  overflow: hidden;
+  touch-action: none; /* let JS handle all touch — prevents browser scroll/zoom taking over */
+  /* Subtle dotted background — calmer than the heavy grid we had. */
+  background:
+    radial-gradient(circle at 10px 10px, rgba(59,46,42,0.10) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--paper);
+}
+
+.graph-overlay {
+  position: absolute; top: 8px; left: 8px; right: 8px;
+  display: flex; gap: 8px; align-items: center;
+  pointer-events: none;
+}
+.go-stats {
+  font-family: 'Inter'; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  background: rgba(255, 250, 240, 0.85);
+  border: 1px solid var(--ink-3);
+  padding: 4px 8px;
+}
+.go-actions { margin-left: auto; display: flex; gap: 4px; pointer-events: auto; }
+.go-btn {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  box-shadow: 1px 1px 0 0 var(--ink);
+}
+.go-btn:hover:not(:disabled) { background: var(--accent-sun); }
+.go-btn:disabled { opacity: 0.4; cursor: default; }
+.go-btn.on { background: var(--accent-sun); }
+
+/* ==============================
+   Elevated agents — computer access opt-in.
+   Visual language: warm red / 🛡 shield. The badge never blends with
+   the standard role chip; it has to read AT A GLANCE on the office
+   floor as "this one can touch the disk".
+   ============================== */
+.agent-card.elevated,
+.desk.elevated .nameplate,
+.inspect-panel.elevated .ip-name {
+  border-color: #c44;
+  box-shadow: 2px 2px 0 0 #c44, inset 0 0 0 1px rgba(196,68,68,0.2);
+}
+body.night .agent-card.elevated { box-shadow: 2px 2px 0 0 #c44; }
+
+.elevated-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-family: 'Press Start 2P'; font-size: 7px;
+  background: #c44; color: #fff8ee;
+  border: 1px solid var(--ink);
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.elevated-banner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: rgba(196,68,68,0.12);
+  border: 2px dashed #c44;
+  font-family: 'VT323'; font-size: 15px;
+  color: #8b2828;
+  line-height: 1.3;
+}
+body.night .elevated-banner { color: #f9c9c9; background: rgba(196,68,68,0.22); }
+
+/* Mission-modal elevated authorization row */
+.form-row.elevated-opt {
+  background: rgba(196,68,68,0.10);
+  border: 2px dashed #c44;
+  padding: 8px 10px;
+}
+
+/* Elevated approval rows in the corner tray pop with a red border */
+.ap-row.elevated {
+  border-left: 3px solid #c44;
+  padding-left: 8px;
+  background: rgba(196,68,68,0.08);
+}
+
+/* Tool-execution receipts read denser than approvals — they're an
+   audit log, not stamps. Subtle background, smaller stamp glyph. */
+.receipt-card.tool-execution {
+  background: rgba(125,125,125,0.08);
+  padding: 6px 10px;
+}
+.receipt-card.tool-execution .rc-stamp {
+  font-size: 14px;
+  width: 26px; height: 26px;
+  color: #6a6a6a;
+}
+.receipt-card.tool-execution .rc-title { font-size: 15px; }
+body.night .receipt-card.tool-execution { background: rgba(255,255,255,0.06); }
+
+
+/* ========================================================================
+   Modern Dark Theme — pixel command center revamp
+   Only applies when body.night is active. Day mode uses the :root vars
+   defined at the top of this file (warm pastel palette).
+   ======================================================================== */
+
+body.night {
+  --bg:          #0c0e1a;
+  --bg-2:        #131628;
+  --paper:       #191c30;
+  --paper-2:     #20243c;
+  --ink:         #eaecf6;
+  --ink-2:       #b0b8d8;
+  --ink-3:       #7880a8;
+  --rule:        #2a2e48;
+  --rule-2:      #363c62;
+
+  --carpet:      #161f3a;
+  --carpet-dk:   #0f1628;
+  --wood:        #251e3a;
+  --wood-dk:     #1a1428;
+  --tile:        #191c32;
+
+  --accent-rose: #e05c8c;
+  --accent-lav:  #7c6af0;
+  --accent-teal: #00d4b5;
+  --accent-sun:  #f0a830;
+  --accent-leaf: #3ac8a0;
+
+  --live:        #00d4b5;
+  --warn:        #f0a830;
+  --error:       #e05c5c;
+
+  --ceo:         #7c6af0;
+  --ceo-dk:      #5448d0;
+
+  --shadow:      0 2px 0 0 rgba(0,0,0,0.6), 0 6px 20px -6px rgba(0,0,0,0.8);
+  --shadow-hard: 3px 3px 0 0 rgba(0,212,181,0.2);
+
+  background-image:
+    radial-gradient(circle at 15% 8%,  rgba(124,106,240,0.10), transparent 38%),
+    radial-gradient(circle at 88% 85%, rgba(0,212,181,0.07),   transparent 44%);
+  background-color: var(--bg);
+}
+
+body.night::after {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0,212,181,0.018) 0px,
+    rgba(0,212,181,0.018) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 1;
+}
+
+/* ---- Office shell (night) ---- */
+body.night .office {
+  background:
+    linear-gradient(180deg, #080b14 0%, #0c1120 62%, #141e32 62%, #101828 100%);
+  border-color: rgba(0,212,181,0.25);
+}
+
+body.night .office .wall-line {
+  background: linear-gradient(90deg, transparent, rgba(0,212,181,0.3), transparent);
+  opacity: 1;
+  height: 1px;
+}
+
+body.night .office .floor {
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 31px,
+      rgba(0,212,181,0.07) 31px, rgba(0,212,181,0.07) 32px),
+    repeating-linear-gradient(0deg,
+      transparent 0, transparent 15px,
+      rgba(0,212,181,0.04) 15px, rgba(0,212,181,0.04) 16px),
+    #101828;
+  border-top: 2px solid rgba(0,212,181,0.3);
+}
+
+/* ---- Rooms (night) ---- */
+body.night .room {
+  background: #141728;
+  border: 2px solid rgba(0,212,181,0.15);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+}
+
+body.night .room.empty {
+  border-style: dashed;
+  border-color: rgba(0,212,181,0.1);
+  background: rgba(20,23,40,0.5);
+}
+
+body.night .room.drop-target {
+  border-color: var(--accent-teal);
+  box-shadow: 0 0 0 1px var(--accent-teal), inset 0 0 12px rgba(0,212,181,0.08);
+}
+
+body.night .room.elevated { border-color: rgba(240,168,48,0.4); }
+
+body.night .room.ceo {
+  background: #13112a;
+  border-color: rgba(124,106,240,0.35);
+}
+
+body.night .room.ceo .interior {
+  background:
+    radial-gradient(circle at 65% 25%, rgba(124,106,240,0.12), transparent 55%),
+    repeating-linear-gradient(45deg,
+      rgba(255,255,255,0.015) 0 6px, transparent 6px 12px),
+    #12102a;
+}
+
+body.night .room .interior {
+  background:
+    repeating-linear-gradient(45deg,
+      rgba(255,255,255,0.015) 0 6px, transparent 6px 12px),
+    var(--carpet);
+}
+
+/* ---- Nameplate (night) ---- */
+body.night .room .nameplate {
+  background: rgba(0,0,0,0.55);
+  border-bottom: 1px solid rgba(0,212,181,0.18);
+  color: var(--accent-teal);
+}
+
+body.night .room .nameplate .pip {
+  box-shadow: 0 0 5px var(--live), 0 0 10px rgba(0,212,181,0.4);
+}
+
+body.night .room .nameplate .pip.idle { background: var(--ink-3); box-shadow: none; }
+
+body.night .room.empty .nameplate { color: var(--ink-3); border-bottom-color: rgba(0,212,181,0.07); }
+
+/* ---- Furniture (night) ---- */
+body.night .window {
+  background:
+    linear-gradient(180deg, #081428 0%, #0d1e40 55%, #0a1a0a 55%, #061206 100%);
+  border-color: rgba(0,212,181,0.3);
+}
+
+body.night .desk::before { background: #0d0d1e; }
+body.night .desk::after {
+  background: linear-gradient(180deg, #0a1a2e 0%, #0f2540 100%);
+  border-color: rgba(0,212,181,0.4);
+  box-shadow: inset 0 2px 0 0 rgba(0,212,181,0.12);
+}
+
+body.night .filing { background: #1e1a32; border-color: rgba(0,212,181,0.3); }
+body.night .filing span { background: var(--accent-teal); }
+
+body.night .guest-chair {
+  background: #221d38;
+  border-color: rgba(124,106,240,0.4);
+}
+body.night .guest-chair:hover { background: rgba(124,106,240,0.25); }
+
+/* ---- Rail (night) ---- */
+body.night .rail {
+  background: #10121f;
+  border-right: 2px solid rgba(0,212,181,0.18);
+}
+
+body.night .rail .brand {
+  background: linear-gradient(160deg, #18133a 0%, #0e0c22 100%);
+  border: 2px solid rgba(124,106,240,0.4);
+  box-shadow: 3px 3px 0 0 rgba(124,106,240,0.2);
+}
+
+body.night .rail .brand .title { color: var(--accent-teal); }
+body.night .rail .brand .sub   { color: var(--ink-2); }
+body.night .rail .brand .sub .dot { box-shadow: 0 0 4px var(--live); }
+
+body.night .rail nav a {
+  color: var(--ink-2);
+  border-left: 2px solid transparent;
+}
+body.night .rail nav a:hover { color: var(--ink); background: rgba(0,212,181,0.05); }
+body.night .rail nav a.active {
+  color: var(--accent-teal);
+  background: rgba(0,212,181,0.08);
+  border-left-color: var(--accent-teal);
+}
+
+body.night .me { background: rgba(0,0,0,0.3); border-top-color: rgba(0,212,181,0.15); }
+body.night .me .avatar { border-color: var(--accent-sun); color: var(--accent-sun); }
+
+/* ---- Chat / panels (night) ---- */
+body.night .bezel {
+  background: #0d0f1e;
+  border-bottom-color: rgba(0,212,181,0.15);
+}
+
+body.night .screen  { background: #0a0c18; }
+body.night .composer { background: #10121f; border-top-color: rgba(0,212,181,0.15); }
+body.night .composer input { background: #191c30; border-color: rgba(0,212,181,0.2); color: var(--ink); }
+body.night .composer input:focus { border-color: var(--accent-teal); }
+
+body.night .msg.ceo .bubble   { background: #1a1535; border-color: rgba(124,106,240,0.4); }
+body.night .msg.user .bubble  { background: #0f1d30; border-color: rgba(0,212,181,0.3); }
+body.night .msg.agent .bubble { background: #181d30; border-color: rgba(0,212,181,0.2); }
+
+/* ---- Token HUD (night) ---- */
+body.night .token-hud { background: rgba(0,212,181,0.08); border-color: rgba(0,212,181,0.2); color: var(--accent-teal); }
+
+/* ---- Maximus — bigger dog ---- */
+.pet {
+  width: 32px;
+  height: 32px;
+  bottom: 8px;
+  animation: wander 22s linear infinite;
+  image-rendering: pixelated;
+}
+
+/* ---- Px panel/btn (night) ---- */
+body.night .px-panel { background: var(--paper); border-color: rgba(0,212,181,0.2); }
+body.night .px-btn   { background: var(--paper); border-color: rgba(0,212,181,0.25); color: var(--ink); }
+body.night .px-btn:hover { background: rgba(0,212,181,0.1); border-color: var(--accent-teal); }
+
+
+/* ==========================================================================
+   Responsive / Mobile
+   ========================================================================== */
+
+/* Mobile bottom nav — superseded by MobileTabBar (mobile-tabbar) on ≤768px.
+   Hidden everywhere; only shown 641-768px as legacy fallback if MobileTabBar
+   is somehow absent. At ≤768px the MobileTabBar takes over. */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+  z-index: 149; /* below MobileTabBar z-index: 150 */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+}
+
+.bn-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px;
+  padding: 8px 14px 12px;
+  min-width: 56px;
+  background: transparent; border: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  -webkit-tap-highlight-color: transparent;
+}
+.bn-item:hover { background: var(--bg-2); }
+.bn-item.active { color: var(--ink); background: var(--accent-sun); }
+.bn-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Night-mode bottom nav */
+body.night .bottom-nav {
+  background: var(--paper);
+  border-top-color: rgba(0,212,181,0.2);
+}
+body.night .bn-item { color: var(--ink-2); }
+body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--accent-teal); }
+
+/* ---- Small screens (≤ 640px) ---- */
+@media (max-width: 640px) {
+  /* Remove the fixed-width viewport lock */
+  html { overflow-x: hidden; }
+
+  /* Kill the two-column shell — single column, height auto */
+  .app {
+    grid-template-columns: 1fr;
+    height: 100dvh;   /* fixed height so descendants can use height:100% */
+    overflow: hidden;
+  }
+
+  /* Sidebar rail is replaced by bottom nav */
+  .rail { display: none; }
+
+  /* bottom-nav hidden — MobileTabBar handles ≤768px navigation */
+  .bottom-nav { display: none !important; }
+
+  /* Main area fills the app column. The grid rows are: 52px topbar,
+     1fr content, auto. With app at 100dvh the 1fr row gets full remaining height. */
+  .main {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Topbar: tighter, hide secondary chips/buttons */
+  .topbar { padding: 0 10px; gap: 8px; }
+  .topbar .crumbs { font-size: 9px; gap: 6px; }
+  .mobile-hidden { display: none !important; }
+
+  /* Single-column content, fill remaining height.
+     .main is a grid with rows 52px topbar / 1fr here / auto.
+     With .app at 100dvh this row gets the full remaining height. */
+  .content {
+    grid-template-columns: 1fr !important;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    min-height: 0;
+    height: 100%;
+  }
+
+  /* view-area fills the content box and scrolls its own content */
+  .view-area {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  /* Office: mobile-friendly flow layout — rooms stack vertically as
+     compact horizontal cards instead of absolute-positioned grid. */
+  .office { min-height: auto; max-height: 50vh; overflow-y: auto; }
+  .office-wrap { min-height: auto; padding: 8px; }
+  .office .floor { display: none; }
+  .office .wall-line { display: none; }
+  .office .pet { display: none; }
+
+  .rooms {
+    position: static !important;
+    inset: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    padding: 8px;
+  }
+
+  .room {
+    flex-direction: row !important;
+    min-height: 54px !important;
+    max-height: 64px;
+  }
+  .room.ceo {
+    grid-row: auto !important;
+    flex-direction: row !important;
+  }
+  .room .nameplate {
+    writing-mode: horizontal-tb;
+    flex-shrink: 0;
+    width: auto;
+    max-width: 110px;
+    border-bottom: none;
+    border-right: 2px solid var(--ink);
+    font-size: 7px;
+    padding: 4px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .room .interior {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 8px;
+    gap: 6px;
+    overflow: hidden;
+  }
+  /* Hide complex furniture on mobile — keep sprite + bubble */
+  .room .interior .plant,
+  .room .interior .filing,
+  .room .interior .corkboard,
+  .room .interior .window,
+  .room .interior .desk,
+  .room .interior .guest-chair,
+  .room .interior .guest-chair-label,
+  .room .interior .meeting-door,
+  .room .interior .meeting-door-label,
+  .room .interior .sticky-stack,
+  .room .interior .coffee { display: none !important; }
+
+  .sprite-slot {
+    position: static !important;
+    transform: none !important;
+    flex-direction: row !important;
+    gap: 6px;
+  }
+  .sprite-slot .bubble {
+    max-width: 140px;
+    font-size: 12px;
+  }
+  .sprite-slot .bubble::after,
+  .sprite-slot .bubble::before { display: none; }
+
+  .subord-bg {
+    position: static !important;
+    padding: 0 !important;
+    gap: 4px;
+  }
+  .subord-desk { transform: scale(0.7) !important; }
+
+  .room.empty .interior { padding: 6px; }
+  .room.empty .hire { flex-direction: row; gap: 6px; padding: 4px; }
+  .room.empty .hire .plus { width: 28px; height: 28px; font-size: 14px; }
+
+  /* Ticker: tighter on mobile */
+  .ticker { padding: 4px 8px; font-size: 14px; }
+  .ticker .badge { font-size: 7px; padding: 2px 4px; }
+
+  /* Right col: reasonable min-height for chat */
+  .right-col { min-height: 280px; }
+
+  /* Chat composer: bigger tap target */
+  .composer textarea { height: 48px; font-size: 18px; }
+
+  /* Modals: slide up from bottom, full width */
+  .backdrop { padding: 0; align-items: flex-end; }
+  .modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -4px 0 0 var(--ink);
+  }
+}
+
+/* ---- Medium screens (641px – 900px) ---- */
+@media (min-width: 641px) and (max-width: 900px) {
+  .app { grid-template-columns: 180px minmax(0, 1fr); }
+  .rail .brand .title { font-size: 9px; }
+  .rail nav a { font-size: 17px; padding: 6px 8px; }
+  .topbar .status { gap: 8px; }
+  .topbar .status .chip { padding: 4px 7px; font-size: 10px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE SHELL  (≤ 768px)
+   - Hide the desktop rail, show a fixed bottom tab bar
+   - Stack columns instead of side-by-side
+   - Bigger touch targets (44×44 minimum per iOS HIG)
+   - Account for iOS safe-area at the bottom
+   ───────────────────────────────────────────────────────────────────────── */
+.mobile-tabbar { display: none; }
+
+@media (max-width: 768px) {
+  /* Reveal the bottom tab bar */
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: var(--paper);
+    border-top: 2px solid var(--ink);
+    box-shadow: 0 -2px 0 0 rgba(0,0,0,0.08);
+    z-index: 150;
+    padding: 6px 0 calc(6px + env(safe-area-inset-bottom)) 0;
+    justify-content: space-around;
+    gap: 0;
+  }
+  .mtab {
+    background: transparent; border: 0;
+    flex: 1; min-height: 56px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    color: var(--ink-2);
+    cursor: pointer;
+    padding: 4px 6px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mtab:active { background: var(--paper-2); }
+  .mtab.active { color: var(--ink); }
+  .mtab.active .mtab-ico {
+    transform: translateY(-1px);
+    filter: drop-shadow(0 1px 0 var(--accent-sun));
+  }
+  .mtab-ico { font-size: 22px; line-height: 1; }
+  .mtab-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ── Mobile tool drawer (slide-up from "Tools" tab) ── */
+  .mobile-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    display: flex;
+    align-items: flex-end;
+    animation: fadeIn 0.15s ease-out;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .mobile-drawer {
+    width: 100%;
+    background: var(--paper);
+    border-top: 3px solid var(--accent-sun);
+    border-radius: 16px 16px 0 0;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    animation: slideUp 0.2s ease-out;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .mobile-drawer-handle {
+    width: 36px; height: 4px;
+    background: var(--ink-2);
+    border-radius: 2px;
+    margin: 0 auto 10px;
+    opacity: 0.4;
+  }
+  .mobile-drawer-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--ink-2);
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  .mobile-drawer-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .mobile-drawer-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 4px;
+    border-radius: 12px;
+    background: var(--paper-2);
+    border: 1.5px solid var(--rule);
+    cursor: pointer;
+    position: relative;
+    min-height: 72px;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .mobile-drawer-item:active {
+    background: var(--accent-sun-10, rgba(218,165,32,0.12));
+    border-color: var(--accent-sun);
+  }
+  .mdi-icon { font-size: 24px; line-height: 1; }
+  .mdi-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .mdi-badge {
+    position: absolute;
+    top: 6px; right: 6px;
+    background: var(--accent-sun);
+    color: var(--ink);
+    font-size: 9px;
+    font-weight: 800;
+    min-width: 18px; height: 18px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+  }
+
+  /* Hide the desktop rail entirely on mobile — tab bar replaces it */
+  .rail { display: none !important; }
+
+  /* App shell: fixed viewport height so height:100% propagates to children */
+  .app {
+    grid-template-columns: 1fr !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+  /* Main grid fills the app, no stray bottom padding (views handle clearance) */
+  .main { overflow: hidden !important; padding-bottom: 0 !important; width: 100%; }
+  /* Content fills its 1fr grid row */
+  .content {
+    grid-template-columns: 1fr !important;
+    padding: 0 !important; gap: 0 !important;
+    overflow: hidden !important; height: 100% !important;
+  }
+  /* View-area fills content and scrolls internally */
+  .view-area {
+    height: 100% !important;
+    display: flex !important; flex-direction: column !important;
+    overflow: auto !important;
+  }
+
+  /* Reserve space at the bottom so the tab bar doesn't cover content.
+     Apply clearance on scrollable content containers, not on .app/.main. */
+  body { padding-bottom: 0; }
+  .view, .view-projects, .vault-view, .team-view {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Topbar: collapse the dense status row, keep the title compact */
+  .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
+  .topbar .brand-title { font-size: 12px; }
+  .topbar .status { flex-basis: 100%; order: 2; gap: 6px; }
+  .topbar .status .chip { padding: 4px 6px; font-size: 10px; }
+
+  /* Larger tap targets across the board */
+  button, .px-btn, .door-btn, a.action {
+    min-height: 44px; min-width: 44px;
+  }
+  input, textarea, select {
+    min-height: 44px; font-size: 16px; /* prevents iOS auto-zoom */
+  }
+
+  /* Chat panel: full-width, full-height, composer pinned */
+  .chat-monitor { width: 100%; max-width: 100%; }
+  .monitor .bezel { padding: 8px 10px; }
+  .composer textarea { min-height: 44px; font-size: 16px; }
+
+  /* Projects view: flatten the 3-column layout into a scrollable stack.
+     flex: 1 fills the view-area flex container; the padding-bottom above
+     provides clearance for the tab bar without dead space.
+     height: auto overrides the desktop calc(100vh-110px).
+     background fills the empty space so the dark app bg doesn't show through. */
+  .view-projects { flex: 1; height: auto !important; overflow: auto; background: var(--paper); }
+  /* The direct div children include both the section-title spacer and the
+     3-column container. Override the 3-column container's inline height. */
+  .view-projects > div { flex-direction: column !important; height: auto !important; }
+  .view-projects [style*="width: 240px"],
+  .view-projects [style*="width: 260px"] {
+    width: 100% !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--rule);
+    max-height: 45vh;
+    overflow-y: auto;
+  }
+
+  /* Agent cards grid: single column on mobile */
+  .agents-grid { grid-template-columns: 1fr !important; }
+
+  /* Modal: bottom-sheet on mobile — visible chrome behind it so it feels dismissable */
+  .backdrop { padding: 0; align-items: flex-end; }
+  .modal {
+    width: 100% !important; max-width: 100% !important;
+    max-height: 92dvh; height: auto;
+    border-left: none; border-right: none; border-bottom: none;
+    box-shadow: 0 -4px 0 0 var(--ink);
+    border-radius: 0;
+  }
+
+  /* Thread tabs: fixed-width scrollable strip — tabs don't squish */
+  .thread-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    padding: 0 4px 4px;
+    gap: 2px;
+  }
+  .thread-tabs::-webkit-scrollbar { display: none; }
+  .thread-tab {
+    flex: 0 0 auto;
+    min-width: 72px;
+    max-width: 110px;
+    min-height: 40px;
+    scroll-snap-align: start;
+    font-size: 7px;
+    padding: 8px 6px;
+  }
+  .tt-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+  }
+
+  /* Topbar: hide token HUD and crumb on mobile — tab bar already shows view name */
+  .token-hud { display: none; }
+  .topbar .crumbs { display: none; }
+  .topbar {
+    padding: 6px 10px;
+    min-height: 44px;
+    gap: 6px;
+  }
+  .topbar .status { gap: 8px; flex-wrap: nowrap; }
+
+  /* Composer: shorter hint text via placeholder shown through CSS */
+  .composer textarea {
+    font-size: 16px; /* prevent iOS zoom */
+  }
+  .composer textarea::placeholder {
+    font-size: 14px;
+    opacity: 0.6;
+  }
+
+  /* Vault view: collapse the 3-column grid to a single stacking column.
+     The graph pane gets a generous min-height so the canvas is usable. */
+  .view-vault.unified { height: 100% !important; }
+  .vault-layout-3col {
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: auto;
+    overflow-y: auto;
+  }
+  .vault-tree-pane {
+    border-right: 0 !important;
+    border-bottom: 2px solid var(--ink);
+    max-height: 40vh;
+  }
+  .vault-edit-pane {
+    border-right: 0 !important;
+    border-bottom: 2px solid var(--ink);
+    min-height: 50vh;
+  }
+  .vault-graph-pane {
+    border-left: 0 !important;
+    min-height: 60vh;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PWA / Add-to-Home-Screen standalone mode
+   When the app is installed on iOS/Android the browser chrome disappears.
+   The viewport expands to fill the entire screen including the status-bar
+   area (top) and the home-indicator area (bottom).  Safe-area insets bridge
+   the gap between our UI and the physical device edges.
+   ───────────────────────────────────────────────────────────────────────── */
+@media all and (display-mode: standalone) {
+  body { background: var(--paper); }
+
+  /* Status bar sits inside the canvas — topbar absorbs it via padding-top.
+     The main grid's first row must grow to match, otherwise the taller
+     topbar overflows its 52 px cell. */
+  .topbar {
+    padding-top: max(12px, env(safe-area-inset-top));
+    height: auto;
+    min-height: calc(52px + env(safe-area-inset-top));
+  }
+  .main {
+    /* Row 0 grows with the status bar; row 1 gets all remaining space */
+    grid-template-rows: calc(52px + env(safe-area-inset-top)) minmax(0, 1fr) auto;
+  }
+
+  /* Landscape: notch may eat left/right edges */
+  .app {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Mobile tab bar: the home indicator lives below it — already uses
+     env(safe-area-inset-bottom) in its padding.  Make it slightly taller
+     in standalone so the tap targets don't crowd the indicator. */
+  .mobile-tabbar {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+
+  /* Content views: clear the larger tab bar + home indicator */
+  .view, .view-projects, .vault-view, .vault-view.unified,
+  .team-view, .mobile-chat-view {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Multi-agent rooms (project + meeting)
+   Added 2026-05-02 along with multi-mention fan-out and meeting room.
+   The room banner sits between the search bar and the chat scroll area;
+   participant chips show who's in the room, with inline invite/remove for
+   meetings. Project/meeting tabs in the thread strip get a left-border tint
+   so they read as "ad-hoc rooms" vs the four canonical static threads.
+   ───────────────────────────────────────────────────────────────────────── */
+.room-banner {
+  background: linear-gradient(180deg, var(--paper-2) 0%, var(--paper) 100%);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  font-size: var(--text-11);
+}
+.room-banner-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  color: var(--ink);
+}
+.room-banner-icon { font-size: var(--text-13); }
+.room-banner-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: var(--text-10);
+  letter-spacing: 0.04em;
+}
+.room-banner-kind {
+  font-size: var(--text-9); opacity: 0.65;
+  background: var(--paper); padding: 2px 6px;
+  border: 1px solid var(--rule); border-radius: var(--radius-1);
+}
+.room-banner-topic {
+  font-size: var(--text-10); opacity: 0.75; font-style: italic;
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.room-banner-participants {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1);
+  align-items: center;
+}
+.room-banner-empty {
+  font-size: var(--text-10); opacity: 0.6; font-style: italic;
+}
+.room-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  padding: 2px 8px;
+  font-size: var(--text-10);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.room-chip-x {
+  margin-left: 4px;
+  width: 14px; height: 14px;
+  display: inline-grid; place-items: center;
+  background: var(--ink); color: var(--paper);
+  border-radius: 50%;
+  font-size: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.room-chip-x:hover { background: var(--accent-rose, #b85450); }
+
+/* Inline invite-another-agent picker for meeting rooms. */
+.room-invite-wrap { position: relative; display: inline-block; }
+.room-invite-btn {
+  background: transparent;
+  border: 1.5px dashed var(--rule);
+  border-radius: var(--radius-2);
+  padding: 2px 8px;
+  font-size: var(--text-10);
+  font-weight: 600;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-family: inherit;
+}
+.room-invite-btn:hover {
+  border-color: var(--ink); color: var(--ink);
+  background: var(--paper-2);
+}
+.room-invite-pop {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: 4px;
+  z-index: 100;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.room-invite-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-1);
+  font-size: var(--text-11);
+}
+.room-invite-item:hover { background: var(--paper-2); }
+.room-invite-empty {
+  padding: 8px; font-size: var(--text-10); opacity: 0.6; text-align: center;
+}
+
+/* Dynamic project / meeting tabs get a left tint so they're visually
+   distinct from the four canonical static threads. */
+.thread-tab.project-tab { border-left: 3px solid var(--accent-sun, #d4a648); }
+.thread-tab.meeting-tab { border-left: 3px solid var(--accent-rose, #b85450); }
+.tt-close {
+  margin-left: 6px;
+  width: 14px; height: 14px;
+  display: inline-grid; place-items: center;
+  background: transparent; color: var(--ink-3);
+  border-radius: 50%;
+  font-size: 8px;
+  cursor: pointer; user-select: none;
+}
+.tt-close:hover { background: var(--ink); color: var(--paper); }
+
+/* Meeting room create modal — reuses the .modal shell. */
+.meeting-modal-body {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+.meeting-modal-body label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: var(--text-10);
+  color: var(--ink-2);
+}
+.meeting-modal-body input,
+.meeting-modal-body textarea {
+  font-family: inherit;
+  font-size: var(--text-11);
+  padding: 6px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  background: var(--paper);
+  color: var(--ink);
+}
+.meeting-attendee-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px; margin-top: 4px;
+}
+.meeting-attendee {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: var(--text-10);
+  background: var(--paper);
+}
+.meeting-attendee.selected {
+  border-color: var(--ink);
+  background: var(--paper-2);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.meeting-attendee-name { font-weight: 600; }
+.meeting-attendee-role { opacity: 0.6; font-size: 9px; }
+
+/* Project assignment panel inside ProjectsView. */
+.proj-agents-panel {
+  border-top: 1px solid var(--rule);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--paper-2);
+}
+.proj-agents-head {
+  font-family: 'Press Start 2P', monospace;
+  font-size: var(--text-9);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  margin-bottom: var(--sp-2);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.proj-agents-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.proj-agents-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: var(--text-10);
+  border-radius: var(--radius-1);
+  user-select: none;
+}
+.proj-agents-row:hover { background: var(--paper); }
+.proj-agents-row.checked {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+}
+.proj-agents-checkbox {
+  width: 14px; height: 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  display: inline-grid; place-items: center;
+  background: var(--paper);
+  font-size: 10px; line-height: 1;
+  flex-shrink: 0;
+}
+.proj-agents-checkbox.checked { background: var(--ink); color: var(--paper); }
+.proj-talk-btn {
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: 6px;
+  font-size: var(--text-10);
+  font-weight: 600;
+  background: var(--accent-sun, #d4a648);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-family: inherit;
+}
+.proj-talk-btn:hover { box-shadow: 2px 2px 0 var(--ink); }
+.proj-talk-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Elevated agent toolkit — shown inside the InspectPanel elevated banner.
+   Surfaces the actual server-side allowlist (tools + dirs) so the user
+   can SEE what an elevated agent has access to instead of guessing. */
+.elevated-toolkit {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed rgba(0,0,0,0.2);
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: var(--text-10);
+}
+.elevated-toolkit-row {
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.elevated-toolkit-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: var(--text-9);
+  letter-spacing: 0.06em;
+  opacity: 0.65;
+  min-width: 38px;
+  padding-top: 2px;
+}
+.elevated-toolkit-pills, .elevated-toolkit-dirs {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  flex: 1;
+}
+.elevated-toolkit-pill {
+  background: rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: var(--radius-1);
+  padding: 1px 6px;
+  font-size: var(--text-9);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.elevated-toolkit-dir {
+  background: rgba(0,0,0,0.05);
+  padding: 1px 5px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: var(--text-9);
+  border-radius: 2px;
+  color: var(--ink-2);
+}
+.elevated-toolkit-empty {
+  font-size: var(--text-9);
+  opacity: 0.5; font-style: italic;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Code blocks in chat messages.
+   Modern monospace + low-saturation tinting that stays warm to match the
+   pixel-business theme (no neon hacker green). Long blocks collapse via
+   the [+ N more lines] button rendered by CodeBlock.
+   ───────────────────────────────────────────────────────────────────────── */
+.msg-body { display: flex; flex-direction: column; gap: 6px; }
+.msg-body p { margin: 0; }
+.cb-wrap {
+  margin: 6px 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  background: #2a2620;
+  overflow: hidden;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.cb-head {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  letter-spacing: 0.04em;
+}
+.cb-lang { text-transform: uppercase; }
+.cb-meta { opacity: 0.55; font-size: 9px; flex: 1; font-family: inherit; letter-spacing: 0; }
+.cb-copy {
+  background: transparent; border: 1px solid rgba(255,255,255,0.3);
+  color: var(--paper); cursor: pointer;
+  padding: 1px 6px; border-radius: 2px; font-size: 11px;
+}
+.cb-copy:hover { background: rgba(255,255,255,0.15); }
+.cb-pre {
+  margin: 0; padding: 8px 10px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e8d5b0;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+.cb-pre code { font-family: inherit; background: transparent; padding: 0; color: inherit; }
+.cb-kw { color: #d4a648; font-weight: 600; }
+.cb-string { color: #b8c97e; }
+.cb-num { color: #e0a47b; }
+.cb-comment { color: #7a6f5e; font-style: italic; }
+.cb-expand {
+  display: block; width: 100%;
+  background: rgba(255,255,255,0.05);
+  color: var(--paper);
+  border: none; border-top: 1px dashed rgba(255,255,255,0.15);
+  padding: 4px 8px;
+  font-family: inherit; font-size: 10px;
+  cursor: pointer;
+}
+.cb-expand:hover { background: rgba(255,255,255,0.1); }
+
+.msg-icode {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.92em;
+  background: rgba(0,0,0,0.07);
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+
+body.night .cb-wrap { background: #1a1815; box-shadow: 2px 2px 0 #000; }
+body.night .cb-pre { color: #d4c5a0; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Projects IDE editor — line-numbered gutter + syntax-tinted overlay
+   layered behind a real <textarea> so all keyboard behaviour works.
+   The overlay is aria-hidden so screen-readers see the textarea only.
+   Color tokens reused from .cb-* (chat code blocks) so theme changes
+   propagate to both surfaces.
+   ───────────────────────────────────────────────────────────────────────── */
+.ide-edit-head { background: var(--ink); color: var(--paper); padding: 0; }
+.ide-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #2a2620;
+  padding: 6px 10px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  border-top: 2px solid var(--accent-sun, #d4a648);
+}
+.ide-tab-icon { font-size: 11px; opacity: 0.85; }
+.ide-tab-name { font-weight: 600; }
+.ide-tab-dot { color: var(--accent-sun, #d4a648); margin-left: 4px; font-size: 14px; line-height: 1; }
+.ide-tab-path {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 9px; opacity: 0.5; padding: 0 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 360px;
+}
+.ide-stats {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 9px; opacity: 0.6;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.ide-editor-wrap {
+  flex: 1;
+  display: flex;
+  background: #2a2620;
+  min-height: 0;
+  overflow: hidden;
+}
+.ide-gutter {
+  flex-shrink: 0;
+  padding: 10px 8px 10px 12px;
+  background: #221e19;
+  color: rgba(232, 213, 176, 0.4);
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid rgba(255,255,255,0.05);
+  overflow: hidden;
+  min-width: 38px;
+}
+.ide-gutter pre { margin: 0; padding: 0; font-family: inherit; }
+
+.ide-edit-area {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+/* The overlay (syntax tinting) and the textarea are stacked precisely so
+   characters land on top of each other. Both use identical font/size/
+   line-height/padding so the visible text ALIGNS with the editable text. */
+.ide-overlay,
+.ide-textarea {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  white-space: pre;
+  tab-size: 4;
+  overflow: auto;
+  border: none;
+  outline: none;
+}
+.ide-overlay {
+  pointer-events: none;
+  color: #e8d5b0;
+  background: transparent;
+}
+.ide-textarea {
+  background: transparent;
+  /* Caret + selection visible, but make the actual text transparent so
+     the colored overlay shows through. */
+  color: transparent;
+  caret-color: var(--accent-sun, #d4a648);
+  resize: none;
+}
+.ide-textarea::selection { background: rgba(212, 166, 72, 0.35); color: transparent; }
+.ide-textarea::-moz-selection { background: rgba(212, 166, 72, 0.35); color: transparent; }
+
+/* ── Sublime Text-style minimap ── */
+.ide-minimap {
+  width: 80px;
+  flex-shrink: 0;
+  position: relative;
+  background: #1e1b16;
+  border-left: 1px solid rgba(255,255,255,0.06);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  min-height: 0;
+  align-self: stretch;
+}
+.ide-minimap-code {
+  margin: 0;
+  padding: 4px 3px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 1.8px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  white-space: pre;
+  color: rgba(232, 213, 176, 0.55);
+  pointer-events: none;
+  transform-origin: top left;
+}
+.ide-minimap-code .cb-kw      { color: rgba(218, 165, 32, 0.7); }
+.ide-minimap-code .cb-string  { color: rgba(139, 195, 74, 0.6); }
+.ide-minimap-code .cb-comment { color: rgba(150, 150, 150, 0.4); }
+.ide-minimap-code .cb-num     { color: rgba(100, 181, 246, 0.6); }
+.ide-minimap-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: rgba(218, 165, 32, 0.12);
+  border: 1px solid rgba(218, 165, 32, 0.3);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: top 0.08s ease-out;
+}
+
+/* ── Mobile IDE editor improvements ── */
+@media (max-width: 768px) {
+  .ide-editor-wrap {
+    font-size: 12px;
+    position: relative;          /* anchor for overlay minimap */
+  }
+  .ide-gutter {
+    padding: 8px 4px 8px 6px;
+    font-size: 10px;
+    min-width: 26px;
+  }
+  .ide-overlay,
+  .ide-textarea {
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 8px 10px;
+    padding-right: 54px;         /* make room for minimap overlay */
+    -webkit-text-size-adjust: none;
+  }
+  /* Mobile minimap — slim overlay on right edge (Sublime style) */
+  .ide-minimap {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 44px;
+    background: rgba(30, 27, 22, 0.88);
+    border-left: 1px solid rgba(218, 165, 32, 0.18);
+    z-index: 3;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .ide-minimap-code {
+    font-size: 1.4px;
+    line-height: 1.3;
+    padding: 3px 2px;
+  }
+  .ide-minimap-thumb {
+    height: 28px;
+    background: rgba(218, 165, 32, 0.18);
+    border-color: rgba(218, 165, 32, 0.4);
+  }
+}
+
+/* ── IDE Editor — Day (light) mode ───────────────────────────────────────
+   The base editor rules use hardcoded dark values (readable on the dark
+   parchment of night mode). These overrides flip to the warm cream palette
+   when body.night is absent, preserving identical contrast ratios on light. */
+body:not(.night) .ide-editor-wrap {
+  background: #fffaf0;                /* --paper */
+}
+body:not(.night) .ide-gutter {
+  background: #f5ead6;                /* --paper-2 / --bg */
+  color: rgba(59, 46, 42, 0.38);     /* --ink at low opacity — line numbers */
+  border-right: 1px solid #d9c8a8;   /* --rule */
+}
+body:not(.night) .ide-overlay {
+  color: #3b2e2a;                     /* --ink — base code text */
+}
+body:not(.night) .ide-textarea {
+  caret-color: #c47f00;               /* dark amber — readable on cream */
+}
+body:not(.night) .ide-textarea::selection {
+  background: rgba(196, 127, 0, 0.20);
+}
+body:not(.night) .ide-textarea::-moz-selection {
+  background: rgba(196, 127, 0, 0.20);
+}
+
+/* Syntax tokens — warm ink palette, all WCAG AA on #fffaf0 */
+body:not(.night) .ide-overlay .cb-kw      { color: #7a4a00; }  /* deep amber   ~8:1 */
+body:not(.night) .ide-overlay .cb-string  { color: #3a6a1a; }  /* forest green ~7:1 */
+body:not(.night) .ide-overlay .cb-num     { color: #b04f10; }  /* warm rust    ~5:1 */
+body:not(.night) .ide-overlay .cb-comment { color: #9a8a80; font-style: italic; } /* --ink-3 ~3.5:1 */
+
+/* Minimap — cream tinted, tokens echoed at lower opacity */
+body:not(.night) .ide-minimap {
+  background: #ede0c3;                /* --bg-2 */
+  border-left: 1px solid #d9c8a8;    /* --rule */
+}
+body:not(.night) .ide-minimap-code {
+  color: rgba(59, 46, 42, 0.42);
+}
+body:not(.night) .ide-minimap-code .cb-kw      { color: rgba(122, 74,  0,  0.70); }
+body:not(.night) .ide-minimap-code .cb-string  { color: rgba(58,  106, 26, 0.60); }
+body:not(.night) .ide-minimap-code .cb-comment { color: rgba(154, 138, 128, 0.45); }
+body:not(.night) .ide-minimap-code .cb-num     { color: rgba(176, 79,  16, 0.60); }
+body:not(.night) .ide-minimap-thumb {
+  background: rgba(196, 127, 0, 0.14);
+  border-color: rgba(196, 127, 0, 0.36);
+}
+
+@media (max-width: 768px) {
+  body:not(.night) .ide-minimap {
+    background: rgba(245, 234, 214, 0.92);
+    border-left: 1px solid rgba(196, 127, 0, 0.22);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+}
+
+/* Inline images in chat (used by BROWSER_SCREENSHOT — emits a data: URL
+   wrapped in markdown). Capped width so a 1280×800 cap doesn't blow out
+   the chat layout; click to open at full size in a new tab. */
+.msg-image {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: zoom-in;
+}
+
+/* @-mention autocomplete popup — anchors above the composer textarea.
+   Highlight cycles with arrows; Tab/Enter inserts. */
+.mention-pop {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: var(--sp-3);
+  right: var(--sp-3);
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-2);
+  box-shadow: 4px 4px 0 var(--ink);
+  z-index: 100;
+}
+.mention-pop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--paper-2);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  border-bottom: 1px solid var(--rule);
+}
+.mention-pop-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0;
+  opacity: 0.6;
+}
+.mention-pop-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
+}
+.mention-pop-item:last-child { border-bottom: none; }
+.mention-pop-item.active {
+  background: var(--accent-sun, #d4a648);
+  color: var(--ink);
+}
+.mention-pop-name {
+  font-weight: 600; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mention-pop-busy {
+  font-weight: 400;
+  font-size: 9px;
+  margin-left: 6px;
+  opacity: 0.65;
+}
+.mention-pop-role {
+  font-size: 9px; opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mention-pop-item.active .mention-pop-role,
+.mention-pop-item.active .mention-pop-busy { opacity: 0.85; }
+
+/* Task card chat-bridge actions — replaces the "drag to a desk" affordance
+   that disappeared with the inline office layout. The two buttons (→ CHAT
+   and 📋 ROOM) sit at the bottom of every non-done task card, separated
+   from the main body by a hairline. */
+.task-card .tc-actions {
+  display: flex; gap: 4px;
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed rgba(0,0,0,0.15);
+}
+.task-card .tc-action-btn {
+  flex: 1;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-1);
+  padding: 3px 6px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform var(--motion-fast, 80ms) ease-out;
+}
+.task-card .tc-action-btn:hover {
+  background: var(--accent-sun, #d4a648);
+  transform: translate(-1px, -1px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE PATCH v2 — comprehensive touch & responsive fixes
+   Addresses: 2-col grids, kanban swipe, delegate popover bleed, touch
+   targets (checkbox, room-chip, thread-tab close), active states, and
+   bottom-sheet swipe indicator.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Active-state touch feedback for elements that rely on :hover only */
+.filing.clickable:active,
+.guest-chair:active,
+.door-btn:active,
+.note-card:active,
+.delegate-pop .item:active { opacity: 0.7; }
+
+/* Swipe-pill indicator on every bottom-sheet modal */
+@media (max-width: 768px) {
+  .modal-head::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: var(--rule-2);
+    border-radius: 2px;
+    margin: 0 auto 8px;
+  }
+  /* Room chip close: bigger hit area */
+  .room-chip-x {
+    width: 20px; height: 20px;
+    font-size: 10px;
+  }
+  /* Thread-tab close: bigger hit area */
+  .tt-close { width: 20px; height: 20px; font-size: 10px; }
+  /* Delegate popover: pin left so it never bleeds off narrow screens */
+  .delegate-pop {
+    right: auto;
+    left: 8px;
+    min-width: min(260px, calc(100vw - 16px));
+  }
+}
+
+/* Kanban board: horizontal scroll strip with snap on all mobile widths */
+@media (max-width: 768px) {
+  .tb-cols {
+    display: flex !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 10px;
+    gap: 0;
+  }
+  .tb-col {
+    flex: 0 0 min(82vw, 260px) !important;
+    scroll-snap-align: start;
+    border-right: 2px dashed var(--rule-2);
+  }
+  .tb-col:last-child { border-right: 0; }
+  /* Let vertical pan pass through while kanban scrolls horizontally */
+  .task-board { touch-action: pan-y; }
+}
+
+/* 2-column grids → single column on phones */
+@media (max-width: 640px) {
+  .form-grid,
+  .control-board { grid-template-columns: 1fr !important; }
+
+  /* Tool permission grid: single column, bigger tap area */
+  .tool-grid { grid-template-columns: 1fr !important; }
+  .tool-chk { min-height: 44px; }
+  .tool-chk .box { width: 20px; height: 20px; }
+
+  /* Room invite picker: full-width on phone */
+  .room-invite-pop { left: 0; right: 0; min-width: 0; max-width: 100%; }
+
+  /* Composer textarea: let it grow, don't lock height */
+  .composer textarea { height: auto; min-height: 44px; }
+}
+
+/* ── Mobile chat view — chat as a first-class full-height view ── */
+.mobile-chat-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background: var(--paper);
+}
+/* The ChatPanel inside the mobile view fills the space */
+.mobile-chat-view .chat-monitor,
+.mobile-chat-view > div {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Smooth scrollbar hiding on webkit for swipeable areas */
+.tb-cols::-webkit-scrollbar,
+.thread-tabs::-webkit-scrollbar { display: none; }
+.tb-cols { scrollbar-width: none; }
+
+/* Ensure selects also prevent iOS auto-zoom */
+select { font-size: max(16px, 1em); }
+
+/* Prevent long words from blowing out mobile layouts */
+.chat-bubble, .message-text, .task-card, .modal-body {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ── Project Terminal ──────────────────────────────────────────────────────── */
+/* Terminal textarea — always dark, amber caret */
+.term-input:focus { outline: none; border-color: #3d2c8e !important; }
+.term-input::placeholder { color: #3a3555; }
+/* Blink cursor for streaming indicator */
+@keyframes term-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.term-cursor { animation: term-blink 1s step-start infinite; }

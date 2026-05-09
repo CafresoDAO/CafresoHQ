@@ -1,0 +1,36 @@
+filters:
+  and:
+    - file.inFolder("05-Projects")
+    - type == "project"
+properties:
+  file.name:
+    displayName: Project
+  status:
+    displayName: Status
+  stack:
+    displayName: Stack
+  updated:
+    displayName: Updated
+  repo:
+    displayName: Repo
+views:
+  - type: table
+    name: All Projects
+    order:
+      - file.name
+      - status
+      - stack
+      - updated
+    sort:
+      - property: updated
+        direction: DESC
+  - type: table
+    name: Active
+    filters:
+      and:
+        - status != "archived"
+        - status != "shipped"
+    order:
+      - file.name
+      - status
+      - updated

@@ -1,0 +1,36 @@
+{
+  "name": "cafresoai-frontend",
+  "version": "1.0.0",
+  "description": "CafresoAI — SvelteKit frontend that authenticates with Internet Identity (ecosystem-shared principal) and connects users to their OCI Container Instance.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev":          "vite dev --host",
+    "build":        "vite build",
+    "preview":      "vite preview",
+    "check":        "svelte-check --tsconfig ./jsconfig.json",
+    "predeploy:ic":     "npm run build",
+    "deploy:ic":        "cd .. && dfx deploy --network ic cafresoai_frontend",
+    "predeploy:local":  "npm run build",
+    "deploy:local":     "cd .. && dfx deploy --network local cafresoai_frontend",
+    "deploy:playground":"npm run build && cd .. && dfx deploy --playground cafresoai_frontend"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.8.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "svelte": "^5.2.0",
+    "svelte-check": "^4.0.9",
+    "tailwindcss": "^3.4.14",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "@dfinity/agent": "^3.4.3",
+    "@dfinity/auth-client": "^3.4.3",
+    "@dfinity/identity": "^3.4.3",
+    "@dfinity/principal": "^3.4.3",
+    "@dfinity/vetkeys": "^0.2.0"
+  }
+}

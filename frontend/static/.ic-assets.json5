@@ -1,0 +1,25 @@
+// dfx asset-canister upload configuration.
+// See: https://internetcomputer.org/docs/current/developer-docs/web-apps/custom-domains/using-custom-domains
+[
+  {
+    match: "**/*",
+    headers: {
+      "Cache-Control": "public, max-age=600",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https:; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://identity.ic0.app https://*.icp0.io https://icp0.io https://cafreso.com https://*.cafreso.com http://localhost:* http://127.0.0.1:*; frame-src 'self' https://identity.ic0.app https://*.cafreso.com; frame-ancestors 'none'; form-action 'self';"
+    }
+  },
+  {
+    match: "index.html",
+    headers: {
+      "Cache-Control": "public, max-age=0, must-revalidate"
+    }
+  },
+  {
+    match: ".well-known/**",
+    headers: {
+      "Cache-Control": "public, max-age=300"
+    }
+  }
+]
