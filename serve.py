@@ -1678,7 +1678,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-User-Principal, X-API-Key, '
-                         'anthropic-version, x-api-key')
+                         'anthropic-version, x-api-key, X-Vault-Format')
         self.send_header('Access-Control-Max-Age', '86400')
         self.send_header('Vary', 'Origin')
         super().end_headers()
@@ -1710,6 +1710,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_status()
         if self.path.startswith('/terminal/spawn'):
             return self._terminal_spawn()
+        if self.path.startswith('/terminal/pty'):
+            return self._terminal_pty_ws()
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
         if self.path == '/browser/status':
@@ -3241,19 +3243,297 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(500, {'error': f'spawn failed: {e}'})
         return self._send_json(200, {'ok': True, 'cli': cli, 'cwd': str(cwd_path)})
 
+    def _terminal_pty_ws(self):
+        """GET /terminal/pty?cli=claude|codex&cwd=<path>&cols=120&rows=30
+        Upgrades to WebSocket, spawns a PTY running the CLI, and bridges
+        stdin/stdout between the browser (xterm.js) and the process.
+
+        Windows: uses pywinpty (existing behaviour, unchanged).
+        Linux/macOS: uses Python stdlib pty + subprocess (no extra packages).
+
+        Browser → server frames: raw keystroke bytes (text or binary frames),
+        or a JSON resize message: {"type":"resize","cols":N,"rows":N}.
+        Server → browser frames: binary frames containing PTY output bytes.
+        """
+        _is_win = sys.platform == 'win32'
+        if _is_win:
+            try:
+                import winpty as _winpty
+            except ImportError:
+                return self._send_json(503, {'error': 'pywinpty not installed — run: pip install pywinpty'})
+
+        qs = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+        cli  = (params.get('cli')  or ['claude'])[0].strip().lower()
+        cwd  = (params.get('cwd')  or ['']      )[0].strip()
+        cols = max(10, min(500, int((params.get('cols') or ['120'])[0])))
+        rows = max(5,  min(200, int((params.get('rows') or ['30'] )[0])))
+
+        if cli not in ('claude', 'codex'):
+            return self._send_json(400, {'error': 'cli must be claude or codex'})
+        if not cwd:
+            return self._send_json(400, {'error': 'cwd required'})
+        cwd_path = pathlib.Path(cwd).resolve()
+        if not cwd_path.is_dir():
+            return self._send_json(400, {'error': f'directory not found: {cwd}'})
+        bin_ = (self._claudecode_resolve() if cli == 'claude' else self._codex_resolve())
+        if not bin_:
+            return self._send_json(503, {'error': f'{cli} CLI not found'})
+
+        # ── WebSocket handshake ─────────────────────────────────────────────
+        ws_key = self.headers.get('Sec-WebSocket-Key', '')
+        if not ws_key:
+            return self.send_error(400, 'missing Sec-WebSocket-Key')
+        accept = base64.b64encode(
+            hashlib.sha1((ws_key + self._WS_GUID).encode()).digest()
+        ).decode()
+        self.wfile.write((
+            'HTTP/1.1 101 Switching Protocols\r\n'
+            'Upgrade: websocket\r\n'
+            'Connection: Upgrade\r\n'
+            f'Sec-WebSocket-Accept: {accept}\r\n\r\n'
+        ).encode('latin-1'))
+        self.wfile.flush()
+        self.close_connection = True
+        client_sock = self.connection
+        client_sock.settimeout(None)
+
+        # ── Build PTY environment ───────────────────────────────────────────
+        import copy as _copy
+        agent_env = _copy.deepcopy(os.environ)
+        for _d in [r'C:\Program Files\Git\usr\bin',
+                   r'C:\Program Files\Git\bin',
+                   r'C:\Program Files\Git\mingw64\bin']:
+            if os.path.isdir(_d) and _d not in agent_env.get('PATH', ''):
+                agent_env['PATH'] = _d + os.pathsep + agent_env.get('PATH', '')
+
+        # ── Spawn PTY ───────────────────────────────────────────────────────
+        stop_evt = threading.Event()
+
+        # ── WebSocket frame helpers (server-side = unmasked outbound) ───────
+        def _ws_send_raw(sock, data):
+            if isinstance(data, str):
+                data = data.encode('utf-8')
+            n = len(data)
+            if n < 126:
+                hdr = struct.pack('!BB', 0x82, n)          # FIN + binary
+            elif n < 65536:
+                hdr = struct.pack('!BBH', 0x82, 126, n)
+            else:
+                hdr = struct.pack('!BBQ', 0x82, 127, n)
+            try:
+                sock.sendall(hdr + data)
+            except OSError:
+                stop_evt.set()
+
+        def _ws_recv_frame(sock):
+            """Read one WebSocket frame; return (opcode, payload) or (None,None)."""
+            def _read(n):
+                buf = b''
+                while len(buf) < n:
+                    chunk = sock.recv(n - len(buf))
+                    if not chunk:
+                        raise ConnectionError('ws closed')
+                    buf += chunk
+                return buf
+            try:
+                b0, b1 = struct.unpack('!BB', _read(2))
+                opcode  = b0 & 0x0F
+                masked  = bool(b1 & 0x80)
+                length  = b1 & 0x7F
+                if length == 126:
+                    (length,) = struct.unpack('!H', _read(2))
+                elif length == 127:
+                    (length,) = struct.unpack('!Q', _read(8))
+                mask = _read(4) if masked else b'\x00\x00\x00\x00'
+                payload = bytearray(_read(length))
+                if masked:
+                    for i in range(len(payload)):
+                        payload[i] ^= mask[i % 4]
+                return opcode, bytes(payload)
+            except Exception:
+                return None, None
+
+        # ── Spawn PTY (platform-branched) ───────────────────────────────────
+        if _is_win:
+            # Windows: route through cmd.exe /c because .cmd wrappers can't
+            # be exec'd directly by winpty.
+            spawn_argv = ['cmd.exe', '/c', bin_ or cli]
+            try:
+                pty_proc = _winpty.PtyProcess.spawn(
+                    spawn_argv,
+                    cwd=str(cwd_path),
+                    env=agent_env,
+                    dimensions=(rows, cols),
+                )
+            except Exception as exc:
+                _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
+                return
+
+            # ── PTY → WebSocket thread (Windows) ───────────────────────────
+            def pty_to_ws():
+                while not stop_evt.is_set():
+                    try:
+                        data = pty_proc.read(4096)
+                        if data:
+                            _ws_send_raw(client_sock, data.encode('utf-8') if isinstance(data, str) else data)
+                    except EOFError:
+                        _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
+                        break
+                    except Exception:
+                        if not pty_proc.isalive():
+                            _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
+                        break
+                stop_evt.set()
+                try: client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError: pass
+
+            # ── WebSocket → PTY thread (Windows) ───────────────────────────
+            def ws_to_pty():
+                while not stop_evt.is_set():
+                    opcode, payload = _ws_recv_frame(client_sock)
+                    if opcode is None:
+                        break
+                    if opcode == 0x8:      # close frame
+                        break
+                    if opcode in (0x9,):   # ping → pong
+                        try:
+                            n = len(payload)
+                            client_sock.sendall(struct.pack('!BB', 0x8A, n) + payload)
+                        except OSError:
+                            break
+                        continue
+                    if opcode in (0x1, 0x2) and payload:
+                        try:
+                            msg = json.loads(payload)
+                            if isinstance(msg, dict) and msg.get('type') == 'resize':
+                                c = max(10, min(500, int(msg.get('cols', cols))))
+                                r = max(5,  min(200, int(msg.get('rows', rows))))
+                                pty_proc.setwinsize(r, c)
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                        try:
+                            text = payload.decode('utf-8', errors='replace')
+                            pty_proc.write(text)
+                        except Exception:
+                            break
+                stop_evt.set()
+                try: pty_proc.terminate()
+                except Exception: pass
+
+        else:
+            # Linux / macOS: stdlib pty — no extra packages needed.
+            import pty as _pty, fcntl, struct as _struct2, termios, select as _select
+            master_fd, slave_fd = _pty.openpty()
+            # Set initial terminal dimensions on the slave side before spawn.
+            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ,
+                        _struct2.pack('HHHH', rows, cols, 0, 0))
+            spawn_argv = [bin_ or cli]
+            try:
+                proc = subprocess.Popen(
+                    spawn_argv,
+                    stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+                    close_fds=True,
+                    start_new_session=True,
+                    cwd=str(cwd_path),
+                    env=agent_env,
+                )
+            except Exception as exc:
+                os.close(slave_fd); os.close(master_fd)
+                _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
+                return
+            os.close(slave_fd)   # parent doesn't need the slave end
+
+            # ── PTY → WebSocket thread (Linux/macOS) ───────────────────────
+            def pty_to_ws():
+                while not stop_evt.is_set():
+                    try:
+                        r, _, _ = _select.select([master_fd], [], [], 0.05)
+                        if r:
+                            data = os.read(master_fd, 4096)
+                            if not data:
+                                break
+                            _ws_send_raw(client_sock, data)
+                        elif proc.poll() is not None:
+                            _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
+                            break
+                    except OSError:
+                        break
+                    except Exception:
+                        break
+                stop_evt.set()
+                try: os.close(master_fd)
+                except OSError: pass
+                try: client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError: pass
+
+            # ── WebSocket → PTY thread (Linux/macOS) ───────────────────────
+            def ws_to_pty():
+                while not stop_evt.is_set():
+                    opcode, payload = _ws_recv_frame(client_sock)
+                    if opcode is None:
+                        break
+                    if opcode == 0x8:      # close frame
+                        break
+                    if opcode in (0x9,):   # ping → pong
+                        try:
+                            n = len(payload)
+                            client_sock.sendall(_struct2.pack('!BB', 0x8A, n) + payload)
+                        except OSError:
+                            break
+                        continue
+                    if opcode in (0x1, 0x2) and payload:
+                        try:
+                            msg = json.loads(payload)
+                            if isinstance(msg, dict) and msg.get('type') == 'resize':
+                                c = max(10, min(500, int(msg.get('cols', cols))))
+                                r = max(5,  min(200, int(msg.get('rows', rows))))
+                                fcntl.ioctl(master_fd, termios.TIOCSWINSZ,
+                                            _struct2.pack('HHHH', r, c, 0, 0))
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                        try:
+                            os.write(master_fd, payload)
+                        except OSError:
+                            break
+                stop_evt.set()
+                try: proc.terminate()
+                except Exception: pass
+
+        t_out = threading.Thread(target=pty_to_ws, daemon=True)
+        t_in  = threading.Thread(target=ws_to_pty, daemon=True)
+        t_out.start(); t_in.start()
+        t_out.join();  t_in.join()
+        if _is_win:
+            try: pty_proc.terminate()
+            except Exception: pass
+        else:
+            try: proc.terminate()
+            except Exception: pass
+        sys.stderr.write(f'[pty-ws] session closed: {cli} @ {cwd_path}\n')
+
     def _terminal_status(self):
         """Report CLI availability, runtime environment, and spawn capability."""
         claude_bin = self._claudecode_resolve()
         codex_bin  = self._codex_resolve()
         # Spawn is only meaningful on local machines that have a display/GUI.
         spawn_ok = (_RUNTIME_ENV == 'local')
+        try:
+            import winpty as _wp  # noqa: F401
+            pty_ok = True          # Windows + pywinpty installed
+        except ImportError:
+            # Linux / macOS: stdlib pty is always available
+            pty_ok = (sys.platform != 'win32')
         return self._send_json(200, {
-            'claude':         bool(claude_bin),
-            'claudePath':     claude_bin or '',
-            'codex':          bool(codex_bin),
-            'codexPath':      codex_bin or '',
-            'runtime_env':    _RUNTIME_ENV,       # 'local' | 'container'
+            'claude':          bool(claude_bin),
+            'claudePath':      claude_bin or '',
+            'codex':           bool(codex_bin),
+            'codexPath':       codex_bin or '',
+            'runtime_env':     _RUNTIME_ENV,
             'spawn_supported': spawn_ok,
+            'pty_supported':   pty_ok,
         })
 
     def _terminal_stream(self):
@@ -3803,8 +4083,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     length = int(self.headers.get('content-length', 0) or 0)
                     if length == 0:
                         return self._send_json(400, {'error': 'empty blob'})
-                    if length > 25 * 1024 * 1024:  # 25 MB cap per blob
-                        return self._send_json(413, {'error': 'blob too large (max 25 MB)'})
+                    if length > 300 * 1024 * 1024:  # 300 MB cap per blob
+                        return self._send_json(413, {'error': 'blob too large (max 300 MB)'})
                     body = self.rfile.read(length)
                     try:
                         cli.put_object(_oci_vault_namespace, _oci_vault_bucket, key, body,

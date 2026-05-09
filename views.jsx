@@ -493,15 +493,42 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const _isMobileV = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [vaultTab, setVaultTab] = useSV(_isMobileV ? 'graph' : null); // 'tree' | 'graph' | 'editor'
 
+  // ── Bridge mode: when running inside the SvelteKit shell iframe, all vault
+  // reads/writes go through window.VaultBridge (postMessage → parent decrypts).
+  // Falls back to the local serve.py API when opened standalone.
+  const _bridge = typeof window !== 'undefined' && window.VaultBridge?.isAvailable()
+    ? window.VaultBridge : null;
+  // Map display path → blob id (only populated in bridge mode)
+  const _pathToId = useRV({});
+
+  // Helper: adapt bridge file list [{id,name,...}] → [{path,title,id,...}]
+  const _adaptBridgeFiles = (bridgeFiles) => {
+    const m = {};
+    const adapted = (bridgeFiles || []).map(f => {
+      m[f.name] = f.id;
+      return { ...f, path: f.name, title: f.name.split(/[\\/]/).pop().replace(/\.md$/i, '') };
+    });
+    _pathToId.current = m;
+    return adapted;
+  };
+
   const refresh = async () => {
     setErr(null);
+    if (_bridge) {
+      try {
+        const bridgeFiles = await _bridge.list();
+        setFiles(_adaptBridgeFiles(bridgeFiles));
+        setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });
+      } catch (e) {
+        setErr(e.message || 'Could not load vault from shell.');
+        setStatus({ configured: false, unavailable: true, error: e.message });
+      }
+      return;
+    }
     try {
       const s = await window.OpenclawClient.vaultStatus();
       setStatus(s);
-      if (!s.configured) {
-        setFiles([]);
-        return;
-      }
+      if (!s.configured) { setFiles([]); return; }
       try {
         setFiles(await window.OpenclawClient.vaultList());
       } catch (e) {
@@ -516,6 +543,20 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     }
   };
   React.useEffect(() => { refresh(); }, []);
+
+  // Listen for live vault file updates pushed from the parent shell
+  React.useEffect(() => {
+    if (!_bridge) return;
+    const handler = (e) => {
+      if (e.source !== window.parent) return;
+      if (e.data?.type === 'vault:files:update') {
+        setFiles(_adaptBridgeFiles(e.data.files || []));
+        if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   React.useEffect(() => {
     const handler = (e) => { if (e.detail && e.detail.path) openByPath(e.detail.path); };
@@ -545,10 +586,23 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openByPath = async (path) => {
     if (!path) return;
+    // Binary files (images, video, audio) can't open in the text editor
+    const fileMeta = files.find(f => f.path === path);
+    if (fileMeta?.isBinary) {
+      alert(`"${fileMeta.title}" is a binary file.\nDownload it from ai.cafreso.com/vault to view it.`);
+      return;
+    }
     setBusy(true); setErr(null);
     try {
-      const text = await window.OpenclawClient.vaultRead(path);
-      setOpenNote({ path, content: text, dirty: false });
+      let text;
+      if (_bridge) {
+        const id = _pathToId.current[path];
+        if (!id) throw new Error('File not found in vault index: ' + path);
+        text = await _bridge.read(id);
+      } else {
+        text = await window.OpenclawClient.vaultRead(path);
+      }
+      setOpenNote({ path, id: _pathToId.current[path] || null, content: text, dirty: false });
       if (_isMobileV) setVaultTab('editor');
       const parts = path.split('/').filter(Boolean);
       const newExp = new Set(expanded);
@@ -562,8 +616,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!openNote) return;
     setBusy(true); setErr(null);
     try {
-      await window.OpenclawClient.vaultWrite(openNote.path, openNote.content, 'write');
-      setOpenNote({ ...openNote, dirty: false });
+      if (_bridge) {
+        if (openNote.id) {
+          // Existing file — update encrypted blob
+          await _bridge.write(openNote.id, openNote.content);
+        } else {
+          // New file — create encrypted blob
+          const meta = await _bridge.create(openNote.path, openNote.content);
+          setOpenNote(n => ({ ...n, id: meta.id }));
+        }
+      } else {
+        await window.OpenclawClient.vaultWrite(openNote.path, openNote.content, 'write');
+      }
+      setOpenNote(n => ({ ...n, dirty: false }));
       await refresh();
     } catch (e) { setErr(e.message); }
     setBusy(false);
@@ -573,7 +638,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     const path = window.prompt('New note path (e.g. "Inbox/idea.md"):');
     if (!path) return;
     const norm = path.endsWith('.md') ? path : path + '.md';
-    setOpenNote({ path: norm, content: '', dirty: true });
+    // id is null for new notes — saveNote() will call bridge.create()
+    setOpenNote({ path: norm, id: null, content: '', dirty: true });
   };
 
   const openInObsidian = async () => {
@@ -4590,14 +4656,100 @@ function ideTintCode(src, lang) {
   return parts;
 }
 
-function ProjectTerminal({ project }) {
-  const [termMode,      setTermMode]     = useSV('chat');  // 'chat' | 'spawn'
-  const [spawnSupported, setSpawnSupported] = useSV(null);  // null=loading, true/false
+function EmbeddedTerminal({ project, cli, visible }) {
+  const containerRef = React.useRef(null);
+  const termRef      = React.useRef(null);
+  const wsRef        = React.useRef(null);
+  const fitRef       = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!containerRef.current || !project?.path) return;
+    const TermClass = window.Terminal;
+    const FitClass  = window.FitAddon?.FitAddon ?? window.FitAddon;
+    if (!TermClass || !FitClass) {
+      containerRef.current.textContent = 'xterm.js not loaded';
+      return;
+    }
+
+    const term = new TermClass({
+      theme: {
+        background: '#0c0c14', foreground: '#d4d8e8',
+        cursor: '#7c6bff', cursorAccent: '#0c0c14',
+        selectionBackground: 'rgba(124,107,255,0.25)',
+        black: '#0c0c14', brightBlack: '#3a3555',
+      },
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontSize: 13, lineHeight: 1.4,
+      cursorBlink: true, scrollback: 5000,
+    });
+    const fit = new FitClass();
+    term.loadAddon(fit);
+    term.open(containerRef.current);
+    fit.fit();
+    termRef.current = term;
+    fitRef.current  = fit;
+
+    const params = new URLSearchParams({
+      cli, cwd: project.path,
+      cols: String(term.cols), rows: String(term.rows),
+    });
+    // Derive WebSocket URL from current page origin so it works both when
+    // accessed directly (ws://ip:8787/...) and via the Caddy gateway
+    // (wss://hq.cafreso.com/u/<slug>/...).
+    const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const _wsPath  = window.location.pathname.replace(/\/[^/]*$/, ''); // strip /hq.html
+    const ws = new WebSocket(`${_wsProto}//${window.location.host}${_wsPath}/terminal/pty?${params}`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onmessage = e => {
+      const data = e.data instanceof ArrayBuffer
+        ? new TextDecoder().decode(e.data) : e.data;
+      term.write(data);
+    };
+    ws.onclose = () => term.writeln('\r\n\x1b[2m[session closed]\x1b[0m');
+    ws.onerror = () => term.writeln('\r\n\x1b[31m[connection error — is serve.py running?]\x1b[0m');
+
+    term.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
+
+    const sendResize = () => {
+      try { fit.fit(); } catch (_) {}
+      if (ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    };
+    const ro = new ResizeObserver(sendResize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('resize', sendResize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', sendResize);
+      try { ws.close(); } catch (_) {}
+      try { term.dispose(); } catch (_) {}
+      termRef.current = wsRef.current = fitRef.current = null;
+    };
+  }, [project?.id, project?.path, cli]);
+
+  React.useEffect(() => {
+    if (visible && fitRef.current) {
+      requestAnimationFrame(() => { try { fitRef.current.fit(); } catch (_) {} });
+    }
+  }, [visible]);
+
+  return (
+    <div ref={containerRef} style={{
+      flex: 1, width: '100%', height: '100%',
+      overflow: 'hidden', padding: '4px 0 0 6px', boxSizing: 'border-box',
+    }} />
+  );
+}
+
+function TerminalSession({ project, cli, visible, ptySupported, spawnSupported }) {
+  const [termMode,  setTermMode]  = useSV('chat');  // 'chat' | 'spawn'
   const [msgs,      setMsgs]      = useSV([]);
   const [input,     setInput]     = useSV('');
   const [busy,      setBusy]      = useSV(false);
   const [err,       setErr]       = useSV(null);
-  const [cli,       setCli]       = useSV('claude');
   const [model,     setModel]     = useSV('');
   const [keyPanel,  setKeyPanel]  = useSV(false);
   const [keyInput,  setKeyInput]  = useSV('');
@@ -4615,14 +4767,6 @@ function ProjectTerminal({ project }) {
       openai:    oc.hasAgentKey('openai'),
     });
   }, [cli]);
-
-  // Fetch runtime capabilities once on mount — determines which tabs to show
-  React.useEffect(() => {
-    fetch('/terminal/status')
-      .then(r => r.json())
-      .then(j => setSpawnSupported(!!j.spawn_supported))
-      .catch(() => setSpawnSupported(false));
-  }, []);
 
   const provider    = cli === 'claude' ? 'anthropic' : 'openai';
   const keyIsStored = !!keyStored[provider];
@@ -4722,33 +4866,31 @@ function ProjectTerminal({ project }) {
     setKeyPanel(false);
   };
 
-  const SEG_COLOR = { text: '#d4d8e8', tool: '#67e8f9', error: '#f87171' };
-
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%',
-      background: '#0c0c14', fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 13, color: '#d4d8e8',
+      background: 'var(--paper)', fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 13, color: 'var(--ink)',
     }}>
-      {/* Mode tabs — TERMINAL tab only shown on local machines (spawn_supported) */}
+      {/* Mode tabs */}
       <div style={{
-        display: 'flex', borderBottom: '1px solid #1e1b2e', flexShrink: 0, background: '#07070d',
-        alignItems: 'center',
+        display: 'flex', borderBottom: '1px solid var(--rule)', flexShrink: 0,
+        background: 'var(--paper-2)', alignItems: 'center',
       }}>
-        {[['chat', '💬 CLI CHAT'], ...(spawnSupported ? [['spawn', '🖥 TERMINAL']] : [])].map(([mode, label]) => (
+        {[['chat', '💬 CHAT'], ...(spawnSupported ? [['spawn', '⬡ TERMINAL']] : [])].map(([mode, label]) => (
           <button key={mode} onClick={() => { setTermMode(mode); setErr(null); setSpawnMsg(''); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              padding: '5px 14px', fontSize: 10, fontWeight: 700,
+              padding: '6px 14px', fontSize: 10, fontWeight: 700,
               fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1,
-              color: termMode === mode ? '#7c6bff' : '#4a4460',
+              color: termMode === mode ? '#7c6bff' : 'var(--ink-3)',
               borderBottom: termMode === mode ? '2px solid #7c6bff' : '2px solid transparent',
             }}
           >{label}</button>
         ))}
         {spawnSupported === false && (
-          <span style={{ fontSize: 9, color: '#3a3555', marginLeft: 'auto', paddingRight: 10 }}>
-            container · CLI CHAT only
+          <span style={{ fontSize: 9, color: 'var(--ink-3)', marginLeft: 'auto', paddingRight: 10 }}>
+            container · chat only
           </span>
         )}
       </div>
@@ -4756,48 +4898,50 @@ function ProjectTerminal({ project }) {
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 12px', borderBottom: '1px solid #1e1b2e',
-        background: '#07070d', flexShrink: 0,
+        padding: '5px 12px', borderBottom: '1px solid var(--rule)',
+        background: 'var(--paper-2)', flexShrink: 0,
       }}>
-        <span style={{ fontSize: 10, color: '#67e8f9', opacity: 0.8, flex: 1 }}>
+        <span style={{ fontSize: 10, color: '#7c6bff', flex: 1, fontFamily: "'JetBrains Mono', monospace" }}>
           {project.name}
         </span>
-        <select
-          value={cli}
-          onChange={e => { setCli(e.target.value); setSpawnMsg(''); }}
-          disabled={busy}
-          style={{
-            background: '#0c0c14', color: '#d4d8e8', border: '1px solid #2a2445',
-            borderRadius: 4, fontSize: 11, padding: '2px 6px',
-            fontFamily: 'inherit', cursor: 'pointer',
-          }}
-        >
-          <option value="claude">claude</option>
-          <option value="codex">codex</option>
-        </select>
         {termMode === 'chat' && (
-          <input
-            placeholder="model (default)"
+          <select
             value={model}
             onChange={e => setModel(e.target.value)}
             disabled={busy}
             style={{
-              background: '#0c0c14', color: '#d4d8e8', border: '1px solid #2a2445',
-              borderRadius: 4, fontSize: 11, padding: '2px 8px', width: 120,
-              fontFamily: 'inherit',
+              background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--rule)',
+              borderRadius: 4, fontSize: 11, padding: '2px 6px',
+              fontFamily: 'inherit', cursor: 'pointer',
             }}
-          />
+          >
+            {cli === 'claude' ? (
+              <>
+                <option value="">model (default)</option>
+                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                <option value="claude-opus-4-7">Opus 4.7</option>
+                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                <option value="claude-sonnet-4-5-20250514">Sonnet 4.5</option>
+              </>
+            ) : (
+              <>
+                <option value="">model (default)</option>
+                <option value="o3">o3</option>
+                <option value="o4-mini">o4-mini</option>
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+              </>
+            )}
+          </select>
         )}
         {termMode === 'chat' && (
           <button
             onClick={() => { setKeyPanel(p => !p); setKeyInput(''); }}
-            title={keyIsStored
-              ? `${provider} API key stored (AES-256-GCM encrypted) — click to change`
-              : `Set your ${provider} API key (encrypted locally)`}
+            title={keyIsStored ? `${provider} key stored (AES-256-GCM)` : `Set ${provider} API key`}
             style={{
-              background: keyIsStored ? 'rgba(74,222,128,0.12)' : 'transparent',
-              color: keyIsStored ? '#4ade80' : '#6b7280',
-              border: `1px solid ${keyIsStored ? '#1a5e35' : '#2a2445'}`,
+              background: keyIsStored ? 'rgba(111,168,111,0.15)' : 'transparent',
+              color: keyIsStored ? 'var(--live)' : 'var(--ink-3)',
+              border: `1px solid ${keyIsStored ? 'var(--live)' : 'var(--rule)'}`,
               borderRadius: 4, fontSize: 12, padding: '2px 7px', cursor: 'pointer',
               fontFamily: 'inherit',
             }}
@@ -4805,13 +4949,13 @@ function ProjectTerminal({ project }) {
         )}
         {termMode === 'chat' && (busy ? (
           <button onClick={stop} style={{
-            background: '#3b1a1a', color: '#f87171', border: '1px solid #7f2020',
+            background: 'rgba(201,112,112,0.12)', color: 'var(--error)', border: '1px solid var(--error)',
             borderRadius: 4, fontSize: 10, padding: '2px 10px', cursor: 'pointer',
             fontFamily: 'inherit',
-          }}>STOP</button>
+          }}>■ STOP</button>
         ) : (
           <button onClick={clear} style={{
-            background: 'transparent', color: '#4a4460', border: '1px solid #2a2445',
+            background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)',
             borderRadius: 4, fontSize: 10, padding: '2px 8px', cursor: 'pointer',
             fontFamily: 'inherit',
           }}>CLEAR</button>
@@ -4820,9 +4964,8 @@ function ProjectTerminal({ project }) {
 
       {keyPanel && (
         <div style={{
-          background: '#07070d', borderBottom: '1px solid #1e1b2e',
-          padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8,
-          flexShrink: 0,
+          background: 'var(--paper-2)', borderBottom: '1px solid var(--rule)',
+          padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
         }}>
           <span style={{ fontSize: 10, color: '#7c6bff', whiteSpace: 'nowrap' }}>
             {provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}
@@ -4835,24 +4978,24 @@ function ProjectTerminal({ project }) {
             placeholder={keyIsStored ? '••••••• (replace)' : 'sk-…'}
             autoFocus
             style={{
-              flex: 1, background: '#0c0c14', color: '#d4d8e8',
-              border: '1px solid #3d2c8e', borderRadius: 4, fontSize: 11,
+              flex: 1, background: 'var(--paper)', color: 'var(--ink)',
+              border: '1px solid var(--rule-2)', borderRadius: 4, fontSize: 11,
               padding: '4px 8px', fontFamily: 'inherit',
             }}
           />
           <button onClick={saveKey} disabled={!keyInput.trim()} style={{
-            background: '#1a2e1a', color: '#4ade80', border: '1px solid #1a5e35',
+            background: 'var(--carpet)', color: 'var(--ink)', border: '1px solid var(--carpet-dk)',
             borderRadius: 4, fontSize: 10, padding: '3px 10px', cursor: 'pointer',
             fontFamily: 'inherit',
           }}>SAVE</button>
           {keyIsStored && (
             <button onClick={clearKey} style={{
-              background: 'transparent', color: '#f87171', border: '1px solid #7f2020',
+              background: 'transparent', color: 'var(--error)', border: '1px solid var(--error)',
               borderRadius: 4, fontSize: 10, padding: '3px 8px', cursor: 'pointer',
               fontFamily: 'inherit',
             }}>CLEAR KEY</button>
           )}
-          <span style={{ fontSize: 9, color: '#3a3555', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 9, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
             AES-256-GCM · device key
           </span>
         </div>
@@ -4860,110 +5003,348 @@ function ProjectTerminal({ project }) {
 
       {termMode === 'chat' ? (
         <>
-          {/* Chat message area */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Claude Desktop-style chat messages */}
+          <div style={{
+            flex: 1, overflowY: 'auto', padding: '20px 20px 8px',
+            display: 'flex', flexDirection: 'column', gap: 18,
+            background: 'var(--paper)',
+          }}>
             {msgs.length === 0 && (
-              <div style={{ color: '#3a3555', fontSize: 12, marginTop: 24, textAlign: 'center' }}>
-                <div style={{ fontSize: 20, marginBottom: 8 }}>💬</div>
-                Chat with {cli === 'codex' ? 'Codex' : 'Claude Code'} about{' '}
-                <span style={{ color: '#7c6bff' }}>{project.name}</span><br/>
-                <span style={{ fontSize: 10, opacity: 0.7 }}>Non-interactive · uses --print mode · BYOK supported</span>
+              <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: 10, paddingTop: 40,
+              }}>
+                <div style={{ fontSize: 30, opacity: 0.35 }}>
+                  {cli === 'claude' ? '✦' : '◈'}
+                </div>
+                <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                  <strong>{cli === 'claude' ? 'Claude Code' : 'OpenAI Codex'}</strong>
+                  <br/>
+                  <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                    {project.name} · --print mode · BYOK supported
+                  </span>
+                </div>
               </div>
             )}
             {msgs.map((m, i) => (
               m.role === 'user' ? (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ color: '#f59e0b', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>❯</span>
-                  <span style={{ color: '#fcd34d', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</span>
+                /* User — right-aligned bubble */
+                <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{
+                    background: '#7c6bff', color: '#fff',
+                    padding: '10px 14px', borderRadius: '16px 16px 4px 16px',
+                    maxWidth: '80%', fontSize: 13, lineHeight: 1.5,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    boxShadow: '0 1px 6px rgba(124,107,255,0.22)',
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                  }}>
+                    {m.content}
+                  </div>
                 </div>
               ) : (
-                <div key={i} style={{ paddingLeft: 16, borderLeft: '2px solid #1e1b2e' }}>
-                  {(m.segs || []).map((seg, si) => (
-                    <span key={si} style={{
-                      color: SEG_COLOR[seg.type] || '#d4d8e8',
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: 'inline',
-                      fontStyle: seg.type === 'tool' ? 'italic' : 'normal',
-                      opacity: seg.type === 'tool' ? 0.85 : 1,
-                    }}>{seg.text}</span>
-                  ))}
-                  {busy && i === msgs.length - 1 && <span style={{ color: '#7c6bff' }}>▋</span>}
+                /* Assistant — left-aligned with avatar */
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                    background: 'var(--accent-lav)', color: 'var(--ink)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, marginTop: 1, border: '1px solid var(--rule)',
+                  }}>
+                    {cli === 'claude' ? '✦' : '◈'}
+                  </div>
+                  <div style={{ flex: 1, fontSize: 13, lineHeight: 1.65, color: 'var(--ink)', minWidth: 0, fontFamily: 'Inter, system-ui, sans-serif' }}>
+                    {(m.segs || []).map((seg, si) => {
+                      if (seg.type === 'tool') return (
+                        <div key={si} style={{
+                          background: 'var(--paper-2)', border: '1px solid var(--rule)',
+                          borderRadius: 6, padding: '5px 10px', margin: '4px 0',
+                          fontSize: 11, color: 'var(--ink-2)',
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}>⚙ {seg.text}</div>
+                      );
+                      if (seg.type === 'error') return (
+                        <div key={si} style={{
+                          background: 'rgba(201,112,112,0.08)', border: '1px solid var(--error)',
+                          borderRadius: 6, padding: '6px 10px', margin: '4px 0',
+                          color: 'var(--error)', fontSize: 12,
+                        }}>⚠ {seg.text}</div>
+                      );
+                      return (
+                        <span key={si} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {seg.text}
+                        </span>
+                      );
+                    })}
+                    {busy && i === msgs.length - 1 && (
+                      <span style={{
+                        display: 'inline-block', width: 7, height: 13,
+                        background: '#7c6bff', borderRadius: 1, marginLeft: 2,
+                        verticalAlign: 'text-bottom',
+                        animation: 'term-blink 1s step-end infinite',
+                      }}/>
+                    )}
+                  </div>
                 </div>
               )
             ))}
             {err && (
-              <div style={{ background: '#1a0a0a', border: '1px solid #7f2020', borderRadius: 4, padding: '8px 12px', color: '#f87171', fontSize: 11 }}>⚠ {err}</div>
+              <div style={{
+                background: 'rgba(201,112,112,0.08)', border: '1px solid var(--error)',
+                borderRadius: 8, padding: '10px 14px', color: 'var(--error)', fontSize: 12,
+              }}>⚠ {err}</div>
             )}
             <div ref={bottomRef} />
           </div>
-          {/* Chat input bar */}
-          <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid #1e1b2e', background: '#07070d', flexShrink: 0 }}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={onKey}
-              disabled={busy}
-              placeholder={`Ask ${cli === 'codex' ? 'Codex' : 'Claude Code'} to help with ${project.name}…`}
-              rows={2}
-              style={{
-                flex: 1, background: '#0c0c14', color: '#d4d8e8',
-                border: '1px solid #2a2445', borderRadius: 6, resize: 'none',
-                fontFamily: 'inherit', fontSize: 13, padding: '8px 10px',
-                caretColor: '#f59e0b', outline: 'none',
-              }}
-            />
-            <button onClick={send} disabled={busy || !input.trim() || !project} style={{
-              background: busy ? '#1a1730' : '#2d1f6e',
-              color: busy ? '#4a4460' : '#a78bfa',
-              border: '1px solid #3d2c8e', borderRadius: 6,
-              fontFamily: 'inherit', fontSize: 11, fontWeight: 700,
-              padding: '0 16px', cursor: busy ? 'default' : 'pointer', flexShrink: 0,
-            }}>{busy ? '…' : 'RUN'}</button>
+
+          {/* Claude Desktop-style input */}
+          <div style={{
+            padding: '12px 16px 14px', borderTop: '1px solid var(--rule)',
+            background: 'var(--paper-2)', flexShrink: 0,
+          }}>
+            <div style={{
+              display: 'flex', gap: 8, alignItems: 'flex-end',
+              background: 'var(--paper)', border: '1px solid var(--rule)',
+              borderRadius: 12, padding: '8px 8px 8px 14px',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={onKey}
+                disabled={busy}
+                placeholder={`Message ${cli === 'claude' ? 'Claude Code' : 'Codex'}…`}
+                rows={2}
+                style={{
+                  flex: 1, background: 'transparent', color: 'var(--ink)',
+                  border: 'none', resize: 'none', fontFamily: 'Inter, system-ui, sans-serif',
+                  fontSize: 13, padding: 0, outline: 'none',
+                  lineHeight: 1.5, caretColor: '#7c6bff',
+                }}
+              />
+              <button
+                onClick={busy ? stop : send}
+                disabled={!busy && (!input.trim() || !project)}
+                style={{
+                  width: 32, height: 32, borderRadius: 8, border: 'none',
+                  background: busy ? 'rgba(201,112,112,0.15)' : (input.trim() ? '#7c6bff' : 'var(--paper-2)'),
+                  color: busy ? 'var(--error)' : (input.trim() ? '#fff' : 'var(--ink-3)'),
+                  fontSize: 15, cursor: (busy || input.trim()) ? 'pointer' : 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, transition: 'background 0.15s, color 0.15s',
+                  boxShadow: input.trim() && !busy ? '0 2px 6px rgba(124,107,255,0.3)' : 'none',
+                }}
+              >{busy ? '■' : '↑'}</button>
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--ink-3)', marginTop: 5, paddingLeft: 4 }}>
+              Enter to send · Shift+Enter for newline
+            </div>
           </div>
         </>
       ) : (
-        /* Spawn / real terminal panel */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
-          {/* Simulated terminal preview */}
-          <div style={{
-            width: '100%', maxWidth: 560, background: '#000', borderRadius: 8,
-            border: '1px solid #2a2445', overflow: 'hidden',
-            boxShadow: '0 4px 32px rgba(0,0,0,0.5)',
-          }}>
-            <div style={{ background: '#1e1b2e', padding: '6px 12px', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#f87171', display: 'inline-block' }}/>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#fbbf24', display: 'inline-block' }}/>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }}/>
-              <span style={{ fontSize: 10, color: '#4a4460', marginLeft: 8 }}>PowerShell — {cli}</span>
-            </div>
-            <div style={{ padding: '12px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#d4d8e8', lineHeight: 1.5 }}>
-              <div><span style={{ color: '#4ade80' }}>PS</span> <span style={{ color: '#67e8f9' }}>{project.path}&gt;</span> <span style={{ color: '#fff' }}>{cli}</span></div>
-              <div style={{ color: '#6b7280', marginTop: 4 }}>╭── {cli === 'claude' ? 'Claude Code' : 'OpenAI Codex'} ──╮</div>
-              <div style={{ color: '#6b7280' }}>│ Welcome to {project.name}</div>
-              <div style={{ color: '#6b7280' }}>╰─────────────────╯</div>
-              <div style={{ marginTop: 6 }}><span style={{ color: '#f59e0b' }}>❯</span> <span style={{ color: '#7c6bff', animation: 'term-blink 1s step-end infinite' }}>▋</span></div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#4a4460', lineHeight: 1.7 }}>
-            Opens a new <strong style={{ color: '#d4d8e8' }}>Windows Terminal</strong> window running<br/>
-            <code style={{ color: '#67e8f9' }}>{cli}</code> in <code style={{ color: '#a78bfa' }}>{project.path}</code><br/>
-            Full interactive TUI · coloured prompts · history
-          </div>
-          {spawnMsg && (
-            <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid #1a5e35', borderRadius: 6, padding: '8px 16px', color: '#4ade80', fontSize: 11 }}>
-              ✓ {spawnMsg}
+        /* Embedded PTY terminal panel */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {ptySupported ? (
+            <EmbeddedTerminal project={project} cli={cli} visible={visible} />
+          ) : (
+            /* Fallback: launch button */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16, background: 'var(--paper)' }}>
+              <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.7 }}>
+                Opens a new <strong style={{ color: 'var(--ink)' }}>Windows Terminal</strong> window running<br/>
+                <code style={{ color: '#7c6bff' }}>{cli}</code> in <code style={{ color: '#7c6bff', opacity: 0.75 }}>{project.path}</code>
+              </div>
+              {spawnMsg && (
+                <div style={{ background: 'rgba(111,168,111,0.12)', border: '1px solid var(--live)', borderRadius: 6, padding: '8px 16px', color: 'var(--live)', fontSize: 11 }}>
+                  ✓ {spawnMsg}
+                </div>
+              )}
+              {err && (
+                <div style={{ background: 'rgba(201,112,112,0.08)', border: '1px solid var(--error)', borderRadius: 6, padding: '8px 16px', color: 'var(--error)', fontSize: 11 }}>⚠ {err}</div>
+              )}
+              <button onClick={launchTerminal} style={{
+                background: '#7c6bff', color: '#fff', border: 'none',
+                borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                padding: '10px 28px', cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(124,107,255,0.3)',
+              }}>▶ LAUNCH {cli.toUpperCase()} IN TERMINAL</button>
             </div>
           )}
-          {err && (
-            <div style={{ background: '#1a0a0a', border: '1px solid #7f2020', borderRadius: 6, padding: '8px 16px', color: '#f87171', fontSize: 11 }}>⚠ {err}</div>
+          {/* Pop-out footer — dark to blend with terminal */}
+          {ptySupported && (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#0a0a10', padding: '3px 12px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+              <button onClick={launchTerminal} title="Open in separate terminal window" style={{
+                background: 'transparent', color: '#3a3555', border: 'none',
+                fontSize: 9, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 0.5,
+              }}>⬡ pop out</button>
+              {spawnMsg && <span style={{ fontSize: 9, color: '#4ade80', marginLeft: 8 }}>✓ launched</span>}
+            </div>
           )}
-          <button onClick={launchTerminal} style={{
-            background: '#2d1f6e', color: '#a78bfa', border: '1px solid #3d2c8e',
-            borderRadius: 6, fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-            padding: '10px 28px', cursor: 'pointer', letterSpacing: 1,
-          }}>▶ LAUNCH {cli.toUpperCase()} IN TERMINAL</button>
         </div>
       )}
+    </div>
+  );
+}
+
+let _sessionCounter = 0;
+function ProjectTerminal({ project, visible }) {
+  const [sessions, setSessions] = React.useState(() => {
+    const id = `s${++_sessionCounter}`;
+    return [{ id, cli: 'claude' }];
+  });
+  const [activeId, setActiveId] = React.useState(() => sessions[0].id);
+  const [spawnSupported, setSpawnSupported] = React.useState(null);
+  const [ptySupported, setPtySupported]     = React.useState(false);
+  const [addMenuOpen, setAddMenuOpen]       = React.useState(false);
+  const addBtnRef = React.useRef(null);
+
+  React.useEffect(() => {
+    fetch((window._API_BASE || '') + '/terminal/status')
+      .then(r => r.json())
+      .then(j => {
+        setSpawnSupported(!!j.spawn_supported);
+        setPtySupported(!!j.pty_supported);
+      })
+      .catch(() => { setSpawnSupported(false); setPtySupported(false); });
+  }, []);
+
+  React.useEffect(() => {
+    if (!addMenuOpen) return;
+    const close = (e) => {
+      if (addBtnRef.current && !addBtnRef.current.contains(e.target)) setAddMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [addMenuOpen]);
+
+  const addSession = (cli) => {
+    const id = `s${++_sessionCounter}`;
+    setSessions(prev => [...prev, { id, cli }]);
+    setActiveId(id);
+    setAddMenuOpen(false);
+  };
+
+  const closeSession = (id) => {
+    setSessions(prev => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter(s => s.id !== id);
+      if (activeId === id) setActiveId(next[next.length - 1].id);
+      return next;
+    });
+  };
+
+  const getLabel = (session) => {
+    const cliName = session.cli === 'claude' ? 'Claude' : 'Codex';
+    const same = sessions.filter(s => s.cli === session.cli);
+    if (same.length <= 1) return cliName;
+    return `${cliName} #${same.indexOf(session) + 1}`;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Session tab bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        borderBottom: '1px solid var(--rule)', flexShrink: 0,
+        background: 'var(--paper-2)', padding: '0 4px',
+        overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'thin', gap: 1,
+      }}>
+        {sessions.map(s => {
+          const active = s.id === activeId;
+          const icon = s.cli === 'claude' ? '✦' : '◈';
+          return (
+            <div key={s.id}
+              onClick={() => setActiveId(s.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+                fontSize: 10, fontWeight: 600,
+                fontFamily: "'JetBrains Mono', monospace",
+                color: active ? '#7c6bff' : 'var(--ink-3)',
+                borderBottom: active ? '2px solid #7c6bff' : '2px solid transparent',
+                background: active ? 'rgba(124,107,255,0.06)' : 'transparent',
+                borderRadius: '6px 6px 0 0',
+                transition: 'background 0.15s, color 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{icon}</span>
+              <span>{getLabel(s)}</span>
+              {sessions.length > 1 && (
+                <span
+                  onClick={e => { e.stopPropagation(); closeSession(s.id); }}
+                  style={{
+                    opacity: active ? 0.6 : 0.3, fontSize: 13, lineHeight: 1,
+                    marginLeft: 2, borderRadius: 3, padding: '0 2px',
+                    cursor: 'pointer', transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={e => e.target.style.opacity = 1}
+                  onMouseLeave={e => e.target.style.opacity = active ? 0.6 : 0.3}
+                  title="End session"
+                >&times;</span>
+              )}
+            </div>
+          );
+        })}
+        {/* Add session */}
+        <div ref={addBtnRef} style={{ position: 'relative', flexShrink: 0, marginLeft: 2 }}>
+          <button
+            onClick={() => setAddMenuOpen(p => !p)}
+            title="New CLI session"
+            style={{
+              background: addMenuOpen ? 'rgba(124,107,255,0.1)' : 'transparent',
+              border: '1px solid var(--rule)',
+              borderRadius: 4, color: 'var(--ink-3)', fontSize: 14, lineHeight: 1,
+              width: 22, height: 22, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '2px 0', transition: 'background 0.15s',
+            }}
+          >+</button>
+          {addMenuOpen && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 200,
+              background: 'var(--paper)', border: '1px solid var(--rule)',
+              borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+              padding: 4, minWidth: 150,
+            }}>
+              {[['claude', '✦', 'Claude Code'], ['codex', '◈', 'Codex CLI']].map(([c, ico, label]) => (
+                <div key={c}
+                  onClick={() => addSession(c)}
+                  style={{
+                    padding: '7px 12px', cursor: 'pointer', fontSize: 11,
+                    borderRadius: 5, display: 'flex', alignItems: 'center', gap: 8,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: 'var(--ink)', transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--paper-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: 14 }}>{ico}</span>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Session panels — all stay mounted, only active is visible */}
+      {sessions.map(s => (
+        <div key={s.id} style={{
+          flex: 1, overflow: 'hidden',
+          display: s.id === activeId ? 'flex' : 'none',
+          flexDirection: 'column',
+        }}>
+          <TerminalSession
+            project={project}
+            cli={s.cli}
+            visible={visible && s.id === activeId}
+            ptySupported={ptySupported}
+            spawnSupported={spawnSupported}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -4974,6 +5355,15 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   const [busy, setBusy] = useSV(false);
   const [err, setErr] = useSV(null);
   const [rightTab, setRightTab] = useSV('files');
+  const [openedTerminals, setOpenedTerminals] = React.useState([]);
+
+  React.useEffect(() => {
+    if (rightTab === 'terminal' && selected) {
+      setOpenedTerminals(prev =>
+        prev.includes(selected) ? prev : [...prev, selected]
+      );
+    }
+  }, [rightTab, selected]);
 
   /* Toggle assignment of an agent to the current project. The dynamic
      project tab in ChatPanel keys off `agentIds`, so flipping this is
@@ -5000,6 +5390,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
 
   const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [mobileStep, setMobileStep] = useSV(_isMobile ? 'list' : null);
+  const [mobileDetailTab, setMobileDetailTab] = useSV('files');
 
   /* Inline rename state — keyed by project id so multiple cards don't
      collide. Stays null when no project is being renamed. */
@@ -5167,32 +5558,64 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
           </div>
         )}
 
-        {/* Step: file tree + agents */}
+        {/* Step: project detail — files / terminal / agents */}
         {mobileStep === 'detail' && project && (
-          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'auto'}}>
-            <div style={{flex:1,overflow:'auto',borderBottom:'1px solid var(--rule)',minHeight:'40%'}}>
-              <LocalTree path={project.path} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} />
+          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            {/* Mobile sub-tabs: Files | Terminal | Agents */}
+            <div style={{
+              display:'flex', borderBottom:'1px solid var(--rule)',
+              background:'var(--paper-2)', flexShrink:0,
+              overflowX:'auto', WebkitOverflowScrolling:'touch',
+            }}>
+              {[['files','📄 Files'],['terminal','⚡ Terminal'],['agents','👥 Agents']].map(([t,label]) => (
+                <button key={t}
+                  onClick={() => setMobileDetailTab(t)}
+                  style={{
+                    background:'none', border:'none', cursor:'pointer',
+                    padding:'10px 16px', fontSize:11, fontWeight:700,
+                    fontFamily:"'JetBrains Mono',monospace",
+                    color: mobileDetailTab === t ? '#7c6bff' : 'var(--ink-3)',
+                    borderBottom: mobileDetailTab === t ? '2px solid #7c6bff' : '2px solid transparent',
+                    whiteSpace:'nowrap', minHeight:44, flexShrink:0,
+                  }}
+                >{label}</button>
+              ))}
             </div>
-            <div className="proj-agents-panel" style={{borderTop:'2px solid var(--accent-sun)',background:'var(--paper-2)',padding:'12px 14px',borderRadius:'12px 12px 0 0'}}>
-              <div className="proj-agents-head" style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,letterSpacing:'0.05em'}}>👥 ASSIGNED · {(project.agentIds || []).length}</span>
-                {(project.agentIds || []).length > 0 && onSwitchView && (
-                  <button className="px-btn primary" style={{fontSize:10,padding:'8px 16px',marginLeft:'auto',minHeight:36}} onClick={() => onSwitchView('chat')}>TALK ›</button>
-                )}
+
+            {mobileDetailTab === 'files' && (
+              <div style={{flex:1,overflow:'auto'}}>
+                <LocalTree path={project.path} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} />
               </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                {agents.map(a => {
-                  const assigned = (project.agentIds || []).includes(a.id);
-                  return (
-                    <label key={a.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 8px',fontSize:14,cursor:'pointer',borderRadius:8,background: assigned ? 'var(--accent-sun-10, rgba(218,165,32,0.1))' : 'transparent',border: assigned ? '1px solid var(--accent-sun)' : '1px solid transparent',transition:'all 0.15s',minHeight:44}}>
-                      <input type="checkbox" checked={assigned} onChange={() => toggleAgent(a.id)} style={{width:22,height:22,accentColor:'var(--accent-sun)'}} />
-                      <span style={{fontWeight:assigned ? 700 : 400}}>{a.name}</span>
-                      {a.role && <span style={{fontSize:11,opacity:0.5}}>· {a.role}</span>}
-                    </label>
-                  );
-                })}
+            )}
+
+            {mobileDetailTab === 'terminal' && (
+              <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+                <ProjectTerminal project={project} visible={mobileStep === 'detail' && mobileDetailTab === 'terminal'} />
               </div>
-            </div>
+            )}
+
+            {mobileDetailTab === 'agents' && (
+              <div style={{flex:1,overflow:'auto',padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                  <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,letterSpacing:'0.05em'}}>👥 ASSIGNED · {(project.agentIds || []).length}</span>
+                  {(project.agentIds || []).length > 0 && onSwitchView && (
+                    <button className="px-btn primary" style={{fontSize:10,padding:'8px 16px',marginLeft:'auto',minHeight:36}} onClick={() => onSwitchView('chat')}>TALK ›</button>
+                  )}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {agents.map(a => {
+                    const assigned = (project.agentIds || []).includes(a.id);
+                    return (
+                      <label key={a.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 8px',fontSize:14,cursor:'pointer',borderRadius:8,background: assigned ? 'var(--accent-sun-10, rgba(218,165,32,0.1))' : 'transparent',border: assigned ? '1px solid var(--accent-sun)' : '1px solid transparent',transition:'all 0.15s',minHeight:44}}>
+                        <input type="checkbox" checked={assigned} onChange={() => toggleAgent(a.id)} style={{width:22,height:22,accentColor:'var(--accent-sun)'}} />
+                        <span style={{fontWeight:assigned ? 700 : 400}}>{a.name}</span>
+                        {a.role && <span style={{fontSize:11,opacity:0.5}}>· {a.role}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -5422,42 +5845,53 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
               ))}
             </div>
           )}
-          {rightTab === 'terminal' && project ? (
-            <div style={{flex: 1, overflow: 'hidden'}}>
-              <ProjectTerminal project={project} />
-            </div>
-          ) : rightTab === 'files' && openFile ? (
-            <div style={{flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0}}>
-              <div className="proj-edit-head ide-edit-head">
-                <span className="ide-tab">
-                  <span className="ide-tab-icon">{ideFileIcon(openFile.path)}</span>
-                  <span className="ide-tab-name">{openFile.path.split(/[\\/]/).pop()}</span>
-                  {openFile.dirty && <span className="ide-tab-dot" title="unsaved changes">●</span>}
-                </span>
-                <span className="ide-tab-path">{openFile.path}</span>
-                {err && <span className="proj-edit-err">{err}</span>}
-                <span style={{flex:1}}/>
-                <span className="ide-stats">
-                  {openFile.content.split('\n').length} ln · {openFile.content.length} ch · {ideLangFromPath(openFile.path).toUpperCase()}
-                </span>
-                <button className="px-btn primary" style={{fontSize: 10, padding: '3px 10px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
-                  {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
-                </button>
+          {/* Persistent terminal sessions — stay mounted so PTY + chat survive tab/project switches */}
+          {openedTerminals.map(pid => {
+            const p = projects.find(x => x.id === pid);
+            if (!p) return null;
+            const active = rightTab === 'terminal' && selected === pid;
+            return (
+              <div key={pid} style={{flex: 1, overflow: 'hidden', display: active ? undefined : 'none'}}>
+                <ProjectTerminal project={p} visible={active} />
               </div>
-              <IDEEditor
-                value={openFile.content}
-                onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
-                path={openFile.path}
-              />
-            </div>
-          ) : project ? (
-            <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-              <div className="proj-empty-msg" style={{textAlign: 'center'}}>
-                <div style={{fontSize: 24, marginBottom: 8, opacity: 0.4}}>📄</div>
-                Select a file to edit, or switch to Terminal to run a CLI agent.
+            );
+          })}
+
+          {/* Files / empty states — only when terminal is not active */}
+          {!(rightTab === 'terminal' && project) && (
+            rightTab === 'files' && openFile ? (
+              <div style={{flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0}}>
+                <div className="proj-edit-head ide-edit-head">
+                  <span className="ide-tab">
+                    <span className="ide-tab-icon">{ideFileIcon(openFile.path)}</span>
+                    <span className="ide-tab-name">{openFile.path.split(/[\\/]/).pop()}</span>
+                    {openFile.dirty && <span className="ide-tab-dot" title="unsaved changes">●</span>}
+                  </span>
+                  <span className="ide-tab-path">{openFile.path}</span>
+                  {err && <span className="proj-edit-err">{err}</span>}
+                  <span style={{flex:1}}/>
+                  <span className="ide-stats">
+                    {openFile.content.split('\n').length} ln · {openFile.content.length} ch · {ideLangFromPath(openFile.path).toUpperCase()}
+                  </span>
+                  <button className="px-btn primary" style={{fontSize: 10, padding: '3px 10px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
+                    {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
+                  </button>
+                </div>
+                <IDEEditor
+                  value={openFile.content}
+                  onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
+                  path={openFile.path}
+                />
               </div>
-            </div>
-          ) : null}
+            ) : project ? (
+              <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <div className="proj-empty-msg" style={{textAlign: 'center'}}>
+                  <div style={{fontSize: 24, marginBottom: 8, opacity: 0.4}}>📄</div>
+                  Select a file to edit, or switch to Terminal to run a CLI agent.
+                </div>
+              </div>
+            ) : null
+          )}
         </div>
       </div>
       {showAdd ? (
@@ -5483,7 +5917,7 @@ function FileBrowserModal({ initialPath, onSelect, onClose }) {
   const browse = (p) => {
     setLoading(true); setErr(null);
     const qs = p ? `?path=${encodeURIComponent(p)}` : '';
-    fetch(`/fs/browse${qs}`)
+    fetch(`${window._API_BASE || ''}/fs/browse${qs}`)
       .then(r => r.json())
       .then(j => {
         if (j.error) throw new Error(j.error);
