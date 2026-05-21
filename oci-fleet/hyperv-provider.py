@@ -598,18 +598,37 @@ class HyperVProvider:
             log.info("Moonlight sidecar started: %s", container_name)
 
             # ── WSL portproxy: make the container's port reachable on Windows ──
-            # If docker ran through WSL, the container's port is bound on WSL's
-            # network interface (e.g. 172.30.x.x) — NOT on Windows 127.0.0.1.
-            # We add a portproxy so fleet-api can reach 127.0.0.1:{signaling_port}.
-            if prefix:  # only needed when routing through WSL
-                wsl_ip = self._wsl_ip()
-                if wsl_ip:
-                    self._add_portproxy(signaling_port, signaling_port, wsl_ip)
-                else:
-                    log.warning(
-                        "Could not get WSL IP — stream proxy may not reach container on port %d",
+            # WSL2 has built-in `localhostForwarding` (enabled by default in
+            # .wslconfig). When active, ports bound on WSL's 0.0.0.0 are
+            # automatically available on Windows 127.0.0.1 — no portproxy needed.
+            # We probe that first; only fall back to netsh portproxy if the relay
+            # isn't working (e.g. localhostForwarding=false or older WSL version).
+            if prefix:  # only relevant when docker ran through WSL
+                import socket as _sock
+                import time as _t
+                _t.sleep(1.5)  # give container a moment to bind its port
+                relay_ok = False
+                try:
+                    with _sock.create_connection(('127.0.0.1', signaling_port), timeout=2):
+                        relay_ok = True
+                except OSError:
+                    pass
+
+                if relay_ok:
+                    log.info(
+                        "WSL localhost relay working: 127.0.0.1:%d → container (no portproxy needed)",
                         signaling_port,
                     )
+                else:
+                    # Relay not working — add a manual portproxy.
+                    wsl_ip = self._wsl_ip()
+                    if wsl_ip:
+                        self._add_portproxy(signaling_port, signaling_port, wsl_ip)
+                    else:
+                        log.warning(
+                            "Could not get WSL IP — stream proxy may not reach container on port %d",
+                            signaling_port,
+                        )
 
             return True, container_name, signaling_port
 

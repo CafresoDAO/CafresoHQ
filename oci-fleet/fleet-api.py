@@ -2235,6 +2235,78 @@ def _render_prometheus_metrics() -> str:
 
 
 # ── main ────────────────────────────────────────────────────────────────────
+def _restore_hyperv_portproxies():
+    """
+    On startup, refresh Windows portproxy entries for running Hyper-V sessions.
+
+    Scenario: fleet-api restarted after a WSL reboot.  WSL gets a new eth0 IP
+    (e.g. 172.30.x.x → 172.31.x.x).  Old portproxy entries in the 8500–8999
+    range point to the dead old IP.  We:
+      1. Remove ALL portproxy entries in that range (stale or not).
+      2. Re-add entries for sessions that are still running and have a live
+         moonlight-web container (confirmed via `docker inspect`).
+
+    If docker/WSL isn't present (Linux native deploy or Docker Desktop), this
+    function is a no-op — it detects that and exits cleanly.
+    """
+    try:
+        provider = _get_hyperv_provider()
+        if provider is None:
+            return
+
+        # Check if we're actually running through WSL (if not, no portproxy needed)
+        prefix = provider._docker_prefix()
+        if not prefix:
+            return  # native docker — localhost relay handles it
+
+        # Step 1: clear any stale portproxy entries in the moonlight port range
+        import subprocess as _sp
+        for port in range(8500, 9000):
+            _sp.run(
+                ["netsh", "interface", "portproxy", "delete", "v4tov4",
+                 "listenaddress=127.0.0.1", f"listenport={port}"],
+                capture_output=True, timeout=5,
+            )
+
+        # Step 2: re-add entries for running sessions whose container is alive
+        wsl_ip = provider._wsl_ip()
+        if not wsl_ip:
+            log.warning("[startup] Could not get WSL IP — skipping portproxy restore")
+            return
+
+        sessions = _load_sessions()
+        restored = 0
+        for sid, session in sessions.items():
+            if session.get('provider') != 'hyperv':
+                continue
+            if session.get('status') != 'running':
+                continue
+            ml_port = session.get('moonlight_port')
+            if not ml_port:
+                continue
+            container = session.get('moonlight_container', f"cafresoai-moonlight-{sid[:12]}")
+
+            # Verify container is actually running before adding portproxy
+            r = _sp.run(
+                prefix + ["docker", "inspect", "--format={{.State.Running}}", container],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.stdout.strip() != 'true':
+                log.info("[startup] moonlight container %s not running — skipping portproxy", container)
+                continue
+
+            provider._add_portproxy(ml_port, ml_port, wsl_ip)
+            restored += 1
+
+        if restored:
+            log.info("[startup] Restored %d moonlight portproxy entries (WSL IP: %s)", restored, wsl_ip)
+        else:
+            log.debug("[startup] No active moonlight sessions to restore portproxy for")
+
+    except Exception:
+        log.exception("[startup] portproxy restore failed (non-fatal)")
+
+
 def main():
     addr = ('0.0.0.0', PORT)
     print('-' * 60, flush=True)
@@ -2249,6 +2321,12 @@ def main():
           f'{VM_POOL_MAX_AGE_HOURS}h max age', flush=True)
     print(f'  Metrics: http://0.0.0.0:{PORT}/metrics', flush=True)
     print('-' * 60, flush=True)
+
+    # ── Restore WSL portproxies for any running hyperv sessions ────────────────
+    # After a WSL restart the WSL IP changes, leaving stale portproxy entries.
+    # On each fleet-api startup, remove all stale entries in the moonlight-web
+    # port range (8500-8999) and re-add valid ones for active sessions.
+    _restore_hyperv_portproxies()
 
     # Start background maintenance threads
     threading.Thread(target=_idle_reaper_loop, daemon=True,

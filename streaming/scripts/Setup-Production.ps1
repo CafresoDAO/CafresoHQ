@@ -28,7 +28,7 @@ $errors   = @()
 $warnings = @()
 
 # ── 1. Check prerequisites ──────────────────────────────────────────────────
-Write-Host "[1/8] Checking prerequisites..." -ForegroundColor Yellow
+Write-Host "[1/9] Checking prerequisites..." -ForegroundColor Yellow
 
 # Docker
 $dockerOk = $false
@@ -79,8 +79,33 @@ try {
     Write-Host "  Hyper-V: check failed" -ForegroundColor Yellow
 }
 
-# ── 2. Create directory structure ────────────────────────────────────────────
-Write-Host "`n[2/8] Creating directories..." -ForegroundColor Yellow
+# ── 2. Reserve fleet-api ports against Hyper-V/WinNAT dynamic allocation ────
+# Hyper-V Compute Service and WinNAT can "invisibly" reserve ports that fall in
+# the dynamic/ephemeral range, causing PermissionError 10013 even when no
+# process holds the socket.  Adding a static excludedportrange entry tells
+# Windows to skip those ports when picking dynamic ones, while still allowing
+# explicit binds (fleet-api's TCPServer).  Uses `store=persistent` so the
+# exclusion survives reboots.  The command is idempotent — running it twice is safe.
+Write-Host "`n[2/9] Reserving fleet-api ports against dynamic allocation..." -ForegroundColor Yellow
+
+$fleetPorts = @(8080, 8081, 8082)
+foreach ($p in $fleetPorts) {
+    $result = netsh int ipv4 add excludedportrange protocol=tcp startport=$p numberofports=1 store=persistent 2>&1
+    if ($result -match 'Ok|already') {
+        Write-Host "  Port $p exclusion: OK" -ForegroundColor Green
+    } else {
+        # May report "already exists" as an error — that's fine
+        Write-Host "  Port $p: $result" -ForegroundColor DarkGray
+    }
+}
+
+# Restart WinNAT to release any ports it already grabbed (non-fatal if service absent)
+Write-Host "  Restarting WinNAT to release any held ports..." -ForegroundColor DarkGray
+Restart-Service WinNAT -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
+# ── 3. Create directory structure (was step 2) ────────────────────────────────
+Write-Host "`n[3/9] Creating directories..." -ForegroundColor Yellow
 
 $dirs = @(
     'C:\HyperV\GoldImages',
@@ -102,7 +127,7 @@ foreach ($d in $dirs) {
 }
 
 # ── 3. Generate / validate .env ──────────────────────────────────────────────
-Write-Host "`n[3/8] Checking environment configuration..." -ForegroundColor Yellow
+Write-Host "`n[4/9] Checking environment configuration..." -ForegroundColor Yellow
 
 if (-not (Test-Path $EnvFile)) {
     Write-Host "  .env not found — copying from .env.example" -ForegroundColor Yellow
@@ -141,7 +166,7 @@ if (-not $turnSecret -or $turnSecret -eq 'change-me-to-a-random-hex-string') {
 }
 
 # ── 4. Set environment variables for fleet-api ───────────────────────────────
-Write-Host "`n[4/8] Setting environment variables..." -ForegroundColor Yellow
+Write-Host "`n[5/9] Setting environment variables..." -ForegroundColor Yellow
 
 # Set TURN_SECRET for the current session so fleet-api picks it up
 if ($turnSecret -and $turnSecret -ne 'change-me-to-a-random-hex-string') {
@@ -156,7 +181,7 @@ if ($turnUrl) {
 }
 
 # ── 5. Pull Docker images ────────────────────────────────────────────────────
-Write-Host "`n[5/8] Pulling Docker images..." -ForegroundColor Yellow
+Write-Host "`n[6/9] Pulling Docker images..." -ForegroundColor Yellow
 
 if ($dockerOk) {
     $images = @(
@@ -175,7 +200,7 @@ if ($dockerOk) {
 }
 
 # ── 6. Create Docker network ─────────────────────────────────────────────────
-Write-Host "`n[6/8] Creating Docker networks..." -ForegroundColor Yellow
+Write-Host "`n[7/9] Creating Docker networks..." -ForegroundColor Yellow
 
 if ($dockerOk) {
     $networks = @('cafresoai-streaming', 'cafresoai-monitoring')
@@ -191,7 +216,7 @@ if ($dockerOk) {
 }
 
 # ── 7. Start coturn ──────────────────────────────────────────────────────────
-Write-Host "`n[7/8] Starting coturn TURN server..." -ForegroundColor Yellow
+Write-Host "`n[8/9] Starting coturn TURN server..." -ForegroundColor Yellow
 
 if ($dockerOk -and $turnSecret -and $turnSecret -ne 'change-me-to-a-random-hex-string') {
     Push-Location $StreamDir
@@ -215,7 +240,7 @@ if ($dockerOk -and $turnSecret -and $turnSecret -ne 'change-me-to-a-random-hex-s
 }
 
 # ── 8. Validate connectivity ─────────────────────────────────────────────────
-Write-Host "`n[8/8] Validating services..." -ForegroundColor Yellow
+Write-Host "`n[9/9] Validating services..." -ForegroundColor Yellow
 
 # Fleet API
 try {
