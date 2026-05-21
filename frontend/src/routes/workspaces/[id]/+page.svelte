@@ -50,6 +50,8 @@
   const providerLabel = {
     hyperv:   'Hyper-V',
     oci:      'OCI',
+    local:    'Local (WSL)',
+    custom:   'Custom',
     canister: 'ICP',
   };
 

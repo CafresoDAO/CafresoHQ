@@ -34,6 +34,8 @@ import pathlib
 import re
 import subprocess
 import sys
+import contextlib
+import socket
 import threading
 import time
 import urllib.parse
@@ -354,6 +356,68 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return True
         return self.headers.get('X-Fleet-Auth') == SHARED_SECRET
 
+    def _stream_proxy(self, host: str, port: int, path: str):
+        """Low-level TCP splice proxy.
+        Forwards the current HTTP/WebSocket request to (host:port), rewriting
+        the path and Host header.  Handles both plain HTTP responses and
+        WebSocket 101-upgrade transparently — no WebSocket library needed.
+        Called from do_GET for /stream/{sid}/... paths.
+        """
+        try:
+            backend = socket.create_connection((host, port), timeout=5)
+        except OSError as e:
+            log.warning('[stream-proxy] backend %s:%s unreachable: %s', host, port, e)
+            return self._send_json(502, {'error': f'backend {host}:{port} unreachable: {e}'})
+
+        # Reconstruct the request line + headers and forward to backend.
+        # BaseHTTPRequestHandler has already consumed the request line + headers
+        # from self.rfile, so we rebuild them from the parsed fields.
+        req_lines = [f'{self.command} {path} {self.protocol_version}\r\n']
+        for k, v in self.headers.items():
+            if k.lower() == 'host':
+                req_lines.append(f'Host: {host}:{port}\r\n')
+            else:
+                req_lines.append(f'{k}: {v}\r\n')
+        req_lines.append('\r\n')
+
+        try:
+            backend.sendall(''.join(req_lines).encode('latin-1'))
+            clen = int(self.headers.get('Content-Length', 0) or 0)
+            if clen > 0:
+                backend.sendall(self.rfile.read(clen))
+        except OSError as e:
+            backend.close()
+            log.warning('[stream-proxy] backend write error: %s', e)
+            return self._send_json(502, {'error': f'backend write error: {e}'})
+
+        # Splice: two threads copy bytes in opposite directions until either
+        # side closes.  Works identically for HTTP and WebSocket (101 upgrade).
+        client = self.connection
+        stop   = threading.Event()
+
+        def _copy(src, dst, label):
+            try:
+                while not stop.is_set():
+                    data = src.recv(65536)
+                    if not data:
+                        break
+                    dst.sendall(data)
+            except OSError:
+                pass
+            finally:
+                stop.set()
+                with contextlib.suppress(OSError):
+                    dst.shutdown(socket.SHUT_WR)
+
+        t = threading.Thread(target=_copy, args=(backend, client, 'b→c'), daemon=True)
+        t.start()
+        _copy(client, backend, 'c→b')   # blocks until client closes
+        stop.set()
+        t.join(timeout=2)
+        with contextlib.suppress(OSError):
+            backend.close()
+        self.close_connection = True     # tell http.server not to read another req
+
     # ── routes ──────────────────────────────────────────────────────────────
     def do_OPTIONS(self):
         self.send_response(204)
@@ -509,6 +573,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if u.path == '/admin/verify':
             return self._admin_verify()
+
+        # ── Stream proxy (/stream/{sid}/...) ──────────────────────────────────
+        # Routes browser traffic to the local streaming backend:
+        #   local   → ttyd WebSocket terminal on localhost:{port}
+        #   hyperv  → Sunshine HTTP/signaling on {ip}:{port}
+        #             (WebRTC via moonlight-web-stream sidecar — Phase 2b)
+        if u.path.startswith('/stream/'):
+            tail  = u.path[len('/stream/'):]          # 'ses_abc/ws' or 'ses_abc/'
+            slash = tail.find('/')
+            if slash < 0:
+                sid  = tail
+                rest = '/'
+            else:
+                sid  = tail[:slash]
+                rest = tail[slash:] or '/'
+            if u.query:
+                rest = rest + '?' + u.query
+
+            if not sid:
+                return self._send_json(400, {'error': 'missing session id in stream path'})
+
+            sessions = _load_sessions()
+            session  = sessions.get(sid)
+            if not session:
+                return self._send_json(404, {'error': 'stream session not found'})
+            if session.get('status') not in ('running', 'starting'):
+                return self._send_json(410, {
+                    'error':  'session not running',
+                    'status': session.get('status'),
+                })
+
+            provider = session.get('provider')
+            if provider == 'local':
+                b_port = session.get('port')
+                if not b_port:
+                    return self._send_json(502, {'error': 'no port recorded in session'})
+                log.info('[stream-proxy] local %s → localhost:%s%s', sid, b_port, rest)
+                return self._stream_proxy('127.0.0.1', b_port, rest)
+
+            elif provider == 'hyperv':
+                b_host = session.get('ip', '10.0.0.19')
+                # Phase 2b: moonlight-web-stream sidecar → update moonlight_port
+                # when container is running.  For now, proxy to Sunshine's HTTP
+                # port (47990) so it fails with a connection error, not a 404.
+                b_port = (session.get('moonlight_port')
+                          or session.get('sunshine_http_port', 47990))
+                log.info('[stream-proxy] hyperv %s → %s:%s%s', sid, b_host, b_port, rest)
+                return self._stream_proxy(b_host, b_port, rest)
+
+            else:
+                return self._send_json(501, {
+                    'error': f'stream proxy not implemented for provider: {provider}',
+                })
 
         return self._send_json(404, {'error': 'not found'})
 
