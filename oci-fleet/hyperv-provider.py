@@ -47,7 +47,7 @@ class HyperVProvider:
         self.vm_prefix = self.config.get("vm_prefix", "CafresoVM")
         self.sunshine_timeout = self.config.get("sunshine_timeout", 120)
         self.moonlight_web_image = self.config.get(
-            "moonlight_web_image", "ghcr.io/games-on-whales/moonlight-web:latest"
+            "moonlight_web_image", "mrcreativ3001/moonlight-web-stream:latest"
         )
 
     # ── PowerShell execution ─────────────────────────────────────────────────
@@ -445,6 +445,92 @@ class HyperVProvider:
         log.info("GPU-P %s assigned to %s", partition_pct, vm_name)
         return True
 
+    # ── WSL / Docker routing helpers ─────────────────────────────────────────
+
+    def _docker_prefix(self):
+        """
+        Return the command prefix needed to invoke Docker.
+
+        On ASERVER (Windows Server with Docker Desktop CLI but engine in WSL):
+          - docker.exe is on PATH but can't reach the engine
+            (Docker Desktop Linux engine pipe isn't running)
+          - The working engine lives in WSL Ubuntu
+          → prefix = ["wsl", "-d", "Ubuntu", "--user", "root", "--"]
+
+        On a standard Linux host (Docker daemon running natively):
+          → prefix = []  (docker is directly usable)
+
+        Detection: try `docker info` with a 3-second timeout.
+        If it fails (returncode != 0 or times out), fall back to WSL.
+        """
+        try:
+            r = subprocess.run(
+                ["docker", "info"],
+                capture_output=True, timeout=3,
+            )
+            if r.returncode == 0:
+                return []   # native docker works
+        except Exception:
+            pass
+        # Fall back to WSL-routed docker
+        wsl_distro = self.config.get("wsl_distro", "Ubuntu")
+        log.debug("Docker engine not found on host; routing via WSL (%s)", wsl_distro)
+        return ["wsl", "-d", wsl_distro, "--user", "root", "--"]
+
+    def _wsl_ip(self):
+        """Return the WSL eth0 IP (e.g. '172.30.128.1').  Returns None on failure."""
+        wsl_distro = self.config.get("wsl_distro", "Ubuntu")
+        try:
+            r = subprocess.run(
+                ["wsl", "-d", wsl_distro, "--", "hostname", "-I"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                parts = r.stdout.strip().split()
+                return parts[0] if parts else None
+        except Exception as e:
+            log.warning("Could not get WSL IP: %s", e)
+        return None
+
+    def _add_portproxy(self, windows_port, wsl_port, wsl_ip):
+        """
+        Add a Windows portproxy: 127.0.0.1:{windows_port} → {wsl_ip}:{wsl_port}.
+
+        This bridges Windows-side callers (fleet-api's _stream_proxy) to a
+        container running inside WSL whose port is not automatically forwarded.
+        """
+        cmd = [
+            "netsh", "interface", "portproxy",
+            "add", "v4tov4",
+            f"listenaddress=127.0.0.1",
+            f"listenport={windows_port}",
+            f"connectaddress={wsl_ip}",
+            f"connectport={wsl_port}",
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=10)
+            if r.returncode != 0:
+                log.warning("portproxy add failed (rc=%d): %s",
+                            r.returncode, r.stderr.decode(errors='replace').strip()[:200])
+            else:
+                log.info("portproxy: 127.0.0.1:%d → %s:%d", windows_port, wsl_ip, wsl_port)
+        except Exception as e:
+            log.warning("portproxy add error: %s", e)
+
+    def _remove_portproxy(self, windows_port):
+        """Remove the Windows portproxy on 127.0.0.1:{windows_port}."""
+        cmd = [
+            "netsh", "interface", "portproxy",
+            "delete", "v4tov4",
+            "listenaddress=127.0.0.1",
+            f"listenport={windows_port}",
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=10)
+            log.info("portproxy removed: 127.0.0.1:%d", windows_port)
+        except Exception as e:
+            log.warning("portproxy remove error: %s", e)
+
     # ── Moonlight-web-stream sidecar ─────────────────────────────────────────
 
     def start_moonlight_sidecar(self, session_id, vm_ip, sunshine_port=47989,
@@ -452,13 +538,17 @@ class HyperVProvider:
                                  turn_user="", turn_cred=""):
         """
         Start a moonlight-web-stream Docker container for a session.
-        This container bridges Sunshine (inside the VM) to WebRTC (browser).
 
-        Uses mrcreativ3001/moonlight-web-stream which exposes:
+        Image: mrcreativ3001/moonlight-web-stream
+        The container bridges Sunshine (inside the Hyper-V VM) to WebRTC
+        (browser), exposing:
           - TCP signaling_port: web UI + WebSocket signaling
-          - UDP 40000-40100: WebRTC media relay
-        The Sunshine host is configured via the web UI on first launch,
-        or pre-paired through the container's config volume.
+          - UDP 40000-40999 range: WebRTC media relay
+
+        On ASERVER (Docker engine in WSL, no Docker Desktop engine):
+          - Container is started via `wsl -d Ubuntu -- docker run ...`
+          - A Windows portproxy is added so that fleet-api (Windows process)
+            can reach 127.0.0.1:{signaling_port} → WSL container
 
         Returns (success, container_name, signaling_port).
         """
@@ -469,33 +559,27 @@ class HyperVProvider:
         )
 
         # Allocate a UDP media port range for this session
-        # Each session gets 20 ports from the 40000-40999 range
         port_hash = hash(session_id) % 50  # 0-49
         udp_start = 40000 + (port_hash * 20)
-        udp_end = udp_start + 19
+        udp_end   = udp_start + 19
+
+        prefix = self._docker_prefix()
 
         # Build docker run command.
-        # Env var names match ghcr.io/games-on-whales/moonlight-web image:
-        #   SUNSHINE_HOST / SUNSHINE_PORT — where Sunshine is running (VM)
-        #   PORT                          — container's own HTTP/WS listen port
-        #   TURN_SERVER / TURN_USERNAME / TURN_CREDENTIAL — ICE relay
-        cmd = [
+        # mrcreativ3001/moonlight-web-stream env vars:
+        #   WEBRTC_NAT_1TO1_HOST — the VM IP (for ICE host candidates)
+        #   Port mapping: {signaling_port}:8080 (container always listens on 8080)
+        cmd = prefix + [
             "docker", "run", "-d",
             "--name", container_name,
             "--restart", "unless-stopped",
-            # Sunshine target (inside VM)
-            "-e", f"SUNSHINE_HOST={vm_ip}",
-            "-e", f"SUNSHINE_PORT={sunshine_port}",
-            # moonlight-web listens on 8080 internally; signaling_port is the host port
-            "-e", "PORT=8080",
-            "-e", "MOONLIGHT_WS_FALLBACK=true",
-            "-e", "STUN_SERVER=stun:stun.l.google.com:19302",
+            "-e", f"WEBRTC_NAT_1TO1_HOST={vm_ip}",
             "-p", f"{signaling_port}:8080",
             "-p", f"{udp_start}-{udp_end}:{udp_start}-{udp_end}/udp",
         ]
         if turn_url:
             cmd += [
-                "-e", f"TURN_SERVER={turn_url}",
+                "-e", f"TURN_URL={turn_url}",
                 "-e", f"TURN_USERNAME={turn_user}",
                 "-e", f"TURN_CREDENTIAL={turn_cred}",
             ]
@@ -503,18 +587,8 @@ class HyperVProvider:
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60,
+                cmd, capture_output=True, text=True, timeout=90,
             )
-            if result.returncode != 0:
-                # If network doesn't exist, create it and retry
-                if "network cafresoai-streaming not found" in (result.stderr or ""):
-                    subprocess.run(
-                        ["docker", "network", "create", "cafresoai-streaming"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-                    result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=60,
-                    )
 
             if result.returncode != 0:
                 err = result.stderr.strip() or result.stdout.strip()
@@ -522,29 +596,57 @@ class HyperVProvider:
                 return False, container_name, signaling_port
 
             log.info("Moonlight sidecar started: %s", container_name)
+
+            # ── WSL portproxy: make the container's port reachable on Windows ──
+            # If docker ran through WSL, the container's port is bound on WSL's
+            # network interface (e.g. 172.30.x.x) — NOT on Windows 127.0.0.1.
+            # We add a portproxy so fleet-api can reach 127.0.0.1:{signaling_port}.
+            if prefix:  # only needed when routing through WSL
+                wsl_ip = self._wsl_ip()
+                if wsl_ip:
+                    self._add_portproxy(signaling_port, signaling_port, wsl_ip)
+                else:
+                    log.warning(
+                        "Could not get WSL IP — stream proxy may not reach container on port %d",
+                        signaling_port,
+                    )
+
             return True, container_name, signaling_port
 
-        except Exception as e:
+        except Exception:
             log.exception("Error starting moonlight sidecar")
             return False, container_name, signaling_port
 
     def stop_moonlight_sidecar(self, session_id):
-        """Stop and remove the moonlight-web-stream container for a session."""
+        """Stop and remove the moonlight-web-stream container for a session,
+        and clean up the Windows portproxy if one was created."""
         container_name = f"cafresoai-moonlight-{session_id[:12]}"
         log.info("Stopping moonlight sidecar: %s", container_name)
+
+        prefix = self._docker_prefix()
+
         try:
             subprocess.run(
-                ["docker", "stop", container_name],
+                prefix + ["docker", "stop", container_name],
                 capture_output=True, text=True, timeout=15,
             )
             subprocess.run(
-                ["docker", "rm", "-f", container_name],
+                prefix + ["docker", "rm", "-f", container_name],
                 capture_output=True, text=True, timeout=15,
             )
-            return True
+            success = True
         except Exception as e:
             log.warning("Error stopping moonlight sidecar %s: %s", container_name, e)
-            return False
+            success = False
+
+        # Clean up the portproxy for this container's signaling port.
+        # We need to know the port; derive it the same way as start.
+        import hashlib
+        h = int(hashlib.md5(session_id.encode()).hexdigest()[:8], 16)
+        signaling_port = 8500 + (h % 500)
+        self._remove_portproxy(signaling_port)
+
+        return success
 
     def _allocate_signaling_port(self, session_id):
         """
@@ -571,7 +673,8 @@ class HyperVProvider:
             "recordings_path", "/var/lib/cafresoai/recordings"
         )
 
-        cmd = [
+        prefix = self._docker_prefix()
+        cmd = prefix + [
             "docker", "run", "-d",
             "--name", container_name,
             "-e", f"SESSION_ID={session_id}",
@@ -603,13 +706,14 @@ class HyperVProvider:
         """Stop the recording sidecar for a session (sends SIGTERM for clean MP4)."""
         container_name = f"cafresoai-recorder-{session_id[:12]}"
         log.info("Stopping recorder: %s", container_name)
+        prefix = self._docker_prefix()
         try:
             subprocess.run(
-                ["docker", "stop", "-t", "10", container_name],
+                prefix + ["docker", "stop", "-t", "10", container_name],
                 capture_output=True, text=True, timeout=20,
             )
             subprocess.run(
-                ["docker", "rm", "-f", container_name],
+                prefix + ["docker", "rm", "-f", container_name],
                 capture_output=True, text=True, timeout=10,
             )
             return True
