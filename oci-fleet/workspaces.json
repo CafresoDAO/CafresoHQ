@@ -9,15 +9,25 @@
     "vm_template": "Dev1",
     "gold_checkpoint": "Dev1",
     "gold_ip": "10.0.0.19",
-    "resources": { "vcpus": 4, "memory_gb": 8 },
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 8
+    },
     "persistent": true,
-    "stream_protocol": "webrtc",
+    "stream_protocol": "iframe",
     "sunshine_port": 47989,
     "sunshine_installed": true,
-    "allowed_principals": [],
-    "tags": ["popular"],
+    "allowed_principals": [
+      "x43sf-z3ak5-cu6m6-lzr5h-2mdki-ehjtz-emvgy-7d4aj-ygypw-kbla7-5qe",
+      "zt72s-cfwlg-kz4bi-mbvpb-irxtk-jyq7p-q6i2x-ijzuh-krh27-zyj4t-aqe",
+      "rc62u-qypnw-bbkkp-d56wk-tnzaq-vwhi2-cqqay-q56hw-gsqbp-6wegl-jae"
+    ],
+    "tags": [
+      "popular"
+    ],
     "enabled": true,
-    "sort_order": -1
+    "sort_order": -1,
+    "guacamole_url": "https://hq.cafreso.com/guacamole/"
   },
   {
     "id": "cafresoai-hq",
@@ -27,11 +37,16 @@
     "icon": "hq",
     "provider": "oci",
     "image": "cafresoai-serve:latest",
-    "resources": { "ocpus": 1, "memory_gb": 6 },
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 6
+    },
     "persistent": true,
     "stream_protocol": "iframe",
     "stream_path": "/hq.html",
-    "tags": ["popular"],
+    "tags": [
+      "popular"
+    ],
     "enabled": true,
     "sort_order": 0
   },
@@ -46,7 +61,9 @@
     "resources": {},
     "persistent": false,
     "stream_protocol": "iframe",
-    "tags": ["popular"],
+    "tags": [
+      "popular"
+    ],
     "enabled": true,
     "sort_order": 1
   },
@@ -90,12 +107,18 @@
     "vm_template": "Dev1",
     "gold_checkpoint": "CafresoAI-Gold",
     "gold_ip": "10.0.0.19",
-    "resources": { "vcpus": 4, "memory_gb": 8, "gpu_partition": "none" },
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 8,
+      "gpu_partition": "none"
+    },
     "persistent": true,
     "stream_protocol": "webrtc",
     "sunshine_port": 47989,
     "sunshine_installed": true,
-    "tags": ["popular"],
+    "tags": [
+      "popular"
+    ],
     "enabled": true,
     "sort_order": 4
   },
@@ -109,7 +132,11 @@
     "vm_template": "Dev1",
     "gold_checkpoint": "CafresoAI-Gold-GPU",
     "gold_ip": "10.0.0.19",
-    "resources": { "vcpus": 8, "memory_gb": 16, "gpu_partition": "100%" },
+    "resources": {
+      "vcpus": 8,
+      "memory_gb": 16,
+      "gpu_partition": "100%"
+    },
     "persistent": true,
     "stream_protocol": "webrtc",
     "sunshine_port": 47989,
@@ -174,7 +201,10 @@
     "icon": "notebook",
     "provider": "oci",
     "image": "cafresoai-jupyter:latest",
-    "resources": { "ocpus": 1, "memory_gb": 4 },
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 4
+    },
     "persistent": true,
     "stream_protocol": "iframe",
     "stream_path": "/",
@@ -190,7 +220,10 @@
     "icon": "linux",
     "provider": "oci",
     "image": "cafresoai-linux-desktop:latest",
-    "resources": { "ocpus": 2, "memory_gb": 8 },
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
     "persistent": false,
     "stream_protocol": "webrtc",
     "selkies_port": 8080,
@@ -206,7 +239,10 @@
     "icon": "globe",
     "provider": "oci",
     "image": "cafresoai-chrome-kiosk:latest",
-    "resources": { "ocpus": 1, "memory_gb": 4 },
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 4
+    },
     "persistent": false,
     "stream_protocol": "webrtc",
     "selkies_port": 8080,
@@ -222,7 +258,11 @@
     "icon": "code",
     "provider": "hyperv",
     "vm_template": "win11-cursor-gold",
-    "resources": { "vcpus": 4, "memory_gb": 16, "gpu_partition": "25%" },
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 16,
+      "gpu_partition": "25%"
+    },
     "persistent": true,
     "stream_protocol": "webrtc",
     "sunshine_port": 47989,
@@ -238,7 +278,10 @@
     "icon": "code",
     "provider": "oci",
     "image": "cafresoai-vscode:latest",
-    "resources": { "ocpus": 2, "memory_gb": 8 },
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
     "persistent": true,
     "stream_protocol": "iframe",
     "stream_path": "/",
@@ -254,7 +297,10 @@
     "icon": "linux",
     "provider": "oci",
     "image": "cafresoai-kali:latest",
-    "resources": { "ocpus": 2, "memory_gb": 8 },
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
     "persistent": false,
     "stream_protocol": "webrtc",
     "selkies_port": 8080,
@@ -270,7 +316,10 @@
     "icon": "terminal",
     "provider": "oci",
     "image": "cafresoai-serve:latest",
-    "resources": { "ocpus": 1, "memory_gb": 6 },
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 6
+    },
     "persistent": true,
     "stream_protocol": "iframe",
     "stream_path": "/hq.html",

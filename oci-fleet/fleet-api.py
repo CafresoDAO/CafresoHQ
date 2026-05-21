@@ -26,16 +26,16 @@ Run
 For production, run behind a TLS terminator (OCI Load Balancer, Caddy, etc.)
 and pass the secret to the SvelteKit shell via environment.
 """
+import contextlib
 import http.server
 import json
 import logging
 import os
 import pathlib
 import re
+import socket
 import subprocess
 import sys
-import contextlib
-import socket
 import threading
 import time
 import urllib.parse
@@ -359,9 +359,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _stream_proxy(self, host: str, port: int, path: str):
         """Low-level TCP splice proxy.
         Forwards the current HTTP/WebSocket request to (host:port), rewriting
-        the path and Host header.  Handles both plain HTTP responses and
-        WebSocket 101-upgrade transparently — no WebSocket library needed.
-        Called from do_GET for /stream/{sid}/... paths.
+        the path and Host header. Handles both plain HTTP responses and the
+        WebSocket 101-upgrade transparently — no WebSocket library needed,
+        once headers are forwarded the rest is pure byte forwarding.
+        Called from do_GET when the path is /stream/{sid}/...
         """
         try:
             backend = socket.create_connection((host, port), timeout=5)
@@ -371,7 +372,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         # Reconstruct the request line + headers and forward to backend.
         # BaseHTTPRequestHandler has already consumed the request line + headers
-        # from self.rfile, so we rebuild them from the parsed fields.
+        # from self.rfile, so we rebuild them from parsed fields.
         req_lines = [f'{self.command} {path} {self.protocol_version}\r\n']
         for k, v in self.headers.items():
             if k.lower() == 'host':
@@ -391,7 +392,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send_json(502, {'error': f'backend write error: {e}'})
 
         # Splice: two threads copy bytes in opposite directions until either
-        # side closes.  Works identically for HTTP and WebSocket (101 upgrade).
+        # side closes. Works identically for HTTP and WebSocket (101 upgrade).
         client = self.connection
         stop   = threading.Event()
 
@@ -409,9 +410,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with contextlib.suppress(OSError):
                     dst.shutdown(socket.SHUT_WR)
 
-        t = threading.Thread(target=_copy, args=(backend, client, 'b→c'), daemon=True)
+        t = threading.Thread(target=_copy, args=(backend, client, 'b->c'), daemon=True)
         t.start()
-        _copy(client, backend, 'c→b')   # blocks until client closes
+        _copy(client, backend, 'c->b')   # blocks until client closes
         stop.set()
         t.join(timeout=2)
         with contextlib.suppress(OSError):
@@ -574,13 +575,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == '/admin/verify':
             return self._admin_verify()
 
-        # ── Stream proxy (/stream/{sid}/...) ──────────────────────────────────
+        # ── Guacamole desktop proxy (/guacamole/...) ──────────────────────
+        # Plain pass-through to the local Guacamole web app for hyperv
+        # workspaces. Auth is supplied via a token already baked into the
+        # iframe URL by _hyperv_provision_worker (pre-fetched at session
+        # launch using credentials in user-mapping.xml); no header injection
+        # needed because the file-auth provider's connections only surface
+        # when the token came from that same provider.
+        if u.path.startswith('/guacamole/'):
+            guac_path = u.path + (('?' + u.query) if u.query else '')
+            return self._stream_proxy('127.0.0.1', 8484, guac_path)
+
+        # ── Stream proxy (/stream/{sid}/...) ──────────────────────────────
         # Routes browser traffic to the local streaming backend:
-        #   local   → ttyd WebSocket terminal on localhost:{port}
-        #   hyperv  → Sunshine HTTP/signaling on {ip}:{port}
-        #             (WebRTC via moonlight-web-stream sidecar — Phase 2b)
+        #   local    → ttyd WebSocket terminal on localhost:{port}
+        #   hyperv   → 302 redirect to the per-session Guacamole URL
         if u.path.startswith('/stream/'):
-            tail  = u.path[len('/stream/'):]          # 'ses_abc/ws' or 'ses_abc/'
+            tail  = u.path[len('/stream/'):]           # 'ses_abc/ws' or 'ses_abc/'
             slash = tail.find('/')
             if slash < 0:
                 sid  = tail
@@ -609,22 +620,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 b_port = session.get('port')
                 if not b_port:
                     return self._send_json(502, {'error': 'no port recorded in session'})
-                log.info('[stream-proxy] local %s → localhost:%s%s', sid, b_port, rest)
+                log.info('[stream-proxy] local session %s -> localhost:%s%s', sid, b_port, rest)
                 return self._stream_proxy('127.0.0.1', b_port, rest)
 
             elif provider == 'hyperv':
+                # Phase 2c: redirect to the per-session Guacamole URL. The
+                # token was minted by the worker against the local Guacamole
+                # API (file-auth, user 'anthony') and is valid for ~60 min.
+                guac_url   = session.get('guacamole_url', '')
+                guac_token = session.get('guacamole_token', '')
+                if guac_url:
+                    sep = '&' if '?' in guac_url else '?'
+                    target_url = f"{guac_url}{sep}token={guac_token}" if guac_token else guac_url
+                    body = (
+                        f'<!doctype html><meta http-equiv="refresh" content="0;url={target_url}">'
+                        f'<p>Connecting to <a href="{target_url}">desktop</a>...</p>'
+                    ).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(body)
+                    log.info('[stream-proxy] hyperv %s -> redirect %s', sid, target_url)
+                    return
+                # Phase 2d fallback: moonlight/Sunshine direct splice.
                 b_host = session.get('ip', '10.0.0.19')
-                # Phase 2b: moonlight-web-stream sidecar → update moonlight_port
-                # when container is running.  For now, proxy to Sunshine's HTTP
-                # port (47990) so it fails with a connection error, not a 404.
                 b_port = (session.get('moonlight_port')
                           or session.get('sunshine_http_port', 47990))
-                log.info('[stream-proxy] hyperv %s → %s:%s%s', sid, b_host, b_port, rest)
+                log.info('[stream-proxy] hyperv %s -> %s:%s%s', sid, b_host, b_port, rest)
                 return self._stream_proxy(b_host, b_port, rest)
 
             else:
                 return self._send_json(501, {
-                    'error': f'stream proxy not implemented for provider: {provider}',
+                    'error': f'stream proxy not implemented for provider: {provider}'
                 })
 
         return self._send_json(404, {'error': 'not found'})
@@ -1605,6 +1634,24 @@ def _session_provision_worker(session_id: str, principal: str, template: dict):
         log.warning(f'[session:{session_id}] caddy reload non-fatal: {msg}')
 
 
+def _fetch_guacamole_token(username: str, password: str,
+                           url: str = 'http://127.0.0.1:8484/guacamole/api/tokens',
+                           timeout: int = 5) -> str:
+    """Authenticate to the local Guacamole API and return a session token.
+    Returns '' on any failure (we degrade gracefully — user sees login page).
+    """
+    import urllib.request, urllib.parse
+    try:
+        data = urllib.parse.urlencode({'username': username, 'password': password}).encode()
+        req  = urllib.request.Request(url, data=data, method='POST')
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+            return payload.get('authToken', '')
+    except Exception as exc:
+        log.warning('guacamole token fetch failed: %s', exc)
+        return ''
+
+
 # ── Hyper-V provision worker ────────────────────────────────────────────────
 def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
     """Background worker: create a Hyper-V VM for a workspace session.
@@ -1697,6 +1744,20 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
                 'credential': turn_cred,
             })
 
+        # Phase 2c: if the template has guacamole_url, pre-fetch a token
+        # against the local Guacamole API (using the 'anthony' user defined
+        # in user-mapping.xml) and bake it into stream_url so the iframe
+        # auto-logs-in. Falls back to the bare URL (Guacamole shows its own
+        # login page) if the token fetch fails.
+        tmpl_guac_url = (template.get('guacamole_url') or '') if isinstance(template, dict) else ''
+        guac_token    = ''
+        if tmpl_guac_url:
+            guac_token = _fetch_guacamole_token('anthony', 'unused')
+            if guac_token:
+                log.info(f'[hyperv:{session_id}] guacamole token minted ({guac_token[:8]}...)')
+            else:
+                log.warning(f'[hyperv:{session_id}] guacamole token fetch failed — iframe will show login page')
+
         session = _load_sessions().get(session_id, {})
         session.update({
             'status':          'running',
@@ -1709,6 +1770,10 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
             'turn_servers':    turn_servers,
             'region':          'local',
             'last_accessed':   _dt.datetime.utcnow().isoformat() + 'Z',
+            # Phase 2c additions — present only when the template opts in.
+            'guacamole_url':    tmpl_guac_url,
+            'guacamole_token':  guac_token,
+            'stream_protocol':  'iframe' if tmpl_guac_url else session.get('stream_protocol', 'webrtc'),
         })
         _save_session(session_id, session)
         log.info(f'[hyperv:{session_id}] session running → {stream_url}')

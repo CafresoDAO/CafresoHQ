@@ -35,6 +35,11 @@ __PRIMARY_HOST__ {
     }
 
     # Workspace portal API — template catalog + session lifecycle
+    # Guacamole desktop streaming proxy - RDP to HTML5 for Hyper-V workspaces
+    handle /guacamole/* {
+        reverse_proxy localhost:8080
+    }
+
     handle /workspaces/* {
         reverse_proxy localhost:8080
     }
@@ -77,6 +82,11 @@ __USER_ROUTES__
     }
 
     # Workspace portal API (HTTP fallback for dev/pre-DNS)
+    # Guacamole desktop streaming proxy - RDP to HTML5 for Hyper-V workspaces
+    handle /guacamole/* {
+        reverse_proxy localhost:8080
+    }
+
     handle /workspaces/* {
         reverse_proxy localhost:8080
     }
