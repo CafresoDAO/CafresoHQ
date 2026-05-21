@@ -2,21 +2,16 @@
   {
     "id": "cafresoai-hq-local",
     "name": "CafresoHQ",
-    "description": "AI workspace streamed live from this host \u2014 Windows desktop via Sunshine.",
+    "description": "AI workspace streamed live from this host — Windows desktop via Sunshine.",
     "category": "ai",
     "icon": "hq",
     "provider": "hyperv",
-    "vm_template": "Dev1",
-    "gold_checkpoint": "Dev1",
-    "gold_ip": "10.0.0.19",
     "resources": {
       "vcpus": 4,
       "memory_gb": 8
     },
     "persistent": true,
-    "stream_protocol": "webrtc",
-    "sunshine_port": 47989,
-    "sunshine_installed": true,
+    "stream_protocol": "iframe",
     "tags": [
       "popular"
     ],
@@ -26,7 +21,7 @@
   {
     "id": "cafresoai-hq",
     "name": "CafresoHQ",
-    "description": "Your personal AI workspace \u2014 isolated cloud container on OCI.",
+    "description": "Your personal AI workspace — isolated cloud container on OCI.",
     "category": "ai",
     "icon": "hq",
     "provider": "oci",
@@ -98,9 +93,6 @@
     "category": "desktops",
     "icon": "monitor",
     "provider": "hyperv",
-    "vm_template": "Dev1",
-    "gold_checkpoint": "CafresoAI-Gold",
-    "gold_ip": "10.0.0.19",
     "resources": {
       "vcpus": 4,
       "memory_gb": 8,
@@ -108,8 +100,6 @@
     },
     "persistent": true,
     "stream_protocol": "webrtc",
-    "sunshine_port": 47989,
-    "sunshine_installed": true,
     "tags": [
       "popular"
     ],
@@ -123,9 +113,6 @@
     "category": "desktops",
     "icon": "gamepad",
     "provider": "hyperv",
-    "vm_template": "Dev1",
-    "gold_checkpoint": "CafresoAI-Gold-GPU",
-    "gold_ip": "10.0.0.19",
     "resources": {
       "vcpus": 8,
       "memory_gb": 16,
@@ -133,8 +120,6 @@
     },
     "persistent": true,
     "stream_protocol": "webrtc",
-    "sunshine_port": 47989,
-    "sunshine_installed": true,
     "tags": [],
     "enabled": false,
     "sort_order": 5
@@ -251,7 +236,6 @@
     "category": "ai",
     "icon": "code",
     "provider": "hyperv",
-    "vm_template": "win11-cursor-gold",
     "resources": {
       "vcpus": 4,
       "memory_gb": 16,
@@ -259,7 +243,6 @@
     },
     "persistent": true,
     "stream_protocol": "webrtc",
-    "sunshine_port": 47989,
     "tags": [],
     "enabled": false,
     "sort_order": 17
@@ -305,7 +288,7 @@
   {
     "id": "claude-code",
     "name": "Claude Code (Cloud)",
-    "description": "Agentic coding assistant in a terminal \u2014 OCI cloud fallback.",
+    "description": "Agentic coding assistant in a terminal — OCI cloud fallback.",
     "category": "ai",
     "icon": "terminal",
     "provider": "oci",
