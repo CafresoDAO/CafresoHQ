@@ -624,9 +624,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._stream_proxy('127.0.0.1', b_port, rest)
 
             elif provider == 'hyperv':
-                # Phase 2c: redirect to the per-session Guacamole URL. The
-                # token was minted by the worker against the local Guacamole
-                # API (file-auth, user 'anthony') and is valid for ~60 min.
+                # Phase 2c compat: if a guacamole_url is stored on the session
+                # (legacy sessions launched before Phase 2d), redirect there.
                 guac_url   = session.get('guacamole_url', '')
                 guac_token = session.get('guacamole_token', '')
                 if guac_url:
@@ -642,13 +641,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._cors()
                     self.end_headers()
                     self.wfile.write(body)
-                    log.info('[stream-proxy] hyperv %s -> redirect %s', sid, target_url)
+                    log.info('[stream-proxy] hyperv %s -> guacamole redirect %s', sid, target_url)
                     return
-                # Phase 2d fallback: moonlight/Sunshine direct splice.
+
+                # Phase 2d: moonlight-web-stream sidecar proxy.
+                # The sidecar container runs on *this host* (ASERVER), so the
+                # proxy destination is always 127.0.0.1:{moonlight_port}.
+                # Only fall back to the VM's Sunshine HTTP port if no sidecar
+                # is running (e.g. during pool-warmup or first-launch race).
+                ml_port = session.get('moonlight_port')
+                if ml_port:
+                    log.info('[stream-proxy] hyperv %s -> moonlight@localhost:%s%s',
+                             sid, ml_port, rest)
+                    return self._stream_proxy('127.0.0.1', ml_port, rest)
+
+                # Last resort: proxy raw to Sunshine HTTP port on the VM.
                 b_host = session.get('ip', '10.0.0.19')
-                b_port = (session.get('moonlight_port')
-                          or session.get('sunshine_http_port', 47990))
-                log.info('[stream-proxy] hyperv %s -> %s:%s%s', sid, b_host, b_port, rest)
+                b_port = session.get('sunshine_http_port', 47990)
+                log.info('[stream-proxy] hyperv %s -> sunshine@%s:%s%s', sid, b_host, b_port, rest)
                 return self._stream_proxy(b_host, b_port, rest)
 
             else:
@@ -1744,19 +1754,28 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
                 'credential': turn_cred,
             })
 
-        # Phase 2c: if the template has guacamole_url, pre-fetch a token
-        # against the local Guacamole API (using the 'anthony' user defined
-        # in user-mapping.xml) and bake it into stream_url so the iframe
-        # auto-logs-in. Falls back to the bare URL (Guacamole shows its own
-        # login page) if the token fetch fails.
+        # ── Determine stream mode: Guacamole (Phase 2c) or moonlight-web (Phase 2d) ──
+        # Phase 2c: template has guacamole_url → pre-fetch a Guacamole auth token
+        # and redirect the iframe to Guacamole's RDP viewer.
+        # Phase 2d: no guacamole_url → moonlight-web container serves the stream
+        # HTML page; the browser loads it via iframe and WebRTC connects directly
+        # to Sunshine inside the VM (works on LAN or with TURN for external).
         tmpl_guac_url = (template.get('guacamole_url') or '') if isinstance(template, dict) else ''
         guac_token    = ''
         if tmpl_guac_url:
+            # Phase 2c path: Guacamole token pre-fetch
             guac_token = _fetch_guacamole_token('anthony', 'unused')
             if guac_token:
                 log.info(f'[hyperv:{session_id}] guacamole token minted ({guac_token[:8]}...)')
             else:
                 log.warning(f'[hyperv:{session_id}] guacamole token fetch failed — iframe will show login page')
+            final_protocol = 'iframe'
+        else:
+            # Phase 2d path: moonlight-web iframe
+            # stream_protocol='iframe'; the <iframe> loads the moonlight-web HTML
+            # from /stream/{sid}/ (proxied by fleet-api to the sidecar container).
+            final_protocol = 'iframe'
+            log.info(f'[hyperv:{session_id}] moonlight-web sidecar on port {signaling_port}')
 
         session = _load_sessions().get(session_id, {})
         session.update({
@@ -1770,10 +1789,10 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
             'turn_servers':    turn_servers,
             'region':          'local',
             'last_accessed':   _dt.datetime.utcnow().isoformat() + 'Z',
-            # Phase 2c additions — present only when the template opts in.
+            # Guacamole fields — populated only in Phase 2c path.
             'guacamole_url':    tmpl_guac_url,
             'guacamole_token':  guac_token,
-            'stream_protocol':  'iframe' if tmpl_guac_url else session.get('stream_protocol', 'webrtc'),
+            'stream_protocol':  final_protocol,
         })
         _save_session(session_id, session)
         log.info(f'[hyperv:{session_id}] session running → {stream_url}')

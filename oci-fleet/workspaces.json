@@ -26,8 +26,7 @@
       "popular"
     ],
     "enabled": true,
-    "sort_order": -1,
-    "guacamole_url": "https://hq.cafreso.com/guacamole/"
+    "sort_order": -1
   },
   {
     "id": "cafresoai-hq",

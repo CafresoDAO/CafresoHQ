@@ -47,7 +47,7 @@ class HyperVProvider:
         self.vm_prefix = self.config.get("vm_prefix", "CafresoVM")
         self.sunshine_timeout = self.config.get("sunshine_timeout", 120)
         self.moonlight_web_image = self.config.get(
-            "moonlight_web_image", "mrcreativ3001/moonlight-web-stream:latest"
+            "moonlight_web_image", "ghcr.io/games-on-whales/moonlight-web:latest"
         )
 
     # ── PowerShell execution ─────────────────────────────────────────────────
@@ -474,18 +474,28 @@ class HyperVProvider:
         udp_start = 40000 + (port_hash * 20)
         udp_end = udp_start + 19
 
-        # Build docker run command
+        # Build docker run command.
+        # Env var names match ghcr.io/games-on-whales/moonlight-web image:
+        #   SUNSHINE_HOST / SUNSHINE_PORT — where Sunshine is running (VM)
+        #   PORT                          — container's own HTTP/WS listen port
+        #   TURN_SERVER / TURN_USERNAME / TURN_CREDENTIAL — ICE relay
         cmd = [
             "docker", "run", "-d",
             "--name", container_name,
             "--restart", "unless-stopped",
-            "-e", f"WEBRTC_NAT_1TO1_HOST={vm_ip}",
+            # Sunshine target (inside VM)
+            "-e", f"SUNSHINE_HOST={vm_ip}",
+            "-e", f"SUNSHINE_PORT={sunshine_port}",
+            # moonlight-web listens on 8080 internally; signaling_port is the host port
+            "-e", "PORT=8080",
+            "-e", "MOONLIGHT_WS_FALLBACK=true",
+            "-e", "STUN_SERVER=stun:stun.l.google.com:19302",
             "-p", f"{signaling_port}:8080",
             "-p", f"{udp_start}-{udp_end}:{udp_start}-{udp_end}/udp",
         ]
         if turn_url:
             cmd += [
-                "-e", f"TURN_URL={turn_url}",
+                "-e", f"TURN_SERVER={turn_url}",
                 "-e", f"TURN_USERNAME={turn_user}",
                 "-e", f"TURN_CREDENTIAL={turn_cred}",
             ]
