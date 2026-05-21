@@ -114,8 +114,18 @@ export async function getJob(jobId) {
 }
 
 /**
+ * @typedef {Object} ProvisionWaitOptions
+ * @property {(job: any) => void} [onUpdate]
+ * @property {number} [pollMs]
+ * @property {number} [maxWaitMs]
+ */
+
+/**
  * Provision and poll until 'ready' or 'error'. Calls onUpdate(job) on each tick.
  * Throws on error or timeout.
+ *
+ * @param {string} principal
+ * @param {ProvisionWaitOptions} [options]
  */
 export async function provisionAndWait(principal, {
   onUpdate, pollMs = 5_000, maxWaitMs = 600_000

@@ -2,68 +2,351 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --brand-glow:        hsl(28 78% 48% / 0.45);
-  --grid-line:         hsl(220 18% 14% / 0.6);
-  --card-bg:           hsl(220 22% 10% / 0.85);
-  --card-border:       hsl(220 18% 18%);
-  --code-bg:           hsl(220 25% 6%);
-  --transition-fast:   150ms cubic-bezier(0.4, 0, 0.2, 1);
+  color-scheme: light;
+
+  --brand-50: 27 100% 97%;
+  --brand-100: 28 94% 92%;
+  --brand-200: 27 88% 82%;
+  --brand-300: 25 83% 68%;
+  --brand-400: 22 80% 58%;
+  --brand-500: 20 76% 52%;
+  --brand-600: 18 72% 43%;
+  --brand-700: 16 67% 34%;
+  --brand-800: 15 62% 24%;
+  --brand-900: 14 58% 16%;
+
+  --ink-50: 25 25% 9%;
+  --ink-100: 25 22% 14%;
+  --ink-200: 26 18% 24%;
+  --ink-300: 27 15% 36%;
+  --ink-400: 28 14% 48%;
+  --ink-500: 29 13% 58%;
+  --ink-600: 31 18% 76%;
+  --ink-700: 32 28% 85%;
+  --ink-800: 34 42% 91%;
+  --ink-900: 35 65% 94%;
+
+  --surface-card: hsl(38 70% 98% / 0.9);
+  --surface-card-strong: hsl(36 67% 96% / 0.82);
+  --surface-muted: hsl(34 42% 90% / 0.72);
+  --surface-wash: hsl(31 92% 88% / 0.34);
+  --surface-border: 31 28% 79%;
+  --surface-border-strong: 22 75% 55%;
+  --code-bg: hsl(40 74% 97% / 0.88);
+  --code-panel: hsl(30 39% 12%);
+  --code-fg: hsl(var(--ink-100));
+  --brand-glow: hsl(var(--brand-500) / 0.28);
+  --grid-line: hsl(31 31% 75% / 0.38);
+  --header-bg: hsl(40 72% 98% / 0.84);
+  --header-border: hsl(31 35% 82% / 0.82);
+  --card-shadow: 0 20px 70px -46px hsl(25 60% 24% / 0.5);
+  --shell-bg:
+    radial-gradient(circle at 12% -8%, hsl(25 94% 84% / 0.52), transparent 34rem),
+    radial-gradient(circle at 82% 8%, hsl(45 58% 82% / 0.46), transparent 32rem),
+    linear-gradient(135deg, hsl(32 86% 90%), hsl(45 52% 88%) 55%, hsl(36 84% 94%));
 }
 
-html, body { height: 100%; }
-body { font-feature-settings: 'cv02','cv03','cv04','cv11'; }
+.dark {
+  color-scheme: dark;
 
-/* ── Reusable component classes ────────────────────────────────────────────── */
+  --brand-50: 29 100% 96%;
+  --brand-100: 28 95% 90%;
+  --brand-200: 27 89% 79%;
+  --brand-300: 25 86% 69%;
+  --brand-400: 23 84% 60%;
+  --brand-500: 22 82% 56%;
+  --brand-600: 20 78% 46%;
+  --brand-700: 18 72% 36%;
+  --brand-800: 16 67% 26%;
+  --brand-900: 14 61% 17%;
+
+  --ink-50: 40 62% 96%;
+  --ink-100: 38 36% 90%;
+  --ink-200: 34 25% 80%;
+  --ink-300: 31 20% 70%;
+  --ink-400: 30 17% 58%;
+  --ink-500: 28 14% 43%;
+  --ink-600: 24 18% 25%;
+  --ink-700: 23 22% 16%;
+  --ink-800: 22 28% 10%;
+  --ink-900: 22 34% 6%;
+
+  --surface-card: hsl(24 28% 12% / 0.84);
+  --surface-card-strong: hsl(18 29% 9% / 0.9);
+  --surface-muted: hsl(23 24% 18% / 0.78);
+  --surface-wash: hsl(21 56% 25% / 0.22);
+  --surface-border: 23 20% 24%;
+  --surface-border-strong: 22 80% 54%;
+  --code-bg: hsl(22 29% 7% / 0.84);
+  --code-panel: hsl(22 29% 7%);
+  --code-fg: hsl(var(--ink-100));
+  --brand-glow: hsl(var(--brand-500) / 0.42);
+  --grid-line: hsl(28 20% 22% / 0.55);
+  --header-bg: hsl(22 31% 8% / 0.82);
+  --header-border: hsl(23 21% 23% / 0.92);
+  --card-shadow: 0 26px 80px -48px hsl(18 86% 54% / 0.62);
+  --shell-bg:
+    radial-gradient(circle at 6% 0%, hsl(23 78% 38% / 0.18), transparent 28rem),
+    radial-gradient(circle at 82% 16%, hsl(292 42% 22% / 0.22), transparent 30rem),
+    linear-gradient(135deg, hsl(23 38% 7%), hsl(22 30% 8%) 48%, hsl(285 24% 10%));
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  background: hsl(var(--ink-900));
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--ink-900));
+  color: hsl(var(--ink-50));
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+::selection {
+  background: hsl(var(--brand-300) / 0.42);
+}
+
 @layer components {
+  .app-shell {
+    @apply min-h-screen text-ink-50;
+    background: var(--shell-bg);
+  }
+
+  .app-shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: linear-gradient(to bottom, transparent, black 18%, black 72%, transparent);
+    opacity: 0.42;
+  }
+
+  .shell-panel {
+    background: var(--surface-card);
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
+  }
+
   .card {
-    @apply rounded-xl border border-ink-600/40 bg-ink-900/60 backdrop-blur-sm
-           shadow-[0_2px_24px_-12px_hsl(28_78%_48%_/_0.25)];
+    @apply rounded-2xl backdrop-blur-xl transition-colors duration-200;
+    background: linear-gradient(135deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
   }
+
+  .card-quiet {
+    @apply rounded-xl backdrop-blur-xl;
+    background: var(--surface-muted);
+    border: 1px solid hsl(var(--surface-border) / 0.72);
+  }
+
+  .page-kicker {
+    @apply font-mono text-xs font-semibold uppercase tracking-[0.28em] text-brand-500;
+  }
+
+  .page-title {
+    @apply font-display text-5xl font-semibold tracking-normal text-ink-50 sm:text-6xl;
+    line-height: 0.9;
+  }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
-           font-medium transition-all duration-150
-           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-ink-900;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2
+           text-sm font-semibold transition-all duration-150
+           focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2
+           focus:ring-offset-ink-900 disabled:cursor-not-allowed disabled:opacity-55;
   }
+
   .btn-primary {
-    @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400
-           focus:ring-brand-400 active:bg-brand-600
-           shadow-[0_0_0_0_var(--brand-glow)] hover:shadow-[0_0_24px_0_var(--brand-glow)];
+    @apply btn text-white active:scale-[0.99];
+    background: linear-gradient(135deg, hsl(var(--brand-400)), hsl(var(--brand-600)));
+    box-shadow: 0 14px 30px -18px var(--brand-glow), inset 0 1px 0 hsl(0 0% 100% / 0.28);
   }
+
+  .btn-primary:hover {
+    box-shadow: 0 18px 38px -16px var(--brand-glow), inset 0 1px 0 hsl(0 0% 100% / 0.34);
+  }
+
   .btn-ghost {
-    @apply btn bg-transparent text-ink-100 hover:bg-ink-800/50
-           border border-ink-600/40 hover:border-ink-400/40;
+    @apply btn text-ink-100;
+    background: hsl(var(--ink-800) / 0.36);
+    border: 1px solid hsl(var(--surface-border));
   }
-  .btn-sm { @apply px-3 py-1.5 text-sm; }
+
+  .btn-ghost:hover {
+    background: hsl(var(--ink-800) / 0.7);
+    border-color: hsl(var(--brand-500) / 0.42);
+    color: hsl(var(--ink-50));
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
 
   .input {
-    @apply w-full rounded-lg border border-ink-600/40 bg-ink-900/60
-           px-3 py-2 text-sm font-mono text-ink-50
-           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500
-           placeholder:text-ink-400;
+    @apply w-full rounded-xl px-3 py-2 text-sm font-mono text-ink-50
+           transition-colors placeholder:text-ink-400
+           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500;
+    background: var(--code-bg);
+    border: 1px solid hsl(var(--surface-border));
   }
 
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5
-           text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1
+           font-mono text-xs font-semibold uppercase tracking-[0.14em];
+    border: 1px solid transparent;
   }
-  .pill-ok    { @apply pill bg-emerald-500/15 text-emerald-300 border border-emerald-500/30; }
-  .pill-warn  { @apply pill bg-amber-500/15  text-amber-300  border border-amber-500/30; }
-  .pill-err   { @apply pill bg-rose-500/15   text-rose-300   border border-rose-500/30; }
-  .pill-idle  { @apply pill bg-ink-600/30    text-ink-200    border border-ink-600/50; }
+
+  .pill-ok {
+    @apply pill border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300;
+  }
+
+  .pill-warn {
+    @apply pill border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300;
+  }
+
+  .pill-err {
+    @apply pill border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300;
+  }
+
+  .pill-idle {
+    @apply pill text-ink-300;
+    background: hsl(var(--ink-800) / 0.55);
+    border-color: hsl(var(--surface-border));
+  }
 
   .glow-dot {
-    @apply inline-block w-2 h-2 rounded-full;
+    @apply inline-block h-2 w-2 rounded-full;
     box-shadow: 0 0 8px currentColor;
   }
 }
 
-/* ── Subtle animated grid background ───────────────────────────────────────── */
+/* ── Workspace gallery ──────────────────────────────────────────────────── */
+
+@layer components {
+  .workspace-card {
+    @apply relative flex flex-col rounded-xl p-4 transition-all duration-200;
+    background: linear-gradient(135deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
+  }
+  .workspace-card:hover {
+    border-color: hsl(var(--brand-500) / 0.4);
+    box-shadow: var(--card-shadow), 0 0 0 1px hsl(var(--brand-500) / 0.12);
+  }
+  .workspace-card-disabled {
+    @apply opacity-50 pointer-events-none select-none;
+  }
+
+  .category-pill {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1.5
+           text-xs font-semibold cursor-pointer transition-colors duration-150;
+  }
+  .category-pill-active {
+    @apply category-pill text-white;
+    background: linear-gradient(135deg, hsl(var(--brand-400)), hsl(var(--brand-600)));
+  }
+  .category-pill-inactive {
+    @apply category-pill text-ink-300;
+    background: hsl(var(--ink-800) / 0.55);
+    border: 1px solid hsl(var(--surface-border));
+  }
+  .category-pill-inactive:hover {
+    background: hsl(var(--ink-800) / 0.8);
+    color: hsl(var(--ink-100));
+  }
+
+  .provider-badge-hyperv {
+    @apply bg-blue-500/20 text-blue-300 border border-blue-500/30;
+  }
+  .provider-badge-oci {
+    @apply bg-brand-500/20 text-brand-300 border border-brand-500/30;
+  }
+  .provider-badge-canister {
+    @apply bg-purple-500/20 text-purple-300 border border-purple-500/30;
+  }
+  .provider-badge-custom {
+    @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30;
+  }
+
+  /* ── Session dock ──────────────────────────────────────────────────────── */
+
+  .session-dock-item {
+    @apply relative h-10 w-10 rounded-xl border border-ink-600/50
+           bg-ink-800/60 cursor-pointer transition-all duration-150
+           hover:border-brand-500/40;
+  }
+  .session-dock-item-active {
+    @apply session-dock-item border-l-brand-500 border-l-[3px];
+    box-shadow: -4px 0 12px -4px hsl(var(--brand-500) / 0.3);
+  }
+
+  /* ── Floating toolbar ──────────────────────────────────────────────────── */
+
+  .floating-toolbar {
+    @apply flex items-center gap-1 rounded-full px-2 py-1.5 backdrop-blur-xl;
+    background: hsl(var(--ink-900) / 0.82);
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: 0 8px 32px -8px hsl(0 0% 0% / 0.5);
+  }
+
+  .toolbar-btn {
+    @apply grid h-9 w-9 place-items-center rounded-full
+           text-ink-300 transition-colors duration-150
+           hover:bg-ink-800/80 hover:text-ink-50;
+  }
+  .toolbar-btn-danger:hover {
+    @apply bg-rose-500/20 text-rose-300;
+  }
+
+  /* ── Mobile app launcher (iOS-style) ───────────────────────────────────── */
+
+  .app-launcher {
+    @apply fixed inset-0 z-30 bg-cover bg-center;
+    background-color: hsl(var(--ink-900));
+  }
+  .app-launcher-overlay {
+    @apply absolute inset-0 flex flex-col;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+  }
+
+  .app-icon {
+    @apply grid h-[60px] w-[60px] place-items-center rounded-[16px] shadow-lg;
+  }
+
+  .app-icon-label {
+    @apply text-center text-[11px] font-medium text-white truncate max-w-[68px];
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  }
+
+  .app-icon-badge {
+    @apply absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full bg-red-500
+           border-2 border-black/30 text-[8px] font-bold text-white
+           grid place-items-center;
+  }
+
+  .app-dock {
+    @apply rounded-[22px] shadow-2xl;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+}
+
 .bg-grid {
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-size: 56px 56px;
   background-position: -1px -1px;
 }

@@ -85,7 +85,7 @@ function _vaultBaseUrl() {
 async function _putBlob(id, ciphertextB64) {
   const r = await fetch(_vaultBaseUrl() + '/blob/' + encodeURIComponent(id), {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream', 'X-Vault-Format': 'aes-gcm-b64' },
+    headers: { 'Content-Type': 'application/octet-stream' },
     body: ciphertextB64,
   });
   if (!r.ok) throw new Error(`PUT blob ${id} → HTTP ${r.status}`);
@@ -263,16 +263,23 @@ export async function deleteFile(id) {
 /**
  * Upload one File (from <input type="file"> or drag-drop event.dataTransfer.files).
  * Encrypts client-side then PUTs the ciphertext blob.
+ *
+ * Pass `skipIndexSave: true` when calling from uploadFiles() — the batch
+ * wrapper saves the index once at the end instead of once per file, cutting
+ * N index PUTs down to 1 for bulk uploads (latency + cost improvement).
+ *
+ * @param {File} file
+ * @param {{ onProgress?: (event: any) => void, skipIndexSave?: boolean }} [options]
  * Returns the new metadata entry.
  */
-export async function uploadFile(file, { onProgress } = {}) {
+export async function uploadFile(file, { onProgress, skipIndexSave = false } = {}) {
   _ensureUnlocked();
   if (!file) throw new Error('no file given');
-  // ~24 MB plaintext cap — leaves headroom under the 25 MB blob ceiling
-  // in serve.py after AES-GCM tag + IV overhead.
-  const MAX = 24 * 1024 * 1024;
+  // 200 MB plaintext cap — AES-GCM base64-encodes to ~133% of source size,
+  // so 200 MB plaintext → ~267 MB body; serve.py accepts up to 300 MB.
+  const MAX = 200 * 1024 * 1024;
   if (file.size > MAX) {
-    throw new Error(`file too large (${(file.size / 1024 / 1024).toFixed(1)} MB; cap is 24 MB)`);
+    throw new Error(`file too large (${(file.size / 1024 / 1024).toFixed(1)} MB; cap is 200 MB)`);
   }
 
   onProgress?.({ phase: 'reading', file: file.name });
@@ -299,15 +306,26 @@ export async function uploadFile(file, { onProgress } = {}) {
     idx = idx || _emptyIndex();
     return { ...idx, files: [...idx.files, meta] };
   });
-  await _saveIndex(get(vaultIndex));
+  // Single-file path: save index immediately so the file is findable right away.
+  // Batch path: caller (uploadFiles) saves once after all files are done.
+  if (!skipIndexSave) {
+    await _saveIndex(get(vaultIndex));
+  }
   onProgress?.({ phase: 'done', file: file.name, id });
   return meta;
 }
 
 /**
  * Upload multiple files in parallel. Yields a meta entry per success and
- * an error entry per failure. Use Promise.all + per-item try/catch so one
- * bad file doesn't kill the whole batch.
+ * an error entry per failure. Use Promise.allSettled + per-item try/catch so
+ * one bad file doesn't kill the whole batch.
+ *
+ * Optimization: all files share a single final index save (1 PUT) instead of
+ * one per file (N PUTs). A 100-file drop goes from 200 PUTs to 101 PUTs and
+ * saves ~10–20 s of round-trips through Caddy → container → OCI.
+ *
+ * @param {FileList|File[]} files
+ * @param {{ onProgress?: (event: any) => void }} [options]
  */
 export async function uploadFiles(files, { onProgress } = {}) {
   _ensureUnlocked();
@@ -315,7 +333,7 @@ export async function uploadFiles(files, { onProgress } = {}) {
   if (!list.length) return { uploaded: [], failed: [] };
 
   const results = await Promise.allSettled(
-    list.map((f) => uploadFile(f, { onProgress }))
+    list.map((f) => uploadFile(f, { onProgress, skipIndexSave: true }))
   );
   const uploaded = [];
   const failed   = [];
@@ -323,6 +341,11 @@ export async function uploadFiles(files, { onProgress } = {}) {
     if (r.status === 'fulfilled') uploaded.push(r.value);
     else failed.push({ name: list[i].name, error: String(r.reason?.message || r.reason) });
   });
+
+  // Single index save for the entire batch — covers all successfully uploaded files.
+  if (uploaded.length > 0) {
+    await _saveIndex(get(vaultIndex));
+  }
   return { uploaded, failed };
 }
 

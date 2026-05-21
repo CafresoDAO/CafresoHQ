@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import select
 import socket
 import shlex
@@ -141,6 +142,39 @@ def _detect_runtime():
     return 'local'
 
 _RUNTIME_ENV = _detect_runtime()
+
+# Per-process nonce for /terminal/pty WebSocket auth.
+# Generated once at startup; never logged.  Frontend fetches it from
+# /terminal/nonce before opening the WebSocket.  Any connection that doesn't
+# supply it with secrets.compare_digest() equality is rejected with 403.
+_PTY_NONCE = secrets.token_hex(32)   # 256-bit random — unguessable
+
+# ── Persistent PTY session registry ────────────────────────────────────────
+# Keeps PTY processes alive after the WebSocket drops so mobile clients can
+# reconnect and see buffered output from work that ran while they were away.
+_PTY_SESSIONS    = {}               # session_id → session-state dict
+_PTY_SESSIONS_LK = threading.Lock()
+_PTY_SESSION_TTL = 300              # seconds to keep a disconnected PTY alive
+_PTY_BUF_CAP     = 524_288          # max bytes buffered per session (512 KB)
+
+def _pty_reaper():
+    while True:
+        time.sleep(30)
+        now = time.time()
+        to_kill = []
+        with _PTY_SESSIONS_LK:
+            for sid, s in list(_PTY_SESSIONS.items()):
+                if s['sock'] is None and s.get('expires', 0) < now:
+                    to_kill.append((sid, s))
+            for sid, _ in to_kill:
+                _PTY_SESSIONS.pop(sid, None)
+        for _, s in to_kill:
+            s['stop'].set()
+            for k in ('pty_proc', 'proc'):
+                try: s.get(k) and s[k].terminate()
+                except Exception: pass
+
+threading.Thread(target=_pty_reaper, daemon=True).start()
 
 # HQ state persistence
 _hq_state_dir   = pathlib.Path(os.environ.get('OPENCLAW_HQ_STATE_DIR',
@@ -1708,6 +1742,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._codex_status()
         if self.path == '/terminal/status':
             return self._terminal_status()
+        if self.path == '/terminal/nonce':
+            return self._terminal_nonce()
         if self.path.startswith('/terminal/spawn'):
             return self._terminal_spawn()
         if self.path.startswith('/terminal/pty'):
@@ -3243,6 +3279,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(500, {'error': f'spawn failed: {e}'})
         return self._send_json(200, {'ok': True, 'cli': cli, 'cwd': str(cwd_path)})
 
+    def _terminal_nonce(self):
+        """GET /terminal/nonce → {"nonce": "<hex>"}
+        Returns the per-process nonce that /terminal/pty requires as a query
+        param.  Only the HQ app (same container origin) can fetch this, so it
+        acts as a lightweight auth token for the WebSocket endpoint.
+        """
+        return self._send_json(200, {'nonce': _PTY_NONCE})
+
     def _terminal_pty_ws(self):
         """GET /terminal/pty?cli=claude|codex&cwd=<path>&cols=120&rows=30
         Upgrades to WebSocket, spawns a PTY running the CLI, and bridges
@@ -3280,6 +3324,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not bin_:
             return self._send_json(503, {'error': f'{cli} CLI not found'})
 
+        # ── Security: Origin + nonce checks ────────────────────────────────
+        # Origin validation — reject cross-origin WS initiations.
+        # Browsers always send Origin on WebSocket upgrade; non-browser clients
+        # may omit it (curl, CLI tools, unit tests) — those are allowed through
+        # so local dev tooling isn't broken.
+        _origin = self.headers.get('Origin', '').strip()
+        _host   = self.headers.get('Host', '').strip()
+        _is_tls = isinstance(self.connection, ssl.SSLSocket)
+        _scheme = 'https' if _is_tls else 'http'
+        _allowed_origins = {
+            'https://hq.cafreso.com',        # production Caddy gateway
+            'http://localhost:8787',          # local Windows dev
+            'http://127.0.0.1:8787',          # local Windows dev (alt)
+            f'{_scheme}://{_host}',           # same-origin (any IP the client used)
+        }
+        if _origin and _origin not in _allowed_origins:
+            return self.send_error(403, f'WebSocket origin not allowed: {_origin}')
+
+        # Nonce validation — the frontend fetches /terminal/nonce first and
+        # appends ?nonce=<value> to the WS URL.  Any connection without the
+        # correct nonce is rejected (attacker can't fetch the nonce cross-origin
+        # because /terminal/nonce is same-origin-only for browser XHR).
+        _provided_nonce = (params.get('nonce') or [''])[0]
+        if not _provided_nonce or not secrets.compare_digest(_provided_nonce, _PTY_NONCE):
+            return self.send_error(403, 'Missing or invalid nonce — fetch /terminal/nonce first')
+
         # ── WebSocket handshake ─────────────────────────────────────────────
         ws_key = self.headers.get('Sec-WebSocket-Key', '')
         if not ws_key:
@@ -3306,25 +3376,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                    r'C:\Program Files\Git\mingw64\bin']:
             if os.path.isdir(_d) and _d not in agent_env.get('PATH', ''):
                 agent_env['PATH'] = _d + os.pathsep + agent_env.get('PATH', '')
-
-        # ── Spawn PTY ───────────────────────────────────────────────────────
-        stop_evt = threading.Event()
-
-        # ── WebSocket frame helpers (server-side = unmasked outbound) ───────
-        def _ws_send_raw(sock, data):
-            if isinstance(data, str):
-                data = data.encode('utf-8')
-            n = len(data)
-            if n < 126:
-                hdr = struct.pack('!BB', 0x82, n)          # FIN + binary
-            elif n < 65536:
-                hdr = struct.pack('!BBH', 0x82, 126, n)
-            else:
-                hdr = struct.pack('!BBQ', 0x82, 127, n)
-            try:
-                sock.sendall(hdr + data)
-            except OSError:
-                stop_evt.set()
 
         def _ws_recv_frame(sock):
             """Read one WebSocket frame; return (opcode, payload) or (None,None)."""
@@ -3354,54 +3405,233 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 return None, None
 
-        # ── Spawn PTY (platform-branched) ───────────────────────────────────
-        if _is_win:
-            # Windows: route through cmd.exe /c because .cmd wrappers can't
-            # be exec'd directly by winpty.
-            spawn_argv = ['cmd.exe', '/c', bin_ or cli]
+        # ── Optional init frame — inject BYOK keys before spawning ──────────
+        # The browser sends {"type":"init","anthropic_key":"...","openai_key":"..."}
+        # as the very first WebSocket frame (in ws.onopen) so the shell inherits
+        # the user's stored API keys automatically.  If the frame doesn't arrive
+        # within 2 s (or the user has no stored keys), we just proceed without it.
+        # Server-side env vars always win: BYOK is only injected when the
+        # container env is blank (same rule as /terminal/stream).
+        pending_frame = None   # replayed into ws_to_pty if it isn't an init frame
+        client_sock.settimeout(2.0)
+        _init_opcode, _init_payload = _ws_recv_frame(client_sock)
+        client_sock.settimeout(None)
+        if _init_opcode in (0x1, 0x2) and _init_payload:
             try:
-                pty_proc = _winpty.PtyProcess.spawn(
-                    spawn_argv,
-                    cwd=str(cwd_path),
-                    env=agent_env,
-                    dimensions=(rows, cols),
-                )
-            except Exception as exc:
-                _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
-                return
+                _init_msg = json.loads(_init_payload)
+                if isinstance(_init_msg, dict) and _init_msg.get('type') == 'init':
+                    _ak = (_init_msg.get('anthropic_key') or '').strip()
+                    _ok = (_init_msg.get('openai_key')    or '').strip()
+                    if _ak and not agent_env.get('ANTHROPIC_API_KEY', '').strip():
+                        agent_env['ANTHROPIC_API_KEY'] = _ak
+                    if _ok and not agent_env.get('OPENAI_API_KEY', '').strip():
+                        agent_env['OPENAI_API_KEY'] = _ok
+                    del _ak, _ok   # clear plaintext key strings from Python locals
+                    del _init_msg, _init_payload  # clear raw frame bytes
+                else:
+                    pending_frame = (_init_opcode, _init_payload)  # not init — replay
+                    del _init_msg
+            except (ValueError, TypeError):
+                pending_frame = (_init_opcode, _init_payload)      # not JSON — replay
+        elif _init_opcode is not None:
+            pending_frame = (_init_opcode, _init_payload)          # non-text — replay
 
-            # ── PTY → WebSocket thread (Windows) ───────────────────────────
-            def pty_to_ws():
-                while not stop_evt.is_set():
-                    try:
-                        data = pty_proc.read(4096)
-                        if data:
-                            _ws_send_raw(client_sock, data.encode('utf-8') if isinstance(data, str) else data)
-                    except EOFError:
-                        _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
-                        break
-                    except Exception:
-                        if not pty_proc.isalive():
-                            _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
-                        break
-                stop_evt.set()
-                try: client_sock.shutdown(socket.SHUT_RDWR)
-                except OSError: pass
+        # ── WebSocket frame helper (server → client, unmasked) ─────────────
+        def _ws_send_raw(sock, data):
+            if isinstance(data, str):
+                data = data.encode('utf-8')
+            n = len(data)
+            if n < 126:
+                hdr = struct.pack('!BB', 0x82, n)
+            elif n < 65536:
+                hdr = struct.pack('!BBH', 0x82, 126, n)
+            else:
+                hdr = struct.pack('!BBQ', 0x82, 127, n)
+            sock.sendall(hdr + data)   # raises OSError on failure; callers handle it
 
-            # ── WebSocket → PTY thread (Windows) ───────────────────────────
-            def ws_to_pty():
-                while not stop_evt.is_set():
-                    opcode, payload = _ws_recv_frame(client_sock)
-                    if opcode is None:
-                        break
-                    if opcode == 0x8:      # close frame
-                        break
-                    if opcode in (0x9,):   # ping → pong
+        # ── Session resume or new spawn ─────────────────────────────────────
+        session_id = (params.get('session_id') or [''])[0].strip()
+
+        with _PTY_SESSIONS_LK:
+            sess = _PTY_SESSIONS.get(session_id) if session_id else None
+
+        if sess is not None and not sess['stop'].is_set():
+            # ── Reconnect to existing PTY session ──────────────────────────
+            with sess['sock_lk']:
+                sess['sock']    = client_sock
+                sess['expires'] = None   # cancel reaper countdown
+
+            # Replay buffered output collected while the client was away.
+            with sess['buf_lk']:
+                replay, sess['buf'] = bytes(sess['buf']), bytearray()
+            if replay:
+                try:
+                    _ws_send_raw(client_sock, replay)
+                except OSError:
+                    pass
+
+            sys.stderr.write(f'[pty-ws] reconnected: {session_id[:8]}… {cli} @ {cwd_path}\n')
+
+        else:
+            # ── Spawn a fresh PTY ───────────────────────────────────────────
+            stop_evt = threading.Event()
+            sess = {
+                'stop':    stop_evt,
+                'sock':    client_sock,
+                'sock_lk': threading.Lock(),
+                'buf':     bytearray(),
+                'buf_lk':  threading.Lock(),
+                'expires': None,
+            }
+            if session_id:
+                with _PTY_SESSIONS_LK:
+                    _PTY_SESSIONS[session_id] = sess
+
+            if _is_win:
+                spawn_argv = ['cmd.exe', '/c', bin_ or cli]
+                try:
+                    pty_proc = _winpty.PtyProcess.spawn(
+                        spawn_argv, cwd=str(cwd_path), env=agent_env,
+                        dimensions=(rows, cols),
+                    )
+                except Exception as exc:
+                    try: _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
+                    except OSError: pass
+                    if session_id:
+                        with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                    return
+                sess['pty_proc'] = pty_proc
+
+                def pty_to_ws():
+                    while not sess['stop'].is_set():
                         try:
-                            n = len(payload)
-                            client_sock.sendall(struct.pack('!BB', 0x8A, n) + payload)
+                            data = pty_proc.read(4096)
+                        except EOFError:
+                            data = None
+                        except Exception:
+                            data = None if not pty_proc.isalive() else b''
+                        if data is None:
+                            break
+                        if not data:
+                            continue
+                        raw = data.encode('utf-8') if isinstance(data, str) else data
+                        with sess['sock_lk']:
+                            sock = sess['sock']
+                        if sock:
+                            try:
+                                _ws_send_raw(sock, raw)
+                                continue
+                            except OSError:
+                                with sess['sock_lk']:
+                                    if sess['sock'] is sock:
+                                        sess['sock']    = None
+                                        sess['expires'] = time.time() + _PTY_SESSION_TTL
+                        with sess['buf_lk']:
+                            sess['buf'] += raw
+                            if len(sess['buf']) > _PTY_BUF_CAP:
+                                sess['buf'] = sess['buf'][-_PTY_BUF_CAP:]
+                    # PTY exited — notify client and clean up.
+                    sess['stop'].set()
+                    if session_id:
+                        with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                    with sess['sock_lk']:
+                        sock = sess['sock']
+                    if sock:
+                        try: _ws_send_raw(sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
+                        except OSError: pass
+                        try: sock.shutdown(socket.SHUT_RDWR)
+                        except OSError: pass
+                    sys.stderr.write(f'[pty-ws] PTY exited: {session_id[:8] if session_id else "?"} {cli}\n')
+
+            else:
+                import pty as _pty, fcntl, struct as _struct2, termios, select as _select
+                master_fd, slave_fd = _pty.openpty()
+                fcntl.ioctl(slave_fd, termios.TIOCSWINSZ,
+                            _struct2.pack('HHHH', rows, cols, 0, 0))
+                spawn_argv = [bin_ or cli]
+                try:
+                    proc = subprocess.Popen(
+                        spawn_argv,
+                        stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+                        close_fds=True, start_new_session=True,
+                        cwd=str(cwd_path), env=agent_env,
+                    )
+                except Exception as exc:
+                    os.close(slave_fd); os.close(master_fd)
+                    try: _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
+                    except OSError: pass
+                    if session_id:
+                        with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                    return
+                os.close(slave_fd)
+                sess['proc']      = proc
+                sess['master_fd'] = master_fd
+
+                def pty_to_ws():
+                    while not sess['stop'].is_set():
+                        try:
+                            r, _, _ = _select.select([master_fd], [], [], 0.05)
+                            if r:
+                                data = os.read(master_fd, 4096)
+                                if not data:
+                                    break
+                            elif proc.poll() is not None:
+                                break
+                            else:
+                                continue
                         except OSError:
                             break
+                        with sess['sock_lk']:
+                            sock = sess['sock']
+                        if sock:
+                            try:
+                                _ws_send_raw(sock, data)
+                                continue
+                            except OSError:
+                                with sess['sock_lk']:
+                                    if sess['sock'] is sock:
+                                        sess['sock']    = None
+                                        sess['expires'] = time.time() + _PTY_SESSION_TTL
+                        with sess['buf_lk']:
+                            sess['buf'] += data
+                            if len(sess['buf']) > _PTY_BUF_CAP:
+                                sess['buf'] = sess['buf'][-_PTY_BUF_CAP:]
+                    sess['stop'].set()
+                    if session_id:
+                        with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                    try: os.close(master_fd)
+                    except OSError: pass
+                    with sess['sock_lk']:
+                        sock = sess['sock']
+                    if sock:
+                        try: _ws_send_raw(sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
+                        except OSError: pass
+                        try: sock.shutdown(socket.SHUT_RDWR)
+                        except OSError: pass
+                    sys.stderr.write(f'[pty-ws] PTY exited: {session_id[:8] if session_id else "?"} {cli}\n')
+
+            t_out = threading.Thread(target=pty_to_ws, daemon=True)
+            t_out.start()
+
+        # ── ws_to_pty — shared for both new and reconnected sessions ────────
+        # Reads frames from this WS connection and forwards them to the PTY.
+        # On disconnect, detaches the socket from the session WITHOUT killing
+        # the PTY so the client can reconnect and resume.
+        if _is_win:
+            def ws_to_pty():
+                nonlocal pending_frame
+                _pf, pending_frame = pending_frame, None
+                _pf_queue = [_pf] if _pf is not None else []
+                while not sess['stop'].is_set():
+                    if _pf_queue:
+                        opcode, payload = _pf_queue.pop(0)
+                    else:
+                        opcode, payload = _ws_recv_frame(client_sock)
+                    if opcode is None or opcode == 0x8:
+                        break
+                    if opcode == 0x9:   # ping → pong
+                        try: client_sock.sendall(struct.pack('!BB', 0x8A, len(payload)) + payload)
+                        except OSError: break
                         continue
                     if opcode in (0x1, 0x2) and payload:
                         try:
@@ -3409,79 +3639,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             if isinstance(msg, dict) and msg.get('type') == 'resize':
                                 c = max(10, min(500, int(msg.get('cols', cols))))
                                 r = max(5,  min(200, int(msg.get('rows', rows))))
-                                pty_proc.setwinsize(r, c)
+                                sess['pty_proc'].setwinsize(r, c)
                                 continue
                         except (ValueError, TypeError):
                             pass
                         try:
-                            text = payload.decode('utf-8', errors='replace')
-                            pty_proc.write(text)
+                            sess['pty_proc'].write(payload.decode('utf-8', errors='replace'))
                         except Exception:
                             break
-                stop_evt.set()
-                try: pty_proc.terminate()
-                except Exception: pass
-
+                # WS dropped — detach socket; PTY keeps running.
+                with sess['sock_lk']:
+                    if sess['sock'] is client_sock:
+                        sess['sock']    = None
+                        sess['expires'] = time.time() + _PTY_SESSION_TTL
         else:
-            # Linux / macOS: stdlib pty — no extra packages needed.
-            import pty as _pty, fcntl, struct as _struct2, termios, select as _select
-            master_fd, slave_fd = _pty.openpty()
-            # Set initial terminal dimensions on the slave side before spawn.
-            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ,
-                        _struct2.pack('HHHH', rows, cols, 0, 0))
-            spawn_argv = [bin_ or cli]
-            try:
-                proc = subprocess.Popen(
-                    spawn_argv,
-                    stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-                    close_fds=True,
-                    start_new_session=True,
-                    cwd=str(cwd_path),
-                    env=agent_env,
-                )
-            except Exception as exc:
-                os.close(slave_fd); os.close(master_fd)
-                _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
-                return
-            os.close(slave_fd)   # parent doesn't need the slave end
-
-            # ── PTY → WebSocket thread (Linux/macOS) ───────────────────────
-            def pty_to_ws():
-                while not stop_evt.is_set():
-                    try:
-                        r, _, _ = _select.select([master_fd], [], [], 0.05)
-                        if r:
-                            data = os.read(master_fd, 4096)
-                            if not data:
-                                break
-                            _ws_send_raw(client_sock, data)
-                        elif proc.poll() is not None:
-                            _ws_send_raw(client_sock, b'\r\n\x1b[2m[process exited]\x1b[0m\r\n')
-                            break
-                    except OSError:
-                        break
-                    except Exception:
-                        break
-                stop_evt.set()
-                try: os.close(master_fd)
-                except OSError: pass
-                try: client_sock.shutdown(socket.SHUT_RDWR)
-                except OSError: pass
-
-            # ── WebSocket → PTY thread (Linux/macOS) ───────────────────────
             def ws_to_pty():
-                while not stop_evt.is_set():
-                    opcode, payload = _ws_recv_frame(client_sock)
-                    if opcode is None:
+                import fcntl as _fcntl2, struct as _struct3, termios as _termios2
+                nonlocal pending_frame
+                _pf, pending_frame = pending_frame, None
+                _pf_queue = [_pf] if _pf is not None else []
+                while not sess['stop'].is_set():
+                    if _pf_queue:
+                        opcode, payload = _pf_queue.pop(0)
+                    else:
+                        opcode, payload = _ws_recv_frame(client_sock)
+                    if opcode is None or opcode == 0x8:
                         break
-                    if opcode == 0x8:      # close frame
-                        break
-                    if opcode in (0x9,):   # ping → pong
-                        try:
-                            n = len(payload)
-                            client_sock.sendall(_struct2.pack('!BB', 0x8A, n) + payload)
-                        except OSError:
-                            break
+                    if opcode == 0x9:
+                        try: client_sock.sendall(_struct3.pack('!BB', 0x8A, len(payload)) + payload)
+                        except OSError: break
                         continue
                     if opcode in (0x1, 0x2) and payload:
                         try:
@@ -3489,30 +3675,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             if isinstance(msg, dict) and msg.get('type') == 'resize':
                                 c = max(10, min(500, int(msg.get('cols', cols))))
                                 r = max(5,  min(200, int(msg.get('rows', rows))))
-                                fcntl.ioctl(master_fd, termios.TIOCSWINSZ,
-                                            _struct2.pack('HHHH', r, c, 0, 0))
+                                _fcntl2.ioctl(sess['master_fd'], _termios2.TIOCSWINSZ,
+                                              _struct3.pack('HHHH', r, c, 0, 0))
                                 continue
                         except (ValueError, TypeError):
                             pass
                         try:
-                            os.write(master_fd, payload)
+                            os.write(sess['master_fd'], payload)
                         except OSError:
                             break
-                stop_evt.set()
-                try: proc.terminate()
-                except Exception: pass
+                with sess['sock_lk']:
+                    if sess['sock'] is client_sock:
+                        sess['sock']    = None
+                        sess['expires'] = time.time() + _PTY_SESSION_TTL
 
-        t_out = threading.Thread(target=pty_to_ws, daemon=True)
-        t_in  = threading.Thread(target=ws_to_pty, daemon=True)
-        t_out.start(); t_in.start()
-        t_out.join();  t_in.join()
-        if _is_win:
-            try: pty_proc.terminate()
-            except Exception: pass
-        else:
-            try: proc.terminate()
-            except Exception: pass
-        sys.stderr.write(f'[pty-ws] session closed: {cli} @ {cwd_path}\n')
+        t_in = threading.Thread(target=ws_to_pty, daemon=True)
+        t_in.start()
+        t_in.join()   # block until this WS connection closes
+        sys.stderr.write(f'[pty-ws] WS detached: {session_id[:8] if session_id else "?"} {cli} @ {cwd_path}\n')
 
     def _terminal_status(self):
         """Report CLI availability, runtime environment, and spawn capability."""

@@ -4656,7 +4656,7 @@ function ideTintCode(src, lang) {
   return parts;
 }
 
-function EmbeddedTerminal({ project, cli, visible }) {
+function EmbeddedTerminal({ project, cli, sessionId, visible }) {
   const containerRef = React.useRef(null);
   const termRef      = React.useRef(null);
   const wsRef        = React.useRef(null);
@@ -4685,46 +4685,116 @@ function EmbeddedTerminal({ project, cli, visible }) {
     const fit = new FitClass();
     term.loadAddon(fit);
     term.open(containerRef.current);
-    fit.fit();
     termRef.current = term;
     fitRef.current  = fit;
 
-    const params = new URLSearchParams({
-      cli, cwd: project.path,
-      cols: String(term.cols), rows: String(term.rows),
+    let cancelled = false;
+
+    // Registered once — always routes input to the current ws.
+    term.onData(data => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(data);
     });
-    // Derive WebSocket URL from current page origin so it works both when
-    // accessed directly (ws://ip:8787/...) and via the Caddy gateway
-    // (wss://hq.cafreso.com/u/<slug>/...).
-    const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const _wsPath  = window.location.pathname.replace(/\/[^/]*$/, ''); // strip /hq.html
-    const ws = new WebSocket(`${_wsProto}//${window.location.host}${_wsPath}/terminal/pty?${params}`);
-    ws.binaryType = 'arraybuffer';
-    wsRef.current = ws;
 
-    ws.onmessage = e => {
-      const data = e.data instanceof ArrayBuffer
-        ? new TextDecoder().decode(e.data) : e.data;
-      term.write(data);
+    const connect = async () => {
+      if (cancelled) return;
+      // Skip if already open or mid-handshake.
+      const rs = wsRef.current?.readyState;
+      if (rs === WebSocket.OPEN || rs === WebSocket.CONNECTING) return;
+
+      // Fetch nonce — /terminal/nonce is same-origin-only so cross-origin
+      // pages can't obtain it and therefore can't open a PTY.
+      let ptyNonce = '';
+      try {
+        const _nr = await fetch((window._API_BASE || '') + '/terminal/nonce');
+        if (_nr.ok) { const _nd = await _nr.json(); ptyNonce = _nd.nonce || ''; }
+      } catch (_) {}
+
+      if (cancelled) return;
+
+      const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const _wsPath  = window.location.pathname.replace(/\/[^/]*$/, '');
+      const _wsParams = new URLSearchParams({
+        cli, cwd: project.path,
+        cols: String(term.cols), rows: String(term.rows),
+        ...(sessionId ? { session_id: sessionId } : {}),
+      }).toString() + (ptyNonce ? `&nonce=${encodeURIComponent(ptyNonce)}` : '');
+
+      const ws = new WebSocket(`${_wsProto}//${window.location.host}${_wsPath}/terminal/pty?${_wsParams}`);
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+
+      // Always send init frame immediately on open — even with no BYOK keys.
+      // The server waits up to 2 s for this frame before spawning the PTY;
+      // sending it right away eliminates the 2-second blank-screen delay.
+      ws.onopen = async () => {
+        const oc = window.OpenclawClient;
+        let ak = '', ok = '';
+        if (oc?.getAgentKey) {
+          ak = await oc.getAgentKey('anthropic').catch(() => '');
+          ok = await oc.getAgentKey('openai').catch(() => '');
+        }
+        ws.send(JSON.stringify({
+          type: 'init',
+          ...(ak ? { anthropic_key: ak } : {}),
+          ...(ok ? { openai_key:    ok } : {}),
+        }));
+      };
+
+      ws.onmessage = e => {
+        const data = e.data instanceof ArrayBuffer
+          ? new TextDecoder().decode(e.data) : e.data;
+        term.write(data);
+      };
+
+      ws.onerror = () => {
+        term.writeln('\r\n\x1b[31m[connection error — is serve.py running?]\x1b[0m');
+      };
+
+      ws.onclose = () => {
+        if (cancelled) return;
+        if (document.visibilityState === 'visible') {
+          // Page is in the foreground — reconnect after a short delay.
+          term.writeln('\r\n\x1b[2m[reconnecting…]\x1b[0m');
+          setTimeout(() => { if (!cancelled) connect(); }, 2000);
+        }
+        // If hidden, visibilitychange below will reconnect when the user returns.
+      };
     };
-    ws.onclose = () => term.writeln('\r\n\x1b[2m[session closed]\x1b[0m');
-    ws.onerror = () => term.writeln('\r\n\x1b[31m[connection error — is serve.py running?]\x1b[0m');
-
-    term.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
 
     const sendResize = () => {
       try { fit.fit(); } catch (_) {}
-      if (ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      if (wsRef.current?.readyState === WebSocket.OPEN)
+        wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     };
     const ro = new ResizeObserver(sendResize);
     if (containerRef.current) ro.observe(containerRef.current);
     window.addEventListener('resize', sendResize);
 
+    // Reconnect when the user returns from another app / tab.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !cancelled) {
+        const rs = wsRef.current?.readyState;
+        if (rs !== WebSocket.OPEN && rs !== WebSocket.CONNECTING) {
+          term.writeln('\r\n\x1b[2m[reconnecting…]\x1b[0m');
+          connect();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    requestAnimationFrame(() => {
+      if (!cancelled) {
+        try { fit.fit(); } catch (_) {}
+        connect();
+      }
+    });
+
     return () => {
+      cancelled = true;
       ro.disconnect();
       window.removeEventListener('resize', sendResize);
-      try { ws.close(); } catch (_) {}
+      document.removeEventListener('visibilitychange', handleVisibility);
+      try { if (wsRef.current) wsRef.current.close(); } catch (_) {}
       try { term.dispose(); } catch (_) {}
       termRef.current = wsRef.current = fitRef.current = null;
     };
@@ -4744,7 +4814,7 @@ function EmbeddedTerminal({ project, cli, visible }) {
   );
 }
 
-function TerminalSession({ project, cli, visible, ptySupported, spawnSupported }) {
+function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawnSupported }) {
   const [termMode,  setTermMode]  = useSV('chat');  // 'chat' | 'spawn'
   const [msgs,      setMsgs]      = useSV([]);
   const [input,     setInput]     = useSV('');
@@ -4872,94 +4942,83 @@ function TerminalSession({ project, cli, visible, ptySupported, spawnSupported }
       background: 'var(--paper)', fontFamily: "'JetBrains Mono', monospace",
       fontSize: 13, color: 'var(--ink)',
     }}>
-      {/* Mode tabs */}
+      {/* Mode + controls — single unified bar */}
       <div style={{
-        display: 'flex', borderBottom: '1px solid var(--rule)', flexShrink: 0,
-        background: 'var(--paper-2)', alignItems: 'center',
+        display: 'flex', alignItems: 'center', flexShrink: 0,
+        borderBottom: '1px solid var(--rule)', background: 'var(--paper-2)',
+        minHeight: 44,
       }}>
-        {[['chat', '💬 CHAT'], ...(spawnSupported ? [['spawn', '⬡ TERMINAL']] : [])].map(([mode, label]) => (
+        {[['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])].map(([mode, ico, label]) => (
           <button key={mode} onClick={() => { setTermMode(mode); setErr(null); setSpawnMsg(''); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              padding: '6px 14px', fontSize: 10, fontWeight: 700,
-              fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1,
+              padding: '0 16px', height: 44, display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 700,
+              fontFamily: "'JetBrains Mono', monospace",
               color: termMode === mode ? '#7c6bff' : 'var(--ink-3)',
               borderBottom: termMode === mode ? '2px solid #7c6bff' : '2px solid transparent',
+              whiteSpace: 'nowrap', flexShrink: 0,
             }}
-          >{label}</button>
+          ><span>{ico}</span><span>{label}</span></button>
         ))}
         {spawnSupported === false && (
-          <span style={{ fontSize: 9, color: 'var(--ink-3)', marginLeft: 'auto', paddingRight: 10 }}>
-            container · chat only
+          <span style={{ fontSize: 9, color: 'var(--ink-3)', paddingLeft: 10 }}>chat only</span>
+        )}
+        <span style={{ flex: 1 }} />
+        {termMode === 'chat' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 10 }}>
+            <select value={model} onChange={e => setModel(e.target.value)} disabled={busy}
+              style={{
+                background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--rule)',
+                borderRadius: 4, fontSize: 11, padding: '3px 6px',
+                fontFamily: 'inherit', cursor: 'pointer',
+              }}
+            >
+              {cli === 'claude' ? (
+                <>
+                  <option value="">model (default)</option>
+                  <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                  <option value="claude-opus-4-7">Opus 4.7</option>
+                  <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                  <option value="claude-sonnet-4-5-20250514">Sonnet 4.5</option>
+                </>
+              ) : (
+                <>
+                  <option value="">model (default)</option>
+                  <option value="o3">o3</option>
+                  <option value="o4-mini">o4-mini</option>
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                </>
+              )}
+            </select>
+            <button onClick={() => { setKeyPanel(p => !p); setKeyInput(''); }}
+              title={keyIsStored ? `${provider} key stored (AES-256-GCM)` : `Set ${provider} API key`}
+              style={{
+                background: keyIsStored ? 'rgba(111,168,111,0.15)' : 'transparent',
+                color: keyIsStored ? 'var(--live)' : 'var(--ink-3)',
+                border: `1px solid ${keyIsStored ? 'var(--live)' : 'var(--rule)'}`,
+                borderRadius: 4, fontSize: 12, padding: '3px 8px', cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >{keyIsStored ? '🔒' : '🔓'}</button>
+            {busy ? (
+              <button onClick={stop} style={{
+                background: 'rgba(201,112,112,0.12)', color: 'var(--error)', border: '1px solid var(--error)',
+                borderRadius: 4, fontSize: 10, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit',
+              }}>■ STOP</button>
+            ) : (
+              <button onClick={clear} style={{
+                background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)',
+                borderRadius: 4, fontSize: 10, padding: '3px 8px', cursor: 'pointer', fontFamily: 'inherit',
+              }}>CLEAR</button>
+            )}
+          </div>
+        ) : (
+          <span style={{ fontSize: 10, color: 'var(--ink-3)', paddingRight: 12, fontFamily: "'JetBrains Mono', monospace", opacity: 0.7 }}>
+            {project.name}
           </span>
         )}
-      </div>
-
-      {/* Toolbar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '5px 12px', borderBottom: '1px solid var(--rule)',
-        background: 'var(--paper-2)', flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 10, color: '#7c6bff', flex: 1, fontFamily: "'JetBrains Mono', monospace" }}>
-          {project.name}
-        </span>
-        {termMode === 'chat' && (
-          <select
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            disabled={busy}
-            style={{
-              background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--rule)',
-              borderRadius: 4, fontSize: 11, padding: '2px 6px',
-              fontFamily: 'inherit', cursor: 'pointer',
-            }}
-          >
-            {cli === 'claude' ? (
-              <>
-                <option value="">model (default)</option>
-                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-                <option value="claude-opus-4-7">Opus 4.7</option>
-                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-                <option value="claude-sonnet-4-5-20250514">Sonnet 4.5</option>
-              </>
-            ) : (
-              <>
-                <option value="">model (default)</option>
-                <option value="o3">o3</option>
-                <option value="o4-mini">o4-mini</option>
-                <option value="gpt-4.1">GPT-4.1</option>
-                <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-              </>
-            )}
-          </select>
-        )}
-        {termMode === 'chat' && (
-          <button
-            onClick={() => { setKeyPanel(p => !p); setKeyInput(''); }}
-            title={keyIsStored ? `${provider} key stored (AES-256-GCM)` : `Set ${provider} API key`}
-            style={{
-              background: keyIsStored ? 'rgba(111,168,111,0.15)' : 'transparent',
-              color: keyIsStored ? 'var(--live)' : 'var(--ink-3)',
-              border: `1px solid ${keyIsStored ? 'var(--live)' : 'var(--rule)'}`,
-              borderRadius: 4, fontSize: 12, padding: '2px 7px', cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >{keyIsStored ? '🔒' : '🔓'}</button>
-        )}
-        {termMode === 'chat' && (busy ? (
-          <button onClick={stop} style={{
-            background: 'rgba(201,112,112,0.12)', color: 'var(--error)', border: '1px solid var(--error)',
-            borderRadius: 4, fontSize: 10, padding: '2px 10px', cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}>■ STOP</button>
-        ) : (
-          <button onClick={clear} style={{
-            background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)',
-            borderRadius: 4, fontSize: 10, padding: '2px 8px', cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}>CLEAR</button>
-        ))}
       </div>
 
       {keyPanel && (
@@ -5146,7 +5205,7 @@ function TerminalSession({ project, cli, visible, ptySupported, spawnSupported }
         /* Embedded PTY terminal panel */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {ptySupported ? (
-            <EmbeddedTerminal project={project} cli={cli} visible={visible} />
+            <EmbeddedTerminal project={project} cli={cli} sessionId={sessionId} visible={visible} />
           ) : (
             /* Fallback: launch button */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16, background: 'var(--paper)' }}>
@@ -5190,12 +5249,13 @@ let _sessionCounter = 0;
 function ProjectTerminal({ project, visible }) {
   const [sessions, setSessions] = React.useState(() => {
     const id = `s${++_sessionCounter}`;
-    return [{ id, cli: 'claude' }];
+    return [{ id, cli: 'claude', sessionId: crypto.randomUUID() }];
   });
   const [activeId, setActiveId] = React.useState(() => sessions[0].id);
-  const [spawnSupported, setSpawnSupported] = React.useState(null);
+  const [spawnSupported, setSpawnSupported] = React.useState(true);
   const [ptySupported, setPtySupported]     = React.useState(false);
   const [addMenuOpen, setAddMenuOpen]       = React.useState(false);
+  const [addMenuPos,  setAddMenuPos]        = React.useState({ top: 0, left: 0 });
   const addBtnRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -5214,12 +5274,16 @@ function ProjectTerminal({ project, visible }) {
       if (addBtnRef.current && !addBtnRef.current.contains(e.target)) setAddMenuOpen(false);
     };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+    };
   }, [addMenuOpen]);
 
   const addSession = (cli) => {
     const id = `s${++_sessionCounter}`;
-    setSessions(prev => [...prev, { id, cli }]);
+    setSessions(prev => [...prev, { id, cli, sessionId: crypto.randomUUID() }]);
     setActiveId(id);
     setAddMenuOpen(false);
   };
@@ -5246,9 +5310,9 @@ function ProjectTerminal({ project, visible }) {
       <div style={{
         display: 'flex', alignItems: 'center',
         borderBottom: '1px solid var(--rule)', flexShrink: 0,
-        background: 'var(--paper-2)', padding: '0 4px',
+        background: 'var(--paper-2)', padding: '0 6px',
         overflowX: 'auto', WebkitOverflowScrolling: 'touch',
-        scrollbarWidth: 'thin', gap: 1,
+        scrollbarWidth: 'none', gap: 2, minHeight: 44,
       }}>
         {sessions.map(s => {
           const active = s.id === activeId;
@@ -5257,9 +5321,9 @@ function ProjectTerminal({ project, visible }) {
             <div key={s.id}
               onClick={() => setActiveId(s.id)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
-                fontSize: 10, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0 4px 0 12px', cursor: 'pointer', whiteSpace: 'nowrap',
+                minHeight: 44, fontSize: 12, fontWeight: 600,
                 fontFamily: "'JetBrains Mono', monospace",
                 color: active ? '#7c6bff' : 'var(--ink-3)',
                 borderBottom: active ? '2px solid #7c6bff' : '2px solid transparent',
@@ -5269,58 +5333,68 @@ function ProjectTerminal({ project, visible }) {
                 flexShrink: 0,
               }}
             >
-              <span style={{ fontSize: 12 }}>{icon}</span>
+              <span style={{ fontSize: 13 }}>{icon}</span>
               <span>{getLabel(s)}</span>
               {sessions.length > 1 && (
-                <span
+                <button
                   onClick={e => { e.stopPropagation(); closeSession(s.id); }}
-                  style={{
-                    opacity: active ? 0.6 : 0.3, fontSize: 13, lineHeight: 1,
-                    marginLeft: 2, borderRadius: 3, padding: '0 2px',
-                    cursor: 'pointer', transition: 'opacity 0.15s',
-                  }}
-                  onMouseEnter={e => e.target.style.opacity = 1}
-                  onMouseLeave={e => e.target.style.opacity = active ? 0.6 : 0.3}
                   title="End session"
-                >&times;</span>
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'inherit', opacity: active ? 0.7 : 0.35,
+                    fontSize: 16, lineHeight: 1, padding: '0 8px', margin: 0,
+                    minWidth: 32, minHeight: 32, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', borderRadius: 4,
+                    transition: 'opacity 0.15s, background 0.1s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.background = 'rgba(124,107,255,0.1)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = active ? 0.7 : 0.35; e.currentTarget.style.background = 'none'; }}
+                >×</button>
               )}
             </div>
           );
         })}
         {/* Add session */}
-        <div ref={addBtnRef} style={{ position: 'relative', flexShrink: 0, marginLeft: 2 }}>
+        <div ref={addBtnRef} style={{ position: 'relative', flexShrink: 0, marginLeft: 4 }}>
           <button
-            onClick={() => setAddMenuOpen(p => !p)}
+            onClick={() => {
+              if (!addMenuOpen && addBtnRef.current) {
+                const r = addBtnRef.current.getBoundingClientRect();
+                setAddMenuPos({ top: r.bottom + 6, left: r.left });
+              }
+              setAddMenuOpen(p => !p);
+            }}
             title="New CLI session"
             style={{
-              background: addMenuOpen ? 'rgba(124,107,255,0.1)' : 'transparent',
+              background: addMenuOpen ? 'rgba(124,107,255,0.12)' : 'transparent',
               border: '1px solid var(--rule)',
-              borderRadius: 4, color: 'var(--ink-3)', fontSize: 14, lineHeight: 1,
-              width: 22, height: 22, cursor: 'pointer',
+              borderRadius: 6, color: addMenuOpen ? '#7c6bff' : 'var(--ink-3)',
+              fontSize: 20, lineHeight: 1,
+              width: 36, height: 36, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '2px 0', transition: 'background 0.15s',
+              transition: 'background 0.15s, color 0.15s', flexShrink: 0,
             }}
           >+</button>
           {addMenuOpen && (
             <div style={{
-              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 200,
-              background: 'var(--paper)', border: '1px solid var(--rule)',
-              borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
-              padding: 4, minWidth: 150,
+              position: 'fixed', top: addMenuPos.top, left: addMenuPos.left, zIndex: 1000,
+              background: '#12121e', border: '1px solid rgba(124,107,255,0.25)',
+              borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              padding: 6, minWidth: 170,
             }}>
               {[['claude', '✦', 'Claude Code'], ['codex', '◈', 'Codex CLI']].map(([c, ico, label]) => (
                 <div key={c}
                   onClick={() => addSession(c)}
                   style={{
-                    padding: '7px 12px', cursor: 'pointer', fontSize: 11,
-                    borderRadius: 5, display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', cursor: 'pointer', fontSize: 12,
+                    borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10,
                     fontFamily: "'JetBrains Mono', monospace",
-                    color: 'var(--ink)', transition: 'background 0.1s',
+                    color: '#d4d8e8', transition: 'background 0.1s',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--paper-2)'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,107,255,0.18)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <span style={{ fontSize: 14 }}>{ico}</span>
+                  <span style={{ fontSize: 15, color: '#7c6bff' }}>{ico}</span>
                   <span>{label}</span>
                 </div>
               ))}
@@ -5339,6 +5413,7 @@ function ProjectTerminal({ project, visible }) {
           <TerminalSession
             project={project}
             cli={s.cli}
+            sessionId={s.sessionId}
             visible={visible && s.id === activeId}
             ptySupported={ptySupported}
             spawnSupported={spawnSupported}
@@ -5588,11 +5663,18 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
               </div>
             )}
 
-            {mobileDetailTab === 'terminal' && (
-              <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-                <ProjectTerminal project={project} visible={mobileStep === 'detail' && mobileDetailTab === 'terminal'} />
-              </div>
-            )}
+            {/* Terminal — always mounted once the detail view opens, hidden when inactive.
+                Using visibility+height:0 instead of display:none so xterm.js
+                ResizeObserver can still measure the element when it becomes visible. */}
+            <div style={{
+              flex: mobileDetailTab === 'terminal' ? 1 : undefined,
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              visibility: mobileDetailTab === 'terminal' ? 'visible' : 'hidden',
+              height: mobileDetailTab === 'terminal' ? undefined : 0,
+              pointerEvents: mobileDetailTab === 'terminal' ? 'auto' : 'none',
+            }}>
+              <ProjectTerminal project={project} visible={mobileStep === 'detail' && mobileDetailTab === 'terminal'} />
+            </div>
 
             {mobileDetailTab === 'agents' && (
               <div style={{flex:1,overflow:'auto',padding:'12px 14px'}}>

@@ -4,19 +4,29 @@
 
   $: state = $endpointHealth.state;
   $: hasUrl = !!$endpointUrl;
-  $: cls    = state === 'ok'      ? 'pill-ok'
-            : state === 'probing' ? 'pill-warn'
-            : state === 'error'   ? 'pill-err'
-            : 'pill-idle';
-  $: dot    = state === 'ok'      ? 'text-emerald-400'
-            : state === 'probing' ? 'text-amber-400 animate-pulse'
-            : state === 'error'   ? 'text-rose-400'
-            : 'text-ink-400';
-  $: label  = state === 'ok'      ? (compact ? 'OCI live' : 'Container live')
-            : state === 'probing' ? 'Probing…'
-            : state === 'error'   ? 'Unreachable'
-            : hasUrl              ? 'Idle'
-                                  : 'Not configured';
+  $: cls = state === 'ok'
+    ? 'pill-ok'
+    : state === 'probing'
+      ? 'pill-warn'
+      : state === 'error'
+        ? 'pill-err'
+        : 'pill-idle';
+  $: dot = state === 'ok'
+    ? 'text-emerald-400'
+    : state === 'probing'
+      ? 'text-amber-400 animate-pulse'
+      : state === 'error'
+        ? 'text-rose-400'
+        : 'text-ink-400';
+  $: label = state === 'ok'
+    ? (compact ? 'OCI live' : 'Container live')
+    : state === 'probing'
+      ? 'Probing...'
+      : state === 'error'
+        ? 'Unreachable'
+        : hasUrl
+          ? 'Idle'
+          : 'Not configured';
 </script>
 
 {#if compact}
@@ -25,13 +35,13 @@
     <span class="hidden sm:inline">{label}</span>
   </a>
 {:else}
-  <div class="flex items-center gap-3">
+  <div class="flex min-w-0 items-center gap-3">
     <span class={cls}>
       <span class="glow-dot {dot}"></span>
       {label}
     </span>
     {#if $endpointUrl}
-      <code class="text-xs text-ink-400 font-mono truncate max-w-xs">{$endpointUrl}</code>
+      <code class="max-w-xs truncate font-mono text-xs text-ink-400">{$endpointUrl}</code>
     {/if}
   </div>
 {/if}

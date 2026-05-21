@@ -32,6 +32,7 @@ self.addEventListener('activate', (event) => {
 const NEVER_CACHE_PREFIXES = [
   '/openclaw/', '/codex/', '/claudecode/', '/oca/', '/lmstudio/', '/ollama/',
   '/vault/', '/tools/', '/projects/', '/approvals/', '/hq/', '/brave/',
+  '/terminal/',
 ];
 
 self.addEventListener('fetch', (event) => {

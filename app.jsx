@@ -62,7 +62,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     if (sensitive) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
-      fetch(`/hq/${fileScope}/${fileName}`, {
+      fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(v),
@@ -72,7 +72,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
 
   useEffectA(() => {
     if (sensitive) return;
-    fetch(`/hq/${fileScope}/${fileName}`)
+    fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data == null) return;
@@ -2747,7 +2747,7 @@ ${d.text}` : d.text,
     let stopped = false;
     const poll = async () => {
       try {
-        const r = await fetch('/approvals/external/list', { cache: 'no-store' });
+        const r = await fetch((window._API_BASE || '') + '/approvals/external/list', { cache: 'no-store' });
         if (!r.ok) return;
         const { pending = [] } = await r.json();
         if (stopped) return;
@@ -2783,7 +2783,7 @@ ${d.text}` : d.text,
   }, []);
 
   const decideExternal = (externalId, decision, reason) => {
-    fetch('/approvals/external/decide', {
+    fetch((window._API_BASE || '') + '/approvals/external/decide', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: externalId, decision, reason: reason || '' }),
