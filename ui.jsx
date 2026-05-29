@@ -6,7 +6,7 @@ const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, us
 
 /* ------------ Theme vocabulary system ------------ */
 const THEME_VOCAB = {
-  default:      { agent: 'Agent',   agents: 'Agents',   office: 'Office',        corner: 'CORNER OFFICE', hire: 'HIRE',     vacant: 'VACANT', live: 'LIVE',     hireTitle: 'Hire a sub-agent' },
+  default:      { agent: 'Agent',   agents: 'Agents',   office: 'Office',        corner: 'CEO',           hire: 'HIRE',     vacant: 'VACANT', live: 'LIVE',     hireTitle: 'Hire a sub-agent' },
   sepia:        null,
   solarized:    null,
   dracula:      null,
@@ -912,19 +912,10 @@ function CommandPaletteProvider({ children }) {
 }
 
 function PaletteFab() {
-  const K = '#3b2e2a';
   return (
-    <button className="palette-fab"
-      aria-label="Open command palette"
+    <button className="palette-fab" aria-label="Open command palette"
       onClick={() => window.openclawPalette && window.openclawPalette.open()}>
-      <svg width="22" height="22" viewBox="0 0 16 16" shapeRendering="crispEdges">
-        <rect x="2" y="7" width="6" height="2" fill={K}/>
-        <rect x="6" y="2" width="2" height="7" fill={K} transform="rotate(-45 7 5.5)"/>
-        <rect x="10" y="5" width="4" height="2" fill={K}/>
-        <rect x="12" y="3" width="2" height="6" fill={K}/>
-        <rect x="3" y="10" width="2" height="4" fill={K}/>
-        <rect x="5" y="12" width="4" height="2" fill={K}/>
-      </svg>
+      <span style={{fontSize: 22, lineHeight: 1}}>🛠️</span>
     </button>
   );
 }
@@ -1146,22 +1137,25 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
   };
   const back = () => setIdx(i => Math.max(0, i - 1));
 
-  /* Anchor card position: if spotlight exists, place card below or above it;
-     otherwise centered in viewport. */
-  const cardStyle = spotlight ? (() => {
-    const cardW = 420, cardH = 220;
-    const margin = 16;
-    const W = window.innerWidth, H = window.innerHeight;
-    const below = spotlight.top + spotlight.height + margin + cardH < H;
-    let top = below
-      ? spotlight.top + spotlight.height + margin
-      : spotlight.top - cardH - margin;
-    if (top < margin) top = margin;
-    let left = spotlight.left + spotlight.width / 2 - cardW / 2;
-    if (left < margin) left = margin;
-    if (left + cardW > W - margin) left = W - cardW - margin;
-    return { top: top + 'px', left: left + 'px', transform: 'none' };
-  })() : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+  /* Anchor card position: mobile → bottom sheet above tab bar;
+     desktop → anchored near spotlight or centered. */
+  const isMobileTour = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const cardStyle = isMobileTour
+    ? { bottom: 'calc(72px + env(safe-area-inset-bottom))', left: '8px', right: '8px', top: 'auto', transform: 'none' }
+    : spotlight ? (() => {
+      const cardW = 420, cardH = 220;
+      const margin = 16;
+      const W = window.innerWidth, H = window.innerHeight;
+      const below = spotlight.top + spotlight.height + margin + cardH < H;
+      let top = below
+        ? spotlight.top + spotlight.height + margin
+        : spotlight.top - cardH - margin;
+      if (top < margin) top = margin;
+      let left = spotlight.left + spotlight.width / 2 - cardW / 2;
+      if (left < margin) left = margin;
+      if (left + cardW > W - margin) left = W - cardW - margin;
+      return { top: top + 'px', left: left + 'px', transform: 'none' };
+    })() : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
   return (
     <>
@@ -1355,7 +1349,14 @@ function Tab({
   );
 }
 
-function Rail({ onOpenSettings, active, setActive, collapsed = false, onToggle }) {
+function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle }) {
+  // Brand card doubles as the CEO entry-point — clicking it opens the
+  // CEOPanel modal (mini office + arcade + quick actions). Keyboard users
+  // get the same behavior via Enter / Space.
+  const brandKeyDown = (e) => {
+    if (!onShowCEO) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onShowCEO(); }
+  };
   return (
     <aside className={`rail${collapsed ? ' collapsed' : ''}`}>
       {onToggle && (
@@ -1367,10 +1368,17 @@ function Rail({ onOpenSettings, active, setActive, collapsed = false, onToggle }
           {collapsed ? '»' : '«'}
         </button>
       )}
-      <div className="brand">
+      <div
+        className={'brand' + (onShowCEO ? ' brand-clickable' : '')}
+        role={onShowCEO ? 'button' : undefined}
+        tabIndex={onShowCEO ? 0 : undefined}
+        onClick={onShowCEO || undefined}
+        onKeyDown={onShowCEO ? brandKeyDown : undefined}
+        title={onShowCEO ? 'Open CEO panel' : undefined}
+      >
         <Sprite data={SPRITES.openclaw} scale={collapsed ? 1 : 2} className="bob" />
-        {!collapsed && <div className="title">CAFRESO<br/>AI</div>}
-        {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOAI ONLINE</div>}
+        {!collapsed && <div className="title">CAFRESO<br/>HQ</div>}
+        {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
       </div>
       <nav>
         {NAV_ITEMS.map(([k, label]) => (
@@ -1409,14 +1417,45 @@ function Rail({ onOpenSettings, active, setActive, collapsed = false, onToggle }
    Chat is the primary mobile entry point; Office, Team, Vault, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
-  const [drawerOpen, setDrawerOpen] = React.useState(false);
-  const tabs = [
+  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','docs','workflows','projects','content'];
+  const TAB_BOOKMARKS = [
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],
     ['team',     '👥', 'Team'],
     ['vault',    '📓', 'Vault'],
     ['projects', '🗂', 'Projects'],
   ];
+  const BOOKMARK_IDS = TAB_BOOKMARKS.map(t => t[0]);
+
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const touchRef = React.useRef(null);
+
+  // Horizontal swipe on .view-area to cycle through ALL_VIEWS
+  React.useEffect(() => {
+    const el = document.querySelector('.view-area');
+    if (!el || window.innerWidth > 768) return;
+    const onStart = (e) => {
+      const t = e.touches[0];
+      touchRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+    };
+    const onEnd = (e) => {
+      if (!touchRef.current) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchRef.current.x;
+      const dy = t.clientY - touchRef.current.y;
+      const dt = Date.now() - touchRef.current.t;
+      touchRef.current = null;
+      if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.7 || dt > 400) return;
+      const idx = ALL_VIEWS.indexOf(active);
+      if (idx < 0) return;
+      if (dx < 0 && idx < ALL_VIEWS.length - 1) setActive(ALL_VIEWS[idx + 1]);
+      if (dx > 0 && idx > 0) setActive(ALL_VIEWS[idx - 1]);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchend', onEnd); };
+  }, [active, setActive]);
+
   const toolItems = [
     { icon: '📬', label: 'Inbox',    badge: inboxCount || 0,   action: onOpenInbox },
     { icon: '📁', label: 'Memory',   badge: 0,                  action: onOpenMemory },
@@ -1427,6 +1466,9 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
     { icon: night ? '☀' : '☾', label: night ? 'Day' : 'Night', badge: 0, action: onToggleNight },
     { icon: '⚙️', label: 'Settings', badge: 0,                  action: onOpenSettings },
   ];
+
+  const activeIdx = ALL_VIEWS.indexOf(active);
+
   return (
     <>
       {/* Slide-up tool drawer */}
@@ -1434,7 +1476,12 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
         <div className="mobile-drawer-overlay" onClick={() => setDrawerOpen(false)}>
           <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
             <div className="mobile-drawer-handle" />
-            <div className="mobile-drawer-title">COMMAND CENTER</div>
+            <div className="mobile-drawer-header">
+              <div className="mobile-drawer-title">COMMAND CENTER</div>
+              <button className="mobile-drawer-close" onClick={() => setDrawerOpen(false)}>
+                {'✕'} CLOSE
+              </button>
+            </div>
             <div className="mobile-drawer-grid">
               {toolItems.map(t => (
                 <button key={t.label} className="mobile-drawer-item" onClick={() => { setDrawerOpen(false); if (t.action) t.action(); }}>
@@ -1448,7 +1495,13 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
         </div>
       )}
       <nav className="mobile-tabbar" aria-label="Primary">
-        {tabs.map(([k, icon, label]) => (
+        {/* Swipe indicator dots — embedded in tab bar top edge */}
+        <div className="mobile-swipe-indicator">
+          {ALL_VIEWS.map((v, i) => (
+            <span key={v} className={'msi-dot' + (i === activeIdx ? ' active' : '') + (BOOKMARK_IDS.includes(v) ? ' bookmark' : '')} />
+          ))}
+        </div>
+        {TAB_BOOKMARKS.map(([k, icon, label]) => (
           <button
             key={k}
             className={'mtab' + (active === k ? ' active' : '')}
@@ -1459,7 +1512,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
           </button>
         ))}
         <button className={'mtab' + (drawerOpen ? ' active' : '')} onClick={() => setDrawerOpen(v => !v)}>
-          <span className="mtab-ico" aria-hidden="true">⚡</span>
+          <span className="mtab-ico" aria-hidden="true">🛠️</span>
           <span className="mtab-label">Tools</span>
         </button>
       </nav>
@@ -1470,7 +1523,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, maxSlots = 5 }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, maxSlots = 5 }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -1486,20 +1539,127 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   const emptySlots = Math.max(0, maxSlots - seniorAgents.length);
   const [dropTarget, setDropTarget] = React.useState(null);
   const vocab = useVocab();
+  const isMobileOffice = typeof window !== 'undefined' && window.innerWidth <= 768;
+  // Inbox tasks = anything sitting in the queue waiting to be delegated.
+  // We treat status === 'inbox' OR a task with no assignee as eligible to
+  // show in the rail. The drop handler on agent desks moves the task to
+  // status:'doing' and sets assignedTo, so it disappears from the rail
+  // automatically once delegated.
+  const inboxTasks = (tasks || []).filter(t => t && (t.status === 'inbox' || !t.assignedTo));
   return (
     <div className="office">
+      {/* Task rail — slim strip of draggable cards above the rooms.
+          - Desktop: drag a card onto a senior agent's desk to delegate.
+          - Mobile: tap the assignee dropdown inside the card; drag-and-drop
+            is unreliable on touch so the picker is the primary affordance.
+          The header `tag` already explains the gesture; this rail provides
+          the actual drag source the office was designed around. */}
+      <div className="office-task-rail" aria-label="Inbox tasks">
+        <div className="otr-head">
+          <span className="otr-title">📋 Inbox</span>
+          <span className="otr-hint">
+            {inboxTasks.length === 0
+              ? 'No tasks waiting — add one in the Tasks tab.'
+              : (isMobileOffice
+                  ? 'tap the picker to assign'
+                  : 'drag a card onto an agent\'s desk')}
+          </span>
+          <span className="otr-count">{inboxTasks.length}</span>
+          {onGoToTasks && (
+            <button className="otr-more" onClick={onGoToTasks} title="Open the full task board">
+              Board →
+            </button>
+          )}
+        </div>
+        {inboxTasks.length === 0 ? (
+          <div className="otr-empty">All clear. Drop something here from the Tasks tab to delegate.</div>
+        ) : (
+          <div className="otr-scroll">
+            {inboxTasks.map(t => (
+              <div key={t.id}
+                   className={`otr-card pri-${t.priority || 'med'}`}
+                   draggable
+                   onDragStart={(e) => {
+                     e.dataTransfer.setData('task', t.id);
+                     e.dataTransfer.effectAllowed = 'move';
+                   }}
+                   title="Drag to an agent's desk to delegate">
+                <div className="otr-card-row">
+                  <span className={`otr-pri pri-${t.priority || 'med'}`}>{t.priority || 'med'}</span>
+                  <div className="otr-card-title">{t.title}</div>
+                </div>
+                {t.detail && <div className="otr-card-detail">{t.detail}</div>}
+                <div className="otr-card-foot">
+                  <span className="otr-grip" aria-hidden="true">⋮⋮</span>
+                  {onAssignTask ? (
+                    <select className="otr-assign"
+                            value={t.assignedTo || ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              if (!id) return;
+                              const a = agents.find(x => x.id === id);
+                              if (a && onTaskDropOnAgent) onTaskDropOnAgent(t.id, a);
+                              else if (onAssignTask) onAssignTask(t.id, id);
+                            }}
+                            title="Assign to an agent">
+                      <option value="">Assign to…</option>
+                      {agents.map(a => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="otr-unassigned">↕ drag to a desk</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Mobile: horizontal scrollable agent avatar strip */}
+      {isMobileOffice && (
+        <div className="mobile-agent-strip">
+          <div className="mas-scroll">
+            <div className="mas-item" onClick={onSitWithCEO} title="CafresoAI CEO">
+              <div className="sprite-wrap"><Sprite data="ceo" scale={1.5}/></div>
+              <span className="mas-name">CafresoAI</span>
+            </div>
+            {agents.map(a => (
+              <div key={a.id} className="mas-item" onClick={() => onInspect && onInspect(a)} title={a.name}>
+                <div className="sprite-wrap" style={{ position: 'relative' }}>
+                  <Sprite data={a.sprite || a.name} scale={1.5}/>
+                  <span className="mas-status" style={{
+                    background: a.status === 'busy' || a.status === 'active' ? 'var(--live)' : 'var(--ink-3)',
+                    position: 'absolute', bottom: 0, right: 0,
+                  }}/>
+                </div>
+                <span className="mas-name">{a.name}</span>
+                <span style={{ fontSize: 10 }}>{MOOD_ICON[a.mood] || ''}</span>
+              </div>
+            ))}
+            <div className="mas-plus" onClick={onHire} title="Hire agent">+</div>
+          </div>
+        </div>
+      )}
       <div className="wall-line" />
       <div className="floor" />
       <div className="pet" aria-label="Maximus"><Sprite data="maximus" scale={2}/></div>
 
       <div className="rooms">
-        {/* CEO corner office */}
+        {/* CEO office */}
         <div className="room ceo">
           <div className="nameplate">
-            <span>{vocab.corner} · CAFRESOAI</span>
+            <span>{vocab.corner} · CAFRESOHQ</span>
             <span className="pip" />
           </div>
           <div className="interior">
+            {/* Office furnishings — overhead light, rug, framed photo on the
+                back wall. These run first so they sit BEHIND the interactive
+                pieces (corkboard, arcade, desk, etc.). */}
+            <div className="ceo-ceiling-light" aria-hidden="true"/>
+            <div className="office-carpet" aria-hidden="true"/>
+            <div className="wall-photo" title="Cafreso skyline" aria-hidden="true"/>
             <div className="corkboard" title="Bulletin board — pinned memory & receipts">
               {corkPins.length === 0 && (
                 <div className="cork-empty">📌 pin memory or receipts here</div>
@@ -1511,8 +1671,41 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 </div>
               ))}
             </div>
-            <div className="window" />
+            <div className="window">
+              <div className="sun"/>
+              <div className="cloud cloud-a"/>
+              <div className="cloud cloud-b"/>
+            </div>
+            {/* Wall clock — analog, ticking minute hand */}
+            <div className="wall-clock" title="Wall clock">
+              <span className="wc-hand wc-hour"/>
+              <span className="wc-hand wc-min"/>
+              <span className="wc-pin"/>
+            </div>
+            {/* Mini strategy whiteboard on the right wall */}
+            <div className="whiteboard" title="Strategy whiteboard">
+              <span className="wb-line">Q3 — SHIP HQ</span>
+              <span className="wb-line wb-r">★ ECOSYSTEM</span>
+              <span className="wb-line">DAO · CHAIN · AI</span>
+            </div>
+            {/* Bookshelf with colored binder spines — slots into the gap above
+                the floor between the arcade and the desk. */}
+            <div className="bookshelf" title="Quarterly binders" aria-hidden="true">
+              <div className="shelf"><i className="book b1"/><i className="book b2"/><i className="book b3"/><i className="book b4"/><i className="book b5"/></div>
+              <div className="shelf"><i className="book b3"/><i className="book b1"/><i className="book b5"/><i className="book b2"/></div>
+              <div className="shelf"><i className="book b4"/><i className="book b3"/><i className="book b1"/></div>
+            </div>
             <div className="plant" />
+            {/* Coffee mug on the desk top */}
+            <div className="coffee-mug" title="CEO's coffee" aria-hidden="true">
+              <span className="cm-steam"/>
+            </div>
+            {/* Desk peripherals — keyboard, mouse, phone */}
+            <div className="desk-keyboard" aria-hidden="true"/>
+            <div className="desk-mouse" aria-hidden="true"/>
+            <div className="desk-phone" title="Desk phone" aria-hidden="true"/>
+            {/* Trash bin between desk and filing cabinet */}
+            <div className="trash-bin" title="Trash" aria-hidden="true"/>
             {/* Clickable filing cabinet → memory shelf */}
             <div className="filing clickable" title="Browse CafresoAI's memory" onClick={(e)=>{e.stopPropagation(); onOpenMemory();}}>
               <span/><span/><span/>
@@ -1524,6 +1717,28 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             {/* Meeting room door */}
             <div className="meeting-door" title="Open meeting room" onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}}/>
             <div className="meeting-door-label">MEETING →</div>
+            {/* Pac-Man arcade — clickable easter egg that boots Cafreso Workspaces */}
+            <a className="arcade clickable" href="https://ai.cafreso.com/workspaces"
+               title="PAC-MAN · Boot up Cafreso Workspaces"
+               onClick={(e)=>e.stopPropagation()}>
+              <span className="arcade-marquee">PAC-MAN</span>
+              <span className="arcade-bezel">
+                <span className="arcade-screen">
+                  <i className="dot"/><i className="dot"/><i className="dot"/><i className="dot"/>
+                  <i className="pac"/>
+                  <i className="ghost blinky"/>
+                  <i className="ghost pinky"/>
+                  <i className="ghost inky"/>
+                </span>
+              </span>
+              <span className="arcade-coin"/>
+              <span className="arcade-controls">
+                <i className="joystick"/>
+                <i className="btn-red"/>
+                <i className="btn-red"/>
+              </span>
+              <span className="arcade-base"/>
+            </a>
             <div className="sticky-stack">
               {stickies.map(s => (
                 <div key={s.id} className="sticky" title="Pinned context">
@@ -1534,6 +1749,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <div className="add-sticky" onClick={onAddSticky}>+ NOTE</div>
             </div>
             <div className="desk" />
+            {/* Office chair behind the CEO — the backrest pokes up
+                behind the sprite so it reads as "sitting at the desk". */}
+            <div className="office-chair" aria-hidden="true"/>
             <div className="sprite-slot">
               <div className="bubble t-body">drafting 1-pager…</div>
               <Sprite data="openclaw" scale={2} className="bob slow"/>
@@ -1650,21 +1868,111 @@ function Ticker({ items }) {
 
 /* ------------ CEO Chat monitor ------------ */
 const THREADS = [
-  { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoAI' },
+  { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
   { id: 'team',     label: 'TEAM',     icon: '💬', desc: 'Sub-agents talking to each other' },
   { id: 'research', label: 'RESEARCH', icon: '🔬', desc: 'Research mission iterations' },
 ];
+
+/* ---- Swipe-to-reply/DM wrapper for mobile chat messages ---- */
+function SwipeMessage({ children, onReply, onDM, agentName }) {
+  const ref = React.useRef(null);
+  const touchRef = React.useRef(null);
+  const [offset, setOffset] = React.useState(0);
+  const [showActions, setShowActions] = React.useState(false);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+
+  // All hooks above — safe to conditionally render below
+  if (!isMobile) return children;
+
+  const onStart = (e) => {
+    const t = e.touches[0];
+    touchRef.current = { x: t.clientX, y: t.clientY };
+    setShowActions(false);
+  };
+  const onMove = (e) => {
+    if (!touchRef.current) return;
+    const dx = e.touches[0].clientX - touchRef.current.x;
+    const dy = e.touches[0].clientY - touchRef.current.y;
+    if (Math.abs(dy) > Math.abs(dx)) { touchRef.current = null; setOffset(0); return; }
+    if (dx < 0) { e.preventDefault(); setOffset(Math.max(dx, -100)); }
+  };
+  const onEnd = () => {
+    if (offset < -50) { setShowActions(true); setOffset(-80); }
+    else { setOffset(0); setShowActions(false); }
+    touchRef.current = null;
+  };
+
+  return (
+    <div className="msg-swipe-wrapper">
+      <div className="msg-swipe-actions" style={{ opacity: showActions ? 1 : Math.min(1, Math.abs(offset) / 60) }}>
+        {onReply && <button className="msg-swipe-btn" onClick={() => { setOffset(0); setShowActions(false); onReply(); }} title="Reply">↩</button>}
+        {onDM && agentName && <button className="msg-swipe-btn" onClick={() => { setOffset(0); setShowActions(false); onDM(); }} title={`DM ${agentName}`}>💬</button>}
+      </div>
+      <div style={{ transform: `translateX(${offset}px)`, transition: touchRef.current ? 'none' : 'transform 0.2s ease' }}
+        onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd} ref={ref}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
-  const [activeThread, setActiveThread] = useState('direct');
+  /* activeThread persists across reloads / view switches so navigating away
+     from chat and back doesn't dump the user into the 'direct' thread. */
+  const _ACTIVE_THREAD_KEY = 'openclaw_chat_active_thread_v1';
+  const [activeThread, _setActiveThread] = useState(() => {
+    try {
+      const saved = localStorage.getItem(_ACTIVE_THREAD_KEY);
+      return saved && saved.length ? saved : 'direct';
+    } catch (_e) { return 'direct'; }
+  });
+  const setActiveThread = React.useCallback((next) => {
+    _setActiveThread(prev => {
+      const value = typeof next === 'function' ? next(prev) : next;
+      try { localStorage.setItem(_ACTIVE_THREAD_KEY, String(value || 'direct')); } catch (_e) {}
+      return value;
+    });
+  }, []);
+
+  /* Handoff mode: when CafresoAI emits [HANDOFF_TO: name], the user converses
+     directly with that specialist until they say "back to CafresoAI" or click
+     the Return button. Persisted per-thread so navigation/reload doesn't drop
+     the boss back to the orchestrator mid-conversation. */
+  const _HANDOFF_KEY = 'openclaw_chat_handoffs_v1';
+  const [handoffMap, _setHandoffMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(_HANDOFF_KEY) || '{}') || {}; }
+    catch (_e) { return {}; }
+  });
+  const setHandoffFor = React.useCallback((thread, agentName) => {
+    _setHandoffMap(prev => {
+      const next = { ...prev };
+      if (agentName) next[thread] = agentName;
+      else delete next[thread];
+      try { localStorage.setItem(_HANDOFF_KEY, JSON.stringify(next)); } catch (_e) {}
+      return next;
+    });
+  }, []);
+  const handoffAgentName = handoffMap[activeThread] || null;
+  const handoffAgent = handoffAgentName
+    ? agents.find(a => a.name.toLowerCase() === handoffAgentName.toLowerCase()) || null
+    : null;
+  const returnToCEO = React.useCallback(() => {
+    if (handoffAgentName) {
+      setHandoffFor(activeThread, null);
+      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        text: `(returned to CafresoHQ from ${handoffAgentName})`, thread: activeThread }]);
+    }
+  }, [activeThread, handoffAgentName, setHandoffFor, setChat]);
   const screenRef = useRef(null);
   const bottomRef = useRef(null);
   const abortRef = useRef(null);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [openActionsId, setOpenActionsId] = useState(null);
+  const _isMobileChat = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
   /* @-autocomplete state.
        mention: { active, prefix, start, hits, idx } | null
@@ -1939,18 +2247,57 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     }
 
     setInput('');
+
+    /* If a handoff is active for this thread, the user is talking to the
+       specialist directly — skip CafresoAI entirely. Magic phrase "back to
+       CafresoAI" returns control. */
+    if (handoffAgent) {
+      const lower = text.toLowerCase();
+      if (lower.includes('back to cafresohq') || lower.includes('back to cafresoai') || lower.includes('back to ceo')) {
+        returnToCEO();
+        return;
+      }
+      setChat(prev => [...prev, {
+        id: MOCK.uid('m'), from: 'user', name: 'You',
+        text, target: '@' + handoffAgent.name, thread: activeThread,
+      }]);
+      setStreaming(true);
+      try {
+        await onDispatchToAgent(handoffAgent, text, {
+          suppressUserEcho: true,
+          threadOverride: activeThread,
+        });
+      } catch (err) {
+        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          text: `(${handoffAgent.name} bowed out: ${err && err.message || err})`, thread: activeThread }]);
+      } finally {
+        setStreaming(false);
+      }
+      return;
+    }
+
     const userMsg = { id: MOCK.uid('m'), from: 'user', name: 'You', text };
     const pendingChat = [...chat, userMsg];
     setChat(pendingChat);
     setStreaming(true);
     const ceoId = MOCK.uid('m');
-    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoAI', text: '', streaming: true }]);
+    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true }]);
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = MOCK.throttleTokens(setChat, ceoId);
+    /* Track DMs and handoff that CafresoAI emits during the stream so the
+       host can dispatch to specialists / switch the active responder after
+       the orchestrator finishes its turn. */
+    const ceoDms = [];
+    let ceoHandoff = null;
+    const onTool = (ev) => {
+      if (ev.phase === 'dm') ceoDms.push({ to: ev.arg, body: ev.body });
+      else if (ev.phase === 'handoff') ceoHandoff = { to: ev.arg, body: ev.body };
+    };
     try {
       await MOCK.ceoStream(text, flush, { chat: pendingChat, agents, signal: controller.signal,
            onUsage: u => onCeoUsage && onCeoUsage(u),
+           onTool,
            onHint: flush.note });
       flush.flushNow();
     } catch (err) {
@@ -1969,9 +2316,119 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     });
     const approvalDesc = MOCK.extractApproval(finalText);
     if (approvalDesc && onApprovalRequest) {
-      onApprovalRequest({ title: approvalDesc, by: 'CafresoAI', kind: 'awaiting stamp' });
+      onApprovalRequest({ title: approvalDesc, by: 'CafresoHQ', kind: 'awaiting stamp' });
     }
     setStreaming(false);
+
+    /* Strip raw routing markers from the rendered CEO bubble so the user sees
+       a clean reply, not bracket syntax. The markers were already captured
+       above via onTool. */
+    if (ceoHandoff || ceoDms.length) {
+      setChat(prev => prev.map(m => {
+        if (m.id !== ceoId) return m;
+        let cleaned = String(m.text || '')
+          .replace(/\[\s*HANDOFF_TO\s*:\s*[^\]\n]+\][\s\S]*?\[\s*\/\s*HANDOFF_TO\s*\]/gi, '')
+          .replace(/\[\s*DM_TO\s*:\s*[^\]\n]+\][\s\S]*?\[\s*\/\s*DM_TO\s*\]/gi, '');
+        cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+        return { ...m, text: cleaned };
+      }));
+    }
+
+    /* HANDOFF_TO — switch the active responder to the specialist and have
+       them open the conversation with the boss directly. */
+    if (ceoHandoff && onDispatchToAgent) {
+      const target = agents.find(a => a.name.toLowerCase() === ceoHandoff.to.toLowerCase());
+      if (target) {
+        setHandoffFor(activeThread, target.name);
+        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          text: `↪ Handed off to ${target.name}. Talk to them directly — say "back to CafresoHQ" to return.`,
+          thread: activeThread }]);
+        try {
+          await onDispatchToAgent(target, ceoHandoff.body || text, {
+            suppressUserEcho: true,
+            threadOverride: activeThread,
+          });
+        } catch (err) {
+          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+            text: `(${target.name} couldn't take the handoff: ${err && err.message || err})`,
+            thread: activeThread }]);
+        }
+      } else {
+        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          text: `(CafresoHQ tried to hand off to "${ceoHandoff.to}" but no such teammate is hired)`,
+          thread: activeThread }]);
+      }
+    } else if (ceoDms.length && onDispatchToAgent) {
+      /* Parallel DM_TO fan-out from the orchestrator. Dispatch each in parallel;
+         specialists stream into the same thread with coParticipants context.
+         When 2+ specialists reply, CafresoAI synthesizes one combined response. */
+      const targets = ceoDms.map(d => ({
+        agent: agents.find(a => a.name.toLowerCase() === d.to.toLowerCase()),
+        body: d.body,
+      })).filter(d => d.agent);
+      const unknown = ceoDms.filter(d => !agents.find(a => a.name.toLowerCase() === d.to.toLowerCase()));
+      for (const u of unknown) {
+        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          text: `(CafresoHQ tried to DM "${u.to}" but no such teammate is hired)`,
+          thread: activeThread }]);
+      }
+      if (targets.length) {
+        setStreaming(true);
+        try {
+          await Promise.all(targets.map(t =>
+            onDispatchToAgent(t.agent, t.body, {
+              suppressUserEcho: true,
+              threadOverride: activeThread,
+              coParticipants: targets.filter(o => o.agent.id !== t.agent.id).map(o => ({ name: o.agent.name, role: o.agent.role })),
+            }).catch(err => {
+              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+                text: `(${t.agent.name} bowed out: ${err && err.message || err})`,
+                thread: activeThread }]);
+            })
+          ));
+
+          /* Synthesis pass — combine specialist outputs into one tight CEO reply.
+             Only do this for 2+ specialists (single DMs should have been a
+             HANDOFF_TO per the orchestrator prompt). Captures the latest reply
+             from each delegated specialist by scanning chat history after the
+             fan-out completed. */
+          if (targets.length >= 2) {
+            let synthChat = [];
+            setChat(prev => { synthChat = prev; return prev; });
+            const targetNames = new Set(targets.map(t => t.agent.name.toLowerCase()));
+            const replies = [];
+            for (let i = synthChat.length - 1; i >= 0 && replies.length < targets.length; i--) {
+              const m = synthChat[i];
+              if (m.from !== 'agent' || !m.text || m.thread !== activeThread) continue;
+              const speakerName = String(m.name || '').split(' · ')[0].trim().toLowerCase();
+              if (!targetNames.has(speakerName)) continue;
+              if (replies.find(r => r.from === speakerName)) continue;
+              replies.unshift({ from: speakerName, text: m.text });
+            }
+            if (replies.length >= 2) {
+              const synthPrompt = `The boss asked: "${text}"\n\nYou delegated to ${targets.map(t => t.agent.name).join(', ')} in parallel. Here are their replies:\n\n` +
+                replies.map(r => `[${r.from}]:\n${r.text}`).join('\n\n---\n\n') +
+                `\n\nNow synthesize ONE tight combined response for the boss (2-4 sentences). Don't paste the raw outputs — extract what matters, note any disagreement, and cite vault paths if any were saved. Do NOT emit DM_TO or HANDOFF_TO markers in this turn.`;
+              const synthId = MOCK.uid('m');
+              setChat(prev => [...prev, { id: synthId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
+              const synthFlush = MOCK.throttleTokens(setChat, synthId);
+              try {
+                await MOCK.ceoStream(synthPrompt, synthFlush, { chat: synthChat, agents, signal: controller.signal,
+                     onUsage: u => onCeoUsage && onCeoUsage(u),
+                     onHint: synthFlush.note });
+                synthFlush.flushNow();
+              } catch (_synthErr) {
+                /* Best-effort — if synthesis fails, the raw specialist replies
+                   are already visible in the thread. */
+              }
+              setChat(prev => prev.map(m => m.id === synthId ? {...m, streaming: false} : m));
+            }
+          }
+        } finally {
+          setStreaming(false);
+        }
+      }
+    }
   };
 
   const stop = () => { if (abortRef.current) abortRef.current.abort(); };
@@ -2167,10 +2624,31 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           </div>
         </div>
       )}
+      {handoffAgent && (
+        <div className="handoff-banner" style={{
+          display:'flex', alignItems:'center', gap:8,
+          padding:'8px 12px',
+          background:'linear-gradient(90deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)',
+          borderBottom:'2px solid var(--accent-sun, #d4a017)',
+          fontSize:12, fontWeight:600,
+        }}>
+          <span style={{fontSize:14}}>↪</span>
+          <span style={{flex:1}}>
+            Talking to <strong>{handoffAgent.name}</strong> · <span style={{opacity:0.7, fontWeight:400}}>{handoffAgent.role}</span>
+          </span>
+          <button onClick={returnToCEO} className="px-btn ghost" style={{
+            fontSize:10, padding:'4px 10px',
+            background:'var(--paper-2)', border:'1.5px solid var(--ink)',
+            borderRadius:6, cursor:'pointer', fontWeight:700, letterSpacing:'0.04em',
+          }}>
+            ← BACK TO CAFRESOHQ
+          </button>
+        </div>
+      )}
       <div className="screen" ref={screenRef}>
         {visibleChat.length === 0 && !searchQuery && (
           <div className="thread-empty">
-            {activeThread === 'direct'   && <>No messages yet — type below to message CafresoAI.</>}
+            {activeThread === 'direct'   && <>No messages yet — type below to message CafresoHQ.</>}
             {activeThread === 'team'     && <>No team chatter yet. When sub-agents DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
             {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each iteration's output lands here.</>}
             {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message all assigned agents at once, or @-mention a subset.</>}
@@ -2194,67 +2672,103 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               </div>
             );
           }
-          return (
+          const quoteReply = () => {
+            const quoted = String(m.text).split('\n').map(l => '> ' + l).join('\n');
+            setInput((prev) => (prev ? prev + '\n\n' : '') + quoted + '\n\n');
+            if (composerRef.current) composerRef.current.focus();
+          };
+          const startDM = () => {
+            if (m.name && m.from !== 'user') {
+              setInput((prev) => (prev ? prev + ' ' : '') + `@${m.name} `);
+              if (composerRef.current) composerRef.current.focus();
+            }
+          };
+          // Display label for the message author. CEO messages always show
+          // "CafresoHQ-CEO" so the role is unmistakable in the chat thread.
+          // The hyphen gives the browser a natural wrap point in the narrow
+          // `.who` column.
+          const _whoLabel = m.from === 'user'
+            ? 'You'
+            : m.from === 'ceo'
+              ? 'CafresoHQ-CEO'
+              : (m.name || 'Agent');
+          const msgContent = (
             <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}`}>
-              <div className="who">
-                {m.from === 'user' ? <div style={{width:22,height:22,background:'var(--accent-sun)',border:'2px solid var(--ink)',display:'grid',placeItems:'center',fontFamily:'Press Start 2P',fontSize:10}}>B</div>
-                  : m.from === 'ceo' ? <Sprite data="openclaw" scale={1}/>
-                  : <Sprite data="teal" scale={1}/>}
+              <div className="who" title={_whoLabel}>
+                <span className="who-name">{_whoLabel}</span>
+                {m.target ? <span className="who-target">→ @{m.target}</span> : null}
+                {m.pinned ? <span className="msg-pinned-badge" title="pinned">📌</span> : null}
               </div>
               <div className="bubble">
-                <div className="name">
-                  {m.name}{m.target ? <span className="msg-target"> → @{m.target}</span> : null}
-                  {m.pinned ? <span className="msg-pinned-badge" title="pinned">📌</span> : null}
-                </div>
                 <div className="msg-body">
                   <MessageBody text={m.text} />
                   {m.streaming ? <span className="typing"><span/><span/><span/></span> : null}
                 </div>
                 {!m.streaming && m.text ? (
-                  <div className="msg-actions">
-                    <button title="Copy" onClick={() => {
-                      try { navigator.clipboard.writeText(m.text); }
-                      catch(_e) {}
-                      if (window.openclawToast) window.openclawToast.success('Copied');
-                    }}>📋</button>
-                    <button title="Quote-reply" onClick={() => {
-                      const quoted = String(m.text).split('\n').map(l => '> ' + l).join('\n');
-                      setInput((prev) => (prev ? prev + '\n\n' : '') + quoted + '\n\n');
-                    }}>↩</button>
-                    {m.from !== 'user' ? (
-                      <button title="Re-run this prompt" onClick={() => {
-                        // Find the user message that immediately preceded this agent reply
-                        const idx = chat.findIndex(x => x.id === m.id);
-                        for (let i = idx - 1; i >= 0; i--) {
-                          if (chat[i].from === 'user') {
-                            setInput(chat[i].text);
-                            break;
-                          }
-                        }
-                      }}>↻</button>
-                    ) : null}
-                    <button title={m.pinned ? 'Unpin' : 'Pin'} onClick={() => {
-                      setChat(prev => prev.map(x => x.id === m.id ? { ...x, pinned: !x.pinned } : x));
-                    }}>{m.pinned ? '📍' : '📌'}</button>
-                    {onPinAsTask && (
-                      <button title="Pin as a task in the backlog" onClick={() => {
-                        onPinAsTask({ msg: m });
-                        if (window.openclawToast) window.openclawToast.success('Pinned to Tasks');
-                      }}>📋+</button>
+                  <>
+                    {_isMobileChat && (
+                      <button className="msg-actions-toggle" onClick={() => setOpenActionsId(prev => prev === m.id ? null : m.id)} title="Actions">{'···'}</button>
                     )}
-                  </div>
+                    <div className={'msg-actions' + (_isMobileChat && openActionsId === m.id ? ' msg-actions-open' : '')}>
+                      <button title="Copy" onClick={() => {
+                        try { navigator.clipboard.writeText(m.text); }
+                        catch(_e) {}
+                        if (window.openclawToast) window.openclawToast.success('Copied');
+                      }}>📋</button>
+                      <button title="Quote-reply" onClick={quoteReply}>↩</button>
+                      {m.from !== 'user' ? (
+                        <>
+                          <button title="Re-run this prompt" onClick={() => {
+                            const idx = chat.findIndex(x => x.id === m.id);
+                            for (let i = idx - 1; i >= 0; i--) {
+                              if (chat[i].from === 'user') {
+                                setInput(chat[i].text);
+                                break;
+                              }
+                            }
+                          }}>↻</button>
+                          <button title={`DM ${m.name}`} onClick={startDM}>💬</button>
+                        </>
+                      ) : null}
+                      <button title={m.pinned ? 'Unpin' : 'Pin'} onClick={() => {
+                        setChat(prev => prev.map(x => x.id === m.id ? { ...x, pinned: !x.pinned } : x));
+                      }}>{m.pinned ? '📍' : '📌'}</button>
+                      {onPinAsTask && (
+                        <button title="Pin as a task in the backlog" onClick={() => {
+                          onPinAsTask({ msg: m });
+                          if (window.openclawToast) window.openclawToast.success('Pinned to Tasks');
+                        }}>📋+</button>
+                      )}
+                    </div>
+                  </>
                 ) : null}
               </div>
             </div>
+          );
+          return (
+            <SwipeMessage key={m.id} onReply={quoteReply} onDM={m.from !== 'user' ? startDM : null} agentName={m.name}>
+              {msgContent}
+            </SwipeMessage>
           );
         })}
         <div ref={bottomRef} style={{height:0,overflow:'hidden'}} aria-hidden="true"/>
       </div>
       {!isReadOnly ? (
       <div className="composer" style={{position:'relative'}}>
+        {/* Action row — sits ABOVE the textarea so it doesn't squeeze the
+            input. Small pills that respect their content width; they push
+            to the right via flex auto. */}
+        <div className="actions">
+          <button className="composer-mini composer-mini--ghost" onClick={()=>setShowDelegate(s=>!s)} title="Hand off to a sub-agent">
+            <Ico kind="delegate" size={11}/> Delegate
+          </button>
+          {streaming
+            ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Stop streaming">■ Stop</button>
+            : <button className="composer-mini composer-mini--primary" onClick={send} title="Send (Enter)">Send ↵</button>}
+        </div>
         <textarea
           ref={composerRef}
-          placeholder="Message CafresoAI… (@ mention · ↵ send · /brainstorm for team)"
+          placeholder="Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)"
           value={input}
           onChange={onInputChange}
           onKeyDown={onKey}
@@ -2294,14 +2808,6 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             ))}
           </div>
         )}
-        <div className="actions">
-          <button className="px-btn secondary" onClick={()=>setShowDelegate(s=>!s)}>
-            <Ico kind="delegate" size={12}/> Delegate
-          </button>
-          {streaming
-            ? <button className="px-btn danger" onClick={stop}>■ Stop</button>
-            : <button className="px-btn primary" onClick={send}>Send</button>}
-        </div>
         {showDelegate && (
           <div className="delegate-pop">
             <div className="title">HAND OFF TO…</div>
@@ -2720,6 +3226,141 @@ function Toast({ msg }) {
   return <div className="toast"><span className="kw">{msg.kind || 'HQ'}</span><span>{msg.text}</span></div>;
 }
 
+/* ──────────────────────────────────────────────────────────────────────
+   CEOPanel — modal that opens when the user clicks the CafresoHQ-CEO
+   sidebar card. Shows a mini diorama of the CEO office (with a live
+   Pac-Man cabinet) plus quick-action buttons (Settings, Sit 1:1,
+   Memory, Meeting, Workspaces). Pattern mirrors InspectPanel but with a
+   dedicated layout because the orchestrator's view is richer than a
+   sub-agent's stat sheet.
+   ──────────────────────────────────────────────────────────────────── */
+function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, onOpenMeeting }) {
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const fire = (fn) => () => { if (typeof fn === 'function') fn(); onClose(); };
+  return (
+    <div className="ceo-panel-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="CafresoHQ-CEO panel">
+      <div className="ceo-panel" onClick={(e) => e.stopPropagation()}>
+        <header className="ceo-panel-head">
+          <div className="ceo-panel-identity">
+            <Sprite data={SPRITES.openclaw} scale={2}/>
+            <div>
+              <div className="ceo-panel-title">CafresoHQ-CEO</div>
+              <div className="ceo-panel-sub">Orchestrator · Cafreso HQ</div>
+            </div>
+          </div>
+          <button className="ceo-panel-close" onClick={onClose} aria-label="Close">✕</button>
+        </header>
+        {/* The .office wrapper scopes pixel-art rendering + Press Start 2P
+            font so the mini diorama looks the same as the Office tab. */}
+        <div className="ceo-panel-stage office">
+          <div className="ceo-panel-room">
+            <div className="interior">
+              {/* Office furnishings — run first so they sit behind the
+                  interactive pieces (corkboard, arcade, desk, etc.). */}
+              <div className="ceo-ceiling-light" aria-hidden="true"/>
+              <div className="office-carpet" aria-hidden="true"/>
+              <div className="wall-photo" title="Cafreso skyline" aria-hidden="true"/>
+              <div className="corkboard">📌 pin memory or receipts here</div>
+              <div className="window">
+                <div className="sun"/>
+                <div className="cloud cloud-a"/>
+                <div className="cloud cloud-b"/>
+              </div>
+              <div className="wall-clock" title="Wall clock">
+                <span className="wc-hand wc-hour"/>
+                <span className="wc-hand wc-min"/>
+                <span className="wc-pin"/>
+              </div>
+              <div className="whiteboard" title="Strategy whiteboard">
+                <span className="wb-line">Q3 — SHIP HQ</span>
+                <span className="wb-line wb-r">★ ECOSYSTEM</span>
+                <span className="wb-line">DAO · CHAIN · AI</span>
+              </div>
+              <div className="bookshelf" title="Quarterly binders" aria-hidden="true">
+                <div className="shelf"><i className="book b1"/><i className="book b2"/><i className="book b3"/><i className="book b4"/><i className="book b5"/></div>
+                <div className="shelf"><i className="book b3"/><i className="book b1"/><i className="book b5"/><i className="book b2"/></div>
+                <div className="shelf"><i className="book b4"/><i className="book b3"/><i className="book b1"/></div>
+              </div>
+              <div className="plant"/>
+              <div className="coffee-mug" aria-hidden="true"><span className="cm-steam"/></div>
+              <div className="desk-keyboard" aria-hidden="true"/>
+              <div className="desk-mouse" aria-hidden="true"/>
+              <div className="desk-phone" title="Desk phone" aria-hidden="true"/>
+              <div className="trash-bin" title="Trash" aria-hidden="true"/>
+              <a className="arcade clickable"
+                 href="https://ai.cafreso.com/workspaces"
+                 title="PAC-MAN · Boot up Cafreso Workspaces"
+                 onClick={(e)=>e.stopPropagation()}>
+                <span className="arcade-marquee">PAC-MAN</span>
+                <span className="arcade-bezel">
+                  <span className="arcade-screen">
+                    <i className="dot"/><i className="dot"/><i className="dot"/><i className="dot"/>
+                    <i className="pac"/>
+                    <i className="ghost blinky"/>
+                    <i className="ghost pinky"/>
+                    <i className="ghost inky"/>
+                  </span>
+                </span>
+                <span className="arcade-coin"/>
+                <span className="arcade-controls">
+                  <i className="joystick"/>
+                  <i className="btn-red"/>
+                  <i className="btn-red"/>
+                </span>
+                <span className="arcade-base"/>
+              </a>
+              <div className="filing clickable" title="Memory shelf"
+                   onClick={fire(onOpenMemory)}>
+                <span/><span/><span/>
+              </div>
+              <div className="guest-chair" title="Sit 1:1 with the CEO"
+                   onClick={fire(onSitWithCEO)}/>
+              <div className="meeting-door" title="Meeting room"
+                   onClick={fire(onOpenMeeting)}/>
+              <div className="desk"/>
+              <div className="office-chair" aria-hidden="true"/>
+              <div className="sprite-slot">
+                <Sprite data={SPRITES.openclaw} scale={1}/>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="ceo-panel-actions">
+          <button className="ceo-panel-action" onClick={fire(onOpenSettings)}>
+            <span className="ceo-panel-icon"><Ico kind="settings" size={16}/></span>
+            <span>Settings</span>
+          </button>
+          <button className="ceo-panel-action" onClick={fire(onSitWithCEO)}>
+            <span className="ceo-panel-icon" aria-hidden="true">☕</span>
+            <span>Sit 1:1</span>
+          </button>
+          <button className="ceo-panel-action" onClick={fire(onOpenMemory)}>
+            <span className="ceo-panel-icon" aria-hidden="true">🗂</span>
+            <span>Memory</span>
+          </button>
+          <button className="ceo-panel-action" onClick={fire(onOpenMeeting)}>
+            <span className="ceo-panel-icon" aria-hidden="true">🚪</span>
+            <span>Meeting</span>
+          </button>
+          <a className="ceo-panel-action ceo-panel-action--workspaces"
+             href="https://ai.cafreso.com/workspaces"
+             onClick={onClose}>
+            <span className="ceo-panel-icon" aria-hidden="true">🕹</span>
+            <span>Workspaces</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.OpenclawUI.CEOPanel = CEOPanel;
 window.OpenclawUI.InspectPanel = InspectPanel;
 window.OpenclawUI.TokenHUD = TokenHUD;
 window.OpenclawUI.ShortcutHud = ShortcutHud;

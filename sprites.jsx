@@ -101,7 +101,7 @@ const DOGS = {
 function Sprite({ data, scale = 3, className = '', style = {} }) {
   // `data` can be a palette key (string) or a palette object.
   const isDog = typeof data === 'string' && !!DOGS[data];
-  const palette = typeof data === 'string' ? (DOGS[data] || HUMANS[data]) : data;
+  const palette = typeof data === 'string' ? (DOGS[data] || HUMANS[data] || HUMANS.openclaw) : (data || HUMANS.openclaw);
   const template = isDog ? CHAR_16_DOG : CHAR_16;
   const rows = 16, cols = 16;
   const grid = {

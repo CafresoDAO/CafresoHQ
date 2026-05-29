@@ -6,6 +6,16 @@
    Settings persisted in localStorage. window.OpenclawClient is the surface.
    ========================================================================== */
 
+// Derive the API path prefix from the current page URL.
+// When loaded at https://hq.cafreso.com/u/<slug>/hq.html (Caddy gateway):
+//   _API_BASE = '/u/<slug>'  →  fetch(_API_BASE + '/terminal/status')
+//   resolves to https://hq.cafreso.com/u/<slug>/terminal/status
+//   Caddy handle_path strips the prefix and proxies /terminal/status to the container.
+// When loaded directly at http://ip:8787/hq.html or http://localhost:8787/hq.html:
+//   _API_BASE = ''  →  fetch('' + '/terminal/status') = fetch(_API_BASE + '/terminal/status')  ✓
+const _API_BASE = window.location.pathname.replace(/\/[^/]*$/, '');
+window._API_BASE = _API_BASE;   // expose for views.jsx / app.jsx
+
 const LS_KEY = 'openclaw_client_v1';
 
 const ANTHROPIC_MODELS = [
@@ -315,7 +325,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     temperature, // honored if the CLI passes it through; harmless otherwise
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch('/claudecode/stream', {
+  const res = await fetch(_API_BASE + '/claudecode/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -363,7 +373,7 @@ async function streamOpenclaw({ system, messages, model, temperature, maxTokens,
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch('/openclaw/stream', {
+  const res = await fetch(_API_BASE + '/openclaw/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -391,7 +401,7 @@ async function streamOpenclaw({ system, messages, model, temperature, maxTokens,
 
 async function openclawStatus() {
   try {
-    const r = await fetch('/openclaw/status');
+    const r = await fetch(_API_BASE + '/openclaw/status');
     if (!r.ok) return { configured: false };
     return await r.json();
   } catch (_e) { return { configured: false }; }
@@ -412,7 +422,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch('/codex/stream', {
+  const res = await fetch(_API_BASE + '/codex/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -440,7 +450,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
 
 async function codexStatus() {
   try {
-    const r = await fetch('/codex/status');
+    const r = await fetch(_API_BASE + '/codex/status');
     if (!r.ok) return { configured: false, binary: '', override: '', allowedDirs: [], badDirs: [] };
     return await r.json();
   } catch (_e) { return { configured: false, binary: '', override: '', allowedDirs: [], badDirs: [] }; }
@@ -632,11 +642,11 @@ function formatRegistry(reg) {
 }
 
 async function claudecodeStatus() {
-  const r = await fetch('/claudecode/status');
+  const r = await fetch(_API_BASE + '/claudecode/status');
   return r.ok ? r.json() : { configured: false, binary: '', override: '' };
 }
 async function claudecodeConfigure(binary) {
-  const r = await fetch('/claudecode/configure', {
+  const r = await fetch(_API_BASE + '/claudecode/configure', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ binary: binary || '' }),
   });
@@ -655,7 +665,7 @@ async function claudecodeProbe() {
 }
 
 async function codexConfigure(binary) {
-  const r = await fetch('/codex/configure', {
+  const r = await fetch(_API_BASE + '/codex/configure', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ binary: binary || '' }),
   });
@@ -847,7 +857,7 @@ async function braveSearch(query, { count = 6, signal } = {}) {
   const s = _settings;
   if (!s.braveKey) throw new Error('No Brave key — open Settings → API → Tools');
   const params = new URLSearchParams({ q: query, count: String(count), safesearch: 'moderate' });
-  const r = await fetch('/brave/search?' + params.toString(), {
+  const r = await fetch(_API_BASE + '/brave/search?' + params.toString(), {
     headers: { 'X-Brave-Key': s.braveKey },
     signal,
   });
@@ -873,7 +883,7 @@ async function braveProbe() {
 
 /* ---- Markdown Vault (local filesystem, optional Obsidian REST plugin) ---- */
 async function vaultStatus() {
-  const r = await fetch('/vault/status');
+  const r = await fetch(_API_BASE + '/vault/status');
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -881,7 +891,7 @@ async function vaultStatus() {
   return r.json();
 }
 async function vaultDiscover() {
-  const r = await fetch('/vault/discover');
+  const r = await fetch(_API_BASE + '/vault/discover');
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -894,7 +904,7 @@ async function vaultConfigure(patchOrRoot) {
   const body = typeof patchOrRoot === 'string'
     ? { root: patchOrRoot }
     : (patchOrRoot || {});
-  const r = await fetch('/vault/configure', {
+  const r = await fetch(_API_BASE + '/vault/configure', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -905,7 +915,7 @@ async function vaultConfigure(patchOrRoot) {
   return r.json();
 }
 async function vaultGraph() {
-  const r = await fetch('/vault/graph');
+  const r = await fetch(_API_BASE + '/vault/graph');
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -913,7 +923,7 @@ async function vaultGraph() {
   return r.json();
 }
 async function vaultOpenInObsidian(path) {
-  const r = await fetch('/vault/open', {
+  const r = await fetch(_API_BASE + '/vault/open', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path }),
   });
@@ -924,7 +934,7 @@ async function vaultOpenInObsidian(path) {
   return r.json();
 }
 async function vaultList() {
-  const r = await fetch('/vault/list');
+  const r = await fetch(_API_BASE + '/vault/list');
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -933,7 +943,7 @@ async function vaultList() {
   return j.files || [];
 }
 async function vaultRead(path) {
-  const r = await fetch('/vault/note?path=' + encodeURIComponent(path));
+  const r = await fetch(_API_BASE + '/vault/note?path=' + encodeURIComponent(path));
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -941,7 +951,7 @@ async function vaultRead(path) {
   return r.text();
 }
 async function vaultWrite(path, content, mode = 'write') {
-  const r = await fetch('/vault/note?path=' + encodeURIComponent(path) + '&mode=' + mode, {
+  const r = await fetch(_API_BASE + '/vault/note?path=' + encodeURIComponent(path) + '&mode=' + mode, {
     method: 'PUT', headers: { 'content-type': 'text/markdown' },
     body: content,
   });
@@ -952,7 +962,7 @@ async function vaultWrite(path, content, mode = 'write') {
   return r.json();
 }
 async function vaultDelete(path) {
-  const r = await fetch('/vault/note?path=' + encodeURIComponent(path), { method: 'DELETE' });
+  const r = await fetch(_API_BASE + '/vault/note?path=' + encodeURIComponent(path), { method: 'DELETE' });
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -960,7 +970,7 @@ async function vaultDelete(path) {
   return r.json();
 }
 async function vaultSearch(query, { limit = 10 } = {}) {
-  const r = await fetch('/vault/search?q=' + encodeURIComponent(query) + '&limit=' + limit);
+  const r = await fetch(_API_BASE + '/vault/search?q=' + encodeURIComponent(query) + '&limit=' + limit);
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(j.error || `HTTP ${r.status}`);
@@ -1072,23 +1082,33 @@ function hasAgentKey(provider) {
 
 async function terminalStatus() {
   try {
-    const r = await fetch('/terminal/status');
+    const r = await fetch(_API_BASE + '/terminal/status');
     if (!r.ok) return { claude: false, codex: false };
     return await r.json();
   } catch (_e) { return { claude: false, codex: false }; }
 }
 
-async function terminalStream({ messages, cli, cwd, model, projectName, onData, signal }) {
-  // Decrypt stored BYOK key for this CLI — blank string if none set.
-  // Decryption is AES-GCM client-side; the plaintext is sent over
-  // localhost/HTTPS only and never logged or persisted by serve.py.
+async function terminalStream({ messages, cli, cwd, model, projectName, sessionId, projectId, authMethod, onData, signal }) {
+  // authMethod: 'subscription' — use the CLI's own OAuth login (Pro/Max plan)
+  //             'apikey'       — decrypt stored BYOK key and send it
+  // Default to 'subscription' for claude, 'apikey' for codex.
   const provider = cli === 'claude' ? 'anthropic' : 'openai';
-  const agentKey = await getAgentKey(provider);
+  const useSubscription = (authMethod || (cli === 'claude' ? 'subscription' : 'apikey')) === 'subscription';
 
-  const payload = { messages, cli, cwd, model, projectName };
-  if (agentKey) payload[cli === 'claude' ? 'claudeKey' : 'codexKey'] = agentKey;
+  // sessionId + projectId let the backend tie this stream to a long-running
+  // orchestrator session so subsequent calls can resume context (e.g. CLI
+  // working directory, tool state, agent memory) instead of starting fresh.
+  const payload = { messages, cli, cwd, model, projectName, sessionId, projectId };
+  if (useSubscription) {
+    // Tell the server explicitly: don't inject any API key — let the CLI
+    // authenticate via its own OAuth / subscription credentials.
+    payload.authMethod = 'subscription';
+  } else {
+    const agentKey = await getAgentKey(provider);
+    if (agentKey) payload[cli === 'claude' ? 'claudeKey' : 'codexKey'] = agentKey;
+  }
 
-  const res = await fetch('/terminal/stream', {
+  const res = await fetch(_API_BASE + '/terminal/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1109,7 +1129,96 @@ async function terminalStream({ messages, cli, cwd, model, projectName, onData, 
 
 async function spawnTerminal({ cli, cwd }) {
   const params = new URLSearchParams({ cli, cwd });
-  const r = await fetch(`/terminal/spawn?${params}`);
+  const r = await fetch(`${_API_BASE}/terminal/spawn?${params}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+/* ── Export / generate (real binary deliverables to the vault) ────────────
+   Each calls a serve.py endpoint that renders the markdown / prompt and
+   writes the resulting .pptx / .docx / .pdf / image / video into the vault. */
+async function exportPptx(path, content) {
+  const r = await fetch(_API_BASE + '/export/pptx', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+async function exportDocx(path, content) {
+  const r = await fetch(_API_BASE + '/export/docx', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+async function exportPdf(path, content) {
+  const r = await fetch(_API_BASE + '/export/pdf', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+/* Read media provider/model from settings. Falls back to OpenAI/dall-e-3. */
+function _mediaConfig(kind /* 'image' | 'video' */) {
+  const s = (typeof getSettings === 'function') ? getSettings() : (window.OpenclawClient && window.OpenclawClient.getSettings ? window.OpenclawClient.getSettings() : {});
+  const provider = (kind === 'video' ? s.videoProvider : s.imageProvider) || 'openai';
+  const model = (kind === 'video' ? s.videoModel : s.imageModel) || (kind === 'video' ? '' : 'dall-e-3');
+  return { provider, model };
+}
+
+async function generateImage(path, prompt, opts = {}) {
+  const cfg = _mediaConfig('image');
+  const provider = opts.provider || cfg.provider;
+  const model = opts.model || cfg.model;
+  // Decrypt provider's API key from the on-device vault (best-effort).
+  // Local providers (a1111, comfyui) don't need a key — they hit a local URL.
+  let apiKey = '';
+  try {
+    if (provider === 'openai')  apiKey = await getAgentKey('openai')  || '';
+    if (provider === 'google')  apiKey = await getAgentKey('google')  || '';
+    if (provider === 'fal')     apiKey = await getAgentKey('fal')     || '';
+  } catch (_e) {}
+  // Resolve baseUrl for local providers from settings.
+  const s = (typeof getSettings === 'function') ? getSettings() : {};
+  let baseUrl = opts.baseUrl;
+  if (!baseUrl) {
+    if (provider === 'a1111')   baseUrl = s.a1111Url   || 'http://127.0.0.1:7860';
+    if (provider === 'comfyui') baseUrl = s.comfyUrl   || 'http://127.0.0.1:8188';
+  }
+  const r = await fetch(_API_BASE + '/generate/image', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, prompt, provider, model, size: opts.size, apiKey, baseUrl, workflow: opts.workflow }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+async function generateVideo(path, prompt, opts = {}) {
+  const cfg = _mediaConfig('video');
+  const provider = opts.provider || cfg.provider;
+  const model = opts.model || cfg.model;
+  let apiKey = '';
+  try {
+    if (provider === 'openai')  apiKey = await getAgentKey('openai')  || '';
+    if (provider === 'google')  apiKey = await getAgentKey('google')  || '';
+    if (provider === 'fal')     apiKey = await getAgentKey('fal')     || '';
+  } catch (_e) {}
+  const s = (typeof getSettings === 'function') ? getSettings() : {};
+  let baseUrl = opts.baseUrl;
+  if (!baseUrl && provider === 'comfyui') baseUrl = s.comfyUrl || 'http://127.0.0.1:8188';
+  const r = await fetch(_API_BASE + '/generate/video', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, prompt, provider, model, duration: opts.duration, apiKey, baseUrl, workflow: opts.workflow }),
+  });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
@@ -1118,28 +1227,28 @@ async function spawnTerminal({ cli, cwd }) {
 async function vaultUpload(files) {
   const fd = new FormData();
   for (const f of files) fd.append('file', f, f.name);
-  const r = await fetch('/vault/upload', { method: 'POST', body: fd });
+  const r = await fetch(_API_BASE + '/vault/upload', { method: 'POST', body: fd });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
 }
 
 async function vaultOciStatus() {
-  const r = await fetch('/vault/oci/status');
+  const r = await fetch(_API_BASE + '/vault/oci/status');
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
 }
 
 async function vaultOciList() {
-  const r = await fetch('/vault/oci/list');
+  const r = await fetch(_API_BASE + '/vault/oci/list');
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
 }
 
 async function vaultOciSync(direction = 'push') {
-  const r = await fetch('/vault/oci/sync', {
+  const r = await fetch(_API_BASE + '/vault/oci/sync', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ direction }),
   });
@@ -1151,7 +1260,7 @@ async function vaultOciSync(direction = 'push') {
 async function toolExec(tool, arg, { body = '', signal, cwd } = {}) {
   const payload = { tool, arg, body };
   if (cwd) payload.cwd = cwd;
-  const r = await fetch('/tools/exec', {
+  const r = await fetch(_API_BASE + '/tools/exec', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1166,7 +1275,7 @@ async function toolExec(tool, arg, { body = '', signal, cwd } = {}) {
    url can be 'owner/repo' or a full https URL.
    Returns { path, name, url } on success. */
 async function cloneRepo({ url, name, depth = 1 } = {}) {
-  const r = await fetch('/projects/clone', {
+  const r = await fetch(_API_BASE + '/projects/clone', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ url, name, depth }),
@@ -1180,6 +1289,62 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   return j;
 }
 
+/* ── VaultBridge — postMessage client to the SvelteKit parent shell ──────────
+   When the HQ app runs inside ai.cafreso.com/app (iframe), the SvelteKit
+   parent holds the vetKeys master key and can decrypt vault blobs on demand.
+   VaultBridge proxies vault operations as postMessages to the parent.
+
+   VaultBridge.isAvailable() returns false when the HQ app is opened standalone
+   (not iframed inside the shell), allowing graceful fallback to the local API. */
+(function () {
+  const _pending = new Map();
+
+  function _req(type, data) {
+    return new Promise((resolve, reject) => {
+      const reqId = Math.random().toString(36).slice(2, 10);
+      const timer = setTimeout(() => {
+        _pending.delete(reqId);
+        reject(new Error('VaultBridge timeout: ' + type));
+      }, 20000);
+      _pending.set(reqId, { resolve, reject, timer });
+      window.parent.postMessage({ type, reqId, ...data }, '*');
+    });
+  }
+
+  window.addEventListener('message', function (e) {
+    if (e.source !== window.parent) return;
+    const { type, reqId } = e.data || {};
+    if (!reqId || !_pending.has(reqId)) return;
+    const { resolve, reject, timer } = _pending.get(reqId);
+    clearTimeout(timer);
+    _pending.delete(reqId);
+    if (type === 'vault:error') {
+      const err = new Error(e.data.message || 'vault error');
+      err.code = e.data.code;
+      reject(err);
+    } else {
+      resolve(e.data);
+    }
+  });
+
+  window.VaultBridge = {
+    /** True when running inside the SvelteKit shell iframe. */
+    isAvailable() {
+      try { return window.parent !== window; } catch { return false; }
+    },
+    /** Returns the decrypted file index: [{id, name, size, mimeType, isBinary, updatedAt}] */
+    list() { return _req('vault:list', {}).then(r => r.files || []); },
+    /** Decrypt and return the text content of a file by blob ID. */
+    read(id) { return _req('vault:read', { id }).then(r => r.content); },
+    /** Encrypt and save updated text content for an existing file. */
+    write(id, content) { return _req('vault:write', { id, content }); },
+    /** Create a new text file in the vault. Returns the metadata entry. */
+    create(name, content) { return _req('vault:create', { name, content }).then(r => r.meta); },
+    /** Delete a vault file by blob ID. */
+    remove(id) { return _req('vault:delete', { id }); },
+  };
+})();
+
 window.OpenclawClient = {
   getSettings, setSettings, onSettingsChange,
   stream, listLMStudioModels, probe,
@@ -1190,6 +1355,7 @@ window.OpenclawClient = {
   vaultDiscover, vaultGraph, vaultOpenInObsidian,
   vaultUpload, vaultOciStatus, vaultOciList, vaultOciSync,
   terminalStatus, terminalStream, spawnTerminal,
+  exportPptx, exportDocx, exportPdf, generateImage, generateVideo,
   setAgentKey, getAgentKey, hasAgentKey,
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,

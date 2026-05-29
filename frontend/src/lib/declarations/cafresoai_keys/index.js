@@ -10,7 +10,7 @@ export { idlFactory } from "./cafresoai_keys.did.js";
  * beginning in dfx 0.15.0
  */
 export const canisterId =
-  process.env.CANISTER_ID_CAFRESOAI_KEYS;
+  import.meta.env.PUBLIC_CANISTER_ID_CAFRESOAI_KEYS || 'vhw7q-lqaaa-aaaab-agthq-cai';
 
 export const createActor = (canisterId, options = {}) => {
   const agent = options.agent || new HttpAgent({ ...options.agentOptions });
@@ -22,7 +22,7 @@ export const createActor = (canisterId, options = {}) => {
   }
 
   // Fetch root key for certificate validation during development
-  if (process.env.DFX_NETWORK !== "ic") {
+  if ((import.meta.env.PUBLIC_DFX_NETWORK || "ic") !== "ic") {
     agent.fetchRootKey().catch((err) => {
       console.warn(
         "Unable to fetch root key. Check to ensure that your local replica is running"

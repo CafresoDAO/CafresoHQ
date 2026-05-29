@@ -258,7 +258,7 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
   );
 }
 
-function HireModal({ open, onClose, onHire }) {
+function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
   const [role, setRole] = useStateM(MOCK.ROLES[0]);
   const [prompt, setPrompt] = useStateM('You are a helpful sub-agent. Be concise and warm.');
@@ -377,6 +377,28 @@ function HireModal({ open, onClose, onHire }) {
               <div className="post-card hire-tile" onClick={()=>setShowBoard(false)}>
                 <div className="plus">+<br/>NEW</div>
               </div>
+              {(() => {
+                const haveNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
+                const missing = (MOCK.OPENSWARM_ROSTER || []).filter(t => !haveNames.has(t.name.toLowerCase()));
+                if (!missing.length) return null;
+                return (
+                  <div
+                    className="post-card hire-tile"
+                    onClick={() => {
+                      if (!window.confirm(`Hire ${missing.length} openswarm-style specialist${missing.length === 1 ? '' : 's'}: ${missing.map(t => t.name).join(', ')}?`)) return;
+                      MOCK.spawnOpenswarmRoster(currentAgents, onHire);
+                      onClose();
+                    }}
+                    style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
+                    title="Seed openswarm-style roster: Vera, Kip, Dax, Sloan, Quill, Pixel, Reel"
+                  >
+                    <div className="plus" style={{ fontSize: 18, lineHeight: 1.2, padding: 8 }}>
+                      ⚡<br/>SEED<br/>SWARM<br/>
+                      <span style={{ fontSize: 8, opacity: 0.7 }}>+{missing.length}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
           <div className="form-grid">
@@ -471,10 +493,17 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
         </>
       }
     >
-          <div style={{display:'flex',gap:6,marginBottom:14}}>
-            {['agents','global','keys'].map(t => (
-              <button key={t} className={`px-btn ${tab===t?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setTab(t)}>
-                {t==='agents'?'PER-AGENT':t==='global'?'GLOBAL':'CONNECTIONS'}
+          <div className="settings-tabs" style={{display:'flex',gap:4,marginBottom:14,flexWrap:'wrap'}}>
+            {[
+              ['agents', '👥', 'PER-AGENT'],
+              ['global', '🎛', 'GLOBAL'],
+              ['media',  '🎨', 'MEDIA'],
+              ['keys',   '🔌', 'CONNECTIONS'],
+            ].map(([t, ico, label]) => (
+              <button key={t} className={`px-btn ${tab===t?'primary':'secondary'}`}
+                style={{fontSize:9, display:'flex', alignItems:'center', gap:6, padding:'8px 12px', minHeight:36}}
+                onClick={()=>setTab(t)}>
+                <span style={{fontSize:13}}>{ico}</span> {label}
               </button>
             ))}
           </div>
@@ -596,8 +625,208 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
+          {tab === 'media' && <MediaTab />}
           {tab === 'keys' && <ApiTab />}
     </Modal>
+  );
+}
+
+/* Media tab — user-configured image / video generation provider + model.
+   Read by claude-client.jsx _mediaConfig() and forwarded to serve.py's
+   /generate/image and /generate/video endpoints. API keys come from the
+   per-provider on-device key vault (Connections tab). */
+function MediaTab() {
+  const [s, update] = useSettingsStore();
+  const imgProvider = s.imageProvider || '';
+  const imgModel = s.imageModel || '';
+  const vidProvider = s.videoProvider || '';
+  const vidModel = s.videoModel || '';
+  const a1111Url = s.a1111Url || 'http://127.0.0.1:7860';
+  const comfyUrl = s.comfyUrl || 'http://127.0.0.1:8188';
+  const imageDefaults = {
+    openai:  'gpt-image-1',
+    // Default to Gemini Flash Image ("nano banana") — cheaper and faster than
+    // Imagen, uses the same GOOGLE_API_KEY the user already has for chat.
+    google:  'gemini-2.5-flash-image-preview',
+    fal:     'fal-ai/flux/schnell',
+    a1111:   '',  // A1111 uses whatever ckpt is loaded; empty = no override
+    comfyui: 'sd_xl_base_1.0.safetensors',
+  };
+  const videoDefaults = {
+    fal:     'fal-ai/bytedance/seedance/v1/lite/text-to-video',
+    comfyui: '',
+  };
+  // When switching providers always reset the model to the new provider's
+  // default — otherwise you'd carry e.g. "dall-e-3" into Google and it'd fail.
+  // Users can still customise the model after the switch.
+  const setImgProvider = (p) => update({ imageProvider: p, imageModel: imageDefaults[p] || '' });
+  const setVidProvider = (p) => update({ videoProvider: p, videoModel: videoDefaults[p] || '' });
+  const isLocalImg = imgProvider === 'a1111' || imgProvider === 'comfyui';
+  const isLocalVid = vidProvider === 'comfyui';
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>🖼 IMAGE GENERATION</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">Provider</div>
+            <div className="sub">where Pixel sends image prompts</div>
+          </div>
+          <select value={imgProvider} onChange={e => setImgProvider(e.target.value)}>
+            <option value="">— disabled —</option>
+            <optgroup label="Cloud">
+              <option value="openai">OpenAI (DALL·E / gpt-image-1)</option>
+              <option value="google">Google (Gemini Flash Image / Imagen)</option>
+              <option value="fal">fal.ai (Flux / SDXL / many)</option>
+            </optgroup>
+            <optgroup label="Local">
+              <option value="a1111">Automatic1111 WebUI</option>
+              <option value="comfyui">ComfyUI</option>
+            </optgroup>
+          </select>
+        </div>
+        {imgProvider && (
+          <>
+            <div className="row-knob" style={{flexDirection:'column', alignItems:'stretch', gap:6}}>
+              <div className="row" style={{justifyContent:'space-between'}}>
+                <div>
+                  <div className="lbl">{imgProvider === 'a1111' ? 'Checkpoint (optional)' : 'Model ID'}</div>
+                  <div className="sub">
+                    {imgProvider === 'openai' && 'e.g. gpt-image-1, dall-e-3, dall-e-2'}
+                    {imgProvider === 'google' && 'gemini-2.5-flash-image-preview ("nano banana", recommended) · or imagen-3.0-generate-002 / imagen-4.0-generate-001'}
+                    {imgProvider === 'fal' && 'e.g. fal-ai/flux/schnell, fal-ai/flux-pro, fal-ai/recraft-v3'}
+                    {imgProvider === 'a1111' && 'leave blank to use whatever is loaded; or e.g. sd_xl_base_1.0.safetensors'}
+                    {imgProvider === 'comfyui' && 'checkpoint filename, e.g. sd_xl_base_1.0.safetensors'}
+                  </div>
+                </div>
+                <button className="px-btn ghost" style={{fontSize:8}} onClick={()=>update({imageModel: imageDefaults[imgProvider] || ''})}>
+                  RESET
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder={imageDefaults[imgProvider] || 'model id (optional)'}
+                value={imgModel}
+                onChange={e => update({ imageModel: e.target.value })}
+                style={{width:'100%',boxSizing:'border-box',fontFamily:'JetBrains Mono, monospace',fontSize:11}}
+              />
+            </div>
+            {isLocalImg && (
+              <div className="row-knob" style={{flexDirection:'column', alignItems:'stretch', gap:6}}>
+                <div>
+                  <div className="lbl">{imgProvider === 'a1111' ? 'Automatic1111 URL' : 'ComfyUI URL'}</div>
+                  <div className="sub">
+                    {imgProvider === 'a1111' && 'launch A1111 with --api flag · default :7860'}
+                    {imgProvider === 'comfyui' && 'default :8188 — ComfyUI exposes its API by default'}
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder={imgProvider === 'a1111' ? 'http://127.0.0.1:7860' : 'http://127.0.0.1:8188'}
+                  value={imgProvider === 'a1111' ? a1111Url : comfyUrl}
+                  onChange={e => update(imgProvider === 'a1111' ? { a1111Url: e.target.value } : { comfyUrl: e.target.value })}
+                  style={{width:'100%',boxSizing:'border-box',fontFamily:'JetBrains Mono, monospace',fontSize:11}}
+                />
+              </div>
+            )}
+            <div className="hint" style={{marginTop:6, fontSize:10}}>
+              {imgProvider === 'openai' && <>API key from <strong>Connections</strong> → OPENAI_API_KEY. Server env vars override.</>}
+              {imgProvider === 'google' && <>API key from <strong>Connections</strong> → GOOGLE_API_KEY. Server env vars override.</>}
+              {imgProvider === 'fal' && <>API key from <strong>Connections</strong> → FAL_KEY (add via the agent-key vault). Server env vars override.</>}
+              {imgProvider === 'a1111' && <>Local — no API key needed. Make sure A1111 is running with <code>--api</code>.</>}
+              {imgProvider === 'comfyui' && <>Local — no API key needed. ComfyUI exposes its API automatically.</>}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="cb-panel">
+        <h4>🎬 VIDEO GENERATION</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">Provider</div>
+            <div className="sub">where Reel sends video prompts</div>
+          </div>
+          <select value={vidProvider} onChange={e => setVidProvider(e.target.value)}>
+            <option value="">— disabled —</option>
+            <optgroup label="Cloud">
+              <option value="fal">fal.ai (Seedance / Veo / Kling)</option>
+              <option value="openai">OpenAI Sora (gated)</option>
+              <option value="google">Google Veo (direct API not wired)</option>
+            </optgroup>
+            <optgroup label="Local">
+              <option value="comfyui">ComfyUI (AnimateDiff / SVD / Mochi / Hunyuan)</option>
+            </optgroup>
+          </select>
+        </div>
+        {vidProvider && (
+          <>
+            {vidProvider !== 'comfyui' && (
+              <div className="row-knob" style={{flexDirection:'column', alignItems:'stretch', gap:6}}>
+                <div className="row" style={{justifyContent:'space-between'}}>
+                  <div>
+                    <div className="lbl">Model ID</div>
+                    <div className="sub">
+                      {vidProvider === 'fal' && 'e.g. fal-ai/bytedance/seedance/v1/lite/text-to-video, fal-ai/veo3, fal-ai/kling-video/v2/master/text-to-video'}
+                      {vidProvider === 'openai' && 'e.g. sora-1 (when available on your account)'}
+                      {vidProvider === 'google' && 'e.g. veo-3'}
+                    </div>
+                  </div>
+                  <button className="px-btn ghost" style={{fontSize:8}} onClick={()=>update({videoModel: videoDefaults[vidProvider] || ''})}>
+                    RESET
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder={videoDefaults[vidProvider] || 'model id'}
+                  value={vidModel}
+                  onChange={e => update({ videoModel: e.target.value })}
+                  style={{width:'100%',boxSizing:'border-box',fontFamily:'JetBrains Mono, monospace',fontSize:11}}
+                />
+              </div>
+            )}
+            {isLocalVid && (
+              <div className="row-knob" style={{flexDirection:'column', alignItems:'stretch', gap:6}}>
+                <div>
+                  <div className="lbl">ComfyUI URL</div>
+                  <div className="sub">default :8188 — load an AnimateDiff/SVD/Mochi/Hunyuan workflow inside Comfy</div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="http://127.0.0.1:8188"
+                  value={comfyUrl}
+                  onChange={e => update({ comfyUrl: e.target.value })}
+                  style={{width:'100%',boxSizing:'border-box',fontFamily:'JetBrains Mono, monospace',fontSize:11}}
+                />
+              </div>
+            )}
+            <div className="hint" style={{marginTop:6, fontSize:10}}>
+              {vidProvider === 'fal' && 'API key from Connections → FAL_KEY. Most fal models cost $0.01-$0.50 per video.'}
+              {vidProvider === 'openai' && 'Sora API is currently gated — most accounts will get 403. Use fal.ai for production.'}
+              {vidProvider === 'google' && 'Direct Veo API not yet wired in the backend. Use fal.ai/veo3 instead.'}
+              {vidProvider === 'comfyui' && (
+                <>Local. <strong>Reel must pass a workflow JSON</strong> in the GENERATE_VIDEO body — export it from ComfyUI's "Save (API Format)" after building a working AnimateDiff/SVD/Mochi/Hunyuan graph. No auto-default because video workflows are model-specific.</>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="cb-panel" style={{gridColumn:'1 / -1'}}>
+        <h4>ℹ HOW IT WORKS</h4>
+        <div className="hint" style={{fontSize:11, lineHeight:1.5}}>
+          When configured, the <strong>Pixel</strong> and <strong>Reel</strong> agents on your roster can emit{' '}
+          <code>[GENERATE_IMAGE: path]</code> / <code>[GENERATE_VIDEO: path]</code> markers.
+          The server calls your chosen provider and saves the binary result into the vault at the requested path.
+          <br/><br/>
+          <strong>Cloud</strong> providers are pay-as-you-go (cents per image, ~$0.01–$0.50 per video).{' '}
+          <strong>Local</strong> providers (Automatic1111, ComfyUI) are free but require you to be running the tool yourself with a model loaded on your GPU.
+          {!imgProvider && !vidProvider && (
+            <> <strong>Both providers are disabled</strong> — Pixel and Reel will tell you to configure one here.</>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

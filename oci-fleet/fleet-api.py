@@ -338,7 +338,8 @@ def _reload_caddy_with_new_routes() -> tuple[bool, str]:
         #                                /usr/bin/systemctl reload caddy,\
         #                                /usr/sbin/caddy validate --config /etc/caddy/Caddyfile
         validate = subprocess.run(
-            ['sudo', '-n', '/usr/sbin/caddy', 'validate', '--config', str(tmp)],
+            ['sudo', '-n', '/usr/sbin/caddy', 'validate',
+             '--adapter', 'caddyfile', '--config', str(tmp)],
             capture_output=True, text=True, timeout=10,
         )
         if validate.returncode != 0:

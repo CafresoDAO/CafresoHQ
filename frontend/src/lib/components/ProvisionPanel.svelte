@@ -1,20 +1,15 @@
 <script>
-  // Provisioning UX: shown on the dashboard when the user is signed in but
-  // no OCI container exists for their principal yet. Triggers fleet-api,
-  // polls until ready, then writes the endpoint URL to the endpoint store.
   import { onMount } from 'svelte';
   import { isAuthenticated, principalText } from '$lib/stores/auth.js';
-  import { setEndpoint, endpointUrl } from '$lib/stores/endpoint.js';
+  import { setEndpoint } from '$lib/stores/endpoint.js';
   import { lookup, provisionAndWait, fleetHealth, FleetApiError, fleetApiUrl }
     from '$lib/api/fleetClient.js';
 
-  // 'unknown' | 'checking' | 'no-api' | 'no-container' | 'provisioning'
-  // | 'ready' | 'existing' | 'error'
-  let state    = 'unknown';
-  let phase    = '';
-  let error    = '';
+  let state = 'unknown';
+  let phase = '';
+  let error = '';
   let endpoint = '';
-  let apiOk    = null;       // null | true | false
+  let apiOk = null;
 
   $: principal = $principalText;
 
@@ -28,23 +23,24 @@
     }
   }
 
-  // Pick the best endpoint URL from a lookup/job response.
-  // Prefers gateway_url (HTTPS-ready, no mixed-content) when available,
-  // falls back to the raw container endpoint.
-  function _pickEndpoint(r) {
+  function pickEndpoint(r) {
     return r?.gateway_url || r?.endpoint || null;
   }
 
   async function autoLookup() {
     if (!$isAuthenticated || !principal) return;
-    state = 'checking'; phase = ''; error = '';
+    state = 'checking';
+    phase = '';
+    error = '';
     await checkApi();
-    if (!apiOk) { state = 'no-api'; return; }
+    if (!apiOk) {
+      state = 'no-api';
+      return;
+    }
     try {
-      const r  = await lookup(principal);
-      const ep = _pickEndpoint(r);
+      const r = await lookup(principal);
+      const ep = pickEndpoint(r);
       if (ep) {
-        // Already provisioned — adopt the endpoint silently.
         setEndpoint(ep);
         endpoint = ep;
         state = 'existing';
@@ -58,21 +54,23 @@
   }
 
   async function startProvision() {
-    state = 'provisioning'; phase = 'starting'; error = '';
+    state = 'provisioning';
+    phase = 'starting';
+    error = '';
     try {
       const job = await provisionAndWait(principal, {
         onUpdate: (j) => {
           phase = j.phase || j.status || 'working';
         },
-        pollMs:    5_000,
-        maxWaitMs: 600_000,
+        pollMs: 5000,
+        maxWaitMs: 600000
       });
-      const ep = _pickEndpoint(job);
+      const ep = pickEndpoint(job);
       if (ep) {
         setEndpoint(ep);
         endpoint = ep;
-        state    = 'ready';
-        phase    = 'ready';
+        state = 'ready';
+        phase = 'ready';
       } else {
         throw new Error('no endpoint in job result');
       }
@@ -90,26 +88,30 @@
     return String(err?.message || err);
   }
 
-  // Re-run lookup whenever the user signs in / changes principal
   $: if ($isAuthenticated && principal && state === 'unknown') autoLookup();
   $: if (!$isAuthenticated && state !== 'unknown') {
-    state = 'unknown'; phase = ''; error = ''; endpoint = '';
+    state = 'unknown';
+    phase = '';
+    error = '';
+    endpoint = '';
   }
 
-  onMount(() => { if ($isAuthenticated && principal) autoLookup(); });
+  onMount(() => {
+    if ($isAuthenticated && principal) autoLookup();
+  });
 </script>
 
 <div class="card p-5">
   <div class="flex items-start justify-between gap-3">
     <div>
-      <div class="text-xs uppercase tracking-wider text-ink-400">Your CafresoAI HQ</div>
-      <div class="mt-1 font-semibold">
+      <div class="page-kicker">Your CafresoAI HQ</div>
+      <div class="mt-2 text-xl font-semibold">
         {#if state === 'checking'}
-          Checking the fleet…
+          Checking the fleet...
         {:else if state === 'existing' || state === 'ready'}
           Container ready
         {:else if state === 'provisioning'}
-          Provisioning your HQ…
+          Provisioning your HQ...
         {:else if state === 'no-container'}
           No container yet
         {:else if state === 'no-api'}
@@ -132,69 +134,61 @@
     {/if}
   </div>
 
-  <!-- ── states ────────────────────────────────────────────────────────── -->
   {#if state === 'checking'}
-    <p class="mt-3 text-sm text-ink-200">Asking the fleet API if your principal already has an HQ…</p>
-
+    <p class="mt-3 text-sm leading-6 text-ink-300">Asking the fleet API if your principal already has an HQ...</p>
   {:else if state === 'no-api'}
-    <p class="mt-3 text-sm text-ink-200">
-      Can't reach the fleet API at <code class="font-mono text-brand-300">{$fleetApiUrl}</code>.
+    <p class="mt-3 text-sm leading-6 text-ink-300">
+      Can't reach the fleet API at <code class="font-mono text-brand-600 dark:text-brand-300">{$fleetApiUrl}</code>.
     </p>
-    <p class="mt-1 text-xs text-ink-400">
-      Start it locally:
-      <code class="font-mono">python oci-fleet/fleet-api.py</code>,
-      or update the URL in <a href="/settings" class="text-brand-400 underline">Settings</a>.
+    <p class="mt-1 text-xs leading-5 text-ink-400">
+      Start it locally with <code class="font-mono">python oci-fleet/fleet-api.py</code>,
+      or update the URL in
+      <a href="/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>.
     </p>
     <button class="btn-ghost btn-sm mt-3" on:click={autoLookup}>Retry</button>
-
   {:else if state === 'no-container'}
-    <p class="mt-3 text-sm text-ink-200">
-      Your principal doesn't have a CafresoAI HQ yet. Provisioning takes about a minute —
-      we'll spin up a private OCI container in Ashburn (1 OCPU · 6&nbsp;GB · ARM64).
+    <p class="mt-3 text-sm leading-6 text-ink-300">
+      Your principal doesn't have a CafresoAI HQ yet. Provisioning takes about a minute.
+      We'll spin up a private OCI container in Ashburn with 1 OCPU, 6 GB, and ARM64.
     </p>
     <button class="btn-primary mt-4" on:click={startProvision}>
       Provision my HQ
     </button>
-
   {:else if state === 'provisioning'}
-    <p class="mt-3 text-sm text-ink-200">
-      Building your HQ. This can take 60–90s while OCI pulls the image and
-      starts the container.
+    <p class="mt-3 text-sm leading-6 text-ink-300">
+      Building your HQ. This can take 60 to 90 seconds while OCI pulls the image
+      and starts the container.
     </p>
     <div class="mt-4 space-y-2">
       <div class="flex items-center gap-2 text-sm">
         <span class="glow-dot text-amber-400 animate-pulse"></span>
         <span class="font-mono text-ink-200">{phase || 'working'}</span>
       </div>
-      <div class="h-1.5 w-full overflow-hidden rounded-full bg-ink-800">
-        <div class="h-full w-1/3 animate-pulse bg-brand-500"></div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-ink-800/70">
+        <div class="h-full w-1/3 animate-pulse rounded-full bg-brand-500"></div>
       </div>
     </div>
-
   {:else if state === 'existing'}
-    <p class="mt-3 text-sm text-ink-200">
-      Your HQ is live. Endpoint adopted — the rest of the app is already pointed at it.
+    <p class="mt-3 text-sm leading-6 text-ink-300">
+      Your HQ is live. Endpoint adopted, and the rest of the app is already pointed at it.
     </p>
-    <code class="mt-2 block font-mono text-xs text-ink-100 break-all">{endpoint}</code>
-    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ →</a>
-
+    <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{endpoint}</code>
+    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
   {:else if state === 'ready'}
-    <p class="mt-3 text-sm text-ink-200">
+    <p class="mt-3 text-sm leading-6 text-ink-300">
       Your CafresoAI HQ is online. Welcome.
     </p>
-    <code class="mt-2 block font-mono text-xs text-ink-100 break-all">{endpoint}</code>
-    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ →</a>
-
+    <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{endpoint}</code>
+    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
   {:else if state === 'error'}
-    <p class="mt-3 text-sm text-rose-300">{error}</p>
+    <p class="mt-3 text-sm text-rose-700 dark:text-rose-300">{error}</p>
     <div class="mt-3 flex gap-2">
       <button class="btn-ghost btn-sm" on:click={autoLookup}>Retry lookup</button>
       <button class="btn-ghost btn-sm" on:click={startProvision} disabled={!apiOk}>
         Try provision
       </button>
     </div>
-
   {:else}
-    <p class="mt-3 text-sm text-ink-200">Sign in with Internet Identity to check your HQ.</p>
+    <p class="mt-3 text-sm leading-6 text-ink-300">Sign in with Internet Identity to check your HQ.</p>
   {/if}
 </div>

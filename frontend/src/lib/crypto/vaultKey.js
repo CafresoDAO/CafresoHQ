@@ -169,8 +169,8 @@ export function forgetMasterKey() {
  * Derive (or fetch from cache) the vault master key for the signed-in user.
  * One vetKeys call per session — cached in sessionStorage thereafter.
  *
- * @param {Actor} keysActor  The cafresoai_keys actor (built with the user's identity)
- * @returns {Uint8Array} 32-byte master key
+ * @param {any} keysActor  The cafresoai_keys actor (built with the user's identity)
+ * @returns {Promise<Uint8Array>} 32-byte master key
  */
 export async function getMasterKey(keysActor) {
   if (_masterKeyCache) return _masterKeyCache;
@@ -227,7 +227,8 @@ export async function encryptBytes(masterBytes, fileId, plaintext) {
   }
   const key = await deriveFileContentKey(masterBytes, fileId);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+  const plainBuffer = new Uint8Array(plaintext).buffer;
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plainBuffer);
   const combined = new Uint8Array(iv.length + ct.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(ct), iv.length);

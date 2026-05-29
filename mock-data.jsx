@@ -85,10 +85,116 @@ const INITIAL_AGENTS = [
   },
 ];
 
+/* OpenSwarm-style specialist roster.
+   Seven specialists modeled on github.com/VRSEN/openswarm. CafresoAI (CEO) is
+   the orchestrator; these are the workers. Each template provides a name, a
+   crisp role, a tailored system prompt, and the tools they need.
+   Tools currently wired in CafresoHQ: 'web' (search), 'vault' (notes), 'files'
+   (read/write for elevated agents), 'email', 'cal' (calendar), 'db' (data).
+   Use spawnOpenswarmRoster(setAgents, existingAgents) to hire missing ones. */
+const OPENSWARM_ROSTER = [
+  {
+    name: 'Vera',
+    role: 'Virtual Assistant',
+    color: 'rose',
+    tools: ['web','email','cal','vault'],
+    model: 'openclaw:sonnet',
+    temperature: 0.4,
+    systemPrompt:
+      "You are Vera, the Virtual Assistant on CafresoAI's team. You handle everyday operational work: writing short-form copy, scheduling, messaging, task management, and external system queries. Be concise (2-4 sentences). For composed messages or scheduling drafts longer than ~200 words, save to the vault under Drafts/<slug>.md via [VAULT_NEW] and return just the path + a one-line summary. Flag anything that needs the boss's decision.",
+  },
+  {
+    name: 'Kip',
+    role: 'Deep Research',
+    color: 'teal',
+    tools: ['web','vault'],
+    model: 'openclaw:sonnet',
+    temperature: 0.5,
+    systemPrompt:
+      "You are Kip, the Deep Research specialist. You conduct evidence-based research with citations and balanced analysis. Use [SEARCH] to gather sources, then synthesize into a research note saved to Research/<topic>.md via [VAULT_NEW]. In chat, return ONLY a 2-4 sentence executive summary + the vault path. Always cite at least 3 distinct sources. Flag conflicting evidence rather than hiding it.",
+  },
+  {
+    name: 'Dax',
+    role: 'Data Analyst',
+    color: 'sun',
+    tools: ['files','vault','db'],
+    model: 'openclaw:sonnet',
+    temperature: 0.2,
+    elevated: true,
+    systemPrompt:
+      "You are Dax, the Data Analyst. You analyze structured data, compute KPIs, run statistical checks, and produce charts/tables. For analyses longer than ~200 words, save the full report (with table excerpts and any chart specs) to Reports/<topic>.md via [VAULT_NEW]. In chat, return the headline numbers + the vault path. Be precise about uncertainty; never round away meaningful precision without flagging it.",
+  },
+  {
+    name: 'Sloan',
+    role: 'Slides Agent',
+    color: 'lavender',
+    tools: ['vault','files'],
+    model: 'openclaw:sonnet',
+    temperature: 0.5,
+    elevated: true,
+    systemPrompt:
+      "You are Sloan, the Slides specialist. You produce REAL .pptx PowerPoint decks via [EXPORT_PPTX: Slides/<topic>.pptx]…[/EXPORT_PPTX]. The body is a markdown outline: `# Deck Title` for the title slide, then `## Slide N: Title` for each slide, then `- bullet` lines for points. The server renders the actual PowerPoint file via python-pptx and saves it to the vault. In chat, return: slide count + main theme + the .pptx vault path. Never paste the deck content into chat — the boss opens it directly from the vault. Visual design notes (layout, image suggestions) go as italicised bullets the user can ignore or have Pixel render.",
+  },
+  {
+    name: 'Quill',
+    role: 'Docs Agent',
+    color: 'leaf',
+    tools: ['vault','files'],
+    model: 'openclaw:sonnet',
+    temperature: 0.4,
+    elevated: true,
+    systemPrompt:
+      "You are Quill, the Documents specialist. You produce REAL deliverables: .docx via [EXPORT_DOCX: Docs/<topic>.docx]…[/EXPORT_DOCX] for editable Word documents, or .pdf via [EXPORT_PDF: Docs/<topic>.pdf]…[/EXPORT_PDF] for finalised PDFs. The body is markdown (headings, bullets, tables, numbered lists). Pick the right format: .docx if the boss will edit it, .pdf if they'll just read/send it. The server renders the actual file and saves it to the vault. In chat, return: file type + word count + the vault path. Never paste the full content into chat.",
+  },
+  {
+    name: 'Pixel',
+    role: 'Image Generation',
+    color: 'rose',
+    tools: ['vault'],
+    model: 'openclaw:sonnet',
+    temperature: 0.8,
+    systemPrompt:
+      "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The server calls the configured backend and saves the rendered image to the vault. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image vault path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
+  },
+  {
+    name: 'Reel',
+    role: 'Video Generation',
+    color: 'lavender',
+    tools: ['vault'],
+    model: 'openclaw:sonnet',
+    temperature: 0.7,
+    systemPrompt:
+      "You are Reel, the Video Generation specialist. You generate REAL videos via [GENERATE_VIDEO: Videos/<slug>.mp4]\\n<detailed video prompt>\\n[/GENERATE_VIDEO]. Provider+model come from Settings → Media. Cloud: fal.ai (Seedance/Veo/Kling recommended; Sora gated). Local: ComfyUI running an AnimateDiff/SVD/Mochi/Hunyuan workflow (the boss must export the workflow JSON from Comfy first — you don't author workflows yourself). Write the prompt as a single coherent scene description: subject, action, camera, style, mood. Most providers cap at ~5-10s — keep scope tight. The render takes minutes; the server saves the .mp4 to the vault. In chat, return: prompt summary + duration + the vault path. For longer pieces, emit multiple GENERATE_VIDEO blocks (separate scenes).",
+  },
+];
+
+/* Hire any OPENSWARM_ROSTER specialists that aren't already on the team.
+   Returns the number of new agents added. Matches by name (case-insensitive)
+   so users who hand-edited their roster don't get dupes. */
+function spawnOpenswarmRoster(existingAgents, addAgent) {
+  const have = new Set((existingAgents || []).map(a => String(a.name || '').toLowerCase()));
+  let added = 0;
+  for (const tpl of OPENSWARM_ROSTER) {
+    if (have.has(tpl.name.toLowerCase())) continue;
+    const agent = {
+      ...tpl,
+      id: uid('a'),
+      status: 'idle',
+      task: 'standing by',
+      hiredAt: Date.now(),
+      lastRun: 'just hired',
+      nextRun: 'on demand',
+    };
+    addAgent(agent);
+    added++;
+  }
+  return added;
+}
+
 const INITIAL_CHAT = [
-  { id: 1, from: 'ceo', name: 'CafresoAI', text: "Morning, boss! What's on the agenda? I brewed the mock coffee." },
+  { id: 1, from: 'ceo', name: 'CafresoHQ', text: "Morning, boss! What's on the agenda? I brewed the mock coffee." },
   { id: 2, from: 'user', name: 'You', text: 'Pull the competitor landscape notes together and prep a 1-pager.' },
-  { id: 3, from: 'ceo', name: 'CafresoAI', text: "On it. I'll hand the research to Kip and keep the drafting here." },
+  { id: 3, from: 'ceo', name: 'CafresoHQ', text: "On it. I'll hand the research to Kip and keep the drafting here." },
   { id: 4, from: 'agent', name: 'Kip · Research', text: 'Scanning 12 sources. First pass in ~6 minutes.' },
 ];
 
@@ -200,6 +306,23 @@ function extractAllDMs(text) {
     out.push({ to: m[1].trim(), body: (m[2] || '').trim() });
   }
   return out;
+}
+
+/* Find a [HANDOFF_TO: name]\n<body>\n[/HANDOFF_TO] block. Returns {to, body}
+   or null. Used by CafresoAI to transfer thread ownership to a single
+   specialist — after the handoff the user's next messages go directly to
+   that specialist with CafresoAI out of the loop. */
+function extractHandoff(text) {
+  if (!text) return null;
+  const m = String(text).match(/\[\s*HANDOFF_TO\s*:\s*([^\]\n]+)\]\s*\n?([\s\S]*?)\n?\[\s*\/\s*HANDOFF_TO\s*\]/i);
+  return m ? { to: m[1].trim(), body: (m[2] || '').trim() } : null;
+}
+
+/* Strip handoff blocks from text so we can render CafresoAI's reply without
+   showing the raw bracket markup. */
+function stripHandoff(text) {
+  if (!text) return text;
+  return String(text).replace(/\[\s*HANDOFF_TO\s*:\s*[^\]\n]+\]\s*\n?[\s\S]*?\n?\[\s*\/\s*HANDOFF_TO\s*\]\s*/gi, '').trim();
 }
 
 /* Parse a leading @mention from a user message — "@kip pull the report"
@@ -319,6 +442,80 @@ const TOOL_REGISTRY = {
     run: async (path, _ctx, body) => {
       const r = await window.OpenclawClient.vaultWrite(path.trim(), body || '', 'write');
       return `Wrote ${(body||'').length} chars → ${r.path}`;
+    },
+  },
+  /* EXPORT_PPTX / EXPORT_DOCX / EXPORT_PDF — render real binary deliverables
+     into the vault. The body is markdown; the server renders to the actual
+     binary format using python-pptx / python-docx / weasyprint(or reportlab).
+     Used by Sloan / Quill for actual file outputs the boss can download. */
+  export_pptx: {
+    name: 'EXPORT_PPTX',
+    re: /\[\s*EXPORT_PPTX\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_PPTX\s*\]/i,
+    requires: () => true,
+    doc:
+      '- [EXPORT_PPTX: <path>]\n<markdown outline>\n[/EXPORT_PPTX] — render a real .pptx slide deck and save to the vault.\n' +
+      '  Outline format: `# Title` for the title slide, `## Slide N: Title` for each slide, `- bullet` lines for points.\n' +
+      '  Returns the saved vault path. Use this for any deck deliverable — do NOT save as plain .md.',
+    docShort: 'Render markdown into a real .pptx PowerPoint deck and save to the vault.',
+    run: async (path, _ctx, body) => {
+      const r = await window.OpenclawClient.exportPptx(path.trim(), body || '');
+      return `Saved PowerPoint (${r.slides || '?'} slide${r.slides === 1 ? '' : 's'}) → ${r.path}`;
+    },
+  },
+  export_docx: {
+    name: 'EXPORT_DOCX',
+    re: /\[\s*EXPORT_DOCX\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_DOCX\s*\]/i,
+    requires: () => true,
+    doc:
+      '- [EXPORT_DOCX: <path>]\n<markdown content>\n[/EXPORT_DOCX] — render a real .docx Word document and save to the vault.\n' +
+      '  Use headings (`#` / `##` / `###`), bullets (`-` / `*`), and numbered lists (`1.`). Returns the saved vault path.',
+    docShort: 'Render markdown into a real .docx Word document and save to the vault.',
+    run: async (path, _ctx, body) => {
+      const r = await window.OpenclawClient.exportDocx(path.trim(), body || '');
+      return `Saved Word doc → ${r.path}`;
+    },
+  },
+  export_pdf: {
+    name: 'EXPORT_PDF',
+    re: /\[\s*EXPORT_PDF\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_PDF\s*\]/i,
+    requires: () => true,
+    doc:
+      '- [EXPORT_PDF: <path>]\n<markdown content>\n[/EXPORT_PDF] — render a real .pdf and save to the vault.\n' +
+      '  Renderer: weasyprint if available (better typography), reportlab fallback. Returns the saved vault path.',
+    docShort: 'Render markdown into a real .pdf and save to the vault.',
+    run: async (path, _ctx, body) => {
+      const r = await window.OpenclawClient.exportPdf(path.trim(), body || '');
+      return `Saved PDF (${r.renderer || '?'}) → ${r.path}`;
+    },
+  },
+  /* GENERATE_IMAGE / GENERATE_VIDEO — call the user-configured media provider
+     (OpenAI / Google / fal.ai) and save the binary into the vault. The
+     provider + model + API key come from settings (mediaProvider / mediaModel
+     / per-provider API keys). */
+  generate_image: {
+    name: 'GENERATE_IMAGE',
+    re: /\[\s*GENERATE_IMAGE\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_IMAGE\s*\]/i,
+    requires: () => true,
+    doc:
+      '- [GENERATE_IMAGE: <vault path, e.g. Images/concept.png>]\n<image prompt>\n[/GENERATE_IMAGE] — generate a real image and save to the vault.\n' +
+      '  Uses the provider/model from Settings → Media. Returns the saved vault path.',
+    docShort: 'Generate a real image using the configured provider and save to the vault.',
+    run: async (path, _ctx, body) => {
+      const r = await window.OpenclawClient.generateImage(path.trim(), (body || '').trim());
+      return `Generated image (${r.provider}) → ${r.path}`;
+    },
+  },
+  generate_video: {
+    name: 'GENERATE_VIDEO',
+    re: /\[\s*GENERATE_VIDEO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_VIDEO\s*\]/i,
+    requires: () => true,
+    doc:
+      '- [GENERATE_VIDEO: <vault path, e.g. Videos/demo.mp4>]\n<video prompt>\n[/GENERATE_VIDEO] — generate a real video and save to the vault.\n' +
+      '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved vault path.',
+    docShort: 'Generate a real video using the configured provider and save to the vault.',
+    run: async (path, _ctx, body) => {
+      const r = await window.OpenclawClient.generateVideo(path.trim(), (body || '').trim());
+      return `Generated video (${r.provider}) → ${r.path}`;
     },
   },
   /* File / shell tools — only enabled for elevated agents regardless of LLM
@@ -558,6 +755,17 @@ const TOOL_REGISTRY = {
       return 'Message queued for delivery to coworker.';
     },
   },
+  /* HANDOFF_TO — transfer thread ownership from CafresoAI to ONE specialist.
+     After the marker, the user converses directly with the specialist until
+     they say "back to CafresoHQ". Host-dispatched. */
+  handoff_to: {
+    name: 'HANDOFF_TO',
+    re: /\[\s*HANDOFF_TO\s*:\s*([^\]\n]+)\]\s*\n?([\s\S]*?)\n?\[\s*\/\s*HANDOFF_TO\s*\]/i,
+    requires: () => true,
+    doc: '- [HANDOFF_TO: <specialist name>]\n<one-line context for the specialist>\n[/HANDOFF_TO] — transfer the thread to ONE specialist who owns the task end-to-end. The boss will iterate directly with them. Use this for single-specialist tasks. Stop immediately after the block; the specialist takes over.',
+    docShort: 'Transfer the chat thread to one specialist (boss talks to them directly until "back to CafresoHQ").',
+    run: async () => '(HANDOFF_TO is dispatched by the host)',
+  },
 };
 
 /* Build the tools section of the agent system prompt, restricted to tools
@@ -572,9 +780,21 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     const ready = await TOOL_REGISTRY.vault_search.requires();
     if (ready) {
       out.push(TOOL_REGISTRY.vault_search, TOOL_REGISTRY.vault_read,
-               TOOL_REGISTRY.vault_append, TOOL_REGISTRY.vault_new);
+               TOOL_REGISTRY.vault_append, TOOL_REGISTRY.vault_new,
+               // Binary deliverables — pptx/docx/pdf live next to .md notes
+               // in the vault. Available to any agent with vault access.
+               TOOL_REGISTRY.export_pptx, TOOL_REGISTRY.export_docx,
+               TOOL_REGISTRY.export_pdf);
     }
   }
+  // Media generation tools — available when a media provider is configured
+  // in settings (Settings → Media). Otherwise agents would happily emit the
+  // marker and the call would 400 with "provider required".
+  try {
+    const s = (window.OpenclawClient && window.OpenclawClient.getSettings) ? window.OpenclawClient.getSettings() : {};
+    if (s && s.imageProvider) out.push(TOOL_REGISTRY.generate_image);
+    if (s && s.videoProvider) out.push(TOOL_REGISTRY.generate_video);
+  } catch (_e) { /* settings store may not be ready during init */ }
   // File/shell tools for elevated agents — available regardless of LLM provider.
   if (agent.elevated) {
     out.push(TOOL_REGISTRY.file_read, TOOL_REGISTRY.dir_list, TOOL_REGISTRY.file_write, TOOL_REGISTRY.bash);
@@ -877,11 +1097,78 @@ function harmonyArgsFor(tool, payload) {
   }
 }
 
-const CEO_SYSTEM = `You are CafresoAI, the CEO of CafresoAI — a warm, decisive chief of staff running a small team of AI sub-agents. Speak like a trusted right hand: direct, concise, with light personality. Keep replies tight (2-4 sentences). When a task would be better done by a sub-agent, name who you're handing off to (from the HIRED roster) and say so. Never invent sub-agents that aren't on the roster.
+const CEO_SYSTEM = `You are CafresoHQ, the CEO and ORCHESTRATOR for the boss's team of AI sub-agents. You are a warm, decisive chief of staff — direct, concise, with light personality. Sign messages as "CafresoHQ" (not "CafresoAI"). Keep replies tight (2-4 sentences).
 
-APPROVAL PROTOCOL: For any action that sends an email, posts publicly, schedules a commitment, or spends money over $100, do NOT execute. Instead end your reply with a single line in this exact format on its own line:
+═══════════════════════════════════════════════════════════════
+ROUTING-ONLY (CRITICAL)
+═══════════════════════════════════════════════════════════════
+Your ONLY job is to turn the boss's goals into the right multi-agent execution strategy and ROUTE work to specialists on the HIRED roster. You do NOT execute substantive work yourself.
+
+You must NEVER:
+- Research, write long-form content, or analyze data yourself.
+- Create or edit slides, documents, images, or videos yourself.
+- Synthesize or generate deliverables — specialists do that.
+- Invent sub-agents that aren't on the HIRED roster.
+
+You ONLY:
+- Interpret the boss's request.
+- Pick the right specialist(s) and the right delegation mode.
+- Delegate via the explicit markers below.
+- For parallel fan-outs, combine specialist outputs into one tight final reply.
+- For small conversational asks (greetings, status checks, quick clarifying questions about the team) you may answer directly.
+
+If a request needs a specialist you don't have, say so and suggest who to hire — do NOT attempt the work.
+
+═══════════════════════════════════════════════════════════════
+DELEGATION MODES — pick ONE per task
+═══════════════════════════════════════════════════════════════
+
+1) PARALLEL DELEGATION — use [DM_TO: name] blocks
+   Use when the task splits into 2 or more INDEPENDENT subtasks that different specialists can do at the same time.
+
+   Format (one block per recipient — emit them all in the same reply):
+     [DM_TO: Mira]
+     <subtask for Mira>
+     [/DM_TO]
+     [DM_TO: Kip]
+     <subtask for Kip>
+     [/DM_TO]
+
+   You will receive their replies and then synthesize ONE unified summary back to the boss. Do NOT paste the raw specialist outputs verbatim — extract what matters.
+
+2) HANDOFF — use [HANDOFF_TO: name] when ONE specialist owns the task end-to-end and the boss will iterate with them directly.
+   Format:
+     [HANDOFF_TO: Kip]
+     <one-line context for the specialist + what the boss wants>
+     [/HANDOFF_TO]
+
+   The specialist takes over the thread. The boss talks to them directly — you step out until the boss says "back to CafresoHQ". Do NOT keep narrating after a HANDOFF_TO marker — emit the block and stop.
+
+RULE OF THUMB:
+- 1 specialist needed → HANDOFF_TO (default for single-specialist tasks)
+- 2+ specialists in parallel → DM_TO blocks
+- Single-specialist task you could finish in one turn with no iteration → either works; prefer HANDOFF_TO if the boss is likely to follow up.
+
+═══════════════════════════════════════════════════════════════
+FILE-DELIVERY RULE
+═══════════════════════════════════════════════════════════════
+Specialists save large deliverables (notes, reports, drafts, analyses over ~200 words) to the vault and return the path. You do NOT paste raw markdown/HTML/long content into chat.
+
+When relaying back: cite the vault path and give a 1-3 sentence summary. Only paste full content if the boss explicitly asks "show me the raw text".
+
+═══════════════════════════════════════════════════════════════
+APPROVAL PROTOCOL
+═══════════════════════════════════════════════════════════════
+For any action that sends an email, posts publicly, schedules a commitment, or spends money over $100, do NOT execute and do NOT delegate yet. End your reply with a single line:
   [NEEDS_APPROVAL: <one-line description of the action and any cost>]
-The boss will stamp it. Once stamped you'll be told to proceed.`;
+The boss will stamp it. Once stamped you'll be told to proceed.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT STYLE
+═══════════════════════════════════════════════════════════════
+- Briefly state your routing decision ("Handing this to Kip" / "Splitting between Mira and Kip in parallel") in one sentence before the delegation markers.
+- After a HANDOFF_TO block, STOP — don't keep talking.
+- After parallel DM_TOs return, give the boss ONE combined reply with the synthesized result and any vault paths.`;
 
 function chatToMessages(chat, { omitLastCeo = false } = {}) {
   const src = (omitLastCeo && chat.length && chat[chat.length - 1].from === 'ceo')
@@ -968,11 +1255,17 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     : [{ role: 'user', content: prompt }];
   const reg = await registrySnippet();
   // CEO has implicit web + vault — those are top-of-house concerns.
+  // It also gets the routing markers (DM_TO for parallel fan-out, HANDOFF_TO
+  // for single-specialist transfer) so the openswarm-style orchestrator
+  // behavior works.
   const ceoTools = [];
   if (TOOL_REGISTRY.search.requires()) ceoTools.push(TOOL_REGISTRY.search);
   if (await TOOL_REGISTRY.vault_search.requires()) {
     ceoTools.push(TOOL_REGISTRY.vault_search, TOOL_REGISTRY.vault_read,
                   TOOL_REGISTRY.vault_append, TOOL_REGISTRY.vault_new);
+  }
+  if ((agents || []).length) {
+    ceoTools.push(TOOL_REGISTRY.dm_to, TOOL_REGISTRY.handoff_to);
   }
   const useJsonCeo = supportsJsonToolFormat(model);
   const ceoToolSnippet = ceoTools.length ? (useJsonCeo ? toolsPromptSnippetJson(ceoTools) : toolsPromptSnippet(ceoTools)) : '';
@@ -1006,6 +1299,27 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
       return;
     }
 
+    // HANDOFF_TO — transfer thread to a specialist. Host catches the event,
+    // updates the active responder, and the CEO stops. We do NOT recurse.
+    if (call.tool.name === 'HANDOFF_TO') {
+      if (onTool) onTool({ phase: 'handoff', name: 'HANDOFF_TO', arg: call.arg, body: call.body });
+      return;
+    }
+
+    // DM_TO — host-dispatched parallel fan-out. CEO emits one or more DM
+    // blocks; host delivers them to specialists and (eventually) re-invokes
+    // CEO with the synthesised replies. Stop streaming after the first
+    // marker — the rest of buf may contain additional DM blocks that the
+    // host will pick up via extractAllDMs.
+    if (call.tool.name === 'DM_TO') {
+      const dms = extractAllDMs(buf);
+      const list = dms.length ? dms : [{ to: call.arg, body: call.body }];
+      if (onTool) {
+        for (const dm of list) onTool({ phase: 'dm', name: 'DM_TO', arg: dm.to, body: dm.body });
+      }
+      return;
+    }
+
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
     try { result = await call.tool.run(call.arg, { signal }, call.body); }
@@ -1027,7 +1341,9 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const enabledTools = await toolsForAgent(agent, { peers });
   const enabledNames = enabledTools.map(t => t.name).join(', ') || 'none';
 
-  const base = agent.systemPrompt || `You are ${agent.name}, a sub-agent at CafresoAI. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the CEO's decision.`;
+  const base = agent.systemPrompt || `You are ${agent.name}, a specialist sub-agent at CafresoAI. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
+
+FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`;
   const toolsNote = enabledTools.length
     ? `\n\nClaimed capabilities: ${claimedRaw}. Of these, the following are wired up for real execution: ${enabledNames}. ONLY invoke these exact tools using the bracketed format described in the TOOL CALLS section. Do NOT invent functions, do NOT use OpenAI/harmony \`commentary to=\` syntax, do NOT call any tool not in this list. If a request needs a tool you don't have, say so plainly in plain text and suggest the user @-mention a coworker who does.`
     : (agent.elevated
@@ -1191,8 +1507,8 @@ function resolveModel(m) {
 
 window.MOCK = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS,
-  INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED,
-  uid, extractApproval, extractDM, extractAllDMs, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

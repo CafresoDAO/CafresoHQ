@@ -1,0 +1,298 @@
+type Tree = 
+ variant {
+   leaf;
+   node:
+    record {
+      Color;
+      Tree;
+      record {
+        text;
+        opt InterCanisterActionResult;
+      };
+      Tree;
+    };
+ };
+type Treasury = 
+ record {
+   "principal": text;
+   timestampUpdated: int;
+ };
+type TransferCyclesResult = 
+ variant {
+   err: TransferCyclesError;
+   ok: nat;
+ };
+type TransferCyclesError = 
+ variant {
+   aggregate_quota_reached;
+   canister_quota_reached;
+   insufficient_cycles_available;
+   other: text;
+   too_few_cycles_requested;
+ };
+type TextScanResult = 
+ record {
+   entities: vec text;
+   nextKey: opt text;
+ };
+type Status = 
+ variant {
+   running;
+   stopped;
+   stopping;
+ };
+type ScalingSizeLimit = 
+ variant {
+   count: nat;
+   heapSize: nat;
+ };
+type Result_8 = 
+ variant {
+   err: ErrorCreateService;
+   ok: text;
+ };
+type Result_7 = 
+ variant {
+   err: text;
+   ok: vec GlobalOrder;
+ };
+type Result_6 = 
+ variant {
+   err: text;
+   ok: Comment;
+ };
+type Result_5 = 
+ variant {
+   err: text;
+   ok: BurnReceipt;
+ };
+type Result_4 = 
+ variant {
+   err: text;
+   ok;
+ };
+type Result_3 = 
+ variant {
+   err: ErrorStopIndex;
+   ok: text;
+ };
+type Result_2 = 
+ variant {
+   err: text;
+   ok: GlobalOrder;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok: Post;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: Product;
+ };
+type Product = 
+ record {
+   description: text;
+   fileKeys: vec text;
+   name: text;
+   priceNanas: text;
+   slug: text;
+   tags: vec text;
+   timestampListed: int;
+ };
+type Post = 
+ record {
+   authorHue: int;
+   authorName: text;
+   authorPrincipal: text;
+   authorRole: text;
+   block: int;
+   body: text;
+   burned: int;
+   canister: text;
+   category: text;
+   comments: int;
+   date: text;
+   excerpt: text;
+   hero: text;
+   layout: text;
+   pinned: bool;
+   readMin: int;
+   slug: text;
+   timestampCreated: int;
+   timestampUpdated: int;
+   tips: int;
+   title: text;
+ };
+type PKToCanisterMapping = 
+ vec record {
+       text;
+       vec CanisterId;
+     };
+type LeaderRow = 
+ record {
+   burnCount: nat;
+   "principal": text;
+   totalBurned: int;
+ };
+type InterCanisterActionResult = 
+ variant {
+   err: text;
+   ok;
+ };
+type IndexCanisterInformation = 
+ record {
+   canister_id: text;
+   cycles: nat;
+   memory_size: nat;
+   module_hash: opt blob;
+   owner: principal;
+   pkCanisterMap: vec record {
+                        text;
+                        vec CanisterId;
+                      };
+   settings: CanisterSettings;
+   status: Status;
+ };
+type IndexCanister = 
+ service {
+   appAutoScaleNoop: (_pk: text) -> (text);
+   appScanKeys: (skLowerBound: text, skUpperBound: text, ascending:
+    opt bool) -> (TextScanResult) query;
+   appSkExists: (sk: text) -> (bool) query;
+   appStats: () ->
+    (record {
+       burns: nat;
+       comments: nat;
+       orders: nat;
+       posts: nat;
+       products: nat;
+     }) query;
+   autoScaleServiceCanister: (pk: text) -> (text);
+   callingCanisterOwnsPK: (caller: principal, pk: text) -> (bool);
+   confirmOrder: (id: int, blockIndex: int) -> (Result_2);
+   createServicePartition: (pk: text, sizeLimitIn: opt ScalingSizeLimit) ->
+    (Result_8);
+   cycles_manager_transferCycles: (cyclesRequested: nat) ->
+    (TransferCyclesResult);
+   deleteCanisterMapByPK: (pk: text) -> (opt CanisterCleanupStatusMap);
+   deleteForumPost: (slug: text) -> (Result_4);
+   deleteOrphans: (canisterIds: vec text) -> (vec text);
+   deletePost: (slug: text) -> (Result_4);
+   deleteProduct: (slug: text) -> (Result_4);
+   getCanisterInformation: () -> (IndexCanisterInformation);
+   getCanisterStatus: (frontendCanisterId: text) ->
+    (FrontendCanisterInformation);
+   getCanistersByPK: (pk: text) -> (vec text) query;
+   getLeaderboard: (limit: nat) -> (vec LeaderRow) query;
+   getNanoTimestamp: () -> (int) query;
+   getOrder: (id: int) -> (opt GlobalOrder) query;
+   getPKCount: () -> (nat) query;
+   getPKCountFromKeyPrefix: (key: text) -> (int) query;
+   getPKEntitiesFromKey: (key: text) -> (vec record {
+                                               text;
+                                               vec text;
+                                             }) query;
+   getPKToCanisterMapping: () -> (PKToCanisterMapping) query;
+   getPost: (slug: text) -> (opt Post) query;
+   getProduct: (slug: text) -> (opt Product) query;
+   getTreasury: () -> (opt Treasury) query;
+   listAllOrders: () -> (Result_7) query;
+   listBurns: (slug: text) -> (vec BurnReceipt) query;
+   listComments: (slug: text) -> (vec Comment) query;
+   listDevLogPosts: () -> (vec Post) query;
+   listForumPosts: () -> (vec Post) query;
+   listMyOrders: () -> (vec GlobalOrder) query;
+   listPosts: () -> (vec Post) query;
+   listProducts: () -> (vec Product) query;
+   load: () -> (int) query;
+   postComment: (slug: text, authorName: text, authorHue: int, authorRole:
+    text, "text": text, parentId: int) -> (Result_6);
+   postForumEntry: (inPost: Post) -> (Result_1);
+   pullCyclesFromService: (serviceCanisterId: text) -> ();
+   pushCyclesToCanister: (targetCanisterId: text, amount: nat) -> ();
+   recordBurn: (slug: text, amount: int, blockIndex: int) -> (Result_5);
+   recordOrder: (itemsJson: text, shippingJson: text, paidBlock: int,
+    paymentMethod: text) -> (Result_2);
+   setTreasury: (p: principal) -> (Result_4);
+   stopCanister: () -> (Result_3);
+   tearDownPartition: (pk: text) -> (vec text);
+   totalBurned: () -> (int) query;
+   updateOrderStatus: (id: int, status: text, note: text) -> (Result_2);
+   upsertPost: (inPost: Post) -> (Result_1);
+   upsertProduct: (p: Product) -> (Result);
+ };
+type GlobalOrder = 
+ record {
+   buyer: text;
+   id: int;
+   itemsJson: text;
+   note: text;
+   paidBlock: int;
+   paymentMethod: text;
+   shippingJson: text;
+   status: text;
+   timestampCreated: int;
+   timestampUpdated: int;
+   totalNanas: int;
+ };
+type FrontendCanisterInformation = 
+ record {
+   cycles: nat;
+   memory_size: nat;
+   module_hash: opt blob;
+   settings: CanisterSettings;
+   status: Status;
+ };
+type ErrorStopIndex = variant {NotAuthorized;};
+type ErrorCreateService = 
+ variant {
+   AnonymousCaller;
+   InvalidPartitionKey;
+   NotAuthorized;
+   PartitionExists;
+ };
+type Comment = 
+ record {
+   authorHue: int;
+   authorName: text;
+   authorRole: text;
+   burned: int;
+   id: int;
+   parentId: int;
+   poster: text;
+   slug: text;
+   stake: int;
+   "text": text;
+   timestamp: int;
+ };
+type Color = 
+ variant {
+   B;
+   R;
+ };
+type CanisterSettings = 
+ record {
+   compute_allocation: opt nat;
+   controllers: opt vec principal;
+   freezing_threshold: opt nat;
+   memory_allocation: opt nat;
+ };
+type CanisterId = text;
+type CanisterCleanupStatusMap = 
+ record {
+   delete: Tree;
+   stop: Tree;
+   transfer: Tree;
+ };
+type BurnReceipt = 
+ record {
+   amount: int;
+   block: int;
+   caller: text;
+   id: int;
+   slug: text;
+   timestamp: int;
+ };
+service : () -> IndexCanister

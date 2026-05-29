@@ -2,68 +2,460 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ─────────────────────────────────────────────────────────── */
+/* =========================================================================
+   Cafreso unified design tokens.
+   Merges the CafresoAI control-plane scale (brand 50–900 / ink 50–900 /
+   surfaces + component layer) with the Cafreso Pages semantic tokens
+   (shadcn / bits-ui: --background/--foreground/--primary/… + named
+   --brand-* aliases). One stylesheet powers both the (pages) consumer
+   surface and the /hq control plane.
+   ========================================================================= */
 :root {
-  --brand-glow:        hsl(28 78% 48% / 0.45);
-  --grid-line:         hsl(220 18% 14% / 0.6);
-  --card-bg:           hsl(220 22% 10% / 0.85);
-  --card-border:       hsl(220 18% 18%);
-  --code-bg:           hsl(220 25% 6%);
-  --transition-fast:   150ms cubic-bezier(0.4, 0, 0.2, 1);
+  color-scheme: light;
+
+  /* Brand: warm yellow / banana / gold */
+  --brand-50:  48 100% 96%;
+  --brand-100: 47 95% 90%;
+  --brand-200: 46 92% 80%;
+  --brand-300: 45 95% 72%;
+  --brand-400: 45 95% 66%;
+  --brand-500: 45 95% 62%;   /* banana — primary accent */
+  --brand-600: 38 85% 54%;
+  --brand-700: 32 72% 50%;   /* banana-rim — hover/active */
+  --brand-800: 28 65% 36%;
+  --brand-900: 24 60% 22%;
+
+  /* Ink: coffee (dark text) → crema (mid surfaces) → paper (lightest) */
+  --ink-50:  24 48% 9%;      /* coffee — primary text */
+  --ink-100: 24 38% 18%;
+  --ink-200: 24 30% 28%;
+  --ink-300: 24 18% 42%;
+  --ink-400: 28 16% 56%;
+  --ink-500: 26 22% 70%;
+  --ink-600: 26 30% 74%;     /* crema — base background */
+  --ink-700: 31 50% 90%;
+  --ink-800: 36 67% 96%;     /* surface-strong */
+  --ink-900: 38 70% 98%;     /* paper */
+
+  /* Surfaces — warm gradient cards with inset highlights */
+  --surface-card: hsl(38 70% 98% / 0.92);
+  --surface-card-strong: hsl(36 67% 96% / 0.85);
+  --surface-muted: hsl(31 50% 90% / 0.78);
+  --surface-wash: hsl(26 30% 88% / 0.5);
+  --surface-border: 31 28% 79%;
+  --surface-border-strong: 32 72% 50%;
+  --code-bg: hsl(40 74% 97% / 0.88);
+  --code-panel: hsl(24 48% 9%);
+  --code-fg: hsl(38 70% 98%);
+  --brand-glow: hsl(var(--brand-500) / 0.32);
+  --grid-line: hsl(31 28% 75% / 0.32);
+  --header-bg: hsl(38 70% 98% / 0.92);
+  --header-border: hsl(31 28% 79% / 0.8);
+  --card-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.85),
+    0 1px 2px rgba(0,0,0,0.06),
+    0 8px 22px -12px hsl(24 48% 9% / 0.2);
+  --shell-bg:
+    radial-gradient(circle at 14% -6%, hsl(45 95% 90% / 0.55), transparent 36rem),
+    radial-gradient(circle at 86% 12%, hsl(18 79% 92% / 0.5), transparent 32rem),
+    linear-gradient(135deg, hsl(36 67% 96%), hsl(26 30% 90%) 60%, hsl(38 70% 98%));
+
+  /* Ecosystem accents (used by EcosystemNav app-switcher) */
+  --eco-pages:   hsl(18 79% 86%);
+  --eco-ai:      hsl(280 38% 56%);
+  --eco-hq:      hsl(45 95% 62%);
+  --eco-banking: hsl(43 74% 54%);
+
+  /* ── Cafreso Pages semantic tokens (shadcn / bits-ui) ── */
+  --background: 26 30% 74%;
+  --foreground: 222 84% 4.9%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215 16% 47%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 84% 5%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 84% 5%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --primary: 222 47% 11%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+  --ring: 222 84% 5%;
+  --radius: 0.5rem;
+
+  /* ── Named brand aliases (Cafreso Pages) ── */
+  --brand-crema: 26 30% 74%;
+  --brand-peach: 18 79% 86%;
+  --brand-coffee: 24 48% 9%;
+  --brand-banana: 45 95% 62%;
+  --brand-banana-rim: 32 72% 50%;
+  --brand-icp-gold: 43 74% 54%;
+  --brand-leaf: 112 43% 45%;
+  --brand-farm-sky: 160 30% 78%;
+  --brand-cart-badge: 0 84% 60%;
+  --brand-link-green: 134 61% 70%;
+  --brand-link-green-hover: 142 71% 45%;
 }
 
-html, body { height: 100%; }
-body { font-feature-settings: 'cv02','cv03','cv04','cv11'; }
+.dark {
+  color-scheme: dark;
 
-/* ── Reusable component classes ────────────────────────────────────────────── */
+  /* Dark mode keeps the banana scale but anchors against deeper coffee */
+  --brand-50:  47 100% 94%;
+  --brand-100: 46 95% 88%;
+  --brand-200: 46 92% 76%;
+  --brand-300: 45 95% 68%;
+  --brand-400: 45 95% 62%;
+  --brand-500: 45 95% 58%;
+  --brand-600: 38 80% 50%;
+  --brand-700: 32 72% 44%;
+  --brand-800: 28 65% 32%;
+  --brand-900: 24 60% 18%;
+
+  --ink-50:  38 70% 98%;
+  --ink-100: 36 67% 92%;
+  --ink-200: 31 36% 82%;
+  --ink-300: 28 22% 68%;
+  --ink-400: 26 18% 52%;
+  --ink-500: 26 18% 38%;
+  --ink-600: 24 24% 24%;
+  --ink-700: 24 30% 16%;
+  --ink-800: 24 38% 11%;
+  --ink-900: 24 48% 9%;
+
+  --surface-card: hsl(24 38% 14% / 0.86);
+  --surface-card-strong: hsl(24 48% 11% / 0.9);
+  --surface-muted: hsl(24 30% 18% / 0.78);
+  --surface-wash: hsl(32 60% 24% / 0.22);
+  --surface-border: 24 22% 26%;
+  --surface-border-strong: 45 95% 56%;
+  --code-bg: hsl(24 48% 9% / 0.85);
+  --code-panel: hsl(24 48% 9%);
+  --code-fg: hsl(38 70% 98%);
+  --brand-glow: hsl(var(--brand-500) / 0.46);
+  --grid-line: hsl(28 20% 22% / 0.45);
+  --header-bg: hsl(24 38% 10% / 0.85);
+  --header-border: hsl(24 22% 24% / 0.9);
+  --card-shadow:
+    inset 0 1px 0 hsl(45 95% 62% / 0.06),
+    0 24px 70px -42px hsl(45 95% 58% / 0.4);
+  --shell-bg:
+    radial-gradient(circle at 8% 0%, hsl(32 60% 30% / 0.22), transparent 28rem),
+    radial-gradient(circle at 84% 14%, hsl(280 38% 22% / 0.22), transparent 30rem),
+    linear-gradient(135deg, hsl(24 48% 8%), hsl(24 38% 10%) 50%, hsl(24 30% 12%));
+
+  /* ── Cafreso Pages dark semantic tokens ── */
+  --background: 24 48% 9%;
+  --foreground: 210 40% 98%;
+  --muted: 0 0% 25%;
+  --muted-foreground: 0 0% 80%;
+  --popover: 24 48% 12%;
+  --popover-foreground: 210 40% 98%;
+  --card: 24 48% 12%;
+  --card-foreground: 210 40% 98%;
+  --border: 0 0% 50%;
+  --input: 0 0% 50%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222 47% 11%;
+  --secondary: 217 33% 18%;
+  --secondary-foreground: 210 40% 98%;
+  --accent: 0 0% 25%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 63% 31%;
+  --destructive-foreground: 210 40% 98%;
+  --ring: 213 27% 84%;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  background: hsl(var(--ink-900));
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--ink-900));
+  color: hsl(var(--ink-50));
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+::selection {
+  background: hsl(var(--brand-300) / 0.42);
+}
+
 @layer components {
-  .card {
-    @apply rounded-xl border border-ink-600/40 bg-ink-900/60 backdrop-blur-sm
-           shadow-[0_2px_24px_-12px_hsl(28_78%_48%_/_0.25)];
+  .app-shell {
+    @apply min-h-screen;
+    color: hsl(var(--ink-50));
+    background: var(--shell-bg);
   }
+
+  .app-shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: linear-gradient(to bottom, transparent, black 18%, black 72%, transparent);
+    opacity: 0.34;
+  }
+
+  .shell-panel {
+    background: var(--surface-card);
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
+  }
+
+  .card {
+    @apply rounded-2xl transition-all duration-200;
+    background: linear-gradient(180deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
+  }
+  .card:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.85),
+      0 1px 2px rgba(0,0,0,0.06),
+      0 14px 32px -14px hsl(24 48% 9% / 0.28);
+  }
+
+  .card-quiet {
+    @apply rounded-xl;
+    background: var(--surface-muted);
+    border: 1px solid hsl(var(--surface-border) / 0.72);
+  }
+
+  .page-kicker {
+    @apply font-mono text-xs font-semibold uppercase tracking-[0.22em];
+    color: hsl(var(--brand-700));
+  }
+
+  .page-title {
+    @apply font-display text-5xl font-semibold tracking-tight sm:text-6xl;
+    color: hsl(var(--ink-50));
+    line-height: 0.95;
+  }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
-           font-medium transition-all duration-150
-           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-ink-900;
+           text-sm font-semibold transition-all duration-150
+           focus:outline-none focus:ring-2 focus:ring-offset-2
+           disabled:cursor-not-allowed disabled:opacity-55;
+    --tw-ring-color: hsl(var(--brand-500));
+    --tw-ring-offset-color: hsl(var(--ink-900));
   }
+
   .btn-primary {
-    @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400
-           focus:ring-brand-400 active:bg-brand-600
-           shadow-[0_0_0_0_var(--brand-glow)] hover:shadow-[0_0_24px_0_var(--brand-glow)];
+    @apply btn active:scale-[0.99];
+    background: hsl(var(--ink-50));
+    color: hsl(var(--ink-900));
+    border: 1.5px solid hsl(var(--ink-50));
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
   }
+  .btn-primary:hover {
+    background: hsl(var(--ink-100));
+    box-shadow: 0 4px 12px -2px hsl(24 48% 9% / 0.3);
+  }
+
+  .btn-accent {
+    @apply btn active:scale-[0.99];
+    background: hsl(var(--brand-500));
+    color: hsl(var(--ink-50));
+    border: 1.5px solid hsl(var(--brand-700));
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+  .btn-accent:hover {
+    background: hsl(var(--brand-400));
+    box-shadow: 0 4px 14px -2px var(--brand-glow);
+  }
+
   .btn-ghost {
-    @apply btn bg-transparent text-ink-100 hover:bg-ink-800/50
-           border border-ink-600/40 hover:border-ink-400/40;
+    @apply btn;
+    color: hsl(var(--ink-100));
+    background: transparent;
+    border: 1px solid hsl(var(--surface-border));
   }
-  .btn-sm { @apply px-3 py-1.5 text-sm; }
+
+  .btn-ghost:hover {
+    background: hsl(var(--ink-800) / 0.7);
+    border-color: hsl(var(--brand-700) / 0.6);
+    color: hsl(var(--ink-50));
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
 
   .input {
-    @apply w-full rounded-lg border border-ink-600/40 bg-ink-900/60
-           px-3 py-2 text-sm font-mono text-ink-50
-           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500
-           placeholder:text-ink-400;
+    @apply w-full rounded-lg px-3 py-2 text-sm font-mono
+           transition-colors placeholder:text-ink-400
+           focus:outline-none focus:ring-1;
+    color: hsl(var(--ink-50));
+    background: var(--code-bg);
+    border: 1px solid hsl(var(--surface-border));
+    --tw-ring-color: hsl(var(--brand-500));
   }
+  .input:focus { border-color: hsl(var(--brand-500)); }
 
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5
-           text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1
+           font-mono text-xs font-semibold uppercase tracking-[0.12em];
+    border: 1px solid transparent;
   }
-  .pill-ok    { @apply pill bg-emerald-500/15 text-emerald-300 border border-emerald-500/30; }
-  .pill-warn  { @apply pill bg-amber-500/15  text-amber-300  border border-amber-500/30; }
-  .pill-err   { @apply pill bg-rose-500/15   text-rose-300   border border-rose-500/30; }
-  .pill-idle  { @apply pill bg-ink-600/30    text-ink-200    border border-ink-600/50; }
+
+  .pill-ok {
+    @apply pill border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300;
+  }
+
+  .pill-warn {
+    @apply pill border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300;
+  }
+
+  .pill-err {
+    @apply pill border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300;
+  }
+
+  .pill-idle {
+    @apply pill;
+    color: hsl(var(--ink-300));
+    background: hsl(var(--ink-800) / 0.55);
+    border-color: hsl(var(--surface-border));
+  }
 
   .glow-dot {
-    @apply inline-block w-2 h-2 rounded-full;
+    @apply inline-block h-2 w-2 rounded-full;
     box-shadow: 0 0 8px currentColor;
   }
 }
 
-/* ── Subtle animated grid background ───────────────────────────────────────── */
 .bg-grid {
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-size: 56px 56px;
   background-position: -1px -1px;
+}
+
+/* =========================================================================
+   Cafreso Pages utilities + responsive overrides (consumer surface).
+   ========================================================================= */
+@layer utilities {
+  .spin {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes pop {
+    0% { transform: scale(0.3); opacity: 0; }
+    70% { transform: scale(1.15); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .animate-pop { animation: pop 0.4s cubic-bezier(.2,.8,.2,1); }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+  .fade-up { animation: fade-up .5s cubic-bezier(.2,.8,.2,1) both; }
+
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 hsl(112 60% 45% / 0.4); }
+    70% { box-shadow: 0 0 0 14px hsl(112 60% 45% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(112 60% 45% / 0); }
+  }
+  .pulse-ring { animation: pulse-ring 1.8s infinite; }
+
+  .font-serif-display { font-family: "Playfair Display", "Cormorant Garamond", Georgia, serif; }
+
+  /* Density modifier — toggled via `.density-compact` on <main> */
+  .density-compact .post-card { padding: 14px !important; }
+  .density-compact h1.post-hero-title { font-size: 38px !important; }
+  .density-compact .article-body { padding: 28px 36px !important; }
+}
+
+/* Desktop defaults for responsive class-based layouts. */
+@media (min-width: 881px) {
+  .checkout-form { grid-template-columns: 1fr 1fr; }
+}
+
+/* Responsive helpers — INTENTIONALLY outside any @layer so the `!important`
+   rules beat inline `style="..."` attributes (which are unlayered). */
+@media (max-width: 880px) {
+  .desktop-only { display: none !important; }
+  body { padding-bottom: 72px; } /* breathing room for fixed MobileNav pill */
+
+  /* Banking.Brave announcement layout */
+  .bb-hero-grid { grid-template-columns: 1fr !important; gap: 24px !important; }
+  .bb-hero-title { font-size: 40px !important; }
+  .bb-hero-seal { width: 180px !important; height: 180px !important; }
+  .bb-ribbon { grid-template-columns: repeat(2, 1fr) !important; gap: 14px !important; }
+  .bb-yield-grid { grid-template-columns: 1fr !important; }
+  .bb-stats-grid { grid-template-columns: 1fr !important; }
+  .bb-pillars-grid { grid-template-columns: 1fr !important; }
+  .bb-article-body { padding: 24px 18px !important; }
+
+  /* Shop-side e-commerce: collapse 2-up and 3-up grids */
+  .shop-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+  .pdp-layout { flex-direction: column !important; gap: 16px !important; padding: 20px !important; }
+  .pdp-gallery, .pdp-copy { padding: 8px !important; }
+  .pdp-copy h1 { font-size: 28px !important; }
+  .checkout-form { grid-template-columns: 1fr !important; }
+  .checkout-form .col-span-2 { grid-column: auto !important; }
+
+  /* Leaderboard table: wrap in a horizontal scroll container */
+  .leaderboard-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .leaderboard-scroll table { min-width: 560px; }
+
+  /* Blog index — featured card stacks, filters wrap cleanly */
+  .blog-featured-inner { grid-template-columns: 1fr !important; gap: 16px !important; }
+  .blog-featured-inner h1.post-hero-title { font-size: 30px !important; }
+  .blog-filters { padding: 12px !important; gap: 8px !important; }
+  .blog-filters input { font-size: 14px !important; }
+  .blog-search { width: 100% !important; }
+  .blog-container { padding: 20px 14px 90px !important; }
+
+  /* Blog post detail */
+  .article-body { padding: 24px 20px !important; }
+  .post-hero-title { font-size: 32px !important; }
+  .post-hero-img { aspect-ratio: 16 / 10 !important; }
+
+  /* Design gallery */
+  .design-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+  .design-grid-5 { grid-template-columns: repeat(2, 1fr) !important; }
+  .design-grid-8 { grid-template-columns: repeat(4, 1fr) !important; gap: 6px !important; }
+  .design-container { padding: 20px 14px !important; }
+  .design-container section .flex { flex-wrap: wrap !important; }
+
+  /* Footer */
+  .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 20px !important; padding: 24px 20px !important; }
+  .footer-legal { grid-column: 1 / -1 !important; flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
+
+  /* Header: reduce padding, shrink login button, show hamburger */
+  .site-header-wrap { padding: 8px 10px 0 !important; }
+  .site-header { padding: 0 8px 0 8px !important; }
+  .site-header-login { padding: 0 10px !important; font-size: 12px !important; }
+  .mobile-hamburger { display: flex !important; }
+
+  /* Make the nanas-balance chip compact so it still fits */
+  .nanas-chip-compact { display: inline-flex !important; }
+  .nanas-chip-full { display: none !important; }
+}
+@media (min-width: 881px) {
+  .mobile-only { display: none !important; }
+  .nanas-chip-compact { display: none !important; }
 }

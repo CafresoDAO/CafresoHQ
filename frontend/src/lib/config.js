@@ -5,6 +5,12 @@
 export const PROD_HOST = 'ai.cafreso.com';
 
 /**
+ * CafresoPages self-hosted search API (home server → Cloudflare Tunnel).
+ * Queries hit the semantic vault first; Brave Search API is the fallback.
+ */
+export const SEARCH_API_BASE = 'https://search.cafreso.com';
+
+/**
  * Where this app is served — falls back to the current location at runtime.
  * Useful for share URLs, OG tags, error reports, etc.
  */

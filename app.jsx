@@ -3,7 +3,7 @@
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
 const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
@@ -62,7 +62,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     if (sensitive) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
-      fetch(`/hq/${fileScope}/${fileName}`, {
+      fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(v),
@@ -72,7 +72,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
 
   useEffectA(() => {
     if (sensitive) return;
-    fetch(`/hq/${fileScope}/${fileName}`)
+    fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data == null) return;
@@ -533,6 +533,63 @@ function whoCan(agents, queryRaw) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   EcosystemNav — Cafreso wordmark + app-switcher dropdown in the topbar.
+   Visually links HQ to the wider Cafreso ecosystem (Pages, AI, Banking).
+   Renders the real Cafreso script wordmark (/assets/cafreso-wordmark.png)
+   plus a CSS-styled "HQ" suffix chip matching the brand tagline pattern.
+   ───────────────────────────────────────────────────────────────────── */
+const ECOSYSTEM_APPS = [
+  { id: 'pages',   label: 'Pages',   url: 'https://cafreso.com',                                   icon: '📄', accent: 'var(--brand-peach)' },
+  { id: 'ai',      label: 'AI',      url: 'https://ai.cafreso.com',                                icon: '🧠', accent: 'var(--brand-plum)' },
+  { id: 'hq',      label: 'HQ',      url: '',                          /* current */              icon: '🏢', accent: 'var(--brand-banana)', active: true },
+  { id: 'banking', label: 'Banking', url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/',          icon: '🏦', accent: 'var(--brand-icp-gold)' },
+];
+function EcosystemNav() {
+  const [open, setOpen] = React.useState(false);
+  const btnRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('touchstart', close); };
+  }, [open]);
+  return (
+    <div className="ecosystem-nav">
+      <a className="cf-brand" href="/hq.html" aria-label="Cafreso HQ home">
+        {/* Two cf-mark variants — only one shows at a time via body.night
+            class, so the coffee-on-light logo flips to white-on-dark
+            without a JS theme prop subscription. */}
+        <img src="/assets/cf-mark-coffee.png" alt="Cafreso" className="cf-mark cf-mark--light"/>
+        <img src="/assets/cf-mark-white.png"  alt=""        className="cf-mark cf-mark--dark" aria-hidden="true"/>
+        <span className="cf-suffix" aria-label="HQ"><i>H</i><i>Q</i></span>
+      </a>
+      <div className="cf-apps-wrap" ref={btnRef}>
+        <button className="cf-apps-btn" onClick={()=>setOpen(o=>!o)} aria-expanded={open}>
+          Apps <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+        </button>
+        {open && (
+          <div className="cf-apps-menu" role="menu">
+            {ECOSYSTEM_APPS.map(app => (
+              <a key={app.id} role="menuitem"
+                 className={'cf-apps-item' + (app.active ? ' is-active' : '')}
+                 href={app.url || undefined}
+                 aria-current={app.active ? 'page' : undefined}
+                 onClick={(e)=>{ if (!app.url) e.preventDefault(); setOpen(false); }}
+                 style={{ '--app-accent': app.accent }}>
+                <span className="cf-apps-icon" aria-hidden="true">{app.icon}</span>
+                <span className="cf-apps-label">{app.label}</span>
+                {app.active && <span className="cf-apps-current">CURRENT</span>}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    AppGlobalCommands — registers always-available palette commands.
    Lives inside <CommandPaletteProvider> (so useCommands works) and
    gets fresh callbacks whenever its props change. Doesn't render
@@ -759,6 +816,27 @@ function App() {
     }
   }, [agents]);
   const [chat, setChat] = useStored(k('chat'), MOCK.INITIAL_CHAT, persistableChat);
+
+  /* One-time migration: rename "CafresoAI" → "CafresoHQ" on any persisted
+     chat messages so users with old localStorage state don't see the legacy
+     name. Runs once per session via a sessionStorage flag. */
+  React.useEffect(() => {
+    if (sessionStorage.getItem('cafreso_renamed_v1')) return;
+    setChat(prev => {
+      if (!Array.isArray(prev)) return prev;
+      let touched = false;
+      const next = prev.map(m => {
+        if (m && m.from === 'ceo' && m.name === 'CafresoAI') {
+          touched = true;
+          return { ...m, name: 'CafresoHQ' };
+        }
+        return m;
+      });
+      try { sessionStorage.setItem('cafreso_renamed_v1', '1'); } catch (_e) {}
+      return touched ? next : prev;
+    });
+  }, []);
+
 
   // ── Message registry (Phase 1 of agent-comms refactor) ─────────────
   // Durable, schema'd records of every agent↔agent handoff. The chat is
@@ -1030,7 +1108,7 @@ function App() {
   const [tourSeen, setTourSeen] = useStored(k('tourSeen'), false);
   const [tourOpen, setTourOpen] = useStateA(false);
   useEffectA(() => {
-    if (!tourSeen) {
+    if (!tourSeen && agents.length === 0) {
       const t = setTimeout(() => setTourOpen(true), 800);
       return () => clearTimeout(t);
     }
@@ -1069,6 +1147,10 @@ function App() {
   // Stickies are now a `kind='sticky'` pin — kept under this name and shape
   // for back-compat with the existing sticky-stack UI on the CEO desk.
   const [inspect, setInspect] = useStateA(null);
+  // CEOPanel — opens when the user clicks the Rail brand card (CafresoHQ
+  // identity card). Mirrors how InspectPanel handles sub-agents, but the
+  // CEO gets a richer view (mini office diorama + arcade + quick links).
+  const [ceoShown, setCeoShown] = useStateA(false);
   const [shortcutsOpen, setShortcutsOpen] = useStateA(false);
   const [toast, setToast] = useStateA(null);
 
@@ -1328,7 +1410,7 @@ ${d.text}` : d.text,
 
   const onHire = (a) => {
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
-    setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoAI', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
+    setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     setFeed(f => [{ agent: a.name, msg: 'walked onto the floor' }, ...f]);
     say(`Hired ${a.name}`, 'HIRE');
   };
@@ -1406,7 +1488,7 @@ ${d.text}` : d.text,
       for (const x of assistants) abortAgentRun(x.id);
       const dropIds = new Set([id, ...assistants.map(x => x.id)]);
       setAgents(prev => prev.filter(x => !dropIds.has(x.id)));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoAI',
+      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ',
         text: `${a.name} let go, along with their ${assistants.length} assistant${assistants.length === 1 ? '' : 's'} (${assistants.map(x=>x.name).join(', ')}).` }]);
     } else if (cascadeAction === 'transfer') {
       // Reassign assistants to report to the boss (clear reportsTo) and keep
@@ -1416,12 +1498,12 @@ ${d.text}` : d.text,
         .filter(x => x.id !== id)
         .map(x => x.reportsTo === id ? { ...x, reportsTo: null, parentAgentId: null,
           recent: `(reassigned from ${a.name})` } : x));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoAI',
+      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ',
         text: `${a.name} let go. Their ${assistants.length} assistant${assistants.length === 1 ? '' : 's'} (${assistants.map(x=>x.name).join(', ')}) now report directly to you.` }]);
     } else {
       // No assistants — straightforward dismissal.
       setAgents(prev => prev.filter(x => x.id !== id));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoAI', text: `${a.name} has been let go.` }]);
+      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `${a.name} has been let go.` }]);
     }
     say(`${a.name} let go`, 'BYE');
   };
@@ -2747,7 +2829,7 @@ ${d.text}` : d.text,
     let stopped = false;
     const poll = async () => {
       try {
-        const r = await fetch('/approvals/external/list', { cache: 'no-store' });
+        const r = await fetch((window._API_BASE || '') + '/approvals/external/list', { cache: 'no-store' });
         if (!r.ok) return;
         const { pending = [] } = await r.json();
         if (stopped) return;
@@ -2783,7 +2865,7 @@ ${d.text}` : d.text,
   }, []);
 
   const decideExternal = (externalId, decision, reason) => {
-    fetch('/approvals/external/decide', {
+    fetch((window._API_BASE || '') + '/approvals/external/decide', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: externalId, decision, reason: reason || '' }),
@@ -3101,6 +3183,9 @@ ${d.text}` : d.text,
               onOpenMemory={() => setActiveView('memory')}
               onOpenMeeting={onOpenMeeting}
               onTaskDropOnAgent={onTaskDropOnAgent}
+              tasks={tasks}
+              onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agentId, status: 'doing' } : t))}
+              onGoToTasks={() => setActiveView('tasks')}
               maxSlots={5}
             />
             <Ticker items={feed} />
@@ -3136,7 +3221,7 @@ ${d.text}` : d.text,
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
-        return <TeamView agents={agents} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} />;
+        return <TeamView agents={agents} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} />;
       case 'docs':
         return <DocsView tasks={tasks} agents={agents} />;
       case 'vault':
@@ -3296,6 +3381,7 @@ ${d.text}` : d.text,
     <div className={`app${railCollapsed ? ' rail-collapsed' : ''}`}>
       <Rail
         onOpenSettings={() => setSettingsOpen(true)}
+        onShowCEO={() => setCeoShown(true)}
         active={activeView}
         setActive={setActiveView}
         collapsed={railCollapsed}
@@ -3319,9 +3405,22 @@ ${d.text}` : d.text,
           meetingCount={meetings.length}
         />
       ) : null}
+      {/* Mobile floating approvals badge — always visible when pending */}
+      {approvals.length > 0 && typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches && (
+        <button className="mobile-approvals-fab" onClick={() => {
+          // Scroll to top of view-area where the ApprovalTray lives
+          const va = document.querySelector('.view-area');
+          if (va) va.scrollTo({ top: 0, behavior: 'smooth' });
+        }}>
+          <span>🔔</span>
+          <span className="maf-count">{approvals.length}</span>
+          <span className="maf-label">APPROVAL{approvals.length > 1 ? 'S' : ''}</span>
+        </button>
+      )}
       <PaletteFab />
       <div className="main">
         <div className="topbar">
+          <EcosystemNav />
           <div className="crumbs">
             <span><Ico kind={activeView}/></span>
             <span>HQ</span>
@@ -3333,10 +3432,6 @@ ${d.text}` : d.text,
             <div className="chip mobile-hidden"><span className="dot"/> LIVE</div>
             <div className="chip mobile-hidden">{agents.filter(a=>a.status==='busy'||a.status==='active').length} WORKING</div>
             <div className="chip mobile-hidden">{agents.length} HIRED</div>
-            <NotificationBell
-              unreadCount={mergedNotifications.filter(n => n.unread).length}
-              onClick={() => setNotifOpen(true)}
-            />
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · agent message registry (active handoffs, blocked tasks, failures)">
               📬 INBOX{inboxActiveCount > 0 ? ` · ${inboxActiveCount}` : ''}
             </Btn>
@@ -3353,7 +3448,16 @@ ${d.text}` : d.text,
             {(agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')) && (
               <Btn variant="danger" size="sm" onClick={onStopAll} title="Abort every in-flight agent + pause every running mission">■ STOP ALL</Btn>
             )}
-            <Btn variant="primary" size="sm" onClick={()=>setHireOpen(true)}>+ HIRE</Btn>
+            {/* Activity cluster — bell + receipts paired at top-right.
+                Receipt tray renders itself in document order (fixed position
+                already), so we mount only the bell here and rely on the
+                CSS `.topbar-activity` rule to anchor the cluster. */}
+            <div className="topbar-activity">
+              <NotificationBell
+                unreadCount={mergedNotifications.filter(n => n.unread).length}
+                onClick={() => setNotifOpen(true)}
+              />
+            </div>
           </div>
         </div>
 
@@ -3398,10 +3502,18 @@ ${d.text}` : d.text,
         </button>
       </nav>
 
-      <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire}/>
+      <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}/>
       <InspectPanel agent={inspect} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}/>
+      <CEOPanel
+        open={ceoShown}
+        onClose={() => setCeoShown(false)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onSitWithCEO={() => { setActiveView('chat'); }}
+        onOpenMemory={() => setMemoryOpen(true)}
+        onOpenMeeting={() => setMeetingOpen(true)}
+      />
       <MemoryShelf open={memoryOpen} onClose={()=>setMemoryOpen(false)} memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory}/>
       {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting}/>}
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
@@ -3422,42 +3534,84 @@ ${d.text}` : d.text,
         open={tourOpen}
         onClose={() => { setTourOpen(false); setTourSeen(true); }}
         onComplete={() => { setTourSeen(true); }}
-        steps={[
-          {
-            id: 'welcome',
-            title: 'Welcome to CafresoAI',
-            body: 'Your office for AI agents. The Office view is your command center — agents work at desks, you delegate from your chair. Let\'s tour the highlights.',
-          },
-          {
-            id: 'rail',
-            title: 'Switch views from the left rail',
-            body: 'Office, Tasks, Vault, Projects… every part of the system has its own page. Click the «/» button at the top to collapse the rail when you need more workspace.',
-            target: '.rail',
-          },
-          {
-            id: 'topbar',
-            title: 'Top-bar actions',
-            body: 'The topbar holds your status (token usage, working agents, hires) plus jump-to actions for memory, stand-up, research missions, and theme.',
-            target: '.topbar',
-          },
-          {
-            id: 'palette',
-            title: 'Press ⌘K (or Ctrl-K) anywhere',
-            body: 'The command palette is your fastest way to navigate, hire agents, change density, or run any action — without lifting your hands from the keyboard.',
-          },
-          {
-            id: 'notifs',
-            title: 'Notifications and approvals',
-            body: 'The 🔔 bell in the topbar shows unread approvals, receipts, and agent activity. Anything that needs your attention lands there.',
-            target: '.oc-notif-bell',
-          },
-          {
-            id: 'hire',
-            title: 'Ready to hire your team?',
-            body: 'Click + HIRE in the topbar (or press ⌘K → "Hire") to bring on your first sub-agent. Each hire gets a desk, a role, and their own model.',
-            target: '.topbar .px-btn.primary',
-          },
-        ]}
+        steps={(() => {
+          const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+          if (isMobile) return [
+            {
+              id: 'welcome',
+              title: 'Welcome to CafresoAI',
+              body: 'Your AI agent command center. Swipe between views, chat with agents, and manage your team — all from your phone.',
+            },
+            {
+              id: 'swipe-nav',
+              title: 'Swipe to navigate',
+              body: 'Swipe left or right anywhere on the screen to move between all 11 views. The dots above the tab bar show where you are.',
+              target: '.mobile-tabbar',
+            },
+            {
+              id: 'tools-drawer',
+              title: 'Tools drawer',
+              body: 'Tap 🛠️ Tools for quick access to Inbox, Memory, Stand-up, Research, Meetings, Workflows, and Settings.',
+              target: '.mobile-tabbar .mtab:last-child',
+            },
+            {
+              id: 'palette',
+              title: 'Command palette',
+              body: 'Tap the 🛠️ button in the corner to open the command palette — search for any action, view, or agent.',
+              target: '.palette-fab',
+            },
+            {
+              id: 'swipe-reply',
+              title: 'Swipe to reply or DM',
+              body: 'In chat, swipe a message left to reveal Reply and DM buttons. DM lets you talk directly to any agent.',
+              action: () => setActiveView('chat'),
+            },
+            {
+              id: 'hire',
+              title: 'Hire your first agent',
+              body: 'Tap + HIRE in the topbar to bring on your first sub-agent. Each hire gets a desk, a role, and their own AI model.',
+              target: '.topbar .px-btn.primary',
+              action: () => setActiveView('visual'),
+            },
+          ];
+          // Desktop tour
+          return [
+            {
+              id: 'welcome',
+              title: 'Welcome to CafresoAI',
+              body: 'Your office for AI agents. The Office view is your command center — agents work at desks, you delegate from your chair. Let\'s tour the highlights.',
+            },
+            {
+              id: 'rail',
+              title: 'Switch views from the left rail',
+              body: 'Office, Tasks, Vault, Projects… every part of the system has its own page. Click the «/» button at the top to collapse the rail when you need more workspace.',
+              target: '.rail',
+            },
+            {
+              id: 'topbar',
+              title: 'Top-bar actions',
+              body: 'The topbar holds your status (token usage, working agents, hires) plus jump-to actions for memory, stand-up, research missions, and theme.',
+              target: '.topbar',
+            },
+            {
+              id: 'palette',
+              title: 'Press ⌘K (or Ctrl-K) anywhere',
+              body: 'The command palette is your fastest way to navigate, hire agents, change density, or run any action — without lifting your hands from the keyboard.',
+            },
+            {
+              id: 'notifs',
+              title: 'Notifications and approvals',
+              body: 'The 🔔 bell in the topbar shows unread approvals, receipts, and agent activity. Anything that needs your attention lands there.',
+              target: '.oc-notif-bell',
+            },
+            {
+              id: 'hire',
+              title: 'Ready to hire your team?',
+              body: 'Click + HIRE in the topbar (or press ⌘K → "Hire") to bring on your first sub-agent. Each hire gets a desk, a role, and their own model.',
+              target: '.topbar .px-btn.primary',
+            },
+          ];
+        })()}
       />
       <StandupModal open={standupOpen} onClose={()=>setStandupOpen(false)} agents={agents} onArchive={onArchiveStandup}/>
       <MissionsModal open={missionsOpen} onClose={()=>setMissionsOpen(false)} agents={agents} missions={missions}
