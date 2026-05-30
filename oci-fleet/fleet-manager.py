@@ -326,6 +326,14 @@ def cmd_provision(args, fleet: dict):
         print(warn(f'  Could not read OCI credentials for container: {_e}'))
         print(f'  {dim("Container will fall back to Instance Principal auth")}')
 
+    # ── Hermes Agent (default runtime) per-principal secret ─────────────────
+    # The same key is read by (a) the in-container `hermes gateway` API server
+    # to authenticate callers and (b) serve.py's _hermes_proxy to inject the
+    # Bearer token server-side. Generated once per principal and persisted in
+    # the fleet registry so it's stable across start/stop.
+    import secrets as _secrets
+    api_server_key = _secrets.token_urlsafe(24)
+
     env_vars = {
         'OPENCLAW_FLEET_MODE':    'oci-fleet',
         'OPENCLAW_VAULT_BACKEND': 'oci',
@@ -341,7 +349,20 @@ def cmd_provision(args, fleet: dict):
         'OCI_FINGERPRINT':        _oci_cfg.get('fingerprint', ''),
         'OCI_REGION':             _oci_cfg.get('region', 'us-ashburn-1'),
         'OCI_KEY_B64':            _oci_key_b64,
+        # ── Hermes API server (default runtime) ──────────────────────────────
+        'API_SERVER_ENABLED':     'true',
+        'API_SERVER_KEY':         api_server_key,
+        'HERMES_HOME':            '/data/hermes',
     }
+    # Backend key passthrough: give the in-container Hermes a working LLM
+    # backend by forwarding whichever key the operator has in their env
+    # (precedence handled by hermes-bootstrap.py). Without one, the API server
+    # still starts but calls error until a key/BYOK is supplied.
+    for _bk in ('GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
+        _bv = os.environ.get(_bk, '').strip()
+        if _bv:
+            env_vars[_bk] = _bv
+            print(f'  Hermes backend key: {dim(_bk)} (forwarded from operator env)')
 
     pull_secret = _read_ocir_pull_secret(fleet)
     if pull_secret:
@@ -435,6 +456,9 @@ def cmd_provision(args, fleet: dict):
         'status':                'ACTIVE',
         'created_at':            datetime.now(timezone.utc).isoformat(),
         'principal':             principal,
+        # Per-principal Hermes API server key (also injected as a container env
+        # var). Stored so operations/debug can authenticate to the gateway.
+        'api_server_key':        api_server_key,
     }
     save_fleet(fleet)
     print(f'\n{ok("Provisioned!")}')
@@ -866,17 +890,24 @@ def _render_caddyfile(fleet: dict, primary_host: str) -> str:
             continue
         slug = _principal_slug(principal)
         port = info.get('port', 8787)
-        user_blocks.append(
+        # `hq.html` is the app entry (there is no index.html). Make the bare
+        # slug URL the shell links to resolve to the app:
+        #   /u/<slug>        → redirect to /u/<slug>/hq.html
+        #   /u/<slug>/       → (handle_path strips to "/") rewrite to /hq.html
+        #   /u/<slug>/<file> → proxied through unchanged
+        block = (
+            f'    handle /u/{slug} {{\n'
+            f'        redir * /u/{slug}/hq.html\n'
+            f'    }}\n'
             f'    handle_path /u/{slug}/* {{\n'
+            f'        @approot path /\n'
+            f'        rewrite @approot /hq.html\n'
             f'        reverse_proxy {ip}:{port}\n'
             f'    }}'
         )
+        user_blocks.append(block)
         # Same routes also exposed over plain :80 (for IP-based debugging)
-        user_blocks_http.append(
-            f'    handle_path /u/{slug}/* {{\n'
-            f'        reverse_proxy {ip}:{port}\n'
-            f'    }}'
-        )
+        user_blocks_http.append(block)
 
     gateway_ip = (fleet.get('gateway') or {}).get('public_ip') or '<unset>'
     # Use simple placeholder replace — `.format()` clashes with Caddy's {...} blocks.

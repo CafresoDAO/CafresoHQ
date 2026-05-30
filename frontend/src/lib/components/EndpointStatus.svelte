@@ -30,7 +30,7 @@
 </script>
 
 {#if compact}
-  <a href="/settings" class={cls} title={$endpointUrl || 'No endpoint configured'}>
+  <a href="/hq/settings" class={cls} title={$endpointUrl || 'No endpoint configured'}>
     <span class="glow-dot {dot}"></span>
     <span class="hidden sm:inline">{label}</span>
   </a>

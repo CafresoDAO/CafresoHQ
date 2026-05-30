@@ -37,9 +37,10 @@ services:
       # Pass-through from host shell or .env file.
       # Blank = users must supply their own via HQ Settings (BYOK).
       # Set one or both to enable server-wide CLI auth for all container users.
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"   # claude CLI (claude-code)
+      GROQ_API_KEY:      "${GROQ_API_KEY:-}"         # DEFAULT (open-weights, free tier)
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"    # claude CLI (claude-code)
       OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"       # codex CLI (OpenAI direct)
-      OCA_API_KEY:       "${OCA_API_KEY:-}"          # codex CLI (Oracle OCA)
+      GOOGLE_API_KEY:    "${GOOGLE_API_KEY:-}"       # Gemini API (BYOK)
     volumes:
       # Persist local state between docker restarts
       - ./data/hq-state:/data/hq-state

@@ -1,0 +1,36 @@
+# CafresoAI fleet image build context — keep it tiny.
+# The Dockerfile COPYs only specific root files + oci-fleet/{entrypoint.sh,
+# hermes-bootstrap.py, requirements-serve.txt}. Everything below is irrelevant
+# to the image and would otherwise bloat the build context (slow over the WSL
+# 9p /mnt/c mount).
+
+.git
+.gitignore
+node_modules
+**/node_modules
+build
+.tmp-build
+dist
+out
+*.log
+serve_*.log
+.serve.log
+__pycache__
+**/__pycache__
+*.pyc
+.dfx
+.env.dfx
+.claude
+electron
+frontend
+src
+assets
+docs
+*.spec
+hq-state
+canister_ids.json
+.DS_Store
+build-win.bat
+build_exe.bat
+launch.bat
+start-elevated.sh

@@ -42,42 +42,18 @@ ROUTES = {
     '/ollama/':   ('localhost', 11434),
 }
 
-# Oracle OCA (LiteLLM gateway) HTTPS proxy — /oca/* → Oracle endpoint.
-# Auth: OCA_API_KEY env var (server-side) takes priority over any
-# Authorization header the browser sends.  Avoids CORS entirely.
-OCA_HOST = 'code-internal.aiservice.us-chicago-1.oci.oraclecloud.com'
-OCA_BASE = '/20250206/app/litellm'
-OCA_FALLBACK_MODELS = [
-    'gpt-5.5-pro',
-    'gpt-5.5',
-    'gpt-5.4-pro',
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-5.4-nano',
-    'gpt-5.3-codex',
-    'gpt-5.2-codex',
-    'gpt-5.2',
-    'gpt-5.1-codex-max',
-    'gpt-5.1-codex',
-    'gpt-5.1-codex-mini',
-    'gpt-5-codex',
-    'gpt5',
-    'gpt-4.1',
-]
-OCA_MODEL_SLUGS = set(OCA_FALLBACK_MODELS)
+# Hermes Agent (Nous Research) — the per-container `hermes gateway` exposes an
+# OpenAI-compatible API server (enable via ~/.hermes/.env:
+# API_SERVER_ENABLED=true, API_SERVER_KEY=…). We proxy /hermes/* → that server,
+# injecting the Bearer key server-side so it never reaches the browser, and
+# metering the OpenAI `usage` object for per-principal billing. Not in ROUTES
+# because it needs the dedicated _hermes_proxy (auth injection + usage tap).
+HERMES_HOST = os.environ.get('HERMES_API_HOST', '127.0.0.1')
+HERMES_PORT = int(os.environ.get('HERMES_API_PORT', '8642') or '8642')
+
 HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
                'proxy-authorization', 'te', 'trailers', 'transfer-encoding',
                'upgrade', 'content-length'}
-
-def _oca_wire_model(model: str) -> str:
-    """Return the model id shape OCA's LiteLLM gateway expects."""
-    mid = str(model or '').strip()
-    if not mid or mid.startswith('oca/') or '/' in mid:
-        return mid
-    if mid in OCA_MODEL_SLUGS:
-        return 'oca/' + mid
-    return mid
-
 # Claude Code (Pro/Max subscription) — invoked as a subprocess so the user's
 # already-authenticated CLI does the auth. Path is overridable; if blank we
 # look up `claude` in PATH at request time.
@@ -1734,8 +1710,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hq_handler('GET')
         if self.path.startswith('/brave/'):
             return self._brave_search()
-        if self.path.startswith('/oca/'):
-            return self._oca_proxy('GET')
+        if self.path.startswith('/hermes/'):
+            return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
             return self._vault('GET')
         if self.path == '/claudecode/status':
@@ -1770,8 +1746,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        if self.path.startswith('/oca/'):
-            return self._oca_proxy('POST')
+        if self.path.startswith('/hermes/'):
+            return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
             return self._vault('POST')
         if self.path == '/claudecode/configure':
@@ -1822,8 +1798,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_error(405)
 
     def do_OPTIONS(self):
-        if self.path.startswith('/oca/'):
-            return self._oca_proxy('OPTIONS')
         prefix, target = self._route()
         if target:
             return self._proxy('OPTIONS', prefix, target)
@@ -2834,25 +2808,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                '-C', primary_dir]
         for d in _openclaw_allowed_dirs[1:]:
             cmd += ['--add-dir', d]
-        wire_model = ''
-        # Always route Codex through the local OCA proxy so /v1/models never
-        # hits OCA directly. OCA's raw /v1/models endpoint can return survey
-        # HTML that Codex 0.128 rejects, causing a startup crash before any
-        # SSE headers are written — the browser then gets "Failed to fetch"
-        # instead of a proper error message.
-        cmd += [
-            '-c', 'model_provider="oca"',
-            '-c', f'model_providers.oca.base_url="http://127.0.0.1:{PORT}/oca/v1"',
-            '-c', 'model_providers.oca.env_key="OCA_API_KEY"',
-            '-c', 'model_providers.oca.wire_api="responses"',
-            '-c', 'model_providers.oca.name="Oracle Code Assist"',
-        ]
-        if model:
-            # The UI stores friendly OCA slugs (gpt-5.5, gpt-5.3-codex, etc).
-            # Codex can pass arbitrary model ids through the Responses API, so
-            # use OCA's real `oca/...` ids instead of profile names.
-            wire_model = _oca_wire_model('gpt5' if model == 'gpt-5' else model)
-            cmd += ['--model', wire_model]
+        # Codex talks directly to OpenAI (default provider). Auth via
+        # OPENAI_API_KEY (user-supplied through HQ settings / operator env).
+        wire_model = model or 'gpt-4.1'
+        cmd += ['-c', 'model_provider="openai"']
+        cmd += ['--model', wire_model]
         # OCI cloud requirements (synced into ~/.codex/cloud-requirements-cache.json)
         # restrict approval_policy to "untrusted" — anything else (including
         # "never") is rejected as `Configured value … is disallowed by
@@ -2875,11 +2835,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                          f'dirs={_openclaw_allowed_dirs}\n')
 
         # Inherit env + Git Bash paths so shell tools work on Windows.
-        # Codex uses its own ~/.codex/config.toml — model_provider = "oca",
-        # wire_api = "responses", env_key = "OCA_API_KEY". We do NOT touch
-        # OPENAI_BASE_URL (would break OCA's base_url). But we DO mirror
-        # OCA_API_KEY into OPENAI_API_KEY so Codex finds it regardless of
-        # whether it honors env_key from the [model_providers.oca] section.
+        # Codex talks to OpenAI directly via OPENAI_API_KEY (BYOK / operator env).
         import copy as _copy
         agent_env = _copy.deepcopy(os.environ)
         path_key = next((k for k in agent_env.keys() if k.lower() == 'path'), 'Path')
@@ -2896,10 +2852,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         for _k in [k for k in list(agent_env.keys()) if k.lower() == 'path']:
             agent_env.pop(_k, None)
         agent_env['Path'] = path_value
+        # Codex uses OpenAI directly via OPENAI_API_KEY; no base_url override.
         agent_env.pop('OPENAI_BASE_URL', None)
-        _oca_key = agent_env.get('OCA_API_KEY', '').strip()
-        if _oca_key:
-            agent_env['OPENAI_API_KEY'] = _oca_key
 
         try:
             proc = subprocess.Popen(
@@ -3102,21 +3056,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             def _summarize_stderr(s):
                 """Codex sometimes dumps the entire upstream HTTP body into
-                stderr (e.g. OCA's /v1/models response, which contains an
-                embedded survey HTML page). Trim that to the actual error
-                summary so the chat surface doesn't get blasted with HTML."""
+                stderr. Trim that to the actual error summary so the chat
+                surface doesn't get blasted with HTML."""
                 if not s: return ''
-                # Known noise: OCA model-list refresh failure includes the
-                # full survey HTML payload. Show only the reason line.
+                # Known noise: a model-list refresh failure can include a large
+                # HTML payload. Show only the reason line.
                 m = re.search(r'failed to refresh available models:[^\n]+', s)
                 refresh_hint = ''
                 if m:
                     refresh_hint = (
-                        '\n\nKnown issue: direct OCA /v1/models responses can '
-                        'include survey HTML that Codex CLI rejects. HQ now '
-                        'normalizes /oca/v1/models; restart serve.py so Codex '
-                        'agents use the local proxy, or run codex once from a '
-                        'normal shell to refresh its model cache.'
+                        '\n\nNote: the model-list refresh failed. Check that '
+                        'OPENAI_API_KEY is set and the selected model is valid.'
                     )
                 # Drop any line that looks like raw HTML / JSON body, or
                 # known-benign codex startup chatter ("Reading prompt from
@@ -3843,20 +3793,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if model:
                     cmd += ['--model', model]
             else:
-                wire_model = _oca_wire_model('gpt5' if model == 'gpt-5' else model) if model else ''
-                _oca_key = agent_env.get('OCA_API_KEY', '').strip()
-                if _oca_key:
-                    agent_env['OPENAI_API_KEY'] = _oca_key
+                # Codex → OpenAI directly (OPENAI_API_KEY); no base_url override.
+                wire_model = model or 'gpt-4.1'
                 cmd = [bin_, 'exec', '--json', '--skip-git-repo-check',
                        '--sandbox', 'workspace-write', '-C', str(cwd_path),
-                       '-c', 'model_provider="oca"',
-                       '-c', f'model_providers.oca.base_url="http://127.0.0.1:{PORT}/oca/v1"',
-                       '-c', 'model_providers.oca.env_key="OCA_API_KEY"',
-                       '-c', 'model_providers.oca.wire_api="responses"',
-                       '-c', 'model_providers.oca.name="Oracle Code Assist"',
+                       '-c', 'model_provider="openai"',
                        '-c', 'approval_policy="untrusted"']
-                if wire_model:
-                    cmd += ['--model', wire_model]
+                cmd += ['--model', wire_model]
 
         sys.stderr.write(
             f'[terminal] cli={cli} cwd={cwd_path} model={model or "(default)"}'
@@ -5204,528 +5147,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         return self._send_json(404, {'error': f'unknown vault route: {path}'})
 
-    def _oca_proxy(self, method):
-        """Proxy /oca/* → Oracle OCA LiteLLM HTTPS endpoint.
-
-        /oca/v1/chat/completions  →  OCA_HOST + OCA_BASE + /v1/chat/completions
-        /oca/v1/models            →  OCA_HOST + OCA_BASE + /v1/models
-
-        Auth: OCA_API_KEY env var (server-side) is injected as
-        'Authorization: Bearer …' and takes priority over any header the
-        browser sends.  Falls back to the browser's own Authorization header
-        so callers that paste a key in the UI still work if the env var is
-        absent.  Accept-Encoding is forced to 'identity' so SSE arrives
-        uncompressed and can be streamed straight to the client.
-        """
-        tail = self.path[4:]  # strip '/oca', keep leading '/'
-        if not tail.startswith('/'):
-            tail = '/' + tail
-        parsed_tail = urllib.parse.urlparse(tail)
-        if method == 'GET' and parsed_tail.path.rstrip('/') == '/v1/models':
-            return self._oca_models_proxy()
-        # OCA path quirk: the Responses API is at /responses (NOT /v1/responses).
-        # The OpenAI-compatible models endpoint IS at /v1/models, so a single
-        # client base_url like ".../litellm/v1" would fail one of them. Rewrite
-        # /v1/responses → /responses so clients can keep "/v1" everywhere.
-        if parsed_tail.path == '/v1/responses' or parsed_tail.path.startswith('/v1/responses/'):
-            tail = tail.replace('/v1/responses', '/responses', 1)
-        # WebSocket upgrade — defensive pass-through. The /responses endpoint is
-        # HTTP-streaming on OCA, but if a client ever asks for WS we'll bridge it.
-        upgrade_hdr = (self.headers.get('Upgrade') or '').lower()
-        connection_hdr = (self.headers.get('Connection') or '').lower()
-        if method == 'GET' and 'websocket' in upgrade_hdr and 'upgrade' in connection_hdr:
-            return self._oca_websocket_proxy(tail)
-        upstream_path = OCA_BASE + tail
-
-        # Read the request body. Handle chunked transfer-encoding because
-        # Codex CLI uses it for POST /v1/responses; SimpleHTTP doesn't decode
-        # chunked automatically.
-        te = (self.headers.get('Transfer-Encoding') or '').lower()
-        length = int(self.headers.get('content-length', 0) or 0)
-        if 'chunked' in te:
-            body_parts = []
-            try:
-                while True:
-                    size_line = self.rfile.readline(64).strip()
-                    if not size_line:
-                        break
-                    try:
-                        chunk_size = int(size_line.split(b';', 1)[0], 16)
-                    except ValueError:
-                        break
-                    if chunk_size == 0:
-                        # Drain trailers (empty line)
-                        self.rfile.readline()
-                        break
-                    chunk = self.rfile.read(chunk_size)
-                    body_parts.append(chunk)
-                    self.rfile.readline()  # trailing CRLF after chunk
-                body = b''.join(body_parts)
-            except Exception as e:
-                sys.stderr.write(f'[oca] chunked-decode failed: {e}\n')
-                body = b''
-        else:
-            body = self.rfile.read(length) if length else None
-        _body_len = len(body) if body else 0
-        _req = None
-        _model_rewrite = ''
-        if body and method == 'POST':
-            try:
-                _req = json.loads(body.decode('utf-8', 'replace'))
-                if isinstance(_req, dict):
-                    request_path = urllib.parse.urlparse(tail).path
-                    old_model = str(_req.get('model') or '').strip()
-                    new_model = _oca_wire_model(old_model)
-                    if (
-                        new_model
-                        and new_model != old_model
-                        and (request_path == '/responses' or request_path.startswith('/responses/'))
-                    ):
-                        _req['model'] = new_model
-                        body = json.dumps(_req, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
-                        _body_len = len(body)
-                        _model_rewrite = f' model_rewrite={old_model}->{new_model}'
-            except Exception:
-                _req = None
-        sys.stderr.write(f'[oca] {method} {tail} body={_body_len}B te={te or "-"}{_model_rewrite}\n')
-        if isinstance(_req, dict):
-            sys.stderr.write(
-                f'[oca]   model={_req.get("model","?")} '
-                f'tools={len(_req.get("tools", []))} '
-                f'input_items={len(_req.get("input", []))} '
-                f'top_keys={sorted(_req.keys())}\n'
-            )
-
-        # Drop ALL hop-headers, host, AND any case-variant of headers we
-        # inject ourselves (authorization, accept-encoding). Without the
-        # explicit drop, Codex sends `authorization:` lowercase and our
-        # `Authorization:` capital injection produces TWO auth headers in
-        # the forwarded request — OCA's API gateway treats this as a
-        # protocol violation and returns 404 NotFound (not 401, not 400)
-        # before the body is even read. Took six rounds of debugging to
-        # find: the proxy logs revealed the duplicate by listing both keys.
-        _DROP_LOWER = HOP_HEADERS | {'host', 'authorization', 'accept-encoding'}
-        headers = {k: v for k, v in self.headers.items()
-                   if k.lower() not in _DROP_LOWER}
-        headers['Host'] = OCA_HOST
-        headers['Accept-Encoding'] = 'identity'
-
-        env_key = os.environ.get('OCA_API_KEY', '').strip()
-        if env_key:
-            headers['Authorization'] = 'Bearer ' + env_key
-        else:
-            # No server-side key — fall back to whatever the client sent.
-            client_auth = self.headers.get('Authorization') or self.headers.get('authorization')
-            if client_auth:
-                headers['Authorization'] = client_auth
-
-        ctx = ssl.create_default_context()
-        conn = http.client.HTTPSConnection(OCA_HOST, 443, timeout=600, context=ctx)
-        headers_sent = False
-        try:
-            # Windows-safe full-duplex send+receive.
-            #
-            # OCA's /responses endpoint starts streaming the 200 response
-            # *before* the client finishes sending the (large) request body.
-            # On Windows, Python's http.client sends headers+body atomically,
-            # so when OCA's first SSE chunks arrive, the local TCP stack
-            # aborts the in-flight body write with ConnectionAbortedError
-            # (WinError 10053).  Fix: send only the request *headers* first,
-            # then dispatch the body in a background daemon thread so the
-            # main thread can call getresponse() concurrently.  TCP is
-            # full-duplex — send and receive don't block each other.
-            # skip_host / skip_accept_encoding: putrequest() auto-injects both
-            # headers; our `headers` dict already contains them (set above), so
-            # without these flags the forwarded request ends up with two Host
-            # headers → Jetty/Nginx upstream returns "400 Duplicate Host Header".
-            conn.putrequest(method, upstream_path,
-                            skip_host=True, skip_accept_encoding=True)
-            for k, v in headers.items():
-                conn.putheader(k, v)
-            if body is not None:
-                conn.putheader('Content-Length', str(len(body)))
-            conn.endheaders()       # flushes request headers only
-
-            _body_err = [None]
-            _body_thread = None
-            if body:
-                def _bg_send_body():
-                    try:
-                        conn.send(body)
-                    except Exception as exc:
-                        _body_err[0] = exc
-                _body_thread = threading.Thread(
-                    target=_bg_send_body, daemon=True, name='oca-body-send')
-                _body_thread.start()
-
-            resp = conn.getresponse()
-
-            if _body_thread is not None:
-                _body_thread.join(timeout=10)
-            if _body_err[0]:
-                sys.stderr.write(
-                    f'[oca] bg body-send error (response already received): '
-                    f'{_body_err[0]!r}\n'
-                )
-            self.send_response(resp.status)
-            for k, v in resp.getheaders():
-                if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
-                    continue
-                self.send_header(k, v)
-            # Force close-delimited framing — we already strip Transfer-Encoding,
-            # so the response has no length. Telling the client we'll close on
-            # finish is the cleanest signal.
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            headers_sent = True
-            while True:
-                try:
-                    chunk = resp.read(1024)
-                except (ConnectionResetError, ConnectionAbortedError, OSError):
-                    # Upstream dropped mid-stream — that's fine, just stop
-                    # forwarding. Don't 502 the client (we've already sent
-                    # response headers and likely some bytes).
-                    break
-                if not chunk:
-                    break
-                try:
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-                    break
-        except Exception as e:
-            err_repr = f'{type(e).__name__}: {e}'
-            sys.stderr.write(f'[oca] proxy upstream error on {upstream_path}: {err_repr}\n')
-            if not headers_sent:
-                try:
-                    self.send_error(502, f'oca: {err_repr}')
-                except Exception:
-                    pass
-            else:
-                # Already streaming — log but don't try to send another response,
-                # which would corrupt the in-flight body.
-                sys.stderr.write(f'[oca] stream error after headers: {err_repr}\n')
-        finally:
-            try: conn.close()
-            except Exception: pass
-
-    def _oca_models_payload(self, raw: bytes = b'') -> dict:
-        """Return a model catalog shape both Codex and OpenAI-style clients can parse."""
-        ids = []
-        data_ids = []
-        try:
-            body = json.loads((raw or b'{}').decode('utf-8', 'replace'))
-        except Exception:
-            body = {}
-
-        candidates = []
-        if isinstance(body, dict):
-            for key in ('data', 'models'):
-                value = body.get(key)
-                if isinstance(value, list):
-                    candidates.extend(value)
-        elif isinstance(body, list):
-            candidates.extend(body)
-
-        # Collect per-model default_reasoning_level strings from OCA's response.
-        # Codex v0.128+ deserialises this field as a string enum (e.g. "xhigh"),
-        # not as a struct. Build the map before discarding non-id fields.
-        _oca_defaults: dict = {}  # oca/model-id → "low"/"medium"/"high"/"xhigh"
-
-        for item in candidates:
-            if isinstance(item, str):
-                mid = item
-            elif isinstance(item, dict):
-                mid = item.get('id') or item.get('model') or item.get('slug') or item.get('name')
-                drl = item.get('default_reasoning_level')
-                if isinstance(drl, str) and drl:
-                    _oca_defaults[str(mid or '').strip()] = drl
-            else:
-                mid = ''
-            mid = str(mid or '').strip()
-            if mid:
-                if mid not in data_ids:
-                    data_ids.append(mid)
-                slug = mid.split('/', 1)[1] if mid.startswith('oca/') else mid
-                if slug not in ids:
-                    ids.append(slug)
-                # Record slug→default too so both prefixed and bare keys work.
-                if mid in _oca_defaults and slug not in _oca_defaults:
-                    _oca_defaults[slug] = _oca_defaults[mid]
-
-        if not ids:
-            ids = list(OCA_FALLBACK_MODELS)
-        if not data_ids:
-            data_ids = [mid if mid.startswith('oca/') else f'oca/{mid}' for mid in ids]
-
-        # `supported_reasoning_levels` items: OCA returns structs with an `effort`
-        # field and Codex parses them correctly. Include id/name for older clients.
-        # `priority` (u32) was added in Codex 0.128 — without it the model-refresh
-        # deserialiser raises "missing field `priority`" mid-stream and Codex
-        # exits 1 before the prompt is processed. Lower number = higher priority
-        # in Codex's UI (matches OpenAI's own ordering: low first, xhigh last).
-        REASONING_PRESETS = [
-            {'effort': 'low',    'id': 'low',    'name': 'Low',    'description': 'Fast, less reasoning',  'priority': 1},
-            {'effort': 'medium', 'id': 'medium', 'name': 'Medium', 'description': 'Balanced',              'priority': 2},
-            {'effort': 'high',   'id': 'high',   'name': 'High',   'description': 'Slow, deep reasoning',  'priority': 3},
-            {'effort': 'xhigh',  'id': 'xhigh',  'name': 'X-High', 'description': 'Very deep reasoning',   'priority': 4},
-        ]
-        # `default_reasoning_level` must be a plain string — Codex 0.128+ parses
-        # it as a string enum. An object like {"effort":"medium"} triggers
-        # "unknown variant `effort`" and kills the model-refresh stream.
-        _DEFAULT_EFFORT = 'medium'
-
-        # Codex 0.128 added `shell_type` as a required field on each model
-        # object. Without it the model-refresh deserialiser raises
-        # "missing field `shell_type`" and Codex exits 1 before sending
-        # the prompt. OCA's raw response also omits it, so we inject it here.
-        # Valid enum values (from Codex 0.128 source):
-        #   "default" | "local" | "unified_exec" | "disabled" | "shell_command"
-        # "default" is the safest choice — lets Codex pick the execution
-        # strategy based on the model's own capabilities rather than us
-        # prescribing one that may not match OCA's sandbox.
-        _SHELL_TYPE = 'default'
-
-        # Codex 0.128 requires BOTH `data` and `models` arrays at the top
-        # level. They use DIFFERENT schemas:
-        #   data[]   = { id, object, created, owned_by, shell_type,
-        #                supported_reasoning_levels[], default_reasoning_level }
-        #   models[] = { id, slug, display_name, supported_in_api, visibility,
-        #                shell_type, supported_reasoning_levels[],
-        #                default_reasoning_level }
-        # Each reasoning level item must include `priority` (added in 0.128).
-        # The earlier `missing field 'priority'` error was misleading — it
-        # came from parsing `models` items as `data` items because of a
-        # schema collision; the real fix is keeping the two schemas distinct.
-        data = [{
-            'id': mid,
-            'object': 'model',
-            'created': 0,
-            'owned_by': 'oca',
-            'shell_type': _SHELL_TYPE,
-            'supported_reasoning_levels': REASONING_PRESETS,
-            'default_reasoning_level': _oca_defaults.get(mid, _DEFAULT_EFFORT),
-        } for mid in data_ids]
-        # `models` items have their own (richer) schema in Codex 0.128.
-        # Required fields discovered iteratively from "missing field …"
-        # parse errors at the data→models byte boundary:
-        #   priority (u32), base_instructions (string), and likely several
-        #   more — pre-populate every field that's plausibly required so
-        #   we don't churn on per-restart whack-a-mole.
-        models = [{
-            'id': mid,
-            'slug': mid,
-            'display_name': mid.replace('gpt', 'GPT').replace('-', ' '),
-            'description': f'OCA-hosted {mid}',
-            'supported_in_api': True,
-            'visibility': 'list',
-            'priority': i + 1,
-            'shell_type': _SHELL_TYPE,
-            'base_instructions': '',
-            'supported_reasoning_levels': REASONING_PRESETS,
-            'default_reasoning_level': _oca_defaults.get(mid, _DEFAULT_EFFORT),
-            # Common extension fields that future Codex deserialisers may
-            # require. Empty/sensible defaults so they're never `null`.
-            'capabilities': [],
-            'context_window': 200000,
-            'max_output_tokens': 16384,
-            'supports_vision': False,
-            'supports_streaming': True,
-            'supports_function_calling': True,
-            'supports_tools': True,
-            'supports_reasoning_summaries': False,
-            'supports_parallel_tool_calls': True,
-            'supports_response_format': True,
-            'support_verbosity': True,
-            'supported_verbosities': ['low', 'medium', 'high'],
-            'default_verbosity': 'medium',
-            'truncation_policy': {'mode': 'tokens', 'limit': 200000},
-            'experimental_supported_tools': [],
-            'training_cutoff': '',
-            'tags': [],
-            'aliases': [],
-            'deprecated': False,
-            'pricing': {},
-        } for i, mid in enumerate(ids)]
-        return {'object': 'list', 'data': data, 'models': models}
-
-    def _oca_models_proxy(self):
-        # Same duplicate-header trap as _oca_proxy: Codex sends `authorization`
-        # lowercase, then our `Authorization` injection produces two auth
-        # headers, OCA serves a half-broken response, the resulting partial
-        # JSON gets normalised into something Codex's model deserialiser
-        # rejects with "stream disconnected before completion". Strip case
-        # variants of every header we re-inject.
-        _DROP_LOWER = HOP_HEADERS | {'host', 'authorization', 'accept-encoding'}
-        headers = {k: v for k, v in self.headers.items()
-                   if k.lower() not in _DROP_LOWER}
-        headers['Host'] = OCA_HOST
-        headers['Accept-Encoding'] = 'identity'
-        env_key = os.environ.get('OCA_API_KEY', '').strip()
-        if env_key:
-            headers['Authorization'] = 'Bearer ' + env_key
-
-        raw = b''
-        ctx = ssl.create_default_context()
-        conn = http.client.HTTPSConnection(OCA_HOST, 443, timeout=30, context=ctx)
-        try:
-            conn.request('GET', OCA_BASE + '/v1/models', headers=headers)
-            resp = conn.getresponse()
-            raw = resp.read()
-        except Exception as e:
-            sys.stderr.write(f'[oca] models fallback: {e}\n')
-        finally:
-            conn.close()
-
-        return self._send_json(200, self._oca_models_payload(raw))
-
-    # ---- OCA WebSocket pass-through --------------------------------------
-    # Codex CLI talks to OCA's /v1/responses over WSS. We bridge by:
-    #   1. Receiving the upgrade GET from the client
-    #   2. Opening an SSL socket to OCA on port 443
-    #   3. Forwarding the upgrade (rewriting Host/path/auth)
-    #   4. Reading OCA's 101 response
-    #   5. Sending our own 101 (with Sec-WebSocket-Accept) to the client
-    #   6. select()-based bidirectional byte relay until either side closes
-    # No frame parsing — raw bytes pass through both ways.
-    _WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-
-    def _oca_websocket_proxy(self, tail):
-        ws_key = self.headers.get('Sec-WebSocket-Key', '')
-        ws_version = self.headers.get('Sec-WebSocket-Version', '13')
-        if not ws_key:
-            return self.send_error(400, 'missing Sec-WebSocket-Key')
-        upstream_path = OCA_BASE + tail
-
-        # Build the upgrade request to OCA. Forward only headers that matter
-        # for WS negotiation; never leak the client's Authorization header.
-        forward_keys = {'sec-websocket-protocol', 'sec-websocket-extensions',
-                        'origin', 'user-agent', 'client', 'client-version'}
-        req_lines = [
-            f'GET {upstream_path} HTTP/1.1',
-            f'Host: {OCA_HOST}',
-            'Upgrade: websocket',
-            'Connection: Upgrade',
-            f'Sec-WebSocket-Key: {ws_key}',
-            f'Sec-WebSocket-Version: {ws_version}',
-            'Accept-Encoding: identity',
-        ]
-        for k, v in self.headers.items():
-            if k.lower() in forward_keys:
-                req_lines.append(f'{k}: {v}')
-        env_key = os.environ.get('OCA_API_KEY', '').strip()
-        if env_key:
-            req_lines.append(f'Authorization: Bearer {env_key}')
-        request_bytes = ('\r\n'.join(req_lines) + '\r\n\r\n').encode('latin-1')
-
-        upstream = None
-        try:
-            ctx = ssl.create_default_context()
-            raw = socket.create_connection((OCA_HOST, 443), timeout=30)
-            upstream = ctx.wrap_socket(raw, server_hostname=OCA_HOST)
-            upstream.sendall(request_bytes)
-
-            # Read upstream response headers (up to 64KB safety cap)
-            buf = b''
-            while b'\r\n\r\n' not in buf:
-                chunk = upstream.recv(4096)
-                if not chunk:
-                    return self.send_error(502, 'upstream closed during ws handshake')
-                buf += chunk
-                if len(buf) > 65536:
-                    return self.send_error(502, 'upstream sent oversized handshake')
-
-            head, _, leftover = buf.partition(b'\r\n\r\n')
-            head_str = head.decode('latin-1', errors='replace')
-            first_line = head_str.split('\r\n', 1)[0]
-
-            if '101' not in first_line:
-                sys.stderr.write(f'[oca-ws] upstream rejected upgrade: {first_line}\n')
-                sys.stderr.write(f'[oca-ws] head: {head_str[:600]}\n')
-                return self.send_error(502, f'oca ws upgrade failed: {first_line}')
-
-            # Compute Sec-WebSocket-Accept and respond 101 to the client
-            accept = base64.b64encode(
-                hashlib.sha1((ws_key + self._WS_GUID).encode()).digest()
-            ).decode()
-
-            upstream_headers = {}
-            for line in head_str.split('\r\n')[1:]:
-                if ':' in line:
-                    k, _, v = line.partition(':')
-                    upstream_headers[k.strip().lower()] = v.strip()
-
-            resp_lines = [
-                'HTTP/1.1 101 Switching Protocols',
-                'Upgrade: websocket',
-                'Connection: Upgrade',
-                f'Sec-WebSocket-Accept: {accept}',
-            ]
-            if 'sec-websocket-protocol' in upstream_headers:
-                resp_lines.append(f"Sec-WebSocket-Protocol: {upstream_headers['sec-websocket-protocol']}")
-            if 'sec-websocket-extensions' in upstream_headers:
-                resp_lines.append(f"Sec-WebSocket-Extensions: {upstream_headers['sec-websocket-extensions']}")
-
-            # Write directly to wfile (the framework's buffered writer over the
-            # same socket) so any prior buffered data flushes correctly. After
-            # that, switch to raw-socket recv/send via self.connection.
-            self.wfile.write(('\r\n'.join(resp_lines) + '\r\n\r\n').encode('latin-1'))
-            if leftover:
-                self.wfile.write(leftover)
-            self.wfile.flush()
-
-            # Tell BaseHTTPRequestHandler we've taken over this socket so it
-            # doesn't try to handle another request on it after we return.
-            self.close_connection = True
-
-            client_sock = self.connection
-            sys.stderr.write(f'[oca-ws] relay open: {upstream_path}\n')
-
-            # Bidirectional relay. 60s idle timeout — wss responses streams
-            # can have long pauses between events but not infinite.
-            sockets = [client_sock, upstream]
-            while True:
-                try:
-                    ready, _, errored = select.select(sockets, [], sockets, 300)
-                except (OSError, ValueError):
-                    break
-                if errored:
-                    break
-                if not ready:
-                    # idle timeout — close cleanly
-                    break
-                done = False
-                for s in ready:
-                    try:
-                        data = s.recv(8192)
-                    except (ConnectionResetError, ConnectionAbortedError, OSError):
-                        done = True
-                        break
-                    if not data:
-                        done = True
-                        break
-                    target = upstream if s is client_sock else client_sock
-                    try:
-                        target.sendall(data)
-                    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-                        done = True
-                        break
-                if done:
-                    break
-
-            sys.stderr.write(f'[oca-ws] relay closed: {upstream_path}\n')
-
-        except Exception as e:
-            sys.stderr.write(f'[oca-ws] error: {type(e).__name__}: {e}\n')
-            try:
-                self.send_error(502, f'oca ws: {type(e).__name__}: {e}')
-            except Exception:
-                pass
-        finally:
-            if upstream is not None:
-                try: upstream.close()
-                except Exception: pass
-
     def _brave_search(self):
         """Forward /brave/search?q=... to Brave Web Search.
 
@@ -5823,6 +5244,147 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 pass
         finally:
             conn.close()
+
+    def _hermes_proxy(self, method):
+        """Proxy /hermes/* → the local `hermes gateway` OpenAI-compatible API
+        server (HERMES_HOST:HERMES_PORT, default 127.0.0.1:8642).
+
+        /hermes/v1/chat/completions → http://127.0.0.1:8642/v1/chat/completions
+
+        Auth: API_SERVER_KEY env var is injected as 'Authorization: Bearer …'
+        server-side and takes priority over any header the browser sends, so
+        the key never lives in the browser. Falls back to the client's
+        Authorization header if the env var is absent (dev convenience).
+        Accept-Encoding is forced to 'identity' so SSE arrives uncompressed
+        and streams straight through. A bounded tail of the response is scanned
+        for the OpenAI `usage` object and recorded per-principal (metering).
+        """
+        upstream_path = self.path[len('/hermes'):]  # keep leading /
+        if not upstream_path.startswith('/'):
+            upstream_path = '/' + upstream_path
+
+        length = int(self.headers.get('content-length', 0) or 0)
+        body = self.rfile.read(length) if length else None
+
+        _drop = HOP_HEADERS | {'host', 'authorization', 'accept-encoding'}
+        headers = {k: v for k, v in self.headers.items()
+                   if k.lower() not in _drop}
+        headers['Host'] = f'{HERMES_HOST}:{HERMES_PORT}'
+        headers['Accept-Encoding'] = 'identity'
+
+        env_key = os.environ.get('API_SERVER_KEY', '').strip()
+        if env_key:
+            headers['Authorization'] = 'Bearer ' + env_key
+        else:
+            client_auth = self.headers.get('Authorization') or self.headers.get('authorization')
+            if client_auth:
+                headers['Authorization'] = client_auth
+
+        principal = (self.headers.get('X-User-Principal') or '').strip() or 'local'
+        conn = http.client.HTTPConnection(HERMES_HOST, HERMES_PORT, timeout=600)
+        try:
+            conn.request(method, upstream_path, body=body, headers=headers)
+            resp = conn.getresponse()
+            self.send_response(resp.status)
+            for k, v in resp.getheaders():
+                if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
+                    continue
+                self.send_header(k, v)
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            tail = b''  # rolling buffer (last 16KB) for usage extraction
+            while True:
+                try:
+                    chunk = resp.fp.read1(8192) if hasattr(resp.fp, 'read1') else resp.read(1024)
+                except Exception:
+                    break
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+                tail = (tail + chunk)[-16384:]
+            self._record_hermes_usage(principal, upstream_path, tail)
+        except Exception as e:
+            try:
+                self.send_error(502, f'hermes: {e}')
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+    # Deterministic, writable usage-log path: prefer an explicit override, then
+    # the persistent Hermes data dir (mounted volume in the fleet), then /data,
+    # then the home dir. Avoids the HOME-ambiguity that silently broke writes.
+    def _hermes_usage_log_path(self):
+        override = os.environ.get('HERMES_USAGE_LOG', '').strip()
+        if override:
+            return override
+        for base in (os.environ.get('HERMES_HOME', '').strip(), '/data',
+                     os.path.expanduser('~')):
+            if base and os.path.isdir(base):
+                return os.path.join(base, 'hermes-usage.log')
+        return os.path.join(os.path.expanduser('~'), 'hermes-usage.log')
+
+    def _record_hermes_usage(self, principal, path, tail_bytes):
+        """Best-effort per-principal token accounting. Scans the response tail
+        for the LAST OpenAI `usage` object (covers both non-stream JSON bodies
+        and the terminal SSE chunk), then appends a JSONL record to the usage
+        log. Never raises — metering must not break the proxy. Phase 5 replaces
+        this flat log with the vault-backed quota store."""
+        try:
+            text = tail_bytes.decode('utf-8', 'replace')
+            sys.stderr.write(f'[hermes] _record called tail={len(text)}B path={path}\n')
+            usage = None
+            # Fast path: non-streaming responses are a single JSON object whose
+            # top-level `usage` we can read directly.
+            try:
+                obj = json.loads(text)
+                if isinstance(obj, dict) and isinstance(obj.get('usage'), dict):
+                    usage = obj['usage']
+            except Exception:
+                pass
+            # SSE / partial path: find the LAST `"usage"` key and brace-match
+            # the object that FOLLOWS it (the usage object's own braces).
+            if not isinstance(usage, dict):
+                idx = text.rfind('"usage"')
+                brace = text.find('{', idx) if idx >= 0 else -1
+                # Guard against `"usage": null` (intermediate stream chunks).
+                if brace >= 0 and 'null' not in text[idx:brace]:
+                    depth = 0
+                    for j in range(brace, len(text)):
+                        c = text[j]
+                        if c == '{':
+                            depth += 1
+                        elif c == '}':
+                            depth -= 1
+                            if depth == 0:
+                                try:
+                                    cand = json.loads(text[brace:j + 1])
+                                    if isinstance(cand, dict):
+                                        usage = cand
+                                except Exception:
+                                    usage = None
+                                break
+            if not isinstance(usage, dict):
+                sys.stderr.write('[hermes] _record: no usage object found in tail\n')
+                return
+            rec = {
+                'ts': time.time(),
+                'principal': principal,
+                'path': path,
+                'prompt_tokens': usage.get('prompt_tokens'),
+                'completion_tokens': usage.get('completion_tokens'),
+                'total_tokens': usage.get('total_tokens'),
+            }
+            log_path = self._hermes_usage_log_path()
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(rec, separators=(',', ':')) + '\n')
+            sys.stderr.write(f'[hermes] usage principal={principal} total={rec["total_tokens"]} -> {log_path}\n')
+        except Exception as e:
+            sys.stderr.write(f'[hermes] _record error: {e!r}\n')
 
     def log_message(self, fmt, *args):
         sys.stderr.write(f'{self.address_string()} - {fmt % args}\n')

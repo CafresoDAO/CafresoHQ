@@ -143,7 +143,7 @@
     <p class="mt-1 text-xs leading-5 text-ink-400">
       Start it locally with <code class="font-mono">python oci-fleet/fleet-api.py</code>,
       or update the URL in
-      <a href="/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>.
+      <a href="/hq/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>.
     </p>
     <button class="btn-ghost btn-sm mt-3" on:click={autoLookup}>Retry</button>
   {:else if state === 'no-container'}
@@ -173,13 +173,13 @@
       Your HQ is live. Endpoint adopted, and the rest of the app is already pointed at it.
     </p>
     <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{endpoint}</code>
-    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
+    <a href="/hq/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
   {:else if state === 'ready'}
     <p class="mt-3 text-sm leading-6 text-ink-300">
       Your CafresoAI HQ is online. Welcome.
     </p>
     <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{endpoint}</code>
-    <a href="/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
+    <a href="/hq/app" class="btn-primary btn-sm mt-3">Launch HQ</a>
   {:else if state === 'error'}
     <p class="mt-3 text-sm text-rose-700 dark:text-rose-300">{error}</p>
     <div class="mt-3 flex gap-2">

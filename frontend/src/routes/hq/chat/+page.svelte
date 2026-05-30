@@ -64,7 +64,7 @@
   {:else if !$endpointReady}
     <div class="card p-5 text-sm leading-6 text-ink-300">
       Configure a working endpoint in
-      <a href="/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>
+      <a href="/hq/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>
       first.
     </div>
   {:else}

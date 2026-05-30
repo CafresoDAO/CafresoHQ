@@ -113,7 +113,7 @@
           <dd>{d.oci_vault_ready ? 'ready' : 'not ready'}</dd>
         </dl>
         <div class="mt-5 flex flex-wrap gap-2">
-          <a href="/app" class="btn-primary btn-sm">Launch HQ</a>
+          <a href="/hq/app" class="btn-primary btn-sm">Launch HQ</a>
           <button class="btn-ghost btn-sm" on:click={() => probeHealth()}>
             Re-check
           </button>
@@ -122,12 +122,12 @@
         <p class="mt-4 text-sm text-rose-700 dark:text-rose-300">
           Couldn't reach this endpoint: {$endpointHealth.error}
         </p>
-        <a href="/settings" class="btn-ghost btn-sm mt-4">Update endpoint</a>
+        <a href="/hq/settings" class="btn-ghost btn-sm mt-4">Update endpoint</a>
       {:else if !$endpointUrl}
         <p class="mt-4 text-sm leading-6 text-ink-300">
           Configure the URL of your OCI Container Instance to connect.
         </p>
-        <a href="/settings" class="btn-primary btn-sm mt-4">Configure endpoint</a>
+        <a href="/hq/settings" class="btn-primary btn-sm mt-4">Configure endpoint</a>
       {/if}
     </div>
   </div>
@@ -137,17 +137,17 @@
   {/if}
 
   <div class="grid gap-4 sm:grid-cols-3">
-    <a href="/chat" class="card p-5 transition-colors hover:border-brand-500/50 group">
+    <a href="/hq/chat" class="card p-5 transition-colors hover:border-brand-500/50 group">
       <div class="page-kicker">Action</div>
       <div class="mt-2 text-lg font-semibold transition-colors group-hover:text-brand-500">Chat</div>
       <p class="mt-2 text-sm leading-6 text-ink-300">Talk to Claude through your private container.</p>
     </a>
-    <a href="/vault" class="card p-5 transition-colors hover:border-brand-500/50 group">
+    <a href="/hq/vault" class="card p-5 transition-colors hover:border-brand-500/50 group">
       <div class="page-kicker">Action</div>
       <div class="mt-2 text-lg font-semibold transition-colors group-hover:text-brand-500">Vault</div>
       <p class="mt-2 text-sm leading-6 text-ink-300">Browse encrypted files of any type, zero-knowledge.</p>
     </a>
-    <a href="/settings" class="card p-5 transition-colors hover:border-brand-500/50 group">
+    <a href="/hq/settings" class="card p-5 transition-colors hover:border-brand-500/50 group">
       <div class="page-kicker">Action</div>
       <div class="mt-2 text-lg font-semibold transition-colors group-hover:text-brand-500">Settings</div>
       <p class="mt-2 text-sm leading-6 text-ink-300">Endpoint URL, deployment mode, and identity controls.</p>

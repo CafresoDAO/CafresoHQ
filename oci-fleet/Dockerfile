@@ -33,6 +33,18 @@ RUN npm install -g @openai/codex@latest || true
 COPY oci-fleet/requirements-serve.txt /tmp/requirements-serve.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-serve.txt
 
+# ── Hermes Agent (Nous Research) — the DEFAULT agent runtime ─────────────────
+# Provides the `hermes` CLI + gateway + OpenAI-compatible API server. The
+# entrypoint runs `hermes gateway` alongside serve.py; serve.py proxies
+# /hermes/* → 127.0.0.1:8642 (same container = same netns). Pinned to the
+# researched/verified version.
+#
+# aiohttp is REQUIRED for the OpenAI-compatible API server adapter — the lean
+# `hermes-agent` wheel does not pull it, and without it the gateway logs
+# "API Server: aiohttp not installed" and the :8642 endpoint never binds
+# (verified via local container test). Keep it pinned alongside hermes-agent.
+RUN pip install --no-cache-dir "hermes-agent==0.15.1" aiohttp
+
 # ── App files — copy only what serve.py needs to serve ───────────────────────
 WORKDIR /app
 
@@ -53,12 +65,13 @@ COPY mock-data.jsx            ./mock-data.jsx
 COPY sw.js                    ./sw.js
 COPY manifest.webmanifest     ./manifest.webmanifest
 
-# ── Container entrypoint ──────────────────────────────────────────────────────
-COPY oci-fleet/entrypoint.sh  ./entrypoint.sh
+# ── Container entrypoint + Hermes bootstrap ──────────────────────────────────
+COPY oci-fleet/entrypoint.sh      ./entrypoint.sh
+COPY oci-fleet/hermes-bootstrap.py ./hermes-bootstrap.py
 RUN chmod +x entrypoint.sh
 
 # ── Runtime data dirs (override with OCI Block Volume or Object Storage) ─────
-RUN mkdir -p /data/hq-state /data/vault
+RUN mkdir -p /data/hq-state /data/vault /data/hermes
 
 # ── Environment ──────────────────────────────────────────────────────────────
 # These defaults are overridden per-container by fleet-manager.py
@@ -72,13 +85,20 @@ ENV OPENCLAW_HQ_STATE_DIR=/data/hq-state
 ENV OPENCLAW_VAULT=/data/vault
 ENV PORT=8787
 
+# Hermes Agent state (config.yaml, memories/, cron/, .env) on the data volume
+# so persistent memory + cron survive container restarts. The API server runs
+# on loopback inside the container; serve.py proxies /hermes/* to it.
+ENV HERMES_HOME=/data/hermes
+ENV API_SERVER_ENABLED=true
+ENV HERMES_API_HOST=127.0.0.1
+ENV HERMES_API_PORT=8642
+
 # ── Agent CLI keys — override at runtime via fleet-manager or docker run -e ──
 # Leave blank here; fleet-manager.py injects per-user values at provisioning.
 # Users can also supply their own keys via HQ Settings (BYOK); serve.py
 # injects them per-request without touching these container-wide vars.
 ENV ANTHROPIC_API_KEY=""
 ENV OPENAI_API_KEY=""
-ENV OCA_API_KEY=""
 
 # Expose serve.py port
 EXPOSE 8787

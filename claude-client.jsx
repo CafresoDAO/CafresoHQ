@@ -1,8 +1,10 @@
 /* ==========================================================================
    CafresoAI — real backend client
    Dispatches streaming chat to:
+     - Hermes Agent (DEFAULT — OpenAI-compatible via /hermes/v1 proxy, SSE)
      - Anthropic Messages API (browser-direct, stream SSE)
-     - LM Studio (OpenAI-compatible /v1/chat/completions, SSE)
+     - LM Studio / Ollama (OpenAI-compatible /v1/chat/completions, SSE)
+     - Claude Code / Openclaw / Codex CLIs, Google Gemini
    Settings persisted in localStorage. window.OpenclawClient is the surface.
    ========================================================================== */
 
@@ -48,41 +50,35 @@ const CLAUDECODE_MODELS = [
    client just picks a model. Same accepted IDs as CLAUDECODE_MODELS. */
 const OPENCLAW_MODELS = CLAUDECODE_MODELS;
 
-/* Codex CLI elevated agent — serve.py pins model_provider="oca" at launch and
-   maps these friendly slugs to OCA's real oca/... model ids server-side. */
+/* Codex CLI elevated agent — talks directly to OpenAI (model_provider=openai)
+   via OPENAI_API_KEY (BYOK / operator env). Models are real OpenAI ids. */
 const CODEX_MODELS = [
-  'gpt-5.5-pro',
-  'gpt-5.5',
-  'gpt-5.4-pro',
-  'gpt-5.4',
-  'gpt-5.4-mini',
-  'gpt-5.4-nano',
-  'gpt-5.3-codex',
-  'gpt-5.2-codex',
-  'gpt-5.2',
-  'gpt-5.1-codex-max',
-  'gpt-5.1-codex',
-  'gpt-5.1-codex-mini',
-  'gpt-5-codex',
-  'gpt5',
   'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'o3',
+  'o4-mini',
 ];
 
-/* Oracle OCA (LiteLLM proxy) — Oracle internal LLM gateway speaking the
-   OpenAI Chat Completions wire format. Bearer-key auth. Models include
-   Oracle-hosted GPT-5.x family and a Codex variant. The same gateway also
-   exposes the Responses API (newer SDK) — for now we route everything
-   through chat-completions, which all listed models support. */
-const OCA_MODELS = [
-  { id: 'oca/gpt-5.5-pro',   label: 'GPT-5.5 Pro',   reasoning: true },
-  { id: 'oca/gpt-5.5',       label: 'GPT-5.5',       reasoning: true },
-  { id: 'oca/gpt-5.4',       label: 'GPT-5.4',       reasoning: true },
-  { id: 'oca/gpt-5.3-codex', label: 'GPT-5.3 Codex', reasoning: true },
-  { id: 'oca/gpt-4.1',       label: 'GPT-4.1' },
+/* Hermes Agent (Nous Research) — the DEFAULT runtime. serve.py proxies
+   /hermes/v1 → the per-container `hermes gateway` OpenAI-compatible API
+   server (127.0.0.1:8642), injecting the Bearer API_SERVER_KEY server-side
+   so the key never reaches the browser. The single advertised model id is
+   'hermes-agent' — the gateway routes to whatever LLM backend is configured
+   in ~/.hermes/config.yaml, and runs the full agent toolset server-side. */
+const HERMES_MODELS = [
+  'hermes-agent',
 ];
 
 const DEFAULTS = {
-  provider: 'lmstudio',
+  provider: 'hermes',
+  /* Hermes Agent (default). Same-origin proxy at /hermes/v1 → serve.py →
+     the container's `hermes gateway` API server. No browser-side key:
+     serve.py injects API_SERVER_KEY. Override hermesUrl only when bypassing
+     the proxy (direct dev access to a local gateway on :8642). */
+  hermesUrl: '/hermes/v1',
+  hermesModel: 'hermes-agent',
   anthropicKey: '',
   anthropicModel: 'claude-haiku-4-5-20251001',
   lmstudioUrl: '/lmstudio/v1',
@@ -90,16 +86,9 @@ const DEFAULTS = {
   ollamaUrl: '/ollama/v1',
   ollamaModel: '',
   claudecodeModel: 'sonnet',
-  codexModel: 'gpt-5.5',
+  codexModel: 'gpt-4.1',
   googleModel: 'gemini-3.1-pro-preview',
   googleKey: '',
-  /* Oracle OCA — LiteLLM proxy. Default points at the serve.py same-origin
-     proxy (/oca/v1) which injects the OCA_API_KEY env var server-side,
-     avoiding CORS and keeping the key out of the browser. Override to the
-     raw OCA HTTPS URL only if running without the serve.py proxy. */
-  ocaUrl: '/oca/v1',
-  ocaKey: '',
-  ocaModel: 'oca/gpt-5.5',
   maxTokens: 1024,
   braveKey: '',
   braveEnabled: false,
@@ -219,7 +208,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
 }
 
 /* Shared OpenAI-compatible streaming. Used by both LM Studio and Ollama.
-   noStreamOptions: suppress `stream_options` for backends (e.g. OCA) that
+   noStreamOptions: suppress `stream_options` for backends that
    reject that field with InvalidParameter. */
 async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions }) {
   const root = (base || '').replace(/\/+$/, '');
@@ -298,19 +287,38 @@ function streamOllama(opts) {
   });
 }
 
-/* Oracle OCA (LiteLLM gateway) — OpenAI-compatible chat completions
-   with Bearer key auth. The litellm proxy translates these to whatever
-   underlying model Oracle has provisioned (gpt-5.x, codex variant, etc.). */
-function streamOca(opts) {
+/* Hermes Agent (DEFAULT) — OpenAI-compatible chat completions through the
+   same-origin /hermes/v1 proxy. serve.py injects the Bearer API_SERVER_KEY
+   server-side and meters the `usage` object, so no key is needed here.
+   noStreamOptions: the gateway runs a full agent and may reject the
+   `stream_options` field; per-request token usage is captured server-side
+   at the proxy boundary (see serve.py _hermes_proxy), so the browser
+   doesn't depend on include_usage. Tool-progress (`hermes.tool.progress`)
+   SSE events are ignored by parseSSE's data-only path and surfaced
+   separately by the console embed (Phase 3). */
+function streamHermes(opts) {
   return streamOpenAICompat({
     ...opts,
-    base: _settings.ocaUrl,
-    apiKey: _settings.ocaKey,
-    requireKey: false,      // Auth handled server-side via OCA_API_KEY env var
-    noStreamOptions: true,  // OCA rejects stream_options with InvalidParameter
-    label: 'Oracle OCA',
-    defaultModel: _settings.ocaModel,
+    base: _API_BASE + (_settings.hermesUrl || '/hermes/v1'),
+    requireKey: false,      // Auth handled server-side via API_SERVER_KEY env var
+    noStreamOptions: true,  // gateway may reject stream_options; metering is server-side
+    label: 'Hermes',
+    defaultModel: _settings.hermesModel || 'hermes-agent',
   });
+}
+
+/* Liveness/model probe for the Hermes gateway via the proxy. Mirrors the
+   shape returned by claudecodeStatus()/codexStatus() so the UI can gate on
+   `.configured`. */
+async function hermesStatus() {
+  try {
+    const base = _API_BASE + (_settings.hermesUrl || '/hermes/v1');
+    const r = await fetch(base.replace(/\/+$/, '') + '/models');
+    if (!r.ok) return { configured: false, models: [] };
+    const data = await r.json().catch(() => ({}));
+    const models = Array.isArray(data && data.data) ? data.data.map(m => m.id) : [];
+    return { configured: true, models };
+  } catch (_e) { return { configured: false, models: [] }; }
 }
 
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
@@ -461,7 +469,7 @@ async function codexStatus() {
    back to whatever provider the user picked in Settings. */
 function parseModelId(id) {
   if (!id) return { provider: null, model: null };
-  for (const p of ['anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'openclaw:', 'codex:', 'google:', 'oca:']) {
+  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'openclaw:', 'codex:', 'google:']) {
     if (id.startsWith(p)) return { provider: p.slice(0, -1), model: id.slice(p.length) };
   }
   return { provider: null, model: id };
@@ -472,13 +480,13 @@ async function stream(opts) {
   const { provider: pinned, model: bareModel } = parseModelId(opts.model);
   const provider = pinned || _settings.provider;
   const next = { ...opts, model: bareModel || undefined };
+  if (provider === 'hermes')     return streamHermes(next);
   if (provider === 'anthropic')  return streamAnthropic(next);
   if (provider === 'claudecode') return streamClaudeCode(next);
   if (provider === 'openclaw')   return streamOpenclaw(next);
   if (provider === 'codex')      return streamCodex(next);
   if (provider === 'google')     return streamGoogle(next);
   if (provider === 'ollama')     return streamOllama(next);
-  if (provider === 'oca')        return streamOca(next);
   return streamLMStudio(next);
 }
 
@@ -683,54 +691,15 @@ async function codexProbe() {
   } catch (e) { return { ok: false, detail: e.message }; }
 }
 
-/* Fetch the live model list from the OCA gateway (via the /oca/ proxy).
-   Falls back to the hardcoded OCA_MODELS array on any error so the UI
-   always has something to show. */
-async function listOcaModels() {
-  const root = (_settings.ocaUrl || '/oca/v1').replace(/\/+$/, '');
-  try {
-    const headers = {};
-    if (_settings.ocaKey) headers['Authorization'] = 'Bearer ' + _settings.ocaKey;
-    const r = await fetch(root + '/models', { headers });
-    if (!r.ok) return OCA_MODELS;
-    const j = await r.json();
-    const data = j.data || (Array.isArray(j) ? j : []);
-    if (!data.length) return OCA_MODELS;
-    return data.map(m => ({
-      id: m.id,
-      label: (m.id || '').replace(/^oca\//, ''),
-      reasoning: /codex|o3|reasoning/i.test(m.id || ''),
-    }));
-  } catch (_e) {
-    return OCA_MODELS;
-  }
-}
-
-/* Oracle OCA probe — hits the gateway's /v1/models endpoint.
-   Auth is injected server-side (OCA_API_KEY env var in serve.py) so a
-   browser-side key is optional. Returns { ok, detail } for the UI chip. */
-async function ocaProbe() {
-  const s = _settings;
-  if (!s.ocaUrl) return { ok: false, detail: 'no URL set' };
-  const root = s.ocaUrl.replace(/\/+$/, '');
-  try {
-    const headers = {};
-    if (s.ocaKey) headers['Authorization'] = 'Bearer ' + s.ocaKey;
-    const r = await fetch(root + '/models', { headers });
-    if (!r.ok) return { ok: false, detail: `HTTP ${r.status}` };
-    const j = await r.json().catch(() => ({}));
-    const count = (j.data && j.data.length) || (Array.isArray(j) ? j.length : 0);
-    return { ok: true, detail: count ? `${count} models reachable` : 'connected' };
-  } catch (e) {
-    return { ok: false, detail: e.message };
-  }
-}
-
 async function probe() {
   const s = _settings;
+  if (s.provider === 'hermes') {
+    const h = await hermesStatus();
+    if (h.configured) return { ok: true, detail: h.models.length ? `${h.models.length} model(s)` : 'gateway up' };
+    return { ok: false, detail: 'gateway unreachable — is `hermes gateway` running with API_SERVER_ENABLED?' };
+  }
   if (s.provider === 'claudecode') return claudecodeProbe();
   if (s.provider === 'codex') return codexProbe();
-  if (s.provider === 'oca') return ocaProbe();
   if (s.provider === 'anthropic') {
     if (!s.anthropicKey) return { ok: false, detail: 'no key' };
     try {
@@ -766,13 +735,26 @@ async function probe() {
 /* Build a grouped, prefixed list for model-picker UIs.
    Returns: [{ label, provider, options: [{ id, label }] }, ...] */
 async function localModelOptions() {
-  const groups = [
-    {
-      label: 'Anthropic (Claude API · credits)',
-      provider: 'anthropic',
-      options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })),
-    },
-  ];
+  const groups = [];
+  // Hermes Agent (default runtime) — surface first; only if the gateway's
+  // API server is reachable through the proxy.
+  try {
+    const h = await hermesStatus();
+    if (h.configured) {
+      const opts = (h.models.length ? h.models : HERMES_MODELS)
+        .map(m => ({ id: 'hermes:' + m, label: m }));
+      groups.push({
+        label: 'Hermes Agent (default · Nous Research)',
+        provider: 'hermes',
+        options: opts,
+      });
+    }
+  } catch (_e) {}
+  groups.push({
+    label: 'Anthropic (Claude API · credits)',
+    provider: 'anthropic',
+    options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })),
+  });
   // Claude Code (Pro/Max subscription) — only surface if the proxy can find
   // the CLI. Otherwise picking it would just error every call.
   try {
@@ -808,22 +790,6 @@ async function localModelOptions() {
     provider: 'google',
     options: GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })),
   });
-
-  /* Oracle OCA — fetch live model list from the proxy; only surface if a
-     URL is configured. Falls back to hardcoded list on error. */
-  if (_settings.ocaUrl) {
-    try {
-      const ocaLive = await listOcaModels();
-      groups.push({
-        label: 'Oracle OCA (LiteLLM gateway)',
-        provider: 'oca',
-        options: ocaLive.map(m => ({
-          id: 'oca:' + m.id,
-          label: m.label + (m.reasoning ? ' · reasoning' : ''),
-        })),
-      });
-    } catch (_e) {}
-  }
 
   const [lm, ol] = await Promise.all([
     lmStudioModelDetails().catch(() => []),
@@ -1359,7 +1325,7 @@ window.OpenclawClient = {
   setAgentKey, getAgentKey, hasAgentKey,
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,
-  ocaProbe, listOcaModels,
+  hermesStatus,
   openclawStatus, codexStatus, toolExec, cloneRepo,
-  ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, OCA_MODELS,
+  ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

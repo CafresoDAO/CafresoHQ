@@ -226,7 +226,7 @@
         </p>
         <div class="flex flex-wrap gap-2 pt-1">
           <button class="btn-primary" on:click={popout}>Open HQ in new tab</button>
-          <a href="/settings" class="btn-ghost">Update endpoint</a>
+          <a href="/hq/settings" class="btn-ghost">Update endpoint</a>
         </div>
         <p class="pt-1 text-xs text-ink-400">
           Endpoint: <code class="font-mono">{$endpointUrl}</code>

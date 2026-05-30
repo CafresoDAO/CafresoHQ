@@ -257,7 +257,7 @@
       <pre class="whitespace-pre-wrap font-mono text-xs text-rose-700 dark:text-rose-200">{$vaultError}</pre>
       <div class="flex gap-2">
         <button class="btn-primary btn-sm" on:click={unlockVault}>Retry</button>
-        <a href="/settings" class="btn-ghost btn-sm">Check settings</a>
+        <a href="/hq/settings" class="btn-ghost btn-sm">Check settings</a>
       </div>
     </div>
   {:else if $vaultState === 'locked'}
