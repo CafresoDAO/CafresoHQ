@@ -829,11 +829,26 @@ function MediaTab() {
 }
 
 function ApiTab() {
+  const C = window.OpenclawClient;
   const [s, update] = useSettingsStore();
   const [probing, setProbing] = useStateM(false);
   const [probeResult, setProbeResult] = useStateM(null);
   const [lmModels, setLmModels] = useStateM([]);
   const [olModels, setOlModels] = useStateM([]);
+  // Hermes capability: 'lite' vs 'full' system-prompt size. Backed by serve.py
+  // /hermes/capability (rewrites config.yaml + restarts gateway).
+  const [capMode, setCapMode] = useStateM('lite');
+  const [capBusy, setCapBusy] = useStateM(false);
+  useEffectM(() => {
+    if (C && C.hermesGetCapability) C.hermesGetCapability().then(setCapMode).catch(()=>{});
+  }, []);
+  const changeCap = async (mode) => {
+    if (mode === capMode || capBusy) return;
+    const prev = capMode; setCapMode(mode); setCapBusy(true);
+    try { await C.hermesSetCapability(mode); }
+    catch (e) { setCapMode(prev); setProbeResult({ ok:false, detail:'capability: ' + e.message }); }
+    finally { setCapBusy(false); }
+  };
 
   useEffectM(() => {
     if (s.provider === 'lmstudio') {
