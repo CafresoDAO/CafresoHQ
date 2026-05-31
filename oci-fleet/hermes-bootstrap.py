@@ -87,7 +87,7 @@ def _model_block():
     # OpenAI-compatible. Open-weights models only. Free tier.
     groq = os.environ.get('GROQ_API_KEY', '').strip()
     if groq:
-        mdl = os.environ.get('GROQ_MODEL', '').strip() or 'llama-3.3-70b-versatile'
+        mdl = os.environ.get('GROQ_MODEL', '').strip() or 'openai/gpt-oss-120b'
         _log(f'backend: Groq (default open-weights, model={mdl})')
         return (
             'model:\n'

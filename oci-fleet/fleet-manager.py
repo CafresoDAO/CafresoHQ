@@ -358,7 +358,7 @@ def cmd_provision(args, fleet: dict):
     # backend by forwarding whichever key the operator has in their env
     # (precedence handled by hermes-bootstrap.py). Without one, the API server
     # still starts but calls error until a key/BYOK is supplied.
-    for _bk in ('GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
+    for _bk in ('GROQ_API_KEY', 'GROQ_MODEL', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
         _bv = os.environ.get(_bk, '').strip()
         if _bv:
             env_vars[_bk] = _bv
