@@ -321,6 +321,32 @@ async function hermesStatus() {
   } catch (_e) { return { configured: false, models: [] }; }
 }
 
+/* Hermes capability mode: 'lite' (trimmed system prompt — fits free tiers like
+   Groq free) vs 'full' (rich toolset prompt — best with BYOK / paid keys for
+   heavier workloads). Backed by serve.py /hermes/capability. */
+async function hermesGetCapability() {
+  try {
+    const r = await fetch(_API_BASE + '/hermes/capability');
+    if (!r.ok) return 'lite';
+    const d = await r.json().catch(() => ({}));
+    return d.mode === 'full' ? 'full' : 'lite';
+  } catch (_e) { return 'lite'; }
+}
+
+async function hermesSetCapability(mode) {
+  const want = mode === 'full' ? 'full' : 'lite';
+  const r = await fetch(_API_BASE + '/hermes/capability', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode: want }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`capability ${r.status}: ${t.slice(0, 160)}`);
+  }
+  return r.json();
+}
+
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
    and translates its stream-json output into the OpenAI-compat SSE shape,
    so we can reuse parseSSE here. */
@@ -1325,7 +1351,7 @@ window.OpenclawClient = {
   setAgentKey, getAgentKey, hasAgentKey,
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,
-  hermesStatus,
+  hermesStatus, hermesGetCapability, hermesSetCapability,
   openclawStatus, codexStatus, toolExec, cloneRepo,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

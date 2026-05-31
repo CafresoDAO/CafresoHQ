@@ -1710,6 +1710,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hq_handler('GET')
         if self.path.startswith('/brave/'):
             return self._brave_search()
+        if self.path == '/hermes/capability':
+            return self._hermes_get_capability()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
@@ -1746,6 +1748,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == '/hermes/capability':
+            return self._hermes_set_capability()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
@@ -5244,6 +5248,81 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 pass
         finally:
             conn.close()
+
+    # ── Hermes capability mode (lite ↔ full) ─────────────────────────────────
+    # Hermes injects its full toolset into the system prompt (~14-17k tokens),
+    # which exceeds free hosted tiers' request-size caps (e.g. Groq free ~5-6k →
+    # HTTP 413). 'lite' forces tool_search deferral + trims the preamble so the
+    # prompt fits the free tier; 'full' restores the rich prompt for BYOK/paid
+    # keys that can afford it. The HQ Settings toggle drives this.
+    def _hermes_capability_file(self):
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        return _os.path.join(home, 'capability_mode')
+
+    def _hermes_get_capability(self):
+        try:
+            with open(self._hermes_capability_file(), 'r', encoding='utf-8') as f:
+                mode = (f.read().strip() or 'lite')
+        except Exception:
+            mode = 'lite'
+        return self._send_json(200, {'mode': mode if mode in ('lite', 'full') else 'lite'})
+
+    def _hermes_set_capability(self):
+        """POST {mode: 'lite'|'full'} → rewrite config.yaml's capability block and
+        restart the hermes gateway so the new system-prompt size takes effect."""
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        mode = str(req.get('mode', '')).strip().lower()
+        if mode not in ('lite', 'full'):
+            return self._send_json(400, {'error': "mode must be 'lite' or 'full'"})
+
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        cfg_path = _os.path.join(home, 'config.yaml')
+        try:
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                cfg = f.read()
+        except Exception as e:
+            return self._send_json(500, {'error': f'read config: {e}'})
+
+        # Replace the toolsets/agent/tools tail (everything from the first
+        # 'toolsets:' line) with the requested capability block. The block layout
+        # matches hermes-bootstrap.py:_capability_block so the two stay in sync.
+        if mode == 'full':
+            block = ('toolsets:\n  - hermes-cli\n'
+                     'agent:\n  environment_probe: true\n  task_completion_guidance: true\n'
+                     'tools:\n  tool_search:\n    enabled: auto\n')
+        else:
+            block = ('toolsets:\n  - hermes-cli\n'
+                     'agent:\n  environment_probe: false\n  task_completion_guidance: false\n'
+                     'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
+
+        idx = cfg.find('\ntoolsets:')
+        new_cfg = (cfg[:idx + 1] if idx >= 0 else cfg.rstrip() + '\n') + block
+        try:
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                f.write(new_cfg)
+            with open(self._hermes_capability_file(), 'w', encoding='utf-8') as f:
+                f.write(mode)
+        except Exception as e:
+            return self._send_json(500, {'error': f'write config: {e}'})
+
+        # Restart the gateway so it reloads config.yaml. Best-effort; the proxy
+        # keeps serving until the new gateway binds. `hermes gateway restart`
+        # replaces the running singleton.
+        restarted = False
+        try:
+            subprocess.Popen(['hermes', 'gateway', 'restart'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            restarted = True
+        except Exception as e:
+            sys.stderr.write(f'[hermes] capability restart failed: {e}\n')
+        return self._send_json(200, {'mode': mode, 'restarted': restarted,
+                                     'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_proxy(self, method):
         """Proxy /hermes/* → the local `hermes gateway` OpenAI-compatible API

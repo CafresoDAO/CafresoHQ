@@ -150,19 +150,66 @@ def _model_block():
     )
 
 
+def _capability_block(mode: str) -> str:
+    """Return the toolsets/tools/agent YAML for a capability mode.
+
+    WHY THIS EXISTS:
+      Hermes injects its full toolset + instructions into the system prompt on
+      every call (~14-17k tokens). Free hosted tiers (e.g. Groq free) reject
+      requests over ~5-6k tokens with HTTP 413 "request too large" — so the
+      default MUST ship a trimmed prompt or no completion ever succeeds.
+
+      'lite'  (DEFAULT): enables tool_search so tool schemas are DEFERRED
+              (loaded on demand, not dumped into the prompt) and turns off the
+              environment probe + completion-guidance preamble. Fits the free
+              tier. Agents still work — they search for the tool they need.
+      'full'  (opt-in via HQ Settings, best with BYOK / paid keys): tool_search
+              auto, environment probe + guidance on — richer one-shot context for
+              heavier workloads where the bigger prompt is affordable.
+
+    The HQ Settings toggle calls serve.py /hermes/capability which rewrites this
+    block and restarts the gateway (see serve.py _hermes_capability)."""
+    mode = (mode or 'lite').strip().lower()
+    if mode == 'full':
+        return (
+            'toolsets:\n'
+            '  - hermes-cli\n'
+            'agent:\n'
+            '  environment_probe: true\n'
+            '  task_completion_guidance: true\n'
+            'tools:\n'
+            '  tool_search:\n'
+            '    enabled: auto\n'
+        )
+    # lite (default) — minimal prompt so the free tier fits
+    return (
+        'toolsets:\n'
+        '  - hermes-cli\n'
+        'agent:\n'
+        '  environment_probe: false\n'
+        '  task_completion_guidance: false\n'
+        'tools:\n'
+        '  tool_search:\n'
+        '    enabled: true\n'      # force deferred tool schemas → small prompt
+        '    threshold_pct: 0\n'   # always defer, never inline the toolset
+    )
+
+
 def _write_config():
     cfg_path = os.path.join(HERMES_HOME, 'config.yaml')
     if os.path.exists(cfg_path):
         _log(f'config.yaml exists — leaving as-is ({cfg_path})')
         return
+    mode = os.environ.get('HERMES_CAPABILITY_MODE', 'lite').strip().lower()
+    _log(f'capability mode: {mode}')
     body = (
         '# CafresoAI — auto-generated minimal Hermes config (in-container).\n'
         '# Backend chosen by key precedence at first boot; edit to customize.\n'
+        '# capability_mode controls system-prompt size (lite=free-tier-safe).\n'
         + _model_block() +
         'approvals:\n'
         '  mode: manual\n'   # surface flagged tools to the HQ ApprovalTray (Phase 2)
-        'toolsets:\n'
-        '  - hermes-cli\n'
+        + _capability_block(mode)
     )
     try:
         with open(cfg_path, 'w', encoding='utf-8') as f:

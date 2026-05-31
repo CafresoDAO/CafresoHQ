@@ -36,7 +36,7 @@ function ModelPicker({ value, onChange, refreshKey }) {
       .catch(() => {
         if (!live) return;
         /* Last-resort fallback — all static model lists so the picker
-           is never blank. Includes OCA static list if a URL is set. */
+           is never blank. Static lists only. */
         const s = window.OpenclawClient.getSettings();
         const fallback = [
           { label: 'Anthropic (Claude API)', provider: 'anthropic',
@@ -45,8 +45,6 @@ function ModelPicker({ value, onChange, refreshKey }) {
             options: window.OpenclawClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
           { label: 'Codex CLI', provider: 'codex',
             options: window.OpenclawClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
-          { label: 'Oracle OCA', provider: 'oca',
-            options: window.OpenclawClient.OCA_MODELS.map(m => ({ id: m.id, label: m.label })) },
         ];
         setGroups(fallback);
         setLoading(false);
@@ -874,11 +872,28 @@ function ApiTab() {
             <option value="anthropic">Anthropic — API credits</option>
             <option value="google">Google (Gemini) — API credits</option>
             <option value="claudecode">Anthropic — Pro/Max (via Claude Code)</option>
+            <option value="hermes">Hermes (default · in your container)</option>
             <option value="codex">OpenAI Codex CLI (local + tools)</option>
-            <option value="oca">Oracle OCA (LiteLLM)</option>
           </select>
           <span className="hint" style={{maxWidth:240}}>fallback for agents whose model isn't pinned</span>
         </div>
+        {s.provider === 'hermes' && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Agent capability</div>
+              <div className="sub">
+                {capBusy ? 'Reloading agent… (~10s)'
+                  : capMode === 'full'
+                    ? 'Full toolset in every prompt — needs a larger/paid key (free tiers will 413).'
+                    : 'Lite: trimmed prompt that fits free tiers (e.g. Groq free). Tools load on demand.'}
+              </div>
+            </div>
+            <select value={capMode} disabled={capBusy} onChange={e=>changeCap(e.target.value)}>
+              <option value="lite">Lite — free-tier safe</option>
+              <option value="full">Full — BYOK / heavy</option>
+            </select>
+          </div>
+        )}
         <div className="row-knob">
           <div><div className="lbl">Max tokens per reply</div><div className="sub">caps response length</div></div>
           <input type="number" min="64" max="8192" step="64" style={{width:90}}
@@ -1041,7 +1056,6 @@ function ApiTab() {
         </div>
       )}
 
-      {s.provider === 'oca' && <OcaPanel s={s} update={update} />}
 
       <BraveTab s={s} update={update} />
       <VaultTab />
@@ -1115,10 +1129,6 @@ function ClaudeCodePanel({ s, update }) {
   );
 }
 
-/* Oracle OCA panel — Settings → API → OCA.
-   Auth is handled server-side: serve.py injects OCA_API_KEY from the
-   Windows User env var, so no key needs to be pasted here. The API KEY
-   field is an optional override for when serve.py is not in use. */
 function CodexPanel({ s, update }) {
   const [status, setStatus] = useStateM({ configured: false, binary: '', override: '', allowedDirs: [], badDirs: [] });
   const [draft, setDraft] = useStateM('');
@@ -1186,82 +1196,6 @@ function CodexPanel({ s, update }) {
       <div className="row-knob">
         <div><div className="lbl">Save override</div><div className="sub">stored in the proxy's memory; re-set on restart unless OPENCLAW_CODEX_BIN env var</div></div>
         <button className="px-btn secondary" onClick={save} disabled={busy}>{busy ? '...' : 'SAVE'}</button>
-      </div>
-    </div>
-  );
-}
-
-function OcaPanel({ s, update }) {
-  const [probing, setProbing] = useStateM(false);
-  const [probeResult, setProbeResult] = useStateM(null);
-  const [ocaModels, setOcaModels] = useStateM(window.OpenclawClient.OCA_MODELS || []);
-  const [modelsLoading, setModelsLoading] = useStateM(false);
-
-  // Load live model list whenever the URL changes
-  useEffectM(() => {
-    if (!s.ocaUrl) return;
-    setModelsLoading(true);
-    window.OpenclawClient.listOcaModels()
-      .then(ms => { setOcaModels(ms); setModelsLoading(false); })
-      .catch(() => setModelsLoading(false));
-  }, [s.ocaUrl]);
-
-  const runProbe = async () => {
-    setProbing(true);
-    try {
-      const r = await window.OpenclawClient.ocaProbe();
-      setProbeResult(r);
-    } catch (e) {
-      setProbeResult({ ok: false, detail: e.message });
-    }
-    setProbing(false);
-  };
-
-  return (
-    <div className="cb-panel">
-      <h4>ORACLE OCA · LITELLM GATEWAY</h4>
-      <div className="form-row" style={{marginBottom: 'var(--sp-4)'}}>
-        <label>BASE URL</label>
-        <input
-          placeholder="/oca/v1"
-          value={s.ocaUrl}
-          onChange={e => update({ ocaUrl: e.target.value })}
-        />
-        <span className="hint">/oca/v1 = serve.py same-origin proxy (recommended, avoids CORS) · or paste the raw OCA HTTPS URL</span>
-      </div>
-      <div className="form-row" style={{marginBottom: 'var(--sp-4)'}}>
-        <label>API KEY</label>
-        <input
-          type="password"
-          placeholder="leave blank — serve.py injects OCA_API_KEY from env"
-          value={s.ocaKey}
-          onChange={e => update({ ocaKey: e.target.value })}
-        />
-        <span className="hint">optional override · when blank, auth is handled by OCA_API_KEY on the server</span>
-      </div>
-      <div className="form-row" style={{marginBottom: 'var(--sp-4)'}}>
-        <label>MODEL</label>
-        <select value={s.ocaModel} onChange={e => update({ ocaModel: e.target.value })}>
-          {ocaModels.map(m => (
-            <option key={m.id} value={m.id}>
-              {m.label}{m.reasoning ? ' · reasoning' : ''}
-            </option>
-          ))}
-        </select>
-        <span className="hint">{modelsLoading ? 'loading…' : `${ocaModels.length} models · used for CEO + any agent whose model isn't pinned`}</span>
-      </div>
-      <div className="row-knob">
-        <div>
-          <div className="lbl">Connection test</div>
-          <div className="sub">
-            {probing ? 'probing…'
-              : probeResult ? (probeResult.ok ? `✓ ${probeResult.detail}` : `✕ ${probeResult.detail}`)
-              : 'verifies the proxy + OCA_API_KEY env var reach the gateway'}
-          </div>
-        </div>
-        <button className="px-btn secondary" onClick={runProbe} disabled={probing}>
-          {probing ? '…' : 'TEST'}
-        </button>
       </div>
     </div>
   );
