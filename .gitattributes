@@ -1,0 +1,9 @@
+# Shell scripts and anything COPYd into the Linux container MUST stay LF —
+# CRLF breaks the shebang ("exec format error") on container boot.
+*.sh            text eol=lf
+oci-fleet/entrypoint.sh text eol=lf
+*.py            text eol=lf
+Dockerfile      text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+caddyfile*      text eol=lf
