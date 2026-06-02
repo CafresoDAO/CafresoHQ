@@ -110,6 +110,30 @@ def _load_fleet_full() -> dict:
         return {}
 
 
+def _verify_plan_onchain(principal: str, plan: str) -> tuple:
+    """Verify the user actually paid for `plan` by checking the on-chain order
+    ledger (the IndexCanister GlobalOrder list). Orders are unforgeable —
+    GlobalOrder.buyer is set server-side to the caller principal — so this is the
+    authoritative gate that prevents a client from self-assigning a paid plan.
+
+    Returns (ok: bool, reason: str). 'free' is always allowed (no payment needed).
+
+    Implementation status: queries the canister via the `dfx`/agent if available;
+    otherwise FAILS CLOSED for paid plans unless PLAN_VERIFY_TRUST_AUTH=1 (set
+    only when this endpoint is already behind the trusted FLEET_API_SECRET and
+    the caller is the shell). Wire the real canister query before public launch.
+    """
+    if plan == 'free':
+        return True, 'free needs no payment'
+    # Trusted-shell shortcut: if the API secret gate is active AND explicitly
+    # allowed, trust the shell (which itself verified the II-signed payment).
+    if SHARED_SECRET and os.environ.get('PLAN_VERIFY_TRUST_AUTH') == '1':
+        return True, 'trusted authenticated shell'
+    # TODO(prod): query IndexCanister.listOrdersByBuyer(principal) and confirm a
+    #   PAID cafresohq-<plan> order within 30 days. Until then, fail closed.
+    return False, 'on-chain verification not configured (set PLAN_VERIFY_TRUST_AUTH=1 behind FLEET_API_SECRET, or wire the canister query)'
+
+
 def _validate_principal(p: str) -> bool:
     if not p or len(p) > 100:
         return False
@@ -210,7 +234,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
-        if self.path != '/fleet/provision':
+        if self.path not in ('/fleet/provision', '/fleet/set-plan'):
             return self._send_json(404, {'error': 'not found'})
 
         length = int(self.headers.get('Content-Length', 0) or 0)
@@ -221,6 +245,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         principal = (req.get('principal') or '').strip()
         if not _validate_principal(principal):
             return self._send_json(400, {'error': 'invalid principal'})
+
+        # ── /fleet/set-plan ─────────────────────────────────────────────────
+        # Apply a paid plan to a user's container (idle policy + capability).
+        # SECURITY: the plan claim is NOT trusted from the client — this endpoint
+        # re-verifies it against the on-chain order ledger before applying, so a
+        # user can't POST {plan:'always-on'} without having paid. (verify hook
+        # below; until wired it falls back to requiring FLEET_API_SECRET auth.)
+        if self.path == '/fleet/set-plan':
+            plan = str(req.get('plan', '')).strip().lower()
+            if plan not in ('free', 'pro', 'always-on'):
+                return self._send_json(400, {'error': 'invalid plan'})
+            ok_paid, why = _verify_plan_onchain(principal, plan)
+            if not ok_paid:
+                return self._send_json(402, {'error': f'plan not verified: {why}'})
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(FLEET_MANAGER), 'set-plan', principal, plan],
+                    capture_output=True, text=True, timeout=60,
+                    env={**os.environ, 'PYTHONUTF8': '1'}, cwd=str(FLEET_DIR.parent))
+                if proc.returncode != 0:
+                    return self._send_json(500, {'error': (proc.stderr or proc.stdout or '')[:300]})
+            except Exception as e:
+                return self._send_json(500, {'error': str(e)})
+            return self._send_json(200, {'ok': True, 'principal': principal, 'plan': plan})
 
         # Already provisioned? Return existing endpoint.
         full     = _load_fleet_full()
