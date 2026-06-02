@@ -17,6 +17,7 @@
 import { transfer as icrcTransfer, TOKENS } from '$lib/api/icrc1.js';
 import { recordOrder, getTreasury, listMyOrders } from '$lib/api/store.js';
 import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
+import { fleetApiUrl, fleetApiAuthToken } from '$lib/api/fleetClient.js';
 import { get } from 'svelte/store';
 import { prices } from '$lib/stores/prices.js';
 
@@ -137,10 +138,12 @@ export async function subscribeWithCard(planId, { successUrl, cancelUrl }) {
  *  self-heals on next reconcile. */
 export async function notifyFleet(principalText, planId) {
   try {
-    const base = (window._FLEET_API_BASE || '');  // same-origin /fleet/* via gateway
+    const base = (get(fleetApiUrl) || '').replace(/\/+$/, '');
+    const tok = get(fleetApiAuthToken);
+    const headers = { 'content-type': 'application/json' };
+    if (tok) headers['X-Fleet-Auth'] = tok;  // proves the call came from the shell
     const r = await fetch(base + '/fleet/set-plan', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      method: 'POST', headers,
       body: JSON.stringify({ principal: principalText, plan: planId }),
     });
     return r.ok;

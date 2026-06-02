@@ -17,6 +17,7 @@
     { href: '/hq/chat', label: 'Chat' },
     { href: '/hq/search', label: 'Search' },
     { href: '/hq/vault', label: 'Vault' },
+    { href: '/hq/plans', label: 'Plans' },
     { href: '/hq/settings', label: 'Settings' }
   ];
 

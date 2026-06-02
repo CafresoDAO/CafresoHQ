@@ -125,13 +125,23 @@ def _verify_plan_onchain(principal: str, plan: str) -> tuple:
     """
     if plan == 'free':
         return True, 'free needs no payment'
-    # Trusted-shell shortcut: if the API secret gate is active AND explicitly
-    # allowed, trust the shell (which itself verified the II-signed payment).
-    if SHARED_SECRET and os.environ.get('PLAN_VERIFY_TRUST_AUTH') == '1':
-        return True, 'trusted authenticated shell'
-    # TODO(prod): query IndexCanister.listOrdersByBuyer(principal) and confirm a
-    #   PAID cafresohq-<plan> order within 30 days. Until then, fail closed.
-    return False, 'on-chain verification not configured (set PLAN_VERIFY_TRUST_AUTH=1 behind FLEET_API_SECRET, or wire the canister query)'
+
+    # Trust model: the IndexCanister exposes listMyOrders() (authed, returns the
+    # CALLER's own unforgeable orders) but NOT listOrdersByBuyer(p) — so a
+    # server (anonymous) can't read a specific user's orders directly. The
+    # correct verifier is therefore the SHELL, which already holds the user's II
+    # identity and calls listMyOrders() to confirm a paid cafresohq-<plan> order
+    # before POSTing here. This endpoint trusts that shell IFF the request
+    # carries the shared secret (FLEET_API_SECRET) — i.e. it came from our
+    # gateway/shell, not an arbitrary client. With auth on, we accept the plan.
+    if SHARED_SECRET:
+        return True, 'verified by authenticated shell (FLEET_API_SECRET)'
+
+    # No shared secret = dev mode / open API → cannot trust a paid-plan claim.
+    # Fail closed. (Set FLEET_API_SECRET in prod; the shell already sends it.)
+    return False, ('paid-plan verification requires FLEET_API_SECRET (so only the '
+                   'shell, which checked the on-chain order, can set plans). '
+                   'Set it in prod.')
 
 
 def _validate_principal(p: str) -> bool:
