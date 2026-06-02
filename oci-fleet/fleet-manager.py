@@ -42,6 +42,14 @@ import urllib.error
 from datetime import datetime, timezone
 from typing import Optional
 
+# Force UTF-8 stdout/stderr so unicode glyphs (→, ✓, box-drawing) never crash on
+# Windows cp1252 consoles — fleet-api / cron call this non-interactively.
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # ── Optional deps ────────────────────────────────────────────────────────────
 try:
     import oci
@@ -481,6 +489,12 @@ def cmd_provision(args, fleet: dict):
         # Per-principal Hermes API server key (also injected as a container env
         # var). Stored so operations/debug can authenticate to the gateway.
         'api_server_key':        api_server_key,
+        # SaaS plan — drives idle-stop policy + capability (see SAAS_MVP_PLAN.md).
+        #   free       → reap-idle 20m, capability lite   (~cents/mo)
+        #   pro        → reap-idle 60m, capability full
+        #   always-on  → never idle-stopped (the premium tier)
+        # Set at provision (--plan) and later via billing webhook → set-plan.
+        'plan':                  getattr(args, 'plan', None) or 'free',
     }
     save_fleet(fleet)
     print(f'\n{ok("Provisioned!")}')
@@ -1080,15 +1094,20 @@ def cmd_prune(args, fleet: dict):
             print(err(f'  FAILED {name}: {str(e)[:60]}'))
 
 
+# Per-plan idle-stop windows (minutes). always-on is exempt (premium tier).
+PLAN_IDLE_MINUTES = {'free': 20, 'pro': 60, 'always-on': None}
+
+
 def cmd_reap_idle(args, fleet: dict):
-    """Stop containers idle longer than --minutes (default 30). This is THE
-    profitability lever: stopped Container Instances pause billing AND free the
-    A1 pool, so a 4-slot free tier can serve many users who aren't all active at
-    once. Idle = no request to serve.py within the window (serve.py /idle reports
-    seconds-since-last-request). Use --dry-run to preview."""
+    """Stop idle containers per their PLAN policy (the profitability lever):
+    stopped Container Instances pause billing AND free the A1 pool, so a 4-slot
+    free tier serves many users who aren't all active at once.
+      free → 20m · pro → 60m · always-on → never.
+    --minutes overrides the per-plan window for all. Idle = no user request to
+    serve.py within the window (serve.py /idle reports it). --dry-run to preview."""
     require_oci()
     cli = container_client(fleet)
-    window = (getattr(args, 'minutes', None) or 30) * 60
+    override = getattr(args, 'minutes', None)
     stopped = 0
     for principal, info in fleet.get('users', {}).items():
         if info.get('status') != 'ACTIVE':
@@ -1096,6 +1115,13 @@ def cmd_reap_idle(args, fleet: dict):
         ip = info.get('ip'); cid = info.get('container_instance_id')
         if not ip or not cid:
             continue
+        plan = (info.get('plan') or 'free').lower()
+        plan_min = PLAN_IDLE_MINUTES.get(plan, 20)
+        win_min = override if override is not None else plan_min
+        if win_min is None:   # always-on (or plan with no idle policy)
+            print(dim(f'  {info["display_name"]}: plan={plan} (always-on, exempt)'))
+            continue
+        window = win_min * 60
         idle = None
         try:
             import urllib.request, json as _json
@@ -1121,6 +1147,36 @@ def cmd_reap_idle(args, fleet: dict):
     if not getattr(args, 'dry_run', False) and stopped:
         save_fleet(fleet)
         print(ok(f'\nStopped {stopped} idle container(s) — pool freed, billing paused.'))
+
+
+def cmd_set_plan(args, fleet: dict):
+    """Set a user's SaaS plan (free|pro|always-on). This is the hook a Stripe
+    billing webhook calls on subscribe/cancel. Optionally restarts the gateway's
+    capability to match (lite for free, full for paid)."""
+    principal = args.principal
+    info = fleet['users'].get(principal)
+    if not info:
+        print(err(f'Unknown principal: {principal}')); sys.exit(1)
+    plan = args.plan.lower()
+    if plan not in PLAN_IDLE_MINUTES:
+        print(err(f"plan must be one of: {', '.join(PLAN_IDLE_MINUTES)}")); sys.exit(1)
+    info['plan'] = plan
+    save_fleet(fleet)
+    cap = 'lite' if plan == 'free' else 'full'
+    print(ok(f'{info["display_name"]} → plan={plan} (idle={PLAN_IDLE_MINUTES[plan]}m, capability={cap})'))
+    # Best-effort: push the matching capability to the live container.
+    ip = info.get('ip')
+    if ip and info.get('status') == 'ACTIVE':
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request(
+                f'http://{ip}:8787/hermes/capability',
+                data=_json.dumps({'mode': cap}).encode(),
+                headers={'Content-Type': 'application/json'}, method='POST')
+            urllib.request.urlopen(req, timeout=8)
+            print(dim(f'  pushed capability={cap} to container'))
+        except Exception as e:
+            print(dim(f'  (capability push skipped: {str(e)[:50]})'))
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
@@ -1151,7 +1207,13 @@ def main():
     def add_principal(p):
         p.add_argument('principal', help='ICP Internet Identity principal')
 
-    add_principal(sub.add_parser('provision', help='Create a new container for a user'))
+    prov_p = sub.add_parser('provision', help='Create a new container for a user')
+    add_principal(prov_p)
+    prov_p.add_argument('--plan', choices=['free', 'pro', 'always-on'], default='free',
+                        help='SaaS plan (default free → idle-stop 20m, capability lite)')
+    setplan_p = sub.add_parser('set-plan', help="Change a user's plan (Stripe webhook target)")
+    add_principal(setplan_p)
+    setplan_p.add_argument('plan', choices=['free', 'pro', 'always-on'])
     add_principal(sub.add_parser('start',     help='Start a stopped container'))
     add_principal(sub.add_parser('stop',      help='Stop a running container'))
     add_principal(sub.add_parser('delete',    help='Delete a user\'s container'))
@@ -1203,6 +1265,7 @@ def main():
         'capacity':    cmd_capacity,
         'prune':       cmd_prune,
         'reap-idle':   cmd_reap_idle,
+        'set-plan':    cmd_set_plan,
     }
 
     fn = dispatch.get(args.command)
