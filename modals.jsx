@@ -924,6 +924,24 @@ function ApiTab() {
         {s.provider === 'hermes' && (
           <div className="row-knob">
             <div>
+              <div className="lbl">OpenRouter key</div>
+              <div className="sub">
+                your free personal key · get one at{' '}
+                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer"
+                   style={{color:'var(--accent-rose, #c45)', textDecoration:'underline'}}>
+                  openrouter.ai/keys
+                </a>
+              </div>
+            </div>
+            <input type="password" placeholder="sk-or-v1-…" autoComplete="off" spellCheck={false}
+              style={{width:200}}
+              defaultValue={s.openrouterKey || ''}
+              onBlur={e => { const v=e.target.value.trim(); if (v!==(s.openrouterKey||'')) { if (C && C.hermesSetOpenRouterKey) C.hermesSetOpenRouterKey(v); else update({openrouterKey:v}); } }}/>
+          </div>
+        )}
+        {s.provider === 'hermes' && (
+          <div className="row-knob">
+            <div>
               <div className="lbl">Agent capability</div>
               <div className="sub">
                 {capBusy ? 'Reloading agent… (~10s)'

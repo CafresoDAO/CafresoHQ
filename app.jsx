@@ -3,7 +3,7 @@
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
 const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
@@ -3539,37 +3539,48 @@ ${d.text}` : d.text,
           if (isMobile) return [
             {
               id: 'welcome',
-              title: 'Welcome to CafresoAI',
-              body: 'Your AI agent command center. Swipe between views, chat with agents, and manage your team — all from your phone.',
+              title: 'Welcome to your HQ',
+              body: 'This is your private command center for a team of AI agents — a little pixel-art office that lives just for you. Let\'s get you set up in under two minutes.',
             },
             {
-              id: 'swipe-nav',
-              title: 'Swipe to navigate',
-              body: 'Swipe left or right anywhere on the screen to move between all 11 views. The dots above the tab bar show where you are.',
-              target: '.mobile-tabbar',
+              id: 'key',
+              title: 'Get your free AI key',
+              body: <OnboardingKeyStep />,
             },
             {
-              id: 'tools-drawer',
-              title: 'Tools drawer',
-              body: 'Tap 🛠️ Tools for quick access to Inbox, Memory, Stand-up, Research, Meetings, Workflows, and Settings.',
-              target: '.mobile-tabbar .mtab:last-child',
+              id: 'office',
+              title: 'The Office — your agents',
+              body: 'This is the Office. Each agent works at their own desk. Tap a desk to inspect an agent, see what they\'re doing, and delegate work.',
+              action: () => setActiveView('visual'),
+            },
+            {
+              id: 'chat',
+              title: 'Chat with your team',
+              body: 'The Chat view is where you talk to CafresoAI and your crew. Swipe a message left to Reply or DM a specific agent directly.',
+              action: () => setActiveView('chat'),
+            },
+            {
+              id: 'vault',
+              title: 'The Vault — shared memory',
+              body: 'The Vault is your team\'s shared knowledge base — notes, docs, and memory your agents can read and write. Everything they learn lives here.',
+              action: () => setActiveView('vault'),
+            },
+            {
+              id: 'tasks',
+              title: 'Tasks — track the work',
+              body: 'The Tasks board tracks everything in flight: what you\'ve delegated, what agents are working on, and what\'s done.',
+              action: () => setActiveView('tasks'),
             },
             {
               id: 'palette',
-              title: 'Command palette',
-              body: 'Tap the 🛠️ button in the corner to open the command palette — search for any action, view, or agent.',
+              title: 'Tools & command palette',
+              body: 'Tap 🛠️ for the Tools drawer (Inbox, Memory, Stand-up, Settings…) or the corner button for the command palette — search any action, view, or agent.',
               target: '.palette-fab',
-            },
-            {
-              id: 'swipe-reply',
-              title: 'Swipe to reply or DM',
-              body: 'In chat, swipe a message left to reveal Reply and DM buttons. DM lets you talk directly to any agent.',
-              action: () => setActiveView('chat'),
             },
             {
               id: 'hire',
               title: 'Hire your first agent',
-              body: 'Tap + HIRE in the topbar to bring on your first sub-agent. Each hire gets a desk, a role, and their own AI model.',
+              body: 'Tap + HIRE in the topbar to bring on your first sub-agent. Each hire gets a desk, a role, and their own AI model. You\'re ready — go build your team.',
               target: '.topbar .px-btn.primary',
               action: () => setActiveView('visual'),
             },
@@ -3578,37 +3589,51 @@ ${d.text}` : d.text,
           return [
             {
               id: 'welcome',
-              title: 'Welcome to CafresoAI',
-              body: 'Your office for AI agents. The Office view is your command center — agents work at desks, you delegate from your chair. Let\'s tour the highlights.',
+              title: 'Welcome to your HQ',
+              body: 'This is your private command center for a team of AI agents — a pixel-art office that\'s yours alone. Agents work at desks, you delegate from your chair. Let\'s get you set up.',
             },
             {
-              id: 'rail',
-              title: 'Switch views from the left rail',
-              body: 'Office, Tasks, Vault, Projects… every part of the system has its own page. Click the «/» button at the top to collapse the rail when you need more workspace.',
+              id: 'key',
+              title: 'Get your free AI key',
+              body: <OnboardingKeyStep />,
+            },
+            {
+              id: 'office',
+              title: 'The Office — your agents',
+              body: 'The Office is home base. Every agent works at their own desk; click a desk to inspect an agent, see what they\'re doing, and hand off work.',
               target: '.rail',
+              action: () => setActiveView('visual'),
             },
             {
-              id: 'topbar',
-              title: 'Top-bar actions',
-              body: 'The topbar holds your status (token usage, working agents, hires) plus jump-to actions for memory, stand-up, research missions, and theme.',
-              target: '.topbar',
+              id: 'chat',
+              title: 'Chat with your team',
+              body: 'Chat is where you brief CafresoAI and your crew. Ask questions, delegate, or DM a single agent — they reply using the free AI key you just set.',
+              action: () => setActiveView('chat'),
+            },
+            {
+              id: 'vault',
+              title: 'The Vault — shared memory',
+              body: 'The Vault is your team\'s shared knowledge base: notes, docs, and long-term memory your agents read from and write to. Everything they learn lives here.',
+              action: () => setActiveView('vault'),
+            },
+            {
+              id: 'tasks',
+              title: 'Tasks — track the work',
+              body: 'The Tasks board shows everything in flight — what you\'ve delegated, what agents are doing, and what\'s done. The left rail switches between all your views.',
+              action: () => setActiveView('tasks'),
             },
             {
               id: 'palette',
               title: 'Press ⌘K (or Ctrl-K) anywhere',
-              body: 'The command palette is your fastest way to navigate, hire agents, change density, or run any action — without lifting your hands from the keyboard.',
-            },
-            {
-              id: 'notifs',
-              title: 'Notifications and approvals',
-              body: 'The 🔔 bell in the topbar shows unread approvals, receipts, and agent activity. Anything that needs your attention lands there.',
+              body: 'The command palette is your fastest route — navigate, hire agents, change settings, or run any action without leaving the keyboard. The 🔔 bell holds approvals and activity.',
               target: '.oc-notif-bell',
             },
             {
               id: 'hire',
               title: 'Ready to hire your team?',
-              body: 'Click + HIRE in the topbar (or press ⌘K → "Hire") to bring on your first sub-agent. Each hire gets a desk, a role, and their own model.',
+              body: 'Click + HIRE in the topbar (or ⌘K → "Hire") to bring on your first sub-agent. Each hire gets a desk, a role, and their own model. You\'re all set — go build.',
               target: '.topbar .px-btn.primary',
+              action: () => setActiveView('visual'),
             },
           ];
         })()}

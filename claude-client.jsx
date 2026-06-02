@@ -79,6 +79,12 @@ const DEFAULTS = {
      the proxy (direct dev access to a local gateway on :8642). */
   hermesUrl: '/hermes/v1',
   hermesModel: 'hermes-agent',
+  /* User's personal OpenRouter key (free at https://openrouter.ai/keys).
+     Stored here so the onboarding/Settings UI can re-display + re-submit it.
+     The authoritative copy lives server-side in the container's
+     ~/.hermes/.env (OPENROUTER_API_KEY), set via hermesSetOpenRouterKey() →
+     serve.py /hermes/openrouter-key. The browser copy is convenience only. */
+  openrouterKey: '',
   anthropicKey: '',
   anthropicModel: 'claude-haiku-4-5-20251001',
   lmstudioUrl: '/lmstudio/v1',
@@ -369,6 +375,33 @@ async function hermesSetModel(model) {
     throw new Error(`model ${r.status}: ${t.slice(0, 160)}`);
   }
   return r.json();
+}
+
+/* Persist the user's personal free OpenRouter key.
+   The production path writes it into the container's ~/.hermes/.env
+   (OPENROUTER_API_KEY) and restarts the gateway, via a serve.py endpoint
+   POST /hermes/openrouter-key {key}. Until that endpoint ships, this still
+   stores the key in browser settings so the onboarding flow is complete and
+   the value survives reloads; { serverStored:false } signals the caller that
+   only the local copy was saved. Always saves locally first. */
+async function hermesSetOpenRouterKey(key) {
+  const trimmed = String(key || '').trim();
+  setSettings({ openrouterKey: trimmed });
+  if (!trimmed) return { ok: true, serverStored: false, detail: 'cleared' };
+  try {
+    const r = await fetch(_API_BASE + '/hermes/openrouter-key', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: trimmed }),
+    });
+    if (r.ok) {
+      const d = await r.json().catch(() => ({}));
+      return { ok: true, serverStored: true, ...d };
+    }
+    return { ok: true, serverStored: false, detail: `server ${r.status} — saved locally` };
+  } catch (e) {
+    return { ok: true, serverStored: false, detail: 'offline — saved locally' };
+  }
 }
 
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
@@ -1376,6 +1409,7 @@ window.OpenclawClient = {
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
+  hermesSetOpenRouterKey,
   openclawStatus, codexStatus, toolExec, cloneRepo,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

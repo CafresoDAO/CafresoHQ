@@ -1200,6 +1200,83 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   <OnboardingKeyStep>
+   The "Get your free AI key" body used inside a tour step. Walks the user
+   through creating a free OpenRouter key and pasting it in. Persists via
+   window.OpenclawClient.hermesSetOpenRouterKey() (server-side container env
+   when the endpoint exists; otherwise local settings — see client helper).
+   Styled with the same tokens as the rest of the tour card.
+   ───────────────────────────────────────────────────────────────────── */
+function OnboardingKeyStep() {
+  const C = window.OpenclawClient;
+  const existing = (C && C.getSettings && C.getSettings().openrouterKey) || '';
+  const [key, setKey] = useState(existing);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(existing ? 'have' : null); // 'have' | 'ok' | 'local' | 'err'
+
+  const save = async () => {
+    const trimmed = (key || '').trim();
+    if (!trimmed || saving) return;
+    setSaving(true); setSaved(null);
+    try {
+      const r = (C && C.hermesSetOpenRouterKey)
+        ? await C.hermesSetOpenRouterKey(trimmed)
+        : { ok: true, serverStored: false };
+      setSaved(r && r.serverStored ? 'ok' : 'local');
+    } catch (_e) {
+      setSaved('err');
+    } finally { setSaving(false); }
+  };
+
+  const rowStyle = { display: 'flex', gap: 'var(--sp-2)', marginTop: 'var(--sp-3)' };
+  const linkStyle = { color: 'var(--accent-rose, #c45)', fontWeight: 700, textDecoration: 'underline' };
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 var(--sp-3)' }}>
+        Your HQ runs on a free, open-weights AI brain — but it needs <strong>your own
+        free key</strong> from OpenRouter. It takes about a minute and stays unique to you.
+      </p>
+      <ol style={{ margin: '0 0 var(--sp-3)', paddingLeft: '1.2em', lineHeight: 'var(--lh-normal)' }}>
+        <li>Open{' '}
+          <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={linkStyle}>
+            openrouter.ai/keys
+          </a>{' '}and sign up (it's free).</li>
+        <li>Click <strong>Create Key</strong>, give it any name.</li>
+        <li>Copy the key (starts with <code>sk-or-…</code>).</li>
+        <li>Paste it below and hit <strong>Save</strong>.</li>
+      </ol>
+      <div style={rowStyle}>
+        <input
+          type="password"
+          className="oc-input sz-sm"
+          placeholder="sk-or-v1-…"
+          value={key}
+          onChange={e => { setKey(e.target.value); setSaved(null); }}
+          onKeyDown={e => { if (e.key === 'Enter') save(); }}
+          style={{ flex: 1, fontSize: 'var(--text-11)' }}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="OpenRouter API key"
+        />
+        <button className="px-btn secondary" style={{ fontSize: 'var(--text-10)' }}
+          onClick={save} disabled={saving || !(key || '').trim()}>
+          {saving ? '…' : 'Save'}
+        </button>
+      </div>
+      <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', minHeight: '1.2em',
+        color: saved === 'err' ? 'var(--danger, #c33)' : 'var(--ink-3)' }}>
+        {saved === 'ok'    && '✓ Key saved to your container. You\'re ready.'}
+        {saved === 'local' && '✓ Key saved. (Stored in this browser — your container will pick it up.)'}
+        {saved === 'have'  && '✓ A key is already set. Paste a new one to replace it.'}
+        {saved === 'err'   && '✕ Couldn\'t save — check the key and try again.'}
+        {!saved            && 'Free · unique to you · you can change it anytime in Settings → API.'}
+      </div>
+    </div>
+  );
+}
+
 function NotificationBell({ unreadCount = 0, onClick, title }) {
   return (
     <button
@@ -3061,7 +3138,7 @@ window.OpenclawUI = {
   ToastProvider, useToast,
   CommandPaletteProvider, useCommands,
   NotificationBell, NotificationCenter,
-  OnboardingTour,
+  OnboardingTour, OnboardingKeyStep,
   VocabCtx, getVocab,
   PaletteFab,
 };
