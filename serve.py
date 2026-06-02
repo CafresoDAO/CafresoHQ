@@ -1754,6 +1754,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_set_capability()
         if self.path == '/hermes/model':
             return self._hermes_set_model()
+        if self.path == '/hermes/openrouter-key':
+            return self._hermes_set_openrouter_key()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
@@ -5400,6 +5402,57 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             sys.stderr.write(f'[hermes] capability restart failed: {e}\n')
         return self._send_json(200, {'mode': mode, 'restarted': restarted,
+                                     'note': 'gateway reloading; allow ~10s'})
+
+    def _hermes_set_openrouter_key(self):
+        """POST {key} → store the user's OWN OpenRouter key in ~/.hermes/.env
+        (OPENROUTER_API_KEY) and restart the gateway so it takes effect.
+
+        This gives each user a UNIQUE free key (created at openrouter.ai/keys),
+        overriding any shared operator key injected at provision. The key lives
+        only in the user's container .env (0600), never in the browser long-term.
+        """
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        key = str(req.get('key', '')).strip()
+        import re as _re
+        if not _re.match(r'^sk-or-[A-Za-z0-9_\-]{8,}$', key):
+            return self._send_json(400, {'error': 'invalid OpenRouter key (expected sk-or-…)'})
+
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        env_path = _os.path.join(home, '.env')
+        try:
+            _os.makedirs(home, exist_ok=True)
+            lines = []
+            if _os.path.exists(env_path):
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    lines = [l for l in f.read().splitlines()
+                             if not l.startswith('OPENROUTER_API_KEY=')]
+            lines.append(f'OPENROUTER_API_KEY={key}')
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines) + '\n')
+            try:
+                _os.chmod(env_path, 0o600)
+            except Exception:
+                pass
+        except Exception as e:
+            return self._send_json(500, {'error': f'write .env: {e}'})
+
+        # Also export into THIS process env so an immediate gateway restart
+        # (which inherits serve.py's env via the bootstrap) sees it.
+        _os.environ['OPENROUTER_API_KEY'] = key
+        restarted = False
+        try:
+            subprocess.Popen(['hermes', 'gateway', 'restart'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            restarted = True
+        except Exception as e:
+            sys.stderr.write(f'[hermes] openrouter-key restart failed: {e}\n')
+        return self._send_json(200, {'ok': True, 'restarted': restarted,
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_proxy(self, method):

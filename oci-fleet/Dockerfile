@@ -14,8 +14,13 @@
 FROM python:3.11-slim-bookworm
 
 # ── System deps ──────────────────────────────────────────────────────────────
+# build-essential + python3-dev: so user code-agent sessions (Claude Code / Codex)
+#   can compile native npm/pip modules. ripgrep: Claude Code uses `rg` for fast
+#   search and degrades/ warns without it. Without these the CLIs *start* but
+#   real coding workloads fail mid-task.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates gnupg jq procps bash \
+    build-essential python3-dev ripgrep less unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Node.js 20 LTS (required for Claude Code CLI + Codex CLI) ────────────────
@@ -71,7 +76,9 @@ COPY oci-fleet/hermes-bootstrap.py ./hermes-bootstrap.py
 RUN chmod +x entrypoint.sh
 
 # ── Runtime data dirs (override with OCI Block Volume or Object Storage) ─────
-RUN mkdir -p /data/hq-state /data/vault /data/hermes
+# /root/Documents is in the Codex/Openclaw allowed-dirs sandbox; create it so
+# code-agent sessions have a valid working directory (was a "badDir" otherwise).
+RUN mkdir -p /data/hq-state /data/vault /data/hermes /root/Documents
 
 # ── Environment ──────────────────────────────────────────────────────────────
 # These defaults are overridden per-container by fleet-manager.py

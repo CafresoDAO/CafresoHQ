@@ -405,46 +405,68 @@ def cmd_provision(args, fleet: dict):
         },
     )
 
-    print('Creating container instance… ', end='', flush=True)
-    try:
-        resp = cli.create_container_instance(
-            create_container_instance_details=details)
-        ci_id = resp.data.id
+    # OCI Container Instance creation in this tenancy intermittently lands in
+    # FAILED for transient platform reasons (image pull / host placement) even
+    # though the image boots cleanly. Retry a few times, cleaning up the failed
+    # instance each round so we don't leak orphans.
+    def _create_and_wait():
+        """Create one instance + poll to ACTIVE. Returns (ci_id, ip) on success,
+        or (ci_id, None) on FAILED/timeout so the caller can clean up + retry."""
+        resp = cli.create_container_instance(create_container_instance_details=details)
+        cid = resp.data.id
         print(ok('created'))
-    except Exception as e:
-        print(err('FAILED'))
-        print(f'  {e}')
-        sys.exit(1)
+        print('Waiting for ACTIVE state ', end='', flush=True)
+        for _ in range(36):
+            time.sleep(5)
+            try:
+                ci = cli.get_container_instance(cid).data
+                state = ci.lifecycle_state
+                if state == 'ACTIVE':
+                    _ip = None
+                    try:
+                        if ci.vnics:
+                            net_cli = oci.core.VirtualNetworkClient(get_oci_config(fleet))
+                            vnic = net_cli.get_vnic(ci.vnics[0].vnic_id).data
+                            _ip = vnic.public_ip or vnic.private_ip
+                    except Exception as ip_err:
+                        print(f'\n  {warn(f"could not resolve IP: {ip_err}")}')
+                    print(ok(' ACTIVE'))
+                    return cid, _ip
+                if state in ('FAILED', 'DELETED'):
+                    print(err(f' {state}'))
+                    return cid, None
+                print('.', end='', flush=True)
+            except Exception:
+                print('.', end='', flush=True)
+        print(warn(' timed out'))
+        return cid, None
 
-    # Wait for ACTIVE state (up to 3 minutes)
-    print('Waiting for ACTIVE state ', end='', flush=True)
-    ip = None
-    for _ in range(36):
-        time.sleep(5)
+    MAX_ATTEMPTS = 3
+    ci_id, ip = None, None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        print(f'Creating container instance (attempt {attempt}/{MAX_ATTEMPTS})… ',
+              end='', flush=True)
         try:
-            ci = cli.get_container_instance(ci_id).data
-            state = ci.lifecycle_state
-            if state == 'ACTIVE':
-                # Resolve the public IP via the network client.
-                # ContainerInstance.vnics[i] is just {vnic_id}; the IP lives on the VNIC itself.
-                try:
-                    if ci.vnics:
-                        net_cli = oci.core.VirtualNetworkClient(get_oci_config(fleet))
-                        vnic = net_cli.get_vnic(ci.vnics[0].vnic_id).data
-                        ip = vnic.public_ip or vnic.private_ip
-                except Exception as ip_err:
-                    print(f'\n  {warn(f"could not resolve IP: {ip_err}")}')
-                print(ok(' ACTIVE'))
-                break
-            elif state in ('FAILED', 'DELETED'):
-                print(err(f' {state}'))
-                print(err('Container failed to start. Check OCI Console logs.'))
-                sys.exit(1)
-            print('.', end='', flush=True)
-        except Exception:
-            print('.', end='', flush=True)
-    else:
-        print(warn(' timed out (still provisioning)'))
+            ci_id, ip = _create_and_wait()
+        except Exception as e:
+            print(err('FAILED'))
+            print(f'  {e}')
+            ci_id, ip = None, None
+        if ip:
+            break
+        # transient failure — delete the dud instance before retrying
+        if ci_id:
+            try:
+                cli.delete_container_instance(ci_id)
+                print(dim('  cleaned up failed instance; retrying…'))
+            except Exception:
+                pass
+        ci_id = None
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(8)
+    if not ip:
+        print(err('\nProvision failed after retries — check OCI Console / capacity.'))
+        sys.exit(1)
 
     # Record in fleet registry
     fleet['users'][principal] = {
