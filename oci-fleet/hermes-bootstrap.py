@@ -7,12 +7,14 @@ Idempotently seeds $HERMES_HOME with:
   - config.yaml: a minimal `model` block, backend chosen by key precedence
 
 Backend precedence (first available wins):
-  1. GROQ_API_KEY       -> provider=groq  (DEFAULT for new users; open-weights)
+  1. OPENROUTER_API_KEY -> provider=openrouter (DEFAULT; free tier has NO request
+                           size cap, so Hermes' ~17k prompt fits. Groq free 413s.)
+  1b GROQ_API_KEY       -> provider=groq (needs PAID tier for Hermes prompt size)
   2. LMSTUDIO_BASE_URL  -> provider=lmstudio (explicit OpenAI-compatible endpoint)
   3. ANTHROPIC_API_KEY  -> provider=anthropic (BYOK)
   4. GOOGLE_API_KEY     -> provider=gemini (BYOK)
-  5. none               -> Groq stub written; API server starts but calls
-                           error until GROQ_API_KEY is supplied. Non-fatal.
+  5. none               -> OpenRouter stub written; API server starts but calls
+                           error until OPENROUTER_API_KEY is supplied. Non-fatal.
 
 Never raises fatally — a bad bootstrap must not stop serve.py from serving the
 app shell. All writes are skip-if-exists so user edits survive restarts.
@@ -46,7 +48,7 @@ def _write_env():
         'API_SERVER_KEY': os.environ.get('API_SERVER_KEY', ''),
     }
     # Pass through whichever backend key is present so dotenv-only reads work too.
-    for k in ('GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
+    for k in ('OPENROUTER_API_KEY', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
         v = os.environ.get(k, '').strip()
         if v:
             want[k] = v
@@ -75,20 +77,42 @@ def _write_env():
 def _model_block():
     """Return YAML for the model block based on key precedence.
 
-    DEFAULT for new HQ containers is **Groq** — a free, fast, OpenAI-compatible
-    host for open-weights models (Llama 3.3 70B by default). New users get a
-    capable model out of the box at no per-token cost to them. Users can later
-    bring their own Claude / Gemini / other key via the HQ app settings, which
-    writes a higher-precedence backend into this same config — so the proprietary
-    providers below are NEVER the out-of-box default; they only apply when the
-    operator/user has explicitly supplied that key.
+    DEFAULT for new HQ containers is **OpenRouter** (Hermes' native default) on a
+    free open-weights model — its free tier has no per-request size cap, so
+    Hermes' large system prompt fits (Groq free does not). New users get a capable
+    model out of the box at no per-token cost. Users can later bring their own
+    Claude / Gemini / other key via HQ settings, which writes a higher-precedence
+    backend into this same config — proprietary providers are NEVER the out-of-box
+    default; they apply only when the operator/user explicitly supplies that key.
     """
-    # ── 1. Groq (DEFAULT for new users) ─────────────────────────────────────
-    # OpenAI-compatible. Open-weights models only. Free tier.
+    # ── 1. OpenRouter (DEFAULT for new users) ───────────────────────────────
+    # OpenRouter is Hermes' NATIVE default provider (no custom_providers needed).
+    # Why it's the default over Groq: Groq's FREE tier caps request size at
+    # ~5-6k tokens, but Hermes injects a ~17k-token agent system prompt → every
+    # call 413s. OpenRouter's free tier has NO per-request size cap (only req/min
+    # + req/day frequency limits), so Hermes' full prompt fits.
+    #
+    # Model: openai/gpt-oss-120b:free (131k ctx) — chosen because the :free
+    # endpoint responds reliably AND accepts the 18k payload (verified). Override
+    # with OPENROUTER_MODEL, e.g. nousresearch/hermes-3-llama-3.1-405b:free when
+    # that provider isn't upstream-throttled.
+    openrouter = os.environ.get('OPENROUTER_API_KEY', '').strip()
+    if openrouter:
+        mdl = os.environ.get('OPENROUTER_MODEL', '').strip() or 'openai/gpt-oss-120b:free'
+        _log(f'backend: OpenRouter (default open-weights, model={mdl})')
+        return (
+            'model:\n'
+            f'  default: {mdl}\n'
+            '  provider: openrouter\n'
+            '  base_url: https://openrouter.ai/api/v1\n'
+        )
+
+    # ── 1b. Groq (alternate open-weights; only if explicitly keyed) ─────────
+    # NOTE: Groq FREE tier 413s on Hermes' prompt — use a paid Groq key here.
     groq = os.environ.get('GROQ_API_KEY', '').strip()
     if groq:
         mdl = os.environ.get('GROQ_MODEL', '').strip() or 'openai/gpt-oss-120b'
-        _log(f'backend: Groq (default open-weights, model={mdl})')
+        _log(f'backend: Groq (model={mdl}) — needs paid tier for Hermes prompt size')
         return (
             'model:\n'
             f'  default: {mdl}\n'
@@ -134,19 +158,14 @@ def _model_block():
             '  base_url: https://generativelanguage.googleapis.com/v1beta\n'
         )
     # ── 4. No key at all ────────────────────────────────────────────────────
-    # Write a Groq stub so the model is correct the moment a GROQ_API_KEY is
-    # added; until then the API server starts but calls error.
-    _log('WARN no backend key found — defaulting to Groq config; set GROQ_API_KEY to enable')
+    # Write an OpenRouter stub so the model is correct the moment an
+    # OPENROUTER_API_KEY is added; until then the API server starts but errors.
+    _log('WARN no backend key found — defaulting to OpenRouter config; set OPENROUTER_API_KEY to enable')
     return (
         'model:\n'
-        '  default: llama-3.3-70b-versatile\n'
-        '  provider: groq\n'
-        '  base_url: https://api.groq.com/openai/v1\n'
-        'custom_providers:\n'
-        '  - name: groq\n'
-        '    base_url: https://api.groq.com/openai/v1\n'
-        '    key_env: GROQ_API_KEY\n'
-        '    api_mode: chat_completions\n'
+        '  default: openai/gpt-oss-120b:free\n'
+        '  provider: openrouter\n'
+        '  base_url: https://openrouter.ai/api/v1\n'
     )
 
 
