@@ -839,8 +839,13 @@ function ApiTab() {
   // /hermes/capability (rewrites config.yaml + restarts gateway).
   const [capMode, setCapMode] = useStateM('lite');
   const [capBusy, setCapBusy] = useStateM(false);
+  // Hermes model quick-switch: current model + curated free presets (incl. Nemotron 120B).
+  const [hModel, setHModel] = useStateM('');
+  const [hPresets, setHPresets] = useStateM([]);
+  const [hBusy, setHBusy] = useStateM(false);
   useEffectM(() => {
     if (C && C.hermesGetCapability) C.hermesGetCapability().then(setCapMode).catch(()=>{});
+    if (C && C.hermesGetModel) C.hermesGetModel().then(r => { setHModel(r.model || ''); setHPresets(r.presets || []); }).catch(()=>{});
   }, []);
   const changeCap = async (mode) => {
     if (mode === capMode || capBusy) return;
@@ -848,6 +853,13 @@ function ApiTab() {
     try { await C.hermesSetCapability(mode); }
     catch (e) { setCapMode(prev); setProbeResult({ ok:false, detail:'capability: ' + e.message }); }
     finally { setCapBusy(false); }
+  };
+  const changeModel = async (model) => {
+    if (!model || model === hModel || hBusy) return;
+    const prev = hModel; setHModel(model); setHBusy(true);
+    try { await C.hermesSetModel(model); }
+    catch (e) { setHModel(prev); setProbeResult({ ok:false, detail:'model: ' + e.message }); }
+    finally { setHBusy(false); }
   };
 
   useEffectM(() => {
@@ -892,6 +904,23 @@ function ApiTab() {
           </select>
           <span className="hint" style={{maxWidth:240}}>fallback for agents whose model isn't pinned</span>
         </div>
+        {s.provider === 'hermes' && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Model</div>
+              <div className="sub">
+                {hBusy ? 'Switching model… (~10s)'
+                  : 'Free open-weights in your container · switch anytime'}
+              </div>
+            </div>
+            <select value={hPresets.some(p=>p.id===hModel) ? hModel : ''}
+                    disabled={hBusy} onChange={e=>changeModel(e.target.value)}>
+              {!hPresets.some(p=>p.id===hModel) && hModel &&
+                <option value="">{hModel} (custom)</option>}
+              {hPresets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+        )}
         {s.provider === 'hermes' && (
           <div className="row-knob">
             <div>

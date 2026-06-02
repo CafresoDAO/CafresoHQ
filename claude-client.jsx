@@ -347,6 +347,30 @@ async function hermesSetCapability(mode) {
   return r.json();
 }
 
+/* Hermes model quick-switch: read the current model + curated presets, or set a
+   new one (rewrites config.yaml model.default + restarts the gateway). Presets
+   are OpenRouter free open-weights ids verified to accept Hermes' large prompt. */
+async function hermesGetModel() {
+  try {
+    const r = await fetch(_API_BASE + '/hermes/model');
+    if (!r.ok) return { model: '', presets: [] };
+    return await r.json();
+  } catch (_e) { return { model: '', presets: [] }; }
+}
+
+async function hermesSetModel(model) {
+  const r = await fetch(_API_BASE + '/hermes/model', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`model ${r.status}: ${t.slice(0, 160)}`);
+  }
+  return r.json();
+}
+
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
    and translates its stream-json output into the OpenAI-compat SSE shape,
    so we can reuse parseSSE here. */
@@ -1351,7 +1375,7 @@ window.OpenclawClient = {
   setAgentKey, getAgentKey, hasAgentKey,
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,
-  hermesStatus, hermesGetCapability, hermesSetCapability,
+  hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
   openclawStatus, codexStatus, toolExec, cloneRepo,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

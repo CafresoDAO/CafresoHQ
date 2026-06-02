@@ -1712,6 +1712,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._brave_search()
         if self.path == '/hermes/capability':
             return self._hermes_get_capability()
+        if self.path == '/hermes/model':
+            return self._hermes_get_model()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
@@ -1750,6 +1752,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/hermes/capability':
             return self._hermes_set_capability()
+        if self.path == '/hermes/model':
+            return self._hermes_set_model()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
@@ -5259,6 +5263,80 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         import os as _os
         home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
         return _os.path.join(home, 'capability_mode')
+
+    # ── Hermes model quick-switch ─────────────────────────────────────────────
+    # GET  /hermes/model            → {model, presets}
+    # POST /hermes/model {model}    → rewrite config.yaml model.default + restart
+    # Presets are curated OpenRouter free open-weights ids verified to accept
+    # Hermes' large prompt. The UI offers these as one-click switches.
+    _HERMES_MODEL_PRESETS = [
+        {'id': 'openai/gpt-oss-120b:free',                  'label': 'GPT-OSS 120B (default)'},
+        {'id': 'nvidia/nemotron-3-super-120b-a12b:free',    'label': 'Nemotron 3 Super 120B'},
+        {'id': 'nousresearch/hermes-3-llama-3.1-405b:free', 'label': 'Hermes 3 405B (Nous)'},
+        {'id': 'meta-llama/llama-3.3-70b-instruct:free',    'label': 'Llama 3.3 70B'},
+        {'id': 'qwen/qwen3-next-80b-a3b-instruct:free',     'label': 'Qwen3-Next 80B'},
+    ]
+
+    def _hermes_config_path(self):
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        return _os.path.join(home, 'config.yaml')
+
+    def _hermes_get_model(self):
+        import re as _re
+        model = ''
+        try:
+            with open(self._hermes_config_path(), 'r', encoding='utf-8') as f:
+                m = _re.search(r'^\s*default:\s*(.+)\s*$', f.read(), _re.MULTILINE)
+                if m:
+                    model = m.group(1).strip()
+        except Exception:
+            pass
+        return self._send_json(200, {'model': model, 'presets': self._HERMES_MODEL_PRESETS})
+
+    def _hermes_set_model(self):
+        """POST {model} → rewrite config.yaml model.default + restart gateway.
+        Only the model id changes; provider/base_url (OpenRouter) are preserved."""
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        model = str(req.get('model', '')).strip()
+        # allow presets OR any plausible "vendor/model[:tag]" id
+        import re as _re
+        valid = any(p['id'] == model for p in self._HERMES_MODEL_PRESETS) or \
+            bool(_re.match(r'^[\w.\-]+/[\w.\-:]+$', model))
+        if not model or not valid:
+            return self._send_json(400, {'error': 'invalid model id'})
+
+        cfg_path = self._hermes_config_path()
+        try:
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                cfg = f.read()
+        except Exception as e:
+            return self._send_json(500, {'error': f'read config: {e}'})
+
+        new_cfg, n = _re.subn(r'(^\s*default:\s*).+$',
+                              lambda m: m.group(1) + model, cfg,
+                              count=1, flags=_re.MULTILINE)
+        if n == 0:
+            return self._send_json(500, {'error': 'no model.default line in config'})
+        try:
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                f.write(new_cfg)
+        except Exception as e:
+            return self._send_json(500, {'error': f'write config: {e}'})
+
+        restarted = False
+        try:
+            subprocess.Popen(['hermes', 'gateway', 'restart'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            restarted = True
+        except Exception as e:
+            sys.stderr.write(f'[hermes] model restart failed: {e}\n')
+        return self._send_json(200, {'model': model, 'restarted': restarted,
+                                     'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_get_capability(self):
         try:
