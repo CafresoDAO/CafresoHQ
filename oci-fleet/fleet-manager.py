@@ -1013,6 +1013,116 @@ def cmd_config(args, fleet: dict):
     print(f'  {BOLD}Registry:{RESET} {dim(str(FLEET_FILE))}')
 
 
+# ── Capacity / housekeeping (the SaaS unit-economics levers) ──────────────────
+# The OCI Always-Free Ampere A1 pool is 4 OCPU / 24 GB — a HARD ceiling. At
+# 1 OCPU/6 GB per user that's exactly 4 concurrent containers. So every wasted
+# slot (a FAILED instance left lingering, or an idle paid-for container) is
+# 25% of free capacity / real money. These commands keep the pool lean.
+
+def _all_container_instances(cli, fleet):
+    return cli.list_container_instances(compartment_id=fleet['compartment_id']).data.items
+
+
+def cmd_capacity(args, fleet: dict):
+    """Show A1 pool usage — how many of the 4 free OCPUs are consumed."""
+    require_oci()
+    cli = container_client(fleet)
+    POOL_OCPU, POOL_GB = 4.0, 24.0
+    active_states = ('ACTIVE', 'CREATING', 'UPDATING', 'INACTIVE')
+    used_o = used_g = 0.0
+    rows = []
+    for c in _all_container_instances(cli, fleet):
+        if c.lifecycle_state in ('DELETED', 'DELETING'):
+            continue
+        full = cli.get_container_instance(c.id).data
+        o = full.shape_config.ocpus or 0
+        g = full.shape_config.memory_in_gbs or 0
+        if c.lifecycle_state in active_states:
+            used_o += o; used_g += g
+        rows.append((c.lifecycle_state, c.display_name, o, g))
+    for st, name, o, g in sorted(rows):
+        tag = ok(st) if st == 'ACTIVE' else (warn(st) if st == 'INACTIVE' else err(st))
+        print(f'  {tag:20} {name:34} {o}ocpu/{g}gb')
+    pct = int(used_o / POOL_OCPU * 100) if POOL_OCPU else 0
+    bar = ok if used_o < POOL_OCPU else err
+    print(f'\n  {BOLD}A1 pool: {bar(f"{used_o:g}/{POOL_OCPU:g} OCPU")} · '
+          f'{used_g:g}/{POOL_GB:g} GB · {pct}% used{RESET}')
+    free = int(POOL_OCPU - used_o)
+    print(f'  {dim(f"room for ~{max(0,free)} more 1-OCPU container(s) before paid")}')
+
+
+def cmd_prune(args, fleet: dict):
+    """Delete FAILED container instances + any ACTIVE instance not in the
+    registry (orphan test/leftover). Frees the A1 pool. Use --dry-run to preview.
+    THIS is what prevents the 'LimitExceeded — pool full of dead instances' trap."""
+    require_oci()
+    cli = container_client(fleet)
+    registered = {d.get('container_instance_id') for d in fleet.get('users', {}).values()}
+    reg_names  = {d.get('display_name') for d in fleet.get('users', {}).values()}
+    kill = []
+    for c in _all_container_instances(cli, fleet):
+        if c.lifecycle_state == 'FAILED':
+            kill.append((c.id, c.display_name, 'FAILED'))
+        elif (c.lifecycle_state in ('ACTIVE', 'INACTIVE')
+              and c.id not in registered and c.display_name not in reg_names):
+            kill.append((c.id, c.display_name, 'ORPHAN'))
+    if not kill:
+        print(ok('Nothing to prune — pool is clean.')); return
+    print(f'{BOLD}Prune candidates ({len(kill)}):{RESET}')
+    for _cid, name, why in kill:
+        print(f'  {err(why):18} {name}')
+    if getattr(args, 'dry_run', False):
+        print(dim('\n(dry-run — nothing deleted)')); return
+    for cid, name, why in kill:
+        try:
+            cli.delete_container_instance(cid); print(ok(f'  deleted {why}: {name}'))
+        except Exception as e:
+            print(err(f'  FAILED {name}: {str(e)[:60]}'))
+
+
+def cmd_reap_idle(args, fleet: dict):
+    """Stop containers idle longer than --minutes (default 30). This is THE
+    profitability lever: stopped Container Instances pause billing AND free the
+    A1 pool, so a 4-slot free tier can serve many users who aren't all active at
+    once. Idle = no request to serve.py within the window (serve.py /idle reports
+    seconds-since-last-request). Use --dry-run to preview."""
+    require_oci()
+    cli = container_client(fleet)
+    window = (getattr(args, 'minutes', None) or 30) * 60
+    stopped = 0
+    for principal, info in fleet.get('users', {}).items():
+        if info.get('status') != 'ACTIVE':
+            continue
+        ip = info.get('ip'); cid = info.get('container_instance_id')
+        if not ip or not cid:
+            continue
+        idle = None
+        try:
+            import urllib.request, json as _json
+            with urllib.request.urlopen(f'http://{ip}:8787/idle', timeout=6) as r:
+                idle = _json.loads(r.read()).get('idle_seconds')
+        except Exception:
+            # can't reach /idle (old image or down) — skip, don't risk stopping a live one
+            print(dim(f'  {info["display_name"]}: /idle unreachable, skipping'))
+            continue
+        if idle is not None and idle >= window:
+            mins = int(idle // 60)
+            if getattr(args, 'dry_run', False):
+                print(warn(f'  would stop {info["display_name"]} (idle {mins}m)'))
+            else:
+                try:
+                    cli.stop_container_instance(cid)
+                    info['status'] = 'INACTIVE'; stopped += 1
+                    print(ok(f'  stopped {info["display_name"]} (idle {mins}m)'))
+                except Exception as e:
+                    print(err(f'  FAILED {info["display_name"]}: {str(e)[:50]}'))
+        else:
+            print(dim(f'  {info["display_name"]}: active ({int((idle or 0)//60)}m idle)'))
+    if not getattr(args, 'dry_run', False) and stopped:
+        save_fleet(fleet)
+        print(ok(f'\nStopped {stopped} idle container(s) — pool freed, billing paused.'))
+
+
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 def main():
@@ -1031,6 +1141,12 @@ def main():
                                         '(useful when API token creation hits IDCS limits — '
                                         'paste a token from OCI Console -> Profile -> Auth Tokens)')
     sub.add_parser('config',     help='Show fleet configuration')
+    sub.add_parser('capacity',   help='Show A1 free-pool usage (4 OCPU ceiling)')
+    prune_p = sub.add_parser('prune', help='Delete FAILED + orphan instances to free the pool')
+    prune_p.add_argument('--dry-run', action='store_true', help='Preview without deleting')
+    reap_p = sub.add_parser('reap-idle', help='Stop containers idle > N min (free the pool, pause billing)')
+    reap_p.add_argument('--minutes', type=int, default=30, help='Idle threshold in minutes (default 30)')
+    reap_p.add_argument('--dry-run', action='store_true', help='Preview without stopping')
 
     def add_principal(p):
         p.add_argument('principal', help='ICP Internet Identity principal')
@@ -1084,6 +1200,9 @@ def main():
         'image-push':  cmd_image_push,
         'caddy-sync':  cmd_caddy_sync,
         'config':      cmd_config,
+        'capacity':    cmd_capacity,
+        'prune':       cmd_prune,
+        'reap-idle':   cmd_reap_idle,
     }
 
     fn = dispatch.get(args.command)

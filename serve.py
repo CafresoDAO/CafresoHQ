@@ -51,6 +51,16 @@ ROUTES = {
 HERMES_HOST = os.environ.get('HERMES_API_HOST', '127.0.0.1')
 HERMES_PORT = int(os.environ.get('HERMES_API_PORT', '8642') or '8642')
 
+# ── Idle tracking (powers fleet reap-idle → stop idle containers, free A1 pool) ─
+# Single-slot list so the request handler can mutate it without `global`.
+# /idle, /health, and /idle's own polls do NOT count as activity.
+_LAST_ACTIVITY = [time.time()]
+_IDLE_EXEMPT_PREFIXES = ('/idle', '/health')
+
+def _touch_activity(path):
+    if not any(path == p or path.startswith(p) for p in _IDLE_EXEMPT_PREFIXES):
+        _LAST_ACTIVITY[0] = time.time()
+
 HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
                'proxy-authorization', 'te', 'trailers', 'transfer-encoding',
                'upgrade', 'content-length'}
@@ -1704,6 +1714,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None, None
 
     def do_GET(self):
+        # /idle is the signal the fleet's reap-idle uses to stop idle containers
+        # (free the A1 pool + pause billing). Report seconds since the last
+        # *user-facing* request. Health/idle pings themselves don't count as
+        # activity (they'd keep a container "busy" forever).
+        if self.path == '/idle':
+            import time as _t
+            return self._send_json(200, {'idle_seconds': int(_t.time() - _LAST_ACTIVITY[0])})
+        _touch_activity(self.path)
         if self.path == '/health':
             return self._health()
         if self.path.startswith('/hq/'):
@@ -1750,6 +1768,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        _touch_activity(self.path)
         if self.path == '/hermes/capability':
             return self._hermes_set_capability()
         if self.path == '/hermes/model':
