@@ -274,7 +274,7 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
         onClick={() => setOpen(true)}
         title="Open chat (Esc to close)"
         style={{
-          position: 'fixed', bottom: 56, right: 16, zIndex: 320,
+          position: 'fixed', bottom: 56, right: 16, zIndex: 'var(--z-window)',
           background: 'var(--paper)', color: 'var(--ink)',
           border: '2px solid var(--ink)',
           borderRadius: 999,
@@ -327,7 +327,7 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
         ...(isTouch
           ? { left: 0, top: 0, right: 0, bottom: 0, width: '100%', height: '100%' }
           : { left: geometry.x + 'px', top: geometry.y + 'px', width: geometry.w + 'px', height: geometry.h + 'px' }),
-        zIndex: 320,
+        zIndex: 'var(--z-window)',
         background: 'var(--paper)',
         border: '2px solid var(--ink)',
         borderRadius: isTouch ? 0 : 6,

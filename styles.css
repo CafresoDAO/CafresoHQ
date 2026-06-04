@@ -49,13 +49,26 @@
   --shadow-4: 0 12px 36px rgba(0,0,0,0.28); /* modal */
 
   /* Z-index registry — never use raw numbers in JS or CSS, always reference these.
-     If you need a new layer, ADD it here. */
+     If you need a new layer, ADD it here.
+
+     Ordering rationale (low → high), reads bottom-up like real elevation:
+       base    — in-flow page content
+       sticky  — pinned headers / composers that scroll-stick
+       overlay — drawer/backdrop dimmers, lasso rects
+       toast   — transient status above dimmed overlays
+       window  — floating/draggable panels (chat window, popouts, receipts, inspect)
+       dropdown— menus & popovers triggered FROM the chrome; MUST clear windows
+                 so the Apps menu never hides behind the floating chat.
+       modal   — focus-trapping dialogs (Hire/Settings/CEO/Command palette)
+       tooltip — hover hints, always last in front
+  */
   --z-base:     1;
-  --z-dropdown: 50;
-  --z-overlay:  100;   /* drawer overlays, lasso rect */
+  --z-sticky:   10;    /* sticky composer / column headers */
+  --z-overlay:  100;   /* drawer overlays, lasso rect, backdrops */
   --z-toast:    200;   /* status messages */
-  --z-window:   320;   /* floating chat window, popouts */
-  --z-modal:    400;   /* HireModal, SettingsModal, etc. */
+  --z-window:   300;   /* floating chat window, popouts, receipts, inspect */
+  --z-dropdown: 350;   /* topbar menus, popovers, autocomplete — above windows */
+  --z-modal:    400;   /* HireModal, SettingsModal, CommandPalette, etc. */
   --z-tooltip:  500;   /* hover tooltips, last in front */
 
   /* Motion — entry/exit animations and hover transitions. */
@@ -1469,14 +1482,14 @@ body.theme-coffeeshop .desk::after {
 .oc-notif-backdrop {
   position: fixed; inset: 0;
   background: rgba(20, 14, 10, 0.20);
-  z-index: var(--z-overlay);
+  z-index: var(--z-modal);
   animation: oc-fade-in var(--motion-fast) var(--ease-out);
 }
 .oc-notif-panel {
   position: fixed;
   top: 0; right: 0; bottom: 0;
   width: min(420px, 92vw);
-  z-index: calc(var(--z-overlay) + 1);
+  z-index: calc(var(--z-modal) + 1);
   background: var(--paper);
   border-left: 2px solid var(--ink);
   box-shadow: var(--shadow-3);
@@ -1792,6 +1805,13 @@ body.night .rail-toggle { background: var(--paper); color: var(--ink); }
   border-bottom: 1px solid var(--brand-rule);
   background: linear-gradient(180deg, hsl(38 70% 98% / 0.98), hsl(38 70% 96% / 0.95));
   backdrop-filter: blur(8px);
+  /* backdrop-filter already creates a stacking context here, which traps the
+     Apps dropdown's z-index inside the topbar. Promote the whole bar above the
+     floating chat window (--z-window) so menus anchored in the chrome render
+     ON TOP of the chat, while its descendants resolve their own z-order
+     relative to this context. */
+  position: relative;
+  z-index: var(--z-dropdown);
 }
 .topbar .crumbs {
   display: flex; align-items: center; gap: 10px;
@@ -1864,25 +1884,43 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
   min-height: 32px;
 }
 .cf-apps-btn:hover { background: hsl(36 67% 94%); border-color: var(--brand-banana-rim); }
-.cf-apps-btn[aria-expanded="true"] { background: hsl(36 67% 94%); border-color: var(--brand-coffee); }
+.cf-apps-btn:focus-visible {
+  outline: none;
+  border-color: var(--brand-coffee);
+  box-shadow: 0 0 0 2px var(--accent-sun);
+}
+.cf-apps-btn[aria-expanded="true"] {
+  background: hsl(36 67% 94%);
+  border-color: var(--brand-coffee);
+  box-shadow: inset 0 1px 2px rgba(38,35,19,0.10);
+}
+.cf-apps-btn span[aria-hidden] {
+  font-size: 9px;
+  opacity: 0.7;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
 .cf-apps-menu {
   position: absolute;
   top: calc(100% + 8px); left: 0;
-  z-index: 200;
+  /* Resolves inside the topbar's stacking context (which itself sits at
+     --z-dropdown, above the chat window). A local --z-dropdown keeps the
+     intent self-documenting and re-asserts order vs. sibling chrome. */
+  z-index: var(--z-dropdown);
   min-width: 220px;
   padding: 6px;
   background: linear-gradient(180deg, hsl(26 45% 98% / 0.98), hsl(26 40% 94% / 0.95));
   border: 1px solid var(--brand-rule);
-  border-radius: 14px;
+  border-radius: var(--radius-4);
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.85),
-    0 12px 32px -8px rgba(38,35,19,0.25);
+    var(--shadow-3);
   display: flex; flex-direction: column; gap: 2px;
-  animation: cf-menu-in 120ms cubic-bezier(.2,.8,.2,1);
+  transform-origin: top left;
+  animation: cf-menu-in var(--motion-fast) var(--ease-out);
 }
 @keyframes cf-menu-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
 }
 .cf-apps-item {
   display: flex; align-items: center; gap: 10px;
@@ -3049,7 +3087,7 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   background: rgba(59,46,42,0.55);
   backdrop-filter: blur(2px);
   display: grid; place-items: center;
-  z-index: 200;
+  z-index: var(--z-modal);
   padding: 20px;
 }
 .modal {
@@ -3259,7 +3297,7 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   background: var(--paper); border: 2px solid var(--ink);
   box-shadow: var(--shadow-hard);
   padding: 8px;
-  z-index: 20;
+  z-index: var(--z-dropdown);
   min-width: 200px;
 }
 .delegate-pop .title {
@@ -4196,7 +4234,7 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
 .focus-overlay {
   position: fixed; inset: 0;
   background: linear-gradient(180deg, #fff6e0 0%, #e4d6ea 100%);
-  z-index: 500;
+  z-index: var(--z-tooltip);
   display: grid;
   grid-template-rows: auto 1fr auto;
   padding: 24px clamp(24px, 10vw, 180px);
@@ -4621,7 +4659,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
   background: var(--paper);
   border: 3px solid var(--ink);
   box-shadow: 6px 6px 0 0 var(--ink);
-  z-index: 150;
+  z-index: var(--z-window);
 }
 .inspect .head {
   background: var(--ceo);
@@ -4655,7 +4693,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
 /* Keyboard shortcut tooltip (pixel floppy) */
 .shortcut-hud {
   position: fixed; bottom: 16px; left: 16px;
-  z-index: 100;
+  z-index: var(--z-window);
   display: flex; align-items: center; gap: 8px;
 }
 .floppy-btn {
@@ -4699,7 +4737,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
 .ceo-panel-backdrop {
   position: fixed; inset: 0;
   background: rgba(20, 14, 6, 0.55);
-  z-index: 220;
+  z-index: var(--z-modal);
   display: grid; place-items: center;
   padding: 14px;
   backdrop-filter: blur(2px);
@@ -4896,7 +4934,7 @@ body.night .ceo-panel-action:hover {
   border: 2px solid var(--ink);
   box-shadow: var(--shadow-hard);
   font-family: 'VT323'; font-size: 17px;
-  z-index: 300;
+  z-index: var(--z-toast);
   display: flex; align-items: center; gap: 8px;
   animation: toastIn 0.25s ease-out;
 }
@@ -5299,7 +5337,7 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
    ============================== */
 .receipt-tray {
   position: fixed; bottom: 18px; right: 18px;
-  z-index: 30;
+  z-index: var(--z-window);
   background: var(--paper);
   border: 2px solid var(--ink);
   box-shadow: 3px 3px 0 0 var(--ink);
@@ -7061,7 +7099,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   border-radius: var(--radius-2);
   box-shadow: 4px 4px 0 var(--ink);
   padding: 4px;
-  z-index: 100;
+  z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: 280px;
   overflow-y: auto;
@@ -7574,7 +7612,7 @@ body:not(.night) .ide-minimap-thumb {
   border: 1.5px solid var(--ink);
   border-radius: var(--radius-2);
   box-shadow: 4px 4px 0 var(--ink);
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 .mention-pop-head {
   display: flex; align-items: center; justify-content: space-between;
