@@ -430,36 +430,36 @@ def cmd_provision(args, fleet: dict):
                 ci = cli.get_container_instance(cid).data
                 state = ci.lifecycle_state
                 if state == 'ACTIVE':
-                    _ip = None
+                    _pub, _priv = None, None
                     try:
                         if ci.vnics:
                             net_cli = oci.core.VirtualNetworkClient(get_oci_config(fleet))
                             vnic = net_cli.get_vnic(ci.vnics[0].vnic_id).data
-                            _ip = vnic.public_ip or vnic.private_ip
+                            _pub, _priv = vnic.public_ip, vnic.private_ip
                     except Exception as ip_err:
                         print(f'\n  {warn(f"could not resolve IP: {ip_err}")}')
                     print(ok(' ACTIVE'))
-                    return cid, _ip
+                    return cid, (_pub or _priv), _priv
                 if state in ('FAILED', 'DELETED'):
                     print(err(f' {state}'))
-                    return cid, None
+                    return cid, None, None
                 print('.', end='', flush=True)
             except Exception:
                 print('.', end='', flush=True)
         print(warn(' timed out'))
-        return cid, None
+        return cid, None, None
 
     MAX_ATTEMPTS = 3
-    ci_id, ip = None, None
+    ci_id, ip, priv_ip = None, None, None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f'Creating container instance (attempt {attempt}/{MAX_ATTEMPTS})… ',
               end='', flush=True)
         try:
-            ci_id, ip = _create_and_wait()
+            ci_id, ip, priv_ip = _create_and_wait()
         except Exception as e:
             print(err('FAILED'))
             print(f'  {e}')
-            ci_id, ip = None, None
+            ci_id, ip, priv_ip = None, None, None
         if ip:
             break
         # transient failure — delete the dud instance before retrying
@@ -482,6 +482,9 @@ def cmd_provision(args, fleet: dict):
         'display_name':          display_name,
         'vault_prefix':          vault_prefix,
         'ip':                    ip or '',
+        # Private (VCN) IP — Caddy proxies to THIS so the public IP's :8787 can be
+        # firewalled off (Phase B network lockdown). Falls back to public if absent.
+        'private_ip':            priv_ip or '',
         'port':                  8787,
         'status':                'ACTIVE',
         'created_at':            datetime.now(timezone.utc).isoformat(),
@@ -926,6 +929,9 @@ def _render_caddyfile(fleet: dict, primary_host: str) -> str:
             continue
         slug = _principal_slug(principal)
         port = info.get('port', 8787)
+        # Proxy to the PRIVATE (VCN) IP when known so the container's public
+        # :8787 can be firewalled to the gateway only (Phase B). Public fallback.
+        ip = info.get('private_ip') or ip
         # `hq.html` is the app entry (there is no index.html). Make the bare
         # slug URL the shell links to resolve to the app:
         #   /u/<slug>        → redirect to /u/<slug>/hq.html

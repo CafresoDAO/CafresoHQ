@@ -127,17 +127,25 @@ claims it. Options, strongest first:
 
 ---
 
-## 5. Also close: direct container IP exposure
+## 5. Also close: direct container IP exposure — DONE (Phase B)
 
-The container has a **public IP** (`is_public_ip_assigned=True` in
-`fleet-manager.py`) and serves on `:8787` directly — bypassing the gateway
-entirely. Even with gateway auth, `http://<container-ip>:8787/hq.html` is open.
+The container had a **public IP** serving `:8787` directly, bypassing the gateway
+(`http://<container-ip>:8787/hq.html` was open even with gateway auth).
 
-Fixes (pick one, ideally both):
-- **Network:** OCI NSG/security-list to allow `:8787` **only from the gateway’s
-  private IP** (`10.0.1.6`), deny public. Set `is_public_ip_assigned=False` and
-  route solely via the gateway over the VCN.
-- **App:** serve.py requires the signed session header/cookie (defense-in-depth).
+**Fixed (network, no container recreate):**
+- Gateway and containers share the VCN (gateway subnet `10.0.1.0/24`, container
+  subnet `10.0.0.0/24`). Caddy now proxies to each container's **private** IP
+  (`fleet.json.private_ip`; renderers prefer it — fleet-manager + fleet-api).
+- The container subnet's security list rule for `:8787` was changed from
+  `0.0.0.0/0` → `10.0.1.0/24`, so only the gateway subnet can reach `:8787`.
+  Verified: public internet → `:8787` now times out (000); gateway → private IP
+  still 200; HQ serves. Containers are also isolated from each other on `:8787`.
+
+**Remaining (optional, deeper defense-in-depth — needs container recreate):**
+- serve.py could additionally require a gateway-injected `X-Gateway-Auth` secret
+  header so even an in-VCN attacker can't hit `:8787`. Code path noted; deferred
+  because applying it to live containers needs a recreate.
+- SSH `:22` on the container subnet is still `0.0.0.0/0` (separate hardening).
 
 ---
 

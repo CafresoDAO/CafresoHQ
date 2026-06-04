@@ -390,6 +390,9 @@ def _render_caddyfile(fleet: dict) -> str:
         ip = info.get('ip')
         if not ip:
             continue
+        # Prefer the private (VCN) IP so the public :8787 can be firewalled to
+        # the gateway only (Phase B). Public IP is the fallback.
+        ip = info.get('private_ip') or ip
         slug = _principal_slug(principal)
         port = info.get('port', 8787)
         block = (
