@@ -10,6 +10,10 @@ export interface _SERVICE {
     { 'context' : Uint8Array | number[], 'key_name' : string }
   >,
   'mintHqSession' : ActorMethod<[], { 'exp' : bigint, 'token' : string }>,
+  'mintPlanToken' : ActorMethod<
+    [bigint],
+    { 'exp' : bigint, 'token' : string, 'plan' : string }
+  >,
   'setHqSessionSecret' : ActorMethod<[string], undefined>,
   'vault_encrypted_key' : ActorMethod<
     [Uint8Array | number[]],

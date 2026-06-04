@@ -57,8 +57,10 @@
         shipping: {}, paidBlock: 0, paymentMethod: 'stripe',
       });
       if (!rec.err) {
-        await notifyFleet(get(principalText), paidPlan);
-        msg = { kind: 'ok', text: `${PLANS[paidPlan].label} active! Your HQ is updating (~10s).` };
+        const applied = await notifyFleet(rec.ok?.id);
+        msg = applied.ok
+          ? { kind: 'ok', text: `${PLANS[paidPlan].label} active! Your HQ is updating (~10s).` }
+          : { kind: 'ok', text: `Payment recorded. Your ${PLANS[paidPlan].label} plan activates once the card charge is confirmed on-chain.` };
       } else {
         msg = { kind: 'err', text: `Payment ok but recording failed: ${rec.err}` };
       }
@@ -76,8 +78,10 @@
     try {
       const r = await subscribeWithIcp(planId);
       if (r.err) { msg = { kind: 'err', text: r.err }; return; }
-      await notifyFleet(get(principalText), planId);
-      msg = { kind: 'ok', text: `Subscribed to ${PLANS[planId].label}! Your HQ is updating (~10s).` };
+      const applied = await notifyFleet(r.order?.id);
+      msg = applied.ok
+        ? { kind: 'ok', text: `Subscribed to ${PLANS[planId].label}! Your HQ is updating (~10s).` }
+        : { kind: 'ok', text: `Paid! ${PLANS[planId].label} will apply to your HQ momentarily.${applied.reason ? '' : ''}` };
       await refresh();
     } finally { busy = ''; }
   }

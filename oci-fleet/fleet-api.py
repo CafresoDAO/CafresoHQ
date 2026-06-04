@@ -280,14 +280,71 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _run_set_plan(self, principal, plan):
+        """Invoke `fleet-manager set-plan` for a verified (principal, plan)."""
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(FLEET_MANAGER), 'set-plan', principal, plan],
+                capture_output=True, text=True, timeout=60,
+                env={**os.environ, 'PYTHONUTF8': '1'}, cwd=str(FLEET_DIR.parent))
+            if proc.returncode != 0:
+                return self._send_json(500, {'error': (proc.stderr or proc.stdout or '')[:300]})
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        return self._send_json(200, {'ok': True, 'principal': principal, 'plan': plan})
+
+    def _apply_plan(self):
+        """POST /fleet/set-plan — apply a plan to the caller's container.
+
+        Two paths:
+          • { token }           → plan proof minted ON-CHAIN (mintPlanToken). The
+            token IS the credential; principal+plan are taken FROM it, so a client
+            can't claim a tier they didn't pay for. No X-Fleet-Auth needed.
+          • { principal, plan } → legacy/admin override; requires X-Fleet-Auth
+            (FLEET_API_SECRET) since it carries no independent proof.
+        """
+        length = int(self.headers.get('Content-Length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+
+        token = str(req.get('token', '')).strip()
+        if token:
+            secret = hq_token.secret_bytes()
+            if not secret:
+                return self._send_json(503, {'error': 'plan tokens not configured'})
+            claims = hq_token.verify_plan(token, secret)
+            if not claims:
+                return self._send_json(401, {'error': 'invalid or expired plan token'})
+            principal, plan = claims['principal'], claims['plan']
+            if not _validate_principal(principal):
+                return self._send_json(400, {'error': 'invalid principal in token'})
+            return self._run_set_plan(principal, plan)
+
+        # Legacy/admin path — must carry the shared secret.
+        if not self._check_auth():
+            return self._send_json(401, {'error': 'unauthorized (token or X-Fleet-Auth required)'})
+        principal = (req.get('principal') or '').strip()
+        plan = str(req.get('plan', '')).strip().lower()
+        if not _validate_principal(principal):
+            return self._send_json(400, {'error': 'invalid principal'})
+        if plan not in ('free', 'pro', 'always-on'):
+            return self._send_json(400, {'error': 'invalid plan'})
+        return self._run_set_plan(principal, plan)
+
     def do_POST(self):
         # Session cookie install is token-gated, not secret-gated (browser call).
         if self.path == '/fleet/session':
             return self._install_session_cookie()
+        # Plan application is plan-token-gated (token minted on-chain proves a
+        # paid order) — also not secret-gated for the browser path.
+        if self.path == '/fleet/set-plan':
+            return self._apply_plan()
 
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
-        if self.path not in ('/fleet/provision', '/fleet/set-plan'):
+        if self.path != '/fleet/provision':
             return self._send_json(404, {'error': 'not found'})
 
         length = int(self.headers.get('Content-Length', 0) or 0)
@@ -298,30 +355,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         principal = (req.get('principal') or '').strip()
         if not _validate_principal(principal):
             return self._send_json(400, {'error': 'invalid principal'})
-
-        # ── /fleet/set-plan ─────────────────────────────────────────────────
-        # Apply a paid plan to a user's container (idle policy + capability).
-        # SECURITY: the plan claim is NOT trusted from the client — this endpoint
-        # re-verifies it against the on-chain order ledger before applying, so a
-        # user can't POST {plan:'always-on'} without having paid. (verify hook
-        # below; until wired it falls back to requiring FLEET_API_SECRET auth.)
-        if self.path == '/fleet/set-plan':
-            plan = str(req.get('plan', '')).strip().lower()
-            if plan not in ('free', 'pro', 'always-on'):
-                return self._send_json(400, {'error': 'invalid plan'})
-            ok_paid, why = _verify_plan_onchain(principal, plan)
-            if not ok_paid:
-                return self._send_json(402, {'error': f'plan not verified: {why}'})
-            try:
-                proc = subprocess.run(
-                    [sys.executable, str(FLEET_MANAGER), 'set-plan', principal, plan],
-                    capture_output=True, text=True, timeout=60,
-                    env={**os.environ, 'PYTHONUTF8': '1'}, cwd=str(FLEET_DIR.parent))
-                if proc.returncode != 0:
-                    return self._send_json(500, {'error': (proc.stderr or proc.stdout or '')[:300]})
-            except Exception as e:
-                return self._send_json(500, {'error': str(e)})
-            return self._send_json(200, {'ok': True, 'principal': principal, 'plan': plan})
 
         # Already provisioned? Return existing endpoint.
         full     = _load_fleet_full()

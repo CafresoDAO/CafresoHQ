@@ -12,6 +12,17 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Record({ 'exp' : IDL.Int, 'token' : IDL.Text })],
         [],
       ),
+    'mintPlanToken' : IDL.Func(
+        [IDL.Int],
+        [
+          IDL.Record({
+            'exp' : IDL.Int,
+            'token' : IDL.Text,
+            'plan' : IDL.Text,
+          }),
+        ],
+        [],
+      ),
     'setHqSessionSecret' : IDL.Func([IDL.Text], [], []),
     'vault_encrypted_key' : IDL.Func(
         [IDL.Vec(IDL.Nat8)],

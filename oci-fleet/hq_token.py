@@ -63,6 +63,33 @@ def verify(token: str, secret: bytes, now: int = None):
     return {'principal': principal, 'exp': exp}
 
 
+PLAN_TIERS = ('free', 'pro', 'always-on')
+
+
+def verify_plan(token: str, secret: bytes, now: int = None):
+    """Verify a PLAN proof minted on-chain (mintPlanToken). Returns
+    {'principal', 'plan', 'exp'} if the HMAC + exp check out and the plan is a
+    known tier, else None. Format: v1plan.<principal>.<plan>.<exp>.<hmacHex>."""
+    if not token or not secret:
+        return None
+    parts = token.split('.')
+    if len(parts) != 5:
+        return None
+    ver, principal, plan, exp_s, tag_hex = parts
+    if ver != 'v1plan' or not principal or plan not in PLAN_TIERS or not exp_s.isdigit():
+        return None
+    exp = int(exp_s)
+    if now is None:
+        now = int(time.time())
+    if exp < now:
+        return None
+    signed = f'{ver}.{principal}.{plan}.{exp_s}'.encode('utf-8')
+    expected = hmac.new(secret, signed, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, tag_hex.lower()):
+        return None
+    return {'principal': principal, 'plan': plan, 'exp': exp}
+
+
 def verify_for_slug(token: str, slug: str, secret: bytes, now: int = None):
     """verify() + confirm the token's principal owns `slug`. Returns the claims
     dict on success, else None."""

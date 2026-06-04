@@ -17,7 +17,7 @@
 import { transfer as icrcTransfer, TOKENS } from '$lib/api/icrc1.js';
 import { recordOrder, getTreasury, listMyOrders } from '$lib/api/store.js';
 import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
-import { fleetApiUrl, fleetApiAuthToken } from '$lib/api/fleetClient.js';
+import { fleetApiUrl } from '$lib/api/fleetClient.js';
 import { get } from 'svelte/store';
 import { prices } from '$lib/stores/prices.js';
 
@@ -140,19 +140,40 @@ export async function subscribeWithCard(planId, { successUrl, cancelUrl }) {
 }
 
 /** Tell the fleet to apply the user's plan to their container (idle policy +
- *  capability). Calls the fleet-api bridge, which runs `fleet-manager set-plan`.
- *  Best-effort: the fleet also reconciles from the ledger, so a missed call
- *  self-heals on next reconcile. */
-export async function notifyFleet(principalText, planId) {
+ *  capability) — proven by an ON-CHAIN plan token.
+ *
+ *  We mint the token from the cafresoai_keys canister, which reads the paid
+ *  order (`orderId`) from the unforgeable ledger, confirms it belongs to the
+ *  caller + is paid + within the period, and HMAC-signs the tier. The fleet
+ *  applies the plan only on a valid token, so the client can't self-assign.
+ *
+ *  ICP orders are marked paid on-chain immediately → this works right away.
+ *  Card orders (no ICP block) stay pending until confirmed on-chain, so the
+ *  mint throws and we return { ok:false }; the plan applies once the order is
+ *  paid (Stripe→confirmOrder) and the fleet reconciles.
+ *
+ *  @param {number|bigint} orderId  on-chain order id (from recordOrder)
+ *  @returns {Promise<{ok:boolean, plan?:string, reason?:string}>}
+ */
+export async function notifyFleet(orderId) {
+  if (orderId == null) return { ok: false, reason: 'no order id' };
   try {
+    const { getKeysActor } = await import('$lib/api/keysActor.js');
+    const actor = await getKeysActor();
+    let proof;
+    try {
+      proof = await actor.mintPlanToken(BigInt(orderId));
+    } catch (e) {
+      return { ok: false, reason: String(e?.message || e) };
+    }
     const base = (get(fleetApiUrl) || '').replace(/\/+$/, '');
-    const tok = get(fleetApiAuthToken);
-    const headers = { 'content-type': 'application/json' };
-    if (tok) headers['X-Fleet-Auth'] = tok;  // proves the call came from the shell
     const r = await fetch(base + '/fleet/set-plan', {
-      method: 'POST', headers,
-      body: JSON.stringify({ principal: principalText, plan: planId }),
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: proof.token }),
     });
-    return r.ok;
-  } catch (_e) { return false; }
+    return { ok: r.ok, plan: proof.plan };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
 }

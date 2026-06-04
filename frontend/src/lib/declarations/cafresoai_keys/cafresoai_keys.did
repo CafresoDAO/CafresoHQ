@@ -12,6 +12,17 @@ service : {
                           exp: int;
                           token: text;
                         });
+  /// Mint a PLAN proof for the caller, derived from a paid on-chain order.
+  /// Verifies (against the unforgeable order ledger) that `orderId` belongs to
+  /// the caller, is paid, contains a cafresohq-<plan> item, and is within the
+  /// subscription period — then HMAC-signs the plan tier. The fleet applies the
+  /// plan only on a valid token, so a user can't self-assign a tier they didn't
+  /// pay for. Token: v1plan.<principal>.<plan>.<exp>.<hmacHex>.
+  mintPlanToken: (int) -> (record {
+                             exp: int;
+                             plan: text;
+                             token: text;
+                           });
   /// Admin-only: set/rotate the HMAC secret shared with the gateway verifier.
   /// `secretHex` is lowercase/upper hex (>= 32 chars / 16 bytes recommended).
   setHqSessionSecret: (text) -> ();

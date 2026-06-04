@@ -144,6 +144,30 @@ actor CafresoaiKeys {
     // HQ_SESSION_SECRET env. Empty until configured → minting is disabled.
     stable var hqSecret : Blob = "";
 
+    // ── CafresoPages order ledger (for plan proofs) ──────────────────────────
+    // The IndexCanister holds the on-chain order ledger. getOrder is a public
+    // query; GlobalOrder.buyer is server-set + unforgeable, and an order only
+    // reaches status "paid" after the canister verifies the ICP block on-chain.
+    // We read it here to mint plan proofs the fleet trusts (see mintPlanToken).
+    type GlobalOrder = {
+      buyer : Text;
+      id : Int;
+      itemsJson : Text;
+      note : Text;
+      paidBlock : Int;
+      paymentMethod : Text;
+      shippingJson : Text;
+      status : Text;
+      timestampCreated : Int;
+      timestampUpdated : Int;
+      totalNanas : Int;
+    };
+    let orderIndex : actor {
+      getOrder : (Int) -> async (?GlobalOrder);
+    } = actor ("bek5d-2qaaa-aaaab-agqrq-cai");
+
+    let PLAN_PERIOD_NS : Int = 30 * 24 * 60 * 60 * 1_000_000_000; // 30 days
+
     func hexVal(c : Char) : ?Nat8 {
       let n = Char.toNat32(c);
       if (n >= 48 and n <= 57) { ?Nat8.fromNat(Nat32.toNat(n - 48)) }        // 0-9
@@ -206,6 +230,53 @@ actor CafresoaiKeys {
       let signed : Text = "v1." # Principal.toText(caller) # "." # Int.toText(exp);
       let tag = Sha256.hmac(Blob.toArray(hqSecret), Blob.toArray(Text.encodeUtf8(signed)));
       { token = signed # "." # Sha256.toHex(tag); exp = exp };
+    };
+
+    /// Mint a PLAN proof for the caller, derived from a paid on-chain order.
+    /// Verifies (against the unforgeable order ledger) that `orderId` belongs to
+    /// the caller, is paid, contains a cafresohq-<plan> item, and is within the
+    /// subscription period — then HMAC-signs the plan tier. The fleet applies the
+    /// plan only on a valid token, so a user can't self-assign a tier they didn't
+    /// pay for. Token: v1plan.<principal>.<plan>.<exp>.<hmacHex>.
+    public shared (msg) func mintPlanToken(orderId : Int) : async {
+      token : Text;
+      plan : Text;
+      exp : Int;
+    } {
+      let caller = msg.caller;
+      if (Principal.isAnonymous(caller)) {
+        throw Error.reject("sign in with Internet Identity to claim a plan");
+      };
+      if (hqSecret.size() == 0) {
+        throw Error.reject("HQ sessions are not configured yet");
+      };
+      let found = await orderIndex.getOrder(orderId);
+      let order = switch (found) {
+        case (null) { throw Error.reject("order not found") };
+        case (?o) { o };
+      };
+      if (order.buyer != Principal.toText(caller)) {
+        throw Error.reject("order does not belong to caller");
+      };
+      if (order.status != "paid") {
+        throw Error.reject("order is not paid");
+      };
+      // Derive the plan tier from the order's items (most specific first).
+      let items = order.itemsJson;
+      let plan : Text =
+        if (Text.contains(items, #text "cafresohq-always-on")) { "always-on" }
+        else if (Text.contains(items, #text "cafresohq-pro")) { "pro" }
+        else if (Text.contains(items, #text "cafresohq-free")) { "free" }
+        else { throw Error.reject("order has no CafresoHQ plan item") };
+      // Still within the subscription period?
+      if (Time.now() - order.timestampUpdated > PLAN_PERIOD_NS) {
+        throw Error.reject("subscription period has elapsed");
+      };
+      let nowSec : Int = Time.now() / 1_000_000_000;
+      let exp : Int = nowSec + 300; // 5 min — used immediately by the shell
+      let signed : Text = "v1plan." # Principal.toText(caller) # "." # plan # "." # Int.toText(exp);
+      let tag = Sha256.hmac(Blob.toArray(hqSecret), Blob.toArray(Text.encodeUtf8(signed)));
+      { token = signed # "." # Sha256.toHex(tag); plan = plan; exp = exp };
     };
 
     // ── Diagnostics ────────────────────────────────────────────────────────
