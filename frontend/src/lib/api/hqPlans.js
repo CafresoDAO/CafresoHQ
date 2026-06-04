@@ -23,6 +23,12 @@ import { prices } from '$lib/stores/prices.js';
 
 export const PLAN_PERIOD_DAYS = 30;
 
+// CafresoHQ subscription revenue goes to the admin principal (override the Pages
+// store treasury). Set via PUBLIC_HQ_TREASURY for a different env if needed.
+export const HQ_TREASURY =
+  (typeof import.meta !== 'undefined' && import.meta.env?.PUBLIC_HQ_TREASURY) ||
+  'rc62u-qypnw-bbkkp-d56wk-tnzaq-vwhi2-cqqay-q56hw-gsqbp-6wegl-jae';
+
 // The three SaaS tiers (see docs/SAAS_MVP_PLAN.md). usd is the list price;
 // slug is the catalog/order key the fleet maps to a plan. 'free' needs no
 // payment — it's the default a principal gets before any paid order.
@@ -80,7 +86,8 @@ export async function subscribeWithIcp(planId) {
   const plan = PLANS[planId];
   if (!plan || plan.usd <= 0) return { err: 'Pick a paid plan.' };
 
-  const treasury = await getTreasury();
+  // HQ revenue → admin principal (falls back to the Pages store treasury).
+  const treasury = HQ_TREASURY || await getTreasury();
   if (!treasury) return { err: 'Treasury not configured — contact support.' };
 
   const icpAmount = usdToIcp(plan.usd);
