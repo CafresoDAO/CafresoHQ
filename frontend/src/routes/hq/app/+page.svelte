@@ -4,6 +4,9 @@
   import { endpointUrl, endpointHealth, endpointReady, probeHealth } from '$lib/stores/endpoint.js';
   import { isAuthenticated } from '$lib/stores/auth.js';
   import {
+    ensureHqSession, hqSessionReady, hqSessionError, endpointNeedsSession
+  } from '$lib/api/hqSession.js';
+  import {
     vaultFiles,
     vaultUnlocked,
     unlockVault,
@@ -26,7 +29,19 @@
   $: isLocalhost = $endpointUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test($endpointUrl);
   $: mixedContent = shellIsHttps && endpointIsHttp && !isLocalhost;
 
-  $: fullscreenIframe = $isAuthenticated && $endpointReady && !mixedContent && !!appUrl;
+  // Containers reached through the gateway require an HQ session cookie before
+  // the iframe (and its vault/agent XHRs) can load — otherwise forward_auth 401s.
+  // Local/self-hosted endpoints have no verifier and skip this.
+  $: needsSession = endpointNeedsSession($endpointUrl);
+  $: sessionOk = !needsSession || $hqSessionReady;
+
+  // Mint + install the session as soon as we're signed in and the container is
+  // reachable. Re-runs if the endpoint changes.
+  $: if ($isAuthenticated && needsSession && $endpointReady && !$hqSessionReady) {
+    ensureHqSession().catch(() => {});
+  }
+
+  $: fullscreenIframe = $isAuthenticated && $endpointReady && !mixedContent && sessionOk && !!appUrl;
 
   let iframe;
   let loaded = false;
@@ -231,6 +246,26 @@
         <p class="pt-1 text-xs text-ink-400">
           Endpoint: <code class="font-mono">{$endpointUrl}</code>
         </p>
+      </div>
+    {:else if needsSession && !$hqSessionReady}
+      <div class="card space-y-3 p-6">
+        {#if $hqSessionError}
+          <div class="page-kicker">Session</div>
+          <h2 class="text-xl font-semibold">Couldn’t secure your session</h2>
+          <p class="text-sm leading-6 text-ink-300">{$hqSessionError}</p>
+          <div class="flex gap-2 pt-1">
+            <button class="btn-primary" on:click={() => ensureHqSession()}>Retry</button>
+            <a href="/hq/settings" class="btn-ghost">Settings</a>
+          </div>
+          <p class="text-xs text-ink-400">
+            Your container is access-controlled — only your signed-in identity can open it.
+          </p>
+        {:else}
+          <div class="flex items-center gap-3 text-sm text-ink-300">
+            <span class="glow-dot text-brand-400 animate-pulse"></span>
+            Securing your private session…
+          </div>
+        {/if}
       </div>
     {/if}
   </section>

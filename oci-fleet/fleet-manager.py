@@ -938,12 +938,24 @@ def _render_caddyfile(fleet: dict, primary_host: str) -> str:
             f'    handle_path /u/{slug}/* {{\n'
             f'        @approot path /\n'
             f'        rewrite @approot /hq.html\n'
-            f'        reverse_proxy {ip}:{port}\n'
+            f'        # /health stays open (liveness, no secrets). Everything else\n'
+            f'        # needs a valid HQ session cookie, checked by verifier.py.\n'
+            f'        @noauth path /health /healthz\n'
+            f'        handle @noauth {{\n'
+            f'            reverse_proxy {ip}:{port}\n'
+            f'        }}\n'
+            f'        handle {{\n'
+            f'            forward_auth localhost:9090 {{\n'
+            f'                uri /verify?slug={slug}\n'
+            f'                copy_headers X-Hq-Principal\n'
+            f'            }}\n'
+            f'            reverse_proxy {ip}:{port}\n'
+            f'        }}\n'
             f'    }}'
         )
         user_blocks.append(block)
-        # Same routes also exposed over plain :80 (for IP-based debugging)
-        user_blocks_http.append(block)
+        # NOTE: container routes are intentionally NOT exposed over plain :80 —
+        # the session cookie is Secure-only, so HTTP can't carry auth. HTTPS only.
 
     gateway_ip = (fleet.get('gateway') or {}).get('public_ip') or '<unset>'
     # Use simple placeholder replace — `.format()` clashes with Caddy's {...} blocks.

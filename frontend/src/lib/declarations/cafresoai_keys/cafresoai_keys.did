@@ -1,9 +1,20 @@
 service : {
   cycle_balance: () -> (nat) query;
+  /// Whether an HQ session secret has been configured (no secret leaked).
+  hqSessionConfigured: () -> (bool) query;
   key_config: () -> (record {
                        context: blob;
                        key_name: text;
                      }) query;
+  /// Mint a short-lived HQ session token for the authenticated caller. The
+  /// gateway verifier accepts it for the caller's container only.
+  mintHqSession: () -> (record {
+                          exp: int;
+                          token: text;
+                        });
+  /// Admin-only: set/rotate the HMAC secret shared with the gateway verifier.
+  /// `secretHex` is lowercase/upper hex (>= 32 chars / 16 bytes recommended).
+  setHqSessionSecret: (text) -> ();
   /// Returns the caller's vault master key, encrypted under their transport
   /// public key. Caller MUST be authenticated (no anonymous principals).
   /// Cycle cost is paid by this canister out of its own balance.

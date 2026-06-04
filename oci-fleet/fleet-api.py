@@ -39,6 +39,8 @@ import time
 import urllib.parse
 import uuid
 
+import hq_token  # shared HQ session-token verify (stdlib HMAC)
+
 # ── Config ───────────────────────────────────────────────────────────────────
 FLEET_DIR        = pathlib.Path(__file__).parent
 FLEET_FILE       = FLEET_DIR / 'fleet.json'
@@ -241,7 +243,48 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         return self._send_json(404, {'error': 'not found'})
 
+    def _install_session_cookie(self):
+        """POST /fleet/session  { token } → validate the on-chain-minted token
+        and set it as an HttpOnly, Secure, SameSite=None cookie scoped to this
+        gateway host. The embedded HQ iframe (served from this host) then sends
+        the cookie automatically, and Caddy's forward_auth → verifier.py gates
+        every /u/<slug>/* request with it. NOT gated by X-Fleet-Auth — the
+        browser can't hold that secret; the token itself is the credential."""
+        length = int(self.headers.get('Content-Length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        token = str(req.get('token', '')).strip()
+        secret = hq_token.secret_bytes()
+        if not secret:
+            return self._send_json(503, {'error': 'sessions not configured'})
+        claims = hq_token.verify(token, secret)
+        if not claims:
+            return self._send_json(401, {'error': 'invalid or expired token'})
+
+        max_age = max(0, int(claims['exp']) - int(time.time()))
+        body = json.dumps({'ok': True, 'exp': claims['exp']}).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        # Host-only cookie on the gateway; SameSite=None so the cross-site
+        # iframe (loaded by ai.cafreso.com) sends it; Secure + HttpOnly.
+        self.send_header('Set-Cookie',
+                         f'{hq_token.COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; '
+                         f'Secure; HttpOnly; SameSite=None')
+        self._cors()
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_POST(self):
+        # Session cookie install is token-gated, not secret-gated (browser call).
+        if self.path == '/fleet/session':
+            return self._install_session_cookie()
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
         if self.path not in ('/fleet/provision', '/fleet/set-plan'):
@@ -350,12 +393,29 @@ def _render_caddyfile(fleet: dict) -> str:
         slug = _principal_slug(principal)
         port = info.get('port', 8787)
         block = (
+            f'    handle /u/{slug} {{\n'
+            f'        redir * /u/{slug}/hq.html\n'
+            f'    }}\n'
             f'    handle_path /u/{slug}/* {{\n'
-            f'        reverse_proxy {ip}:{port}\n'
+            f'        @approot path /\n'
+            f'        rewrite @approot /hq.html\n'
+            f'        # /health stays open (liveness). Everything else needs a\n'
+            f'        # valid HQ session cookie, checked by verifier.py (:9090).\n'
+            f'        @noauth path /health /healthz\n'
+            f'        handle @noauth {{\n'
+            f'            reverse_proxy {ip}:{port}\n'
+            f'        }}\n'
+            f'        handle {{\n'
+            f'            forward_auth localhost:9090 {{\n'
+            f'                uri /verify?slug={slug}\n'
+            f'                copy_headers X-Hq-Principal\n'
+            f'            }}\n'
+            f'            reverse_proxy {ip}:{port}\n'
+            f'        }}\n'
             f'    }}'
         )
         user_blocks.append(block)
-        user_blocks_http.append(block)
+        # Container routes are HTTPS-only (Secure cookie); not exposed on :80.
 
     gw           = fleet.get('gateway') or {}
     primary_host = gw.get('public_hostname') or 'hq.cafreso.com'

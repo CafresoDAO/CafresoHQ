@@ -1,8 +1,25 @@
 # Per-Container Authentication — Security Design
 
-> **Status:** design (beta testing; containers currently OPEN by design while in beta).
+> **Status:** IMPLEMENTED (canister-minted token), pending go-live deploy.
+> Code is merged + crypto-verified; flip it on with `oci-fleet/DEPLOY_AUTH.md`.
 > **Goal:** gate every `https://hq.cafreso.com/u/<slug>/*` request so only the
 > Internet Identity that owns the container can reach it.
+>
+> **Chosen mechanism (resolves §3): canister-minted HMAC token.** Ownership is
+> proven natively by the IC — the signed-in user calls `mintHqSession()` on the
+> `cafresoai_keys` canister, which (since `msg.caller` is the unforgeable II
+> principal) HMAC-signs `v1.<principal>.<exp>` with a secret shared only with the
+> gateway. The shell installs that token as an `HttpOnly; Secure; SameSite=None`
+> cookie via `POST /fleet/session`; Caddy `forward_auth` → `verifier.py` (:9090)
+> re-checks the HMAC + `exp` and that `sha256(principal)[:16] == slug` before
+> proxying. No Node sidecar, no secret in the browser, no delegation-chain
+> verification needed on the server. Crypto verified against FIPS/RFC vectors.
+>
+> Components shipped: `src/cafresoai_keys/Sha256.mo` (vendored SHA-256/HMAC),
+> `mintHqSession`/`setHqSessionSecret` in the keys canister, `oci-fleet/hq_token.py`,
+> `oci-fleet/verifier.py` (+`verifier.service`), `POST /fleet/session` in fleet-api,
+> `forward_auth` in both Caddy renderers, `frontend/src/lib/api/hqSession.js`
+> wired into the HQ app page.
 
 ---
 
