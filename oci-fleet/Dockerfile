@@ -70,6 +70,9 @@ COPY tweaks-panel.jsx         ./tweaks-panel.jsx
 COPY mock-data.jsx            ./mock-data.jsx
 COPY sw.js                    ./sw.js
 COPY manifest.webmanifest     ./manifest.webmanifest
+# Static images (logo marks, favicons, PWA icons, office sprites). Referenced
+# via RELATIVE paths so they resolve under the gateway prefix /u/<slug>/assets/.
+COPY assets/                  ./assets/
 
 # ── Container entrypoint + Hermes bootstrap ──────────────────────────────────
 COPY oci-fleet/entrypoint.sh      ./entrypoint.sh

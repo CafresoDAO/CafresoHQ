@@ -584,12 +584,14 @@ function EcosystemNav() {
   }, [open]);
   return (
     <div className="ecosystem-nav">
-      <a className="cf-brand" href="/hq.html" aria-label="Cafreso HQ home">
+      <a className="cf-brand" href="hq.html" aria-label="Cafreso HQ home">
         {/* Two cf-mark variants — only one shows at a time via body.night
             class, so the coffee-on-light logo flips to white-on-dark
-            without a JS theme prop subscription. */}
-        <img src="/assets/cf-mark-coffee.png" alt="Cafreso" className="cf-mark cf-mark--light"/>
-        <img src="/assets/cf-mark-white.png"  alt=""        className="cf-mark cf-mark--dark" aria-hidden="true"/>
+            without a JS theme prop subscription.
+            RELATIVE paths so they resolve under the gateway prefix
+            (/u/<slug>/assets/…) as well as locally (/assets/…). */}
+        <img src="assets/cf-mark-coffee.png" alt="Cafreso" className="cf-mark cf-mark--light"/>
+        <img src="assets/cf-mark-white.png"  alt=""        className="cf-mark cf-mark--dark" aria-hidden="true"/>
         <span className="cf-suffix" aria-label="HQ"><i>H</i><i>Q</i></span>
       </a>
       <div className="cf-apps-wrap" ref={btnRef}>
