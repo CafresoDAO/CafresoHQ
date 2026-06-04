@@ -243,6 +243,22 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
     };
   }, [open]);
 
+  /* One-time repair: a persisted geometry bigger than the viewport (from a past
+     resize, a smaller screen, or a corrupted value) makes the chat fill the
+     whole screen. Reset it to the compact bottom-right default so the window is
+     a sane floating panel again. Runs once on mount. */
+  React.useEffect(() => {
+    if (isTouch) return;
+    const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+    const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+    const bad = !geometry || !(geometry.w > 0) || !(geometry.h > 0)
+      || geometry.w > VW - 12 || geometry.h > VH - 12;
+    if (bad) {
+      const w = Math.min(400, VW - 24), h = Math.min(460, VH - 24);
+      setGeometry({ x: Math.max(8, VW - w - 24), y: Math.max(8, VH - h - 80), w, h });
+    }
+  }, []);
+
   /* Cursor lookup keyed by the 4-edge subset. Mirrors the standard CSS
      cursors so the arrow shape matches what the user is dragging. */
   const _CURSORS = {
@@ -326,7 +342,19 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
         position: 'fixed',
         ...(isTouch
           ? { left: 0, top: 0, right: 0, bottom: 0, width: '100%', height: '100%' }
-          : { left: geometry.x + 'px', top: geometry.y + 'px', width: geometry.w + 'px', height: geometry.h + 'px' }),
+          : (() => {
+              // Clamp the (possibly stale/oversized) saved geometry to the
+              // current viewport so the window can never exceed the screen —
+              // fixes a persisted geometry larger than the viewport rendering
+              // the chat near-fullscreen, and keeps it on-screen after resizes.
+              const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+              const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+              const w = Math.max(280, Math.min(geometry.w, VW - 16));
+              const h = Math.max(220, Math.min(geometry.h, VH - 16));
+              const x = Math.max(8, Math.min(geometry.x, VW - w - 8));
+              const y = Math.max(8, Math.min(geometry.y, VH - h - 8));
+              return { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' };
+            })()),
         zIndex: 'var(--z-window)',
         background: 'var(--paper)',
         border: '2px solid var(--ink)',
