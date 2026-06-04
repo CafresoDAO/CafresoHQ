@@ -1114,6 +1114,31 @@ def cmd_prune(args, fleet: dict):
 
 # Per-plan idle-stop windows (minutes). always-on is exempt (premium tier).
 PLAN_IDLE_MINUTES = {'free': 20, 'pro': 60, 'always-on': None}
+PLAN_PERIOD_DAYS = 30   # subscription length; mirrors hqPlans.js + the canister
+
+
+def _container_addr(info: dict):
+    """Address ops use to reach a container's serve.py. Prefers the private VCN
+    IP — the public :8787 is firewalled to the gateway subnet (Phase B), so these
+    calls must run ON the gateway and target the private IP."""
+    return info.get('private_ip') or info.get('ip')
+
+
+def _push_capability(info: dict, cap: str) -> bool:
+    """Best-effort push of capability=lite|full to a live container."""
+    addr = _container_addr(info)
+    if not addr or info.get('status') != 'ACTIVE':
+        return False
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(
+            f'http://{addr}:8787/hermes/capability',
+            data=_json.dumps({'mode': cap}).encode(),
+            headers={'Content-Type': 'application/json'}, method='POST')
+        urllib.request.urlopen(req, timeout=8)
+        return True
+    except Exception:
+        return False
 
 
 def cmd_reap_idle(args, fleet: dict):
@@ -1141,9 +1166,10 @@ def cmd_reap_idle(args, fleet: dict):
             continue
         window = win_min * 60
         idle = None
+        addr = _container_addr(info)
         try:
             import urllib.request, json as _json
-            with urllib.request.urlopen(f'http://{ip}:8787/idle', timeout=6) as r:
+            with urllib.request.urlopen(f'http://{addr}:8787/idle', timeout=6) as r:
                 idle = _json.loads(r.read()).get('idle_seconds')
         except Exception:
             # can't reach /idle (old image or down) — skip, don't risk stopping a live one
@@ -1179,22 +1205,60 @@ def cmd_set_plan(args, fleet: dict):
     if plan not in PLAN_IDLE_MINUTES:
         print(err(f"plan must be one of: {', '.join(PLAN_IDLE_MINUTES)}")); sys.exit(1)
     info['plan'] = plan
+    # Track when the plan was set + when a PAID plan lapses, so `reap-expired`
+    # can auto-downgrade subscriptions that weren't renewed within the period.
+    now = int(time.time())
+    info['plan_set_at'] = now
+    if plan == 'free':
+        info.pop('plan_expires_at', None)
+    else:
+        info['plan_expires_at'] = now + PLAN_PERIOD_DAYS * 86400
     save_fleet(fleet)
     cap = 'lite' if plan == 'free' else 'full'
-    print(ok(f'{info["display_name"]} → plan={plan} (idle={PLAN_IDLE_MINUTES[plan]}m, capability={cap})'))
+    exp_note = ''
+    if info.get('plan_expires_at'):
+        exp_note = f", expires {datetime.fromtimestamp(info['plan_expires_at'], timezone.utc):%Y-%m-%d}"
+    print(ok(f'{info["display_name"]} → plan={plan} (idle={PLAN_IDLE_MINUTES[plan]}m, capability={cap}{exp_note})'))
     # Best-effort: push the matching capability to the live container.
-    ip = info.get('ip')
-    if ip and info.get('status') == 'ACTIVE':
-        try:
-            import urllib.request, json as _json
-            req = urllib.request.Request(
-                f'http://{ip}:8787/hermes/capability',
-                data=_json.dumps({'mode': cap}).encode(),
-                headers={'Content-Type': 'application/json'}, method='POST')
-            urllib.request.urlopen(req, timeout=8)
-            print(dim(f'  pushed capability={cap} to container'))
-        except Exception as e:
-            print(dim(f'  (capability push skipped: {str(e)[:50]})'))
+    if _push_capability(info, cap):
+        print(dim(f'  pushed capability={cap} to container'))
+    else:
+        print(dim('  (capability push skipped — container unreachable)'))
+
+
+def cmd_reap_expired(args, fleet: dict):
+    """Downgrade PAID plans whose subscription period elapsed without renewal
+    back to free (idle-stop 20m + capability lite). Runs from the gateway cron;
+    needs no OCI. A renewal (set-plan via a fresh paid order) pushes the expiry
+    out again, so this only catches genuinely lapsed subs. --dry-run to preview."""
+    now = int(time.time())
+    downgraded = 0
+    for principal, info in fleet.get('users', {}).items():
+        plan = (info.get('plan') or 'free').lower()
+        if plan == 'free':
+            continue
+        exp = info.get('plan_expires_at')
+        if not exp or exp > now:
+            days = int((exp - now) / 86400) if exp else None
+            print(dim(f'  {info.get("display_name", principal[:12])}: plan={plan} '
+                      f'{f"({days}d left)" if days is not None else "(no expiry set)"}'))
+            continue
+        if getattr(args, 'dry_run', False):
+            print(warn(f'  would downgrade {info.get("display_name", principal[:12])} '
+                       f'(plan={plan}, lapsed {int((now-exp)/86400)}d ago) → free'))
+            continue
+        info['plan'] = 'free'
+        info['plan_set_at'] = now
+        info.pop('plan_expires_at', None)
+        downgraded += 1
+        pushed = _push_capability(info, 'lite')
+        print(ok(f'  downgraded {info.get("display_name", principal[:12])} → free'
+                 f'{" (capability=lite pushed)" if pushed else ""}'))
+    if downgraded and not getattr(args, 'dry_run', False):
+        save_fleet(fleet)
+        print(ok(f'\nDowngraded {downgraded} lapsed subscription(s).'))
+    elif not downgraded:
+        print(dim('No lapsed subscriptions.'))
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
@@ -1221,6 +1285,8 @@ def main():
     reap_p = sub.add_parser('reap-idle', help='Stop containers idle > N min (free the pool, pause billing)')
     reap_p.add_argument('--minutes', type=int, default=30, help='Idle threshold in minutes (default 30)')
     reap_p.add_argument('--dry-run', action='store_true', help='Preview without stopping')
+    rexp_p = sub.add_parser('reap-expired', help='Downgrade lapsed paid plans → free (renewal/expiry)')
+    rexp_p.add_argument('--dry-run', action='store_true', help='Preview without downgrading')
 
     def add_principal(p):
         p.add_argument('principal', help='ICP Internet Identity principal')
@@ -1283,6 +1349,7 @@ def main():
         'capacity':    cmd_capacity,
         'prune':       cmd_prune,
         'reap-idle':   cmd_reap_idle,
+        'reap-expired': cmd_reap_expired,
         'set-plan':    cmd_set_plan,
     }
 
