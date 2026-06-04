@@ -3,10 +3,15 @@
   import { get } from 'svelte/store';
   import {
     endpointUrl,
+    endpointReady,
     probeHealth,
     detectLocalCompanion,
     setEndpoint
   } from '$lib/stores/endpoint.js';
+  import { isAuthenticated } from '$lib/stores/auth.js';
+  import {
+    ensureHqSession, endpointNeedsSession, hqSessionReady
+  } from '$lib/api/hqSession.js';
   import Header from '$lib/components/Header.svelte';
 
   let { children } = $props();
@@ -19,6 +24,16 @@
     }
     if (get(endpointUrl)) {
       probeHealth().catch(() => {});
+    }
+  });
+
+  // Install the container session cookie for ANY /hq page that talks to the
+  // gateway (Chat, Vault, Search, App) — so they work even when opened directly,
+  // not only after visiting the HQ app page.
+  $effect(() => {
+    if ($isAuthenticated && $endpointReady
+        && endpointNeedsSession($endpointUrl) && !$hqSessionReady) {
+      ensureHqSession().catch(() => {});
     }
   });
 </script>
