@@ -404,6 +404,30 @@ async function hermesSetOpenRouterKey(key) {
   }
 }
 
+/* Agent fleet status + on-demand install. The HQ ships with Hermes (default,
+   always installed); Claude Code and Codex can be added on demand via `npm i -g`,
+   which the backend runs synchronously — so agentsInstall() can take 30-60 s. */
+async function agentsStatus() {
+  try {
+    const r = await fetch(_API_BASE + '/agents');
+    if (!r.ok) return { agents: [] };
+    return await r.json();
+  } catch (_e) { return { agents: [] }; }
+}
+
+async function agentsInstall(agent) {
+  const r = await fetch(_API_BASE + '/agents/install', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) {
+    throw new Error(d.error || `install ${r.status}`);
+  }
+  return d;
+}
+
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
    and translates its stream-json output into the OpenAI-compat SSE shape,
    so we can reuse parseSSE here. */
@@ -1410,6 +1434,7 @@ window.OpenclawClient = {
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
   hermesSetOpenRouterKey,
+  agentsStatus, agentsInstall,
   openclawStatus, codexStatus, toolExec, cloneRepo,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

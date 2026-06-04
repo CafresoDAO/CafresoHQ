@@ -493,10 +493,11 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
     >
           <div className="settings-tabs" style={{display:'flex',gap:4,marginBottom:14,flexWrap:'wrap'}}>
             {[
-              ['agents', '👥', 'PER-AGENT'],
-              ['global', '🎛', 'GLOBAL'],
-              ['media',  '🎨', 'MEDIA'],
-              ['keys',   '🔌', 'CONNECTIONS'],
+              ['agents',  '👥', 'PER-AGENT'],
+              ['agentcli','🤖', 'AGENTS'],
+              ['global',  '🎛', 'GLOBAL'],
+              ['media',   '🎨', 'MEDIA'],
+              ['keys',    '🔌', 'CONNECTIONS'],
             ].map(([t, ico, label]) => (
               <button key={t} className={`px-btn ${tab===t?'primary':'secondary'}`}
                 style={{fontSize:9, display:'flex', alignItems:'center', gap:6, padding:'8px 12px', minHeight:36}}
@@ -623,6 +624,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
+          {tab === 'agentcli' && <AgentClisTab />}
           {tab === 'media' && <MediaTab />}
           {tab === 'keys' && <ApiTab />}
     </Modal>
@@ -823,6 +825,140 @@ function MediaTab() {
             <> <strong>Both providers are disabled</strong> — Pixel and Reel will tell you to configure one here.</>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Agents tab — the in-container CLI agent fleet (distinct from the per-agent
+   sub-agent roster). The HQ ships with Hermes (default, always installed);
+   Claude Code and Codex install on demand via the backend's `npm i -g`, which
+   runs synchronously and can take 30-60 s. Backed by GET /agents and
+   POST /agents/install (claude-client: agentsStatus / agentsInstall). */
+function AgentClisTab() {
+  const C = window.OpenclawClient;
+  const [agents, setAgents] = useStateM(null);   // null = loading
+  const [loadErr, setLoadErr] = useStateM(null);
+  const [busyId, setBusyId] = useStateM(null);    // agent id currently installing
+  const [rowErr, setRowErr] = useStateM({});      // { [id]: errorString }
+
+  const AGENT_ICON = { hermes: '☼', 'claude-code': '✦', codex: '◈' };
+
+  const load = async () => {
+    setLoadErr(null);
+    try {
+      const r = await C.agentsStatus();
+      setAgents(r.agents || []);
+    } catch (e) {
+      setAgents([]);
+      setLoadErr(e.message || String(e));
+    }
+  };
+
+  useEffectM(() => { load(); }, []);
+
+  const install = async (id) => {
+    if (busyId) return;
+    setBusyId(id);
+    setRowErr(prev => { const n = { ...prev }; delete n[id]; return n; });
+    try {
+      const d = await C.agentsInstall(id);
+      // Optimistically mark this row installed with the returned version, then
+      // refresh from the backend so installed/removable/etc. stay authoritative.
+      setAgents(prev => (prev || []).map(a =>
+        a.id === id ? { ...a, installed: true, version: d.version || a.version } : a));
+      load();
+    } catch (e) {
+      setRowErr(prev => ({ ...prev, [id]: e.message || String(e) }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="control-board">
+      <div className="cb-panel" style={{ gridColumn: '1 / -1' }}>
+        <h4>🤖 AGENTS</h4>
+        <div className="sub" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+          Your HQ ships with <strong>Hermes</strong>. Add Claude Code or Codex when you need them.
+        </div>
+
+        {agents === null && (
+          <div className="muted" style={{ padding: '8px 2px' }}>Loading agents…</div>
+        )}
+
+        {loadErr && (
+          <div className="row-knob" style={{ alignItems: 'center' }}>
+            <div><div className="lbl" style={{ color: 'var(--error)' }}>⚠ Couldn't load agents</div>
+              <div className="sub">{loadErr}</div></div>
+            <button className="px-btn secondary" style={{ fontSize: 9 }} onClick={load}>RETRY</button>
+          </div>
+        )}
+
+        {agents && agents.length > 0 && (
+          <div className="stack">
+            {agents.map(a => {
+              const installing = busyId === a.id;
+              const err = rowErr[a.id];
+              return (
+                <div key={a.id} className="row-knob" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+                    <span style={{ fontSize: 18, color: '#7c6bff', lineHeight: 1.2 }}>
+                      {AGENT_ICON[a.id] || '◆'}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="lbl" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {a.label || a.id}
+                        {a.default && (
+                          <span style={{
+                            fontSize: 8, fontWeight: 700, letterSpacing: '0.04em',
+                            color: '#7c6bff', background: 'rgba(124,107,255,0.16)',
+                            borderRadius: 4, padding: '2px 6px',
+                          }}>DEFAULT</span>
+                        )}
+                      </div>
+                      <div className="sub" style={{ maxWidth: 320 }}>{a.desc || ''}</div>
+                      {err && (
+                        <div className="sub" style={{ color: 'var(--error)', marginTop: 4 }}>⚠ {err}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {a.installed ? (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, letterSpacing: '0.03em',
+                        color: 'var(--live)', background: 'rgba(111,168,111,0.14)',
+                        border: '1px solid var(--live)', borderRadius: 5,
+                        padding: '4px 9px', whiteSpace: 'nowrap',
+                      }}>
+                        {a.default ? 'Default · Installed' : `Installed${a.version ? ' · ' + a.version : ''}`}
+                      </span>
+                    ) : installing ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button className="px-btn primary is-loading" disabled style={{ fontSize: 9, minWidth: 76 }}>
+                          INSTALLING
+                        </button>
+                        <span className="tiny" style={{ maxWidth: 150, lineHeight: 1.3 }}>
+                          Installing… this can take up to a minute.
+                        </span>
+                      </div>
+                    ) : (
+                      <button className="px-btn primary" style={{ fontSize: 9 }}
+                        disabled={!!busyId} onClick={() => install(a.id)}>
+                        {err ? 'RETRY' : 'INSTALL'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {agents && agents.length === 0 && !loadErr && (
+          <div className="muted" style={{ padding: '8px 2px' }}>No agents reported.</div>
+        )}
       </div>
     </div>
   );

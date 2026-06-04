@@ -4879,7 +4879,12 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const pid = project?.id || project?.path || '';
   const sKey = (suffix) => pid && sessionId ? `openclaw_terminal:${suffix}:${pid}:${sessionId}` : null;
 
-  const [termMode,  setTermMode]  = useStoredV(sKey('mode'),  'chat');  // 'chat' | 'spawn'
+  /* Hermes is an interactive PTY agent (`hermes chat`) — there's no --print
+     chat-stream path for it, so it always runs in the embedded terminal. */
+  const isHermes = cli === 'hermes';
+  const [termModeRaw, setTermMode] = useStoredV(sKey('mode'),  isHermes ? 'spawn' : 'chat');  // 'chat' | 'spawn'
+  // Hermes has no chat-stream mode — always render the embedded PTY.
+  const termMode = isHermes ? 'spawn' : termModeRaw;
   const [msgs,      setMsgs]      = useStoredV(sKey('msgs'),  []);
   const [input,     setInput]     = useSV('');
   const [busy,      setBusy]      = useSV(false);
@@ -4982,7 +4987,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     setSpawnMsg(''); setErr(null);
     try {
       await oc.spawnTerminal({ cli, cwd: project.path });
-      setSpawnMsg(`${cli === 'claude' ? 'Claude Code' : 'Codex'} launched in a new terminal window.`);
+      setSpawnMsg(`${cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude Code' : 'Codex'} launched in a new terminal window.`);
     } catch (e) {
       setErr(e.message || String(e));
     }
@@ -5017,7 +5022,10 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         borderBottom: '1px solid var(--rule)', background: 'var(--paper-2)',
         minHeight: 44,
       }}>
-        {[['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])].map(([mode, ico, label]) => (
+        {(isHermes
+            ? [['spawn', '☼', 'Terminal']]
+            : [['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])]
+        ).map(([mode, ico, label]) => (
           <button key={mode} onClick={() => { setTermMode(mode); setErr(null); setSpawnMsg(''); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
@@ -5030,7 +5038,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             }}
           ><span>{ico}</span><span>{label}</span></button>
         ))}
-        {spawnSupported === false && (
+        {!isHermes && spawnSupported === false && (
           <span style={{ fontSize: 9, color: 'var(--ink-3)', paddingLeft: 10 }}>chat only</span>
         )}
         <span style={{ flex: 1 }} />
@@ -5351,7 +5359,7 @@ function ProjectTerminal({ project, visible }) {
 
   const [sessions, setSessions] = useStoredV(sessKey, () => {
     const id = `s${++_sessionCounter}`;
-    return [{ id, cli: 'claude', sessionId: _uuid() }];
+    return [{ id, cli: 'hermes', sessionId: _uuid() }];
   });
   const [activeId, setActiveId] = useStoredV(activeKey, () => sessions[0]?.id);
 
@@ -5360,7 +5368,7 @@ function ProjectTerminal({ project, visible }) {
   React.useEffect(() => {
     if (sessions.length === 0) {
       const id = `s${++_sessionCounter}`;
-      const fresh = [{ id, cli: 'claude', sessionId: _uuid() }];
+      const fresh = [{ id, cli: 'hermes', sessionId: _uuid() }];
       setSessions(fresh);
       setActiveId(id);
       return;
@@ -5425,11 +5433,14 @@ function ProjectTerminal({ project, visible }) {
     });
   };
 
+  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : 'Codex';
+  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : '◈';
+
   const getLabel = (session) => {
-    const cliName = session.cli === 'claude' ? 'Claude' : 'Codex';
+    const name = cliName(session.cli);
     const same = sessions.filter(s => s.cli === session.cli);
-    if (same.length <= 1) return cliName;
-    return `${cliName} #${same.indexOf(session) + 1}`;
+    if (same.length <= 1) return name;
+    return `${name} #${same.indexOf(session) + 1}`;
   };
 
   return (
@@ -5444,7 +5455,7 @@ function ProjectTerminal({ project, visible }) {
       }}>
         {sessions.map(s => {
           const active = s.id === activeId;
-          const icon = s.cli === 'claude' ? '✦' : '◈';
+          const icon = cliIcon(s.cli);
           return (
             <div key={s.id}
               onClick={() => setActiveId(s.id)}
@@ -5510,7 +5521,7 @@ function ProjectTerminal({ project, visible }) {
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
             }}>
-              {[['claude', '✦', 'Claude Code'], ['codex', '◈', 'Codex CLI']].map(([c, ico, label]) => (
+              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false]].map(([c, ico, label, isDefault]) => (
                 <div key={c}
                   onClick={() => addSession(c)}
                   style={{
@@ -5524,6 +5535,13 @@ function ProjectTerminal({ project, visible }) {
                 >
                   <span style={{ fontSize: 15, color: '#7c6bff' }}>{ico}</span>
                   <span>{label}</span>
+                  {isDefault && (
+                    <span style={{
+                      marginLeft: 'auto', fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                      color: '#7c6bff', background: 'rgba(124,107,255,0.16)',
+                      borderRadius: 4, padding: '2px 6px',
+                    }}>DEFAULT</span>
+                  )}
                 </div>
               ))}
             </div>
