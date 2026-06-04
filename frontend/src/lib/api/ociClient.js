@@ -40,6 +40,7 @@ export async function ociGet(path, { timeoutMs = 15000 } = {}) {
     const r = await fetch(_baseUrl() + path, {
       method:  'GET',
       headers: _baseHeaders(),
+      credentials: 'include',   // send the hq.cafreso.com session cookie cross-origin
       signal:  ctrl.signal
     });
     const text = await r.text();
@@ -60,6 +61,7 @@ export async function ociPost(path, body, { timeoutMs = 60000 } = {}) {
       method: 'POST',
       headers: { ..._baseHeaders(), 'Content-Type': 'application/json' },
       body:    JSON.stringify(body ?? {}),
+      credentials: 'include',   // send the hq.cafreso.com session cookie cross-origin
       signal:  ctrl.signal
     });
     const text = await r.text();

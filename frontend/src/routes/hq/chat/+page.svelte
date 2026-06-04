@@ -15,19 +15,18 @@
     input = '';
     sending = true;
     try {
+      // Route through the container's Hermes agent (the deployed default) —
+      // OpenAI-compatible /hermes/v1 proxy. serve.py injects the API key.
       const body = {
-        model: 'claude-sonnet-4-5',
-        max_tokens: 1024,
+        model: 'hermes-agent',
+        stream: false,
         messages: messages.filter((m) => m.role !== 'error').map((m) => ({
           role: m.role,
           content: m.content
         }))
       };
-      const resp = await ociPost('/api/anthropic/v1/messages', body, { timeoutMs: 60000 });
-      const reply = (resp?.content || [])
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n') || '(no text in response)';
+      const resp = await ociPost('/hermes/v1/chat/completions', body, { timeoutMs: 120000 });
+      const reply = resp?.choices?.[0]?.message?.content || '(no text in response)';
       messages = [...messages, { role: 'assistant', content: reply }];
     } catch (err) {
       const detail = err instanceof EndpointError && err.body
@@ -52,7 +51,7 @@
     <div class="page-kicker">CafresoAI / Chat</div>
     <h1 class="page-title mt-4">Chat<span class="text-brand-500">.</span></h1>
     <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
-      Messages route through your private container's Anthropic proxy at
+      Messages route through your private container's Hermes agent at
       <code class="font-mono text-brand-600 dark:text-brand-300">{$endpointUrl || '(no endpoint)'}</code>.
     </p>
   </header>
@@ -74,7 +73,7 @@
           <div class="grid min-h-[18rem] place-items-center text-center text-sm text-ink-400">
             <div>
               <div class="page-kicker">Ready</div>
-              <p class="mt-2">No messages yet. Say hi to Claude.</p>
+              <p class="mt-2">No messages yet. Say hi to Hermes.</p>
             </div>
           </div>
         {/if}
@@ -97,7 +96,7 @@
         {#if sending}
           <div class="flex justify-start">
             <div class="rounded-2xl border border-ink-600/60 bg-ink-800/55 px-4 py-3 text-sm text-ink-300">
-              <span class="animate-pulse">Claude is thinking...</span>
+              <span class="animate-pulse">Hermes is thinking...</span>
             </div>
           </div>
         {/if}
