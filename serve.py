@@ -1742,6 +1742,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._openclaw_status()
         if self.path == '/codex/status':
             return self._codex_status()
+        if self.path == '/agents':
+            return self._agents_status()
         if self.path == '/terminal/status':
             return self._terminal_status()
         if self.path == '/terminal/nonce':
@@ -1779,6 +1781,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
             return self._vault('POST')
+        if self.path == '/agents/install':
+            return self._agents_install()
         if self.path == '/claudecode/configure':
             return self._claudecode_configure()
         if self.path == '/codex/configure':
@@ -2315,6 +2319,79 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'allowedDirs': dirs_ok,
             'badDirs': dirs_bad,
             'allowedTools': list(_openclaw_allowed_tools),
+        })
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Agents — Hermes ships built-in (default runtime); Claude Code + Codex are
+    # optional and installed on-demand so the image stays lean and provisioning
+    # is fast. Users add the agents they want from HQ Settings.
+    # ──────────────────────────────────────────────────────────────────────
+    def _agent_version(self, bin_, *args):
+        if not bin_:
+            return ''
+        try:
+            r = subprocess.run([bin_, *args], capture_output=True, text=True, timeout=10)
+            out = (r.stdout or r.stderr or '').strip()
+            return out.splitlines()[0][:80] if out else ''
+        except Exception:
+            return ''
+
+    def _agents_status(self):
+        """GET /agents — which agents are available in this container."""
+        hermes_bin = shutil.which('hermes')
+        claude_bin = self._claudecode_resolve()
+        codex_bin  = self._codex_resolve()
+        return self._send_json(200, {
+            'agents': [
+                {'id': 'hermes', 'label': 'Hermes Agent', 'installed': bool(hermes_bin),
+                 'default': True, 'removable': False,
+                 'version': self._agent_version(hermes_bin, '--version'),
+                 'desc': 'Nous Research agent — your container’s default runtime.'},
+                {'id': 'claude-code', 'label': 'Claude Code', 'installed': bool(claude_bin),
+                 'default': False, 'removable': True,
+                 'version': self._agent_version(claude_bin, '--version'),
+                 'desc': 'Anthropic’s coding agent CLI (BYO key).'},
+                {'id': 'codex', 'label': 'Codex', 'installed': bool(codex_bin),
+                 'default': False, 'removable': True,
+                 'version': self._agent_version(codex_bin, '--version'),
+                 'desc': 'OpenAI’s coding agent CLI (BYO key).'},
+            ],
+        })
+
+    def _agents_install(self):
+        """POST /agents/install { agent: 'claude-code'|'codex' } — install an
+        optional agent CLI via npm. Fixed allowlist (no arbitrary packages).
+        Synchronous; npm can take ~30-60s. Returns { ok, agent, version }."""
+        AGENT_NPM = {
+            'claude-code': '@anthropic-ai/claude-code@latest',
+            'codex':       '@openai/codex@latest',
+        }
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            body = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        agent = str(body.get('agent', '')).strip().lower()
+        pkg = AGENT_NPM.get(agent)
+        if not pkg:
+            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
+        npm = shutil.which('npm')
+        if not npm:
+            return self._send_json(503, {'error': 'npm not available in this container'})
+        try:
+            proc = subprocess.run([npm, 'install', '-g', pkg],
+                                  capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            return self._send_json(504, {'error': 'install timed out (>300s)'})
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        if proc.returncode != 0:
+            return self._send_json(500, {
+                'error': (proc.stderr or proc.stdout or 'npm install failed')[-600:]})
+        bin_ = (self._claudecode_resolve() if agent == 'claude-code' else self._codex_resolve())
+        return self._send_json(200, {
+            'ok': True, 'agent': agent, 'installed': bool(bin_),
+            'version': self._agent_version(bin_, '--version'),
         })
 
     # ──────────────────────────────────────────────────────────────────────
@@ -3306,16 +3383,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cols = max(10, min(500, int((params.get('cols') or ['120'])[0])))
         rows = max(5,  min(200, int((params.get('rows') or ['30'] )[0])))
 
-        if cli not in ('claude', 'codex'):
-            return self._send_json(400, {'error': 'cli must be claude or codex'})
+        if cli not in ('claude', 'codex', 'hermes'):
+            return self._send_json(400, {'error': 'cli must be claude, codex, or hermes'})
         if not cwd:
             return self._send_json(400, {'error': 'cwd required'})
         cwd_path = pathlib.Path(cwd).resolve()
         if not cwd_path.is_dir():
             return self._send_json(400, {'error': f'directory not found: {cwd}'})
-        bin_ = (self._claudecode_resolve() if cli == 'claude' else self._codex_resolve())
+        if cli == 'claude':
+            bin_ = self._claudecode_resolve()
+        elif cli == 'codex':
+            bin_ = self._codex_resolve()
+        else:  # hermes — the default agent, always present in the image
+            bin_ = shutil.which('hermes')
         if not bin_:
             return self._send_json(503, {'error': f'{cli} CLI not found'})
+        # Hermes opens its interactive agent via the `chat` subcommand; the
+        # workspace cwd scopes the agent to that project. claude/codex just exec.
+        cli_extra_args = ['chat'] if cli == 'hermes' else []
 
         # ── Security: Origin + nonce checks ────────────────────────────────
         # Origin validation — reject cross-origin WS initiations.
@@ -3485,7 +3570,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     _PTY_SESSIONS[session_id] = sess
 
             if _is_win:
-                spawn_argv = ['cmd.exe', '/c', bin_ or cli]
+                spawn_argv = ['cmd.exe', '/c', bin_ or cli] + cli_extra_args
                 try:
                     pty_proc = _winpty.PtyProcess.spawn(
                         spawn_argv, cwd=str(cwd_path), env=agent_env,
@@ -3545,7 +3630,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 master_fd, slave_fd = _pty.openpty()
                 fcntl.ioctl(slave_fd, termios.TIOCSWINSZ,
                             _struct2.pack('HHHH', rows, cols, 0, 0))
-                spawn_argv = [bin_ or cli]
+                spawn_argv = [bin_ or cli] + cli_extra_args
                 try:
                     proc = subprocess.Popen(
                         spawn_argv,

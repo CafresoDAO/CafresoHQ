@@ -23,16 +23,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential python3-dev ripgrep less unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node.js 20 LTS (required for Claude Code CLI + Codex CLI) ────────────────
+# ── Node.js 20 LTS ───────────────────────────────────────────────────────────
+# Kept in the base image so Claude Code / Codex can be installed ON-DEMAND
+# (npm i -g) from HQ Settings — the image ships Hermes-first and lean, and users
+# add the coding agents they want after provisioning (POST /agents/install).
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Claude Code CLI ──────────────────────────────────────────────────────────
-RUN npm install -g @anthropic-ai/claude-code@latest
-
-# ── Codex CLI (optional — comment out if not needed) ─────────────────────────
-RUN npm install -g @openai/codex@latest || true
+# NOTE: Claude Code + Codex are intentionally NOT baked in. They install on
+# demand via serve.py POST /agents/install (Settings → Agents). This keeps the
+# image small + provisioning fast; Hermes is the always-present default runtime.
 
 # ── Python deps for serve.py OCI vault backend ───────────────────────────────
 COPY oci-fleet/requirements-serve.txt /tmp/requirements-serve.txt
