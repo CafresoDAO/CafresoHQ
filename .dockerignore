@@ -24,7 +24,8 @@ __pycache__
 electron
 frontend
 src
-assets
+# NOTE: assets/ is intentionally NOT ignored — the container serves the logo,
+# favicons, and PWA icons from /app/assets (only ~380K).
 docs
 *.spec
 hq-state
