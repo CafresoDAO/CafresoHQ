@@ -361,6 +361,12 @@ def cmd_provision(args, fleet: dict):
         'API_SERVER_ENABLED':     'true',
         'API_SERVER_KEY':         api_server_key,
         'HERMES_HOME':            '/data/hermes',
+        # Frontend/backend split: allow the canister-served HQ UI to open the
+        # terminal WebSocket and fetch the PTY nonce cross-origin. Override via
+        # the operator env (comma-separated origins).
+        'OPENCLAW_ALLOWED_WS_ORIGINS': os.environ.get(
+            'OPENCLAW_ALLOWED_WS_ORIGINS',
+            'https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io'),
     }
     # Backend key passthrough: give the in-container Hermes a working LLM
     # backend by forwarding whichever key the operator has in their env
