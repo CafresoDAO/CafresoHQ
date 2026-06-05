@@ -2381,41 +2381,56 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not bin_:
             return ''
         try:
-            r = subprocess.run([bin_, *args], capture_output=True, text=True, timeout=10)
+            r = subprocess.run([bin_, *args], capture_output=True, text=True, timeout=6)
             out = (r.stdout or r.stderr or '').strip()
             return out.splitlines()[0][:80] if out else ''
         except Exception:
             return ''
 
     def _agents_status(self):
-        """GET /agents — which agents are available in this container."""
-        hermes_bin = shutil.which('hermes')
-        claude_bin = self._claudecode_resolve()
-        codex_bin  = self._codex_resolve()
-        return self._send_json(200, {
-            'agents': [
-                {'id': 'hermes', 'label': 'Hermes Agent', 'installed': bool(hermes_bin),
-                 'default': True, 'removable': False,
-                 'version': self._agent_version(hermes_bin, '--version'),
-                 'desc': 'Nous Research agent — your container’s default runtime.'},
-                {'id': 'claude-code', 'label': 'Claude Code', 'installed': bool(claude_bin),
-                 'default': False, 'removable': True,
-                 'version': self._agent_version(claude_bin, '--version'),
-                 'desc': 'Anthropic’s coding agent CLI (BYO key).'},
-                {'id': 'codex', 'label': 'Codex', 'installed': bool(codex_bin),
-                 'default': False, 'removable': True,
-                 'version': self._agent_version(codex_bin, '--version'),
-                 'desc': 'OpenAI’s coding agent CLI (BYO key).'},
-            ],
-        })
+        """GET /agents — which agents are available on this serve.py host.
+        Version probes (one subprocess per installed CLI) run concurrently so the
+        endpoint stays snappy even with several agents installed."""
+        specs = [
+            ('hermes',      'Hermes Agent', True,  False, self._hermes_resolve,
+             'Nous Research agent — your container’s default runtime.'),
+            ('claude-code', 'Claude Code',  False, True,  self._claudecode_resolve,
+             'Anthropic’s coding agent CLI (BYO key).'),
+            ('codex',       'Codex',        False, True,  self._codex_resolve,
+             'OpenAI’s coding agent CLI (BYO key).'),
+            ('gemini',      'Gemini',       False, True,  self._gemini_resolve,
+             'Google’s Gemini agent CLI (BYO key).'),
+        ]
+        bins = {aid: resolve() for (aid, _l, _d, _r, resolve, _ds) in specs}
+        # Probe versions concurrently (bounded; each call self-limits to ~6s).
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=len(specs)) as ex:
+            futs = {aid: ex.submit(self._agent_version, b, '--version')
+                    for aid, b in bins.items() if b}
+            versions = {aid: f.result() for aid, f in futs.items()}
+        agents = [
+            {'id': aid, 'label': label, 'installed': bool(bins[aid]),
+             'default': dflt, 'removable': rem,
+             'version': versions.get(aid, ''), 'desc': desc}
+            for (aid, label, dflt, rem, _resolve, desc) in specs
+        ]
+        return self._send_json(200, {'agents': agents})
 
     def _agents_install(self):
-        """POST /agents/install { agent: 'claude-code'|'codex' } — install an
-        optional agent CLI via npm. Fixed allowlist (no arbitrary packages).
-        Synchronous; npm can take ~30-60s. Returns { ok, agent, version }."""
+        """POST /agents/install { agent: 'claude-code'|'codex'|'gemini'|'hermes' }
+        — install an agent CLI onto the serve.py host. Node CLIs go through npm;
+        Hermes (a unix-only Python package) goes through pip. Fixed allowlist (no
+        arbitrary packages). Synchronous; can take ~30-90s. Returns { ok, agent,
+        installed, version }."""
         AGENT_NPM = {
             'claude-code': '@anthropic-ai/claude-code@latest',
             'codex':       '@openai/codex@latest',
+            'gemini':      '@google/gemini-cli@latest',
+        }
+        # Hermes is unix-only (gateway/pty_bridge import termios/pty/fcntl) — it
+        # only installs where serve.py runs on a unix host (container or WSL).
+        AGENT_PIP = {
+            'hermes':      'hermes-agent',
         }
         length = int(self.headers.get('content-length', 0) or 0)
         try:
@@ -2423,23 +2438,43 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
         agent = str(body.get('agent', '')).strip().lower()
-        pkg = AGENT_NPM.get(agent)
-        if not pkg:
-            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
-        npm = shutil.which('npm')
-        if not npm:
-            return self._send_json(503, {'error': 'npm not available in this container'})
+
+        if agent in AGENT_NPM:
+            npm = shutil.which('npm')
+            if not npm:
+                return self._send_json(503, {'error': 'npm not available on this host'})
+            cmd = [npm, 'install', '-g', AGENT_NPM[agent]]
+        elif agent in AGENT_PIP:
+            if sys.platform == 'win32':
+                return self._send_json(400, {'error':
+                    'hermes is unix-only and cannot install on native Windows — '
+                    'run CafresoHQ in WSL (use Start-CafresoHQ) and install there'})
+            # Prefer `pip` if present, else `python3 -m pip` (pip often isn't on
+            # the WSL PATH). --user keeps it in the invoking user's site dir.
+            pip = shutil.which('pip3') or shutil.which('pip')
+            base = [pip] if pip else [sys.executable or 'python3', '-m', 'pip']
+            cmd = base + ['install', '--user', '--upgrade', AGENT_PIP[agent]]
+        else:
+            return self._send_json(400, {
+                'error': 'agent must be claude-code, codex, gemini, or hermes'})
+
         try:
-            proc = subprocess.run([npm, 'install', '-g', pkg],
-                                  capture_output=True, text=True, timeout=300)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired:
             return self._send_json(504, {'error': 'install timed out (>300s)'})
         except Exception as e:
             return self._send_json(500, {'error': str(e)})
         if proc.returncode != 0:
             return self._send_json(500, {
-                'error': (proc.stderr or proc.stdout or 'npm install failed')[-600:]})
-        bin_ = (self._claudecode_resolve() if agent == 'claude-code' else self._codex_resolve())
+                'error': (proc.stderr or proc.stdout or 'install failed')[-600:]})
+
+        resolvers = {
+            'claude-code': self._claudecode_resolve,
+            'codex':       self._codex_resolve,
+            'gemini':      self._gemini_resolve,
+            'hermes':      self._hermes_resolve,
+        }
+        bin_ = resolvers[agent]()
         return self._send_json(200, {
             'ok': True, 'agent': agent, 'installed': bool(bin_),
             'version': self._agent_version(bin_, '--version'),
@@ -3576,6 +3611,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     _pty_auth = (_init_msg.get('auth_method') or '').strip().lower()
                     _ak = (_init_msg.get('anthropic_key') or '').strip()
                     _ok = (_init_msg.get('openai_key')    or '').strip()
+                    _gk = (_init_msg.get('gemini_key')    or '').strip()
                     if _pty_auth == 'subscription':
                         # Strip API key so CLI uses its own OAuth login
                         agent_env.pop('ANTHROPIC_API_KEY', None)

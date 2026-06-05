@@ -4785,15 +4785,17 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       // sending it right away eliminates the 2-second blank-screen delay.
       ws.onopen = async () => {
         const oc = window.OpenclawClient;
-        let ak = '', ok = '';
+        let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
           ak = await oc.getAgentKey('anthropic').catch(() => '');
           ok = await oc.getAgentKey('openai').catch(() => '');
+          gk = await oc.getAgentKey('google').catch(() => '');   // Gemini CLI
         }
         ws.send(JSON.stringify({
           type: 'init',
           ...(ak ? { anthropic_key: ak } : {}),
           ...(ok ? { openai_key:    ok } : {}),
+          ...(gk ? { gemini_key:    gk } : {}),
         }));
       };
 
@@ -5521,7 +5523,7 @@ function ProjectTerminal({ project, visible }) {
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
             }}>
-              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false]].map(([c, ico, label, isDefault]) => (
+              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false], ['gemini', '✧', 'Gemini CLI', false]].map(([c, ico, label, isDefault]) => (
                 <div key={c}
                   onClick={() => addSession(c)}
                   style={{

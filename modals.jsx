@@ -842,7 +842,7 @@ function AgentClisTab() {
   const [busyId, setBusyId] = useStateM(null);    // agent id currently installing
   const [rowErr, setRowErr] = useStateM({});      // { [id]: errorString }
 
-  const AGENT_ICON = { hermes: '☼', 'claude-code': '✦', codex: '◈' };
+  const AGENT_ICON = { hermes: '☼', 'claude-code': '✦', codex: '◈', gemini: '✧' };
 
   const load = async () => {
     setLoadErr(null);
@@ -880,7 +880,7 @@ function AgentClisTab() {
       <div className="cb-panel" style={{ gridColumn: '1 / -1' }}>
         <h4>🤖 AGENTS</h4>
         <div className="sub" style={{ marginBottom: 12, lineHeight: 1.5 }}>
-          Your HQ ships with <strong>Hermes</strong>. Add Claude Code or Codex when you need them.
+          Your HQ ships with <strong>Hermes</strong>. Add Claude Code, Codex, or Gemini when you need them.
         </div>
 
         {agents === null && (
