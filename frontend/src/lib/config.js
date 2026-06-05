@@ -40,8 +40,15 @@ export const ECOSYSTEM = {
  * Allow-Credentials; the hq_session cookie is SameSite=None so the cross-site
  * iframe sends it). Empty string disables the split (falls back to the
  * container's own baked-in UI).
+ *
+ * Served from hq-ui.cafreso.com (IC custom domain on the cafresohq_ui canister)
+ * rather than the raw *.icp0.io origin, so the iframe is SAME-SITE with the API
+ * (hq.cafreso.com) and shell (ai.cafreso.com) — all cafreso.com. That keeps the
+ * hq_session cookie first-party, immune to third-party-cookie blocking. The raw
+ * canister URL (https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io) still works but is
+ * cross-site and gets its cookie dropped by most browsers in the iframe.
  */
-export const HQ_UI_CANISTER_ORIGIN = 'https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io';
+export const HQ_UI_CANISTER_ORIGIN = 'https://hq-ui.cafreso.com';
 
 /**
  * Per-user OCI container URL pattern — matches fleet-api.py + Caddy routing.

@@ -92,7 +92,18 @@ def main():
     with open(os.path.join(OUT, '.ic-assets.json5'), 'w', encoding='utf-8', newline='\n') as fh:
         fh.write(IC_ASSETS)
 
-    print(f'[build-hq-ui] wrote {copied} entries -> {OUT}')
+    # IC custom-domain mapping. Serving this canister from hq-ui.cafreso.com makes
+    # the post-login iframe SAME-SITE with the API (hq.cafreso.com) and the shell
+    # (ai.cafreso.com) — all under cafreso.com — so the hq_session cookie is
+    # first-party and never dropped by third-party-cookie blocking. Mirrors
+    # frontend/static/.well-known/ic-domains. Register the domain with the IC
+    # boundary nodes + add DNS (see scripts/README or the deploy notes).
+    well_known = os.path.join(OUT, '.well-known')
+    os.makedirs(well_known, exist_ok=True)
+    with open(os.path.join(well_known, 'ic-domains'), 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write('hq-ui.cafreso.com\n')
+
+    print(f'[build-hq-ui] wrote {copied} entries (+ .well-known/ic-domains) -> {OUT}')
 
 
 if __name__ == '__main__':
