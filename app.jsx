@@ -7,7 +7,7 @@ const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOP
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
 const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
-const { TasksView, MemoryPage, TeamView, DocsView, CalendarView, VaultView, GraphView, ComingSoon, WorkflowsView, ProjectsView, VIEW_LABELS } = window.OpenclawViews;
+const { TasksView, MemoryPage, TeamView, DocsView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.OpenclawViews;
 
 /* localStorage-backed useState. Reads on mount; writes are DEBOUNCED so a
    streaming-token burst doesn't hammer JSON.stringify on every frame. The
@@ -650,9 +650,8 @@ function AppGlobalCommands({
     { id: 'nav.vault',      label: 'Switch view: Vault',     section: 'Navigation', icon: '📓', run: () => setActiveView('vault') },
     { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => setActiveView('team') },
     { id: 'nav.docs',       label: 'Switch view: Docs',      section: 'Navigation', icon: '📄', run: () => setActiveView('docs') },
-    { id: 'nav.workflows',  label: 'Switch view: Workflows', section: 'Navigation', icon: '⚡', run: () => setActiveView('workflows') },
+    { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => setActiveView('terminal') },
     { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => setActiveView('projects') },
-    { id: 'nav.content',    label: 'Switch view: Content',   section: 'Navigation', icon: '✦', run: () => setActiveView('content') },
 
     /* Top-level actions. */
     { id: 'act.hire',     label: 'Hire a new agent',         section: 'Actions', icon: '＋', run: onHire },
@@ -3260,10 +3259,8 @@ ${d.text}` : d.text,
         return <CalendarView tasks={tasks} agents={agents} />;
       case 'projects':
         return <ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} />;
-      case 'content':
-        return <ComingSoon name="Content" blurb="Drafts, templates, and outgoing messages — anything an agent produces that's headed for somewhere outside HQ. The space currently lives in chat; this gives it a home."/>;
-      case 'workflows':
-        return <WorkflowsView workflows={workflows} tasks={tasks} onDelete={id => setWorkflows(prev => prev.filter(w => w.id !== id))} />;
+      case 'terminal':
+        return <TerminalView />;
       default:
         return null;
     }

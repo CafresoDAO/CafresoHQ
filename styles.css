@@ -4692,7 +4692,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
 
 /* Keyboard shortcut tooltip (pixel floppy) */
 .shortcut-hud {
-  position: fixed; bottom: 16px; left: 16px;
+  position: fixed; bottom: 72px; left: 16px;
   z-index: var(--z-window);
   display: flex; align-items: center; gap: 8px;
 }

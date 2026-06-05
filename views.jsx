@@ -5501,7 +5501,8 @@ function ProjectTerminal({ project, visible }) {
             onClick={() => {
               if (!addMenuOpen && addBtnRef.current) {
                 const r = addBtnRef.current.getBoundingClientRect();
-                setAddMenuPos({ top: r.bottom + 6, left: r.left });
+                // Open upward so the menu isn't hidden under the terminal canvas
+                setAddMenuPos({ bottom: window.innerHeight - r.top + 6, left: r.left });
               }
               setAddMenuOpen(p => !p);
             }}
@@ -5518,7 +5519,7 @@ function ProjectTerminal({ project, visible }) {
           >+</button>
           {addMenuOpen && (
             <div style={{
-              position: 'fixed', top: addMenuPos.top, left: addMenuPos.left, zIndex: 1000,
+              position: 'fixed', bottom: addMenuPos.bottom, left: addMenuPos.left, zIndex: 99999,
               background: '#12121e', border: '1px solid rgba(124,107,255,0.25)',
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
@@ -6383,14 +6384,39 @@ function ComingSoon({ label }) {
   );
 }
 
-/* ---------------- Workflows placeholder ---------------- */
-function WorkflowsView() {
+/* ================================================================
+   TerminalView — full-screen standalone terminal
+   A permanent HQ-global terminal that starts Hermes and lets you
+   add Claude Code / Codex / Gemini tabs once they are installed.
+   Uses the same ProjectTerminal machinery but with a fixed project
+   context (id='hq-global-terminal', path='') so sessions persist.
+   ================================================================ */
+function TerminalView() {
+  const HQ_PROJECT = React.useMemo(() => ({ id: 'hq-global-terminal', path: '' }), []);
   return (
-    <div className="view-soon">
-      <div className="section-title">⚡ WORKFLOWS</div>
-      <div className="empty-state">
-        <div className="empty-title">🚧 Coming soon</div>
-        <div className="empty-sub">Build multi-step automated workflows chaining agents and tasks.</div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0a0a10' }}>
+      {/* Header */}
+      <div style={{
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(124,107,255,0.18)',
+        background: '#0f0f1a',
+        flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', color: '#7c6bff', fontFamily: "'JetBrains Mono', monospace" }}>
+          ☼ TERMINAL
+        </span>
+        <span style={{ fontSize: 10, color: 'rgba(212,216,232,0.45)', fontFamily: "'JetBrains Mono', monospace" }}>
+          Hermes · Claude Code · Codex · Gemini
+        </span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 9, color: 'rgba(212,216,232,0.3)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>
+          + to add session · × to close tab
+        </span>
+      </div>
+      {/* Terminal panel fills remaining space */}
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        <ProjectTerminal project={HQ_PROJECT} visible={true} />
       </div>
     </div>
   );
@@ -6408,7 +6434,7 @@ window.OpenclawViews = {
   VaultView,
   GraphView,
   ComingSoon,
-  WorkflowsView,
   ProjectsView,
+  TerminalView,
   VIEW_LABELS,
 };

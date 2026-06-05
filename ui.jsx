@@ -48,9 +48,8 @@ const NAV_ITEMS = [
   ['vault', 'Vault'],
   ['team', 'Team'],
   ['docs', 'Docs'],
-  ['workflows', 'Workflows'],
+  ['terminal', 'Terminal'],
   ['projects', 'Projects'],
-  ['content', 'Content'],
 ];
 
 /* ─────────────────────────────────────────────────────────────────────

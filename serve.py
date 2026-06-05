@@ -5737,6 +5737,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         headers['Connection'] = 'close'
 
         env_key = os.environ.get('API_SERVER_KEY', '').strip()
+        if not env_key:
+            # Fallback: read API_SERVER_KEY from ~/.hermes/.env so the proxy
+            # works even when the env var wasn't injected at container start.
+            try:
+                import re as _re
+                _hermes_home = os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
+                with open(os.path.join(_hermes_home, '.env'), 'r', encoding='utf-8') as _hf:
+                    _km = _re.search(r'^API_SERVER_KEY\s*=\s*([^\r\n]+)', _hf.read(), _re.MULTILINE)
+                    if _km:
+                        env_key = _km.group(1).strip().strip('"\'')
+            except Exception:
+                pass
         if env_key:
             headers['Authorization'] = 'Bearer ' + env_key
         else:
