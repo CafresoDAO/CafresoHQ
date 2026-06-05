@@ -376,7 +376,7 @@ function DocsView({ tasks, agents }) {
   return (
     <div className="view-docs">
       <div className="section-title">
-        📄 ARTIFACTS
+        📄 DOCS
         <span className="tag">{docs.length} doc(s) · output from completed tasks</span>
       </div>
       {docs.length === 0 && (
