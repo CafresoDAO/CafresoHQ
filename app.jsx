@@ -3807,3 +3807,14 @@ if (_ocSearch.get('popout') === 'graph') {
 } else {
   ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 }
+
+/* Signal the boot overlay (hq.html) that the React app has mounted so it can
+   fade out once the backend /health check also passes. requestAnimationFrame
+   defers to after the first paint. */
+try {
+  requestAnimationFrame(function () {
+    window.dispatchEvent(new Event('cafresohq:ready'));
+  });
+} catch (_e) {
+  window.dispatchEvent(new Event('cafresohq:ready'));
+}
