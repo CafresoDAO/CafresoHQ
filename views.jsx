@@ -48,11 +48,10 @@ const VIEW_LABELS = {
   vault:     'MARKDOWN VAULT',
   graph:     'VAULT GRAPH',
   team:      'STAFF ROSTER',
-  docs:      'DOCS · ARTIFACTS',
+  docs:      'DOCS',
   calendar:  'CALENDAR',
   projects:  'PROJECTS',
-  content:   'CONTENT',
-  workflows: 'WORKFLOWS',
+  terminal:  'TERMINAL',
 };
 
 /* ---------------- Tasks (full board with filter + search) ---------------- */
