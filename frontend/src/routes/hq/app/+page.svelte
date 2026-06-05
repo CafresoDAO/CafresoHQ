@@ -16,13 +16,24 @@
     deleteFile
   } from '$lib/stores/vault.js';
   import ProvisionPanel from '$lib/components/ProvisionPanel.svelte';
+  import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
 
   $: if ($endpointUrl && $endpointHealth.state === 'idle') {
     probeHealth().catch(() => {});
   }
 
   const APP_PATH = '/hq.html';
-  $: appUrl = $endpointUrl ? $endpointUrl + APP_PATH : '';
+  // Frontend/backend split (Phase 3): when the container is reached through the
+  // public gateway, serve the UI from the cafresohq_ui canister and point it back
+  // at the container API via ?api= — so UI updates ship via `dfx deploy`, not a
+  // container image rebuild. Local/self-hosted endpoints (and any host that isn't
+  // the gateway) load the container's own baked-in /hq.html as before.
+  $: useCanisterUi = !!HQ_UI_CANISTER_ORIGIN && needsSession;
+  $: appUrl = $endpointUrl
+    ? (useCanisterUi
+        ? `${HQ_UI_CANISTER_ORIGIN}${APP_PATH}?api=${encodeURIComponent($endpointUrl)}`
+        : $endpointUrl + APP_PATH)
+    : '';
 
   $: shellIsHttps = typeof window !== 'undefined' && window.location?.protocol === 'https:';
   $: endpointIsHttp = $endpointUrl?.startsWith('http://');
@@ -49,7 +60,9 @@
 
   function reload() {
     loaded = false;
-    if (iframe) iframe.src = appUrl + '?_t=' + Date.now();
+    // appUrl may already carry a query (?api=…) when serving the canister UI —
+    // use the right separator so we don't produce a malformed double-?.
+    if (iframe) iframe.src = appUrl + (appUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
   }
 
   function popout() {
@@ -61,9 +74,13 @@
   }
 
   function iframeOrigin() {
-    if (!$endpointUrl) return null;
+    // The postMessage target must match the iframe DOCUMENT's origin. When the
+    // UI is served from the canister (split mode), that's the canister origin —
+    // not the container endpoint the UI talks to via ?api=.
+    const src = useCanisterUi ? HQ_UI_CANISTER_ORIGIN : $endpointUrl;
+    if (!src) return null;
     try {
-      return new URL($endpointUrl).origin;
+      return new URL(src).origin;
     } catch {
       return null;
     }

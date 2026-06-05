@@ -32,6 +32,18 @@ export const ECOSYSTEM = {
 };
 
 /**
+ * HQ app UI, served from the `cafresohq_ui` ICP asset canister (frontend/backend
+ * split — Phase 3). The post-login iframe loads this canister's /hq.html with
+ * `?api=<container endpoint>`, so UI updates ship via a ~1-min `dfx deploy`
+ * instead of a Docker image rebuild + container recreate. The container's
+ * serve.py stays API-only and is reached cross-origin (CORS echoes Origin +
+ * Allow-Credentials; the hq_session cookie is SameSite=None so the cross-site
+ * iframe sends it). Empty string disables the split (falls back to the
+ * container's own baked-in UI).
+ */
+export const HQ_UI_CANISTER_ORIGIN = 'https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io';
+
+/**
  * Per-user OCI container URL pattern — matches fleet-api.py + Caddy routing.
  * Slug = sha256(principal)[:16] (hex). Matches _gateway_url_for_principal()
  * in fleet-api.py and the Caddyfile handle_path /u/{slug}/* pattern.
