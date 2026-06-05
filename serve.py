@@ -75,6 +75,52 @@ _claudecode_bin = os.environ.get('OPENCLAW_CLAUDE_BIN', '').strip()
 # Override binary path with OPENCLAW_CODEX_BIN env var.
 _codex_bin = os.environ.get('OPENCLAW_CODEX_BIN', '').strip()
 
+# Hermes CLI (Nous Research) — the container's default agent runtime. Normally
+# on PATH (pip-installed in the image, or in the user's WSL/unix env). Override
+# the binary path with OPENCLAW_HERMES_BIN. Hermes is unix-only (its gateway +
+# pty_bridge import termios/pty/fcntl) so it never resolves on native Windows —
+# the supported Windows path runs the whole stack inside WSL (see Start-CafresoHQ).
+_hermes_bin = os.environ.get('OPENCLAW_HERMES_BIN', '').strip()
+
+# Gemini CLI (Google) — npm `@google/gemini-cli`, native on every platform.
+# Override the binary path with OPENCLAW_GEMINI_BIN.
+_gemini_bin = os.environ.get('OPENCLAW_GEMINI_BIN', '').strip()
+
+# Extra browser origins allowed to open the terminal WebSocket and fetch the PTY
+# nonce. Needed when the HQ UI is served cross-origin from an ICP asset canister
+# (the frontend/backend split). Comma-separated, e.g.
+#   OPENCLAW_ALLOWED_WS_ORIGINS=https://<canister>.icp0.io,https://ai.cafreso.com
+_extra_app_origins = {o.strip() for o in
+                      os.environ.get('OPENCLAW_ALLOWED_WS_ORIGINS', '').split(',')
+                      if o.strip()}
+
+# API contract version between the (canister-served) UI and this backend. Bump
+# only on a BREAKING change to an endpoint the UI depends on; the UI reads it
+# from /health and degrades gracefully rather than hard-failing across a
+# version-skewed deploy (UI on a canister, API in a slower-to-update container).
+API_VERSION = 1
+
+# ── Client path translation (Windows path → WSL mount) ───────────────────────
+# The HQ UI may run on Windows and store project paths in Windows form
+# (C:\Users\me\proj). The supported Windows deployment runs the whole serve.py
+# stack inside WSL, where those live under /mnt/<drive>. Translate any
+# client-supplied path so the unix host can resolve it. No-op on native Windows
+# (serve.py there already speaks Windows paths) and for paths that are already
+# unix-style. Accepts both back- and forward-slash Windows paths.
+_WINPATH_RE = re.compile(r'^([A-Za-z]):[\\/](.*)$')
+_WINDRIVE_RE = re.compile(r'^([A-Za-z]):[\\/]?$')
+
+def _client_path(p):
+    if not p or sys.platform == 'win32':
+        return p
+    m = _WINPATH_RE.match(p)
+    if m:
+        return f'/mnt/{m.group(1).lower()}/' + m.group(2).replace('\\', '/')
+    m2 = _WINDRIVE_RE.match(p)
+    if m2:
+        return f'/mnt/{m2.group(1).lower()}'
+    return p
+
 # /openclaw/stream — elevated agent endpoint with computer access. Same
 # `claude` CLI as /claudecode/stream but tools are ENABLED and constrained
 # by a server-side allowlist (paths and tool names). Both lists are env-
@@ -1685,6 +1731,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # which is exactly what SSE needs without fighting chunked encoding.
     protocol_version = 'HTTP/1.0'
 
+    # RFC 6455 WebSocket handshake magic GUID — concatenated with the client's
+    # Sec-WebSocket-Key and SHA-1'd to form Sec-WebSocket-Accept. Used by the
+    # /terminal/pty upgrade handler.
+    _WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
     def end_headers(self):
         # Disable caching for local-dev iteration so HTML/JSX edits land on
         # next reload without browser caching tripping us up.
@@ -1949,7 +2000,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(req_cwd).resolve()
+                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
                 for d in _openclaw_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
@@ -2085,7 +2136,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         In container mode or when the admin explicitly set OPENCLAW_ALLOWED_DIRS
         the strict whitelist is enforced.
         """
-        p = pathlib.Path(path).resolve()
+        p = pathlib.Path(_client_path(path)).resolve()
         if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
             return p  # local default: no restriction, user accesses own files
         for d in _openclaw_allowed_dirs:
@@ -2206,7 +2257,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         tool_cwd = _openclaw_allowed_dirs[0] if _openclaw_allowed_dirs else os.getcwd()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(req_cwd).resolve()
+                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
                 if cwd_p.is_dir():
                     if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
                         tool_cwd = str(cwd_p)  # local default: trust any existing dir
@@ -2694,7 +2745,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(req_cwd).resolve()
+                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
                 for d in _openclaw_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
@@ -2835,6 +2886,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     or '')
         return shutil.which(_codex_bin or 'codex') or shutil.which('codex.cmd') or ''
 
+    def _hermes_resolve(self):
+        """Find the hermes binary. Returns absolute path or ''.
+        OPENCLAW_HERMES_BIN overrides; otherwise PATH lookup. In the container
+        and in WSL/unix this resolves natively; on native Windows it returns ''
+        (hermes is unix-only — run the stack in WSL instead)."""
+        if _hermes_bin and pathlib.Path(_hermes_bin).is_file():
+            return _hermes_bin
+        return shutil.which(_hermes_bin or 'hermes') or ''
+
+    def _gemini_resolve(self):
+        """Find the gemini binary (npm @google/gemini-cli). Returns path or ''.
+        OPENCLAW_GEMINI_BIN overrides. On Windows prefer the .cmd npm wrapper
+        (same OSError-193 reasoning as _codex_resolve)."""
+        if _gemini_bin and pathlib.Path(_gemini_bin).is_file():
+            return _gemini_bin
+        if sys.platform == 'win32':
+            return (shutil.which('gemini.cmd')
+                    or shutil.which(_gemini_bin or 'gemini')
+                    or shutil.which('gemini')
+                    or '')
+        return shutil.which(_gemini_bin or 'gemini') or shutil.which('gemini.cmd') or ''
+
     def _codex_configure(self):
         global _codex_bin
         length = int(self.headers.get('content-length', 0) or 0)
@@ -2896,7 +2969,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(req_cwd).resolve()
+                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
                 for d in _openclaw_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
@@ -3240,7 +3313,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     req_path = os.getcwd()
 
         try:
-            p = pathlib.Path(req_path).resolve()
+            p = pathlib.Path(_client_path(req_path)).resolve()
         except Exception as e:
             return self._send_json(400, {'error': f'invalid path: {e}'})
 
@@ -3310,7 +3383,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'cli must be claude or codex'})
         if not cwd:
             return self._send_json(400, {'error': 'cwd required'})
-        cwd_path = pathlib.Path(cwd).resolve()
+        cwd_path = pathlib.Path(_client_path(cwd)).resolve()
         if not cwd_path.is_dir():
             return self._send_json(400, {'error': f'directory not found: {cwd}'})
         bin_ = (self._claudecode_resolve() if cli == 'claude' else self._codex_resolve())
@@ -3383,23 +3456,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cols = max(10, min(500, int((params.get('cols') or ['120'])[0])))
         rows = max(5,  min(200, int((params.get('rows') or ['30'] )[0])))
 
-        if cli not in ('claude', 'codex', 'hermes'):
-            return self._send_json(400, {'error': 'cli must be claude, codex, or hermes'})
+        if cli not in ('claude', 'codex', 'hermes', 'gemini'):
+            return self._send_json(400, {'error': 'cli must be claude, codex, hermes, or gemini'})
         if not cwd:
             return self._send_json(400, {'error': 'cwd required'})
-        cwd_path = pathlib.Path(cwd).resolve()
+        cwd_path = pathlib.Path(_client_path(cwd)).resolve()
         if not cwd_path.is_dir():
             return self._send_json(400, {'error': f'directory not found: {cwd}'})
         if cli == 'claude':
             bin_ = self._claudecode_resolve()
         elif cli == 'codex':
             bin_ = self._codex_resolve()
-        else:  # hermes — the default agent, always present in the image
-            bin_ = shutil.which('hermes')
+        elif cli == 'gemini':
+            bin_ = self._gemini_resolve()
+        else:  # hermes — the default agent (unix-only; native here or via WSL)
+            bin_ = self._hermes_resolve()
         if not bin_:
             return self._send_json(503, {'error': f'{cli} CLI not found'})
         # Hermes opens its interactive agent via the `chat` subcommand; the
-        # workspace cwd scopes the agent to that project. claude/codex just exec.
+        # workspace cwd scopes the agent to that project. Others just exec.
         cli_extra_args = ['chat'] if cli == 'hermes' else []
 
         # ── Security: Origin + nonce checks ────────────────────────────────
@@ -3508,7 +3583,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         agent_env['ANTHROPIC_API_KEY'] = _ak
                     if _ok and not agent_env.get('OPENAI_API_KEY', '').strip():
                         agent_env['OPENAI_API_KEY'] = _ok
-                    del _ak, _ok, _pty_auth  # clear plaintext key strings from Python locals
+                    # Gemini CLI reads GEMINI_API_KEY (and GOOGLE_API_KEY as a
+                    # fallback) — set both so either lookup path works.
+                    if _gk and not agent_env.get('GEMINI_API_KEY', '').strip():
+                        agent_env['GEMINI_API_KEY'] = _gk
+                        agent_env.setdefault('GOOGLE_API_KEY', _gk)
+                    del _ak, _ok, _gk, _pty_auth  # clear plaintext key strings from Python locals
                     del _init_msg, _init_payload  # clear raw frame bytes
                 else:
                     pending_frame = (_init_opcode, _init_payload)  # not init — replay
@@ -3780,6 +3860,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """Report CLI availability, runtime environment, and spawn capability."""
         claude_bin = self._claudecode_resolve()
         codex_bin  = self._codex_resolve()
+        hermes_bin = self._hermes_resolve()
+        gemini_bin = self._gemini_resolve()
         # Spawn is only meaningful on local machines that have a display/GUI.
         spawn_ok = (_RUNTIME_ENV == 'local')
         try:
@@ -3793,6 +3875,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'claudePath':      claude_bin or '',
             'codex':           bool(codex_bin),
             'codexPath':       codex_bin or '',
+            'hermes':          bool(hermes_bin),
+            'hermesPath':      hermes_bin or '',
+            # hermesVia: how a Projects terminal would reach hermes — 'native'
+            # when on PATH here; '' when unavailable (e.g. native Windows, where
+            # the supported path is running the whole stack in WSL).
+            'hermesVia':       ('native' if hermes_bin else ''),
+            'gemini':          bool(gemini_bin),
+            'geminiPath':      gemini_bin or '',
             'runtime_env':     _RUNTIME_ENV,
             'spawn_supported': spawn_ok,
             'pty_supported':   pty_ok,
@@ -3843,7 +3933,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'cli must be "claude" or "codex"'})
         if not cwd:
             return self._send_json(400, {'error': 'cwd required'})
-        cwd_path = pathlib.Path(cwd).resolve()
+        cwd_path = pathlib.Path(_client_path(cwd)).resolve()
         if not cwd_path.is_dir():
             return self._send_json(400, {'error': f'directory not found: {cwd}'})
 
@@ -5585,6 +5675,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                    if k.lower() not in _drop}
         headers['Host'] = f'{HERMES_HOST}:{HERMES_PORT}'
         headers['Accept-Encoding'] = 'identity'
+        # Force the upstream (aiohttp) to close after responding. We relay the
+        # body with a raw read1() loop (so SSE streams straight through) which
+        # bypasses http.client's Content-Length framing — on a keep-alive
+        # response read1() would block waiting for an EOF the gateway never
+        # sends, hanging the request (and, since we drop Content-Length as a
+        # hop header, the browser's fetch never resolves either). Connection:
+        # close makes the gateway send EOF after the body, so the loop ends.
+        headers['Connection'] = 'close'
 
         env_key = os.environ.get('API_SERVER_KEY', '').strip()
         if env_key:
