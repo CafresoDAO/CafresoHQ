@@ -1493,7 +1493,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
    Chat is the primary mobile entry point; Office, Team, Vault, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
-  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','docs','workflows','projects','content'];
+  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','docs','terminal','projects'];
   const TAB_BOOKMARKS = [
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],

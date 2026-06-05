@@ -362,11 +362,14 @@ def cmd_provision(args, fleet: dict):
         'API_SERVER_KEY':         api_server_key,
         'HERMES_HOME':            '/data/hermes',
         # Frontend/backend split: allow the canister-served HQ UI to open the
-        # terminal WebSocket and fetch the PTY nonce cross-origin. Override via
-        # the operator env (comma-separated origins).
+        # terminal WebSocket and fetch the PTY nonce cross-origin. The UI is now
+        # served from the IC custom domain hq-ui.cafreso.com (same-site with the
+        # API so the session cookie is first-party); the raw *.icp0.io origin is
+        # kept too for direct canister access. Override via the operator env
+        # (comma-separated origins).
         'OPENCLAW_ALLOWED_WS_ORIGINS': os.environ.get(
             'OPENCLAW_ALLOWED_WS_ORIGINS',
-            'https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io'),
+            'https://hq-ui.cafreso.com,https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io'),
     }
     # Backend key passthrough: give the in-container Hermes a working LLM
     # backend by forwarding whichever key the operator has in their env
