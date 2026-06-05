@@ -8,15 +8,63 @@
    Settings persisted in localStorage. window.OpenclawClient is the surface.
    ========================================================================== */
 
-// Derive the API path prefix from the current page URL.
-// When loaded at https://hq.cafreso.com/u/<slug>/hq.html (Caddy gateway):
-//   _API_BASE = '/u/<slug>'  →  fetch(_API_BASE + '/terminal/status')
-//   resolves to https://hq.cafreso.com/u/<slug>/terminal/status
-//   Caddy handle_path strips the prefix and proxies /terminal/status to the container.
-// When loaded directly at http://ip:8787/hq.html or http://localhost:8787/hq.html:
-//   _API_BASE = ''  →  fetch('' + '/terminal/status') = fetch(_API_BASE + '/terminal/status')  ✓
-const _API_BASE = window.location.pathname.replace(/\/[^/]*$/, '');
-window._API_BASE = _API_BASE;   // expose for views.jsx / app.jsx
+// ── API base resolution ─────────────────────────────────────────────────────
+// Precedence:
+//   1. ?api=<base>  — injected by the shell when the UI is served cross-origin
+//      from an ICP canister (e.g. ?api=https://hq.cafreso.com/u/<slug>). This is
+//      the frontend/backend-split path: UI on the canister, API in the container.
+//   2. A pre-set window._API_BASE (shell may inject it inline before this loads).
+//   3. Derive from the page path (same-origin):
+//      · https://hq.cafreso.com/u/<slug>/hq.html → '/u/<slug>' (Caddy strips it)
+//      · http://localhost:8787/hq.html           → '' (direct, same-origin)
+// When no override is present, behavior is identical to before (zero regression).
+(function () {
+  var injected = null;
+  try {
+    var qp = new URLSearchParams(window.location.search).get('api');
+    if (qp) injected = qp;
+  } catch (_e) {}
+  if (injected == null && typeof window._API_BASE === 'string' && window._API_BASE_OVERRIDE) {
+    injected = window._API_BASE;
+  }
+  window._API_BASE = (injected != null)
+    ? String(injected).replace(/\/$/, '')
+    : window.location.pathname.replace(/\/[^/]*$/, '');
+})();
+const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
+
+// ── Credentialed fetch for cross-origin (canister UI → container API) ─────────
+// When the UI is on a different origin than the API, the browser won't send the
+// hq_session cookie unless the request opts in with credentials:'include'. We
+// install a scoped wrapper that adds it ONLY for requests whose resolved origin
+// matches the API origin — third-party requests (unpkg/fonts/CDNs) and the React
+// runtime are untouched, and same-origin requests are unaffected (cookies
+// already flow there, so adding the flag is a harmless no-op). This centralizes
+// the cross-origin credential behavior without editing every call site.
+(function () {
+  if (window.__cafresoApiFetchInstalled) return;
+  window.__cafresoApiFetchInstalled = true;
+  var _origFetch = window.fetch.bind(window);
+  function apiOrigin() {
+    var b = window._API_BASE || '';
+    try { return /^https?:\/\//.test(b) ? new URL(b).origin : window.location.origin; }
+    catch (_e) { return window.location.origin; }
+  }
+  function withCreds(init) {
+    init = init || {};
+    if (init.credentials == null) init = Object.assign({}, init, { credentials: 'include' });
+    return init;
+  }
+  // Explicit helper for code that wants to be unambiguous.
+  window.apiFetch = function (input, init) { return _origFetch(input, withCreds(init)); };
+  window.fetch = function (input, init) {
+    try {
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (new URL(url, window.location.href).origin === apiOrigin()) init = withCreds(init);
+    } catch (_e) {}
+    return _origFetch(input, init);
+  };
+})();
 
 const LS_KEY = 'openclaw_client_v1';
 

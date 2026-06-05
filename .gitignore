@@ -49,3 +49,7 @@ node_modules/
 
 # ── dfx generated env (canister ids) ──────────────────────
 .env.dfx
+
+# Generated HQ-UI asset-canister build dir (scripts/build_hq_ui.py)
+hq-ui/
+scripts/__pycache__/

@@ -10,6 +10,12 @@
       "build": "echo 'NOTE: run `npm --prefix frontend run build` before `dfx deploy`'",
       "dependencies": ["cafresoai_keys"]
     },
+    "cafresohq_ui": {
+      "//": "The HQ app UI (hq.html + jsx + css + assets), served from ICP so UI updates are a ~1-min dfx deploy instead of a container rebuild. serve.py becomes API-only; this UI calls it cross-origin (?api=<base>). build_hq_ui.py assembles hq-ui/ from the repo-root UI files.",
+      "type": "assets",
+      "source": ["hq-ui"],
+      "build": "python scripts/build_hq_ui.py"
+    },
     "cafresoai_keys": {
       "type": "motoko",
       "main": "src/cafresoai_keys/main.mo",

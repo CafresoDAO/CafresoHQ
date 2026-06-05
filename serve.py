@@ -1910,6 +1910,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {
             'status':           'ok',
             'version':          '1.0.0',
+            # apiVersion: integer contract between the (canister-served) UI and
+            # this API. Bump on a BREAKING endpoint change; the UI min-checks it
+            # so a freshly-deployed UI degrades gracefully against an older
+            # container (and vice-versa) instead of hard-failing. See API_VERSION.
+            'apiVersion':       API_VERSION,
             'mode':             _fleet_mode,
             'vault_backend':    _vault_backend,
             'uptime_seconds':   int(time.time() - _server_start_time),
@@ -3457,12 +3462,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(500, {'error': f'spawn failed: {e}'})
         return self._send_json(200, {'ok': True, 'cli': cli, 'cwd': str(cwd_path)})
 
+    def _app_origins(self):
+        """Browser origins permitted to open the terminal WebSocket and fetch the
+        PTY nonce: same-origin, the production gateway, localhost dev, plus any
+        canister origins configured via OPENCLAW_ALLOWED_WS_ORIGINS (cross-origin
+        frontend/backend split)."""
+        host   = self.headers.get('Host', '').strip()
+        scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+        origins = {
+            'https://hq.cafreso.com',       # production Caddy gateway
+            'http://localhost:8787',         # local dev
+            'http://127.0.0.1:8787',         # local dev (alt)
+            f'{scheme}://{host}',            # same-origin (any host the client used)
+        }
+        return origins | _extra_app_origins
+
     def _terminal_nonce(self):
         """GET /terminal/nonce → {"nonce": "<hex>"}
         Returns the per-process nonce that /terminal/pty requires as a query
-        param.  Only the HQ app (same container origin) can fetch this, so it
-        acts as a lightweight auth token for the WebSocket endpoint.
+        param. Same-origin callers (no Origin header on same-origin XHR, or an
+        Origin in the allowlist) get it; a cross-origin Origin that isn't in the
+        allowlist is refused, so only the HQ app — same-origin or an approved
+        canister origin (OPENCLAW_ALLOWED_WS_ORIGINS) — can obtain it.
         """
+        _origin = self.headers.get('Origin', '').strip()
+        if _origin and _origin not in self._app_origins():
+            return self.send_error(403, f'origin not allowed: {_origin}')
         return self._send_json(200, {'nonce': _PTY_NONCE})
 
     def _terminal_pty_ws(self):
@@ -3518,16 +3543,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # may omit it (curl, CLI tools, unit tests) — those are allowed through
         # so local dev tooling isn't broken.
         _origin = self.headers.get('Origin', '').strip()
-        _host   = self.headers.get('Host', '').strip()
-        _is_tls = isinstance(self.connection, ssl.SSLSocket)
-        _scheme = 'https' if _is_tls else 'http'
-        _allowed_origins = {
-            'https://hq.cafreso.com',        # production Caddy gateway
-            'http://localhost:8787',          # local Windows dev
-            'http://127.0.0.1:8787',          # local Windows dev (alt)
-            f'{_scheme}://{_host}',           # same-origin (any IP the client used)
-        }
-        if _origin and _origin not in _allowed_origins:
+        if _origin and _origin not in self._app_origins():
             return self.send_error(403, f'WebSocket origin not allowed: {_origin}')
 
         # Nonce validation — the frontend fetches /terminal/nonce first and
