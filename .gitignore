@@ -53,3 +53,7 @@ node_modules/
 # Generated HQ-UI asset-canister build dir (scripts/build_hq_ui.py)
 hq-ui/
 scripts/__pycache__/
+
+# Runtime state / caches (never ship)
+hq-state/
+oci-fleet/_or.json
