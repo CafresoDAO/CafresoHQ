@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>CafresoHQ · Shared Graph</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; min-height: 100vh; background: #171310; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+  #graph { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #brand {
+    position: fixed; left: 14px; bottom: 12px; z-index: 5;
+    color: #cabfa9; font-size: 12px; letter-spacing: .02em; opacity: .8;
+    background: rgba(20,18,12,.5); padding: 4px 10px; border-radius: 14px;
+  }
+  #analytics {
+    display: none; position: fixed; top: 14px; right: 14px; z-index: 5; width: 230px;
+    background: rgba(20,18,12,.82); backdrop-filter: blur(6px);
+    border: 1px solid rgba(245,210,93,.22); border-radius: 10px;
+    padding: 12px 13px; color: #e9e2d4; font-size: 12px; line-height: 1.5;
+  }
+  #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="analytics"></div>
+<div id="brand">CafresoHQ</div>
+<script src="graph-viewer.js"></script>
+</body>
+</html>
