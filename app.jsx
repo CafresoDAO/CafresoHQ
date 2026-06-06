@@ -150,6 +150,10 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
   const dragRef   = useRefA(null); // active drag/resize state during gesture
   const isTouch   = typeof window !== 'undefined' &&
     window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  // Full-screen the chat ONLY on small touch screens (phones). iPads/tablets are
+  // touch but load the DESKTOP layout (>768px); there the chat must stay a
+  // floating window so it doesn't cover the rail/topbar ("chat takes over").
+  const fullScreen = isTouch && typeof window !== 'undefined' && window.innerWidth <= 768;
 
   /* Esc closes the window (unless an input is focused — don't lose typing). */
   React.useEffect(() => {
@@ -340,7 +344,7 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
       ref={winRef}
       style={{
         position: 'fixed',
-        ...(isTouch
+        ...(fullScreen
           ? { left: 0, top: 0, right: 0, bottom: 0, width: '100%', height: '100%' }
           : (() => {
               // Clamp the (possibly stale/oversized) saved geometry to the
@@ -358,8 +362,8 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
         zIndex: 'var(--z-window)',
         background: 'var(--paper)',
         border: '2px solid var(--ink)',
-        borderRadius: isTouch ? 0 : 6,
-        boxShadow: isTouch ? 'none' : '0 12px 36px rgba(0,0,0,0.28)',
+        borderRadius: fullScreen ? 0 : 6,
+        boxShadow: fullScreen ? 'none' : '0 12px 36px rgba(0,0,0,0.28)',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
