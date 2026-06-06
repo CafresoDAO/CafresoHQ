@@ -3,7 +3,7 @@
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
 const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
@@ -560,64 +560,10 @@ function whoCan(agents, queryRaw) {
     .sort((a, b) => b.matches.length - a.matches.length);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   EcosystemNav — Cafreso wordmark + app-switcher dropdown in the topbar.
-   Visually links HQ to the wider Cafreso ecosystem (Pages, AI, Banking).
-   Renders the real Cafreso script wordmark (/assets/cafreso-wordmark.png)
-   plus a CSS-styled "HQ" suffix chip matching the brand tagline pattern.
-   ───────────────────────────────────────────────────────────────────── */
-const ECOSYSTEM_APPS = [
-  { id: 'pages',   label: 'Pages',   url: 'https://cafreso.com',                                   icon: '📄', accent: 'var(--brand-peach)' },
-  { id: 'ai',      label: 'AI',      url: 'https://ai.cafreso.com',                                icon: '🧠', accent: 'var(--brand-plum)' },
-  { id: 'hq',      label: 'HQ',      url: '',                          /* current */              icon: '🏢', accent: 'var(--brand-banana)', active: true },
-  { id: 'banking', label: 'Banking', url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/',          icon: '🏦', accent: 'var(--brand-icp-gold)' },
-];
-function EcosystemNav() {
-  const [open, setOpen] = React.useState(false);
-  const btnRef = React.useRef(null);
-  React.useEffect(() => {
-    if (!open) return;
-    const close = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('touchstart', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('touchstart', close); };
-  }, [open]);
-  return (
-    <div className="ecosystem-nav">
-      <a className="cf-brand" href="hq.html" aria-label="Cafreso HQ home">
-        {/* Two cf-mark variants — only one shows at a time via body.night
-            class, so the coffee-on-light logo flips to white-on-dark
-            without a JS theme prop subscription.
-            RELATIVE paths so they resolve under the gateway prefix
-            (/u/<slug>/assets/…) as well as locally (/assets/…). */}
-        <img src="assets/cf-mark-coffee.png" alt="Cafreso" className="cf-mark cf-mark--light"/>
-        <img src="assets/cf-mark-white.png"  alt=""        className="cf-mark cf-mark--dark" aria-hidden="true"/>
-        <span className="cf-suffix" aria-label="HQ"><i>H</i><i>Q</i></span>
-      </a>
-      <div className="cf-apps-wrap" ref={btnRef}>
-        <button className="cf-apps-btn" onClick={()=>setOpen(o=>!o)} aria-expanded={open}>
-          Apps <span aria-hidden="true">{open ? '▴' : '▾'}</span>
-        </button>
-        {open && (
-          <div className="cf-apps-menu" role="menu">
-            {ECOSYSTEM_APPS.map(app => (
-              <a key={app.id} role="menuitem"
-                 className={'cf-apps-item' + (app.active ? ' is-active' : '')}
-                 href={app.url || undefined}
-                 aria-current={app.active ? 'page' : undefined}
-                 onClick={(e)=>{ if (!app.url) e.preventDefault(); setOpen(false); }}
-                 style={{ '--app-accent': app.accent }}>
-                <span className="cf-apps-icon" aria-hidden="true">{app.icon}</span>
-                <span className="cf-apps-label">{app.label}</span>
-                {app.active && <span className="cf-apps-current">CURRENT</span>}
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+/* The HQ topbar's ecosystem switcher is now the shared <cafreso-ecobar> web
+   component (cafreso-ecobar.jsx) — used by HQ, the SvelteKit frontend, and
+   Minegold from one definition. The old React-only EcosystemNav + ECOSYSTEM_APPS
+   that lived here were removed to keep a single source of truth. */
 
 /* ─────────────────────────────────────────────────────────────────────
    AppGlobalCommands — registers always-available palette commands.
@@ -1149,6 +1095,15 @@ function App() {
     return () => window.removeEventListener('openclaw:replayTour', onReplay);
   }, []);
 
+  /* Persistent getting-started checklist (survives a tour-skip). */
+  const [gsDismissed, setGsDismissed] = useStored(k('gettingStartedDone'), false);
+  const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
+  useEffectA(() => {
+    const onPub = () => setPublishedGraph(true);
+    window.addEventListener('openclaw:graph-published', onPub);
+    return () => window.removeEventListener('openclaw:graph-published', onPub);
+  }, []);
+
   /* Listen for messages from the Graph popout window so clicks in the
      popout open notes in the main window. */
   useEffectA(() => {
@@ -1169,6 +1124,16 @@ function App() {
   }, []);
   const [hireOpen, setHireOpen] = useStateA(false);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
+  const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
+  // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
+  const [hasKey, setHasKey] = useStateA(() => { try { return window.OpenclawClient.hasUsableKey(); } catch (_e) { return true; } });
+  React.useEffect(() => {
+    const C = window.OpenclawClient;
+    const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
+    recompute();
+    return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
+  }, []);
+  const openSettings = React.useCallback((tab) => { setSettingsTab(tab || null); setSettingsOpen(true); }, []);
   const [scanlines, setScanlines] = useStored(k('scanlines'), true);
   const [sound, setSound] = useStored(k('sound'), false);
   const [feed, setFeed] = useStateA(MOCK.ACTIVITY_SEED);
@@ -3447,7 +3412,7 @@ ${d.text}` : d.text,
       <PaletteFab />
       <div className="main">
         <div className="topbar">
-          <EcosystemNav />
+          <cafreso-ecobar current="hq"></cafreso-ecobar>
           <div className="crumbs">
             <span><Ico kind={activeView}/></span>
             <span>HQ</span>
@@ -3472,6 +3437,13 @@ ${d.text}` : d.text,
             </Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setWorkflowOpen(true)}>WORKFLOW</Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setNight(v=>!v)}>{night?'☀':'☾'} {night?'DAY':'NIGHT'}</Btn>
+            {!hasKey && (
+              <button className="chip chip-warn" onClick={()=>openSettings('keys')}
+                title="No AI key for the active provider yet — your agents can't run until you add one. Click to open Settings → Connections."
+                style={{cursor:'pointer', background:'rgba(232,169,169,0.16)', borderColor:'rgba(232,169,169,0.5)', color:'#E8A9A9'}}>
+                ⚠ ADD AI KEY
+              </button>
+            )}
             {(agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')) && (
               <Btn variant="danger" size="sm" onClick={onStopAll} title="Abort every in-flight agent + pause every running mission">■ STOP ALL</Btn>
             )}
@@ -3523,14 +3495,14 @@ ${d.text}` : d.text,
             <span className="bn-label">{label}</span>
           </button>
         ))}
-        <button className="bn-item" onClick={()=>setSettingsOpen(true)}>
+        <button className="bn-item" onClick={()=>openSettings()}>
           <Ico kind="settings" size={18}/>
           <span className="bn-label">Settings</span>
         </button>
       </nav>
 
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
-      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
+      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}/>
       <InspectPanel agent={inspect} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}/>
       <CEOPanel
@@ -3557,6 +3529,17 @@ ${d.text}` : d.text,
         onClear={() => { setNotifFeed([]); setNotifSeenAt(Date.now()); }}
         emptyHint="Nothing pending. Approvals, agent activity, and receipts will land here."
       />
+      {!gsDismissed && !tourOpen && (
+        <GettingStarted
+          hasKey={hasKey}
+          chatted={(chat || []).some(m => m.from === 'user')}
+          published={publishedGraph}
+          onAddKey={() => openSettings('keys')}
+          onChat={() => setActiveView('chat')}
+          onPublish={() => setActiveView('vault')}
+          onDismiss={() => setGsDismissed(true)}
+        />
+      )}
       <OnboardingTour
         open={tourOpen}
         onClose={() => { setTourOpen(false); setTourSeen(true); }}

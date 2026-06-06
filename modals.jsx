@@ -465,10 +465,18 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   );
 }
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight }) {
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, initialTab }) {
   const [tab, setTab] = useStateM('agents');
   const [selected, setSelected] = useStateM(agents[0]?.id || null);
   const sel = agents.find(a => a.id === selected) || agents[0];
+
+  // Deep-link: jump to a requested tab each time the modal is (re)opened
+  // (e.g. the "no API key" chip opens straight to CONNECTIONS).
+  const prevOpenRef = useRefM(false);
+  useEffectM(() => {
+    if (open && !prevOpenRef.current && initialTab) setTab(initialTab);
+    prevOpenRef.current = open;
+  }, [open, initialTab]);
 
   if (!open) return null;
 

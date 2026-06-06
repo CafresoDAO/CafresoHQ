@@ -1276,6 +1276,52 @@ function OnboardingKeyStep() {
   );
 }
 
+/* Persistent getting-started checklist. Unlike the one-shot tour, this survives
+   a tour-skip and stays until every step is done (or the user dismisses it), so
+   a new user is never left at a dead end (e.g. agents that error with no key).
+   Steps auto-check from live app state passed in as props. */
+function GettingStarted({ hasKey, chatted, published, onAddKey, onChat, onPublish, onDismiss }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const steps = [
+    { k: 'key',   done: !!hasKey,    n: 1, label: 'Add your AI key',        hint: 'Free OpenRouter key — powers every agent.', act: onAddKey,  cta: 'Add key' },
+    { k: 'chat',  done: !!chatted,   n: 2, label: 'Chat with your team',     hint: 'Say hi to your CEO — ask for anything.',    act: onChat,    cta: 'Open chat' },
+    { k: 'graph', done: !!published, n: 3, label: 'Publish your first graph', hint: 'Turn your vault into a shareable map.',     act: onPublish, cta: 'Open graph' },
+  ];
+  const doneCount = steps.filter(s => s.done).length;
+  const allDone = doneCount === steps.length;
+
+  const card = {
+    position: 'fixed', left: 14, bottom: 14, zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
+    background: 'rgba(24,20,14,0.95)', backdropFilter: 'blur(8px)',
+    border: '1px solid rgba(245,210,93,0.28)', borderRadius: 12, padding: '12px 13px',
+    color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', boxShadow: '0 14px 44px rgba(0,0,0,0.42)',
+  };
+  if (collapsed) {
+    return React.createElement('button', {
+      onClick: () => setCollapsed(false),
+      style: { position: 'fixed', left: 14, bottom: 14, zIndex: 40, cursor: 'pointer', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 20, padding: '7px 12px', background: 'rgba(24,20,14,0.95)', color: '#F5D25D', font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' },
+      title: 'Getting started',
+    }, '✦ Getting started · ' + doneCount + '/' + steps.length);
+  }
+  return React.createElement('div', { style: card },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+      React.createElement('div', { style: { fontWeight: 700, color: '#F5D25D', flex: 1 } }, allDone ? "You're all set 🎉" : 'Getting started'),
+      React.createElement('span', { style: { color: '#8f8676' } }, doneCount + '/' + steps.length),
+      React.createElement('button', { onClick: () => setCollapsed(true), title: 'Collapse', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '–'),
+      React.createElement('button', { onClick: onDismiss, title: 'Dismiss', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '✕'),
+    ),
+    steps.map((s) => React.createElement('div', { key: s.k, style: { display: 'flex', alignItems: 'flex-start', gap: 9, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)' } },
+      React.createElement('span', { style: { flex: '0 0 auto', width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, marginTop: 1, background: s.done ? 'rgba(165,196,161,0.25)' : 'rgba(245,210,93,0.14)', color: s.done ? '#A5C4A1' : '#F5D25D', border: '1px solid ' + (s.done ? 'rgba(165,196,161,0.5)' : 'rgba(245,210,93,0.4)') } }, s.done ? '✓' : s.n),
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', { style: { fontWeight: 600, textDecoration: s.done ? 'line-through' : 'none', color: s.done ? '#8f8676' : '#e9e2d4' } }, s.label),
+        !s.done && React.createElement('div', { style: { color: '#9b938a', fontSize: 11, lineHeight: 1.35, margin: '1px 0 4px' } }, s.hint),
+        !s.done && s.act && React.createElement('button', { onClick: s.act, style: { cursor: 'pointer', border: '1px solid rgba(245,210,93,0.4)', borderRadius: 6, padding: '3px 9px', background: 'rgba(245,210,93,0.12)', color: '#F5D25D', font: '600 11px Inter, system-ui, sans-serif' } }, s.cta + ' →'),
+      ),
+    )),
+    allDone && React.createElement('button', { onClick: onDismiss, style: { marginTop: 9, width: '100%', cursor: 'pointer', border: '1px solid rgba(165,196,161,0.45)', borderRadius: 7, padding: '6px', background: 'rgba(165,196,161,0.14)', color: '#A5C4A1', font: '600 12px Inter, system-ui, sans-serif' } }, 'Dismiss'),
+  );
+}
+
 function NotificationBell({ unreadCount = 0, onClick, title }) {
   return (
     <button
@@ -3137,7 +3183,7 @@ window.OpenclawUI = {
   ToastProvider, useToast,
   CommandPaletteProvider, useCommands,
   NotificationBell, NotificationCenter,
-  OnboardingTour, OnboardingKeyStep,
+  OnboardingTour, OnboardingKeyStep, GettingStarted,
   VocabCtx, getVocab,
   PaletteFab,
 };

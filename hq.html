@@ -149,8 +149,22 @@
   }
   try { size(); seed(); frame(); window.addEventListener('resize', function () { size(); seed(); }); } catch (_) {}
 
-  // ── Status copy: Starting… → Provisioning… ──
-  setTimeout(function () { if (!done && txt) txt.textContent = 'Provisioning CafresoHQ…'; }, 1200);
+  // ── Status copy: honest provisioning ETA while a cold container wakes ──
+  // Warm starts hide in <1s; cold OCI containers take ~20-40s, so show a soft
+  // countdown and degrade the copy gracefully instead of a frozen spinner.
+  var ETA = 30;
+  function tickStatus() {
+    if (done || !txt) return;
+    if (healthOk) { txt.textContent = appReady ? 'Ready' : 'Loading your HQ…'; return; }
+    var elapsed = Math.round((Date.now() - started) / 1000);
+    var left = ETA - elapsed;
+    if (elapsed < 2) txt.textContent = 'Starting CafresoHQ…';
+    else if (left > 4) txt.textContent = 'Waking your private container… ~' + left + 's';
+    else if (elapsed < 60) txt.textContent = 'Almost there — warming up…';
+    else txt.textContent = 'Still warming up (cold start)…';
+  }
+  var statusTimer = setInterval(tickStatus, 1000);
+  setTimeout(tickStatus, 1200);
 
   // ── Health polling ──
   function apiBase() {
@@ -172,6 +186,7 @@
 
   function hide() {
     if (done) return; done = true;
+    try { clearInterval(statusTimer); } catch (_) {}
     boot.classList.add('is-hiding');
     setTimeout(function () { if (raf) cancelAnimationFrame(raf); boot.remove(); }, 700);
   }
@@ -190,23 +205,10 @@
 </script>
 <div id="root"></div>
 
-<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css"/>
-<script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
-<script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
-<script type="text/babel" src="tweaks-panel.jsx?v=21"></script>
-<script type="text/babel" src="sprites.jsx?v=21"></script>
-<script type="text/babel" src="claude-client.jsx?v=21"></script>
-<script type="text/babel" src="mock-data.jsx?v=21"></script>
-<script type="text/babel" src="ui.jsx?v=21"></script>
-<script type="text/babel" src="modals.jsx?v=21"></script>
-<script type="text/babel" src="features.jsx?v=21"></script>
-<script type="text/babel" src="views.jsx?v=21"></script>
-<script type="text/babel" src="missions.jsx?v=21"></script>
-<script type="text/babel" src="agent_runner.jsx?v=21"></script>
-<script type="text/babel" src="app.jsx?v=21"></script>
+<!-- HQ UI scripts. Vendor globals (React/ReactDOM/xterm) are self-hosted and the
+     JSX is pre-transformed at build time (no @babel/standalone, no unpkg). The tags
+     below are injected from dist-ui/manifest.json by serve.py (local/electron) or
+     scripts/build_hq_ui.py (asset canister) — see scripts/ui_manifest.py. -->
+<!--HQ_SCRIPTS-->
 </body>
 </html>

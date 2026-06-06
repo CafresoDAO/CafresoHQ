@@ -180,6 +180,24 @@ function setSettings(patch) {
 }
 function onSettingsChange(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
+/* Is the active provider actually usable (does the user have what it needs)?
+   Drives the onboarding "no API key" nudge. Provider-aware so local/CLI backends
+   (which need no browser key) don't trigger a false warning. */
+function hasUsableKey(s) {
+  s = s || _settings;
+  switch (s.provider || 'hermes') {
+    case 'anthropic':  return !!s.anthropicKey;
+    case 'google':     return !!s.googleKey;
+    case 'lmstudio':   return !!s.lmstudioModel;   // local — "ready" = a model picked
+    case 'ollama':     return !!s.ollamaModel;
+    case 'claudecode':                              // CLI-backed, no key entered in the UI
+    case 'codex':      return true;
+    case 'hermes':                                  // default — needs the user's OpenRouter key
+    case 'openrouter':
+    default:           return !!s.openrouterKey;
+  }
+}
+
 /* Anthropic requires alternating user/assistant and must start with user. */
 function normalizeMessages(msgs) {
   const out = [];
@@ -1467,7 +1485,7 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
 })();
 
 window.OpenclawClient = {
-  getSettings, setSettings, onSettingsChange,
+  getSettings, setSettings, onSettingsChange, hasUsableKey,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
