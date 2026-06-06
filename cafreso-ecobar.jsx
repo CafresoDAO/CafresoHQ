@@ -72,10 +72,35 @@
 
   class CafresoEcobar extends HTMLElement {
     static get observedAttributes() { return ['current', 'compact']; }
-    connectedCallback() { this._render(); }
+
+    connectedCallback() {
+      this._render();
+      // Outside-click + Escape close the menu. Bound ONCE per element and torn
+      // down on disconnect so re-renders / remounts never leak listeners.
+      if (!this._onDoc) {
+        var self = this;
+        this._onDoc = function (e) { if (self._open && !self.contains(e.target)) self._setOpen(false); };
+        this._onKey = function (e) { if (e.key === 'Escape' && self._open) self._setOpen(false); };
+        document.addEventListener('click', this._onDoc);
+        document.addEventListener('keydown', this._onKey);
+      }
+    }
+    disconnectedCallback() {
+      if (this._onDoc) document.removeEventListener('click', this._onDoc);
+      if (this._onKey) document.removeEventListener('keydown', this._onKey);
+      this._onDoc = this._onKey = null;
+    }
     attributeChangedCallback() { if (this.shadowRoot) this._render(); }
 
+    _setOpen(v) {
+      this._open = v;
+      if (this._menu) this._menu.style.display = v ? 'block' : 'none';
+      if (this._caret) this._caret.textContent = v ? '▴' : '▾';
+      if (this._btn) this._btn.setAttribute('aria-expanded', v ? 'true' : 'false');
+    }
+
     _render() {
+      var self = this;
       var current = (this.getAttribute('current') || '').toLowerCase();
       var compact = this.hasAttribute('compact');
       var root = this.shadowRoot || this.attachShadow({ mode: 'open' });
@@ -85,17 +110,14 @@
       var curApp = APPS.filter(function (a) { return a.id === current; })[0];
       var bar = h('div', { class: 'bar' });
 
-      // Brand: dot + wordmark + current-app pill.
       var brandHref = curApp ? (current === 'hq' ? 'hq.html' : curApp.url) : 'https://cafreso.com';
       var brand = h('a', { class: 'brand', href: brandHref, title: 'Cafreso' }, [h('span', { class: 'dot' })]);
       if (!compact) brand.appendChild(h('span', { class: 'word' }, ['Cafreso']));
       if (curApp) brand.appendChild(h('span', { class: 'cur' }, [curApp.label]));
       bar.appendChild(brand);
 
-      // Apps switcher.
       var wrap = h('div', { class: 'wrap' });
-      var open = false;
-      var btn = h('button', { class: 'apps', 'aria-haspopup': 'true' }, ['Apps ', h('span', { class: 'caret' }, ['▾'])]);
+      var btn = h('button', { class: 'apps', 'aria-haspopup': 'true', 'aria-expanded': 'false' }, ['Apps ', h('span', { class: 'caret' }, ['▾'])]);
       var menu = h('div', { class: 'menu', role: 'menu' });
       menu.style.display = 'none';
       APPS.forEach(function (a) {
@@ -109,17 +131,15 @@
         if (active) item.appendChild(h('span', { class: 'badge' }, ['CURRENT']));
         menu.appendChild(item);
       });
-      function setOpen(v) { open = v; menu.style.display = v ? 'block' : 'none'; btn.querySelector('.caret').textContent = v ? '▴' : '▾'; }
-      btn.addEventListener('click', function (e) { e.stopPropagation(); setOpen(!open); });
-      document.addEventListener('click', function () { if (open) setOpen(false); });
+      btn.addEventListener('click', function (e) { e.stopPropagation(); self._setOpen(!self._open); });
       wrap.appendChild(btn); wrap.appendChild(menu);
       bar.appendChild(wrap);
 
-      // Optional host identity slot (chip + sign-out).
       var idslot = h('span', { class: 'idslot' }, [h('slot', { name: 'identity' })]);
       bar.appendChild(idslot);
 
       root.appendChild(bar);
+      this._menu = menu; this._btn = btn; this._caret = btn.querySelector('.caret'); this._open = false;
     }
   }
 
