@@ -1,18 +1,19 @@
 <script>
   /* EcosystemNav — Cafreso wordmark + app-switcher dropdown.
      Visually links the SvelteKit app to the wider Cafreso ecosystem
-     (Pages, AI, HQ, Banking) so users feel they're in the same product
-     family across subdomains. */
+     (Pages, AI, HQ, Mine) so users feel they're in the same product
+     family across subdomains. Mirrors the shared <cafreso-ecobar> web
+     component used by HQ + Minegold — keep the app list/labels in sync. */
   import { onMount } from 'svelte';
 
-  /** Active app id — pass from parent ('pages' | 'ai' | 'hq' | 'banking'). */
+  /** Active app id — pass from parent ('pages' | 'ai' | 'hq' | 'mine'). */
   export let active = 'ai';
 
   const apps = [
     { id: 'pages',   label: 'Pages',   url: 'https://cafreso.com',                                  icon: '📄', accent: 'var(--eco-pages)' },
     { id: 'ai',      label: 'AI',      url: 'https://ai.cafreso.com',                                icon: '🧠', accent: 'var(--eco-ai)' },
     { id: 'hq',      label: 'HQ',      url: 'https://hq.cafreso.com',                                icon: '🏢', accent: 'var(--eco-hq)' },
-    { id: 'banking', label: 'Banking', url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/',          icon: '🏦', accent: 'var(--eco-banking)' }
+    { id: 'mine',    label: 'Mine',    url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/',          icon: '⛏', accent: 'var(--eco-banking)' }
   ];
 
   let open = false;
