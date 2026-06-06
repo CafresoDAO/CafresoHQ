@@ -191,16 +191,22 @@
     setTimeout(function () { if (raf) cancelAnimationFrame(raf); boot.remove(); }, 700);
   }
   function maybeHide() {
-    // Normal path: app mounted AND backend reachable, after a brief minimum so
-    // the splash never just flickers.
-    if (appReady && healthOk && (Date.now() - started) > 900) hide();
+    // Hide as soon as the React app has MOUNTED (after a brief minimum so the
+    // splash doesn't just flicker). Deliberately NOT gated on /health: the UI is
+    // served from the ICP asset canister and talks to its backend cross-origin
+    // (?api=…), so a same-origin /health never resolves. Blocking on it trapped
+    // the whole app behind the splash. The app shows its own in-app loading
+    // states for data while the container wakes.
+    if (appReady && (Date.now() - started) > 700) hide();
   }
-  window.addEventListener('cafresohq:ready', function () { appReady = true; maybeHide(); });
-  // Safety nets: never trap the user. If the app mounted but the backend is
-  // still cold after a while, proceed anyway (the app degrades gracefully).
-  setTimeout(function () { if (appReady) hide(); }, 12000);
-  setTimeout(hide, 30000);
-  boot.addEventListener('click', function () { if (appReady) hide(); });
+  window.addEventListener('cafresohq:ready', function () {
+    appReady = true; maybeHide();
+    if (!done) setTimeout(maybeHide, 750);   // catch the case where ready fired very early
+  });
+  // Safety net: if the app never signals ready (hung/crashed), don't trap the
+  // user behind the splash — reveal whatever's there.
+  setTimeout(function () { if (!done) hide(); }, 8000);
+  boot.addEventListener('click', hide);   // tap-to-dismiss escape hatch
 })();
 </script>
 <div id="root"></div>
