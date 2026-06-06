@@ -961,7 +961,364 @@ function saveGraphPrefs(prefs) {
   try { localStorage.setItem(GRAPH_PREFS_KEY, JSON.stringify(prefs)); } catch (_) {}
 }
 
+/* Edge color from the typed-edge palette (shared with the legacy renderer's
+   EDGE_TYPE_STYLE). Falls back to a soft theme default for plain links. */
+function edgeColorForType(type, isDark) {
+  const s = EDGE_TYPE_STYLE[type];
+  if (s && s.color) return s.color;
+  return isDark ? 'rgba(168,152,190,0.22)' : 'rgba(120,108,90,0.24)';
+}
+
+// Concept-map mode reads note bodies client-side; cap how many we pull so a big
+// vault doesn't fire hundreds of fetches. Scoping to a folder keeps it focused.
+const CONCEPT_NOTE_CAP = 120;
+
+/* InfraNodus-grade WebGL graph view (sigma.js + graphology via
+   window.CafresoGraphEngine). Replaces the legacy Canvas-2D renderer below.
+   Keeps the external contract: props {onOpenNote, embedded, activePath,
+   onMinimize, agents}, the window.OpenclawGraph API, and the popout. Adds an
+   analytics side panel (communities, betweenness, structure, gaps) and a second
+   data source — a concept co-occurrence map (window.CafresoCooccur) — that drops
+   into the same engine/analytics/publish path. */
 function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize = null, agents = null }) {
+  const containerRef = React.useRef(null);
+  const engineRef = React.useRef(null);
+  const rawRef = React.useRef({ byId: {}, maxInlinks: 0, mtimeRange: null });
+  const persistedRef = React.useRef(null);
+  if (persistedRef.current === null) persistedRef.current = loadGraphPrefs() || {};
+  const persisted = persistedRef.current;
+
+  const [colorMode, setColorMode] = useSV(persisted.colorMode || 'community');
+  const [localMode, setLocalMode] = useSV(persisted.localMode || 'global');
+  const [filter, setFilter] = useSV('');
+  const [analytics, setAnalytics] = useSV(null);
+  const [loading, setLoading] = useSV(true);
+  const [panelOpen, setPanelOpen] = useSV(persisted.drawerOpen !== false);
+  const [ctxMenu, setCtxMenu] = useSV(null); // { id, x, y }
+  const [nodeCount, setNodeCount] = useSV(0);
+  const [shareUrl, setShareUrl] = useSV(null);
+  const [sharing, setSharing] = useSV(false);
+  const [edgesHover, setEdgesHover] = useSV(!!persisted.edgesHover); // hide edges until hover
+  const edgesHoverRef = React.useRef(edgesHover);
+  edgesHoverRef.current = edgesHover;
+
+  // Data source: 'links' = wikilink graph (/vault/graph); 'concepts' = co-occurrence map.
+  const [source, setSource] = useSV(persisted.source === 'concepts' ? 'concepts' : 'links');
+  const [scope, setScope] = useSV(persisted.scope || '__all__');   // folder prefix for concepts
+  const [folders, setFolders] = useSV([]);
+  const [conceptMeta, setConceptMeta] = useSV(null);
+  // Refs keep the loader/mount helpers reading the latest values without re-binding.
+  const sourceRef = React.useRef(source); sourceRef.current = source;
+  const scopeRef = React.useRef(scope); scopeRef.current = scope;
+  const filterRef = React.useRef(filter); filterRef.current = filter;
+  const colorModeRef = React.useRef(colorMode); colorModeRef.current = colorMode;
+  const localModeRef = React.useRef(localMode); localModeRef.current = localMode;
+  const activePathRef = React.useRef(activePath); activePathRef.current = activePath;
+
+  const isDark = typeof document !== 'undefined' && document.body.classList.contains('night');
+  const titleFor = (id) => {
+    const n = rawRef.current.byId[id];
+    return (n && (n.title || n.label)) || String(id).split('/').pop().replace(/\.md$/, '');
+  };
+
+  // Color function for non-community modes — reuses the legacy colorForNode.
+  const colorFor = React.useCallback((id, node) => {
+    if (!node || colorMode === 'community') return null;
+    const cs = (typeof getComputedStyle === 'function') ? getComputedStyle(document.documentElement) : null;
+    return colorForNode(node, {
+      colorMode,
+      maxInlinks: rawRef.current.maxInlinks,
+      mtimeRange: rawRef.current.mtimeRange,
+      clusterColoring: false, clusters: null,
+    }, isDark, cs);
+  }, [colorMode, isDark]);
+
+  const wireEngine = React.useCallback((eng) => {
+    // Concept nodes are terms, not note paths — don't try to open them.
+    eng.on('nodeClick', (id) => { if (sourceRef.current === 'links') onOpenNote && onOpenNote(id); });
+    eng.on('nodeDoubleClick', (id) => { if (sourceRef.current === 'links') onOpenNote && onOpenNote(id); });
+    eng.on('hover', () => { /* highlight handled inside the engine */ });
+    eng.on('stageClick', () => setCtxMenu(null));
+    eng.on('analytics', (a) => setAnalytics(a));
+    eng.on('nodeRightClick', (id, evt) => {
+      const ox = (evt && evt.original) ? evt.original.clientX : (evt && evt.x) || 0;
+      const oy = (evt && evt.original) ? evt.original.clientY : (evt && evt.y) || 0;
+      setCtxMenu({ id, x: ox, y: oy });
+    });
+  }, [onOpenNote]);
+
+  const buildData = (g) => {
+    rawRef.current.byId = Object.fromEntries(g.nodes.map((n) => [n.id, n]));
+    let maxIn = 0, mMin = Infinity, mMax = -Infinity;
+    for (const n of g.nodes) {
+      if ((n.inlinks || 0) > maxIn) maxIn = n.inlinks;
+      if (n.mtime) { if (n.mtime < mMin) mMin = n.mtime; if (n.mtime > mMax) mMax = n.mtime; }
+    }
+    rawRef.current.maxInlinks = maxIn;
+    rawRef.current.mtimeRange = mMin < mMax ? { min: mMin, max: mMax } : null;
+    const edges = g.edges.map((e) => ({ ...e, color: edgeColorForType(e.type, isDark) }));
+    return { nodes: g.nodes, edges };
+  };
+
+  // Pull note bodies for the concept map (scoped + capped to bound the fetches).
+  const loadConceptDocs = async () => {
+    const all = await window.OpenclawClient.vaultList();
+    let files = (all || []).filter((f) => /\.md$/i.test(f.path || ''));
+    const sc = scopeRef.current;
+    if (sc && sc !== '__all__') files = files.filter((f) => f.path === sc || f.path.startsWith(sc.replace(/\/$/, '') + '/'));
+    files = files.sort((a, b) => (b.mtime || 0) - (a.mtime || 0)).slice(0, CONCEPT_NOTE_CAP);
+    const docs = [];
+    const CONC = 6;
+    for (let i = 0; i < files.length; i += CONC) {
+      const got = await Promise.all(files.slice(i, i + CONC).map(async (f) => {
+        try { return { id: f.path, title: f.title || titleFor(f.path), text: await window.OpenclawClient.vaultRead(f.path) }; }
+        catch (_) { return null; }
+      }));
+      for (const d of got) if (d) docs.push(d);
+    }
+    return docs;
+  };
+
+  // Resolve the active data source into {nodes, edges} for the engine.
+  const loadData = async () => {
+    if (sourceRef.current === 'concepts') {
+      if (!window.CafresoCooccur) throw new Error('concept builder unavailable');
+      const docs = await loadConceptDocs();
+      const built = window.CafresoCooccur.build(docs, { window: 4, maxNodes: 200 });
+      setConceptMeta({ docs: docs.length, terms: built.nodes.length });
+      return built;
+    }
+    setConceptMeta(null);
+    return await window.OpenclawClient.vaultGraph();
+  };
+
+  // (Re)mount the engine on fresh data, re-applying controls a remount drops.
+  const mountData = (g) => {
+    if (!containerRef.current || !window.CafresoGraphEngine) return null;
+    try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
+    const eng = window.CafresoGraphEngine.mount(containerRef.current, buildData(g), {
+      dark: isDark, colorMode: colorModeRef.current, colorFor, now: Date.now(),
+      edgeMode: edgesHoverRef.current ? 'hover' : 'always',
+    });
+    engineRef.current = eng;
+    wireEngine(eng);
+    if (filterRef.current) eng.setFilter(filterRef.current);
+    if (sourceRef.current === 'links' && activePathRef.current) {
+      eng.setActivePath(activePathRef.current);
+      if (localModeRef.current !== 'global') eng.setLocalMode(activePathRef.current, parseInt(localModeRef.current, 10));
+    }
+    setNodeCount(g.nodes.length);
+    return eng;
+  };
+
+  // Load + mount on first render and whenever the source/scope changes.
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const g = await loadData();
+        if (cancelled || !containerRef.current) { setLoading(false); return; }
+        const eng = mountData(g);
+        setLoading(false);
+        if (!eng) return;
+        window.OpenclawGraph = {
+          _lastGraph: g,
+          pulse: (id) => { try { engineRef.current && engineRef.current.focusNode(id); } catch (_) {} },
+          refresh: async () => {
+            try {
+              const g2 = await loadData();
+              if (!containerRef.current) return;
+              const e2 = mountData(g2);
+              if (e2) window.OpenclawGraph._lastGraph = g2;
+            } catch (_) {}
+          },
+        };
+      } catch (e) { console.warn('graph load:', e); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [source, scope]);
+
+  // Folder list for the concept-map scope picker (cheap, once).
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await window.OpenclawClient.vaultList();
+        if (cancelled) return;
+        const set = new Set();
+        for (const f of all || []) { const i = (f.path || '').indexOf('/'); if (i > 0) set.add(f.path.slice(0, i)); }
+        setFolders([...set].sort());
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Destroy the engine on unmount.
+  React.useEffect(() => () => {
+    try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
+    if (window.OpenclawGraph) { try { delete window.OpenclawGraph; } catch (_) {} }
+  }, []);
+
+  // Control → engine wiring.
+  React.useEffect(() => { const e = engineRef.current; if (e) { e.setColorMode(colorMode); e.setColorFor(colorFor); } }, [colorMode, colorFor]);
+  React.useEffect(() => { const e = engineRef.current; if (e) e.setFilter(filter); }, [filter]);
+  React.useEffect(() => { const e = engineRef.current; if (e) e.setEdgeMode(edgesHover ? 'hover' : 'always'); }, [edgesHover]);
+  React.useEffect(() => {
+    const e = engineRef.current; if (!e) return;
+    // Local depth is note-relative — only meaningful for the wikilink graph.
+    if (source !== 'links' || localMode === 'global' || !activePath) e.setLocalMode(null, 0);
+    else e.setLocalMode(activePath, parseInt(localMode, 10));
+  }, [localMode, activePath, source]);
+  React.useEffect(() => { const e = engineRef.current; if (e && source === 'links' && activePath) e.setActivePath(activePath); }, [activePath, source]);
+
+  // Persist prefs.
+  React.useEffect(() => {
+    saveGraphPrefs({ ...persisted, colorMode, localMode, drawerOpen: panelOpen, edgesHover, source, scope });
+  }, [colorMode, localMode, panelOpen, edgesHover, source, scope]);
+
+  // Keep sigma sized to its container.
+  React.useEffect(() => {
+    const el = containerRef.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { const e = engineRef.current; if (e) e.resize(); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Publish: export the laid-out snapshot to a shareable public graph URL.
+  const publish = React.useCallback(async () => {
+    const e = engineRef.current; if (!e) return;
+    setSharing(true);
+    try {
+      const snap = e.exportSnapshot();
+      snap.title = sourceRef.current === 'concepts'
+        ? ('Concept map' + (scopeRef.current && scopeRef.current !== '__all__' ? ' · ' + scopeRef.current : ''))
+        : (activePath ? titleFor(activePath) : 'Vault graph');
+      const base = (typeof window !== 'undefined' && window._API_BASE != null) ? window._API_BASE : '';
+      const res = await fetch(base + '/graph/publish', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap),
+      });
+      const j = await res.json();
+      if (j && j.viewerUrl) {
+        const full = (base || (typeof location !== 'undefined' ? location.origin : '')) + j.viewerUrl;
+        setShareUrl(full);
+        try { await navigator.clipboard.writeText(full); } catch (_) {}
+        // Onboarding: mark "publish your first graph" complete.
+        try { localStorage.setItem('openclaw_hq_v1:publishedGraph', '1'); window.dispatchEvent(new CustomEvent('openclaw:graph-published')); } catch (_) {}
+      }
+    } catch (err) { console.warn('publish graph:', err); }
+    finally { setSharing(false); }
+  }, [activePath]);
+
+  const m = analytics && analytics.metrics;
+  const STRUCT_COPY = {
+    biased: 'One dominant topic — add contrasting ideas.',
+    focused: 'A clear main theme with some branches.',
+    diversified: 'Several well-connected topics — healthy balance.',
+    dispersed: 'Many scattered topics — consider bridging them.',
+  };
+  const COLOR_MODES = [['community', 'Topics'], ['tags', 'Tags'], ['type', 'Type'], ['folder', 'Folder'], ['inlinks', 'Links'], ['modified', 'Recency']];
+
+  const ctrlStyle = { background: 'rgba(20,18,12,0.55)', color: '#e9e2d4', border: '1px solid rgba(245,210,93,0.25)', borderRadius: 6, padding: '3px 7px', fontSize: 12, fontFamily: 'Inter, system-ui, sans-serif' };
+
+  return React.createElement('div', { style: { position: 'relative', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', background: isDark ? '#171310' : '#f4efe6' } },
+    // Sigma mounts here.
+    React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0 } }),
+
+    // Loading hint.
+    loading && React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bdb3a0', font: '13px Inter, sans-serif', pointerEvents: 'none' } }, source === 'concepts' ? 'Building concept map…' : 'Loading graph…'),
+
+    // Top toolbar.
+    React.createElement('div', { style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none' } },
+      React.createElement('input', {
+        value: filter, placeholder: source === 'concepts' ? 'Filter concepts' : 'Filter  (tag:x  type:y  -term)',
+        onChange: (e) => setFilter(e.target.value),
+        style: { ...ctrlStyle, width: 180, pointerEvents: 'auto' },
+      }),
+      // Data source: wikilink graph vs concept co-occurrence map.
+      React.createElement('select', { value: source, onChange: (e) => setSource(e.target.value), title: 'Graph source', style: { ...ctrlStyle, pointerEvents: 'auto' } },
+        React.createElement('option', { value: 'links' }, '🔗 Links'),
+        React.createElement('option', { value: 'concepts' }, '🧠 Concepts')),
+      React.createElement('select', { value: colorMode, onChange: (e) => setColorMode(e.target.value), title: 'Color by', style: { ...ctrlStyle, pointerEvents: 'auto' } },
+        COLOR_MODES.map(([v, l]) => React.createElement('option', { key: v, value: v }, l))),
+      // Concept mode → folder scope picker; link mode → local depth around the active note.
+      source === 'concepts'
+        ? React.createElement('select', { value: scope, onChange: (e) => setScope(e.target.value), title: 'Concept-map scope (folder)', style: { ...ctrlStyle, pointerEvents: 'auto', maxWidth: 150 } },
+            React.createElement('option', { value: '__all__' }, 'All notes'),
+            folders.map((f) => React.createElement('option', { key: f, value: f }, f + '/')))
+        : React.createElement('select', { value: localMode, onChange: (e) => setLocalMode(e.target.value), title: 'Local depth around active note', style: { ...ctrlStyle, pointerEvents: 'auto' } },
+            [['global', 'Whole graph'], ['1', '1 hop'], ['2', '2 hops'], ['3', '3 hops']].map(([v, l]) => React.createElement('option', { key: v, value: v }, l))),
+      React.createElement('button', { onClick: () => setEdgesHover((v) => !v), title: edgesHover ? 'Edges appear on hover' : 'Edges always visible — click to calm', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto', ...(edgesHover ? { color: '#F5D25D', borderColor: 'rgba(245,210,93,0.55)' } : {}) } }, edgesHover ? 'Edges: hover' : 'Edges: on'),
+      source === 'concepts'
+        ? React.createElement('button', { onClick: () => { const a = window.OpenclawGraph; if (a && a.refresh) a.refresh(); }, title: 'Re-read notes and rebuild the concept map', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Rebuild')
+        : React.createElement('button', { onClick: () => { const e = engineRef.current; if (e) e.refreshLayout(); }, title: 'Re-run layout', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Layout'),
+      React.createElement('button', { onClick: publish, title: 'Publish a shareable public graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, sharing ? 'Publishing…' : '⤴ Share'),
+      React.createElement('div', { style: { flex: 1 } }),
+      React.createElement('button', { onClick: () => setPanelOpen((v) => !v), style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, panelOpen ? 'Hide analytics ›' : '‹ Analytics'),
+      onMinimize && React.createElement('button', { onClick: onMinimize, style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '✕'),
+    ),
+
+    // Analytics side panel (InfraNodus-style).
+    panelOpen && React.createElement('div', { style: { position: 'absolute', top: 50, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif' } },
+      React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5D25D' } }, source === 'concepts' ? 'Concept analysis' : 'Graph analysis'),
+      source === 'concepts' && conceptMeta && React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginBottom: 8 } }, 'Co-occurrence over ' + conceptMeta.docs + ' note' + (conceptMeta.docs === 1 ? '' : 's')),
+      !m && React.createElement('div', { style: { color: '#9b938a' } }, 'Computing…'),
+      m && React.createElement(React.Fragment, null,
+        React.createElement('div', { style: { display: 'inline-block', padding: '3px 9px', borderRadius: 20, background: 'rgba(245,210,93,0.16)', color: '#F5D25D', fontWeight: 600, textTransform: 'capitalize', marginBottom: 6 } }, m.structure || '—'),
+        React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } }, STRUCT_COPY[m.structure] || ''),
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', marginBottom: 12 } },
+          [[source === 'concepts' ? 'Concepts' : 'Notes', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Components', m.components], ['Modularity', (m.modularity || 0).toFixed(2)], ['Avg degree', (m.avgDegree || 0).toFixed(1)]]
+            .map(([k, v]) => React.createElement('div', { key: k }, React.createElement('span', { style: { color: '#8f8676' } }, k + ': '), React.createElement('b', null, v)))),
+
+        // Top influential (betweenness brokers).
+        React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
+        (analytics.topInfluential || []).slice(0, 6).map((t) =>
+          React.createElement('div', { key: t.id, onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); }, title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+            '◆ ' + titleFor(t.id))),
+
+        // Topical clusters.
+        React.createElement('div', { style: { fontWeight: 600, margin: '12px 0 5px', color: '#F5D25D' } }, 'Main topics'),
+        (analytics.clusters || []).slice(0, 5).map((c) =>
+          React.createElement('div', { key: c.community, style: { marginBottom: 6 } },
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+              React.createElement('span', { style: { width: 9, height: 9, borderRadius: '50%', background: window.CafresoGraphEngine.communityColor(c.community), display: 'inline-block', flex: '0 0 auto' } }),
+              React.createElement('b', null, Math.round(c.share * 100) + '%'),
+              React.createElement('span', { style: { color: '#8f8676' } }, c.size + (source === 'concepts' ? ' concepts' : ' notes'))),
+            React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, paddingLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+              c.topNodes.slice(0, 3).map(titleFor).join(', ')))),
+
+        // Structural gap.
+        analytics.gap && React.createElement('div', { style: { marginTop: 12, padding: 8, borderRadius: 8, background: 'rgba(232,169,169,0.10)', border: '1px solid rgba(232,169,169,0.25)' } },
+          React.createElement('div', { style: { fontWeight: 600, color: '#E8A9A9', marginBottom: 3 } }, 'Structural gap'),
+          React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, lineHeight: 1.4 } },
+            'Weakly connected: ', React.createElement('b', null, titleFor(analytics.gap.aTop)), ' ⟷ ', React.createElement('b', null, titleFor(analytics.gap.bTop)))),
+      ),
+    ),
+
+    // Node context menu.
+    ctxMenu && React.createElement('div', { style: { position: 'fixed', left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 170), top: ctxMenu.y, zIndex: 50, background: 'rgba(28,24,16,0.97)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 8, padding: 4, minWidth: 150, font: '12px Inter, sans-serif', color: '#e9e2d4' },
+      onMouseLeave: () => setCtxMenu(null) },
+      [...(source === 'links' ? [['Open note', () => { onOpenNote && onOpenNote(ctxMenu.id); setCtxMenu(null); }]] : []),
+       ['Focus', () => { const e = engineRef.current; if (e) e.focusNode(ctxMenu.id); setCtxMenu(null); }],
+       ['Hide node', () => { const e = engineRef.current; if (e) { const s = new Set(e.hidden); s.add(ctxMenu.id); e.setHidden(s); } setCtxMenu(null); }]]
+        .map(([label, fn]) => React.createElement('div', { key: label, onClick: fn, style: { padding: '6px 10px', cursor: 'pointer', borderRadius: 5 }, onMouseEnter: (ev) => ev.currentTarget.style.background = 'rgba(245,210,93,0.14)', onMouseLeave: (ev) => ev.currentTarget.style.background = 'transparent' }, label))),
+
+    // Share modal.
+    shareUrl && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 420, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
+      React.createElement('div', { style: { fontWeight: 600, color: '#F5D25D', marginBottom: 8 } }, '⤴ Public graph published'),
+      React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } }, 'Anyone with this link can view this graph (read-only). Copied to your clipboard.'),
+      React.createElement('input', { readOnly: true, value: shareUrl, onFocus: (e) => e.target.select(), style: { width: '100%', boxSizing: 'border-box', ...ctrlStyle, marginBottom: 10 } }),
+      React.createElement('div', { style: { display: 'flex', gap: 8 } },
+        React.createElement('button', { onClick: () => window.open(shareUrl, '_blank'), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Open ↗'),
+        React.createElement('button', { onClick: () => { try { navigator.clipboard.writeText('<iframe src="' + shareUrl + '" width="100%" height="600" style="border:0;border-radius:12px"></iframe>'); } catch (_) {} }, style: { ...ctrlStyle, cursor: 'pointer' } }, 'Copy embed'),
+        React.createElement('div', { style: { flex: 1 } }),
+        React.createElement('button', { onClick: () => setShareUrl(null), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Close')),
+    ),
+  );
+}
+
+function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMinimize = null, agents = null }) {
   const canvasRef = React.useRef(null);
   const wrapRef   = React.useRef(null);
   const centeredRef = React.useRef(false);
