@@ -48,7 +48,6 @@ const VIEW_LABELS = {
   vault:     'MARKDOWN VAULT',
   graph:     'VAULT GRAPH',
   team:      'STAFF ROSTER',
-  docs:      'DOCS',
   calendar:  'CALENDAR',
   projects:  'PROJECTS',
   terminal:  'TERMINAL',
@@ -365,43 +364,6 @@ function TeamView({ agents, onHire, onInspect, onDismiss, onShowCEO }) {
             />
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- Docs (artifacts produced by completed tasks) ---------------- */
-function DocsView({ tasks, agents }) {
-  const docs = tasks.filter(t => t.status === 'done' && t.result);
-  return (
-    <div className="view-docs">
-      <div className="section-title">
-        📄 DOCS
-        <span className="tag">{docs.length} doc(s) · output from completed tasks</span>
-      </div>
-      {docs.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-title">No artifacts yet.</div>
-          <div className="empty-sub">Drop a task on a desk in the Office; the agent's reply gets archived here.</div>
-        </div>
-      )}
-      <div className="docs-list">
-        {docs.map(t => {
-          const a = agents.find(x => x.id === t.assignedTo);
-          return (
-            <div key={t.id} className="doc-card">
-              <div className="doc-head">
-                <div className="doc-title">{t.title}</div>
-                <div className="doc-meta">
-                  {a && <><Sprite data={a.color} scale={1}/> {a.name} · </>}
-                  <span className={`pri pri-${t.priority||'med'}`}>{(t.priority||'med').toUpperCase()}</span>
-                </div>
-              </div>
-              {t.detail && <div className="doc-brief">Brief: {t.detail}</div>}
-              <div className="doc-body">{t.result}</div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -5124,15 +5086,23 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
 
       if (cancelled) return;
 
-      const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const _wsPath  = window.location.pathname.replace(/\/[^/]*$/, '');
+      // Target the BACKEND base (window._API_BASE = the gateway when the UI is
+      // served cross-origin from the asset canister), NOT the page origin — an
+      // ICP asset canister can't serve WebSockets, so the PTY socket must go to
+      // the gateway. Falls back to same-origin when _API_BASE is empty (local).
+      let _wsBase;
+      try { _wsBase = new URL((window._API_BASE || '/').replace(/\/?$/, '/'), window.location.href); }
+      catch (_) { _wsBase = new URL('/', window.location.href); }
+      const _wsProto = _wsBase.protocol === 'https:' ? 'wss:' : 'ws:';
+      const _wsHost  = _wsBase.host;
+      const _wsPath  = _wsBase.pathname.replace(/\/$/, '');   // strip trailing slash
       const _wsParams = new URLSearchParams({
         cli, cwd: project.path,
         cols: String(term.cols), rows: String(term.rows),
         ...(sessionId ? { session_id: sessionId } : {}),
       }).toString() + (ptyNonce ? `&nonce=${encodeURIComponent(ptyNonce)}` : '');
 
-      const ws = new WebSocket(`${_wsProto}//${window.location.host}${_wsPath}/terminal/pty?${_wsParams}`);
+      const ws = new WebSocket(`${_wsProto}//${_wsHost}${_wsPath}/terminal/pty?${_wsParams}`);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
@@ -6785,7 +6755,6 @@ window.OpenclawViews = {
   TasksView,
   MemoryPage,
   TeamView,
-  DocsView,
   CalendarView,
   VaultView,
   GraphView,

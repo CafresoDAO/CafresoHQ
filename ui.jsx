@@ -29,7 +29,6 @@ function Ico({ kind, size=16 }) {
   if (kind === 'memory') return (<svg {...common}><circle cx="8" cy="8" r="5" fill="none" stroke={K} strokeWidth="2"/><rect x="7" y="4" width="2" height="5" fill={K}/></svg>);
   if (kind === 'vault') return (<svg {...common}><rect x="3" y="2" width="9" height="12" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="5" width="5" height="1" fill={K}/><rect x="5" y="8" width="5" height="1" fill={K}/><rect x="5" y="11" width="5" height="1" fill={K}/><rect x="2" y="2" width="2" height="12" fill={K}/></svg>);
   if (kind === 'graph') return (<svg {...common}><circle cx="4" cy="4" r="2" fill={K}/><circle cx="12" cy="4" r="2" fill={K}/><circle cx="4" cy="12" r="2" fill={K}/><circle cx="12" cy="12" r="2" fill={K}/><circle cx="8" cy="8" r="2" fill={K}/><line x1="4" y1="4" x2="8" y2="8" stroke={K} strokeWidth="1"/><line x1="12" y1="4" x2="8" y2="8" stroke={K} strokeWidth="1"/><line x1="4" y1="12" x2="8" y2="8" stroke={K} strokeWidth="1"/><line x1="12" y1="12" x2="8" y2="8" stroke={K} strokeWidth="1"/></svg>);
-  if (kind === 'docs') return (<svg {...common}><polygon points="3,2 10,2 13,5 13,14 3,14" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="8" width="6" height="1" fill={K}/><rect x="5" y="10" width="6" height="1" fill={K}/></svg>);
   if (kind === 'team') return (<svg {...common}><circle cx="5" cy="6" r="2" fill={K}/><circle cx="11" cy="6" r="2" fill={K}/><path d="M2 13 Q5 9 8 13" stroke={K} strokeWidth="2" fill="none"/><path d="M8 13 Q11 9 14 13" stroke={K} strokeWidth="2" fill="none"/></svg>);
   if (kind === 'visual') return (<svg {...common}><rect x="2" y="4" width="12" height="8" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="6" width="2" height="2" fill={K}/><rect x="9" y="6" width="2" height="2" fill={K}/></svg>);
   if (kind === 'workflows') return (<svg {...common}><rect x="1" y="3" width="4" height="3" fill={K}/><rect x="6" y="3" width="4" height="3" fill={K}/><rect x="11" y="3" width="4" height="3" fill={K}/><rect x="3" y="6" width="1" height="3" fill={K}/><rect x="3" y="9" width="10" height="1" fill={K}/><rect x="13" y="6" width="1" height="3" fill={K}/><rect x="7" y="6" width="2" height="3" fill={K}/><rect x="2" y="10" width="4" height="3" fill={K}/><rect x="6" y="10" width="4" height="3" fill={K}/><rect x="10" y="10" width="4" height="3" fill={K}/></svg>);
@@ -47,7 +46,6 @@ const NAV_ITEMS = [
   ['memory', 'Memory'],
   ['vault', 'Vault'],
   ['team', 'Team'],
-  ['docs', 'Docs'],
   ['terminal', 'Terminal'],
   ['projects', 'Projects'],
 ];
@@ -1539,7 +1537,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
    Chat is the primary mobile entry point; Office, Team, Vault, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
-  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','docs','terminal','projects'];
+  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','terminal','projects'];
   const TAB_BOOKMARKS = [
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],

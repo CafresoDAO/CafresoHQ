@@ -7,7 +7,7 @@ const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOP
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
 const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
-const { TasksView, MemoryPage, TeamView, DocsView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.OpenclawViews;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.OpenclawViews;
 
 /* localStorage-backed useState. Reads on mount; writes are DEBOUNCED so a
    streaming-token burst doesn't hammer JSON.stringify on every frame. The
@@ -595,7 +595,6 @@ function AppGlobalCommands({
     { id: 'nav.memory',     label: 'Switch view: Memory',    section: 'Navigation', icon: '📁', run: () => setActiveView('memory') },
     { id: 'nav.vault',      label: 'Switch view: Vault',     section: 'Navigation', icon: '📓', run: () => setActiveView('vault') },
     { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => setActiveView('team') },
-    { id: 'nav.docs',       label: 'Switch view: Docs',      section: 'Navigation', icon: '📄', run: () => setActiveView('docs') },
     { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => setActiveView('terminal') },
     { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => setActiveView('projects') },
 
@@ -1068,7 +1067,7 @@ function App() {
     { id: 'ws.standup',  name: 'Standup',  builtin: true,
       state: { activeView: 'visual',   railCollapsed: false, chatWinOpen: false, density: 'comfortable', theme: 'default', night: false } },
     { id: 'ws.reading',  name: 'Reading',  builtin: true,
-      state: { activeView: 'docs',     railCollapsed: true,  chatWinOpen: false, density: 'spacious',    theme: 'sepia',   night: false } },
+      state: { activeView: 'visual',   railCollapsed: true,  chatWinOpen: false, density: 'spacious',    theme: 'sepia',   night: false } },
   ]), []);
   const [savedWorkspaces, setSavedWorkspaces] = useStored(k('savedWorkspaces'), []);
   const [activeWorkspace, setActiveWorkspace] = useStored(k('activeWorkspace'), null);
@@ -1134,6 +1133,27 @@ function App() {
     return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
   }, []);
   const openSettings = React.useCallback((tab) => { setSettingsTab(tab || null); setSettingsOpen(true); }, []);
+
+  // Backend reachability — surfaces a clear banner instead of silently failing
+  // (empty graph/vault, dead chat/terminal) when the canister UI was opened
+  // without a live ?api gateway. Probes /health with a short retry.
+  const [backendDown, setBackendDown] = useStateA(false);
+  const [backendBannerHidden, setBackendBannerHidden] = useStateA(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const C = window.OpenclawClient;
+      for (let i = 0; i < 3; i++) {
+        let ok = false;
+        try { ok = await C.backendHealth(); } catch (_e) {}
+        if (cancelled) return;
+        if (ok) { setBackendDown(false); return; }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!cancelled) setBackendDown(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [scanlines, setScanlines] = useStored(k('scanlines'), true);
   const [sound, setSound] = useStored(k('sound'), false);
   const [feed, setFeed] = useStateA(MOCK.ACTIVITY_SEED);
@@ -3083,7 +3103,7 @@ ${d.text}` : d.text,
   const onOpenStandup = () => { setStandupOpen(true); setLastStandup(Date.now()); };
   const onArchiveStandup = (entry) => {
     setTasks(prev => [entry, ...prev]);
-    say('Stand-up archived to Docs', 'STAND-UP');
+    say('Stand-up archived', 'STAND-UP');
   };
 
   // Auto-prompt for stand-up after 5pm if we haven't run one today.
@@ -3216,8 +3236,6 @@ ${d.text}` : d.text,
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
         return <TeamView agents={agents} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} />;
-      case 'docs':
-        return <DocsView tasks={tasks} agents={agents} />;
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
@@ -3462,6 +3480,21 @@ ${d.text}` : d.text,
 
         <div className="content full-width">
           <div className="view-area">
+            {backendDown && !backendBannerHidden && (
+              <div role="status" style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+                margin:'0 0 10px', padding:'9px 13px', borderRadius:10,
+                background:'rgba(232,169,169,0.14)', border:'1px solid rgba(232,169,169,0.5)',
+                color:'#E8A9A9', font:'13px Inter, system-ui, sans-serif' }}>
+                <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
+                  <b>⚠ Not connected to your HQ backend.</b> Chat, Vault, Graph and Terminal need a live
+                  container. Open HQ from <b>ai.cafreso.com → Launch HQ</b> so it can reach your private container.
+                  <span style={{opacity:0.7}}> (backend: {window._API_BASE || 'none (canister only)'})</span>
+                </span>
+                <button onClick={()=>{ setBackendBannerHidden(true); }}
+                  style={{ cursor:'pointer', background:'none', border:'1px solid rgba(232,169,169,0.5)',
+                    color:'#E8A9A9', borderRadius:6, padding:'2px 8px', fontSize:12 }}>Dismiss</button>
+              </div>
+            )}
             {approvals.length > 0 && <ApprovalTray pending={approvals} onApprove={onApprove} onReject={onReject}/>}
             {renderView()}
           </div>

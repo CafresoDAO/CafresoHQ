@@ -1484,8 +1484,21 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   };
 })();
 
+/* Is the backend (per-user container via the gateway) actually reachable?
+   Probes _API_BASE + /health. On the asset canister WITHOUT a ?api gateway,
+   _API_BASE is the canister origin which has no /health → false → the UI knows
+   it's running backend-less (no vault/graph/chat/terminal). */
+async function backendHealth() {
+  try {
+    const r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include' });
+    return r.ok;
+  } catch (_e) { return false; }
+}
+/** The resolved backend base URL (gateway when cross-origin, '' when same-origin). */
+function backendBase() { return _API_BASE || ''; }
+
 window.OpenclawClient = {
-  getSettings, setSettings, onSettingsChange, hasUsableKey,
+  getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
