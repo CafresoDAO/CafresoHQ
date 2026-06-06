@@ -11,7 +11,7 @@
  * whose origin isn't this SW's own origin, so it only ever manages the
  * same-origin UI shell.
  */
-const CACHE_NAME = 'openclaw-shell-v2';
+const CACHE_NAME = 'openclaw-shell-v3';
 const SHELL_URLS = [
   '/hq.html',
   '/styles.css',

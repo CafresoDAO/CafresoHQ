@@ -1,0 +1,26 @@
+{
+  "name": "cafresohq-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CafresoHQ app UI build pipeline — transforms JSX (no in-browser Babel) and bundles the sigma.js graph engine.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build_ui_bundle.mjs",
+    "watch": "node scripts/build_ui_bundle.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "xterm": "5.3.0",
+    "xterm-addon-fit": "0.8.0",
+    "sigma": "^3.0.1",
+    "graphology": "^0.25.4",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-communities-louvain": "^2.0.2",
+    "graphology-metrics": "^2.3.1",
+    "graphology-shortest-path": "^2.1.0"
+  }
+}
