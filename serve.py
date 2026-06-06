@@ -1004,6 +1004,70 @@ def _build_graph_fs() -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Graph build cache (FS backend)
+#
+# /vault/graph rebuilds by reading + parsing every .md file and the hq-state
+# JSON on each call — O(total text). On a cold container or a big vault that's
+# a slow first paint of the graph. This cache keys the built graph on a CHEAP
+# stat-only signature (each file's mtime+size, no reads); a repeat call with no
+# file changes returns the cached graph instantly. Any edit/add/delete changes
+# the signature and triggers exactly one rebuild. Single-process, so a plain
+# module global under the server's thread is sufficient.
+# ──────────────────────────────────────────────────────────────────────────
+
+_graph_cache = {'sig': None, 'graph': None}
+_graph_cache_lock = threading.Lock()
+
+
+def _vault_graph_signature() -> str:
+    """Cheap fingerprint of everything _build_graph_fs reads: each vault .md
+    file's (rel, mtime, size) + the top-level hq-state JSON files. Stat-only,
+    so it's far cheaper than the read+parse a full rebuild does."""
+    if not _vault_root:
+        return 'unconfigured'
+    h = hashlib.sha1()
+    root = pathlib.Path(_vault_root).resolve()
+    try:
+        for p in sorted(root.rglob('*.md')):
+            try:
+                rel = p.relative_to(root)
+            except ValueError:
+                continue
+            if any(part.startswith('.') for part in rel.parts):
+                continue
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            h.update(('%s|%d|%d\n' % (str(rel).replace('\\', '/'), int(st.st_mtime), st.st_size)).encode('utf-8'))
+    except OSError:
+        return 'walk-error'
+    try:
+        for jp in sorted(_hq_state_dir.glob('*.json')):
+            try:
+                st = jp.stat()
+                h.update(('S:%s|%d|%d\n' % (jp.name, int(st.st_mtime), st.st_size)).encode('utf-8'))
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return h.hexdigest()
+
+
+def _build_graph_fs_cached() -> dict:
+    """_build_graph_fs() with an mtime-signature cache (see above)."""
+    sig = _vault_graph_signature()
+    with _graph_cache_lock:
+        if _graph_cache['sig'] == sig and _graph_cache['graph'] is not None:
+            return _graph_cache['graph']
+    graph = _build_graph_fs()
+    with _graph_cache_lock:
+        _graph_cache['sig'] = sig
+        _graph_cache['graph'] = graph
+    return graph
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # HQ-state → graph ingestion
 #
 # Reads the JSON files in hq-state/ and turns them into typed graph nodes,
@@ -1815,10 +1879,155 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._approval_wait()
         if self.path == '/approvals/external/list':
             return self._approval_list()
+        if self.path.startswith('/bundle/'):
+            return self._serve_bundle()
+        _p0 = self.path.split('?', 1)[0]
+        if _p0 in ('/', '/hq.html', '/index.html'):
+            return self._serve_hq_html()
+        if _p0 == '/graph-viewer.html':
+            return self._serve_cwd_file('graph-viewer.html', 'text/html; charset=utf-8')
+        if _p0 == '/graph-viewer.js':
+            return self._serve_dist_file('graph-viewer.js', 'application/javascript; charset=utf-8')
+        if _p0.startswith('/graph/snapshot/'):
+            return self._graph_snapshot(_p0.rsplit('/', 1)[-1])
         prefix, target = self._route()
         if target:
             return self._proxy('GET', prefix, target)
         return super().do_GET()
+
+    # --- HQ UI build (no in-browser Babel) ------------------------------------
+    # The HQ app is built into dist-ui/ by scripts/build_ui_bundle.mjs: vendor
+    # globals (React/ReactDOM/xterm) + content-hashed, pre-transformed JSX. hq.html
+    # carries an <!--HQ_SCRIPTS--> placeholder; we substitute it from the manifest.
+    # (Mirrors scripts/ui_manifest.py — inlined so the packaged/frozen build needs
+    # no scripts/ dir alongside the exe.)
+    def _hq_manifest_tags(self):
+        import json as _json
+        with open(os.path.join(os.getcwd(), 'dist-ui', 'manifest.json'), encoding='utf-8') as fh:
+            m = _json.load(fh)
+        parts = []
+        for css in m.get('vendorCss', []):
+            parts.append('<link rel="stylesheet" href="%s"/>' % css)
+        for js in m.get('vendor', []):
+            parts.append('<script src="%s"></script>' % js)
+        if m.get('analyticsWorker'):
+            parts.append('<script>window.__CAFRESO_BUNDLE__=%s;</script>'
+                         % _json.dumps({'analyticsWorker': m['analyticsWorker']}))
+        if m.get('graphEngine'):
+            parts.append('<script src="%s"></script>' % m['graphEngine'])
+        for js in m.get('app', []):
+            parts.append('<script src="%s"></script>' % js)
+        return '\n'.join(parts)
+
+    def _serve_hq_html(self):
+        try:
+            with open(os.path.join(os.getcwd(), 'hq.html'), encoding='utf-8') as fh:
+                html = fh.read()
+            html = html.replace('<!--HQ_SCRIPTS-->', self._hq_manifest_tags())
+        except Exception as e:
+            return self.send_error(500, 'HQ UI not built: %s (run `npm run build`)' % e)
+        body = html.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    def _serve_bundle(self):
+        rel = self.path.split('?', 1)[0].lstrip('/')          # 'bundle/app-<hash>.js'
+        base = os.path.normpath(os.path.join(os.getcwd(), 'dist-ui'))
+        full = os.path.normpath(os.path.join(base, rel))
+        if not full.startswith(base) or not os.path.isfile(full):
+            return self.send_error(404)
+        ctype = ('application/javascript' if full.endswith('.js')
+                 else 'text/css' if full.endswith('.css')
+                 else 'application/octet-stream')
+        with open(full, 'rb') as fh:
+            data = fh.read()
+        self.send_response(200)
+        self.send_header('Content-Type', ctype + '; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+
+    # --- Public shareable graphs (Phase 2) ------------------------------------
+    # Publish exports a laid-out snapshot (positions + community + betweenness) and
+    # stores it under hq-state/public-graphs/<slug>.json; the static graph-viewer
+    # renders it read-only via ?g=/graph/snapshot/<slug>. (Production target is an
+    # ICP asset/Motoko canister — same URL contract, swappable storage.)
+    def _public_graph_dir(self):
+        base = os.environ.get('OPENCLAW_HQ_STATE_DIR') or os.path.join(os.getcwd(), 'hq-state')
+        d = os.path.join(base, 'public-graphs')
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _serve_cwd_file(self, name, ctype):
+        try:
+            with open(os.path.join(os.getcwd(), name), 'rb') as fh:
+                data = fh.read()
+        except Exception:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        try: self.wfile.write(data)
+        except Exception: pass
+
+    def _serve_dist_file(self, name, ctype):
+        full = os.path.normpath(os.path.join(os.getcwd(), 'dist-ui', name))
+        if not os.path.isfile(full):
+            return self.send_error(404)
+        with open(full, 'rb') as fh:
+            data = fh.read()
+        self.send_response(200)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        try: self.wfile.write(data)
+        except Exception: pass
+
+    def _graph_snapshot(self, slug):
+        import re as _re
+        if not _re.fullmatch(r'[A-Za-z0-9_-]{1,64}', slug or ''):
+            return self.send_error(404)
+        full = os.path.join(self._public_graph_dir(), slug + '.json')
+        if not os.path.isfile(full):
+            return self.send_error(404)
+        with open(full, 'rb') as fh:
+            data = fh.read()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        try: self.wfile.write(data)
+        except Exception: pass
+
+    def _graph_publish(self):
+        import json as _json, secrets as _secrets
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length else b'{}'
+            payload = _json.loads(body.decode('utf-8'))
+        except Exception:
+            return self._send_json(400, {'error': 'bad payload'})
+        if not isinstance(payload, dict) or 'graph' not in payload:
+            return self._send_json(400, {'error': 'missing graph'})
+        slug = _secrets.token_hex(6)
+        try:
+            with open(os.path.join(self._public_graph_dir(), slug + '.json'), 'w', encoding='utf-8') as fh:
+                _json.dump(payload, fh)
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        snap_url = '/graph/snapshot/' + slug
+        view_url = '/graph-viewer.html?g=' + snap_url + '&background=dark&most_influential=bc&maxnodes=150&show_analytics=1&selected=highlight&demo=1'
+        return self._send_json(200, {'slug': slug, 'snapshotUrl': snap_url, 'viewerUrl': view_url})
 
     def do_POST(self):
         _touch_activity(self.path)
@@ -1832,6 +2041,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
             return self._vault('POST')
+        if self.path == '/graph/publish':
+            return self._graph_publish()
         if self.path == '/agents/install':
             return self._agents_install()
         if self.path == '/claudecode/configure':
@@ -5377,7 +5588,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # ---------- Graph (nodes + wikilink edges) ----------
         if path == '/vault/graph' and method == 'GET':
             try:
-                graph = _build_graph_rest() if _vault_backend == 'rest' else _build_graph_fs()
+                graph = _build_graph_rest() if _vault_backend == 'rest' else _build_graph_fs_cached()
                 return self._send_json(200, graph)
             except Exception as e:
                 return self._send_json(502, {'error': str(e)})
