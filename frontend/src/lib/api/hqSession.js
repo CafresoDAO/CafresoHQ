@@ -108,6 +108,17 @@ export function stopHqSession() {
   hqSessionReady.set(false);
 }
 
+/** Mint a fresh principal-bound session token on-chain and return it (string).
+ *  Used as the self-service credential for destructive fleet calls
+ *  (e.g. /fleet/deprovision) — the API takes the principal FROM the token, so
+ *  a caller can only act on their own container. Throws on failure. */
+export async function mintSessionToken() {
+  if (!get(isAuthenticated)) throw new Error('sign in first');
+  const actor = await getKeysActor();
+  const minted = await actor.mintHqSession();
+  return String(minted.token);
+}
+
 function _reason(e) {
   const m = String(e?.message || e || 'unknown error');
   if (/not configured/i.test(m)) return 'HQ sessions are not enabled yet.';

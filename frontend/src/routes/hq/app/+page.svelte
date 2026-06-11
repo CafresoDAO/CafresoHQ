@@ -145,12 +145,28 @@
     }
   }
 
+  // The embedded HQ posts this when the gateway starts 401ing — the
+  // hq_session cookie expired mid-use. Re-mint and reload the iframe so the
+  // user recovers in place instead of facing a frozen app.
+  let remintBusy = false;
+  async function onSessionExpired(e) {
+    if (!iframe?.contentWindow || e.source !== iframe.contentWindow) return;
+    if (e.data?.type !== 'hq:session-expired' || remintBusy) return;
+    remintBusy = true;
+    try {
+      const ok = await ensureHqSession();
+      if (ok !== false) reload();
+    } catch (_) { /* hqSessionError card offers manual retry */ }
+    remintBusy = false;
+  }
+
   let vaultUnsub;
 
   onMount(() => {
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', onKey);
       window.addEventListener('message', onVaultMessage);
+      window.addEventListener('message', onSessionExpired);
     }
     vaultUnsub = vaultFiles.subscribe((files) => pushFiles(files));
   });
@@ -159,6 +175,7 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('message', onVaultMessage);
+      window.removeEventListener('message', onSessionExpired);
     }
     vaultUnsub?.();
   });

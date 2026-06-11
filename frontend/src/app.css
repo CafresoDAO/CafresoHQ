@@ -294,6 +294,22 @@ body {
     color: hsl(var(--ink-50));
   }
 
+  .btn-danger {
+    @apply btn active:scale-[0.99];
+    background: hsl(350 70% 45%);
+    color: #fff;
+    border: 1.5px solid hsl(350 70% 38%);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+  .btn-danger:hover {
+    background: hsl(350 72% 50%);
+    box-shadow: 0 4px 14px -2px hsl(350 70% 45% / 0.5);
+  }
+  .btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }

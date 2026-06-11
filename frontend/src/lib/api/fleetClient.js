@@ -114,6 +114,25 @@ export async function getJob(jobId) {
 }
 
 /**
+ * Permanently delete the caller's OWN container. The credential is an
+ * on-chain-minted session token (mintSessionToken in hqSession.js) — the API
+ * takes the principal FROM the token, so a caller can only delete their own
+ * container. Synchronous on the server (~10-30s): removes the OCI container
+ * instance + its gateway route. The user's encrypted vault in Object Storage
+ * is PRESERVED — re-provisioning the same principal recovers it. Idempotent:
+ * deleting a non-existent container succeeds.
+ * Returns { status: 'deleted', principal, note }.
+ */
+export async function deprovision(token) {
+  return _fetch('/fleet/deprovision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ token }),
+    timeoutMs: 130_000,
+  });
+}
+
+/**
  * @typedef {Object} ProvisionWaitOptions
  * @property {(job: any) => void} [onUpdate]
  * @property {number} [pollMs]

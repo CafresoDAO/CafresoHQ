@@ -8,10 +8,8 @@
     detectLocalCompanion
   } from '$lib/stores/endpoint.js';
   import {
-    ECOSYSTEM_DERIVATION_ORIGIN,
     principalText,
-    isAuthenticated,
-    useEcosystemPrincipal
+    isAuthenticated
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
@@ -87,6 +85,9 @@
       inputValue = '';
     }
   }
+
+  let showAdvanced = false;
+  let showHealthJson = false;
 </script>
 
 <section class="mx-auto max-w-5xl space-y-6">
@@ -168,111 +169,127 @@
 
     {#if $endpointHealth.state === 'ok' && $endpointHealth.data}
       {@const d = $endpointHealth.data}
-      <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(d, null, 2)}</pre>
+      <button
+        class="flex items-center gap-2 text-xs text-ink-400 hover:text-ink-200 transition-colors"
+        on:click={() => showHealthJson = !showHealthJson}
+      >
+        <span class="font-mono">{showHealthJson ? '▾' : '▸'}</span>
+        {showHealthJson ? 'Hide' : 'Show'} connection details
+      </button>
+      {#if showHealthJson}
+        <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(d, null, 2)}</pre>
+      {/if}
     {/if}
   </div>
 
-  <div class="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
-    <div class="card p-6 space-y-4">
-      <div>
-        <div class="page-kicker">Ecosystem Identity</div>
-        <h2 class="mt-2 text-xl font-semibold">Internet Identity</h2>
-      </div>
-
-      {#if $isAuthenticated}
-        <div class="text-sm text-ink-300">Signed in. Your principal:</div>
-        <code class="block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{$principalText}</code>
-      {:else}
-        <p class="text-sm text-ink-300">Sign in from the header to see your principal.</p>
-      {/if}
-
-      <dl class="grid grid-cols-1 gap-2 pt-1 text-xs sm:grid-cols-3">
-        <dt class="text-ink-400">II provider</dt>
-        <dd class="font-mono sm:col-span-2">https://identity.ic0.app</dd>
-        <dt class="text-ink-400">Derivation origin</dt>
-        <dd class="break-all font-mono sm:col-span-2">
-          {$useEcosystemPrincipal ? ECOSYSTEM_DERIVATION_ORIGIN : '(use this canister URL)'}
-        </dd>
-        <dt class="text-ink-400">Sister dapps</dt>
-        <dd class="sm:col-span-2">Banking.Brave / Cafreso / Minegold.defi</dd>
-      </dl>
-
-      <label class="card-quiet flex cursor-pointer items-start justify-between gap-4 p-4">
-        <span class="block text-sm">
-          <span class="font-semibold text-ink-50">Use ecosystem-shared principal</span>
-          <span class="mt-1 block text-xs leading-5 text-ink-400">
-            Pass <code class="font-mono">derivationOrigin</code> to II so the same anchor
-            produces the same principal across Banking.Brave, Cafreso Pages,
-            Minegold.defi, and CafresoAI.
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          class="mt-1 h-5 w-5 accent-brand-500"
-          bind:checked={$useEcosystemPrincipal}
-        />
-      </label>
+  <div class="card p-6 space-y-4">
+    <div>
+      <div class="page-kicker">Ecosystem Identity</div>
+      <h2 class="mt-2 text-xl font-semibold">Your account</h2>
     </div>
 
-    <div class="card p-6 space-y-4">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <div class="page-kicker">Fleet API</div>
-          <h2 class="mt-2 text-xl font-semibold">Provisioning service</h2>
-          <p class="mt-1 text-sm leading-6 text-ink-400">
-            Service that provisions OCI containers per principal.
+    {#if $isAuthenticated}
+      <div class="flex items-start gap-4">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500/20 text-xl">
+          🪪
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-ink-100">Signed in via Internet Identity</p>
+          <p class="mt-0.5 text-xs text-ink-400">
+            Your identity is shared seamlessly across the Cafreso ecosystem —
+            Banking.Brave, Cafreso Pages, Minegold.defi, and CafresoAI all
+            recognize the same account.
           </p>
         </div>
-        {#if fleetApiState === 'ok'}
-          <span class="pill-ok"><span class="glow-dot text-emerald-400"></span> Reachable</span>
-        {:else if fleetApiState === 'probing'}
-          <span class="pill-warn"><span class="glow-dot text-amber-400 animate-pulse"></span> Probing</span>
+      </div>
+      <div>
+        <span class="text-xs uppercase tracking-[0.22em] text-ink-400">Principal ID</span>
+        <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{$principalText}</code>
+      </div>
+    {:else}
+      <div class="flex items-center gap-3 rounded-xl border border-ink-600/40 bg-ink-800/40 px-4 py-4">
+        <span class="text-xl">🔒</span>
+        <p class="text-sm text-ink-300">
+          Sign in with Internet Identity (button in the header) to see your account details.
+        </p>
+      </div>
+    {/if}
+  </div>
+
+  <!-- Advanced / developer settings -->
+  <div class="card overflow-hidden">
+    <button
+      class="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-ink-700/30 transition-colors"
+      on:click={() => showAdvanced = !showAdvanced}
+    >
+      <div>
+        <span class="text-xs uppercase tracking-[0.22em] text-ink-400">Developer</span>
+        <h2 class="mt-1 text-base font-semibold">Advanced settings</h2>
+      </div>
+      <span class="text-ink-400 text-lg font-mono">{showAdvanced ? '▾' : '▸'}</span>
+    </button>
+
+    {#if showAdvanced}
+      <div class="border-t border-ink-600/40 p-6 space-y-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-xs uppercase tracking-[0.22em] text-ink-400">Fleet API</div>
+            <h3 class="mt-1 text-base font-semibold">Provisioning service</h3>
+            <p class="mt-1 text-sm leading-6 text-ink-400">
+              Service that provisions OCI containers per principal. Only change this if you're self-hosting the fleet layer.
+            </p>
+          </div>
+          {#if fleetApiState === 'ok'}
+            <span class="pill-ok"><span class="glow-dot text-emerald-400"></span> Reachable</span>
+          {:else if fleetApiState === 'probing'}
+            <span class="pill-warn"><span class="glow-dot text-amber-400 animate-pulse"></span> Probing</span>
+          {:else if fleetApiState === 'err'}
+            <span class="pill-err"><span class="glow-dot text-rose-400"></span> Unreachable</span>
+          {:else}
+            <span class="pill-idle"><span class="glow-dot text-ink-400"></span> Idle</span>
+          {/if}
+        </div>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-[0.22em] text-ink-400">Fleet API URL</span>
+          <input
+            class="input mt-2"
+            type="url"
+            autocomplete="off"
+            spellcheck="false"
+            bind:value={fleetApiInput}
+            placeholder="http://localhost:8080"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-[0.22em] text-ink-400">
+            Auth token <span class="normal-case tracking-normal">(optional in dev)</span>
+          </span>
+          <input
+            class="input mt-2"
+            type="password"
+            autocomplete="off"
+            bind:value={fleetTokenInput}
+            placeholder="X-Fleet-Auth header value"
+          />
+        </label>
+
+        <button class="btn-primary" on:click={saveAndProbeFleet} disabled={!fleetApiInput || fleetApiState === 'probing'}>
+          {fleetApiState === 'probing' ? 'Probing...' : 'Save & probe'}
+        </button>
+
+        {#if fleetApiState === 'ok' && fleetApiData}
+          <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(fleetApiData, null, 2)}</pre>
         {:else if fleetApiState === 'err'}
-          <span class="pill-err"><span class="glow-dot text-rose-400"></span> Unreachable</span>
-        {:else}
-          <span class="pill-idle"><span class="glow-dot text-ink-400"></span> Idle</span>
+          <div class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+            <div class="font-semibold">Probe failed</div>
+            <div class="mt-1 font-mono text-xs">{fleetApiError}</div>
+            <div class="mt-2 text-xs">Start it locally: <code class="font-mono">python oci-fleet/fleet-api.py</code></div>
+          </div>
         {/if}
       </div>
-
-      <label class="block">
-        <span class="text-xs uppercase tracking-[0.22em] text-ink-400">Fleet API URL</span>
-        <input
-          class="input mt-2"
-          type="url"
-          autocomplete="off"
-          spellcheck="false"
-          bind:value={fleetApiInput}
-          placeholder="http://localhost:8080"
-        />
-      </label>
-
-      <label class="block">
-        <span class="text-xs uppercase tracking-[0.22em] text-ink-400">
-          Auth token <span class="normal-case tracking-normal">(optional in dev)</span>
-        </span>
-        <input
-          class="input mt-2"
-          type="password"
-          autocomplete="off"
-          bind:value={fleetTokenInput}
-          placeholder="X-Fleet-Auth header value"
-        />
-      </label>
-
-      <button class="btn-primary" on:click={saveAndProbeFleet} disabled={!fleetApiInput || fleetApiState === 'probing'}>
-        {fleetApiState === 'probing' ? 'Probing...' : 'Save & probe'}
-      </button>
-
-      {#if fleetApiState === 'ok' && fleetApiData}
-        <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(fleetApiData, null, 2)}</pre>
-      {:else if fleetApiState === 'err'}
-        <div class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
-          <div class="font-semibold">Probe failed</div>
-          <div class="mt-1 font-mono text-xs">{fleetApiError}</div>
-          <div class="mt-2 text-xs">Start it locally: <code class="font-mono">python oci-fleet/fleet-api.py</code></div>
-        </div>
-      {/if}
-    </div>
+    {/if}
   </div>
 
   <div class="card p-6">

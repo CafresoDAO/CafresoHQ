@@ -130,15 +130,26 @@ export async function probeHealth({ timeoutMs = 8000 } = {}) {
   }
 }
 
-/** Detect a Local Companion running on this machine. */
+/**
+ * Detect a Local Companion running on this machine.
+ *
+ * Tries HTTPS first, then HTTP. The local app now auto-provisions a localhost
+ * TLS cert, so when ai.cafreso.com (HTTPS) is the shell, only the HTTPS probe
+ * can succeed (an HTTP probe is mixed-content-blocked, and an https→https fetch
+ * only resolves if the cert is browser-trusted, i.e. mkcert) — which is exactly
+ * the condition under which the local app can also be embedded in an iframe.
+ * The HTTP fallback keeps working when the shell itself is served over HTTP.
+ */
 export async function detectLocalCompanion({ timeoutMs = 1500 } = {}) {
-  const candidate = 'http://localhost:8787';
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(candidate + '/health', { signal: ctrl.signal });
-    if (r.ok) return candidate;
-  } catch (_) { /* not running */ }
-  finally { clearTimeout(timer); }
+  const candidates = ['https://localhost:8787', 'http://localhost:8787'];
+  for (const candidate of candidates) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(candidate + '/health', { signal: ctrl.signal });
+      if (r.ok) return candidate;
+    } catch (_) { /* not running / blocked / untrusted cert — try next */ }
+    finally { clearTimeout(timer); }
+  }
   return null;
 }

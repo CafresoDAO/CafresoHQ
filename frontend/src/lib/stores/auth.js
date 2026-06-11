@@ -163,15 +163,19 @@ export async function logout() {
     authIdentity.set(null);
     principalText.set('');
     authStatus.set('idle');
-    // Wipe vault crypto state — master key, cached actor, decrypted index.
+    // Wipe vault crypto state — master key, cached actor, decrypted index —
+    // and stop the hq_session refresh timer (it used to keep firing after
+    // logout, trying to mint sessions for a signed-out user).
     // Lazy-load to avoid a circular import at module init time.
     try {
-      const [{ lockVault }, { resetKeysActor }] = await Promise.all([
+      const [{ lockVault }, { resetKeysActor }, { stopHqSession }] = await Promise.all([
         import('$lib/stores/vault.js'),
         import('$lib/api/keysActor.js'),
+        import('$lib/api/hqSession.js'),
       ]);
       lockVault();
       resetKeysActor();
+      stopHqSession();
     } catch (_) { /* best effort */ }
   }
 }
