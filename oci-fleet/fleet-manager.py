@@ -167,6 +167,11 @@ def principal_to_prefix(principal: str) -> str:
 
 # ── Image URL ─────────────────────────────────────────────────────────────────
 def image_url(fleet: dict) -> str:
+    # Explicit override (e.g. a Docker Hub / GHCR image) takes precedence over the
+    # OCIR-derived URL, so the fleet can pull from any registry without rewiring
+    # the ocir_* fields. Set fleet.json "image": "docker.io/<user>/<repo>:tag".
+    if fleet.get('image'):
+        return fleet['image']
     return (f"{fleet['ocir_region_key']}.ocir.io"
             f"/{fleet['ocir_namespace']}"
             f"/{fleet['ocir_repo']}:latest")
@@ -344,6 +349,7 @@ def cmd_provision(args, fleet: dict):
 
     env_vars = {
         'OPENCLAW_FLEET_MODE':    'oci-fleet',
+        'OPENCLAW_BIND':          '0.0.0.0',   # fleet listens on all interfaces (gateway reaches it by private IP)
         'OPENCLAW_VAULT_BACKEND': 'oci',
         'OCI_VAULT_NAMESPACE':    fleet['vault_namespace'],
         'OCI_VAULT_BUCKET':       fleet['vault_bucket'],
@@ -570,10 +576,13 @@ def cmd_delete(args, fleet: dict):
     print(f'  {hi(principal)}')
     print(f'  Container: {info.get("container_instance_id")}')
     print(warn('Vault data in Object Storage is NOT deleted.\n'))
-    confirm = input('Type DELETE to confirm: ').strip()
-    if confirm != 'DELETE':
-        print('Aborted.')
-        return
+    # --force skips the interactive prompt (used by the fleet-api deprovision
+    # endpoint, which has already confirmed with the user in the browser).
+    if not getattr(args, 'force', False):
+        confirm = input('Type DELETE to confirm: ').strip()
+        if confirm != 'DELETE':
+            print('Aborted.')
+            return
 
     require_oci()
     cid = info.get('container_instance_id')
@@ -586,6 +595,7 @@ def cmd_delete(args, fleet: dict):
         print(ok('deleted'))
     except Exception as e:
         print(err(f'FAILED: {e}'))
+        sys.exit(1)
 
 
 def cmd_status(args, fleet: dict):
@@ -1315,7 +1325,10 @@ def main():
     setplan_p.add_argument('plan', choices=['free', 'pro', 'always-on'])
     add_principal(sub.add_parser('start',     help='Start a stopped container'))
     add_principal(sub.add_parser('stop',      help='Stop a running container'))
-    add_principal(sub.add_parser('delete',    help='Delete a user\'s container'))
+    del_p = sub.add_parser('delete',    help='Delete a user\'s container')
+    add_principal(del_p)
+    del_p.add_argument('--force', action='store_true',
+                       help='Skip the interactive "Type DELETE" prompt (used by the API)')
     add_principal(sub.add_parser('status',    help='Show detailed container status'))
     add_principal(sub.add_parser('health',    help='Hit /health on the container'))
 

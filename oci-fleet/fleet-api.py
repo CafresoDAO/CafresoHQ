@@ -342,6 +342,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/fleet/set-plan':
             return self._apply_plan()
 
+        # Deprovision is DESTRUCTIVE and self-service: the credential is an
+        # on-chain-minted session token (principal comes FROM the token), like
+        # /fleet/set-plan. Not gated by X-Fleet-Auth — the browser can't hold
+        # that secret. Dispatched before _check_auth like the other token paths.
+        if self.path == '/fleet/deprovision':
+            return self._handle_deprovision()
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
         if self.path != '/fleet/provision':
@@ -356,17 +363,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not _validate_principal(principal):
             return self._send_json(400, {'error': 'invalid principal'})
 
-        # Already provisioned? Return existing endpoint.
+        # Already provisioned? Return the existing endpoint — but only if it's
+        # still ALIVE. A stale entry (container deleted/crashed, or its route was
+        # never written) would otherwise hand the user a dead endpoint forever and
+        # make every Provision click a no-op. Probe /health on the container's
+        # private IP first; if it's dead, fall through and re-provision a fresh one.
         full     = _load_fleet_full()
         existing = full.get('users', {}).get(principal)
         if existing and existing.get('ip'):
-            return self._send_json(200, {
-                'status':       'existing',
-                'principal':    principal,
-                'endpoint':     _user_to_endpoint(existing),
-                'gateway_url':  _gateway_url_for_principal(full, principal),
-                'container_id': existing.get('container_instance_id'),
-            })
+            _eip   = existing.get('private_ip') or existing.get('ip')
+            _eport = existing.get('port', 8787)
+            _alive = False
+            try:
+                import urllib.request
+                with urllib.request.urlopen(
+                        f'http://{_eip}:{_eport}/health', timeout=5) as _r:
+                    _alive = getattr(_r, 'status', _r.getcode()) == 200
+            except Exception:
+                _alive = False
+            if _alive:
+                return self._send_json(200, {
+                    'status':       'existing',
+                    'principal':    principal,
+                    'endpoint':     _user_to_endpoint(existing),
+                    'gateway_url':  _gateway_url_for_principal(full, principal),
+                    'container_id': existing.get('container_instance_id'),
+                })
+            log.warning(f'existing entry for {principal} is dead '
+                        f'({_eip}:{_eport}) — re-provisioning')
 
         # Spawn a job — provisioning takes ~60-90s end-to-end.
         job_id = uuid.uuid4().hex[:16]
@@ -392,6 +416,85 @@ class Handler(http.server.BaseHTTPRequestHandler):
             'principal': principal,
             'status':    'queued',
             'poll':      f'/fleet/job/{job_id}',
+        })
+
+    def _handle_deprovision(self):
+        """POST /fleet/deprovision — permanently delete a user's container.
+
+        Two paths (mirrors /fleet/set-plan):
+          • { token }     → self-service. The on-chain-minted session token IS
+            the credential; the principal is taken FROM it, so a caller can only
+            delete their OWN container. No X-Fleet-Auth needed.
+          • { principal } → admin override; requires X-Fleet-Auth with a real
+            FLEET_API_SECRET. Explicitly REFUSED in dev-mode (no secret set) —
+            a principal alone must never be enough to destroy a container.
+
+        Synchronous (~10-30s): removes the OCI Container Instance, drops it from
+        fleet.json, and re-renders the Caddyfile so the `/u/<slug>/*` route is
+        removed. The user's vault in Object Storage is DELIBERATELY preserved —
+        re-provisioning the same principal recovers it.
+        """
+        length = int(self.headers.get('Content-Length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+
+        token = str(req.get('token', '')).strip()
+        if token:
+            secret = hq_token.secret_bytes()
+            if not secret:
+                return self._send_json(503, {'error': 'sessions not configured'})
+            claims = hq_token.verify(token, secret)
+            if not claims:
+                return self._send_json(401, {'error': 'invalid or expired token'})
+            principal = claims['principal']
+        else:
+            # Admin path — only with a REAL shared secret. In dev-mode
+            # _check_auth() would wave everyone through, which must never be
+            # enough to delete someone's container.
+            if not SHARED_SECRET or self.headers.get('X-Fleet-Auth') != SHARED_SECRET:
+                return self._send_json(401, {'error': 'token required (or admin X-Fleet-Auth)'})
+            principal = (req.get('principal') or '').strip()
+        if not _validate_principal(principal):
+            return self._send_json(400, {'error': 'invalid principal'})
+
+        # Idempotent: nothing on record → treat as already-deleted success so a
+        # double-click or a retry doesn't surface a scary error.
+        full = _load_fleet_full()
+        if not full.get('users', {}).get(principal):
+            return self._send_json(200, {
+                'status': 'deleted', 'principal': principal,
+                'note': 'no container on record (already deleted)',
+            })
+
+        log.info(f'deprovision {principal}')
+        env = dict(os.environ)
+        env.setdefault('PYTHONUTF8', '1')
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(FLEET_MANAGER), 'delete', principal, '--force'],
+                capture_output=True, text=True, encoding='utf-8',
+                timeout=120, env=env, cwd=str(FLEET_DIR.parent),
+            )
+        except subprocess.TimeoutExpired:
+            return self._send_json(504, {'error': 'delete timed out after 120s'})
+        if proc.returncode != 0:
+            msg = (proc.stderr or proc.stdout or '').strip()
+            log.error(f'deprovision failed for {principal}: {msg[:500]}')
+            return self._send_json(502, {'error': msg[:600] or 'delete failed'})
+
+        # Remove the user's gateway route by re-rendering from the now-smaller
+        # fleet.json. Non-fatal — the container is already gone either way.
+        ok, cmsg = _reload_caddy_with_new_routes()
+        if not ok:
+            log.warning(f'deprovision caddy reload failed (non-fatal): {cmsg}')
+        return self._send_json(200, {
+            'status':        'deleted',
+            'principal':     principal,
+            'caddy_synced':  ok,
+            'caddy_message': cmsg,
+            'note': 'vault data in Object Storage is preserved — re-provision to recover it',
         })
 
 
@@ -493,13 +596,22 @@ def _reload_caddy_with_new_routes() -> tuple[bool, str]:
         return False, f'tmp write failed: {e}'
 
     try:
-        # `sudo cp` over the live file. Sudoers needs:
-        #   ubuntu ALL=(root) NOPASSWD: /usr/bin/cp /tmp/cafresoai_Caddyfile.new /etc/caddy/Caddyfile,\
-        #                                /usr/bin/systemctl reload caddy,\
-        #                                /usr/sbin/caddy validate --config /etc/caddy/Caddyfile
+        # `sudo cp` + `sudo systemctl reload` need passwordless sudo (NOPASSWD for
+        # exactly: /usr/bin/cp <tmp> /etc/caddy/Caddyfile and /usr/bin/systemctl
+        # reload caddy). `caddy validate` needs NO root — it only reads the tmp
+        # file — so run it directly at the REAL caddy path. On modern Ubuntu the
+        # binary is /usr/bin/caddy, NOT /usr/sbin/caddy; the old hardcoded wrong
+        # path made `sudo caddy validate` fail and SILENTLY dropped every new
+        # user's route (the production "provision isn't working" bug).
+        import shutil as _sh
+        caddy_bin = (_sh.which('caddy') or next(
+            (p for p in ('/usr/bin/caddy', '/usr/local/bin/caddy', '/usr/sbin/caddy')
+             if pathlib.Path(p).exists()), None))
+        if not caddy_bin:
+            return False, ('caddy binary not found (looked in PATH, /usr/bin, '
+                           '/usr/local/bin, /usr/sbin) — cannot validate config')
         validate = subprocess.run(
-            ['sudo', '-n', '/usr/sbin/caddy', 'validate',
-             '--adapter', 'caddyfile', '--config', str(tmp)],
+            [caddy_bin, 'validate', '--adapter', 'caddyfile', '--config', str(tmp)],
             capture_output=True, text=True, timeout=10,
         )
         if validate.returncode != 0:

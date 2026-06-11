@@ -70,5 +70,17 @@ else
   echo "[entrypoint] WARN hermes CLI not found in image — /hermes proxy will 502 until installed"
 fi
 
+# ── npm environment for on-demand agent installs ────────────────────────────
+# POST /agents/install runs `npm i -g`; serve.py inherits this env for its
+# subprocesses, so make the prefix/cache/HOME explicit + writable here. Without
+# this, root's npm guesses an unwritable prefix or a missing cache and installs
+# fail with EACCES. (Dockerfile pre-creates the dirs; this guarantees the env.)
+export HOME="${HOME:-/root}"
+export npm_config_prefix="${npm_config_prefix:-/usr/local}"
+export npm_config_cache="${npm_config_cache:-/root/.npm}"
+if command -v npm >/dev/null 2>&1; then
+  echo "[entrypoint] npm $(npm --version) prefix=$(npm config get prefix) cache=$(npm config get cache)"
+fi
+
 # ── Start serve.py (foreground / PID 1) ──────────────────────────────────────
 exec python -u serve.py

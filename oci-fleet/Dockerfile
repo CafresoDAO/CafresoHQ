@@ -2,14 +2,22 @@
 # Builds a self-contained serve.py image that runs inside OCI Container Instances.
 # Each user gets their own isolated instance of this image.
 #
-# Build:
+# Multi-platform build (amd64 + arm64 — covers x86 Linux, Apple Silicon, and OCI):
+#   docker buildx create --use --name multiarch --bootstrap   # one-time setup
+#   docker buildx build \
+#     --platform linux/amd64,linux/arm64 \
+#     --tag docker.io/anthonycf1/cafresoai-serve:latest \
+#     --push \
+#     -f oci-fleet/Dockerfile .
+#
+# Or use the helper script (PowerShell): .\scripts\docker-build.ps1
+#
+# Single-platform (quick local test only — do NOT push this):
 #   docker build -t cafresoai-serve:latest -f oci-fleet/Dockerfile .
 #
 # Push to OCI Registry (OCIR):
 #   docker tag cafresoai-serve:latest iad.ocir.io/idwv6126novh/cafresoai-serve:latest
 #   docker push iad.ocir.io/idwv6126novh/cafresoai-serve:latest
-#
-# Or use fleet-manager:  python oci-fleet/fleet-manager.py image-push
 
 FROM python:3.11-slim-bookworm
 
@@ -30,6 +38,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# npm global prefix + cache must exist and be writable by root, or the on-demand
+# `npm i -g` from POST /agents/install fails (EACCES / missing-cache). NodeSource
+# defaults the global prefix to /usr/local but never pre-creates node_modules or a
+# root-owned cache; do both explicitly so installs are reliable post-provision.
+RUN npm config set prefix /usr/local \
+    && npm config set cache /root/.npm \
+    && mkdir -p /usr/local/lib/node_modules /root/.npm \
+    && chmod -R 0775 /usr/local/lib/node_modules
 
 # NOTE: Claude Code + Codex are intentionally NOT baked in. They install on
 # demand via serve.py POST /agents/install (Settings → Agents). This keeps the
