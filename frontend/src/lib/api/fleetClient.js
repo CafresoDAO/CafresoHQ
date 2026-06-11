@@ -98,12 +98,18 @@ export async function lookup(principal) {
  * Kick off a provision job. Returns either:
  *   { status: 'existing', endpoint } — already provisioned
  *   { job_id, status: 'queued',  poll } — running async, poll the job
+ *
+ * Self-service: pass `token` (an on-chain-minted session token from
+ * mintSessionToken in hqSession.js) — the API takes the principal FROM the
+ * token, so a caller can only provision their OWN container. Without a token
+ * the server requires admin X-Fleet-Auth (refused in dev-mode), which closes
+ * the hole where anyone could spin a container for an arbitrary principal.
  */
-export async function provision(principal) {
+export async function provision(principal, token) {
   return _fetch('/fleet/provision', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ principal }),
+    body:    JSON.stringify(token ? { principal, token } : { principal }),
     timeoutMs: 15_000,
   });
 }
@@ -137,6 +143,7 @@ export async function deprovision(token) {
  * @property {(job: any) => void} [onUpdate]
  * @property {number} [pollMs]
  * @property {number} [maxWaitMs]
+ * @property {string} [token]  on-chain session token for self-service provision
  */
 
 /**
@@ -147,9 +154,9 @@ export async function deprovision(token) {
  * @param {ProvisionWaitOptions} [options]
  */
 export async function provisionAndWait(principal, {
-  onUpdate, pollMs = 5_000, maxWaitMs = 600_000
+  onUpdate, pollMs = 5_000, maxWaitMs = 600_000, token
 } = {}) {
-  const start = await provision(principal);
+  const start = await provision(principal, token);
   if (start.status === 'existing') {
     onUpdate?.({ ...start, phase: 'existing' });
     return start;

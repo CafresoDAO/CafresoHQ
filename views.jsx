@@ -167,7 +167,7 @@ const ACT_ICON = {
    (passed as a prop; app.jsx is the single source of truth — no own listener).
    Tabs split routine flow from items that NEED THE USER and from completions;
    each row drills down to its detail + jump links. */
-function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead }) {
+function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
   const [tab, setTab] = useSV('attention');   // 'attention' | 'all' | 'done'
   const [expandedId, setExpandedId] = useSV(null);
 
@@ -179,8 +179,15 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     return Math.floor(dt / 86_400_000) + 'd';
   };
 
+  // Pending approvals are LIVE-actionable (resolve via onApprove/onReject) and
+  // belong at the top of the attention tab — distinct from the historical
+  // attention activity rows below them.
+  const pendingApprovals = React.useMemo(
+    () => (approvals || []).filter(p => !selectedAgentId || p.agentId === selectedAgentId),
+    [approvals, selectedAgentId]);
   const attentionCount = React.useMemo(
-    () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
+    () => activity.filter(e => e.priority === 'attention' && e.unread).length + pendingApprovals.length,
+    [activity, pendingApprovals]);
   const doneCount = React.useMemo(
     () => activity.filter(e => e.action === 'done').length, [activity]);
 
@@ -261,7 +268,23 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
 
       {/* Event stream */}
       <div style={{flex:1, overflowY:'auto'}}>
-        {filtered.length === 0 && (
+        {/* Live, actionable approvals — only in the attention tab, pinned on top. */}
+        {tab === 'attention' && pendingApprovals.map(ap => (
+          <div key={ap.id} className="oc-notif-row is-attn oc-approval-row">
+            <span className="oc-notif-icon" style={{color:'var(--brand-banana)'}} aria-hidden="true">🔖</span>
+            <div className="oc-notif-body">
+              <div className="oc-notif-msg">
+                <span style={{fontWeight:600}}>{ap.by || 'agent'}</span> needs a stamp: {ap.title}
+              </div>
+              <div className="oc-notif-meta"><span>{ap.kind || 'approval'}{ap.elevated ? ' · 🛡 elevated' : ''}</span></div>
+              <div className="oc-act-jumps" style={{marginTop:6}}>
+                <button className="px-btn primary" style={{fontSize:8}} onClick={() => onApprove && onApprove(ap.id)}>✓ Approve</button>
+                <button className="px-btn danger" style={{fontSize:8}} onClick={() => onReject && onReject(ap.id)}>✕ Reject</button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {filtered.length === 0 && pendingApprovals.length === 0 && (
           <div className="proj-empty-msg">
             {tab === 'attention' ? 'Nothing needs you right now. 🎉' : tab === 'done' ? 'No completed work yet.' : 'No agent activity yet.'}<br/>
             <span style={{fontSize:'var(--text-9)',opacity:0.7}}>
@@ -276,7 +299,9 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
           const open = expandedId === e.id;
           return (
             <div key={e.id} className={'oc-notif-row' + (attn ? ' is-attn' : '')}
-              onClick={() => toggle(e)} role="button" tabIndex={0}>
+              onClick={() => toggle(e)} role="button" tabIndex={0}
+              aria-expanded={open}
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(e); } }}>
               <span className="oc-notif-icon" style={{color: attn ? 'var(--error)' : (e.color || 'var(--ink-3)')}} aria-hidden="true">
                 {ACT_ICON[e.action] || '✦'}
               </span>
@@ -285,10 +310,11 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                   <span style={{fontWeight:600}}>{e.agentName || 'HQ'}</span> {e.text}
                 </div>
                 <div className="oc-notif-meta"><span>{fmtAgo(e.ts)} ago</span></div>
-                {open && (e.detail || e.taskId || e.nodeId) && (
+                {open && (e.detail || e.taskId || e.nodeId || e.action === 'failed') && (
                   <div className="oc-act-detail" onClick={ev => ev.stopPropagation()}>
                     {e.detail && <div className="oc-act-detail-body">{e.detail}</div>}
                     <div className="oc-act-jumps">
+                      {e.action === 'failed' && onRetry && <button className="px-btn primary" onClick={() => onRetry(e)}>↻ Retry</button>}
                       {e.taskId && onOpenTasks && <button className="px-btn ghost" onClick={onOpenTasks}>Open task board →</button>}
                       {e.nodeId && <button className="px-btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: e.nodeId } }))}>Open note →</button>}
                       <button className="px-btn ghost" onClick={openChat}>Open chat →</button>
@@ -304,7 +330,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
   );
 }
 
-function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead }) {
+function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
   const [selectedAgentId, setSelectedAgentId] = useSV(null);
   const [showInbox, setShowInbox] = useSV(false);
 
@@ -409,6 +435,10 @@ function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowC
               onSelectAgent={setSelectedAgentId}
               onOpenTasks={onOpenTasks}
               onMarkRead={onMarkRead}
+              approvals={approvals}
+              onApprove={onApprove}
+              onReject={onReject}
+              onRetry={onRetry}
             />
           </div>
         )}

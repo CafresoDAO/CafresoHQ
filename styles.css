@@ -8388,6 +8388,33 @@ body.night .poster { filter: brightness(0.7) saturate(0.85); }
 .oc-act-jumps { display: flex; flex-wrap: wrap; gap: 6px; }
 .oc-act-jumps .px-btn { font-size: 9px; padding: 4px 8px; }
 
+/* Live, actionable approval rows pinned atop the inbox attention tab. */
+.oc-approval-row {
+  background: hsl(45 90% 55% / 0.08);
+  border-left-color: var(--brand-banana, #f5d25d);
+}
+.oc-approval-row:hover { background: hsl(45 90% 55% / 0.14); }
+
+/* InspectPanel — per-agent live activity feed (replaces the static recent
+   output string with rows from the canonical activity log). */
+.inspect-activity { display: flex; flex-direction: column; gap: 3px; }
+.inspect-activity .ia-row {
+  display: flex; align-items: baseline; gap: 7px;
+  padding: 4px 6px; border-radius: 6px;
+  background: var(--paper-2, rgba(0,0,0,0.03));
+  font: 10px Inter, system-ui, sans-serif;
+}
+.inspect-activity .ia-row.is-attn {
+  background: hsl(350 70% 50% / 0.09);
+}
+.inspect-activity .ia-icon { flex: 0 0 auto; opacity: 0.8; }
+.inspect-activity .ia-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--ink, #2a2118);
+}
+.inspect-activity .ia-ago { flex: 0 0 auto; opacity: 0.55; font-size: 9px; }
+
 /* Attention badge — small count pip on the Team bottom-nav item. */
 .att-badge {
   position: absolute;

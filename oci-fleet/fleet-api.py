@@ -349,17 +349,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/fleet/deprovision':
             return self._handle_deprovision()
 
+        # Provision is self-service like deprovision: an on-chain-minted session
+        # token is the credential (principal FROM the token). Dispatched BEFORE
+        # _check_auth so dev-mode (no FLEET_API_SECRET) can't wave an anonymous
+        # caller through to spin a container for an arbitrary principal.
+        if self.path == '/fleet/provision':
+            return self._handle_provision()
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
-        if self.path != '/fleet/provision':
-            return self._send_json(404, {'error': 'not found'})
+        return self._send_json(404, {'error': 'not found'})
 
+    def _handle_provision(self):
+        """POST /fleet/provision — create (or return) a user's container.
+
+        Two credential paths (mirrors /fleet/deprovision):
+          • { token }     → self-service. The on-chain-minted session token IS
+            the credential; the principal is taken FROM it, so a caller can only
+            provision their OWN container. No X-Fleet-Auth needed — browser path.
+          • { principal } → admin override; requires X-Fleet-Auth with a real
+            FLEET_API_SECRET. REFUSED in dev-mode (no secret) so a bare principal
+            can never spin containers on someone else's behalf / rack up cost.
+
+        Returns 200 {status:'existing'} when a live container already exists,
+        else 202 {job_id} and provisions asynchronously (~60-90s).
+        """
         length = int(self.headers.get('Content-Length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length) or b'{}')
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
-        principal = (req.get('principal') or '').strip()
+
+        token = str(req.get('token', '')).strip()
+        if token:
+            secret = hq_token.secret_bytes()
+            if not secret:
+                return self._send_json(503, {'error': 'sessions not configured'})
+            claims = hq_token.verify(token, secret)
+            if not claims:
+                return self._send_json(401, {'error': 'invalid or expired token'})
+            principal = claims['principal']
+        else:
+            # Admin path — only with a REAL shared secret. In dev-mode
+            # _check_auth() would wave everyone through, which must never be
+            # enough to provision a container for an arbitrary principal.
+            if not SHARED_SECRET or self.headers.get('X-Fleet-Auth') != SHARED_SECRET:
+                return self._send_json(401, {'error': 'token required (or admin X-Fleet-Auth)'})
+            principal = (req.get('principal') or '').strip()
         if not _validate_principal(principal):
             return self._send_json(400, {'error': 'invalid principal'})
 

@@ -3380,8 +3380,24 @@ function ElevatedToolkit() {
   );
 }
 
-function InspectPanel({ agent, onClose, onUpdate, onDismiss }) {
+const INSPECT_ACT_ICON = {
+  hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
+  done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
+};
+function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMessage }) {
   if (!agent) return null;
+  /* Live activity for THIS agent, straight from the canonical log — replaces
+     the old static `agent.recent` string with what the agent actually did. */
+  const mine = React.useMemo(
+    () => (activity || []).filter(e => e.agentId === agent.id).slice(0, 8),
+    [activity, agent.id]);
+  const ago = (ts) => {
+    const dt = Date.now() - (ts || 0);
+    if (dt < 60_000) return Math.max(0, Math.floor(dt / 1000)) + 's';
+    if (dt < 3_600_000) return Math.floor(dt / 60_000) + 'm';
+    if (dt < 86_400_000) return Math.floor(dt / 3_600_000) + 'h';
+    return Math.floor(dt / 86_400_000) + 'd';
+  };
   return (
     <div className="inspect">
       <div className="head">
@@ -3417,10 +3433,22 @@ function InspectPanel({ agent, onClose, onUpdate, onDismiss }) {
           </div>
         </div>
         <div>
-          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Recent output</div>
-          <div className="recent">
-            {agent.recent || 'No recent output logged yet. Try delegating a task.'}
-          </div>
+          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Live activity</div>
+          {mine.length > 0 ? (
+            <div className="inspect-activity">
+              {mine.map(e => (
+                <div key={e.id} className={'ia-row' + (e.priority === 'attention' ? ' is-attn' : '')}>
+                  <span className="ia-icon" aria-hidden="true">{INSPECT_ACT_ICON[e.action] || '✦'}</span>
+                  <span className="ia-text">{e.text}</span>
+                  <span className="ia-ago">{ago(e.ts)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="recent">
+              {agent.recent || 'No activity logged yet. Drag a task onto this desk or message the team.'}
+            </div>
+          )}
         </div>
         {agent.journal && agent.journal.length > 0 && (
           <div>
@@ -3436,6 +3464,7 @@ function InspectPanel({ agent, onClose, onUpdate, onDismiss }) {
           </div>
         )}
         <div style={{display:'flex',gap:6,marginTop:4}}>
+          {onMessage && <button className="px-btn primary" style={{fontSize:8,flex:1}} onClick={()=>onMessage(agent)}>💬 MESSAGE</button>}
           <button className="px-btn secondary" style={{fontSize:8,flex:1}} onClick={()=>onUpdate(agent.id, { tokens: 0, recent: 'context cleared ☕' })}>☕ REFRESH CTX</button>
           <button className="px-btn danger" style={{fontSize:8}} onClick={()=>{onDismiss(agent.id); onClose();}}>LET GO</button>
         </div>

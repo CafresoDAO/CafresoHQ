@@ -96,9 +96,15 @@
     state = 'provisioning'; phase = 'starting'; error = '';
     startElapsed();
     try {
+      // Self-service credential: an on-chain-minted session token proves this
+      // principal owns the request, so the hardened fleet API provisions for it
+      // (dev-mode no longer waves anonymous callers through). Best-effort — if
+      // minting fails we still send the principal (admin/dev fallback path).
+      let token = '';
+      try { token = await mintSessionToken(); } catch (_) { /* fall through */ }
       const job = await provisionAndWait(principal, {
         onUpdate: (j) => { phase = j.phase || j.status || 'working'; },
-        pollMs: 5000, maxWaitMs: 600000
+        pollMs: 5000, maxWaitMs: 600000, token
       });
       const ep = pickEndpoint(job);
       if (ep) { setEndpoint(ep); endpoint = ep; state = 'ready'; phase = 'ready'; }

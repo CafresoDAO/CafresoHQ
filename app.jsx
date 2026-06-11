@@ -1269,6 +1269,31 @@ function App() {
     })();
     return () => { cancelled = true; };
   }, [backendProbeNonce]);
+  /* Self-healing: while the backend is down, quietly re-probe on a gentle
+     backoff (5s → 30s) so a container that comes back online reconnects on its
+     own — the user shouldn't have to babysit the Retry button. A single
+     lightweight health check per tick (no 3× storm; the banner's "Checking…"
+     state only shows when the user clicks Retry). Clears itself the moment the
+     backend answers. */
+  React.useEffect(() => {
+    if (!backendDown) return;
+    let stopped = false, delay = 5000, timer;
+    const tick = async () => {
+      if (stopped) return;
+      let ok = false;
+      try { ok = await window.OpenclawClient.backendHealth(); } catch (_e) {}
+      if (stopped) return;
+      if (ok) {
+        setBackendDown(false);
+        try { if (window.OpenclawClient.hermesEnsureProvider) window.OpenclawClient.hermesEnsureProvider(); } catch (_e) {}
+        return;   // effect cleanup will fire on backendDown→false
+      }
+      delay = Math.min(30000, Math.round(delay * 1.5));
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, delay);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [backendDown]);
   const [scanlines, setScanlines] = useStored(k('scanlines'), true);
   const [sound, setSound] = useStored(k('sound'), false);
   /* Canonical activity log — the single source of truth for the ticker, the
@@ -2766,6 +2791,36 @@ ${d.text}` : d.text,
   const onRemoveSticky = (id) => setPins(prev => prev.filter(p => p.id !== id));
   const onInspect = (a) => setInspect(a);
 
+  /* Retry a failed item straight from the inbox attention tab. Given the
+     activity entry (carries agentId), find the most recent failed message to
+     that agent and re-dispatch it — same path as the global onRetryFailed but
+     scoped to the row the user clicked. Falls back to a toast when the message
+     or recipient can't be recovered. */
+  const onRetryActivity = (entry) => {
+    const agentId = entry && entry.agentId;
+    const pool = (messagesRef.current || []).filter(m => m.state === 'failed');
+    const failed = agentId ? pool.filter(m => m.toAgentId === agentId) : pool;
+    if (!failed.length) {
+      window.openclawToast && window.openclawToast.warn(
+        agentId ? 'No failed message on record for this agent to retry.'
+                : 'No failed messages to retry.');
+      return;
+    }
+    failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const m = failed[0];
+    const agent = agents.find(a => a.id === m.toAgentId);
+    if (!agent) {
+      window.openclawToast && window.openclawToast.error(
+        `Recipient (${m.toAgentName}) is no longer hired — can't retry.`);
+      return;
+    }
+    dispatchToAgent(agent, m.body, {
+      parentMessageId: m.id,
+      dmFrom: (m.fromAgentId !== 'boss') ? agents.find(a => a.id === m.fromAgentId) || null : null,
+    });
+    window.openclawToast && window.openclawToast.success(`Retrying → ${agent.name}…`);
+  };
+
   // Tasks
   const onAddTask = (t) => { setTasks(prev => [t, ...prev]); say('Task added', 'TASK'); };
   const onMoveTask = (id, status) => setTasks(prev => prev.map(t => t.id===id?{...t, status}:t));
@@ -3397,7 +3452,7 @@ ${d.text}` : d.text,
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
-        return <TeamView agents={agents} activity={activity} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} />;
+        return <TeamView agents={agents} activity={activity} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} approvals={approvals} onApprove={onApprove} onReject={onReject} onRetry={onRetryActivity} />;
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
@@ -3757,7 +3812,8 @@ ${d.text}` : d.text,
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}/>
-      <InspectPanel agent={inspect} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}/>
+      <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+        onMessage={(a)=>{ setInspect(null); if (window.openclawSetChatOpen) window.openclawSetChatOpen(true); window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'direct' })); window.openclawToast && window.openclawToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
       <CEOPanel
         open={ceoShown}
         onClose={() => setCeoShown(false)}
@@ -3776,9 +3832,9 @@ ${d.text}` : d.text,
       <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)}/>
       <NotificationCenter
         open={notifOpen}
-        onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => ({ ...x, unread: false }))); }}
+        onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}
         notifications={mergedNotifications}
-        onMarkAllRead={() => { setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => ({ ...x, unread: false }))); }}
+        onMarkAllRead={() => { setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}
         onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
         emptyHint="Nothing pending. Approvals, agent activity, and receipts will land here."
       />
