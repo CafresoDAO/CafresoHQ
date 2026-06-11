@@ -1773,6 +1773,15 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       )}
       <div className="wall-line" />
       <div className="floor" />
+      {/* Open-floor "lounge" — couch + water cooler frame the room, a floor mat
+          announces the HQ. Decorative only (pointer-events:none), desktop-only. */}
+      {!isMobileOffice && (
+        <div className="floor-decor" aria-hidden="true">
+          <div className="lounge-couch" />
+          <div className="floor-mat">CAFRESO HQ</div>
+          <div className="water-cooler"><span className="wc-bubble" /></div>
+        </div>
+      )}
       <div className="pet" aria-label="Maximus"><Sprite data="maximus" scale={2}/></div>
 
       <div className="rooms">
@@ -1895,7 +1904,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const subs = subordinatesOf(a.id);
           return (
           <div key={a.id}
-               className={`room ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}`}
+               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}`}
                onClick={() => onInspect(a)}
                style={{cursor:'pointer'}}
                onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
@@ -1916,10 +1925,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <span className={`pip ${a.status}`} />
             </div>
             <div className="interior">
+              {/* Per-desk decor — deterministic by index so each office looks
+                  distinct but stable across renders. One rotating wall piece +
+                  a colored rug, desk lamp, and keyboard. Decorative only. */}
+              {(() => { const W = ['mini-window','poster','wall-shelf','pin-note','poster p1','mini-window']; const w = W[i % W.length]; return <div className={w} aria-hidden="true">{w.startsWith('mini-window') ? <span className="sun"/> : null}</div>; })()}
+              <div className="room-rug" data-variant={i % 3} aria-hidden="true"/>
               <div className="plant" style={{left: 6}}/>
               <div className="coffee" title={`Refresh ${a.name}'s context`}
                 onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
               <div className="desk" />
+              <div className="mini-keys" aria-hidden="true"/>
+              <div className="desk-lamp" aria-hidden="true"/>
               <div className="sprite-slot">
                 {a.task ? <div className="bubble t-body">{a.task}</div> : null}
                 <div style={{position:'relative'}}>
@@ -1960,6 +1976,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <span className="pip idle" />
             </div>
             <div className="interior">
+              <div className="hire-sign" aria-hidden="true">FOR HIRE</div>
               <div className="desk" style={{opacity:0.6}}/>
               <div className="hire">
                 <div className="plus">+</div>

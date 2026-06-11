@@ -7960,3 +7960,331 @@ select { font-size: max(16px, 1em); }
 /* Blink cursor for streaming indicator */
 @keyframes term-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .term-cursor { animation: term-blink 1s step-start infinite; }
+
+
+/* ==================================================================
+   HQ REVAMP — office "alive" pass (2026-06)
+   Per-desk decor variety, lounge floor, night lighting, status-driven
+   screens, livelier pet, hire signage. All pure CSS; the matching DOM
+   bits live in ui.jsx OfficeView. Everything respects
+   prefers-reduced-motion and hides on mobile (the avatar strip view).
+   ================================================================== */
+
+/* — Per-room rug (variant by data-variant 0/1/2) — */
+.room-rug {
+  position: absolute;
+  left: 50%; bottom: 2px;
+  transform: translateX(-50%);
+  width: 64%; height: 8px;
+  border: 2px solid var(--ink);
+  z-index: 1;
+  background: repeating-linear-gradient(90deg, #b86b6b 0 6px, #9d5757 6px 12px);
+}
+.room-rug[data-variant="1"] { background: repeating-linear-gradient(90deg, #5e9c9c 0 6px, #4d8484 6px 12px); }
+.room-rug[data-variant="2"] { background: repeating-linear-gradient(90deg, #c9a55a 0 6px, #b08c44 6px 12px); }
+
+/* — Desk lamp: pixel stem + shade; glows at night — */
+.desk-lamp {
+  position: absolute;
+  right: 13%; bottom: 36px;
+  width: 3px; height: 12px;
+  background: var(--ink);
+  z-index: 5;
+}
+.desk-lamp::before {           /* base */
+  content: '';
+  position: absolute; left: -4px; bottom: -2px;
+  width: 11px; height: 3px;
+  background: var(--ink);
+}
+.desk-lamp::after {            /* shade */
+  content: '';
+  position: absolute; left: -7px; top: -5px;
+  width: 12px; height: 6px;
+  background: var(--accent-sun, #f0c674);
+  border: 2px solid var(--ink);
+}
+body.night .desk-lamp::after {
+  background: #ffd98a;
+  box-shadow: 0 6px 14px 2px rgba(255, 214, 130, 0.30);
+}
+
+/* — Mini keyboard on agent desks — */
+.mini-keys {
+  position: absolute;
+  left: 50%; bottom: 30px;
+  transform: translateX(-50%);
+  width: 24%; height: 4px;
+  background: var(--ink-2);
+  border: 1px solid var(--ink);
+  z-index: 5;
+}
+
+/* — Wall decor variants (deterministic per desk index) — */
+.mini-window {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 30%; height: 34%;
+  max-width: 64px;
+  background: linear-gradient(180deg, var(--office-sky-top) 0%, var(--office-sky-mid) 60%, var(--office-land-top) 60%, var(--office-land-bot) 100%);
+  border: 2px solid var(--ink);
+}
+.mini-window::before {
+  content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+  background: var(--ink); transform: translateX(-1px);
+}
+.mini-window::after {
+  content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px;
+  background: var(--ink); transform: translateY(-1px);
+}
+
+.poster {
+  position: absolute;
+  top: 8px; left: 8px;
+  width: 22px; height: 28px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(160deg, #8f7df5 0%, #4a3a8a 100%);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.18);
+}
+.poster::after {
+  content: '';
+  position: absolute; left: 3px; right: 3px; bottom: 4px; height: 2px;
+  background: rgba(255,255,255,0.65);
+  box-shadow: 0 -4px 0 rgba(255,255,255,0.45);
+}
+.poster.p1 { background: linear-gradient(180deg, #f2b56b 0%, #c96b6b 60%, #5a3a5a 100%); }
+.poster.p2 { background: linear-gradient(180deg, #6bbf8a 0%, #2e6e54 100%); }
+
+.wall-shelf {
+  position: absolute;
+  top: 14px; left: 10px;
+  width: 38px; height: 6px;
+  background: var(--wood);
+  border: 2px solid var(--ink);
+}
+.wall-shelf i {
+  position: absolute; bottom: 6px;
+  width: 5px; height: 10px;
+  border: 1px solid var(--ink);
+}
+.wall-shelf i:nth-child(1) { left: 3px;  background: #b86b6b; }
+.wall-shelf i:nth-child(2) { left: 10px; background: #5e9c9c; height: 12px; }
+.wall-shelf i:nth-child(3) { left: 17px; background: #c9a55a; }
+.wall-shelf::after {        /* tiny succulent on the shelf end */
+  content: '';
+  position: absolute; right: 3px; bottom: 6px;
+  width: 6px; height: 6px;
+  background: var(--accent-leaf, #8bb98a);
+  border: 1px solid var(--ink);
+  border-radius: 2px 2px 0 0;
+}
+
+.pin-note {
+  position: absolute;
+  top: 9px; left: 10px;
+  width: 18px; height: 22px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+}
+.pin-note::before {          /* red calendar header */
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 5px;
+  background: #c96b6b;
+  border-bottom: 1px solid var(--ink);
+}
+.pin-note::after {           /* date grid dots */
+  content: '';
+  position: absolute; left: 3px; top: 9px;
+  width: 2px; height: 2px;
+  color: var(--ink-2);
+  background: currentColor;
+  box-shadow: 4px 0 0 currentColor, 8px 0 0 currentColor,
+              0 4px 0 currentColor, 4px 4px 0 currentColor, 8px 4px 0 currentColor;
+}
+
+/* — Status-driven desk screens: busy desks flicker like real work — */
+.room.status-busy .desk::after,
+.room.status-active .desk::after {
+  animation: screen-work 3.4s steps(1) infinite;
+}
+@keyframes screen-work {
+  0%, 100% { filter: brightness(1); }
+  11%      { filter: brightness(1.25); }
+  14%      { filter: brightness(1); }
+  43%      { filter: brightness(1.18); }
+  48%      { filter: brightness(1); }
+  76%      { filter: brightness(1.22); }
+  80%      { filter: brightness(1); }
+}
+/* Screens emit light at night */
+body.night .desk::after {
+  box-shadow: 0 0 12px rgba(120, 170, 255, 0.35), inset 0 2px 0 0 rgba(255,255,255,0.3);
+}
+/* Idle desks power their screen down at night */
+body.night .room.status-idle .desk::after {
+  background: linear-gradient(180deg, #11121e 0%, #0b0c14 100%);
+  box-shadow: inset 0 2px 0 0 rgba(255,255,255,0.06);
+}
+
+/* — Warm ceiling light wash inside each room at night — */
+body.night .room .interior::after {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 75% 55% at 50% 0%, rgba(255, 214, 140, 0.10), transparent 70%);
+  z-index: 6;
+}
+
+/* — Window scene at night: moon + stars instead of sun + clouds — */
+body.night .window .sun {
+  background: radial-gradient(circle at 38% 35%, #f6f1dd 0 45%, #cfc9b4 75%);
+  box-shadow: 0 0 10px rgba(246, 241, 221, 0.5);
+}
+body.night .window,
+body.night .mini-window {
+  background-image:
+    radial-gradient(1px 1px at 18% 22%, rgba(255,255,255,0.9) 50%, transparent 51%),
+    radial-gradient(1px 1px at 64% 14%, rgba(255,255,255,0.8) 50%, transparent 51%),
+    radial-gradient(1px 1px at 42% 38%, rgba(255,255,255,0.7) 50%, transparent 51%),
+    radial-gradient(1px 1px at 82% 30%, rgba(255,255,255,0.75) 50%, transparent 51%),
+    linear-gradient(180deg, var(--office-sky-top) 0%, var(--office-sky-mid) 60%, var(--office-land-top) 60%, var(--office-land-bot) 100%);
+}
+body.night .window .cloud { opacity: 0.25; }
+
+/* — Lounge corner on the open floor (desktop only) — */
+.floor-decor {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 28%;
+  pointer-events: none;
+  z-index: 3;
+}
+.lounge-couch {
+  position: absolute;
+  left: 2.5%; bottom: 8px;
+  width: 56px; height: 18px;
+  background: var(--accent-lav, #b9a8e8);
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: inset 0 -5px 0 0 rgba(0,0,0,0.14);
+}
+.lounge-couch::before {      /* backrest */
+  content: '';
+  position: absolute; left: -2px; right: -2px; top: -10px; height: 10px;
+  background: inherit;
+  border: 2px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+.lounge-couch::after {       /* seat cushion split */
+  content: '';
+  position: absolute; left: 50%; top: 2px; bottom: 2px; width: 2px;
+  background: rgba(0,0,0,0.18);
+}
+.water-cooler {
+  position: absolute;
+  right: 3%; bottom: 8px;
+  width: 14px; height: 26px;
+  background: var(--ink-2);
+  border: 2px solid var(--ink);
+}
+.water-cooler::before {      /* translucent jug */
+  content: '';
+  position: absolute; left: 1px; right: 1px; top: -10px; height: 10px;
+  background: rgba(137, 200, 224, 0.85);
+  border: 2px solid var(--ink);
+  border-bottom: 0;
+}
+.water-cooler .wc-bubble {   /* a bubble rises in the jug */
+  position: absolute;
+  left: 4px; top: -4px;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  animation: wc-bubble 3.2s ease-in infinite;
+}
+@keyframes wc-bubble {
+  0%   { transform: translateY(0);    opacity: 0; }
+  25%  { opacity: 0.9; }
+  85%  { transform: translateY(-5px); opacity: 0.9; }
+  100% { transform: translateY(-6px); opacity: 0; }
+}
+.floor-mat {
+  position: absolute;
+  left: 50%; bottom: 6px;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  background: repeating-linear-gradient(45deg, rgba(0,0,0,0.08) 0 4px, transparent 4px 8px), var(--wood-dk);
+  border: 2px solid var(--ink);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.18em;
+  color: var(--paper);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+body.night .lounge-couch,
+body.night .water-cooler,
+body.night .floor-mat,
+body.night .room-rug,
+body.night .poster { filter: brightness(0.7) saturate(0.85); }
+
+/* — Empty desk: swinging FOR-HIRE sign + dusty look — */
+.room.empty .interior { position: relative; }
+.room.empty .desk { filter: grayscale(0.5); }
+.hire-sign {
+  position: absolute;
+  top: 6px; left: 50%;
+  transform-origin: 50% -6px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 3px 7px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  color: var(--ink-2);
+  animation: sign-swing 4.6s ease-in-out infinite;
+  z-index: 4;
+}
+.hire-sign::before {         /* hanging string */
+  content: '';
+  position: absolute; left: 50%; top: -7px;
+  width: 2px; height: 7px;
+  background: var(--ink);
+}
+@keyframes sign-swing {
+  0%, 100% { transform: translateX(-50%) rotate(-2.5deg); }
+  50%      { transform: translateX(-50%) rotate(2.5deg); }
+}
+.room.empty:hover .hire-sign { color: var(--ink); }
+
+/* — Livelier pet: walks, pauses to sniff, turns around — */
+.pet { animation: wander 26s linear infinite; }
+@keyframes wander {
+  0%   { left: 5%;  transform: scaleX(1); }
+  18%  { left: 40%; transform: scaleX(1); }
+  23%  { left: 40%; transform: scaleX(1); }   /* sniff */
+  45%  { left: 84%; transform: scaleX(1); }
+  49%  { left: 84%; transform: scaleX(-1); }  /* turn */
+  68%  { left: 30%; transform: scaleX(-1); }
+  74%  { left: 30%; transform: scaleX(-1); }  /* sniff */
+  97%  { left: 5%;  transform: scaleX(-1); }
+  100% { left: 5%;  transform: scaleX(1); }
+}
+
+/* — Accessibility: respect reduced motion for every ambient animation — */
+@media (prefers-reduced-motion: reduce) {
+  .pet, .hire-sign, .bob, .water-cooler .wc-bubble,
+  .room.status-busy .desk::after, .room.status-active .desk::after,
+  .window .cloud, .coffee::before, .cm-steam, .ticker-track .line {
+    animation: none !important;
+  }
+}
+
+/* — Mobile: the avatar strip replaces the scene; hide scene-only decor — */
+@media (max-width: 768px) {
+  .floor-decor, .room-rug, .desk-lamp, .mini-keys,
+  .mini-window, .poster, .wall-shelf, .pin-note, .hire-sign {
+    display: none !important;
+  }
+}
