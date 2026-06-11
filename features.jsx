@@ -158,7 +158,9 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                 );
               })}
               {tasks.filter(t=>t.status===key).length === 0 && (
-                <div className="tb-empty">—</div>
+                key === 'inbox'
+                  ? <div className="tb-empty onboard">No tasks yet.<br/>Hit <strong>+ NEW</strong> above, then drag a card onto an agent's desk to delegate.</div>
+                  : <div className="tb-empty">—</div>
               )}
             </div>
           </div>

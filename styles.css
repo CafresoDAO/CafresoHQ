@@ -90,7 +90,7 @@
   --brand-paper-2:     hsl(36 67% 96%);   /* surface-strong */
   --brand-coffee:      hsl(24 48% 9%);    /* #262313 — primary text + dark buttons */
   --brand-coffee-2:    hsl(24 30% 28%);   /* secondary text */
-  --brand-coffee-3:    hsl(24 18% 50%);   /* tertiary */
+  --brand-coffee-3:    hsl(24 22% 42%);   /* tertiary — darkened from 50% for WCAG AA 4.5:1 on paper (~5:1); still visibly muted vs coffee-2 */
   --brand-rule:        hsl(31 28% 79%);   /* hairline */
   --brand-banana:      hsl(45 95% 62%);   /* #F5D25D — primary accent */
   --brand-banana-rim:  hsl(32 72% 50%);   /* #C68A32 — hover/active */
@@ -6211,7 +6211,7 @@ body.night {
   --paper-2:     #20243c;
   --ink:         #eaecf6;
   --ink-2:       #b0b8d8;
-  --ink-3:       #7880a8;
+  --ink-3:       #8b93bd;   /* lightened from #7880a8 for WCAG AA 4.5:1 on the dark paper (~4.9:1) */
   --rule:        #2a2e48;
   --rule-2:      #363c62;
 
@@ -8287,4 +8287,42 @@ body.night .poster { filter: brightness(0.7) saturate(0.85); }
   .mini-window, .poster, .wall-shelf, .pin-note, .hire-sign {
     display: none !important;
   }
+}
+
+/* — Onboarding empty states (NN/g: say why it's empty + how to fill it) — */
+.empty-state.onboard {
+  border-style: solid;
+  border-color: var(--rule);
+  background:
+    radial-gradient(ellipse 70% 80% at 50% 0%, rgba(124,107,255,0.06), transparent 70%),
+    var(--paper-2);
+  border-radius: 4px;
+}
+.empty-state.onboard .empty-sub strong { color: var(--ink); }
+.empty-cta-hint {
+  margin-top: 14px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #7c6bff;
+  animation: cta-bounce 1.8s ease-in-out infinite;
+}
+@keyframes cta-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(3px); }
+}
+.tb-empty.onboard {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-align: center;
+  padding: 14px 10px;
+  border: 2px dashed var(--rule);
+  border-radius: 4px;
+  background: var(--paper-2);
+}
+.tb-empty.onboard strong { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  .empty-cta-hint { animation: none !important; }
 }

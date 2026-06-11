@@ -118,7 +118,18 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
         </div>
       </div>
       <div className="memshelf shelf-page">
-        {filtered.length === 0 && <div className="muted" style={{padding:16}}>No entries with that tag yet.</div>}
+        {memory.length === 0 ? (
+          <div className="empty-state onboard">
+            <div className="empty-title">🧠 Teach your HQ</div>
+            <div className="empty-sub">
+              Long-term memory is folded into every prompt your CEO and crew see — facts,
+              preferences, rules, people. Add your first note below and the team remembers it forever.
+            </div>
+            <div className="empty-cta-hint">↓ start typing in the box below</div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="muted" style={{padding:16}}>No entries tagged {filter}. Pick another tag above, or add one below.</div>
+        ) : null}
         {filtered.map(m => (
           <div key={m.id} className="memrow">
             <span className={`memtag tag-${m.tag.toLowerCase()}`}>{m.tag}</span>
@@ -395,7 +406,15 @@ function CalendarView({ tasks, agents }) {
         🗓 CALENDAR
         <span className="tag">tasks grouped by created date · scheduling coming with stand-up</span>
       </div>
-      {groups.length === 0 && <div className="empty-state"><div className="empty-title">No tasks logged.</div></div>}
+      {groups.length === 0 && (
+        <div className="empty-state onboard">
+          <div className="empty-title">🗓 Nothing on the calendar yet</div>
+          <div className="empty-sub">
+            This is a live mirror of your task board, grouped by day. Add a task in the
+            <strong> Tasks</strong> tab (or drop one on an agent's desk in the office) and it shows up here.
+          </div>
+        </div>
+      )}
       {groups.map(([day, ts]) => (
         <div key={day} className="cal-day">
           <div className="cal-day-head">{fmt(day)}<span className="cal-count">{ts.length}</span></div>
