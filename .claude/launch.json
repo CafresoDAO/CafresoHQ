@@ -5,7 +5,8 @@
       "name": "openclaw",
       "runtimeExecutable": "python",
       "runtimeArgs": ["serve.py"],
-      "port": 8787
+      "port": 8787,
+      "autoPort": true
     }
   ]
 }

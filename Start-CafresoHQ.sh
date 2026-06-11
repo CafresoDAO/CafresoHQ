@@ -47,5 +47,20 @@ else
   echo "[start] WARN hermes CLI not installed — /hermes will 502 until you install it (Settings → Agents)"
 fi
 
-echo "[start] serving CafresoHQ → http://localhost:${PORT}/hq.html"
+# serve.py auto-provisions a localhost TLS cert in local mode and serves HTTPS,
+# so the app can be embedded inside https://ai.cafreso.com. For a *trusted* cert
+# (no browser warning, seamless embed) install mkcert; otherwise serve.py falls
+# back to a self-signed cert (works after a one-time trust, or for direct use).
+if command -v mkcert >/dev/null 2>&1; then
+  echo "[start] mkcert found — HQ will get a browser-trusted HTTPS cert (embeds cleanly in ai.cafreso.com)"
+else
+  echo "[start] TIP: install mkcert for a browser-trusted local HTTPS cert →"
+  echo "        https://github.com/FiloSottile/mkcert  (without it, the cert is self-signed)"
+fi
+
+# serve.py binds 127.0.0.1 by default in local mode (loopback-only = safe, no key
+# needed). To reach HQ from another device you must expose it AND set a key — the
+# terminal is effectively remote code execution:
+#   OPENCLAW_BIND=0.0.0.0 OPENCLAW_API_KEY=<secret> sh Start-CafresoHQ.sh
+echo "[start] serving CafresoHQ on :${PORT}  (loopback-only; serve.py prints the exact URL + scheme)"
 exec python3 serve.py
