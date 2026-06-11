@@ -36,7 +36,9 @@ import urllib.parse
 import urllib.request
 import uuid
 
-PORT = 8787
+# Listen port. Env-configurable (the Dockerfile + entrypoint set PORT) so a
+# self-hoster can avoid a clash with another local service; defaults to 8787.
+PORT = int(os.environ.get('PORT', '8787') or '8787')
 ROUTES = {
     '/lmstudio/': ('10.0.0.100', 1234),
     '/ollama/':   ('localhost', 11434),
@@ -178,6 +180,25 @@ def _detect_runtime():
     return 'local'
 
 _RUNTIME_ENV = _detect_runtime()
+
+# ── Bearer-key auth for local / BYO deployments ──────────────────────────────
+# When OPENCLAW_API_KEY is set, the dangerous routes (terminal, agents, vault,
+# code-agent streams, hq-state) require it via an X-API-Key header or a ?k=
+# query param (WebSocket handshakes can't set custom headers). In OCI-fleet mode
+# the Caddy gateway + verifier already gate access, so the key stays unset/optional
+# there — this is the security floor for Local-native/WSL and any non-loopback
+# exposure (the terminal PTY is effectively RCE). Static UI + /health stay open
+# so the app shell can bootstrap.
+OPENCLAW_API_KEY = os.environ.get('OPENCLAW_API_KEY', '').strip()
+_KEY_PROTECTED_PREFIXES = (
+    '/vault', '/hermes', '/terminal', '/openclaw', '/codex', '/claudecode',
+    '/agents', '/hq/', '/spawn', '/graph/publish', '/approvals', '/browser',
+)
+
+# Background CLI-install jobs (POST /agents/install returns 202 immediately;
+# the UI polls GET /agents/install/status?agent=…). One job per agent id.
+_INSTALL_JOBS = {}
+_INSTALL_JOBS_LOCK = threading.Lock()
 
 # Per-process nonce for /terminal/pty WebSocket auth.
 # Generated once at startup; never logged.  Frontend fetches it from
@@ -1806,14 +1827,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
-        # CORS — required so the CafresoAI SvelteKit frontend (running on a
-        # different origin, e.g. localhost:5174 in dev or an ICP asset canister
-        # in prod) can hit /health, /vault/*, /api/* etc. on the OCI container.
-        # We echo back the requesting Origin when present (safer than '*' when
-        # credentials are involved); fall back to '*' for plain probes.
-        origin = self.headers.get('Origin', '*') if hasattr(self, 'headers') else '*'
-        self.send_header('Access-Control-Allow-Origin', origin)
-        self.send_header('Access-Control-Allow-Credentials', 'true')
+        # CORS — only ALLOWLISTED app origins (the SvelteKit frontend + canister
+        # UI shell, see _app_origins) get credentialed cross-origin access. Any
+        # other origin gets a credential-less '*' (a browser cannot send cookies
+        # with ACAO:'*'), so a malicious site can't read this container's
+        # cookie-authenticated responses cross-origin (the hq_session is
+        # SameSite=None, so it WOULD otherwise ride along). Public probes like
+        # /health still work for anyone.
+        try:
+            origin  = self.headers.get('Origin', '') if hasattr(self, 'headers') else ''
+            allowed = bool(origin) and origin in self._app_origins()
+        except Exception:
+            origin, allowed = '', False
+        if allowed:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Access-Control-Allow-Credentials', 'true')
+        else:
+            self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-User-Principal, X-API-Key, '
@@ -1828,7 +1858,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return prefix, target
         return None, None
 
+    def _api_key_ok(self):
+        """Bearer-key gate (see OPENCLAW_API_KEY). No key configured → open.
+        Otherwise a request to a protected prefix must present the key via the
+        X-API-Key header or a ?k= query param (for WebSocket handshakes). Public
+        paths (static UI, /health, /idle) are exempt."""
+        if not OPENCLAW_API_KEY:
+            return True
+        path = self.path.split('?', 1)[0]
+        if not path.startswith(_KEY_PROTECTED_PREFIXES):
+            return True
+        supplied = self.headers.get('X-API-Key', '') or ''
+        if not supplied:
+            try:
+                supplied = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query).get('k', [''])[0]
+            except Exception:
+                supplied = ''
+        import hmac as _hmac
+        return bool(supplied) and _hmac.compare_digest(str(supplied), OPENCLAW_API_KEY)
+
     def do_GET(self):
+        if not self._api_key_ok():
+            return self._send_json(401, {'error': 'API key required'})
         # /idle is the signal the fleet's reap-idle uses to stop idle containers
         # (free the A1 pool + pause billing). Report seconds since the last
         # *user-facing* request. Health/idle pings themselves don't count as
@@ -1847,6 +1899,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_get_capability()
         if self.path == '/hermes/model':
             return self._hermes_get_model()
+        if self.path == '/hermes/provider':
+            return self._hermes_get_provider()
+        if self.path == '/hermes/config/export':
+            return self._hermes_export_config()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
@@ -1857,6 +1913,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._openclaw_status()
         if self.path == '/codex/status':
             return self._codex_status()
+        if self.path.startswith('/agents/install/status'):
+            return self._agents_install_status()
         if self.path == '/agents':
             return self._agents_status()
         if self.path == '/terminal/status':
@@ -2030,13 +2088,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'slug': slug, 'snapshotUrl': snap_url, 'viewerUrl': view_url})
 
     def do_POST(self):
+        if not self._api_key_ok():
+            return self._send_json(401, {'error': 'API key required'})
         _touch_activity(self.path)
         if self.path == '/hermes/capability':
             return self._hermes_set_capability()
         if self.path == '/hermes/model':
             return self._hermes_set_model()
+        if self.path == '/hermes/provider':
+            return self._hermes_set_provider()
+        if self.path == '/hermes/config/import':
+            return self._hermes_import_config()
         if self.path == '/hermes/openrouter-key':
-            return self._hermes_set_openrouter_key()
+            return self._hermes_set_provider('openrouter')  # back-compat alias
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('POST')
         if self.path.startswith('/vault/'):
@@ -2081,6 +2145,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_error(405)
 
     def do_PUT(self):
+        if not self._api_key_ok():
+            return self._send_json(401, {'error': 'API key required'})
         if self.path.startswith('/hq/'):
             return self._hq_handler('PUT')
         if self.path.startswith('/vault/'):
@@ -2088,6 +2154,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_error(405)
 
     def do_DELETE(self):
+        if not self._api_key_ok():
+            return self._send_json(401, {'error': 'API key required'})
         if self.path.startswith('/vault/'):
             return self._vault('DELETE')
         self.send_error(405)
@@ -2133,6 +2201,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'user_principal':   _fleet_user_principal,
             'claude_code':      bool(_claudecode_bin or shutil.which('claude')),
             'codex':            bool(_codex_bin or shutil.which('codex')),
+            'hermes':           bool(_hermes_bin or shutil.which('hermes')),
+            'gemini':           bool(_gemini_bin or shutil.which('gemini')),
+            'runtime_env':      _RUNTIME_ENV,
+            'auth_required':    bool(OPENCLAW_API_KEY),
             'oci_vault_ready':  oci_ready,
         })
 
@@ -2603,10 +2675,67 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return ''
 
+    def _agent_auth_detect(self, aid):
+        """Best-effort login/credential detection for an agent CLI on THIS host.
+
+        Returns (authenticated: bool, auth: str) where auth is the mechanism
+        found: 'oauth' (CLI login), 'api-key' (env var), 'config' (hermes
+        config.yaml present), or '' when nothing was found. File checks only —
+        no subprocesses, no key material is read or returned. A False here is
+        a hint, not a verdict (e.g. macOS keychain-stored claude creds have no
+        file to see), so the UI words it as "needs login", never "broken".
+        """
+        home = pathlib.Path.home()
+        try:
+            if aid == 'claude-code':
+                if (home / '.claude' / '.credentials.json').is_file():
+                    return True, 'oauth'
+                cfg = home / '.claude.json'
+                if cfg.is_file():
+                    try:
+                        if '"oauthAccount"' in cfg.read_text(encoding='utf-8', errors='ignore'):
+                            return True, 'oauth'
+                    except OSError:
+                        pass
+                if os.environ.get('ANTHROPIC_API_KEY', '').strip():
+                    return True, 'api-key'
+            elif aid == 'codex':
+                if (home / '.codex' / 'auth.json').is_file():
+                    return True, 'oauth'
+                if os.environ.get('OPENAI_API_KEY', '').strip():
+                    return True, 'api-key'
+            elif aid == 'gemini':
+                gdir = home / '.gemini'
+                if ((gdir / 'oauth_creds.json').is_file()
+                        or (gdir / 'google_accounts.json').is_file()):
+                    return True, 'oauth'
+                if (os.environ.get('GEMINI_API_KEY', '').strip()
+                        or os.environ.get('GOOGLE_API_KEY', '').strip()):
+                    return True, 'api-key'
+            elif aid == 'hermes':
+                hh = pathlib.Path(os.environ.get('HERMES_HOME', '').strip()
+                                  or (home / '.hermes'))
+                if (hh / 'config.yaml').is_file():
+                    return True, 'config'
+        except OSError:
+            pass
+        return False, ''
+
+    def _hermes_gateway_running(self):
+        """True when the Hermes gateway is accepting connections on loopback."""
+        try:
+            with socket.create_connection(('127.0.0.1', HERMES_PORT), timeout=0.8):
+                return True
+        except OSError:
+            return False
+
     def _agents_status(self):
         """GET /agents — which agents are available on this serve.py host.
         Version probes (one subprocess per installed CLI) run concurrently so the
-        endpoint stays snappy even with several agents installed."""
+        endpoint stays snappy even with several agents installed. Each agent also
+        carries best-effort login detection (authenticated/auth) so the UI can
+        sync the user's existing local CLIs — and hermes reports whether its
+        gateway is actually up (running)."""
         specs = [
             ('hermes',      'Hermes Agent', True,  False, self._hermes_resolve,
              'Nous Research agent — your container’s default runtime.'),
@@ -2624,10 +2753,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             futs = {aid: ex.submit(self._agent_version, b, '--version')
                     for aid, b in bins.items() if b}
             versions = {aid: f.result() for aid, f in futs.items()}
+        auth = {aid: self._agent_auth_detect(aid) for aid in bins}
+        hermes_up = bool(bins.get('hermes')) and self._hermes_gateway_running()
         agents = [
             {'id': aid, 'label': label, 'installed': bool(bins[aid]),
              'default': dflt, 'removable': rem,
-             'version': versions.get(aid, ''), 'desc': desc}
+             'version': versions.get(aid, ''), 'desc': desc,
+             'authenticated': auth[aid][0], 'auth': auth[aid][1],
+             **({'running': hermes_up} if aid == 'hermes' else {})}
             for (aid, label, dflt, rem, _resolve, desc) in specs
         ]
         return self._send_json(200, {'agents': agents})
@@ -2674,15 +2807,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {
                 'error': 'agent must be claude-code, codex, gemini, or hermes'})
 
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        except subprocess.TimeoutExpired:
-            return self._send_json(504, {'error': 'install timed out (>300s)'})
-        except Exception as e:
-            return self._send_json(500, {'error': str(e)})
-        if proc.returncode != 0:
-            return self._send_json(500, {
-                'error': (proc.stderr or proc.stdout or 'install failed')[-600:]})
+        # Inherit the environment so npm/pip use the prefix+cache the image set
+        # (Dockerfile + entrypoint export npm_config_prefix/cache + HOME); locally
+        # this is the user's own npm/pip config. Guard HOME in case it's unset.
+        install_env = dict(os.environ)
+        install_env.setdefault('HOME', '/root' if sys.platform != 'win32'
+                               else install_env.get('USERPROFILE', ''))
+
+        # Run the install in a BACKGROUND thread and 202 immediately — the old
+        # synchronous path parked a request thread for up to 600s, starving the
+        # whole server while npm ran. The client polls /agents/install/status.
+        with _INSTALL_JOBS_LOCK:
+            cur = _INSTALL_JOBS.get(agent)
+            if cur and cur.get('status') == 'running':
+                return self._send_json(202, {'ok': True, 'agent': agent,
+                                             'status': 'running',
+                                             'note': 'install already in progress'})
+            _INSTALL_JOBS[agent] = {'agent': agent, 'status': 'running',
+                                    'started': time.time()}
 
         resolvers = {
             'claude-code': self._claudecode_resolve,
@@ -2690,11 +2832,68 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'gemini':      self._gemini_resolve,
             'hermes':      self._hermes_resolve,
         }
-        bin_ = resolvers[agent]()
-        return self._send_json(200, {
-            'ok': True, 'agent': agent, 'installed': bool(bin_),
-            'version': self._agent_version(bin_, '--version'),
-        })
+        resolve = resolvers[agent]
+        version_of = self._agent_version
+
+        def _worker():
+            result = {'status': 'error', 'error': 'unknown'}
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True,
+                                      timeout=600, env=install_env)
+                if proc.returncode != 0:
+                    full = ((proc.stderr or '') + '\n' + (proc.stdout or '')).strip()
+                    # Persist the FULL log — truncating to 600 chars hid the real cause.
+                    try:
+                        _sd = os.environ.get('OPENCLAW_HQ_STATE_DIR', '/data/hq-state')
+                        os.makedirs(_sd, exist_ok=True)
+                        with open(os.path.join(_sd, 'agent-install-errors.log'), 'a') as _f:
+                            _f.write('=== %s :: %s ===\n%s\n\n' % (agent, ' '.join(cmd), full))
+                    except Exception:
+                        pass
+                    low = full.lower()
+                    if 'eacces' in low or 'permission denied' in low:
+                        hint = ('permission error writing the install prefix/cache — the host '
+                                'must pre-create + chmod the npm/pip target dir')
+                    elif any(s in low for s in ('enotfound', 'eai_again', 'etimedout',
+                             'getaddrinfo', 'could not resolve', 'network', 'timed out')):
+                        hint = ('network/DNS — this host cannot reach the package registry; '
+                                'open egress to registry.npmjs.org:443 / pypi.org')
+                    elif 'enospc' in low or 'no space' in low:
+                        hint = 'no disk space left to complete the install'
+                    else:
+                        hint = full[-600:] or 'install failed'
+                    result = {'status': 'error', 'error': hint}
+                else:
+                    bin_ = resolve()
+                    result = {'status': 'done', 'ok': True,
+                              'installed': bool(bin_),
+                              'version': version_of(bin_, '--version')}
+            except subprocess.TimeoutExpired:
+                result = {'status': 'error', 'error':
+                          'install timed out (>600s) — usually blocked network egress to '
+                          'the package registry (open outbound to registry.npmjs.org:443 / pypi.org)'}
+            except Exception as e:
+                result = {'status': 'error', 'error': str(e)}
+            result['agent'] = agent
+            result['finished'] = time.time()
+            with _INSTALL_JOBS_LOCK:
+                _INSTALL_JOBS[agent] = result
+
+        threading.Thread(target=_worker, daemon=True, name=f'install-{agent}').start()
+        return self._send_json(202, {'ok': True, 'agent': agent, 'status': 'started',
+                                     'note': 'installing in background — poll '
+                                             '/agents/install/status?agent=' + agent})
+
+    def _agents_install_status(self):
+        """GET /agents/install/status?agent=<id> → the background job's state:
+        {status: running|done|error, …}. 404 when no install was started."""
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        agent = (qs.get('agent', [''])[0] or '').strip().lower()
+        with _INSTALL_JOBS_LOCK:
+            job = dict(_INSTALL_JOBS.get(agent) or {})
+        if not job:
+            return self._send_json(404, {'agent': agent, 'status': 'none'})
+        return self._send_json(200, job)
 
     # ──────────────────────────────────────────────────────────────────────
     # Browser shim — gives agents a way to fetch URLs and grab screenshots.
@@ -3681,9 +3880,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         host   = self.headers.get('Host', '').strip()
         scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
         origins = {
-            'https://hq.cafreso.com',       # production Caddy gateway
-            'http://localhost:8787',         # local dev
+            'https://hq.cafreso.com',        # production Caddy gateway
+            'https://hq-ui.cafreso.com',     # canister UI shell (cross-origin split)
+            'https://ai.cafreso.com',        # SvelteKit frontend
+            'http://localhost:8787',         # local dev (same-origin)
             'http://127.0.0.1:8787',         # local dev (alt)
+            'http://localhost:5173',         # vite dev server
+            'http://localhost:5174',         # vite dev server (alt)
             f'{scheme}://{host}',            # same-origin (any host the client used)
         }
         return origins | _extra_app_origins
@@ -3698,7 +3901,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """
         _origin = self.headers.get('Origin', '').strip()
         if _origin and _origin not in self._app_origins():
-            return self.send_error(403, f'origin not allowed: {_origin}')
+            return self._send_json(403, {'error': f'origin not allowed: {_origin}'})
         return self._send_json(200, {'nonce': _PTY_NONCE})
 
     def _terminal_pty_ws(self):
@@ -4185,6 +4388,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         auth_method = (body.get('authMethod') or '').strip().lower()
         byok_claude = (body.get('claudeKey') or '').strip()
         byok_codex  = (body.get('codexKey') or '').strip()
+        byok_gemini = (body.get('geminiKey') or '').strip()
         # Orchestrator session keys — used to tie multi-turn invocations to
         # the same project + CLI session so context (working dir, prior
         # output) can be threaded through. Logged for trace; future use:
@@ -4192,8 +4396,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         session_id  = (body.get('sessionId') or '').strip()[:80]
         project_id  = (body.get('projectId') or '').strip()[:80]
 
-        if cli not in ('claude', 'codex'):
-            return self._send_json(400, {'error': 'cli must be "claude" or "codex"'})
+        if cli not in ('claude', 'codex', 'gemini'):
+            return self._send_json(400, {'error': 'cli must be "claude", "codex", or "gemini"'})
         if not cwd:
             return self._send_json(400, {'error': 'cwd required'})
         cwd_path = pathlib.Path(_client_path(cwd)).resolve()
@@ -4234,6 +4438,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                    '--allowed-tools', 'Read,Glob,Grep,Bash,Edit,Write,WebFetch,WebSearch',
                    '--add-dir', str(cwd_path),
                    '--input-format', 'text']
+            if model:
+                cmd += ['--model', model]
+        elif cli == 'gemini':
+            bin_ = self._gemini_resolve()
+            if not bin_:
+                return self._send_json(503, {'error': 'gemini CLI not found — npm i -g @google/gemini-cli or set OPENCLAW_GEMINI_BIN'})
+            # Auth mirrors the PTY path: 'subscription' = the gemini CLI's own
+            # Google login (stored creds), otherwise inject the BYOK key into
+            # GEMINI_API_KEY/GOOGLE_API_KEY (both lookups the CLI honours).
+            if auth_method == 'subscription':
+                agent_env.pop('GEMINI_API_KEY', None)
+                agent_env.pop('GOOGLE_API_KEY', None)
+            elif byok_gemini and not agent_env.get('GEMINI_API_KEY', '').strip():
+                agent_env['GEMINI_API_KEY'] = byok_gemini
+                agent_env.setdefault('GOOGLE_API_KEY', byok_gemini)
+            # Non-interactive one-shot: `--prompt` runs once and exits, printing
+            # the answer to stdout. `--yolo` auto-approves tool calls so the
+            # agent can actually read/edit files in the project dir (parity with
+            # claude --print's fixed allowed-tools); the project cwd scopes it.
+            # The prompt goes in argv (not stdin) — gemini reads --prompt, so we
+            # skip the stdin write below for it.
+            cmd = [bin_, '--yolo', '--prompt', prompt]
             if model:
                 cmd += ['--model', model]
         else:
@@ -4287,8 +4513,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except (FileNotFoundError, OSError) as e:
             return self._send_json(500, {'error': f'spawn {cli}: {e}'})
 
+        # claude/codex read the prompt on stdin; gemini gets it in argv (--prompt)
+        # so we just close its stdin to signal no interactive input.
         try:
-            proc.stdin.write(prompt)
+            if cli != 'gemini':
+                proc.stdin.write(prompt)
             proc.stdin.close()
         except Exception as e:
             try: proc.kill()
@@ -4371,6 +4600,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
                     err_text = ''.join(stderr_buf)[:600] or f'exit {proc.returncode}'
                     sse_delta(f'\n⚠ claude exited {proc.returncode}: {err_text}\n', 'error')
+
+        elif cli == 'gemini':
+            # Gemini CLI (`--prompt … --yolo`) prints its answer as plain text to
+            # stdout (it may interleave a little ANSI for spinners). Stream it
+            # straight through as 'text', stripping escape sequences so the chat
+            # bubble stays clean. No token usage is reported by the CLI.
+            _ansi_re = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+            text_emitted = False
+            try:
+                while True:
+                    chunk = proc.stdout.read(256)
+                    if not chunk:
+                        break
+                    clean = _ansi_re.sub('', chunk)
+                    if clean:
+                        text_emitted = True
+                        if not sse_delta(clean, 'text'):
+                            break
+            finally:
+                try: proc.wait(timeout=2)
+                except Exception:
+                    try: proc.kill()
+                    except Exception: pass
+                rc = proc.returncode
+                stderr_text = ''.join(stderr_buf).strip()
+                if rc and rc not in (0, None):
+                    sse_delta(f'\n⚠ gemini exited {rc}: {stderr_text[:300] or "(no stderr)"}\n', 'error')
+                elif not text_emitted:
+                    hint = stderr_text[:300] or 'is the gemini CLI logged in? run it once in PTY mode to authenticate'
+                    sse_delta(f'\n⚠ gemini returned no content — {hint}\n', 'error')
+                try: self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError): pass
 
         else:  # codex
             def _content_text(value):
@@ -5544,6 +5805,113 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e: return self._send_json(500, {'error': str(e)})
             return self._send_json(200, {'deleted': rel})
 
+        # ---------- Rename / move ----------
+        if path == '/vault/rename' and method == 'POST':
+            length = int(self.headers.get('content-length', 0) or 0)
+            try:
+                req = json.loads(self.rfile.read(length) or b'{}')
+            except Exception:
+                return self._send_json(400, {'error': 'bad json'})
+            src = str(req.get('from', '')).strip()
+            dst = str(req.get('to', '')).strip()
+            if not src or not dst:
+                return self._send_json(400, {'error': 'need from + to'})
+            if _vault_backend == 'rest':
+                # Obsidian REST has no native move: copy then delete.
+                try:
+                    s, _h, body = _obsidian_request('GET', '/vault/' + urllib.parse.quote(src))
+                    if s != 200:
+                        return self._send_json(404, {'error': f'source not found ({s})'})
+                    s2, _h2, resp = _obsidian_request(
+                        'PUT', '/vault/' + urllib.parse.quote(dst),
+                        body=body, content_type='text/markdown')
+                    if s2 not in (200, 204):
+                        return self._send_json(s2, {'error': resp[:300].decode('utf-8', 'replace')})
+                    _obsidian_request('DELETE', '/vault/' + urllib.parse.quote(src))
+                except Exception as e:
+                    return self._send_json(502, {'error': f'obsidian: {e}'})
+                return self._send_json(200, {'from': src, 'to': dst, 'backend': 'rest'})
+            if _vault_backend == 'oci':
+                try:
+                    cli = _oci_object_client()
+                    data = cli.get_object(_oci_vault_namespace, _oci_vault_bucket,
+                                          _oci_obj_key(src)).data.content
+                    cli.put_object(_oci_vault_namespace, _oci_vault_bucket,
+                                   _oci_obj_key(dst), put_object_body=data)
+                    cli.delete_object(_oci_vault_namespace, _oci_vault_bucket, _oci_obj_key(src))
+                except Exception as e:
+                    return self._send_json(502, {'error': f'oci: {e}'})
+                return self._send_json(200, {'from': src, 'to': dst, 'backend': 'oci'})
+            try:
+                s_path = _vault_resolve(src)
+                d_path = _vault_resolve(dst)
+            except ValueError as e:
+                return self._send_json(400, {'error': str(e)})
+            if not s_path.exists():
+                return self._send_json(404, {'error': 'source not found'})
+            if d_path.exists():
+                return self._send_json(409, {'error': 'target already exists'})
+            try:
+                d_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(str(s_path), str(d_path))
+            except Exception as e:
+                return self._send_json(500, {'error': str(e)})
+            return self._send_json(200, {'from': src, 'to': dst})
+
+        # ---------- Upload (multipart) ----------
+        # The browser-side file picker / drag-drop lands here. Filenames are
+        # flattened + sanitized; ?dir= picks a target folder inside the vault.
+        if path == '/vault/upload' and method == 'POST':
+            ctype = self.headers.get('content-type', '')
+            if 'multipart/form-data' not in ctype:
+                return self._send_json(400, {'error': 'expected multipart/form-data'})
+            length = int(self.headers.get('content-length', 0) or 0)
+            if length <= 0:
+                return self._send_json(400, {'error': 'empty upload'})
+            if length > 50 * 1024 * 1024:
+                return self._send_json(413, {'error': 'upload too large (50 MB max)'})
+            raw = self.rfile.read(length)
+            import email.parser as _ep
+            import re as _re
+            msg = _ep.BytesParser().parsebytes(
+                b'Content-Type: ' + ctype.encode('latin-1', 'replace') + b'\r\n\r\n' + raw)
+            if not msg.is_multipart():
+                return self._send_json(400, {'error': 'bad multipart body'})
+            folder = qs.get('dir', [''])[0].strip().strip('/')
+            saved, errors = [], []
+            for part in msg.get_payload():
+                fname = part.get_filename()
+                if not fname:
+                    continue
+                fname = fname.replace('\\', '/').split('/')[-1]
+                fname = _re.sub(r'[^\w .()\[\]\-]+', '_', fname).strip()
+                if not fname or fname.startswith('.'):
+                    continue
+                data = part.get_payload(decode=True) or b''
+                rel = (folder + '/' if folder else '') + fname
+                try:
+                    if _vault_backend == 'rest':
+                        s, _h, resp = _obsidian_request(
+                            'PUT', '/vault/' + urllib.parse.quote(rel),
+                            body=data, content_type='application/octet-stream')
+                        if s not in (200, 204):
+                            raise RuntimeError(resp[:200].decode('utf-8', 'replace'))
+                    elif _vault_backend == 'oci':
+                        cli = _oci_object_client()
+                        cli.put_object(_oci_vault_namespace, _oci_vault_bucket,
+                                       _oci_obj_key(rel), put_object_body=data)
+                    else:
+                        target = _vault_resolve(rel)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(data)
+                    saved.append({'path': rel, 'size': len(data)})
+                except Exception as e:
+                    errors.append({'path': rel, 'error': str(e)})
+            if not saved and errors:
+                return self._send_json(500, {'error': errors[0]['error'], 'failed': errors})
+            return self._send_json(200, {'uploaded': saved, 'count': len(saved),
+                                         **({'failed': errors} if errors else {})})
+
         # ---------- Search ----------
         if path == '/vault/search' and method == 'GET':
             query = qs.get('q', [''])[0].strip()
@@ -5621,10 +5989,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Falls back to BRAVE_API_KEY env var if header is absent.
         """
         if not self.path.startswith('/brave/search'):
-            return self.send_error(404)
+            return self._send_json(404, {'error': 'unknown brave endpoint'})
         key = self.headers.get('X-Brave-Key') or os.environ.get('BRAVE_API_KEY', '')
         if not key:
-            return self.send_error(401, 'no Brave key (set X-Brave-Key header or BRAVE_API_KEY env)')
+            return self._send_json(401, {'error': 'no Brave key (set X-Brave-Key header or BRAVE_API_KEY env)'})
         # Preserve all query params after /brave/search
         _, _, qs = self.path.partition('?')
         upstream_path = '/res/v1/web/search' + ('?' + qs if qs else '')
@@ -5653,7 +6021,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     break
         except Exception as e:
-            try: self.send_error(502, f'brave: {e}')
+            try: self._send_json(502, {'error': f'brave: {e}'})
             except Exception: pass
         finally:
             conn.close()
@@ -5706,7 +6074,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     break
         except Exception as e:
             try:
-                self.send_error(502, f'upstream: {e}')
+                self._send_json(502, {'error': f'upstream: {e}'})
             except Exception:
                 pass
         finally:
@@ -5861,35 +6229,119 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'mode': mode, 'restarted': restarted,
                                      'note': 'gateway reloading; allow ~10s'})
 
-    def _hermes_set_openrouter_key(self):
-        """POST {key} → store the user's OWN OpenRouter key in ~/.hermes/.env
-        (OPENROUTER_API_KEY) and restart the gateway so it takes effect.
+    # ── Backend providers the user can pick in HQ Settings ──────────────────
+    # Each logical provider maps to the Hermes model block + the env var that
+    # carries its API key. OpenRouter is the zero-config default; **Gemini
+    # (direct) is the most RELIABLE free tier** (≈15 RPM / 1500 RPD on Flash vs
+    # OpenRouter :free's 20 RPM / 50 RPD — the documented reliability pain);
+    # Groq is fast + free. Gemini + Groq ride their OpenAI-compatible endpoints
+    # (custom_providers) so they use the exact chat_completions path OpenRouter
+    # uses — no unverified native adapter, no silent config keys.
+    _HERMES_PROVIDERS = {
+        'openrouter': {'env': 'OPENROUTER_API_KEY', 'model': 'openai/gpt-oss-120b:free',
+                       're': r'^sk-or-[A-Za-z0-9_\-]{8,}$', 'label': 'OpenRouter'},
+        'gemini':     {'env': 'GOOGLE_API_KEY',     'model': 'gemini-2.5-flash',
+                       're': r'^AIza[A-Za-z0-9_\-]{30,}$', 'label': 'Google Gemini'},
+        'groq':       {'env': 'GROQ_API_KEY',       'model': 'llama-3.3-70b-versatile',
+                       're': r'^gsk_[A-Za-z0-9]{20,}$', 'label': 'Groq'},
+    }
 
-        This gives each user a UNIQUE free key (created at openrouter.ai/keys),
-        overriding any shared operator key injected at provision. The key lives
-        only in the user's container .env (0600), never in the browser long-term.
-        """
+    @staticmethod
+    def _hermes_model_block(provider, model):
+        """Return the config.yaml model block (+ custom_providers) for a provider."""
+        if provider == 'gemini':
+            return (f'model:\n  default: {model}\n  provider: google-openai\n'
+                    '  base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
+                    'custom_providers:\n'
+                    '  - name: google-openai\n'
+                    '    base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
+                    '    key_env: GOOGLE_API_KEY\n'
+                    '    api_mode: chat_completions\n')
+        if provider == 'groq':
+            return (f'model:\n  default: {model}\n  provider: groq\n'
+                    '  base_url: https://api.groq.com/openai/v1\n'
+                    'custom_providers:\n'
+                    '  - name: groq\n'
+                    '    base_url: https://api.groq.com/openai/v1\n'
+                    '    key_env: GROQ_API_KEY\n'
+                    '    api_mode: chat_completions\n')
+        # openrouter — Hermes' native default provider (no custom_providers)
+        return (f'model:\n  default: {model}\n  provider: openrouter\n'
+                '  base_url: https://openrouter.ai/api/v1\n')
+
+    def _hermes_get_provider(self):
+        """GET /hermes/provider → {provider, model, configured}. The UI reads this
+        on load to decide whether to re-push the user's saved key: a container
+        recreate wipes the ephemeral ~/.hermes, so the key must be re-applied from
+        the browser-side settings copy (that's the 'keys vanish on recreate' fix)."""
+        import os as _os, re as _re
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        provider, model = 'openrouter', ''
+        try:
+            with open(_os.path.join(home, 'config.yaml'), 'r', encoding='utf-8') as f:
+                cfg = f.read()
+            pm = _re.search(r'^\s*provider:\s*(\S+)', cfg, _re.MULTILINE)
+            mm = _re.search(r'^\s*default:\s*(\S+)', cfg, _re.MULTILINE)
+            if pm:
+                provider = pm.group(1).strip()
+            if mm:
+                model = mm.group(1).strip()
+        except Exception:
+            pass
+        logical = {'google-openai': 'gemini'}.get(provider, provider)
+        spec = self._HERMES_PROVIDERS.get(logical)
+        configured = False
+        if spec:
+            if _os.environ.get(spec['env'], '').strip():
+                configured = True
+            else:
+                try:
+                    with open(_os.path.join(home, '.env'), 'r', encoding='utf-8') as f:
+                        configured = bool(_re.search(
+                            r'(?m)^%s\s*=\s*\S' % _re.escape(spec['env']), f.read()))
+                except Exception:
+                    pass
+        return self._send_json(200, {'provider': logical, 'model': model,
+                                     'configured': configured})
+
+    def _hermes_set_provider(self, force_provider=None):
+        """POST /hermes/provider {provider, key, model?} → write the provider's key
+        into ~/.hermes/.env, REWRITE config.yaml's model block to that provider, and
+        restart the gateway. Generalizes the old OpenRouter-only path so users can
+        switch to a more reliable free backend (Gemini direct / Groq) with their own
+        free key. /hermes/openrouter-key routes here with force_provider='openrouter'.
+
+        Unlike first-boot bootstrap (skip-if-exists), this REWRITES the model block
+        so switching providers actually changes the live backend. The capability
+        tail (toolsets/agent/tools) is preserved. Key lives only in the container
+        .env (0600), never persisted server-side beyond that file."""
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length) or b'{}')
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
+        provider = (force_provider or str(req.get('provider', 'openrouter'))).strip().lower()
+        spec = self._HERMES_PROVIDERS.get(provider)
+        if not spec:
+            return self._send_json(400, {'error': f'unknown provider: {provider}'})
         key = str(req.get('key', '')).strip()
-        import re as _re
-        if not _re.match(r'^sk-or-[A-Za-z0-9_\-]{8,}$', key):
-            return self._send_json(400, {'error': 'invalid OpenRouter key (expected sk-or-…)'})
+        import os as _os, re as _re
+        if not _re.match(spec['re'], key):
+            return self._send_json(400, {'error': f"invalid {spec['label']} key"})
+        model = str(req.get('model', '')).strip() or spec['model']
 
-        import os as _os
         home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
         env_path = _os.path.join(home, '.env')
+        cfg_path = _os.path.join(home, 'config.yaml')
         try:
             _os.makedirs(home, exist_ok=True)
+            # 1. write the key into .env (replace any prior line for THIS env var)
             lines = []
             if _os.path.exists(env_path):
                 with open(env_path, 'r', encoding='utf-8') as f:
                     lines = [l for l in f.read().splitlines()
-                             if not l.startswith('OPENROUTER_API_KEY=')]
-            lines.append(f'OPENROUTER_API_KEY={key}')
+                             if not l.startswith(spec['env'] + '=')]
+            lines.append(f"{spec['env']}={key}")
             with open(env_path, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(lines) + '\n')
             try:
@@ -5899,17 +6351,127 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'error': f'write .env: {e}'})
 
-        # Also export into THIS process env so an immediate gateway restart
-        # (which inherits serve.py's env via the bootstrap) sees it.
-        _os.environ['OPENROUTER_API_KEY'] = key
+        # 2. rewrite config.yaml's model block (everything before `approvals:`),
+        #    preserving the capability tail so the lite/full toggle survives.
+        try:
+            cfg = ''
+            if _os.path.exists(cfg_path):
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    cfg = f.read()
+            header = ('# CafresoAI — Hermes config (provider set via HQ Settings).\n'
+                      '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
+            block = self._hermes_model_block(provider, model)
+            m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
+            if m:
+                new_cfg = header + block + cfg[m.start():]
+            else:
+                # fresh/unknown config — write a complete minimal one (lite caps)
+                new_cfg = (header + block +
+                           'approvals:\n  mode: manual\n'
+                           'toolsets:\n  - hermes-cli\n'
+                           'agent:\n  environment_probe: false\n  task_completion_guidance: false\n'
+                           'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                f.write(new_cfg)
+        except Exception as e:
+            return self._send_json(500, {'error': f'write config: {e}'})
+
+        # 3. export into THIS process env so the restarted gateway (which inherits
+        #    serve.py's env via the bootstrap) sees the key immediately.
+        _os.environ[spec['env']] = key
         restarted = False
         try:
             subprocess.Popen(['hermes', 'gateway', 'restart'],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             restarted = True
         except Exception as e:
-            sys.stderr.write(f'[hermes] openrouter-key restart failed: {e}\n')
+            sys.stderr.write(f'[hermes] provider restart failed: {e}\n')
+        return self._send_json(200, {'ok': True, 'provider': provider, 'model': model,
+                                     'restarted': restarted,
+                                     'note': 'gateway reloading; allow ~10s'})
+
+    # ── Hermes config import/export ──────────────────────────────────────────
+    # Lets users carry a Hermes agent setup between HQs (or in from a local
+    # ~/.hermes) in one click. config.yaml holds NO secrets — keys live in
+    # .env, which is never exported and never accepted on import.
+    def _hermes_export_config(self):
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        cfg = ''
+        try:
+            with open(_os.path.join(home, 'config.yaml'), 'r', encoding='utf-8') as f:
+                cfg = f.read()
+        except Exception:
+            pass
+        mode = 'lite'
+        try:
+            with open(self._hermes_capability_file(), 'r', encoding='utf-8') as f:
+                mode = (f.read().strip() or 'lite')
+        except Exception:
+            pass
+        return self._send_json(200, {
+            'version': 1,
+            'kind': 'cafresohq-hermes-config',
+            'capability': mode if mode in ('lite', 'full') else 'lite',
+            'config_yaml': cfg,
+            'note': 'keys are NOT included — set them in Settings → Connections',
+        })
+
+    def _hermes_import_config(self):
+        """POST {config_yaml, capability?} → replace ~/.hermes/config.yaml and
+        restart the gateway. Refuses key material (keys belong in .env via
+        Settings) and obviously-broken payloads. Accepts a raw Hermes
+        config.yaml or our export envelope's config_yaml field."""
+        length = int(self.headers.get('content-length', 0) or 0)
+        if length > 64 * 1024:
+            return self._send_json(413, {'error': 'config too large (64 KB max)'})
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        cfg = str(req.get('config_yaml', '') or '')
+        if not cfg.strip():
+            return self._send_json(400, {'error': 'config_yaml is empty'})
+        if 'model:' not in cfg:
+            return self._send_json(400, {'error': "doesn't look like a Hermes config (no model: block)"})
+        import re as _re
+        if _re.search(r'(?im)^\s*[\w-]*(api[_-]?key|secret|token|password)\s*:\s*\S', cfg):
+            return self._send_json(400, {
+                'error': 'config contains key material — remove it; API keys are set in Settings → Connections'})
+        import os as _os
+        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
+        cfg_path = _os.path.join(home, 'config.yaml')
+        try:
+            _os.makedirs(home, exist_ok=True)
+            # Keep one rollback copy in case the imported config breaks the gateway.
+            if _os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, 'r', encoding='utf-8') as f:
+                        prev = f.read()
+                    with open(cfg_path + '.bak', 'w', encoding='utf-8') as f:
+                        f.write(prev)
+                except Exception:
+                    pass
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                f.write(cfg)
+        except Exception as e:
+            return self._send_json(500, {'error': f'write config: {e}'})
+        cap = str(req.get('capability', '')).strip().lower()
+        if cap in ('lite', 'full'):
+            try:
+                with open(self._hermes_capability_file(), 'w', encoding='utf-8') as f:
+                    f.write(cap)
+            except Exception:
+                pass
+        restarted = False
+        try:
+            subprocess.Popen(['hermes', 'gateway', 'restart'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            restarted = True
+        except Exception as e:
+            sys.stderr.write(f'[hermes] import restart failed: {e}\n')
         return self._send_json(200, {'ok': True, 'restarted': restarted,
+                                     'rollback': cfg_path + '.bak',
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_proxy(self, method):
@@ -5933,7 +6495,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get('content-length', 0) or 0)
         body = self.rfile.read(length) if length else None
 
-        _drop = HOP_HEADERS | {'host', 'authorization', 'accept-encoding'}
+        # Also strip browser-context headers. The in-container Hermes gateway's
+        # aiohttp server REJECTS any request carrying an Origin it doesn't know
+        # with 403 (CORS/CSRF) — and our cross-origin canister UI always sends
+        # Origin: https://hq-ui.cafreso.com — so forwarding it broke every Hermes
+        # call (chat + /models). The gateway authenticates via the Bearer we
+        # inject below, not the browser cookie/origin, so drop all three.
+        _drop = HOP_HEADERS | {'host', 'authorization', 'accept-encoding',
+                               'origin', 'referer', 'cookie'}
         headers = {k: v for k, v in self.headers.items()
                    if k.lower() not in _drop}
         headers['Host'] = f'{HERMES_HOST}:{HERMES_PORT}'
@@ -5968,10 +6537,47 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 headers['Authorization'] = client_auth
 
         principal = (self.headers.get('X-User-Principal') or '').strip() or 'local'
-        conn = http.client.HTTPConnection(HERMES_HOST, HERMES_PORT, timeout=600)
+        # The gateway is briefly unavailable right after a restart (key / model /
+        # capability change replaces the running singleton). Retry the upstream
+        # CONNECT a few times so the user sees a short delay instead of a transient
+        # 502 during that ~10-15s window. Safe to retry: nothing is written to the
+        # client until getresponse() succeeds, and the request body is buffered in
+        # memory. Only connection-level failures (gateway not listening / dropped)
+        # are retried — a real HTTP error comes back as a status, not an exception.
+        conn = None
+        resp = None
+        last_err = None
+        for _attempt in range(10):
+            conn = http.client.HTTPConnection(HERMES_HOST, HERMES_PORT, timeout=600)
+            try:
+                conn.request(method, upstream_path, body=body, headers=headers)
+                resp = conn.getresponse()
+                break
+            except (ConnectionRefusedError, ConnectionResetError,
+                    http.client.RemoteDisconnected) as e:
+                last_err = e
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = None
+                time.sleep(1.5)
+            except Exception as e:
+                last_err = e
+                break
+        if resp is None:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+            try:
+                self._send_json(502, {'error': f'hermes: {last_err or "gateway unavailable"}',
+                                      'hint': 'the agent gateway is restarting or down — retry in ~15s'})
+            except Exception:
+                pass
+            return
         try:
-            conn.request(method, upstream_path, body=body, headers=headers)
-            resp = conn.getresponse()
             self.send_response(resp.status)
             for k, v in resp.getheaders():
                 if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
@@ -5996,7 +6602,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._record_hermes_usage(principal, upstream_path, tail)
         except Exception as e:
             try:
-                self.send_error(502, f'hermes: {e}')
+                self._send_json(502, {'error': f'hermes: {e}'})
             except Exception:
                 pass
         finally:
@@ -6094,6 +6700,140 @@ def _local_ip():
         return None
 
 
+def _ensure_local_tls(state_dir, lan_ip='', allow_selfsigned=True):
+    """Provision a localhost TLS cert+key so a LOCAL run can serve HTTPS.
+
+    A browser-TRUSTED https://localhost is what lets the SvelteKit shell at
+    https://ai.cafreso.com embed this app in an <iframe> in every browser
+    (Safari has no localhost mixed-content exemption). Returns
+    (cert_path, key_path, trusted) or (None, None, False).
+
+    Trust tiers, best first:
+      1. mkcert — issues a cert signed by a CA installed in the OS/browser trust
+         store, so the embed works with NO warning. Used if `mkcert` is on PATH.
+      2. self-signed (openssl, then the `cryptography` lib) — only when
+         allow_selfsigned=True (OPENCLAW_TLS_AUTO=1). HTTPS works after the user
+         manually trusts the cert; NOT used by default because a TLS-only server
+         with an untrusted cert is unreachable (worse than plain HTTP).
+
+    Certs are cached under <state_dir>/tls and reused on later starts. A sibling
+    `.mkcert` marker records whether the cached pair is browser-trusted.
+    """
+    try:
+        tls_dir = pathlib.Path(state_dir) / 'tls'
+        tls_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        sys.stderr.write(f'[tls] cannot create cert dir: {e}\n')
+        return None, None, False
+
+    cert = tls_dir / 'localhost.pem'
+    key  = tls_dir / 'localhost-key.pem'
+    marker = tls_dir / '.mkcert'
+
+    # Reuse a previously generated pair — but never hand a cached SELF-SIGNED
+    # pair to a caller that only wants trusted certs (it would flip the server
+    # to TLS-only with a cert the browser rejects).
+    if cert.is_file() and key.is_file() and cert.stat().st_size and key.stat().st_size:
+        if marker.exists() or allow_selfsigned:
+            return str(cert), str(key), marker.exists()
+
+    hosts = ['localhost', '127.0.0.1', '::1']
+    if lan_ip and lan_ip not in hosts:
+        hosts.append(lan_ip)
+
+    # ── Tier 1: mkcert (trusted) ──────────────────────────────────────────────
+    mkcert = shutil.which('mkcert')
+    if mkcert:
+        try:
+            # -install is idempotent; it may prompt for admin the very first time
+            # (to add the local CA). Non-fatal if it fails — the cert still works
+            # for direct use, just not the trusted embed.
+            subprocess.run([mkcert, '-install'], capture_output=True, text=True, timeout=60)
+            r = subprocess.run(
+                [mkcert, '-cert-file', str(cert), '-key-file', str(key), *hosts],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode == 0 and cert.is_file() and key.is_file():
+                marker.write_text('mkcert\n', encoding='utf-8')
+                sys.stderr.write('[tls] generated a browser-trusted cert via mkcert\n')
+                return str(cert), str(key), True
+            sys.stderr.write(f'[tls] mkcert failed: {(r.stderr or r.stdout)[:200]}\n')
+        except (subprocess.SubprocessError, OSError) as e:
+            sys.stderr.write(f'[tls] mkcert error: {e}\n')
+
+    if not allow_selfsigned:
+        # Trusted-only mode (the auto default): no mkcert → stay on HTTP rather
+        # than degrade to an unreachable self-signed TLS-only server.
+        return None, None, False
+
+    # ── Tier 2a: openssl self-signed ──────────────────────────────────────────
+    openssl = shutil.which('openssl')
+    if openssl:
+        try:
+            san = 'subjectAltName=' + ','.join(
+                (f'IP:{h}' if (h.replace('.', '').isdigit() or ':' in h) else f'DNS:{h}')
+                for h in hosts)
+            r = subprocess.run(
+                [openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                 '-keyout', str(key), '-out', str(cert), '-days', '825',
+                 '-subj', '/CN=localhost', '-addext', san],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode == 0 and cert.is_file() and key.is_file():
+                sys.stderr.write('[tls] generated a self-signed cert via openssl '
+                                 '(browser will warn until trusted)\n')
+                return str(cert), str(key), False
+            sys.stderr.write(f'[tls] openssl failed: {(r.stderr or r.stdout)[:200]}\n')
+        except (subprocess.SubprocessError, OSError) as e:
+            sys.stderr.write(f'[tls] openssl error: {e}\n')
+
+    # ── Tier 2b: pure-Python self-signed via cryptography ─────────────────────
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        import datetime as _dt, ipaddress as _ip
+
+        k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        san_list = []
+        for h in hosts:
+            try:
+                san_list.append(x509.IPAddress(_ip.ip_address(h)))
+            except ValueError:
+                san_list.append(x509.DNSName(h))
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'localhost')])
+        # epoch-based dates — Date.now()/utcnow are fine here (real wall clock at
+        # startup), but use a fixed past start to dodge clock-skew rejections.
+        not_before = _dt.datetime(2020, 1, 1)
+        not_after  = _dt.datetime(2035, 1, 1)
+        cert_obj = (
+            x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(k.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(not_before).not_valid_after(not_after)
+            .add_extension(x509.SubjectAlternativeName(san_list), critical=False)
+            .sign(k, hashes.SHA256())
+        )
+        cert.write_bytes(cert_obj.public_bytes(serialization.Encoding.PEM))
+        key.write_bytes(k.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption()))
+        sys.stderr.write('[tls] generated a self-signed cert via cryptography '
+                         '(browser will warn until trusted)\n')
+        return str(cert), str(key), False
+    except ImportError:
+        pass
+    except Exception as e:
+        sys.stderr.write(f'[tls] cryptography generation failed: {e}\n')
+
+    sys.stderr.write('[tls] no cert tool available (mkcert/openssl/cryptography) '
+                     '— staying on HTTP\n')
+    return None, None, False
+
+
 if __name__ == '__main__':
     # When packaged as a PyInstaller exe, static files live next to the exe.
     if getattr(sys, 'frozen', False):
@@ -6101,29 +6841,80 @@ if __name__ == '__main__':
     else:
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    # Optional TLS — set OPENCLAW_TLS_CERT and OPENCLAW_TLS_KEY to the paths
-    # produced by mkcert (or any trusted cert/key pair).
-    # Example: mkcert 192.168.1.x localhost 127.0.0.1
+    # Is this a genuine local desktop run (vs. an OCI Fleet container)? Computed
+    # here because both the TLS-auto and bind-host decisions below depend on it.
+    _is_local_run = _RUNTIME_ENV == 'local' and _fleet_mode not in ('oci-fleet', 'fleet')
+
+    # TLS — explicit cert/key (mkcert or any trusted pair) win. Otherwise, for a
+    # local deployment (anything NOT behind the OCI Fleet gateway — native run
+    # OR `docker run -e OPENCLAW_FLEET_MODE=local`), auto-provision a localhost
+    # cert so the app serves HTTPS and embeds in https://ai.cafreso.com.
+    #
+    # CRITICAL default: auto only upgrades to HTTPS when the cert is
+    # BROWSER-TRUSTED (mkcert present). A self-signed cert here would be a
+    # regression, not an upgrade — the server becomes TLS-only, plain
+    # http://localhost:8787 stops answering, the browser refuses the untrusted
+    # cert, and the app turns unreachable (esp. in Docker, where mkcert can't
+    # install a CA into the HOST browser). And http://localhost is already a
+    # secure context in Chrome/Edge/Firefox, so self-signed buys nothing there.
+    # OPENCLAW_TLS_AUTO=1 forces HTTPS incl. the self-signed fallback (power
+    # users who will trust the cert manually); =0 disables auto entirely.
+    _local_deploy = _fleet_mode not in ('oci-fleet', 'fleet')
     _tls_cert = os.environ.get('OPENCLAW_TLS_CERT', '').strip()
     _tls_key  = os.environ.get('OPENCLAW_TLS_KEY',  '').strip()
+    _tls_trusted = bool(_tls_cert and _tls_key)   # operator-supplied → assume managed
+    if not (_tls_cert and _tls_key):
+        _auto = os.environ.get('OPENCLAW_TLS_AUTO', '').strip().lower()
+        _tls_forced   = _auto in ('1', 'true', 'yes', 'on')
+        _tls_disabled = _auto in ('0', 'false', 'no', 'off')
+        if not _tls_disabled and (_tls_forced or _local_deploy):
+            _gc, _gk, _trusted = _ensure_local_tls(
+                _hq_state_dir, _local_ip() or '', allow_selfsigned=_tls_forced)
+            if _gc and (_trusted or _tls_forced):
+                _tls_cert, _tls_key, _tls_trusted = _gc, _gk, _trusted
     _tls_on   = bool(_tls_cert and _tls_key and
                      pathlib.Path(_tls_cert).is_file() and
                      pathlib.Path(_tls_key).is_file())
     _scheme   = 'https' if _tls_on else 'http'
 
-    with ThreadedServer(('', PORT), Handler) as httpd:
+    # Bind host: containers/fleet listen on all interfaces (the gateway reaches
+    # them by private IP); genuine LOCAL runs default to loopback so an accidental
+    # port map doesn't expose the (RCE-capable) terminal. NOTE: OCI Container
+    # Instances detect as runtime_env='local' (none of the docker markers exist),
+    # so gate the loopback default on the FLEET MODE too — a fleet/container
+    # deploy (OPENCLAW_FLEET_MODE=oci-fleet) MUST bind all interfaces or the
+    # gateway gets 502. Override with OPENCLAW_BIND.
+    _bind_host = os.environ.get('OPENCLAW_BIND', '').strip()
+    if not _bind_host:
+        _bind_host = '127.0.0.1' if _is_local_run else ''
+    if _is_local_run and _bind_host not in ('127.0.0.1', 'localhost') \
+            and not OPENCLAW_API_KEY:
+        print('  ⚠  bound to a non-loopback interface with NO OPENCLAW_API_KEY — '
+              'the terminal PTY is exposed. Set OPENCLAW_API_KEY to lock it down.')
+    with ThreadedServer((_bind_host, PORT), Handler) as httpd:
         if _tls_on:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.load_cert_chain(_tls_cert, _tls_key)
             httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
-            print(f'  🔒 TLS enabled  cert={_tls_cert}')
+            print(f'  🔒 TLS enabled  cert={_tls_cert}'
+                  + ('  (browser-trusted)' if _tls_trusted else '  (self-signed)'))
 
         lan = _local_ip()
         print(f'Openclaw HQ -> {_scheme}://localhost:{PORT}/hq.html')
         if lan:
             print(f'  📱 Mobile / LAN  -> {_scheme}://{lan}:{PORT}/hq.html')
-        if not _tls_on:
-            print('  💡 Set OPENCLAW_TLS_CERT + OPENCLAW_TLS_KEY for HTTPS (enables iOS service worker)')
+        if _tls_on and _local_deploy:
+            if _tls_trusted:
+                print('  ✅ Trusted HTTPS — this HQ can load embedded inside '
+                      'https://ai.cafreso.com')
+            else:
+                print('  ⚠  Self-signed HTTPS. For the seamless embed in '
+                      'ai.cafreso.com, install mkcert (https://github.com/FiloSottile/mkcert) '
+                      'and restart — or open https://localhost:%d/hq.html once and '
+                      'trust the cert.' % PORT)
+        elif not _tls_on:
+            print('  💡 Set OPENCLAW_TLS_CERT + OPENCLAW_TLS_KEY (or install mkcert) '
+                  'for HTTPS — enables the ai.cafreso.com embed + iOS service worker')
         for prefix, (h, p) in ROUTES.items():
             print(f'  proxy {prefix}* -> {h}:{p}/*')
         if _openclaw_allowed_dirs:
