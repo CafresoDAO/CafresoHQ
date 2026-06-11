@@ -465,10 +465,101 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   );
 }
 
+/* ── Settings shell registry ────────────────────────────────────────────────
+   Single source of truth for the settings nav: id, icon, label, one-line
+   description. Order = display order; first entry is the default tab (the
+   most-actioned one — Connections). Legacy deep-link ids map via ALIAS. */
+const SETTINGS_TABS = [
+  { id: 'keys',       ico: '🔌', label: 'CONNECTIONS', desc: 'brain · keys · search' },
+  { id: 'agentcli',   ico: '🤖', label: 'CODE AGENTS', desc: 'CLIs in your container' },
+  { id: 'agents',     ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
+  { id: 'media',      ico: '🎨', label: 'MEDIA',       desc: 'image & video gen' },
+  { id: 'appearance', ico: '🖥', label: 'APPEARANCE',  desc: 'theme & ambience' },
+  { id: 'system',     ico: '🛰', label: 'SYSTEM',      desc: 'health & runtime' },
+];
+const SETTINGS_TAB_ALIAS = { global: 'appearance' }; // old id → new id
+
+/* Search index — one entry per meaningful control so "key", "model", "dark"
+   etc. jump straight to the right drawer. kw = extra match terms. */
+const SETTINGS_INDEX = [
+  { tab:'keys', label:'Backend provider', hint:'which brain powers CafresoAI & crew', kw:'provider brain hermes anthropic google lmstudio ollama claudecode codex' },
+  { tab:'keys', label:'Hermes model', hint:'free open-weights model presets', kw:'model preset gpt-oss nemotron llama' },
+  { tab:'keys', label:'Backend service', hint:'OpenRouter · Gemini · Groq (free keys)', kw:'openrouter gemini groq free reliable service' },
+  { tab:'keys', label:'Service API key', hint:'your personal free key for the backend service', kw:'key api sk-or aiza gsk openrouter gemini groq' },
+  { tab:'keys', label:'Agent capability', hint:'Lite (free-tier safe) vs Full prompt', kw:'capability lite full prompt 413' },
+  { tab:'keys', label:'Max tokens per reply', hint:'caps response length', kw:'tokens length limit' },
+  { tab:'keys', label:'Connection test', hint:'verifies keys/URL work', kw:'test probe verify' },
+  { tab:'keys', label:'Sub-agent model', hint:'pin or inherit the spawner model', kw:'subagent pin inherit spawn' },
+  { tab:'keys', label:'Anthropic key & model', hint:'BYOK Claude via API credits', kw:'anthropic claude key' },
+  { tab:'keys', label:'Google key & model', hint:'BYOK Gemini via API credits', kw:'google gemini key' },
+  { tab:'keys', label:'LM Studio / Ollama URL', hint:'local OpenAI-compatible servers', kw:'lmstudio ollama local url base' },
+  { tab:'keys', label:'Claude Code / Codex CLI', hint:'CLI path override + model', kw:'claudecode codex cli path' },
+  { tab:'keys', label:'Brave web search', hint:'web search tool + API key', kw:'brave search web key' },
+  { tab:'keys', label:'Vault backend', hint:'markdown vault storage + browser', kw:'vault notes markdown obsidian rest' },
+  { tab:'agentcli', label:'Install code agents', hint:'add Claude Code / Codex / Gemini CLI on demand', kw:'install npm cli agents claude codex gemini version' },
+  { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
+  { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
+  { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
+  { tab:'agents', label:'Elevated · computer access', hint:'file/shell access per agent', kw:'elevated computer shell files access security' },
+  { tab:'agents', label:'Dismiss an agent', hint:'remove a hire from the roster', kw:'dismiss fire let go remove' },
+  { tab:'media', label:'Image generation', hint:'provider + model for Pixel', kw:'image generation openai fal a1111 comfyui pixel' },
+  { tab:'media', label:'Video generation', hint:'provider + model for Reel', kw:'video generation fal reel' },
+  { tab:'appearance', label:'Scanline overlay', hint:'soft CRT shimmer', kw:'scanlines crt overlay' },
+  { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
+  { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
+  { tab:'system', label:'Backend health', hint:'live gateway + container status', kw:'health status backend gateway api runtime' },
+  { tab:'system', label:'Hermes provider status', hint:'active service + key state', kw:'provider configured status hermes' },
+  { tab:'system', label:'Export agent setup', hint:'download your Hermes config (no keys)', kw:'export config backup portability hermes yaml' },
+  { tab:'system', label:'Import agent setup', hint:'apply an exported or existing Hermes config', kw:'import config restore migrate hermes yaml' },
+  { tab:'system', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy' },
+  { tab:'system', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
+];
+
 function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, initialTab }) {
-  const [tab, setTab] = useStateM('agents');
+  // Last-used tab survives reopen (and reload) — small thing, big QoL.
+  const [tab, _setTab] = useStateM(() => {
+    try {
+      const t = localStorage.getItem('hq:settingsTab');
+      if (t && SETTINGS_TABS.some(x => x.id === t)) return t;
+    } catch (_e) {}
+    return SETTINGS_TABS[0].id;
+  });
+  const setTab = (t) => {
+    const id = SETTINGS_TAB_ALIAS[t] || t;
+    _setTab(id);
+    try { localStorage.setItem('hq:settingsTab', id); } catch (_e) {}
+  };
+  const [q, setQ] = useStateM('');
   const [selected, setSelected] = useStateM(agents[0]?.id || null);
   const sel = agents.find(a => a.id === selected) || agents[0];
+
+  // Live status for the nav rail: provider key state, CLI install count,
+  // backend reachability. Refetched each time the modal opens.
+  const [navStat, setNavStat] = useStateM({});
+  useEffectM(() => {
+    if (!open) return;
+    let live = true;
+    const C = window.OpenclawClient;
+    (async () => {
+      const stat = {};
+      try { stat.backend = !!(await C.backendHealth()); } catch (_e) { stat.backend = false; }
+      try {
+        if (C.hermesGetProvider) {
+          const p = await C.hermesGetProvider();
+          stat.provider = !!(p && p.configured);
+        }
+      } catch (_e) {}
+      try {
+        if (C.agentsStatus) {
+          const a = await C.agentsStatus();
+          const list = (a && a.agents) || [];
+          if (list.length) stat.clis = `${list.filter(x => x.installed).length}/${list.length}`;
+        }
+      } catch (_e) {}
+      if (live) setNavStat(stat);
+    })();
+    return () => { live = false; };
+  }, [open]);
 
   // Deep-link: jump to a requested tab each time the modal is (re)opened
   // (e.g. the "no API key" chip opens straight to CONNECTIONS).
@@ -485,6 +576,25 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
     onUpdateAgent(sel.id, patch);
   };
 
+  // All query terms must match label+hint+kw (case-insensitive).
+  const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = terms.length
+    ? SETTINGS_INDEX.filter(e => {
+        const hay = (e.label + ' ' + e.hint + ' ' + e.kw).toLowerCase();
+        return terms.every(t => hay.includes(t));
+      })
+    : [];
+
+  const navDot = (t) => {
+    if (t.id === 'keys' && navStat.provider !== undefined)
+      return <span className={`sn-dot ${navStat.provider ? 'ok' : 'warn'}`} title={navStat.provider ? 'provider key set' : 'no provider key'}/>;
+    if (t.id === 'system' && navStat.backend !== undefined)
+      return <span className={`sn-dot ${navStat.backend ? 'ok' : 'err'}`} title={navStat.backend ? 'backend reachable' : 'backend unreachable'}/>;
+    if (t.id === 'agentcli' && navStat.clis)
+      return <span className="sn-badge" title="installed CLIs">{navStat.clis}</span>;
+    return null;
+  };
+
   return (
     <Modal
       open={open}
@@ -499,23 +609,44 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
         </>
       }
     >
-          <div className="settings-tabs" style={{display:'flex',gap:4,marginBottom:14,flexWrap:'wrap'}}>
-            {[
-              ['agents',  '👥', 'PER-AGENT'],
-              ['agentcli','🤖', 'AGENTS'],
-              ['global',  '🎛', 'GLOBAL'],
-              ['media',   '🎨', 'MEDIA'],
-              ['keys',    '🔌', 'CONNECTIONS'],
-            ].map(([t, ico, label]) => (
-              <button key={t} className={`px-btn ${tab===t?'primary':'secondary'}`}
-                style={{fontSize:9, display:'flex', alignItems:'center', gap:6, padding:'8px 12px', minHeight:36}}
-                onClick={()=>setTab(t)}>
-                <span style={{fontSize:13}}>{ico}</span> {label}
-              </button>
-            ))}
-          </div>
+      <div className="settings-shell">
+        <aside className="settings-nav">
+          <input className="settings-search" type="search" placeholder="🔍 search settings…"
+            value={q} onChange={e => setQ(e.target.value)} aria-label="Search settings"/>
+          {SETTINGS_TABS.map(t => (
+            <button key={t.id} className={`sn-item ${tab===t.id && !terms.length ? 'active' : ''}`}
+              onClick={() => { setQ(''); setTab(t.id); }}>
+              <span className="sn-ico">{t.ico}</span>
+              <span className="sn-txt">
+                <span className="sn-label">{t.label}</span>
+                <span className="sn-desc">{t.desc}</span>
+              </span>
+              {navDot(t)}
+            </button>
+          ))}
+        </aside>
+        <div className="settings-body">
+          {terms.length > 0 && (
+            <div className="cb-panel">
+              <h4>SEARCH · {hits.length} RESULT{hits.length === 1 ? '' : 'S'}</h4>
+              {hits.length === 0 && <div className="muted">Nothing matches “{q}”.</div>}
+              {hits.map((e, i) => {
+                const t = SETTINGS_TABS.find(x => x.id === e.tab);
+                return (
+                  <div key={i} className="row-knob" style={{cursor:'pointer'}}
+                    onClick={() => { setQ(''); setTab(e.tab); }}>
+                    <div>
+                      <div className="lbl">{t ? t.ico : ''} {e.label}</div>
+                      <div className="sub">{e.hint}</div>
+                    </div>
+                    <span className="tiny" style={{whiteSpace:'nowrap'}}>{t ? t.label : e.tab} →</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-          {tab === 'agents' && (
+          {!terms.length && tab === 'agents' && (
             <div className="control-board">
               <div className="cb-panel">
                 <h4>ROSTER</h4>
@@ -597,7 +728,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
-          {tab === 'global' && (
+          {!terms.length && tab === 'appearance' && (
             <div className="control-board">
               <div className="cb-panel">
                 <h4>AMBIENCE</h4>
@@ -613,29 +744,192 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                   <div><div className="lbl">{night ? '☀ Day Mode' : '☾ Night Mode'}</div><div className="sub">{night ? 'switch to warm pastels' : 'switch to dark pixel theme'}</div></div>
                   <div className={`pxswitch ${night?'on':''}`} onClick={()=>setNight(v=>!v)}><div className="nub"/></div>
                 </div>
-              </div>
-              <div className="cb-panel">
-                <h4>DEFAULTS</h4>
                 <div className="row-knob">
-                  <div><div className="lbl">Default model</div><div className="sub">new hires inherit this</div></div>
-                  <span className="tiny" style={{maxWidth:200,textAlign:'right'}}>set via the Hire modal</span>
-                </div>
-                <div className="row-knob">
-                  <div><div className="lbl">Activity feed</div><div className="sub">break-room bulletin</div></div>
-                  <div className="pxswitch on"><div className="nub"/></div>
-                </div>
-                <div className="row-knob">
-                  <div><div className="lbl">Auto-delegate</div><div className="sub">CafresoAI picks the best hire</div></div>
-                  <div className="pxswitch on"><div className="nub"/></div>
+                  <div><div className="lbl">Keyboard shortcuts</div><div className="sub">1–8 switch views · S settings · D theme · Ctrl+K palette</div></div>
+                  <span className="tiny">press Ctrl+K</span>
                 </div>
               </div>
             </div>
           )}
 
-          {tab === 'agentcli' && <AgentClisTab />}
-          {tab === 'media' && <MediaTab />}
-          {tab === 'keys' && <ApiTab />}
+          {!terms.length && tab === 'agentcli' && <AgentClisTab />}
+          {!terms.length && tab === 'media' && <MediaTab />}
+          {!terms.length && tab === 'keys' && <ApiTab />}
+          {!terms.length && tab === 'system' && <SystemTab />}
+        </div>
+      </div>
     </Modal>
+  );
+}
+
+/* System tab — live backend/runtime visibility so "is it the key, the
+   container, or the gateway?" is answerable from inside the app instead of
+   the browser devtools. Read-only except the two action buttons. */
+function SystemTab() {
+  const [health, setHealth] = useStateM(null);   // null=loading · false=down · object=ok
+  const [prov, setProv] = useStateM(null);
+  const [busy, setBusy] = useStateM(false);
+  const [note, setNote] = useStateM('');
+  const apiBase = (window._API_BASE || '');
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(apiBase + '/health');
+      setHealth(r.ok ? await r.json() : false);
+    } catch (_e) { setHealth(false); }
+    try {
+      const C = window.OpenclawClient;
+      if (C.hermesGetProvider) setProv(await C.hermesGetProvider());
+    } catch (_e) { setProv(null); }
+    setBusy(false);
+  };
+  useEffectM(() => { load(); }, []);
+
+  const copyDiag = async () => {
+    const diag = {
+      when: new Date().toISOString(),
+      apiBase: apiBase || '(same origin)',
+      health: health || 'unreachable',
+      provider: prov || 'unknown',
+      ua: navigator.userAgent,
+      url: location.href.split('?')[0],
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+      setNote('✓ diagnostics copied — paste into a support chat');
+    } catch (_e) { setNote('copy failed — clipboard blocked'); }
+  };
+
+  // Agent-config portability (Hermes setup travels; keys never do).
+  const importInputRef = useRefM(null);
+  const [importBusy, setImportBusy] = useStateM(false);
+  const exportConfig = async () => {
+    try {
+      const C = window.OpenclawClient;
+      const data = await C.hermesExportConfig();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cafresohq-hermes-config.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      setNote('✓ config exported (keys not included)');
+    } catch (e) { setNote('export failed: ' + e.message); }
+  };
+  const importConfig = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportBusy(true); setNote('');
+    try {
+      const text = await file.text();
+      const C = window.OpenclawClient;
+      const r = await C.hermesImportConfig(text);
+      setNote(r.restarted
+        ? '✓ config imported — agent reloading (~10s). Re-enter your key in Connections if needed.'
+        : '✓ config written (gateway restart pending)');
+      load();
+    } catch (er) { setNote('import failed: ' + er.message); }
+    setImportBusy(false);
+  };
+
+  const resetOnboarding = () => {
+    if (!window.confirm('Replay the new-user guide on next reload?')) return;
+    try {
+      const kill = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && /tourseen|gettingstarted|gsdismissed/i.test(k)) kill.push(k);
+      }
+      kill.forEach(k => localStorage.removeItem(k));
+      setNote(`✓ onboarding reset (${kill.length} flag${kill.length === 1 ? '' : 's'} cleared) — reload to replay`);
+    } catch (_e) { setNote('reset failed'); }
+  };
+
+  const dot = (on) => (
+    <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>
+  );
+  const yn = (v) => v ? 'yes' : 'no';
+
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>BACKEND</h4>
+        <div className="row-knob">
+          <div><div className="lbl">API base</div><div className="sub">where this UI sends requests</div></div>
+          <span className="tiny" style={{maxWidth:220, textAlign:'right', wordBreak:'break-all'}}>{apiBase || '(same origin)'}</span>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Status</div><div className="sub">{health === null ? 'checking…' : health ? 'serving' : 'unreachable'}</div></div>
+          <span>{health === null ? '…' : dot(!!health)}</span>
+        </div>
+        {health && (
+          <>
+            <div className="row-knob">
+              <div><div className="lbl">Runtime</div><div className="sub">container environment</div></div>
+              <span className="tiny">{health.runtime_env || 'unknown'}{health.auth_required ? ' · key-gated' : ''}</span>
+            </div>
+            <div className="row-knob">
+              <div><div className="lbl">Hermes gateway</div><div className="sub">in-container agent runtime</div></div>
+              <span className="tiny">{dot(!!health.hermes)}{yn(!!health.hermes)}</span>
+            </div>
+            <div className="row-knob">
+              <div><div className="lbl">Gemini CLI</div><div className="sub">installed in container</div></div>
+              <span className="tiny">{dot(!!health.gemini)}{yn(!!health.gemini)}</span>
+            </div>
+          </>
+        )}
+        <div className="row-knob">
+          <div><div className="lbl">Re-check</div><div className="sub">probe /health again</div></div>
+          <button className="px-btn secondary" disabled={busy} onClick={load}>{busy ? '…' : 'REFRESH'}</button>
+        </div>
+      </div>
+      <div className="cb-panel">
+        <h4>HERMES PROVIDER</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Service</div><div className="sub">active backend behind Hermes</div></div>
+          <span className="tiny">{prov ? prov.provider : '…'}</span>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Model</div><div className="sub">current default</div></div>
+          <span className="tiny" style={{maxWidth:200, textAlign:'right', wordBreak:'break-all'}}>{prov ? (prov.model || 'unknown') : '…'}</span>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Key configured</div><div className="sub">set one in Connections if not</div></div>
+          <span className="tiny">{prov === null ? '…' : <>{dot(!!(prov && prov.configured))}{yn(!!(prov && prov.configured))}</>}</span>
+        </div>
+      </div>
+      <div className="cb-panel">
+        <h4>AGENT CONFIG</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Export setup</div><div className="sub">download your Hermes agent config (keys NOT included)</div></div>
+          <button className="px-btn secondary" onClick={exportConfig}>EXPORT</button>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Import setup</div><div className="sub">apply an exported file or a raw ~/.hermes/config.yaml</div></div>
+          <button className="px-btn secondary" disabled={importBusy}
+            onClick={() => importInputRef.current && importInputRef.current.click()}>
+            {importBusy ? '…' : 'IMPORT'}
+          </button>
+          <input ref={importInputRef} type="file" accept=".json,.yaml,.yml,.txt" style={{display:'none'}}
+            onChange={importConfig}/>
+        </div>
+        <div className="hint">Moving between HQs (or from a local Hermes install)? Export here, import there — then re-enter your key in Connections.</div>
+      </div>
+      <div className="cb-panel">
+        <h4>SUPPORT</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Copy diagnostics</div><div className="sub">health + provider snapshot, no keys included</div></div>
+          <button className="px-btn secondary" onClick={copyDiag}>COPY</button>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Reset onboarding</div><div className="sub">replay the new-user tour & checklist</div></div>
+          <button className="px-btn secondary" onClick={resetOnboarding}>RESET</button>
+        </div>
+        {note && <div className="hint" style={{marginTop:6}}>{note}</div>}
+      </div>
+    </div>
   );
 }
 
@@ -934,14 +1228,34 @@ function AgentClisTab() {
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {a.installed ? (
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, letterSpacing: '0.03em',
-                        color: 'var(--live)', background: 'rgba(111,168,111,0.14)',
-                        border: '1px solid var(--live)', borderRadius: 5,
-                        padding: '4px 9px', whiteSpace: 'nowrap',
-                      }}>
-                        {a.default ? 'Default · Installed' : `Installed${a.version ? ' · ' + a.version : ''}`}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, letterSpacing: '0.03em',
+                          color: 'var(--live)', background: 'rgba(111,168,111,0.14)',
+                          border: '1px solid var(--live)', borderRadius: 5,
+                          padding: '4px 9px', whiteSpace: 'nowrap',
+                        }}>
+                          {a.default ? 'Default · Installed' : `Installed${a.version ? ' · ' + a.version : ''}`}
+                        </span>
+                        {/* Login state — /agents reports best-effort credential
+                           detection. hermes additionally reports gateway liveness. */}
+                        {a.id === 'hermes' ? (
+                          <span className="tiny" style={{
+                            color: a.running ? 'var(--live)' : 'var(--ink-3)', whiteSpace: 'nowrap',
+                          }}>
+                            {a.running ? '● gateway running' : '○ gateway not running'}
+                          </span>
+                        ) : a.authenticated ? (
+                          <span className="tiny" style={{ color: 'var(--live)', whiteSpace: 'nowrap' }}>
+                            ✓ logged in{a.auth === 'api-key' ? ' (API key)' : ''}
+                          </span>
+                        ) : (
+                          <span className="tiny" style={{ color: 'var(--ink-3)', whiteSpace: 'nowrap' }}
+                            title="No saved login found — open a Terminal tab and run the CLI once to sign in.">
+                            needs login · use Terminal
+                          </span>
+                        )}
+                      </div>
                     ) : installing ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button className="px-btn primary is-loading" disabled style={{ fontSize: 9, minWidth: 76 }}>
@@ -971,6 +1285,23 @@ function AgentClisTab() {
     </div>
   );
 }
+
+// Hermes backend services the user can pick (the free LLM behind Hermes). Each
+// row adapts the key field's label / placeholder / "get a free key" link. Gemini
+// direct is the most reliable free tier (≈15 RPM / 1500 per day) — the fix for
+// OpenRouter :free's 20 RPM / 50-per-day throttling. Mirrors serve.py
+// _HERMES_PROVIDERS + claude-client HERMES_PROVIDER_KEY_FIELD.
+const HBACKENDS = {
+  openrouter: { label: 'OpenRouter', field: 'openrouterKey', ph: 'sk-or-v1-…',
+                link: 'https://openrouter.ai/keys', linkText: 'openrouter.ai/keys',
+                note: 'free open-weights · no per-request size cap' },
+  gemini:     { label: 'Google Gemini', field: 'geminiKey', ph: 'AIza…',
+                link: 'https://aistudio.google.com/apikey', linkText: 'aistudio.google.com/apikey',
+                note: 'most reliable free tier · ~15/min · 1500/day (Flash)' },
+  groq:       { label: 'Groq', field: 'groqKey', ph: 'gsk_…',
+                link: 'https://console.groq.com/keys', linkText: 'console.groq.com/keys',
+                note: 'fastest free tier · use Lite capability (free size limits)' },
+};
 
 function ApiTab() {
   const C = window.OpenclawClient;
@@ -1004,6 +1335,34 @@ function ApiTab() {
     try { await C.hermesSetModel(model); }
     catch (e) { setHModel(prev); setProbeResult({ ok:false, detail:'model: ' + e.message }); }
     finally { setHBusy(false); }
+  };
+
+  // Hermes backend service (which free LLM powers Hermes). Init from the saved
+  // preference, then reconcile with whatever the container actually has live.
+  const [hBackend, setHBackend] = useStateM(s.hermesBackend || 'openrouter');
+  const [keyBusy, setKeyBusy] = useStateM(false);
+  useEffectM(() => {
+    if (C && C.hermesGetProvider) C.hermesGetProvider()
+      .then(r => { if (r && r.configured && HBACKENDS[r.provider]) setHBackend(r.provider); })
+      .catch(() => {});
+  }, []);
+  const changeBackend = (prov) => {
+    if (!HBACKENDS[prov]) return;
+    setHBackend(prov); update({ hermesBackend: prov });
+  };
+  const saveKey = async (prov, val) => {
+    const meta = HBACKENDS[prov]; if (!meta) return;
+    if (val === (s[meta.field] || '')) return;
+    setKeyBusy(true); setProbeResult(null);
+    try {
+      let r = { serverStored: false };
+      if (C && C.hermesSetProvider) r = await C.hermesSetProvider(prov, val, '');
+      else update({ [meta.field]: val, hermesBackend: prov });
+      if (!val) setProbeResult({ ok: true, detail: `${meta.label} key cleared` });
+      else if (r && r.serverStored) setProbeResult({ ok: true, detail: `${meta.label} applied · gateway reloading (~15s)` });
+      else setProbeResult({ ok: false, detail: (r && r.detail) || 'saved locally only' });
+    } catch (e) { setProbeResult({ ok: false, detail: e.message }); }
+    finally { setKeyBusy(false); }
   };
 
   useEffectM(() => {
@@ -1068,19 +1427,34 @@ function ApiTab() {
         {s.provider === 'hermes' && (
           <div className="row-knob">
             <div>
-              <div className="lbl">OpenRouter key</div>
+              <div className="lbl">Backend service</div>
+              <div className="sub">{HBACKENDS[hBackend] ? HBACKENDS[hBackend].note : 'free LLM behind Hermes'}</div>
+            </div>
+            <select value={hBackend} disabled={keyBusy} onChange={e=>changeBackend(e.target.value)}>
+              <option value="openrouter">OpenRouter (default)</option>
+              <option value="gemini">Google Gemini (most reliable free)</option>
+              <option value="groq">Groq (fastest free)</option>
+            </select>
+          </div>
+        )}
+        {s.provider === 'hermes' && HBACKENDS[hBackend] && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">{HBACKENDS[hBackend].label} key</div>
               <div className="sub">
-                your free personal key · get one at{' '}
-                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer"
-                   style={{color:'var(--accent-rose, #c45)', textDecoration:'underline'}}>
-                  openrouter.ai/keys
-                </a>
+                {keyBusy ? 'applying key · gateway reloading (~15s)…' : (
+                  <>your free personal key · get one at{' '}
+                  <a href={HBACKENDS[hBackend].link} target="_blank" rel="noopener noreferrer"
+                     style={{color:'var(--accent-rose, #c45)', textDecoration:'underline'}}>
+                    {HBACKENDS[hBackend].linkText}
+                  </a></>
+                )}
               </div>
             </div>
-            <input type="password" placeholder="sk-or-v1-…" autoComplete="off" spellCheck={false}
-              style={{width:200}}
-              defaultValue={s.openrouterKey || ''}
-              onBlur={e => { const v=e.target.value.trim(); if (v!==(s.openrouterKey||'')) { if (C && C.hermesSetOpenRouterKey) C.hermesSetOpenRouterKey(v); else update({openrouterKey:v}); } }}/>
+            <input type="password" key={hBackend} placeholder={HBACKENDS[hBackend].ph}
+              autoComplete="off" spellCheck={false} style={{width:200}} disabled={keyBusy}
+              defaultValue={s[HBACKENDS[hBackend].field] || ''}
+              onBlur={e => saveKey(hBackend, e.target.value.trim())}/>
           </div>
         )}
         {s.provider === 'hermes' && (

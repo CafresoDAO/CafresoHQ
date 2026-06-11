@@ -27,6 +27,26 @@
   if (injected == null && typeof window._API_BASE === 'string' && window._API_BASE_OVERRIDE) {
     injected = window._API_BASE;
   }
+  // Validate an absolute injected base before adopting it. The credentialed
+  // fetch wrapper sends the hq_session cookie to this origin, so a crafted
+  // ?api=https://evil.example link must NOT be able to redirect API traffic.
+  // Allowed: our gateway, *.cafreso.com over https, and loopback for dev.
+  if (injected != null && /^https?:\/\//i.test(String(injected))) {
+    var okOrigin = false;
+    try {
+      var u = new URL(String(injected));
+      var host = u.hostname.toLowerCase();
+      okOrigin =
+        (u.protocol === 'https:' &&
+          (host === 'cafreso.com' || host.endsWith('.cafreso.com'))) ||
+        host === 'localhost' || host === '127.0.0.1' ||
+        u.origin === window.location.origin;
+    } catch (_e) { okOrigin = false; }
+    if (!okOrigin) {
+      try { console.warn('[hq] ignoring untrusted ?api= origin:', injected); } catch (_e) {}
+      injected = null;
+    }
+  }
   window._API_BASE = (injected != null)
     ? String(injected).replace(/\/$/, '')
     : window.location.pathname.replace(/\/[^/]*$/, '');
@@ -55,14 +75,53 @@ const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
     if (init.credentials == null) init = Object.assign({}, init, { credentials: 'include' });
     return init;
   }
+  // Default timeout for API-origin requests that don't bring their own
+  // AbortSignal: fail in 45s instead of spinning forever when the container
+  // hangs. Streaming / long-running endpoints are exempt — aborting a fetch
+  // also kills an in-progress body read, so those manage their own lifecycle.
+  var NO_TIMEOUT = /(chat\/completions|\/stream|\/messages\b|\/pty|\/install\b|\/export|\/clone|generate)/;
+  function withTimeout(url, init) {
+    if ((init && init.signal) || NO_TIMEOUT.test(url)) return init;
+    if (typeof AbortController === 'undefined') return init;
+    var ctrl = new AbortController();
+    setTimeout(function () {
+      try { ctrl.abort(new DOMException('request timed out (45s)', 'TimeoutError')); }
+      catch (_e) { try { ctrl.abort(); } catch (_e2) {} }
+    }, 45000);
+    return Object.assign({}, init || {}, { signal: ctrl.signal });
+  }
   // Explicit helper for code that wants to be unambiguous.
-  window.apiFetch = function (input, init) { return _origFetch(input, withCreds(init)); };
+  window.apiFetch = function (input, init) {
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    return _origFetch(input, withTimeout(url, withCreds(init)));
+  };
+  // Session-expiry detection: a 401 from the API origin means the hq_session
+  // cookie died mid-use. Without this, every feature just silently hangs or
+  // errors — the app looked frozen. Fire one event; the shell shows recovery
+  // UI, and an embedding parent (ai.cafreso.com /hq/app) can re-mint + reload.
+  var _expiredFired = false;
+  function noteAuthFailure(resp) {
+    if (_expiredFired || !resp || resp.status !== 401) return resp;
+    _expiredFired = true;
+    try { window.dispatchEvent(new CustomEvent('hq:session-expired')); } catch (_e) {}
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'hq:session-expired' }, '*');
+      }
+    } catch (_e) {}
+    return resp;
+  }
   window.fetch = function (input, init) {
+    var isApi = false;
     try {
       var url = (typeof input === 'string') ? input : (input && input.url) || '';
-      if (new URL(url, window.location.href).origin === apiOrigin()) init = withCreds(init);
+      if (new URL(url, window.location.href).origin === apiOrigin()) {
+        isApi = true;
+        init = withTimeout(url, withCreds(init));
+      }
     } catch (_e) {}
-    return _origFetch(input, init);
+    var p = _origFetch(input, init);
+    return isApi ? p.then(noteAuthFailure) : p;
   };
 })();
 
@@ -450,24 +509,114 @@ async function hermesSetModel(model) {
    stores the key in browser settings so the onboarding flow is complete and
    the value survives reloads; { serverStored:false } signals the caller that
    only the local copy was saved. Always saves locally first. */
-async function hermesSetOpenRouterKey(key) {
+/* Which browser-settings field holds the key for each Hermes backend. Stored
+   per-provider so switching back and forth doesn't lose a key, and so the key
+   can be RE-PUSHED to a freshly-recreated container (which loses ~/.hermes). */
+const HERMES_PROVIDER_KEY_FIELD = {
+  openrouter: 'openrouterKey',
+  gemini: 'geminiKey',
+  groq: 'groqKey',
+};
+
+/* Set the Hermes backend provider + its free key. Persists locally (per-provider
+   field + active backend) AND pushes to the container, which rewrites config.yaml
+   to that provider and restarts the gateway. Reliability path from the research:
+   the user can move off OpenRouter :free (20 RPM / 50 RPD) to Gemini direct
+   (≈15 RPM / 1500 RPD) or Groq with their own free key. */
+async function hermesSetProvider(provider, key, model) {
+  const prov = (provider || 'openrouter').toLowerCase();
+  const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
   const trimmed = String(key || '').trim();
-  setSettings({ openrouterKey: trimmed });
+  // persist locally so it survives reload AND container recreate (re-push)
+  setSettings({ hermesBackend: prov, [field]: trimmed });
   if (!trimmed) return { ok: true, serverStored: false, detail: 'cleared' };
   try {
-    const r = await fetch(_API_BASE + '/hermes/openrouter-key', {
+    const r = await fetch(_API_BASE + '/hermes/provider', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: trimmed }),
+      body: JSON.stringify({ provider: prov, key: trimmed, model: model || '' }),
     });
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
       return { ok: true, serverStored: true, ...d };
     }
-    return { ok: true, serverStored: false, detail: `server ${r.status} — saved locally` };
+    // Old container without /hermes/provider (pre-overhaul image): fall back to
+    // the legacy OpenRouter-only endpoint so existing OpenRouter users don't
+    // regress before the new image rolls out. (Gemini/Groq need the new image.)
+    if (r.status === 404 && prov === 'openrouter') {
+      try {
+        const r2 = await fetch(_API_BASE + '/hermes/openrouter-key', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key: trimmed }),
+        });
+        if (r2.ok) { const d = await r2.json().catch(() => ({})); return { ok: true, serverStored: true, ...d }; }
+      } catch (_e) {}
+    }
+    const t = await r.text().catch(() => '');
+    return { ok: true, serverStored: false, detail: `server ${r.status}: ${t.slice(0, 120)}` };
   } catch (e) {
     return { ok: true, serverStored: false, detail: 'offline — saved locally' };
   }
+}
+
+/* Read the container's CURRENT backend + whether it has a key. Used on load to
+   decide whether to re-push the saved key after a recreate. */
+async function hermesGetProvider() {
+  try {
+    const r = await fetch(_API_BASE + '/hermes/provider');
+    if (!r.ok) return { provider: 'openrouter', model: '', configured: false };
+    return await r.json();
+  } catch (_e) { return { provider: 'openrouter', model: '', configured: false }; }
+}
+
+/* The 'keys vanish on recreate' fix: if the freshly-provisioned container has no
+   provider key, silently re-apply the one saved in this browser. Best-effort —
+   never throws, never blocks startup. */
+async function hermesEnsureProvider() {
+  try {
+    const cur = await hermesGetProvider();
+    if (cur && cur.configured) return { restored: false, configured: true };
+    const s = getSettings();
+    const prov = (s.hermesBackend || 'openrouter').toLowerCase();
+    const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
+    const key = (s[field] || '').trim();
+    if (!key) return { restored: false, configured: false };
+    await hermesSetProvider(prov, key, '');
+    return { restored: true, provider: prov };
+  } catch (_e) { return { restored: false, error: true }; }
+}
+
+/* Back-compat wrapper — the old OpenRouter-only entry point. */
+async function hermesSetOpenRouterKey(key) {
+  return hermesSetProvider('openrouter', key, '');
+}
+
+/* Hermes agent-config portability: download the container's config (no keys)
+   as a JSON envelope, or apply one — also accepts a raw ~/.hermes/config.yaml
+   so existing Hermes users can bring their setup to HQ in one step. */
+async function hermesExportConfig() {
+  const r = await fetch(_API_BASE + '/hermes/config/export');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+async function hermesImportConfig(text) {
+  let payload;
+  try {
+    const parsed = JSON.parse(text);
+    // our export envelope
+    payload = { config_yaml: parsed.config_yaml || '', capability: parsed.capability || '' };
+  } catch (_e) {
+    // raw config.yaml
+    payload = { config_yaml: String(text || '') };
+  }
+  const r = await fetch(_API_BASE + '/hermes/config/import', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
 }
 
 /* Agent fleet status + on-demand install. The HQ ships with Hermes (default,
@@ -488,8 +637,26 @@ async function agentsInstall(agent) {
     body: JSON.stringify({ agent }),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.error) {
+  if (!r.ok && r.status !== 202) {
     throw new Error(d.error || `install ${r.status}`);
+  }
+  if (d.error) throw new Error(d.error);
+  // New backend: 202 + background job → poll status until it settles. The
+  // promise still resolves with the final result, so callers are unchanged.
+  // Old backend: a 200 with the final result lands in the return below.
+  if (r.status === 202) {
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(res => setTimeout(res, 3000));
+      let s;
+      try {
+        const sr = await fetch(_API_BASE + '/agents/install/status?agent=' + encodeURIComponent(agent));
+        s = await sr.json().catch(() => ({}));
+      } catch (_e) { continue; }   // transient — keep polling
+      if (s.status === 'done') return s;
+      if (s.status === 'error') throw new Error(s.error || 'install failed');
+    }
+    throw new Error('install still running after 10 minutes — check Settings → Code Agents later');
   }
   return d;
 }
@@ -1108,6 +1275,15 @@ async function vaultDelete(path) {
   }
   return r.json();
 }
+async function vaultRename(from, to) {
+  const r = await fetch(_API_BASE + '/vault/rename', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ from, to }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
 async function vaultSearch(query, { limit = 10 } = {}) {
   const r = await fetch(_API_BASE + '/vault/search?q=' + encodeURIComponent(query) + '&limit=' + limit);
   if (!r.ok) {
@@ -1228,11 +1404,12 @@ async function terminalStatus() {
 }
 
 async function terminalStream({ messages, cli, cwd, model, projectName, sessionId, projectId, authMethod, onData, signal }) {
-  // authMethod: 'subscription' — use the CLI's own OAuth login (Pro/Max plan)
+  // authMethod: 'subscription' — use the CLI's own OAuth / login credentials
   //             'apikey'       — decrypt stored BYOK key and send it
-  // Default to 'subscription' for claude, 'apikey' for codex.
-  const provider = cli === 'claude' ? 'anthropic' : 'openai';
-  const useSubscription = (authMethod || (cli === 'claude' ? 'subscription' : 'apikey')) === 'subscription';
+  // Default to 'subscription' for claude/gemini (CLI login), 'apikey' for codex.
+  const provider = cli === 'claude' ? 'anthropic' : cli === 'gemini' ? 'google' : 'openai';
+  const defaultAuth = (cli === 'claude' || cli === 'gemini') ? 'subscription' : 'apikey';
+  const useSubscription = (authMethod || defaultAuth) === 'subscription';
 
   // sessionId + projectId let the backend tie this stream to a long-running
   // orchestrator session so subsequent calls can resume context (e.g. CLI
@@ -1240,11 +1417,12 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
   const payload = { messages, cli, cwd, model, projectName, sessionId, projectId };
   if (useSubscription) {
     // Tell the server explicitly: don't inject any API key — let the CLI
-    // authenticate via its own OAuth / subscription credentials.
+    // authenticate via its own OAuth / login credentials.
     payload.authMethod = 'subscription';
   } else {
     const agentKey = await getAgentKey(provider);
-    if (agentKey) payload[cli === 'claude' ? 'claudeKey' : 'codexKey'] = agentKey;
+    const keyField = cli === 'claude' ? 'claudeKey' : cli === 'gemini' ? 'geminiKey' : 'codexKey';
+    if (agentKey) payload[keyField] = agentKey;
   }
 
   const res = await fetch(_API_BASE + '/terminal/stream', {
@@ -1503,7 +1681,7 @@ window.OpenclawClient = {
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
   braveSearch, braveProbe,
-  vaultStatus, vaultConfigure, vaultList, vaultRead, vaultWrite, vaultDelete, vaultSearch, vaultProbe,
+  vaultStatus, vaultConfigure, vaultList, vaultRead, vaultWrite, vaultDelete, vaultRename, vaultSearch, vaultProbe,
   vaultDiscover, vaultGraph, vaultOpenInObsidian,
   vaultUpload, vaultOciStatus, vaultOciList, vaultOciSync,
   terminalStatus, terminalStream, spawnTerminal,
@@ -1512,7 +1690,8 @@ window.OpenclawClient = {
   claudecodeStatus, claudecodeConfigure, claudecodeProbe,
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
-  hermesSetOpenRouterKey,
+  hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
+  hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
   openclawStatus, codexStatus, toolExec, cloneRepo,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,

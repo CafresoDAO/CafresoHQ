@@ -96,6 +96,19 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
 
 const STORE_KEY = 'openclaw_hq_v1';
 const k = (n) => STORE_KEY + ':' + n;
+// Per-HQ-container key: scopes a flag by the user's container slug (from the
+// /u/<slug>/ API base). Used for onboarding flags so a NEW user/container shows
+// the New-User guide, instead of inheriting a "seen" flag from a prior account
+// in the same browser. Reads _API_BASE at call time (set before render).
+const ks = (n) => {
+  let slug = 'local';
+  try {
+    const m = String((typeof window !== 'undefined' && window._API_BASE) || '')
+      .match(/\/u\/([0-9a-f]{8,})/i);
+    if (m) slug = m[1];
+  } catch (_) {}
+  return STORE_KEY + ':' + n + ':' + slug;
+};
 // Strip ephemeral fields before persisting agents — runtime status/mood
 // reset to a clean baseline on reload so we don't show stale "busy" sprites.
 // Also drop transient sub-agents (spawned via [SPAWN_SUBAGENT]) so they
@@ -793,6 +806,70 @@ function App() {
       window.OpenclawAgentRunner.setAgents(agents);
     }
   }, [agents]);
+
+  /* ── Local CLI agent sync ──────────────────────────────────────────────
+     Detect agent CLIs already installed on the backend host (hermes, claude,
+     codex, gemini — GET /agents now reports installed + login state) and
+     populate them into the crew automatically, so a self-hoster's existing
+     agents show up in the app without a manual "hire". Idempotent: stable
+     a_cli_* ids, never duplicates, refreshes version/login on later runs, and
+     skips anything the user explicitly dismissed (see onDismiss). Runs twice
+     because useFileStored's async file read REPLACES the roster when it lands
+     — the second pass re-merges if the first one got clobbered. */
+  React.useEffect(() => {
+    const DEFS = {
+      'hermes':      { id: 'a_cli_hermes', name: 'Hermes',      role: 'Resident Agent · CLI',
+                       color: 'sky',   model: 'hermes:hermes-agent',     tools: ['web','files','shell'] },
+      'claude-code': { id: 'a_cli_claude', name: 'Claude Code', role: 'Coding Agent · CLI',
+                       color: 'leaf',  model: 'claudecode:sonnet',       tools: ['files','shell','web'] },
+      'codex':       { id: 'a_cli_codex',  name: 'Codex',       role: 'Coding Agent · CLI',
+                       color: 'mint',  model: 'codex:gpt-4.1',           tools: ['files','shell'] },
+      'gemini':      { id: 'a_cli_gemini', name: 'Gemini',      role: 'Research Agent · CLI',
+                       color: 'blush', model: 'google:gemini-2.5-flash', tools: ['web','files'] },
+    };
+    let cancelled = false;
+    const sync = async () => {
+      const oc = window.OpenclawClient;
+      if (cancelled || !oc || !oc.agentsStatus) return;
+      let detected;
+      try { detected = (await oc.agentsStatus()).agents || []; } catch (_e) { return; }
+      let dismissed = [];
+      try { dismissed = JSON.parse(localStorage.getItem(ks('cliDismissed')) || '[]'); } catch (_e) {}
+      const installed = detected.filter(d =>
+        d.installed && DEFS[d.id] && !dismissed.includes(DEFS[d.id].id));
+      if (!installed.length || cancelled) return;
+      setAgents(prev => {
+        const list = Array.isArray(prev) ? prev : [];
+        let changed = false;
+        const next = [...list];
+        for (const d of installed) {
+          const def = DEFS[d.id];
+          const recent = 'detected on this machine'
+            + (d.authenticated ? ' · logged in' : ' · needs login — open a Terminal tab');
+          const i = next.findIndex(a => a.id === def.id);
+          if (i === -1) {
+            changed = true;
+            next.push({
+              ...def, status: 'idle', mood: 'idle', task: 'standing by',
+              elevated: true, temperature: 0.4, hiredAt: Date.now(),
+              lastRun: '—', nextRun: 'on demand', tokens: 0, tasksDone: 0,
+              cli: d.id, cliVersion: d.version || '', cliAuthed: !!d.authenticated,
+              recent,
+            });
+          } else if (next[i].cliVersion !== (d.version || '')
+                     || next[i].cliAuthed !== !!d.authenticated) {
+            changed = true;
+            next[i] = { ...next[i], cliVersion: d.version || '',
+                        cliAuthed: !!d.authenticated, recent };
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
+    const t1 = setTimeout(sync, 2500);
+    const t2 = setTimeout(sync, 10000);
+    return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
+  }, []);
   const [chat, setChat] = useStored(k('chat'), MOCK.INITIAL_CHAT, persistableChat);
 
   /* One-time migration: rename "CafresoAI" → "CafresoHQ" on any persisted
@@ -1083,7 +1160,7 @@ function App() {
   const [notifSeenAt, setNotifSeenAt] = useStored(k('notifSeenAt'), 0);
 
   // Onboarding tour — show once on first launch unless user dismissed it.
-  const [tourSeen, setTourSeen] = useStored(k('tourSeen'), false);
+  const [tourSeen, setTourSeen] = useStored(ks('tourSeen'), false);
   const [tourOpen, setTourOpen] = useStateA(false);
   useEffectA(() => {
     if (!tourSeen && agents.length === 0) {
@@ -1099,7 +1176,7 @@ function App() {
   }, []);
 
   /* Persistent getting-started checklist (survives a tour-skip). */
-  const [gsDismissed, setGsDismissed] = useStored(k('gettingStartedDone'), false);
+  const [gsDismissed, setGsDismissed] = useStored(ks('gettingStartedDone'), false);
   const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
   useEffectA(() => {
     const onPub = () => setPublishedGraph(true);
@@ -1143,21 +1220,40 @@ function App() {
   // without a live ?api gateway. Probes /health with a short retry.
   const [backendDown, setBackendDown] = useStateA(false);
   const [backendBannerHidden, setBackendBannerHidden] = useStateA(false);
+  const [backendProbeNonce, setBackendProbeNonce] = useStateA(0);   // bump to re-probe
+  const [backendProbing, setBackendProbing] = useStateA(false);
+  // hq_session cookie died mid-use (gateway returns 401). Fired once by the
+  // fetch wrapper in claude-client; without this every feature just hangs.
+  const [sessionExpired, setSessionExpired] = useStateA(false);
+  React.useEffect(() => {
+    const onExpired = () => setSessionExpired(true);
+    window.addEventListener('hq:session-expired', onExpired);
+    return () => window.removeEventListener('hq:session-expired', onExpired);
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       const C = window.OpenclawClient;
+      setBackendProbing(true);
       for (let i = 0; i < 3; i++) {
         let ok = false;
         try { ok = await C.backendHealth(); } catch (_e) {}
         if (cancelled) return;
-        if (ok) { setBackendDown(false); return; }
+        if (ok) {
+          setBackendDown(false);
+          setBackendProbing(false);
+          // Backend is live — re-apply the user's saved Hermes provider key if the
+          // (possibly freshly-recreated) container has none. Best-effort; this is
+          // the 'keys vanish on recreate' fix and must never block startup.
+          try { if (C.hermesEnsureProvider) C.hermesEnsureProvider(); } catch (_e) {}
+          return;
+        }
         await new Promise((r) => setTimeout(r, 1500));
       }
-      if (!cancelled) setBackendDown(true);
+      if (!cancelled) { setBackendDown(true); setBackendProbing(false); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [backendProbeNonce]);
   const [scanlines, setScanlines] = useStored(k('scanlines'), true);
   const [sound, setSound] = useStored(k('sound'), false);
   const [feed, setFeed] = useStateA(MOCK.ACTIVITY_SEED);
@@ -1206,10 +1302,7 @@ function App() {
   }, [messages]);
   const [standupOpen, setStandupOpen] = useStateA(false);
   const [lastStandup, setLastStandup] = useStored(k('lastStandup'), 0); // ms timestamp of last opened
-  const [pins, setPins] = useFileStored(k('pins'), 'state', 'pins', [
-    { id: 'pin_seed1', kind: 'sticky', text: 'Q3 review demo Fri @ 2pm', addedAt: Date.now() },
-    { id: 'pin_seed2', kind: 'sticky', text: 'Tone: warm, concise, human', addedAt: Date.now() },
-  ]);
+  const [pins, setPins] = useFileStored(k('pins'), 'state', 'pins', []);
   const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', []);
   const [missionsOpen, setMissionsOpen] = useStateA(false);
   const [workflows, setWorkflows] = useFileStored(k('workflows'), 'state', 'workflows', []);
@@ -1416,20 +1509,14 @@ ${d.text}` : d.text,
     r.style.setProperty('--carpet', tweaks.carpet);
   }, [tweaks]);
 
-  useEffectA(() => {
-    const id = setInterval(() => {
-      if (agents.length === 0) return;
-      const a = agents[Math.floor(Math.random()*agents.length)];
-      const msgs = ['logged a new finding','drafted a follow-up','updated the tracker','pinged a stakeholder','cleaned 4 stale threads'];
-      setFeed(f => [{ agent: a.name, msg: msgs[Math.floor(Math.random()*msgs.length)] }, ...f].slice(0, 12));
-    }, 6500);
-    return () => clearInterval(id);
-  }, [agents.length]);
+  /* The activity ticker is fed ONLY by real events now (tool calls, hires,
+     task pickups/completions, coffee). A fake generator used to invent agent
+     activity every 6.5s — production users couldn't tell real from fiction. */
 
   const onHire = (a) => {
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
-    setFeed(f => [{ agent: a.name, msg: 'walked onto the floor' }, ...f]);
+    setFeed(f => [{ agent: a.name, msg: 'walked onto the floor' }, ...f].slice(0, 30));
     say(`Hired ${a.name}`, 'HIRE');
   };
 
@@ -1473,6 +1560,15 @@ ${d.text}` : d.text,
   const onDismiss = (id) => {
     const a = agents.find(x=>x.id===id);
     if (!a) return;
+    // Detected-CLI agents are auto-(re)added by the local CLI sync on load —
+    // remember an explicit dismissal so the sync respects the user's choice.
+    if (String(id).startsWith('a_cli_')) {
+      try {
+        const dk = ks('cliDismissed');
+        const cur = JSON.parse(localStorage.getItem(dk) || '[]');
+        if (!cur.includes(id)) localStorage.setItem(dk, JSON.stringify([...cur, id]));
+      } catch (_e) {}
+    }
     // Cascade check: does this agent have assistants reporting to them?
     // We give the boss three options: dismiss assistants too, transfer them
     // to the boss (clear reportsTo), or cancel the dismissal entirely.
@@ -2563,7 +2659,7 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(a.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            setFeed(f => [{ agent: a.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f]);
+            setFeed(f => [{ agent: a.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f].slice(0, 30));
             pulseGraph(ev);
           } else if (ev.phase === 'done') {
             onUpdateAgent(a.id, { task: 'reading results…' });
@@ -2611,7 +2707,7 @@ ${d.text}` : d.text,
   const onCoffee = (a) => {
     abortAgentRun(a.id); // cancel any in-flight stream — context is being cleared
     onUpdateAgent(a.id, { tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: 'freshly caffeinated' });
-    setFeed(f => [{ agent: a.name, msg: 'refreshed context at the coffee machine ☕' }, ...f]);
+    setFeed(f => [{ agent: a.name, msg: 'refreshed context at the coffee machine ☕' }, ...f].slice(0, 30));
     say(`Cleared ${a.name}'s context`, 'COFFEE');
   };
   const onAddSticky = () => {
@@ -2705,7 +2801,7 @@ ${d.text}` : d.text,
     if (!task) return;
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agent.id, status: 'doing' } : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
-    setFeed(f => [{ agent: agent.name, msg: `picked up "${task.title}" 📁` }, ...f]);
+    setFeed(f => [{ agent: agent.name, msg: `picked up "${task.title}" 📁` }, ...f].slice(0, 30));
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
 
     const brief = task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title;
@@ -2730,7 +2826,7 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            setFeed(f => [{ agent: agent.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f]);
+            setFeed(f => [{ agent: agent.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f].slice(0, 30));
             pulseGraph(ev);
           } else if (ev.phase === 'done') {
             onUpdateAgent(agent.id, { task: 'reading results…' });
@@ -2752,7 +2848,7 @@ ${d.text}` : d.text,
         tasksDone: (agent.tasksDone || 0) + 1,
       });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', result: cleanBuf.slice(0, 600) } : t));
-      setFeed(f => [{ agent: agent.name, msg: `finished "${task.title}" ✓` }, ...f]);
+      setFeed(f => [{ agent: agent.name, msg: `finished "${task.title}" ✓` }, ...f].slice(0, 30));
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
       const approvalDesc = MOCK.extractApproval(cleanBuf);
@@ -3139,6 +3235,11 @@ ${d.text}` : d.text,
       else if (e.key === 'm') setActiveView('memory');
       else if (e.key === 'f') setFocus(v => !v);
       else if (e.key === 'u') onOpenStandup();
+      // 1-8 jump straight to a view, same order as the rail (NAV_ITEMS)
+      else if (/^[1-8]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const item = NAV_ITEMS[parseInt(e.key, 10) - 1];
+        if (item) setActiveView(item[0]);
+      }
       else if (e.key === '/') { e.preventDefault(); const t = document.querySelector('.composer textarea'); if (t) t.focus(); }
     };
     window.addEventListener('keydown', onKey);
@@ -3484,6 +3585,25 @@ ${d.text}` : d.text,
 
         <div className="content full-width">
           <div className="view-area">
+            {sessionExpired && (
+              <div role="alert" style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+                margin:'0 0 10px', padding:'9px 13px', borderRadius:10,
+                background:'rgba(245,210,93,0.12)', border:'1px solid rgba(245,210,93,0.5)',
+                color:'#F5D25D', font:'13px Inter, system-ui, sans-serif' }}>
+                <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
+                  <b>🔑 Your session expired.</b> Reopen HQ from{' '}
+                  <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                     style={{color:'#F5D25D', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                  {' '}to sign back in — your work here is saved.
+                </span>
+                <button onClick={()=>{ window.location.reload(); }}
+                  style={{ cursor:'pointer', background:'rgba(245,210,93,0.16)', border:'1px solid rgba(245,210,93,0.6)',
+                    color:'#F5D25D', borderRadius:6, padding:'2px 10px', fontSize:12, fontWeight:700 }}>Reload</button>
+                <button onClick={()=>{ setSessionExpired(false); }} title="Hide"
+                  style={{ cursor:'pointer', background:'none', border:'1px solid rgba(245,210,93,0.4)',
+                    color:'#F5D25D', borderRadius:6, padding:'2px 8px', fontSize:12 }}>✕</button>
+              </div>
+            )}
             {backendDown && !backendBannerHidden && (
               <div role="status" style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
                 margin:'0 0 10px', padding:'9px 13px', borderRadius:10,
@@ -3491,12 +3611,20 @@ ${d.text}` : d.text,
                 color:'#E8A9A9', font:'13px Inter, system-ui, sans-serif' }}>
                 <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
                   <b>⚠ Not connected to your HQ backend.</b> Chat, Vault, Graph and Terminal need a live
-                  container. Open HQ from <b>ai.cafreso.com → Launch HQ</b> so it can reach your private container.
+                  container. Open HQ from{' '}
+                  <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                     style={{color:'#E8A9A9', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                  {' '}so it can reach your private container.
                   <span style={{opacity:0.7}}> (backend: {window._API_BASE || 'none (canister only)'})</span>
                 </span>
-                <button onClick={()=>{ setBackendBannerHidden(true); }}
-                  style={{ cursor:'pointer', background:'none', border:'1px solid rgba(232,169,169,0.5)',
-                    color:'#E8A9A9', borderRadius:6, padding:'2px 8px', fontSize:12 }}>Dismiss</button>
+                <button onClick={()=>{ setBackendProbeNonce(n => n + 1); }} disabled={backendProbing}
+                  style={{ cursor:'pointer', background:'rgba(232,169,169,0.18)', border:'1px solid rgba(232,169,169,0.6)',
+                    color:'#E8A9A9', borderRadius:6, padding:'2px 10px', fontSize:12, fontWeight:700 }}>
+                  {backendProbing ? 'Checking…' : 'Retry'}
+                </button>
+                <button onClick={()=>{ setBackendBannerHidden(true); }} title="Hide"
+                  style={{ cursor:'pointer', background:'none', border:'1px solid rgba(232,169,169,0.4)',
+                    color:'#E8A9A9', borderRadius:6, padding:'2px 8px', fontSize:12 }}>✕</button>
               </div>
             )}
             {approvals.length > 0 && <ApprovalTray pending={approvals} onApprove={onApprove} onReject={onReject}/>}
@@ -3526,8 +3654,9 @@ ${d.text}` : d.text,
       </div>
 
       <nav className="bottom-nav">
-        {NAV_ITEMS.map(([k, label]) => (
-          <button key={k} className={`bn-item${activeView===k?' active':''}`} onClick={()=>setActiveView(k)}>
+        {NAV_ITEMS.map(([k, label], i) => (
+          <button key={k} className={`bn-item${activeView===k?' active':''}`} onClick={()=>setActiveView(k)}
+            title={`${label} (${i + 1})`} aria-current={activeView===k ? 'page' : undefined}>
             <Ico kind={k} size={18}/>
             <span className="bn-label">{label}</span>
           </button>

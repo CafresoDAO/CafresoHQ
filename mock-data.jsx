@@ -201,20 +201,14 @@ function spawnOpenswarmRoster(existingAgents, addAgent) {
   return added;
 }
 
-const INITIAL_CHAT = [
-  { id: 1, from: 'ceo', name: 'CafresoHQ', text: "Morning, boss! What's on the agenda? I brewed the mock coffee." },
-  { id: 2, from: 'user', name: 'You', text: 'Pull the competitor landscape notes together and prep a 1-pager.' },
-  { id: 3, from: 'ceo', name: 'CafresoHQ', text: "On it. I'll hand the research to Kip and keep the drafting here." },
-  { id: 4, from: 'agent', name: 'Kip · Research', text: 'Scanning 12 sources. First pass in ~6 minutes.' },
-];
+/* Production note: these used to ship fake "demo" content (a canned chat
+   conversation and a fake activity ticker). Real users couldn't tell what was
+   real, and the fake chat persisted to localStorage as if it had happened.
+   New accounts now start clean — the thread/ticker empty states do the
+   teaching instead. */
+const INITIAL_CHAT = [];
 
-const ACTIVITY_SEED = [
-  { agent: 'Mira', msg: 'archived 8 newsletters' },
-  { agent: 'Kip',  msg: 'found 3 relevant papers on GPU pricing' },
-  { agent: 'Bop',  msg: 'proposed 2 slots for Thursday review' },
-  { agent: 'Mira', msg: 'drafted reply to vendor@foundry' },
-  { agent: 'Kip',  msg: 'summarized TechCrunch piece on retention' },
-];
+const ACTIVITY_SEED = [];
 
 // Utility
 function uid(prefix='id') { return prefix + '_' + Math.random().toString(36).slice(2, 8); }
@@ -1303,7 +1297,8 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
           emit(`_(model attempted ${orphans.map(o=>o.tool).join(', ')} but those aren't wired up — check Settings → API)_`);
         } else {
           const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
-          emit(peek ? `_(empty after cleaning. Raw: "${peek}…")_` : '_(empty response from CEO model)_');
+          emit(peek ? `_(empty after cleaning. Raw: "${peek}…")_`
+            : '_(no response from the model. On a free model this usually means the prompt was too large — try **Settings → Connections → Agent capability → "Lite"**, or pick a smaller/paid model.)_');
         }
       }
       return;

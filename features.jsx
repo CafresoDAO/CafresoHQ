@@ -9,21 +9,13 @@ const { useState: useSF, useEffect: useEF, useRef: useRF, useMemo: useMF } = Rea
    shared <Modal> shell (focus trap, scroll lock, animated entry). */
 const { Modal: OcModal } = window.OpenclawModals;
 
-/* ---------------- Seed data ---------------- */
-const SEED_TASKS = [
-  { id: 't1', title: 'Competitor landscape 1-pager', detail: 'Scan last 2 quarters of competitor moves. Prep a one-pager with tldr + 3 threats.', assignedTo: null, status: 'inbox', priority: 'high', createdAt: Date.now() - 1000*60*45 },
-  { id: 't2', title: 'Schedule Q3 review', detail: 'Find a 1h slot with the exec team between Thu–Fri.', assignedTo: 'a_bop', status: 'doing', priority: 'med', createdAt: Date.now() - 1000*60*120 },
-  { id: 't3', title: 'Clean inbox', detail: 'Archive anything older than 30 days that isn\'t starred.', assignedTo: 'a_mira', status: 'doing', priority: 'low', createdAt: Date.now() - 1000*60*10 },
-  { id: 't4', title: 'Summarize GPU pricing article', detail: 'TechCrunch piece on H100 spot pricing.', assignedTo: 'a_kip', status: 'done', priority: 'med', createdAt: Date.now() - 1000*60*200 },
-];
+/* ---------------- Seed data ----------------
+   Empty in production: fake demo tasks/memories used to be written into every
+   new account's persisted state (and survived deletion). Empty states in the
+   views teach the features instead. */
+const SEED_TASKS = [];
 
-const SEED_MEMORY = [
-  { id: 'm1', tag: 'PREF',    text: "Boss prefers bullet-point updates over prose.", date: 'Mar 12' },
-  { id: 'm2', tag: 'PEOPLE',  text: "Mira = inbox · Kip = research · Bop = calendar.", date: 'Mar 14' },
-  { id: 'm3', tag: 'PROJECT', text: "Q3 review demo is the north star through April.", date: 'Apr 02' },
-  { id: 'm4', tag: 'TONE',    text: "Keep copy warm, concise, and human. No corporate fluff.", date: 'Apr 18' },
-  { id: 'm5', tag: 'RULE',    text: "Any spend over $100 → approval stamp required.", date: 'Apr 22' },
-];
+const SEED_MEMORY = [];
 
 /* ---------------- Task Board ---------------- */
 /* Inline assignee picker for task cards. Renders as a styled native
@@ -218,9 +210,7 @@ function MemoryShelf({ open, onClose, memory, onAdd, onRemove }) {
 
 /* ---------------- Meeting Room ---------------- */
 function MeetingRoom({ participants, agents, onClose, onRemove }) {
-  const [msgs, setMsgs] = useSF([
-    { id: 'mtg_seed', who: 'CafresoAI', color: 'openclaw', text: "Let's sync on the competitor 1-pager. Kip, what did you find?" },
-  ]);
+  const [msgs, setMsgs] = useSF([]);
   const [input, setInput] = useSF('');
   const [streaming, setStreaming] = useSF(false);
   const logRef = useRF(null);

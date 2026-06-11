@@ -1288,6 +1288,14 @@ function GettingStarted({ hasKey, chatted, published, onAddKey, onChat, onPublis
   const doneCount = steps.filter(s => s.done).length;
   const allDone = doneCount === steps.length;
 
+  // When the last step completes, celebrate briefly then dismiss on the
+  // user's behalf — a finished checklist shouldn't sit on screen forever.
+  useEffect(() => {
+    if (!allDone || !onDismiss) return;
+    const t = setTimeout(onDismiss, 6000);
+    return () => clearTimeout(t);
+  }, [allDone]);
+
   const card = {
     position: 'fixed', left: 14, bottom: 14, zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
     background: 'rgba(24,20,14,0.95)', backdropFilter: 'blur(8px)',
@@ -1501,12 +1509,13 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
       </div>
       <nav>
-        {NAV_ITEMS.map(([k, label]) => (
+        {NAV_ITEMS.map(([k, label], i) => (
           <a
             key={k}
             className={active===k?'active':''}
             onClick={()=>setActive(k)}
-            title={collapsed ? label : undefined}
+            title={collapsed ? `${label} (${i + 1})` : `Shortcut: ${i + 1}`}
+            aria-current={active===k ? 'page' : undefined}
           >
             <Ico kind={k}/> {!collapsed && label}
           </a>
@@ -2177,6 +2186,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   }));
   const allTabs = [...THREADS, ...dynamicProjectTabs, ...dynamicMeetingTabs];
 
+  /* If the active thread's tab disappeared (meeting deleted, project's last
+     agent unassigned), fall back to DIRECT instead of stranding the user on a
+     blank chat with no visible tab. */
+  const tabIdsKey = allTabs.map(t => t.id).join('|');
+  useEffect(() => {
+    if (!allTabs.some(t => t.id === activeThread)) setActiveThread('direct');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThread, tabIdsKey]);
+
   /* Resolve participant agents for the active thread. Used both to fan out
      a sent message and to render the participant chips at the top of the
      thread so the boss can see who's in the room at a glance. */
@@ -2205,9 +2223,26 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     return null;
   })();
 
+  /* Stick-to-bottom scrolling. Follow the stream only while the user is
+     already at (or near) the bottom; scrolling up to read scrollback pauses
+     auto-scroll instead of fighting it, and scrolling back down (or switching
+     threads) re-engages. Runs after every render so streaming tokens are
+     followed too — a single scrollIntoView no-op when not stuck. */
+  const stickRef = useRef(true);
+  useEffect(() => {
+    const el = screenRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+  useLayoutEffect(() => { stickRef.current = true; }, [activeThread]);
   useLayoutEffect(() => {
-    if (bottomRef.current) bottomRef.current.scrollIntoView({ block: 'end' });
-  }, [visibleChat.length, streaming, activeThread]);
+    if (stickRef.current && bottomRef.current)
+      bottomRef.current.scrollIntoView({ block: 'end' });
+  });
 
   const send = async () => {
     const text = input.trim();

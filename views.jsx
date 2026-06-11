@@ -590,7 +590,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       const t = e.target;
       const tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
-      setOpenNote(null);
+      closeNote();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -610,7 +610,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       alert(`"${fileMeta.title}" is a binary file.\nDownload it from ai.cafreso.com/vault to view it.`);
       return;
     }
-    setBusy(true); setErr(null);
+    // Flush any dirty buffer before swapping files — no silent edit loss.
+    if (openNoteRef.current && openNoteRef.current.dirty) {
+      await saveNoteRef.current({ quiet: true });
+    }
+    setBusy(true); setErr(null); setSaveState('');
     try {
       let text;
       if (_bridge) {
@@ -630,26 +634,104 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     setBusy(false);
   };
 
-  const saveNote = async () => {
-    if (!openNote) return;
-    setBusy(true); setErr(null);
+  /* Saving is tracked per-editor (inline chip) and NEVER via the view-level
+     `err` — a failed save used to replace the whole vault view with an error
+     screen, hiding the user's unsaved text. Autosave (2.5s idle) plus
+     flush-on-leave below mean typed text can no longer be silently lost. */
+  const [saveState, setSaveState] = React.useState('');   // '' | 'saving' | 'saved' | 'error: …'
+  const openNoteRef = React.useRef(null);
+  openNoteRef.current = openNote;
+
+  const saveNote = async (opts) => {
+    const note = openNoteRef.current;
+    if (!note || !note.dirty) return;
+    setBusy(true); setSaveState('saving');
     try {
       if (_bridge) {
-        if (openNote.id) {
-          // Existing file — update encrypted blob
-          await _bridge.write(openNote.id, openNote.content);
+        if (note.id) {
+          await _bridge.write(note.id, note.content);
         } else {
-          // New file — create encrypted blob
-          const meta = await _bridge.create(openNote.path, openNote.content);
-          setOpenNote(n => ({ ...n, id: meta.id }));
+          const meta = await _bridge.create(note.path, note.content);
+          setOpenNote(n => (n && n.path === note.path ? { ...n, id: meta.id } : n));
         }
       } else {
-        await window.OpenclawClient.vaultWrite(openNote.path, openNote.content, 'write');
+        await window.OpenclawClient.vaultWrite(note.path, note.content, 'write');
       }
-      setOpenNote(n => ({ ...n, dirty: false }));
-      await refresh();
-    } catch (e) { setErr(e.message); }
+      // Clear dirty only if nothing was typed while the save was in flight.
+      setOpenNote(n => (n && n.path === note.path && n.content === note.content)
+        ? { ...n, dirty: false } : n);
+      setSaveState('saved');
+      if (!(opts && opts.quiet)) await refresh();
+    } catch (e) {
+      setSaveState('error: ' + (e.message || 'save failed'));
+    }
     setBusy(false);
+  };
+  const saveNoteRef = React.useRef(saveNote);
+  saveNoteRef.current = saveNote;
+
+  // Autosave: 2.5s after the last keystroke.
+  React.useEffect(() => {
+    if (!openNote || !openNote.dirty) return;
+    const t = setTimeout(() => { saveNoteRef.current({ quiet: true }); }, 2500);
+    return () => clearTimeout(t);
+  }, [openNote && openNote.content, openNote && openNote.dirty]);
+
+  // Flush-on-leave: unmounting the vault view (switching to another app view)
+  // fires a final save of any dirty buffer.
+  React.useEffect(() => () => {
+    const n = openNoteRef.current;
+    if (n && n.dirty) saveNoteRef.current({ quiet: true });
+  }, []);
+
+  // Closing or switching notes flushes the dirty buffer first.
+  const closeNote = () => {
+    const n = openNoteRef.current;
+    if (n && n.dirty) saveNoteRef.current({ quiet: true });
+    setSaveState('');
+    setOpenNote(null);
+  };
+
+  /* File management — upload / rename / delete. Server-vault backends only
+     (the encrypted bridge vault manages its own files in the parent shell). */
+  const fileInputRef = React.useRef(null);
+  const onUpload = async (e) => {
+    const list = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!list.length) return;
+    setBusy(true);
+    try {
+      const r = await window.OpenclawClient.vaultUpload(list);
+      await refresh();
+      if (r && r.failed && r.failed.length) {
+        alert(`Uploaded ${r.count}, failed ${r.failed.length}:\n` +
+              r.failed.map(f => `${f.path}: ${f.error}`).join('\n'));
+      }
+    } catch (er) { alert('Upload failed: ' + er.message); }
+    setBusy(false);
+  };
+  const renameNote = async () => {
+    const n = openNoteRef.current;
+    if (!n) return;
+    const to = window.prompt('Rename / move to (path inside the vault):', n.path);
+    if (!to || to.trim() === n.path) return;
+    if (n.dirty) await saveNoteRef.current({ quiet: true });
+    try {
+      await window.OpenclawClient.vaultRename(n.path, to.trim());
+      setOpenNote(o => o ? { ...o, path: to.trim() } : o);
+      await refresh();
+    } catch (e) { alert('Rename failed: ' + e.message); }
+  };
+  const deleteNote = async () => {
+    const n = openNoteRef.current;
+    if (!n) return;
+    if (!window.confirm(`Delete "${n.path}"? This cannot be undone.`)) return;
+    try {
+      await window.OpenclawClient.vaultDelete(n.path);
+      setSaveState('');
+      setOpenNote(null);
+      await refresh();
+    } catch (e) { alert('Delete failed: ' + e.message); }
   };
 
   const newNote = () => {
@@ -735,7 +817,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               <div className="vault-toolbar">
                 <span style={{fontWeight:600,fontSize:11,flex:1}}>{status ? status.name : 'Vault'}</span>
                 <button className="px-btn ghost" onClick={newNote} title="New note">{'➕'}</button>
+                {!_bridge && (
+                  <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    title="Upload files into the vault">📤</button>
+                )}
                 <button className="px-btn ghost" onClick={refresh} title="Refresh">{'↻'}</button>
+                <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
               </div>
               <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
                 <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search vault…" onKeyDown={e=>e.key==='Enter'&&search()} />
@@ -773,11 +860,14 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
                   <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
                 </label>
+                {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
+                {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
                 <button className="px-btn ghost" onClick={openInObsidian} title="Open in Obsidian">{'↗'}</button>
-                <button className="px-btn primary" onClick={saveNote} disabled={!openNote.dirty || busy}>
-                  {busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+                <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+                  onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
+                  {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
                 </button>
-                <button className="px-btn ghost" onClick={() => { setOpenNote(null); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
+                <button className="px-btn ghost" onClick={() => { closeNote(); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
               {preview ? (
                 <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
@@ -798,7 +888,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         <div className="vault-toolbar">
           <span style={{fontWeight:600,fontSize:11,flex:1}}>{status.name}</span>
           <button className="px-btn ghost" onClick={newNote} title="New note">➕</button>
+          {!_bridge && (
+            <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              title="Upload files into the vault">📤</button>
+          )}
           <button className="px-btn ghost" onClick={refresh} title="Refresh">↻</button>
+          <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
         </div>
         <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
           <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search vault…" onKeyDown={e=>e.key==='Enter'&&search()} />
@@ -829,16 +924,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
               <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
             </label>
+            {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
+            {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
             <button className="px-btn ghost" onClick={openInObsidian} title="Open in Obsidian">↗</button>
-            <button className="px-btn primary" onClick={saveNote} disabled={!openNote.dirty || busy}>
-              {busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+            <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+              onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
+              {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
             </button>
             {!showGraph && (
               <button className="px-btn ghost" onClick={() => setGraphMinimized(false)} title="Show graph">🧠</button>
             )}
             <button
               className="px-btn ghost"
-              onClick={() => setOpenNote(null)}
+              onClick={closeNote}
               title="Close note (Esc)"
               style={{fontSize:11}}
             >✕</button>
@@ -5037,6 +5135,37 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
   const wsRef        = React.useRef(null);
   const fitRef       = React.useRef(null);
 
+  /* Copy/paste + URL capture. The CLIs (claude/codex/gemini login) print OAuth
+     URLs the user must open in a browser — before this, nothing in the PTY was
+     copyable, which blocked authenticating AI subscriptions entirely. */
+  const [lastUrl, setLastUrl] = React.useState('');
+  const [flash, setFlash]     = React.useState('');
+  const flashTimer = React.useRef(null);
+  const doFlash = (msg) => {
+    setFlash(msg);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(''), 2200);
+  };
+  const copyText = async (text) => {
+    try { await navigator.clipboard.writeText(text); doFlash('✓ copied'); }
+    catch (_e) { doFlash('copy blocked — check browser permission'); }
+  };
+  const copySelectionOrUrl = () => {
+    const sel = termRef.current && termRef.current.getSelection();
+    if (sel && sel.trim()) return copyText(sel.trim());
+    if (lastUrl) return copyText(lastUrl);
+    doFlash('select text first');
+  };
+  const pasteClipboard = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(t); doFlash('✓ pasted');
+      } else if (!t) doFlash('clipboard is empty');
+      else doFlash('terminal not connected');
+    } catch (_e) { doFlash('paste blocked — use Ctrl+V or grant clipboard access'); }
+  };
+
   React.useEffect(() => {
     if (!containerRef.current || !project?.path) return;
     const TermClass = window.Terminal;
@@ -5064,17 +5193,46 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
     fitRef.current  = fit;
 
     let cancelled = false;
+    let urlTail = '';   // rolling output tail for login-URL capture
 
     // Registered once — always routes input to the current ws.
     term.onData(data => {
       if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(data);
     });
 
+    // Ctrl/Cmd+C copies when text is selected (and does NOT send SIGINT over a
+    // selection); Ctrl+Shift+C always copies. Ctrl+V is deliberately left to the
+    // browser's native paste path — xterm's hidden textarea routes it through
+    // onData, and that works in every browser (clipboard.readText does not).
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true;
+      const key = (ev.key || '').toLowerCase();
+      if (key === 'c' && (ev.ctrlKey || ev.metaKey) &&
+          (ev.shiftKey || term.hasSelection())) {
+        const sel = term.getSelection();
+        if (sel && sel.trim()) {
+          navigator.clipboard.writeText(sel.trim()).catch(() => {});
+          term.clearSelection();
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Terminal convention: releasing a mouse selection copies it. This is the
+    // one-gesture path for grabbing an OAuth URL off the screen.
+    const onMouseUp = () => {
+      const sel = term.getSelection();
+      if (sel && sel.trim()) copyText(sel.trim());
+    };
+    containerRef.current.addEventListener('mouseup', onMouseUp);
+
     const connect = async () => {
       if (cancelled) return;
       // Skip if already open or mid-handshake.
       const rs = wsRef.current?.readyState;
       if (rs === WebSocket.OPEN || rs === WebSocket.CONNECTING) return;
+      term.writeln('\x1b[2m[connecting…]\x1b[0m');
 
       // Fetch nonce — /terminal/nonce is same-origin-only so cross-origin
       // pages can't obtain it and therefore can't open a PTY.
@@ -5129,6 +5287,21 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
         const data = e.data instanceof ArrayBuffer
           ? new TextDecoder().decode(e.data) : e.data;
         term.write(data);
+        // Capture the most recent URL from the raw PTY stream (login flows
+        // print OAuth URLs the user must open in a browser). Keep a rolling
+        // tail so URLs split across frames still match; strip ANSI first —
+        // OSC-8 hyperlinks keep their target, colors/cursor codes drop.
+        urlTail = (urlTail + data).slice(-6000);
+        const clean = urlTail
+          .replace(/\x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)/g, ' $1 ')
+          .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ' ')
+          .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+          .replace(/[\r\x07]/g, '\n');
+        const m = clean.match(/https?:\/\/[^\s'"<>\x00-\x1f)\]]+/g);
+        if (m && m.length) {
+          const u = m[m.length - 1].replace(/[.,;:!?]+$/, '');
+          if (u.length > 12) setLastUrl(u);
+        }
       };
 
       ws.onerror = () => {
@@ -5174,11 +5347,14 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       }
     });
 
+    const containerEl = containerRef.current;
     return () => {
       cancelled = true;
       ro.disconnect();
       window.removeEventListener('resize', sendResize);
       document.removeEventListener('visibilitychange', handleVisibility);
+      if (containerEl) containerEl.removeEventListener('mouseup', onMouseUp);
+      clearTimeout(flashTimer.current);
       try { if (wsRef.current) wsRef.current.close(); } catch (_) {}
       try { term.dispose(); } catch (_) {}
       termRef.current = wsRef.current = fitRef.current = null;
@@ -5191,11 +5367,42 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
     }
   }, [visible]);
 
+  const tbBtn = {
+    fontSize: 9, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em',
+    color: 'rgba(212,216,232,0.75)', background: 'rgba(124,107,255,0.10)',
+    border: '1px solid rgba(124,107,255,0.30)', borderRadius: 4,
+    padding: '3px 8px', cursor: 'pointer', flexShrink: 0,
+  };
   return (
-    <div ref={containerRef} style={{
-      flex: 1, width: '100%', height: '100%',
-      overflow: 'hidden', padding: '4px 0 0 6px', boxSizing: 'border-box',
-    }} />
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0 }}>
+      {/* Copy/paste toolbar + login-URL chip. Touch users have no Ctrl+C/V and
+          no mouse selection — these buttons are their only clipboard path. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+        flexShrink: 0, background: '#0a0a12', minHeight: 26,
+        borderBottom: '1px solid rgba(124,107,255,0.12)',
+      }}>
+        <button style={tbBtn} title="Copy selection (or the last URL)" onClick={copySelectionOrUrl}>⧉ COPY</button>
+        <button style={tbBtn} title="Paste clipboard into the terminal" onClick={pasteClipboard}>⇩ PASTE</button>
+        {flash && <span style={{ fontSize: 10, color: '#8fd18f', fontFamily: "'JetBrains Mono', monospace" }}>{flash}</span>}
+        {lastUrl && (
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            <span title={lastUrl} style={{
+              fontSize: 10, color: 'rgba(212,216,232,0.55)', fontFamily: "'JetBrains Mono', monospace",
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240, direction: 'rtl',
+            }}>🔗 {lastUrl}</span>
+            <button style={tbBtn} title="Copy this URL" onClick={() => copyText(lastUrl)}>COPY</button>
+            <button style={tbBtn} title="Open in a new browser tab"
+              onClick={() => window.open(lastUrl, '_blank', 'noopener,noreferrer')}>OPEN ↗</button>
+            <button style={{ ...tbBtn, padding: '3px 5px' }} title="Dismiss" onClick={() => setLastUrl('')}>✕</button>
+          </span>
+        )}
+      </div>
+      <div ref={containerRef} style={{
+        flex: 1, minHeight: 0, width: '100%',
+        overflow: 'hidden', padding: '4px 0 0 6px', boxSizing: 'border-box',
+      }} />
+    </div>
   );
 }
 
@@ -5207,19 +5414,24 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const pid = project?.id || project?.path || '';
   const sKey = (suffix) => pid && sessionId ? `openclaw_terminal:${suffix}:${pid}:${sessionId}` : null;
 
-  /* Hermes is an interactive PTY agent (`hermes chat`) — there's no --print
-     chat-stream path for it, so it always runs in the embedded terminal. */
-  const isHermes = cli === 'hermes';
-  const [termModeRaw, setTermMode] = useStoredV(sKey('mode'),  isHermes ? 'spawn' : 'chat');  // 'chat' | 'spawn'
-  // Hermes has no chat-stream mode — always render the embedded PTY.
-  const termMode = isHermes ? 'spawn' : termModeRaw;
+  /* Every CLI is now dual-mode: a conversational Chat view and the raw PTY.
+     - claude / codex / gemini stream Chat via their CLI's non-interactive
+       mode (`--print` / `exec --json` / `--prompt`), scoped to the project dir
+       and using the CLI's own login — so chat is file-aware and matches PTY.
+     - hermes streams Chat through its always-on OpenAI-compatible gateway
+       (/hermes/v1/chat/completions); no key needed (server-side auth).
+     Default to the PTY so a new tab opens as a real terminal (a full CLI per
+     tab); Chat is one click away via the Chat/PTY toggle. */
+  const [termModeRaw, setTermMode] = useStoredV(sKey('mode'), 'spawn');  // 'chat' | 'spawn'
+  const termMode = termModeRaw;
   const [msgs,      setMsgs]      = useStoredV(sKey('msgs'),  []);
   const [input,     setInput]     = useSV('');
   const [busy,      setBusy]      = useSV(false);
   const [err,       setErr]       = useSV(null);
   const [model,     setModel]     = useStoredV(sKey('model'), '');
-  // 'subscription' = CLI's OAuth login (Pro/Max), 'apikey' = BYOK API key
-  const [authMethod, setAuthMethod] = useStoredV(sKey('auth'), cli === 'claude' ? 'subscription' : 'apikey');
+  // 'subscription' = CLI's own OAuth login, 'apikey' = BYOK API key. Claude and
+  // Gemini default to their subscription/OAuth login; codex defaults to apikey.
+  const [authMethod, setAuthMethod] = useStoredV(sKey('auth'), (cli === 'claude' || cli === 'gemini') ? 'subscription' : 'apikey');
   const [keyPanel,  setKeyPanel]  = useSV(false);
   const [keyInput,  setKeyInput]  = useSV('');
   const [keyStored, setKeyStored] = useSV({});
@@ -5234,11 +5446,13 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     setKeyStored({
       anthropic: oc.hasAgentKey('anthropic'),
       openai:    oc.hasAgentKey('openai'),
+      google:    oc.hasAgentKey('google'),
     });
   }, [cli]);
 
-  const provider    = cli === 'claude' ? 'anthropic' : 'openai';
-  const keyIsStored = !!keyStored[provider];
+  // Which stored BYOK key this CLI uses (hermes needs none — server-side auth).
+  const provider    = cli === 'claude' ? 'anthropic' : cli === 'gemini' ? 'google' : cli === 'hermes' ? null : 'openai';
+  const keyIsStored = !!(provider && keyStored[provider]);
 
   React.useEffect(() => {
     if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -5265,36 +5479,57 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
 
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
-    try {
-      await window.OpenclawClient.terminalStream({
-        messages: history.map(m => ({
-          role: m.role,
-          content: m.segs ? m.segs.map(s => s.text).join('') : (m.content || ''),
-        })),
-        cli,
-        cwd: project.path,
-        model: model.trim() || undefined,
-        projectName: project.name,
-        projectId: project.id,
-        sessionId,
-        authMethod,
-        signal: ctrl.signal,
-        onData: (content, type) => {
-          setMsgs(prev => {
-            const next = [...prev];
-            const last = next[asstIdx];
-            if (!last || last.role !== 'assistant') return prev;
-            const segs = [...(last.segs || [])];
-            if (segs.length > 0 && segs[segs.length - 1].type === type) {
-              segs[segs.length - 1] = { ...segs[segs.length - 1], text: segs[segs.length - 1].text + content };
-            } else {
-              segs.push({ text: content, type });
-            }
-            next[asstIdx] = { ...last, segs };
-            return next;
-          });
-        },
+
+    // Append a streamed chunk to the in-flight assistant message, coalescing
+    // consecutive chunks of the same kind ('text'|'tool'|'error') into one seg.
+    const appendChunk = (content, type) => {
+      setMsgs(prev => {
+        const next = [...prev];
+        const last = next[asstIdx];
+        if (!last || last.role !== 'assistant') return prev;
+        const segs = [...(last.segs || [])];
+        if (segs.length > 0 && segs[segs.length - 1].type === type) {
+          segs[segs.length - 1] = { ...segs[segs.length - 1], text: segs[segs.length - 1].text + content };
+        } else {
+          segs.push({ text: content, type });
+        }
+        next[asstIdx] = { ...last, segs };
+        return next;
       });
+    };
+
+    const wireMessages = history.map(m => ({
+      role: m.role,
+      content: m.segs ? m.segs.map(s => s.text).join('') : (m.content || ''),
+    }));
+
+    try {
+      if (cli === 'hermes') {
+        // Hermes Chat streams through its always-on OpenAI-compatible gateway
+        // (/hermes/v1/chat/completions). Model is server-configured; passing the
+        // 'hermes:' prefix forces the provider without overriding the model.
+        await window.OpenclawClient.stream({
+          model: model.trim() ? 'hermes:' + model.trim() : 'hermes:',
+          messages: wireMessages,
+          signal: ctrl.signal,
+          onToken: (t) => appendChunk(t, 'text'),
+        });
+      } else {
+        // claude / codex / gemini → the CLI's non-interactive mode, scoped to
+        // the project dir, using the CLI's own login (subscription) or BYOK.
+        await window.OpenclawClient.terminalStream({
+          messages: wireMessages,
+          cli,
+          cwd: project.path,
+          model: model.trim() || undefined,
+          projectName: project.name,
+          projectId: project.id,
+          sessionId,
+          authMethod,
+          signal: ctrl.signal,
+          onData: appendChunk,
+        });
+      }
     } catch (e) {
       if (e.name !== 'AbortError') setErr(e.message || String(e));
     }
@@ -5315,7 +5550,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     setSpawnMsg(''); setErr(null);
     try {
       await oc.spawnTerminal({ cli, cwd: project.path });
-      setSpawnMsg(`${cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude Code' : 'Codex'} launched in a new terminal window.`);
+      setSpawnMsg(`${cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude Code' : cli === 'gemini' ? 'Gemini' : 'Codex'} launched in a new terminal window.`);
     } catch (e) {
       setErr(e.message || String(e));
     }
@@ -5350,9 +5585,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         borderBottom: '1px solid var(--rule)', background: 'var(--paper-2)',
         minHeight: 44,
       }}>
-        {(isHermes
-            ? [['spawn', '☼', 'Terminal']]
-            : [['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])]
+        {([['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])]
         ).map(([mode, ico, label]) => (
           <button key={mode} onClick={() => { setTermMode(mode); setErr(null); setSpawnMsg(''); }}
             style={{
@@ -5366,12 +5599,13 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             }}
           ><span>{ico}</span><span>{label}</span></button>
         ))}
-        {!isHermes && spawnSupported === false && (
+        {spawnSupported === false && (
           <span style={{ fontSize: 9, color: 'var(--ink-3)', paddingLeft: 10 }}>chat only</span>
         )}
         <span style={{ flex: 1 }} />
         {termMode === 'chat' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 10 }}>
+            {cli !== 'hermes' && (
             <select value={model} onChange={e => setModel(e.target.value)} disabled={busy}
               style={{
                 background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--rule)',
@@ -5387,6 +5621,14 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                   <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
                   <option value="claude-sonnet-4-5-20250514">Sonnet 4.5</option>
                 </>
+              ) : cli === 'gemini' ? (
+                <>
+                  <option value="">model (default)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                </>
               ) : (
                 <>
                   <option value="">model (default)</option>
@@ -5397,9 +5639,17 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                 </>
               )}
             </select>
-            {cli === 'claude' && (
+            )}
+            {cli === 'hermes' && (
+              <span style={{ fontSize: 9, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                model in Settings → System
+              </span>
+            )}
+            {(cli === 'claude' || cli === 'gemini') && (
               <select value={authMethod} onChange={e => { setAuthMethod(e.target.value); setKeyPanel(false); }}
-                title={authMethod === 'subscription' ? 'Using Claude Pro/Max subscription via CLI login' : 'Using your own Anthropic API key'}
+                title={authMethod === 'subscription'
+                  ? (cli === 'gemini' ? 'Using your Google login via the gemini CLI' : 'Using Claude Pro/Max subscription via CLI login')
+                  : `Using your own ${cli === 'gemini' ? 'Google' : 'Anthropic'} API key`}
                 style={{
                   background: authMethod === 'subscription' ? 'rgba(124,107,255,0.10)' : 'var(--paper)',
                   color: authMethod === 'subscription' ? '#7c6bff' : 'var(--ink)',
@@ -5408,11 +5658,11 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                   fontFamily: 'inherit', cursor: 'pointer',
                 }}
               >
-                <option value="subscription">⚡ Subscription</option>
+                <option value="subscription">{cli === 'gemini' ? '⚡ Login' : '⚡ Subscription'}</option>
                 <option value="apikey">🔑 API Key</option>
               </select>
             )}
-            {(cli !== 'claude' || authMethod === 'apikey') && (
+            {provider && (cli !== 'claude' && cli !== 'gemini' ? true : authMethod === 'apikey') && (
               <button onClick={() => { setKeyPanel(p => !p); setKeyInput(''); }}
                 title={keyIsStored ? `${provider} key stored (AES-256-GCM)` : `Set ${provider} API key`}
                 style={{
@@ -5449,7 +5699,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
           padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
         }}>
           <span style={{ fontSize: 10, color: '#7c6bff', whiteSpace: 'nowrap' }}>
-            {provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}
+            {provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : provider === 'google' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'}
           </span>
           <input
             type="password"
@@ -5497,13 +5747,15 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                 gap: 10, paddingTop: 40,
               }}>
                 <div style={{ fontSize: 30, opacity: 0.35 }}>
-                  {cli === 'claude' ? '✦' : '◈'}
+                  {cli === 'claude' ? '✦' : cli === 'hermes' ? '☼' : cli === 'gemini' ? '✧' : '◈'}
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-                  <strong>{cli === 'claude' ? 'Claude Code' : 'OpenAI Codex'}</strong>
+                  <strong>{cli === 'claude' ? 'Claude Code' : cli === 'hermes' ? 'Hermes' : cli === 'gemini' ? 'Gemini' : 'OpenAI Codex'}</strong>
                   <br/>
                   <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>
-                    {project.name} · --print mode · {cli === 'claude' && authMethod === 'subscription' ? '⚡ subscription' : 'BYOK supported'}
+                    {cli === 'hermes'
+                      ? 'via gateway · server-side auth'
+                      : `${project.name} · ${(cli === 'claude' || cli === 'gemini') && authMethod === 'subscription' ? '⚡ login' : 'BYOK supported'}`}
                   </span>
                 </div>
               </div>
@@ -5532,7 +5784,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, marginTop: 1, border: '1px solid var(--rule)',
                   }}>
-                    {cli === 'claude' ? '✦' : '◈'}
+                    {cli === 'claude' ? '✦' : cli === 'hermes' ? '☼' : cli === 'gemini' ? '✧' : '◈'}
                   </div>
                   <div style={{ flex: 1, fontSize: 13, lineHeight: 1.65, color: 'var(--ink)', minWidth: 0, fontFamily: 'Inter, system-ui, sans-serif' }}>
                     {(m.segs || []).map((seg, si) => {
@@ -5595,7 +5847,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={onKey}
                 disabled={busy}
-                placeholder={`Message ${cli === 'claude' ? 'Claude Code' : 'Codex'}…`}
+                placeholder={`Message ${cli === 'claude' ? 'Claude Code' : cli === 'hermes' ? 'Hermes' : cli === 'gemini' ? 'Gemini' : 'Codex'}…`}
                 rows={2}
                 style={{
                   flex: 1, background: 'transparent', color: 'var(--ink)',
@@ -5711,6 +5963,7 @@ function ProjectTerminal({ project, visible }) {
   const [addMenuOpen, setAddMenuOpen]       = React.useState(false);
   const [addMenuPos,  setAddMenuPos]        = React.useState({ top: 0, left: 0 });
   const addBtnRef = React.useRef(null);
+  const addMenuRef = React.useRef(null);
 
   React.useEffect(() => {
     fetch((window._API_BASE || '') + '/terminal/status')
@@ -5725,13 +5978,21 @@ function ProjectTerminal({ project, visible }) {
   React.useEffect(() => {
     if (!addMenuOpen) return;
     const close = (e) => {
-      if (addBtnRef.current && !addBtnRef.current.contains(e.target)) setAddMenuOpen(false);
+      // The menu is portaled to <body>, so it's NOT inside addBtnRef — check both.
+      if (addBtnRef.current && addBtnRef.current.contains(e.target)) return;
+      if (addMenuRef.current && addMenuRef.current.contains(e.target)) return;
+      setAddMenuOpen(false);
     };
+    const closeNow = () => setAddMenuOpen(false);
     document.addEventListener('mousedown', close);
     document.addEventListener('touchstart', close);
+    window.addEventListener('scroll', closeNow, true);
+    window.addEventListener('resize', closeNow);
     return () => {
       document.removeEventListener('mousedown', close);
       document.removeEventListener('touchstart', close);
+      window.removeEventListener('scroll', closeNow, true);
+      window.removeEventListener('resize', closeNow);
     };
   }, [addMenuOpen]);
 
@@ -5743,26 +6004,27 @@ function ProjectTerminal({ project, visible }) {
   };
 
   const closeSession = (id) => {
-    setSessions(prev => {
-      if (prev.length <= 1) return prev;
-      const closing = prev.find(s => s.id === id);
-      const next = prev.filter(s => s.id !== id);
-      if (activeId === id) setActiveId(next[next.length - 1].id);
-      /* Clear this session's persistent state so localStorage doesn't bloat
-         over time. msgs can be hundreds of KB after a long conversation. */
-      if (closing && pid) {
-        try {
-          ['mode','msgs','model','auth'].forEach(suffix => {
-            localStorage.removeItem(`openclaw_terminal:${suffix}:${pid}:${closing.sessionId}`);
-          });
-        } catch (_e) {}
-      }
-      return next;
-    });
+    if (sessions.length <= 1) return;
+    const closing = sessions.find(s => s.id === id);
+    const next = sessions.filter(s => s.id !== id);
+    // Side effects MUST stay OUTSIDE the setState updater — calling setActiveId()
+    // from inside the setSessions(prev => …) updater is the React anti-pattern
+    // that blanked the whole page when a tab was closed.
+    setSessions(next);
+    if (activeId === id && next.length) setActiveId(next[next.length - 1].id);
+    /* Clear this session's persistent state so localStorage doesn't bloat over
+       time. msgs can be hundreds of KB after a long conversation. */
+    if (closing && pid) {
+      try {
+        ['mode', 'msgs', 'model', 'auth'].forEach(suffix => {
+          localStorage.removeItem(`openclaw_terminal:${suffix}:${pid}:${closing.sessionId}`);
+        });
+      } catch (_e) {}
+    }
   };
 
-  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : 'Codex';
-  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : '◈';
+  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : 'Codex';
+  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : '◈';
 
   const getLabel = (session) => {
     const name = cliName(session.cli);
@@ -5827,8 +6089,15 @@ function ProjectTerminal({ project, visible }) {
             onClick={() => {
               if (!addMenuOpen && addBtnRef.current) {
                 const r = addBtnRef.current.getBoundingClientRect();
-                // Open upward so the menu isn't hidden under the terminal canvas
-                setAddMenuPos({ bottom: window.innerHeight - r.top + 6, left: r.left });
+                // Open DOWNWARD from the button. The portal escapes the tab bar's
+                // overflow clip, so the menu is no longer hidden under the terminal
+                // — and downward avoids running off the top of the screen on mobile
+                // (the tab bar sits at the very top there). Clamp left so the 170px
+                // menu never runs off a narrow/iPad edge.
+                const MENU_W = 170;
+                const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_W - 8));
+                const top = r.bottom + 6;
+                setAddMenuPos({ top, left });
               }
               setAddMenuOpen(p => !p);
             }}
@@ -5843,9 +6112,9 @@ function ProjectTerminal({ project, visible }) {
               transition: 'background 0.15s, color 0.15s', flexShrink: 0,
             }}
           >+</button>
-          {addMenuOpen && (
-            <div style={{
-              position: 'fixed', bottom: addMenuPos.bottom, left: addMenuPos.left, zIndex: 99999,
+          {addMenuOpen && ReactDOM.createPortal(
+            <div ref={addMenuRef} style={{
+              position: 'fixed', top: addMenuPos.top, left: addMenuPos.left, zIndex: 99999,
               background: '#12121e', border: '1px solid rgba(124,107,255,0.25)',
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
@@ -5873,7 +6142,8 @@ function ProjectTerminal({ project, visible }) {
                   )}
                 </div>
               ))}
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </div>
@@ -6718,7 +6988,14 @@ function ComingSoon({ label }) {
    context (id='hq-global-terminal', path='') so sessions persist.
    ================================================================ */
 function TerminalView() {
-  const HQ_PROJECT = React.useMemo(() => ({ id: 'hq-global-terminal', path: '' }), []);
+  // A non-empty path is required — the embedded PTY bails on a falsy project.path
+  // (that's why the standalone Terminal tab loaded blank while Projects worked).
+  // /root/Documents is the container's code-agent sandbox dir (created in the
+  // Dockerfile); local runs override via OPENCLAW_TERMINAL_CWD if they want.
+  const HQ_PROJECT = React.useMemo(() => ({
+    id: 'hq-global-terminal',
+    path: (typeof window !== 'undefined' && window._TERMINAL_CWD) || '/root/Documents',
+  }), []);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0a0a10' }}>
       {/* Header */}

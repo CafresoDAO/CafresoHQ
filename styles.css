@@ -3199,20 +3199,105 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
 .row-knob:last-child { border-bottom: 0; }
 .row-knob .lbl { color: var(--ink); font-weight: 600; }
 .row-knob .sub { font-family: 'Inter'; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+/* A control's long options (e.g. the provider <select>) must NOT squeeze the
+   label + hint into vertical one-char-per-line text. Let the label keep a sane
+   width, cap/allow the control to shrink, wrap the hint to its own line, and
+   never break mid-word. */
+.row-knob { flex-wrap: wrap; }
+.row-knob > :first-child { flex: 1 1 180px; min-width: 0; }
+.row-knob select,
+.row-knob input[type="text"],
+.row-knob input[type="number"],
+.row-knob input[type="password"] { min-width: 0; max-width: 100%; }
+.row-knob .hint { flex: 1 1 100%; }
+.row-knob .lbl,
+.row-knob .sub,
+.row-knob .hint { word-break: normal; overflow-wrap: break-word; hyphens: none; }
 
-/* Settings tab strip — polished pill row */
-.settings-tabs {
-  border-bottom: 2px solid var(--ink);
-  padding-bottom: 10px;
+/* Settings shell — sidebar nav (desktop) / chip row (mobile) + scrolling body.
+   Replaces the old .settings-tabs pill strip. */
+.settings-shell {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-height: 0;
 }
-.settings-tabs .px-btn {
-  border-radius: 8px 8px 0 0;
-  transition: background 0.15s, transform 0.1s;
+.settings-nav {
+  flex: 0 0 188px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
 }
-.settings-tabs .px-btn.primary {
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+}
+.settings-nav .sn-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink);
   position: relative;
-  transform: translateY(2px);
+  transition: background 0.12s;
 }
+.settings-nav .sn-item:hover { background: var(--bg-2); }
+.settings-nav .sn-item.active {
+  background: var(--accent-sun);
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 0 var(--ink);
+}
+.sn-ico { font-size: 15px; flex-shrink: 0; }
+.sn-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.sn-label { font-family: 'Press Start 2P'; font-size: 8px; letter-spacing: 0.04em; }
+.sn-desc {
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sn-dot {
+  width: 8px; height: 8px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.sn-dot.ok   { background: var(--accent-leaf, #6c5); }
+.sn-dot.warn { background: var(--accent-sun, #fc3); }
+.sn-dot.err  { background: var(--accent-rose, #c45); }
+.sn-badge {
+  margin-left: auto;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--bg-2);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+.settings-body { flex: 1; min-width: 0; }
 
 /* Mobile tweaks: stack the two-column control board into one column,
    pad selects/inputs for touch, and let the modal body scroll cleanly. */
@@ -3236,18 +3321,40 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
     font-size: 14px;
     padding: 6px 8px;
   }
-  .settings-tabs {
+  /* Settings shell collapses to a sticky horizontal chip row on mobile */
+  .settings-shell { flex-direction: column; gap: 10px; }
+  .settings-nav {
+    flex: none;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     position: sticky;
     top: 0;
     background: var(--paper);
     z-index: 2;
-    padding-top: 4px;
+    padding: 4px 0 6px;
+    gap: 6px;
   }
-  .settings-tabs .px-btn {
-    flex: 1 0 calc(50% - 4px);
-    min-width: 0;
-    justify-content: center;
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-search {
+    flex: 0 0 130px;
+    margin-bottom: 0;
+    font-size: 14px;
+    min-height: 40px;
   }
+  .settings-nav .sn-item {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 8px 10px;
+    border-color: var(--ink);
+    background: var(--bg-2);
+    min-height: 40px;
+  }
+  .settings-nav .sn-item .sn-desc { display: none; }
+  .settings-nav .sn-item.active { box-shadow: none; }
 }
 
 /* Pixel toggle switch */
