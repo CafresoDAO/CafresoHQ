@@ -1278,12 +1278,14 @@ function OnboardingKeyStep() {
    a tour-skip and stays until every step is done (or the user dismisses it), so
    a new user is never left at a dead end (e.g. agents that error with no key).
    Steps auto-check from live app state passed in as props. */
-function GettingStarted({ hasKey, chatted, published, onAddKey, onChat, onPublish, onDismiss }) {
+function GettingStarted({ hasKey, hired, chatted, assigned, sawWork, onAddKey, onHire, onChat, onTasks, onWatch, onDismiss }) {
   const [collapsed, setCollapsed] = useState(false);
   const steps = [
-    { k: 'key',   done: !!hasKey,    n: 1, label: 'Add your AI key',        hint: 'Free OpenRouter key — powers every agent.', act: onAddKey,  cta: 'Add key' },
-    { k: 'chat',  done: !!chatted,   n: 2, label: 'Chat with your team',     hint: 'Say hi to your CEO — ask for anything.',    act: onChat,    cta: 'Open chat' },
-    { k: 'graph', done: !!published, n: 3, label: 'Publish your first graph', hint: 'Turn your vault into a shareable map.',     act: onPublish, cta: 'Open graph' },
+    { k: 'key',   done: !!hasKey,   n: 1, label: 'Add your AI key',          hint: 'Free OpenRouter key — powers every agent.',         act: onAddKey, cta: 'Add key' },
+    { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
+    { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
+    { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
+    { k: 'watch', done: !!sawWork,  n: 5, label: 'Watch them work',           hint: 'Desks light up; the Team inbox logs every action.', act: onWatch, cta: 'Open office' },
   ];
   const doneCount = steps.filter(s => s.done).length;
   const allDone = doneCount === steps.length;
@@ -1652,7 +1654,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, maxSlots = 5 }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, meetingActive = false, meetingIds = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -1675,6 +1677,60 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   // status:'doing' and sets assignedTo, so it disappears from the rail
   // automatically once delegated.
   const inboxTasks = (tasks || []).filter(t => t && (t.status === 'inbox' || !t.assignedTo));
+
+  /* ── Honest ambient movement ──────────────────────────────────────────
+     Walker sprites stroll across the open floor in response to REAL state:
+     participants head to the meeting room when a meeting opens, and a truly
+     idle agent occasionally visits the water cooler. Purely presentational —
+     never mutates agent state. Skipped on mobile + reduced-motion. */
+  const ambientOk = !isMobileOffice &&
+    !(typeof window !== 'undefined' && window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const meetingIdSet = React.useMemo(() => new Set(meetingActive ? meetingIds : []), [meetingActive, meetingIds.join(',')]);
+
+  // Meeting walkers — fire once on the rising/falling edge of meetingActive.
+  const [walkers, setWalkers] = React.useState([]);
+  const wasMeetingRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!ambientOk) { setWalkers([]); wasMeetingRef.current = meetingActive; return; }
+    const was = wasMeetingRef.current;
+    wasMeetingRef.current = meetingActive;
+    if (meetingActive === was) return;
+    const parts = (meetingActive ? meetingIds : meetingIds)
+      .map(id => agents.find(a => a.id === id)).filter(Boolean);
+    if (!parts.length) return;
+    const dir = meetingActive ? 'go' : 'return';
+    setWalkers(parts.map((a, i) => ({ key: a.id + '-' + dir + '-' + i, color: a.color, dir, delay: i * 1.2 })));
+    const t = setTimeout(() => setWalkers([]), 3600 + parts.length * 1200);
+    return () => clearTimeout(t);
+  }, [meetingActive, ambientOk]);
+
+  // Idle water-cooler visit — pick one genuinely-idle senior every few minutes.
+  const [coolerVisitor, setCoolerVisitor] = React.useState(null);
+  React.useEffect(() => {
+    if (!ambientOk) return;
+    let timer, clearV;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        const idle = seniorAgents.filter(a => a.status === 'idle' && !a.task);
+        if (idle.length) {
+          const pick = idle[Math.floor((Date.now() / 1000) % idle.length)];
+          setCoolerVisitor(pick.id);
+          clearV = setTimeout(() => setCoolerVisitor(null), 20000);
+        }
+        schedule();
+      }, 240000 + (Date.now() % 120000));   // 4–6 min, deterministic-ish
+    };
+    schedule();
+    return () => { clearTimeout(timer); clearTimeout(clearV); };
+  }, [ambientOk, seniorAgents.length]);
+  // Cancel a cooler visit early if that agent stops being idle.
+  React.useEffect(() => {
+    if (!coolerVisitor) return;
+    const a = agents.find(x => x.id === coolerVisitor);
+    if (a && (a.status !== 'idle' || a.task)) setCoolerVisitor(null);
+  }, [agents, coolerVisitor]);
+  const coolerVisitorAgent = coolerVisitor ? agents.find(a => a.id === coolerVisitor) : null;
   return (
     <div className="office">
       {/* Task rail — slim strip of draggable cards above the rooms.
@@ -1694,6 +1750,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   : 'drag a card onto an agent\'s desk')}
           </span>
           <span className="otr-count">{inboxTasks.length}</span>
+          {attentionCount > 0 && onOpenAttention && (
+            <button className="otr-attn" onClick={onOpenAttention}
+              title="Open the Team inbox — items that need you">
+              ⚠ {attentionCount} need{attentionCount === 1 ? 's' : ''} you →
+            </button>
+          )}
           {onGoToTasks && (
             <button className="otr-more" onClick={onGoToTasks} title="Open the full task board">
               Board →
@@ -1783,6 +1845,30 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         </div>
       )}
       <div className="pet" aria-label="Maximus"><Sprite data="maximus" scale={2}/></div>
+
+      {/* Ambient walkers — meeting commute + idle cooler visit. Children of
+          .office so their left% keyframes ride the open floor like .pet. */}
+      {ambientOk && walkers.map(w => (
+        <div key={w.key} className={'walker' + (w.dir === 'return' ? ' return' : '')}
+             style={{ ['--wd']: w.delay + 's' }} aria-hidden="true">
+          <Sprite data={w.color} scale={2} />
+        </div>
+      ))}
+      {ambientOk && coolerVisitorAgent && (
+        <div className="walker cooler" aria-hidden="true">
+          <Sprite data={coolerVisitorAgent.color} scale={2} />
+        </div>
+      )}
+      {/* Meeting cluster — participants grouped at the meeting door while the
+          meeting is in session (this is the P5 "proximity" surface). */}
+      {ambientOk && meetingActive && meetingIds.length > 0 && (
+        <div className="meeting-cluster" title="In a meeting" aria-hidden="true">
+          {meetingIds.map(id => {
+            const a = agents.find(x => x.id === id);
+            return a ? <Sprite key={id} data={a.color} scale={1.4} /> : null;
+          })}
+        </div>
+      )}
 
       <div className="rooms">
         {/* CEO office */}
@@ -1891,7 +1977,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 behind the sprite so it reads as "sitting at the desk". */}
             <div className="office-chair" aria-hidden="true"/>
             <div className="sprite-slot">
-              <div className="bubble t-body">drafting 1-pager…</div>
+              {ceoBusy ? <div className="bubble t-body">replying to you…</div> : null}
               <Sprite data="openclaw" scale={2} className="bob slow"/>
             </div>
           </div>
@@ -1902,9 +1988,11 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             senior's interior, not as separate top-level desks. */}
         {seniorAgents.map((a, i) => {
           const subs = subordinatesOf(a.id);
+          const awayMeeting = ambientOk && meetingIdSet.has(a.id);
+          const awayCooler = ambientOk && coolerVisitor === a.id;
           return (
           <div key={a.id}
-               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}`}
+               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}`}
                onClick={() => onInspect(a)}
                style={{cursor:'pointer'}}
                onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
@@ -1937,7 +2025,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <div className="mini-keys" aria-hidden="true"/>
               <div className="desk-lamp" aria-hidden="true"/>
               <div className="sprite-slot">
-                {a.task ? <div className="bubble t-body">{a.task}</div> : null}
+                {(awayMeeting || awayCooler)
+                  ? <div className="away-placard">{awayMeeting ? 'in the meeting room' : 'stretching legs'}</div>
+                  : (a.task ? <div className="bubble t-body">{a.task}</div> : null)}
                 <div style={{position:'relative'}}>
                   <Sprite data={a.color} scale={2} className={`bob ${i%2?'slow':'fast'}`}/>
                   <div className={`mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood||'idle']}</div>

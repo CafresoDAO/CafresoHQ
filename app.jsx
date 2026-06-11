@@ -119,6 +119,19 @@ const persistableAgents = (xs) => xs
     const { status, mood, task, ...rest } = a;
     return { ...rest, status: 'idle', mood: 'idle', task: 'standing by' };
   });
+/* Merge the persisted activity file (fetched on mount) with whatever was
+   logged in-memory before the fetch landed — dedup by id, in-memory wins
+   (fresher unread state), sort newest-first, cap. Historical ROUTINE entries
+   load as read so a reload doesn't inflate the attention badge; ATTENTION
+   entries stay unread until the user acts on them. */
+const mergeByIdCap = (inMem, fetched, cap = 200) => {
+  const byId = new Map();
+  for (const e of (Array.isArray(fetched) ? fetched : [])) {
+    byId.set(e.id, e.priority === 'attention' ? e : { ...e, unread: false });
+  }
+  for (const e of (Array.isArray(inMem) ? inMem : [])) byId.set(e.id, e);
+  return [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, cap);
+};
 // Cap chat history at 80 entries so localStorage doesn't bloat.
 const persistableChat = (xs) => xs.slice(-80).map(({ streaming, error, ...rest }) => rest);
 
@@ -1156,8 +1169,10 @@ function App() {
   // system events (agent activity, mission updates, runner errors). The
   // existing `receipts` array is folded in at render time.
   const [notifOpen, setNotifOpen]   = useStateA(false);
-  const [notifFeed, setNotifFeed]   = useStateA([]);   // [{ id, kind, msg, ts, unread, source }]
   const [notifSeenAt, setNotifSeenAt] = useStored(k('notifSeenAt'), 0);
+  // Watermark for the notification center "Clear" action — hides activity
+  // entries at or before this ts WITHOUT deleting the canonical log.
+  const [notifClearedAt, setNotifClearedAt] = useStored(k('notifClearedAt'), 0);
 
   // Onboarding tour — show once on first launch unless user dismissed it.
   const [tourSeen, setTourSeen] = useStored(ks('tourSeen'), false);
@@ -1256,7 +1271,19 @@ function App() {
   }, [backendProbeNonce]);
   const [scanlines, setScanlines] = useStored(k('scanlines'), true);
   const [sound, setSound] = useStored(k('sound'), false);
-  const [feed, setFeed] = useStateA(MOCK.ACTIVITY_SEED);
+  /* Canonical activity log — the single source of truth for the ticker, the
+     notification center, and the Team inbox. Persisted to /hq/state/activity;
+     the load transform merges the fetched file with anything logged in the
+     first ~300ms (merge-by-id) so nothing is clobbered. */
+  const activityRef = useRefA([]);
+  const [activity, setActivity] = useFileStored(
+    k('activity'), 'state', 'activity', [],
+    (fetched) => mergeByIdCap(activityRef.current, fetched, 200));
+  useEffectA(() => { activityRef.current = activity; }, [activity]);
+  const logActivity = useCallbackA((entry) => setActivity(prev =>
+    [{ id: MOCK.uid('act'), ts: Date.now(), priority: 'routine', unread: true, ...entry },
+     ...prev].slice(0, 200)
+  ), [setActivity]);
   const [night, setNight] = useStored(k('night'), false);
   // Stickies are now a `kind='sticky'` pin — kept under this name and shape
   // for back-compat with the existing sticky-stack UI on the CEO desk.
@@ -1392,31 +1419,22 @@ function App() {
       const d = e.detail || {};
       const now = Date.now();
       /* Throttle: same node less than 4s apart → skip */
-      const k = (d.agentId || '') + '|' + (d.nodeId || '');
-      const prev = lastByNode.get(k) || 0;
+      const kk = (d.agentId || '') + '|' + (d.nodeId || '');
+      const prev = lastByNode.get(kk) || 0;
       if (now - prev < 4000) return;
-      lastByNode.set(k, now);
-      setNotifFeed(f => [{
-        id: 'act-' + now + '-' + Math.random().toString(36).slice(2, 6),
-        kind: 'agent',
-        msg: `${d.agentName || 'Agent'} ${d.kind === 'write' ? 'wrote' : d.kind === 'link' ? 'linked' : 'read'} ${d.nodeId || 'a note'}`,
-        ts: now,
-        unread: true,
-        source: d.agentName || 'agent',
-      }, ...f].slice(0, 100));
+      lastByNode.set(kk, now);
+      logActivity({
+        agentId: d.agentId, agentName: d.agentName || 'Agent', color: d.color,
+        action: 'vault', nodeId: d.nodeId,
+        text: `${d.kind === 'write' ? 'wrote' : d.kind === 'link' ? 'linked' : 'read'} ${d.nodeId || 'a note'}`,
+      });
     };
     const onRunnerErr = (e) => {
       const d = e.detail || {};
-      const now = Date.now();
-      setNotifFeed(f => [{
-        id: 'err-' + now,
-        kind: 'system',
-        msg: `Agent action failed: ${d.kind || ''}`,
-        ts: now,
-        unread: true,
-        source: 'agent runner',
-        icon: '⚠',
-      }, ...f].slice(0, 100));
+      logActivity({
+        agentName: 'agent runner', action: 'failed', priority: 'attention',
+        text: `agent action failed: ${d.kind || ''}`,
+      });
     };
     const onAgentChatResponse = (e) => {
       const d = e.detail || {};
@@ -1439,7 +1457,7 @@ ${d.text}` : d.text,
       window.removeEventListener('openclaw:agentRunnerError', onRunnerErr);
       window.removeEventListener('openclaw:agentChatResponse', onAgentChatResponse);
     };
-  }, [setChat, setChatWinOpen]);
+  }, [setChat, setChatWinOpen, logActivity]);
   useEffectA(() => {
     /* Apply density class — only one at a time. 'comfortable' is the default
        (no class needed). */
@@ -1516,7 +1534,7 @@ ${d.text}` : d.text,
   const onHire = (a) => {
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
-    setFeed(f => [{ agent: a.name, msg: 'walked onto the floor' }, ...f].slice(0, 30));
+    logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
     say(`Hired ${a.name}`, 'HIRE');
   };
 
@@ -1827,6 +1845,11 @@ ${d.text}` : d.text,
     const agentMsgId = MOCK.uid('m');
     setChat(prev => [...prev, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true, thread, agentId: agent.id }]);
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: prompt.slice(0, 40) });
+    logActivity({
+      agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
+      action: dmFrom ? 'dm' : 'assigned',
+      text: dmFrom ? `received a DM from ${dmFrom.name}` : `picked up "${prompt.slice(0, 48)}…"`,
+    });
 
     const peers = agents.filter(a => a.id !== agent.id);
     const peerList = peers.map(p => `${p.name} (${p.role}${p.elevated ? ' · elevated' : ''})`).join(', ');
@@ -2141,6 +2164,17 @@ ${d.text}` : d.text,
           }
           return t;
         }));
+        // Log blocked tasks as attention items (outside the setState updater).
+        for (const upd of taskUpdates) {
+          if (upd.action !== 'blocked') continue;
+          const bt = tasks.find(x => x.id === upd.id);
+          logActivity({
+            agentId: agent.id, agentName: agent.name, color: agent.color,
+            action: 'attention', priority: 'attention', taskId: upd.id,
+            text: `blocked on "${bt ? bt.title.slice(0, 32) : upd.id}"`,
+            detail: upd.note || '(no reason given)',
+          });
+        }
         // Strip markers from visible chat so the user sees clean text.
         const stripped = buf
           .replace(TASK_DONE_RE, '')
@@ -2158,6 +2192,10 @@ ${d.text}` : d.text,
         tokens: (agent.tokens || 0) + usedTokens,
         tasksDone: (agent.tasksDone || 0) + 1,
         task: 'reporting back',
+      });
+      logActivity({
+        agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
+        action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300),
       });
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, prompt.slice(0, 60));
       const approvalDesc = MOCK.extractApproval(buf);
@@ -2227,6 +2265,11 @@ ${d.text}` : d.text,
         note: aborted ? 'aborted by user' : (cause && cause.kind ? `${cause.kind}: ${cause.actionNeeded}` : raw.slice(0, 120)),
         failureCause: cause,
       });
+      logActivity(aborted
+        ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: 'run stopped' }
+        : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
+            action: 'failed', priority: 'attention',
+            text: `${cause.kind}: ${cause.actionNeeded}`, detail: cause.message });
     } finally {
       endAgentRun(agent.id, controller);
     }
@@ -2659,7 +2702,7 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(a.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            setFeed(f => [{ agent: a.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f].slice(0, 30));
+            logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
             pulseGraph(ev);
           } else if (ev.phase === 'done') {
             onUpdateAgent(a.id, { task: 'reading results…' });
@@ -2678,6 +2721,7 @@ ${d.text}` : d.text,
         recent: brief.slice(0, 80),
         tokens: (a.tokens || 0) + usedTokens,
       });
+      logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
       const approvalDesc = MOCK.extractApproval(cleanBuf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
@@ -2688,6 +2732,9 @@ ${d.text}` : d.text,
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : `⚠ ${err.message}`, error: !aborted }
         : m));
       onUpdateAgent(a.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
+      logActivity(aborted
+        ? { agentId: a.id, agentName: a.name, color: a.color, action: 'progress', text: 'run stopped' }
+        : { agentId: a.id, agentName: a.name, color: a.color, action: 'failed', priority: 'attention', text: 'delegation failed', detail: (err && err.message || String(err)).slice(0, 240) });
     } finally {
       endAgentRun(a.id, controller);
     }
@@ -2707,7 +2754,7 @@ ${d.text}` : d.text,
   const onCoffee = (a) => {
     abortAgentRun(a.id); // cancel any in-flight stream — context is being cleared
     onUpdateAgent(a.id, { tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: 'freshly caffeinated' });
-    setFeed(f => [{ agent: a.name, msg: 'refreshed context at the coffee machine ☕' }, ...f].slice(0, 30));
+    logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee', text: 'refreshed context at the coffee machine ☕' });
     say(`Cleared ${a.name}'s context`, 'COFFEE');
   };
   const onAddSticky = () => {
@@ -2801,7 +2848,7 @@ ${d.text}` : d.text,
     if (!task) return;
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agent.id, status: 'doing' } : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
-    setFeed(f => [{ agent: agent.name, msg: `picked up "${task.title}" 📁` }, ...f].slice(0, 30));
+    logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'assigned', taskId, text: `picked up "${task.title}" 📁` });
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
 
     const brief = task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title;
@@ -2826,7 +2873,7 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            setFeed(f => [{ agent: agent.name, msg: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` }, ...f].slice(0, 30));
+            logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
             pulseGraph(ev);
           } else if (ev.phase === 'done') {
             onUpdateAgent(agent.id, { task: 'reading results…' });
@@ -2848,7 +2895,7 @@ ${d.text}` : d.text,
         tasksDone: (agent.tasksDone || 0) + 1,
       });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', result: cleanBuf.slice(0, 600) } : t));
-      setFeed(f => [{ agent: agent.name, msg: `finished "${task.title}" ✓` }, ...f].slice(0, 30));
+      logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
       const approvalDesc = MOCK.extractApproval(cleanBuf);
@@ -2887,6 +2934,9 @@ ${d.text}` : d.text,
       onUpdateAgent(agent.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
       // Aborted task should go back to inbox so the user can re-drop it; failed tasks too.
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'inbox', assignedTo: null } : t));
+      logActivity(aborted
+        ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: `run stopped — "${task.title}" back to inbox` }
+        : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'failed', priority: 'attention', text: `failed "${task.title}" — back to inbox`, detail: (err && err.message || String(err)).slice(0, 240) });
     } finally {
       endAgentRun(agent.id, controller);
     }
@@ -2933,6 +2983,8 @@ ${d.text}` : d.text,
     const id = MOCK.uid('ap');
     setApprovals(prev => [...prev, { id, ...req }]);
     say(`Approval requested: ${req.title.slice(0, 30)}…`, 'STAMP');
+    logActivity({ agentName: req.by || 'agent', action: 'attention', priority: 'attention',
+      text: `requests approval: ${String(req.title || '').slice(0, 48)}`, taskId: req.taskId });
   };
 
   /* External approvals: the local `claude` CLI's PreToolUse hook posts
@@ -3306,8 +3358,13 @@ ${d.text}` : d.text,
               onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agentId, status: 'doing' } : t))}
               onGoToTasks={() => setActiveView('tasks')}
               maxSlots={5}
+              ceoBusy={chat.some(m => m.from === 'ceo' && m.streaming)}
+              attentionCount={attentionCount}
+              onOpenAttention={openAttention}
+              meetingActive={meetingOpen}
+              meetingIds={meetingParticipants.map(p => p.id)}
             />
-            <Ticker items={feed} />
+            <Ticker items={tickerItems} />
           </div>
         );
       case 'tasks':
@@ -3340,7 +3397,7 @@ ${d.text}` : d.text,
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
-        return <TeamView agents={agents} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} />;
+        return <TeamView agents={agents} activity={activity} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} />;
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
@@ -3414,10 +3471,36 @@ ${d.text}` : d.text,
         source: r.by,
       });
     }
-    /* Live event feed (agent activity, runner errors). */
-    for (const f of notifFeed) out.push(f);
+    /* Live event feed — sourced from the canonical activity log, minus
+       anything cleared (watermark) and the high-frequency routine tool lines
+       (those live in the ticker, not the bell). */
+    for (const e of activity) {
+      if ((e.ts || 0) <= notifClearedAt) continue;
+      if (e.action === 'tool') continue;
+      out.push({
+        id: e.id,
+        kind: e.priority === 'attention' ? 'system' : 'agent',
+        msg: `${e.agentName || 'HQ'} ${e.text}`,
+        ts: e.ts,
+        unread: e.unread && (e.ts || 0) > notifSeenAt,
+        source: e.agentName || 'agent',
+        icon: e.priority === 'attention' ? '⚠' : undefined,
+      });
+    }
     return out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  }, [approvals, receipts, notifFeed, notifSeenAt]);
+  }, [approvals, receipts, activity, notifSeenAt, notifClearedAt]);
+
+  /* Ticker reads the canonical log — newest-first, routine + attention. */
+  const tickerItems = useMemoA(
+    () => activity.slice(0, 24).map(e => ({ agent: e.agentName || 'HQ', msg: e.text })),
+    [activity]);
+  /* Count of unread attention items — drives the Team-nav badge + office pill. */
+  const attentionCount = useMemoA(
+    () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
+  const openAttention = useCallbackA(() => {
+    setActiveView('team');
+    setTimeout(() => window.dispatchEvent(new CustomEvent('openclaw:openAgentInbox')), 60);
+  }, [setActiveView]);
 
   const vocab = getVocab(theme);
   return (
@@ -3656,9 +3739,13 @@ ${d.text}` : d.text,
       <nav className="bottom-nav">
         {NAV_ITEMS.map(([k, label], i) => (
           <button key={k} className={`bn-item${activeView===k?' active':''}`} onClick={()=>setActiveView(k)}
-            title={`${label} (${i + 1})`} aria-current={activeView===k ? 'page' : undefined}>
+            title={`${label} (${i + 1})`} aria-current={activeView===k ? 'page' : undefined}
+            style={{ position: 'relative' }}>
             <Ico kind={k} size={18}/>
             <span className="bn-label">{label}</span>
+            {k === 'team' && attentionCount > 0 && (
+              <span className="att-badge" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>
+            )}
           </button>
         ))}
         <button className="bn-item" onClick={()=>openSettings()}>
@@ -3689,20 +3776,24 @@ ${d.text}` : d.text,
       <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)}/>
       <NotificationCenter
         open={notifOpen}
-        onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setNotifFeed(f => f.map(x => ({ ...x, unread: false }))); }}
+        onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => ({ ...x, unread: false }))); }}
         notifications={mergedNotifications}
-        onMarkAllRead={() => { setNotifSeenAt(Date.now()); setNotifFeed(f => f.map(x => ({ ...x, unread: false }))); }}
-        onClear={() => { setNotifFeed([]); setNotifSeenAt(Date.now()); }}
+        onMarkAllRead={() => { setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => ({ ...x, unread: false }))); }}
+        onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
         emptyHint="Nothing pending. Approvals, agent activity, and receipts will land here."
       />
       {!gsDismissed && !tourOpen && (
         <GettingStarted
           hasKey={hasKey}
+          hired={agents.length > 0}
           chatted={(chat || []).some(m => m.from === 'user')}
-          published={publishedGraph}
+          assigned={tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned')}
+          sawWork={activity.some(e => e.action === 'done')}
           onAddKey={() => openSettings('keys')}
+          onHire={() => setHireOpen(true)}
           onChat={() => setActiveView('chat')}
-          onPublish={() => setActiveView('vault')}
+          onTasks={() => setActiveView('tasks')}
+          onWatch={() => setActiveView('visual')}
           onDismiss={() => setGsDismissed(true)}
         />
       )}
@@ -3774,9 +3865,16 @@ ${d.text}` : d.text,
               body: <OnboardingKeyStep />,
             },
             {
+              id: 'meet-ceo',
+              title: 'Meet your CEO',
+              body: 'This is CafresoAI, your chief of staff. The 1:1 chair at the CEO desk opens a private chat — ask for anything and it gets routed to the right specialist. The desk lights up while she\'s replying.',
+              target: () => document.querySelector('.room.ceo .guest-chair') || document.querySelector('.room.ceo'),
+              action: () => setActiveView('visual'),
+            },
+            {
               id: 'office',
               title: 'The Office — your agents',
-              body: 'The Office is home base. Every agent works at their own desk; click a desk to inspect an agent, see what they\'re doing, and hand off work.',
+              body: 'Every agent works at their own desk; click a desk to inspect them. Desks light up while agents are actually working — and every real action streams into the ticker and the Team inbox.',
               target: '.rail',
               action: () => setActiveView('visual'),
             },
@@ -3807,8 +3905,8 @@ ${d.text}` : d.text,
             {
               id: 'hire',
               title: 'Ready to hire your team?',
-              body: 'Click + HIRE in the topbar (or ⌘K → "Hire") to bring on your first sub-agent. Each hire gets a desk, a role, and their own model. You\'re all set — go build.',
-              target: '.topbar .px-btn.primary',
+              body: 'Click an empty desk (or press H, or ⌘K → "Hire") to bring on your first specialist — or seed a whole crew at once. Each hire gets a desk, a role, and their own model. Then drop a task on their desk and watch the office come alive.',
+              target: () => document.querySelector('.room.empty') || document.querySelector('.topbar .px-btn.primary'),
               action: () => setActiveView('visual'),
             },
           ];

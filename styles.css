@@ -8326,3 +8326,193 @@ body.night .poster { filter: brightness(0.7) saturate(0.85); }
 @media (prefers-reduced-motion: reduce) {
   .empty-cta-hint { animation: none !important; }
 }
+
+/* ==================================================================
+   P2 — Two-layer agent feed (attention / activity / done)
+   ================================================================== */
+.oc-inbox-tabs {
+  display: flex; gap: 2px;
+  padding: 6px 8px 0;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--rule);
+}
+.oc-inbox-tab {
+  flex: 1;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.03em;
+  padding: 8px 4px;
+  border: 2px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: 5px 5px 0 0;
+  transition: background 0.12s, color 0.12s;
+}
+.oc-inbox-tab:hover { color: var(--ink); }
+.oc-inbox-tab.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+.oc-inbox-tab.has-attn { color: hsl(350 70% 50%); }
+.oc-inbox-tab.has-attn.is-active { color: hsl(350 70% 45%); }
+
+/* Attention rows pop with a left accent + tint. */
+.oc-notif-row.is-attn {
+  background: hsl(350 70% 50% / 0.06);
+  box-shadow: inset 3px 0 0 0 hsl(350 70% 50%);
+}
+.oc-notif-row.is-attn:hover { background: hsl(350 70% 50% / 0.11); }
+
+/* Drill-down detail panel inside a row. */
+.oc-act-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--rule);
+  background: var(--paper-2);
+  border-radius: 0 4px 4px 0;
+}
+.oc-act-detail-body {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.oc-act-jumps { display: flex; flex-wrap: wrap; gap: 6px; }
+.oc-act-jumps .px-btn { font-size: 9px; padding: 4px 8px; }
+
+/* Attention badge — small count pip on the Team bottom-nav item. */
+.att-badge {
+  position: absolute;
+  top: 2px; right: 14px;
+  min-width: 15px; height: 15px;
+  padding: 0 3px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #fff;
+  background: hsl(350 72% 48%);
+  border: 1.5px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  pointer-events: none;
+}
+body.night .att-badge { border-color: var(--ink); }
+
+/* Office task-rail "needs you" pill. */
+.otr-attn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: hsl(350 72% 48%);
+  border: 2px solid hsl(350 72% 40%);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 4px;
+  animation: attn-pulse 1.8s ease-in-out infinite;
+}
+.otr-attn:hover { background: hsl(350 74% 52%); }
+@keyframes attn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(350 72% 48% / 0.5); }
+  50%      { box-shadow: 0 0 0 4px hsl(350 72% 48% / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .otr-attn { animation: none !important; }
+}
+@media (max-width: 768px) {
+  .otr-attn { display: none !important; }
+}
+
+/* ==================================================================
+   P4 — Honest ambient movement (walkers, away states, meeting cluster)
+   Walkers ride the open floor like .pet (children of .office). Everything
+   here is keyed to REAL state (a real meeting / a genuinely idle agent) and
+   is hidden on mobile + for reduced-motion users.
+   ================================================================== */
+.walker {
+  position: absolute;
+  bottom: 30px;
+  left: 70%;
+  z-index: 4;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  animation: walk-to-meeting 3.5s ease-in-out forwards;
+  animation-delay: var(--wd, 0s);
+}
+@keyframes walk-to-meeting {       /* floor → CEO office / meeting door (left) */
+  0%   { left: 72%; opacity: 0; transform: scaleX(-1); }
+  8%   { opacity: 1; }
+  88%  { left: 7%;  opacity: 1; transform: scaleX(-1); }
+  100% { left: 5%;  opacity: 0; }
+}
+.walker.return { animation: walk-back 3.5s ease-in-out forwards; animation-delay: var(--wd, 0s); }
+@keyframes walk-back {
+  0%   { left: 5%;  opacity: 0; transform: scaleX(1); }
+  8%   { opacity: 1; }
+  88%  { left: 72%; opacity: 1; transform: scaleX(1); }
+  100% { left: 74%; opacity: 0; }
+}
+.walker.cooler { animation: walk-to-cooler 20s ease-in-out forwards; }
+@keyframes walk-to-cooler {        /* stroll right to .water-cooler, pause, return */
+  0%   { left: 40%; opacity: 0; transform: scaleX(1); }
+  4%   { opacity: 1; }
+  25%  { left: 88%; opacity: 1; transform: scaleX(1); }
+  70%  { left: 88%; opacity: 1; transform: scaleX(1); }   /* drink */
+  72%  { transform: scaleX(-1); }
+  96%  { left: 40%; opacity: 1; transform: scaleX(-1); }
+  100% { left: 38%; opacity: 0; }
+}
+
+/* Empty desk while its owner is away — sprite fades, placard explains. */
+.room.away-meeting .sprite-slot > div:last-child,
+.room.away-cooler .sprite-slot > div:last-child {
+  opacity: 0.32;
+  filter: grayscale(0.6);
+  transition: opacity 0.4s, filter 0.4s;
+}
+.away-placard {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.1;
+  color: var(--ink-2);
+  background: var(--paper);
+  border: 2px solid var(--rule);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+}
+
+/* Participant cluster grouped at the meeting door while a meeting is live. */
+.meeting-cluster {
+  position: absolute;
+  left: 2.5%;
+  bottom: 34px;
+  z-index: 5;
+  display: flex;
+  gap: 1px;
+  pointer-events: none;
+  image-rendering: pixelated;
+  padding: 2px 3px 3px;
+  background: rgba(124,107,255,0.10);
+  border: 1px solid rgba(124,107,255,0.30);
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .walker { display: none !important; }
+}
+@media (max-width: 768px) {
+  .walker, .meeting-cluster, .away-placard { display: none !important; }
+}

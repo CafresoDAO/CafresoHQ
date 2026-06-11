@@ -157,32 +157,19 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
    Shows the most recent ~50 events per agent. Click a row → fires
    openclaw:openNote so the vault opens that note in the active view.
    Optionally filterable to a single agent (when selectedAgentId is set). */
-function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
-  const [events, setEvents] = useSV([]);
+/* Action → icon for the inbox rows. */
+const ACT_ICON = {
+  hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
+  done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
+};
 
-  useSV(0); // dummy hook keep — keeping line count stable
-
-  React.useEffect(() => {
-    const onActivity = (e) => {
-      const d = e.detail || {};
-      const ts = Date.now();
-      setEvents(es => [{
-        id: 'ev-' + ts + '-' + Math.random().toString(36).slice(2, 6),
-        ts,
-        agentId: d.agentId,
-        agentName: d.agentName,
-        color: d.color,
-        kind: d.kind || 'read',
-        nodeId: d.nodeId,
-      }, ...es].slice(0, 250));
-    };
-    window.addEventListener('openclaw:agentActivity', onActivity);
-    return () => window.removeEventListener('openclaw:agentActivity', onActivity);
-  }, []);
-
-  const filtered = selectedAgentId
-    ? events.filter(e => e.agentId === selectedAgentId)
-    : events;
+/* AgentInbox — the two-layer activity feed. Reads the canonical `activity` log
+   (passed as a prop; app.jsx is the single source of truth — no own listener).
+   Tabs split routine flow from items that NEED THE USER and from completions;
+   each row drills down to its detail + jump links. */
+function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead }) {
+  const [tab, setTab] = useSV('attention');   // 'attention' | 'all' | 'done'
+  const [expandedId, setExpandedId] = useSV(null);
 
   const fmtAgo = (ts) => {
     const dt = Date.now() - ts;
@@ -191,14 +178,41 @@ function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
     if (dt < 86_400_000) return Math.floor(dt / 3_600_000) + 'h';
     return Math.floor(dt / 86_400_000) + 'd';
   };
-  const KIND_VERB = { read: 'read', write: 'wrote', link: 'linked' };
 
-  /* Pre-aggregate per-agent counts for the sidebar pills. */
+  const attentionCount = React.useMemo(
+    () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
+  const doneCount = React.useMemo(
+    () => activity.filter(e => e.action === 'done').length, [activity]);
+
   const counts = React.useMemo(() => {
     const c = new Map();
-    for (const e of events) c.set(e.agentId, (c.get(e.agentId) || 0) + 1);
+    for (const e of activity) c.set(e.agentId, (c.get(e.agentId) || 0) + 1);
     return c;
-  }, [events]);
+  }, [activity]);
+
+  const filtered = React.useMemo(() => {
+    let xs = activity;
+    if (selectedAgentId) xs = xs.filter(e => e.agentId === selectedAgentId);
+    if (tab === 'attention') xs = xs.filter(e => e.priority === 'attention');
+    else if (tab === 'done') xs = xs.filter(e => e.action === 'done');
+    return xs;
+  }, [activity, selectedAgentId, tab]);
+
+  const toggle = (e) => {
+    setExpandedId(prev => prev === e.id ? null : e.id);
+    if (e.priority === 'attention' && e.unread && onMarkRead) onMarkRead(e.id);
+    if (e.action === 'vault' && e.nodeId)
+      window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: e.nodeId } }));
+  };
+  const openChat = () => {
+    if (window.openclawSetChatOpen) window.openclawSetChatOpen(true);
+  };
+
+  const TABS = [
+    ['attention', `Needs attention${attentionCount ? ' · ' + attentionCount : ''}`],
+    ['all', 'Activity'],
+    ['done', `Done${doneCount ? ' · ' + doneCount : ''}`],
+  ];
 
   return (
     <div style={{
@@ -209,7 +223,16 @@ function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
     }}>
       <div className="proj-section-head" style={{display:'flex', alignItems:'center', gap:'var(--sp-3)'}}>
         <span style={{flex:1}}>📥 AGENT INBOX</span>
-        <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{events.length} event{events.length===1?'':'s'}</span>
+        <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{activity.length} event{activity.length===1?'':'s'}</span>
+      </div>
+
+      {/* Two-layer tabs */}
+      <div className="oc-inbox-tabs">
+        {TABS.map(([id, label]) => (
+          <button key={id}
+            className={'oc-inbox-tab' + (tab === id ? ' is-active' : '') + (id === 'attention' && attentionCount ? ' has-attn' : '')}
+            onClick={() => setTab(id)}>{label}</button>
+        ))}
       </div>
 
       {/* Per-agent filter chips */}
@@ -222,7 +245,7 @@ function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
         <button
           onClick={() => onSelectAgent && onSelectAgent(null)}
           className={'oc-notif-filter' + (!selectedAgentId ? ' is-active' : '')}
-        >All · {events.length}</button>
+        >All</button>
         {agents.map(a => {
           const n = counts.get(a.id) || 0;
           if (n === 0 && a.id !== selectedAgentId) return null;
@@ -240,34 +263,38 @@ function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
       <div style={{flex:1, overflowY:'auto'}}>
         {filtered.length === 0 && (
           <div className="proj-empty-msg">
-            No agent activity yet.<br/>
+            {tab === 'attention' ? 'Nothing needs you right now. 🎉' : tab === 'done' ? 'No completed work yet.' : 'No agent activity yet.'}<br/>
             <span style={{fontSize:'var(--text-9)',opacity:0.7}}>
-              When an agent reads, writes, or links a note, the event lands here in real time.
+              {tab === 'attention'
+                ? 'Failures, blocks, and approval requests surface here.'
+                : 'Assign a task or chat with the team and every real action lands here.'}
             </span>
           </div>
         )}
-        {filtered.map(ev => {
-          const verb = KIND_VERB[ev.kind] || ev.kind;
+        {filtered.map(e => {
+          const attn = e.priority === 'attention';
+          const open = expandedId === e.id;
           return (
-            <div
-              key={ev.id}
-              className="oc-notif-row"
-              onClick={() => {
-                if (ev.nodeId) window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: ev.nodeId } }));
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <span className="oc-notif-icon" style={{color: ev.color || 'var(--ink-3)'}} aria-hidden="true">
-                {ev.kind === 'write' ? '✎' : ev.kind === 'link' ? '🔗' : '✦'}
+            <div key={e.id} className={'oc-notif-row' + (attn ? ' is-attn' : '')}
+              onClick={() => toggle(e)} role="button" tabIndex={0}>
+              <span className="oc-notif-icon" style={{color: attn ? 'var(--error)' : (e.color || 'var(--ink-3)')}} aria-hidden="true">
+                {ACT_ICON[e.action] || '✦'}
               </span>
               <div className="oc-notif-body">
                 <div className="oc-notif-msg">
-                  <span style={{fontWeight:600}}>{ev.agentName || 'agent'}</span> {verb} <span style={{fontFamily:'JetBrains Mono, monospace',fontSize:'var(--text-11)'}}>{ev.nodeId}</span>
+                  <span style={{fontWeight:600}}>{e.agentName || 'HQ'}</span> {e.text}
                 </div>
-                <div className="oc-notif-meta">
-                  <span>{fmtAgo(ev.ts)} ago</span>
-                </div>
+                <div className="oc-notif-meta"><span>{fmtAgo(e.ts)} ago</span></div>
+                {open && (e.detail || e.taskId || e.nodeId) && (
+                  <div className="oc-act-detail" onClick={ev => ev.stopPropagation()}>
+                    {e.detail && <div className="oc-act-detail-body">{e.detail}</div>}
+                    <div className="oc-act-jumps">
+                      {e.taskId && onOpenTasks && <button className="px-btn ghost" onClick={onOpenTasks}>Open task board →</button>}
+                      {e.nodeId && <button className="px-btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: e.nodeId } }))}>Open note →</button>}
+                      <button className="px-btn ghost" onClick={openChat}>Open chat →</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -277,9 +304,16 @@ function AgentInbox({ agents, selectedAgentId, onSelectAgent }) {
   );
 }
 
-function TeamView({ agents, onHire, onInspect, onDismiss, onShowCEO }) {
+function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead }) {
   const [selectedAgentId, setSelectedAgentId] = useSV(null);
   const [showInbox, setShowInbox] = useSV(false);
+
+  // The office attention pill / nav badge fires this to force the inbox open.
+  React.useEffect(() => {
+    const open = () => setShowInbox(true);
+    window.addEventListener('openclaw:openAgentInbox', open);
+    return () => window.removeEventListener('openclaw:openAgentInbox', open);
+  }, []);
 
   return (
     <div className="view-team" style={{display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0}}>
@@ -370,8 +404,11 @@ function TeamView({ agents, onHire, onInspect, onDismiss, onShowCEO }) {
           <div style={{width: 360, flexShrink: 0, display: 'flex'}}>
             <AgentInbox
               agents={agents}
+              activity={activity}
               selectedAgentId={selectedAgentId}
               onSelectAgent={setSelectedAgentId}
+              onOpenTasks={onOpenTasks}
+              onMarkRead={onMarkRead}
             />
           </div>
         )}
