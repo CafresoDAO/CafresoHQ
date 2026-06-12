@@ -12,6 +12,36 @@
 
 set -e
 
+# ── Self-host (docker run) auto-configuration ───────────────────────────────
+# Fleet containers get a full env from fleet-manager.py: OCI vault credentials,
+# a per-principal API_SERVER_KEY, fleet mode. The self-host one-liner
+# (`docker run -d -p 8787:8787 -v cafresohq-data:/data …`) sets none of that,
+# so detect the bare run and fall back to local-friendly defaults — otherwise
+# the vault points at Object Storage it can't reach (writes hang) and the
+# Hermes gateway never starts (no API key).
+if [ "${OPENCLAW_VAULT_BACKEND}" = "oci" ] && [ -z "${OCI_TENANCY_OCID}" ]; then
+  echo "[entrypoint] No OCI credentials — self-host run: vault backend → fs, mode → local"
+  export OPENCLAW_VAULT_BACKEND=fs
+  export OPENCLAW_FLEET_MODE=local
+fi
+if [ -z "${API_SERVER_KEY}" ]; then
+  # Reuse the key persisted on the data volume from a prior boot, else mint one.
+  # The gateway requires a non-empty key to serve its OpenAI-compatible API;
+  # serve.py's /hermes proxy injects it as the Bearer token, so the value never
+  # needs to leave the container.
+  _envf="${HERMES_HOME:-/root/.hermes}/.env"
+  if [ -f "${_envf}" ]; then
+    API_SERVER_KEY="$(sed -n 's/^API_SERVER_KEY=//p' "${_envf}" | head -1)"
+  fi
+  if [ -z "${API_SERVER_KEY}" ]; then
+    API_SERVER_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+    echo "[entrypoint] Generated API_SERVER_KEY for the Hermes gateway (persists in ${_envf})"
+  else
+    echo "[entrypoint] Reusing API_SERVER_KEY from ${_envf}"
+  fi
+  export API_SERVER_KEY
+fi
+
 # ── Claude Code CLI ─────────────────────────────────────────────────────────
 # `claude --print` reads ANTHROPIC_API_KEY directly from env — no file config.
 if [ -n "${ANTHROPIC_API_KEY}" ]; then

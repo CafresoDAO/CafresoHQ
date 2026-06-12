@@ -88,6 +88,31 @@ export function clearEndpoint() {
 }
 
 /**
+ * Chrome 138+ gates public-site → localhost requests behind a user-granted
+ * "local network access" permission (Edge follows Chromium). Report its state
+ * so callers can (a) guide the user through the one-time Allow click and
+ * (b) stretch fetch timeouts while the prompt is on screen — an AbortSignal
+ * firing mid-prompt cancels the request before the user can answer.
+ * Returns 'granted' | 'prompt' | 'denied' | 'unsupported'.
+ */
+export async function localNetworkPermission() {
+  try {
+    if (!browser() || !navigator.permissions?.query) return 'unsupported';
+    const s = await navigator.permissions.query({ name: 'local-network-access' });
+    return s.state || 'unsupported';
+  } catch (_) {
+    return 'unsupported';   // browser doesn't know the permission = no gating
+  }
+}
+
+/** Effective probe timeout: while the browser is showing (or about to show)
+ *  the local-network permission prompt, give the user time to answer. */
+async function _lnaAwareTimeout(base, url) {
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url || '')) return base;
+  return (await localNetworkPermission()) === 'prompt' ? Math.max(base, 45_000) : base;
+}
+
+/**
  * GET /health on the current endpoint, update endpointHealth.
  * Returns the parsed body on success, throws on failure.
  */
@@ -100,7 +125,7 @@ export async function probeHealth({ timeoutMs = 8000 } = {}) {
   }
   endpointHealth.update((h) => ({ ...h, state: 'probing', error: null }));
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), await _lnaAwareTimeout(timeoutMs, url));
   try {
     const r = await fetch(url + '/health', {
       method: 'GET',
@@ -140,11 +165,16 @@ export async function probeHealth({ timeoutMs = 8000 } = {}) {
  * the condition under which the local app can also be embedded in an iframe.
  * The HTTP fallback keeps working when the shell itself is served over HTTP.
  */
-export async function detectLocalCompanion({ timeoutMs = 1500 } = {}) {
+export async function detectLocalCompanion({ timeoutMs = 1500, allowPrompt = false } = {}) {
   const candidates = ['https://localhost:8787', 'http://localhost:8787'];
+  // While Chrome's local-network permission prompt is pending, only a probe
+  // initiated from a user gesture should wait on it (allowPrompt) — the quiet
+  // background re-poll must not stack 45s requests.
+  let effective = timeoutMs;
+  if (allowPrompt) effective = await _lnaAwareTimeout(timeoutMs, candidates[1]);
   for (const candidate of candidates) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), effective);
     try {
       const r = await fetch(candidate + '/health', { signal: ctrl.signal });
       if (r.ok) return candidate;

@@ -1,7 +1,7 @@
 <script>
   import { onDestroy } from 'svelte';
   import { isAuthenticated, principalText } from '$lib/stores/auth.js';
-  import { setEndpoint, clearEndpoint, detectLocalCompanion } from '$lib/stores/endpoint.js';
+  import { setEndpoint, clearEndpoint, detectLocalCompanion, localNetworkPermission } from '$lib/stores/endpoint.js';
   import { deployTarget, setDeployTarget } from '$lib/stores/deployTarget.js';
   import { lookup, provisionAndWait, deprovision, fleetHealth, FleetApiError, fleetApiUrl }
     from '$lib/api/fleetClient.js';
@@ -18,6 +18,11 @@
 
   // ── Local flow state ──
   let localState = 'idle'; // idle | detecting | found | absent
+  // Chrome/Edge 138+ "local network access" permission state for this site:
+  // '' (unknown) | 'granted' | 'prompt' | 'denied' | 'unsupported'. While
+  // 'prompt', probes hang on the browser's Allow dialog; while 'denied', every
+  // probe fails instantly even with a healthy local HQ — surface both.
+  let lnaState = '';
 
   // OS-aware self-host instructions. Docker is the recommended path — the
   // public image runs identically on macOS / Windows / Linux and includes
@@ -147,11 +152,16 @@
   // ── Local helpers ──
   async function detectLocal() {
     localState = 'detecting'; error = '';
+    lnaState = await localNetworkPermission();
     try {
-      const url = await detectLocalCompanion({ timeoutMs: 2500 });
+      // allowPrompt: this runs from a user gesture, so let the probe wait out
+      // Chrome's "access devices on your local network" dialog instead of
+      // aborting it after 2.5s.
+      const url = await detectLocalCompanion({ timeoutMs: 2500, allowPrompt: true });
       if (url) { setEndpoint(url); endpoint = url; localState = 'found'; }
       else { localState = 'absent'; }
     } catch (_) { localState = 'absent'; }
+    lnaState = await localNetworkPermission();   // the user may have just answered
   }
 
   // ── Detected local agents + embed capability ──
@@ -178,6 +188,8 @@
   // (docker run / launcher) and this page flips to "detected" on its own,
   // without flashing the "Looking…" state every few seconds.
   async function probeQuiet() {
+    lnaState = await localNetworkPermission();   // flips us live when the user allows
+    if (lnaState === 'denied') return;           // pointless until re-allowed in site settings
     try {
       const url = await detectLocalCompanion({ timeoutMs: 2500 });
       if (url) { setEndpoint(url); endpoint = url; localState = 'found'; }
@@ -253,6 +265,12 @@
           <span class="glow-dot text-amber-400 animate-pulse"></span> Looking for your local HQ…
         </div>
         <p class="mt-3 text-sm leading-6 text-ink-300">Probing <code class="font-mono">{LOCAL_URL}</code>.</p>
+        {#if lnaState === 'prompt'}
+          <p class="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
+            🔐 Your browser is asking to <strong>“access devices on your local network”</strong> —
+            click <strong>Allow</strong> so this page can reach your HQ at localhost. One-time.
+          </p>
+        {/if}
       {:else if localState === 'found'}
         <div class="mt-2 flex items-center gap-2 text-xl font-semibold">
           Local HQ detected
@@ -300,8 +318,9 @@
         </div>
         {#if !localIsHttps}
           <p class="mt-2 text-[11px] leading-4 text-ink-500">
-            The embedded dashboard view works in Chrome, Edge and Firefox. For Safari (and a
-            warning-free padlock), install <a class="underline" href="https://github.com/FiloSottile/mkcert"
+            The embedded dashboard view works in Chrome and Edge (allow the one-time
+            “local network” prompt) and Firefox. For Safari (and a warning-free padlock),
+            install <a class="underline" href="https://github.com/FiloSottile/mkcert"
             target="_blank" rel="noopener noreferrer">mkcert</a> and restart your HQ — it picks up a
             browser-trusted certificate automatically.
           </p>
@@ -312,6 +331,19 @@
         <p class="mt-3 text-sm leading-6 text-ink-300">
           No local HQ is running yet. Start one below — this page re-checks automatically.
         </p>
+        {#if lnaState === 'prompt'}
+          <p class="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
+            🔐 Already running? Chrome asks to <strong>“access devices on your local network”</strong>
+            before this page can see localhost — hit <strong>Re-check</strong> below and click
+            <strong>Allow</strong> on the prompt. One-time.
+          </p>
+        {:else if lnaState === 'denied'}
+          <p class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2.5 text-xs leading-5 text-rose-700 dark:text-rose-300">
+            🚫 Your browser is blocking this site from reaching localhost (local network access
+            denied). Click the icon left of the address bar → <strong>Site settings</strong> →
+            <strong>Local network access</strong> → Allow, then Re-check.
+          </p>
+        {/if}
 
         <!-- OS picker (pre-selected from your browser) -->
         <div class="mt-4 flex gap-1.5">
