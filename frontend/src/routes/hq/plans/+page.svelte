@@ -20,6 +20,12 @@
         'Priority capacity', 'Email support' ] },
   ];
 
+  // Card payments stay hidden until the Stripe webhook → on-chain confirmOrder
+  // chain is live (a card charge can't activate a plan without it — mintPlanToken
+  // only accepts orders the ledger says are paid). Flip PUBLIC_CARD_PAYMENTS=on
+  // once the worker webhook is deployed and verified in test mode.
+  const CARD_ENABLED = import.meta.env?.PUBLIC_CARD_PAYMENTS === 'on';
+
   let current = 'free';
   let activeUntil = null;
   let busy = '';        // plan id currently processing
@@ -160,10 +166,14 @@
                       on:click={() => payIcp(t.id)}>
                 {busy === t.id ? 'Processing…' : `Pay with ICP${icp != null ? ` (${icp.toFixed(3)})` : ''}`}
               </button>
-              <button class="btn-ghost w-full" disabled={busy === t.id}
-                      on:click={() => payCard(t.id)}>
-                Pay by card
-              </button>
+              {#if CARD_ENABLED}
+                <button class="btn-ghost w-full" disabled={busy === t.id}
+                        on:click={() => payCard(t.id)}>
+                  Pay by card
+                </button>
+              {:else}
+                <span class="block text-center text-xs text-ink-400">Card payments coming soon</span>
+              {/if}
             {/if}
           </div>
         </div>
