@@ -179,4 +179,58 @@ export async function provisionAndWait(principal, {
     { status: 504, body: { jobId } });
 }
 
+/**
+ * Wake (start) the caller's OWN stopped container so the browser can reach it
+ * again. Same credential model as provision: pass an on-chain-minted session
+ * `token` (the principal is taken FROM the token). Returns either:
+ *   { status: 'ready', endpoint, gateway_url } — already healthy / woke instantly
+ *   { job_id, status: 'queued', poll }         — starting async, poll the job
+ * Throws FleetApiError(404) with body.code==='not_provisioned' when there is no
+ * container on record — the caller should provision instead of waking.
+ */
+export async function wake(token) {
+  return _fetch('/fleet/wake', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ token }),
+    timeoutMs: 15_000,
+  });
+}
+
+/**
+ * Wake and poll until 'ready' or 'error'. Mirrors provisionAndWait — calls
+ * onUpdate(job) each tick. Throws FleetApiError on error/timeout; for a dead
+ * container the thrown error's body.phase==='gone' (the recorded instance was
+ * deleted/failed), so the caller can branch to provision a fresh one — the
+ * encrypted vault in Object Storage is preserved and reattaches on re-provision.
+ *
+ * @param {string} token  on-chain session token (principal taken FROM it)
+ * @param {{onUpdate?:(job:any)=>void, pollMs?:number, maxWaitMs?:number}} [options]
+ */
+export async function wakeAndWait(token, {
+  onUpdate, pollMs = 3_000, maxWaitMs = 180_000
+} = {}) {
+  const start = await wake(token);
+  if (start.status === 'ready') {
+    onUpdate?.({ ...start, phase: 'ready' });
+    return start;
+  }
+  const jobId = start.job_id;
+  onUpdate?.({ ...start, phase: start.phase || 'waking' });
+
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const job = await getJob(jobId);
+    onUpdate?.(job);
+    if (job.status === 'ready') return job;
+    if (job.status === 'error') {
+      // Preserve the full job (incl. phase:'gone') so the caller can branch.
+      throw new FleetApiError(job.error || 'wake failed',
+        { status: 500, body: job });
+    }
+  }
+  throw new FleetApiError('wake timed out', { status: 504, body: { jobId } });
+}
+
 export { FleetApiError };

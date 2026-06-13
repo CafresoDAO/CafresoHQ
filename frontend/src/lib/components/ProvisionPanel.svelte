@@ -1,20 +1,23 @@
 <script>
   import { onDestroy } from 'svelte';
   import { isAuthenticated, principalText } from '$lib/stores/auth.js';
-  import { setEndpoint, clearEndpoint, detectLocalCompanion, localNetworkPermission } from '$lib/stores/endpoint.js';
+  import { setEndpoint, clearEndpoint, detectLocalCompanion, localNetworkPermission, probeHealth } from '$lib/stores/endpoint.js';
   import { deployTarget, setDeployTarget } from '$lib/stores/deployTarget.js';
-  import { lookup, provisionAndWait, deprovision, fleetHealth, FleetApiError, fleetApiUrl }
+  import { lookup, provisionAndWait, wakeAndWait, deprovision, fleetHealth, FleetApiError, fleetApiUrl }
     from '$lib/api/fleetClient.js';
   import { mintSessionToken } from '$lib/api/hqSession.js';
 
   const LOCAL_URL = 'http://localhost:8787';
 
   // ── OCI flow state ──
-  let state = 'unknown';   // unknown | checking | no-api | no-container | provisioning | existing | ready | error
+  let state = 'unknown';   // unknown | checking | no-api | no-container | provisioning | waking | existing | ready | error
   let phase = '';
   let error = '';
   let endpoint = '';
   let apiOk = null;
+  // Set when a wake reports the container is gone (deleted/failed) so we route
+  // the user to a fresh provision with a reassuring "your vault is preserved" note.
+  let goneNote = '';
 
   // ── Local flow state ──
   let localState = 'idle'; // idle | detecting | found | absent
@@ -55,9 +58,11 @@
     pulling:   'Pulling the HQ image…',
     running:   'Container is up — wiring your private route…',
     ACTIVE:    'Container is up — wiring your private route…',
-    route:     'Publishing your secure route…',
-    ready:     'Ready!',
-    working:   'Working…',
+    route:        'Publishing your secure route…',
+    waking:       'Waking your HQ… (~30–60s)',
+    waking_boot:  'HQ engine starting…',
+    ready:        'Ready!',
+    working:      'Working…',
   };
   let provisionStartedAt = 0;
   let elapsed = 0;
@@ -70,8 +75,10 @@
   }
   function stopElapsed() { clearInterval(elapsedTimer); elapsedTimer = null; }
   $: phaseLabel = PHASE_LABELS[phase] || (phase ? phase : 'Working…');
-  // 0→100% over ~120s, capped at 95% until actually ready (honest-ish bar).
-  $: pct = state === 'ready' ? 100 : Math.min(95, Math.round((elapsed / 120) * 100));
+  // 0→100% capped at 95% until actually ready (honest-ish bar). Waking from
+  // sleep is quicker than a cold provision, so it fills over ~60s vs ~120s.
+  $: pct = state === 'ready' ? 100
+         : Math.min(95, Math.round((elapsed / (state === 'waking' ? 60 : 120)) * 100));
 
   $: principal = $principalText;
   $: target = $deployTarget;
@@ -85,20 +92,65 @@
 
   async function autoLookup() {
     if (!$isAuthenticated || !principal) return;
-    state = 'checking'; phase = ''; error = '';
+    state = 'checking'; phase = ''; error = ''; goneNote = '';
     await checkApi();
     if (!apiOk) { state = 'no-api'; return; }
     try {
       const r = await lookup(principal);
-      const ep = pickEndpoint(r);
-      if (ep) { setEndpoint(ep); endpoint = ep; state = 'existing'; }
-      else { state = 'no-container'; }
+      const ep = r && pickEndpoint(r);
+      if (!ep) { state = 'no-container'; return; }
+      // A container is on record. If the fleet says it's stopped (idle-reaped),
+      // wake it straight away. Otherwise adopt the endpoint and confirm it's
+      // actually answering — a stale ACTIVE that 502s also means "wake me".
+      if (r.status === 'INACTIVE') { await startWake(); return; }
+      setEndpoint(ep); endpoint = ep;
+      try {
+        await probeHealth({ timeoutMs: 8000 });
+        state = 'existing';
+      } catch (_) {
+        await startWake();   // recorded but not answering → wake (idempotent)
+      }
     } catch (err) { error = describe(err); state = 'error'; }
+  }
+
+  // Wake a stopped container hands-free (auto-wake, silent): mint the
+  // self-service session token, start it, and poll until /health answers.
+  // Reuses the provisioning progress UI. A 'gone' result (container deleted/
+  // failed — fleet-api already forgot the stale entry) drops back to the
+  // provision state with a reassuring note; the encrypted vault is preserved.
+  async function startWake() {
+    if (state === 'waking' || state === 'provisioning') return;   // dedup
+    state = 'waking'; phase = 'waking'; error = ''; goneNote = '';
+    startElapsed();
+    try {
+      const token = await mintSessionToken();
+      const job = await wakeAndWait(token, {
+        onUpdate: (j) => { phase = j.phase || j.status || 'waking'; },
+        pollMs: 3000, maxWaitMs: 180000
+      });
+      let ep = pickEndpoint(job);
+      if (!ep) {                         // woke but result lacked an endpoint
+        const r = await lookup(principal);
+        ep = r && pickEndpoint(r);
+      }
+      if (ep) { setEndpoint(ep); endpoint = ep; state = 'ready'; phase = 'ready'; }
+      else { throw new Error('woke but no endpoint'); }
+    } catch (err) {
+      const gone = err instanceof FleetApiError
+        && (err.body?.phase === 'gone' || err.status === 404 || err.body?.code === 'not_provisioned');
+      if (gone) {
+        state = 'no-container';
+        goneNote = 'Your previous container was cleaned up — provision a fresh one. Your encrypted vault is preserved and reattaches automatically.';
+      } else {
+        error = describe(err); state = 'error';
+      }
+    }
+    stopElapsed();
   }
 
   async function startProvision() {
     if (state === 'provisioning') return;   // double-click guard
-    state = 'provisioning'; phase = 'starting'; error = '';
+    state = 'provisioning'; phase = 'starting'; error = ''; goneNote = '';
     startElapsed();
     try {
       // Self-service credential: an on-chain-minted session token proves this
@@ -404,6 +456,7 @@
           {#if state === 'checking'}Checking the fleet...
           {:else if state === 'existing' || state === 'ready'}Container ready
           {:else if state === 'provisioning'}Provisioning your HQ...
+          {:else if state === 'waking'}Waking your HQ...
           {:else if state === 'no-container'}No container yet
           {:else if state === 'no-api'}Fleet API unreachable
           {:else if state === 'error'}Couldn't check fleet
@@ -411,7 +464,7 @@
         </div>
         {#if state === 'existing' || state === 'ready'}
           <span class="pill-ok"><span class="glow-dot text-emerald-400"></span> Live</span>
-        {:else if state === 'provisioning' || state === 'checking'}
+        {:else if state === 'provisioning' || state === 'waking' || state === 'checking'}
           <span class="pill-warn"><span class="glow-dot text-amber-400 animate-pulse"></span> Working</span>
         {:else if state === 'no-container'}
           <span class="pill-idle"><span class="glow-dot text-ink-400"></span> Idle</span>
@@ -433,14 +486,23 @@
         </p>
         <button class="btn-ghost btn-sm mt-3" on:click={autoLookup}>Retry</button>
       {:else if state === 'no-container'}
+        {#if goneNote}
+          <p class="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-sm leading-6 text-amber-700 dark:text-amber-300">
+            {goneNote}
+          </p>
+        {/if}
         <p class="mt-3 text-sm leading-6 text-ink-300">
           Your principal doesn't have a CafresoAI HQ yet. Provisioning takes about a minute.
           We'll spin up a private OCI container in Ashburn with 1 OCPU, 6 GB, and ARM64.
         </p>
         <button class="btn-primary mt-4" on:click={startProvision}>Provision my HQ</button>
-      {:else if state === 'provisioning'}
+      {:else if state === 'provisioning' || state === 'waking'}
         <p class="mt-3 text-sm leading-6 text-ink-300">
-          Building your HQ — usually 60 to 90 seconds. Keep this tab open; it launches itself when ready.
+          {#if state === 'waking'}
+            Waking your HQ from sleep — usually about 30 to 60 seconds. Keep this tab open; it launches itself when ready.
+          {:else}
+            Building your HQ — usually 60 to 90 seconds. Keep this tab open; it launches itself when ready.
+          {/if}
         </p>
         <div class="mt-4 space-y-2">
           <div class="flex items-center justify-between gap-2 text-sm">
@@ -453,7 +515,7 @@
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-ink-800/70">
             <div class="h-full rounded-full bg-brand-500 transition-all duration-1000" style="width:{pct}%"></div>
           </div>
-          {#if elapsed > 150}
+          {#if elapsed > 150 && state === 'provisioning'}
             <p class="text-xs leading-5 text-amber-500/90">
               Taking longer than usual — OCI may be tight on capacity. We keep retrying for up to 10 minutes.
             </p>

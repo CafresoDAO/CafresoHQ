@@ -8,14 +8,20 @@
 Endpoints
 ─────────
   GET  /fleet/health                          → liveness
-  GET  /fleet/lookup?principal=<p>            → 200 {endpoint,...} or 404
-  POST /fleet/provision  { principal }        → 200 existing | 202 {job_id}
-  GET  /fleet/job/<id>                        → job status
+  GET  /fleet/lookup?principal=<p>            → 200 {endpoint,...} or 404  (public read)
+  GET  /fleet/job/<id>                        → job status                 (public read)
+  POST /fleet/provision  { token|principal }  → 200 existing | 202 {job_id}
+  POST /fleet/wake       { token|principal }  → 200 ready | 202 {job_id} | 404 not_provisioned
 
 Auth
 ────
-  All non-/health routes require X-Fleet-Auth header matching FLEET_API_SECRET
-  env var (skip auth entirely if FLEET_API_SECRET is unset — DEV ONLY).
+  Public reads — GET /fleet/health, /fleet/lookup, /fleet/job/<id> — need NO
+  X-Fleet-Auth (the browser shell calls them; job ids are unguessable uuid4s and
+  lookup data is gated downstream by Caddy forward_auth → verifier.py). They are
+  rate-limited per client IP (60/min). Self-service POSTs (provision/wake/
+  deprovision/set-plan/session) carry an on-chain-minted token as the credential
+  (principal taken FROM the token). Any OTHER route requires X-Fleet-Auth
+  matching FLEET_API_SECRET (skip auth entirely if unset — DEV ONLY).
 
 Run
 ───
@@ -63,8 +69,63 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger('fleet-api')
 
 # ── In-memory job tracker ────────────────────────────────────────────────────
-_jobs      = {}     # job_id -> dict
-_jobs_lock = threading.Lock()
+_jobs         = {}     # job_id -> dict
+_jobs_lock    = threading.Lock()
+_active_wakes = {}     # principal -> job_id  (in-flight wake dedup; under _jobs_lock)
+
+# ── Per-IP rate limiter (public read endpoints) ──────────────────────────────
+_rate      = {}        # key -> list[float] of hit timestamps within the window
+_rate_lock = threading.Lock()
+
+
+def _client_ip(handler) -> str:
+    """Real client IP. Requests arrive via Caddy, which sets X-Forwarded-For;
+    take the FIRST value (the original client) and fall back to the socket peer."""
+    xff = handler.headers.get('X-Forwarded-For', '')
+    if xff:
+        first = xff.split(',')[0].strip()
+        if first:
+            return first
+    addr = getattr(handler, 'client_address', None)
+    return addr[0] if addr else '?'
+
+
+def _rate_ok(key: str, limit: int = 60, window: int = 60) -> bool:
+    """Sliding-window limiter: at most `limit` hits per `window` seconds per key.
+    Records the hit and returns True if allowed, False if over the limit."""
+    now = time.time()
+    cutoff = now - window
+    with _rate_lock:
+        hits = _rate.get(key)
+        if hits is None:
+            hits = []
+            _rate[key] = hits
+        hits[:] = [t for t in hits if t > cutoff]
+        if len(hits) >= limit:
+            return False
+        hits.append(now)
+        # Opportunistic cleanup so idle keys don't accumulate forever.
+        if len(_rate) > 4096:
+            for k in [k for k, v in list(_rate.items()) if not v or v[-1] <= cutoff]:
+                _rate.pop(k, None)
+        return True
+
+
+def _probe_health(user: dict, timeout: int = 5) -> bool:
+    """True if the user's container answers GET /health 200. Ops calls run ON the
+    gateway, so prefer the private VCN IP (the public :8787 is firewalled)."""
+    if not user:
+        return False
+    ip = user.get('private_ip') or user.get('ip')
+    if not ip:
+        return False
+    port = user.get('port', 8787)
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f'http://{ip}:{port}/health', timeout=timeout) as r:
+            return getattr(r, 'status', r.getcode()) == 200
+    except Exception:
+        return False
 
 
 def _load_users() -> dict:
@@ -208,8 +269,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'fleet_file_exists': FLEET_FILE.exists(),
             })
 
-        if not self._check_auth():
-            return self._send_json(401, {'error': 'unauthorized'})
+        # Public reads (no X-Fleet-Auth): lookup + job status. These are how the
+        # browser shell finds and polls a user's container, so they must keep
+        # working once FLEET_API_SECRET is set. Job ids are unguessable (uuid4);
+        # lookup data is gated downstream by Caddy forward_auth → verifier.py.
+        # Per-IP rate-limited — separate buckets so legitimate job polling (every
+        # 3s during a wake/provision, possibly several users behind one NAT IP)
+        # can't be starved by, nor relax, the stricter anti-enumeration cap on
+        # lookup.
+        ip = _client_ip(self)
+        if u.path == '/fleet/lookup' and not _rate_ok(f'lookup:{ip}', limit=60, window=60):
+            return self._send_json(429, {'error': 'rate limited (60/min)'})
+        if u.path.startswith('/fleet/job/') and not _rate_ok(f'job:{ip}', limit=240, window=60):
+            return self._send_json(429, {'error': 'rate limited'})
 
         if u.path == '/fleet/lookup':
             params    = urllib.parse.parse_qs(u.query)
@@ -241,6 +313,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(404, {'error': 'unknown job'})
             return self._send_json(200, dict(job))
 
+        # Everything else requires auth.
+        if not self._check_auth():
+            return self._send_json(401, {'error': 'unauthorized'})
         return self._send_json(404, {'error': 'not found'})
 
     def _install_session_cookie(self):
@@ -356,6 +431,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/fleet/provision':
             return self._handle_provision()
 
+        # Wake is self-service like provision: an on-chain-minted session token is
+        # the credential (principal FROM the token). Dispatched BEFORE _check_auth
+        # so it works in dev-mode AND once FLEET_API_SECRET is set.
+        if self.path == '/fleet/wake':
+            return self._handle_wake()
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
         return self._send_json(404, {'error': 'not found'})
@@ -399,25 +480,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not _validate_principal(principal):
             return self._send_json(400, {'error': 'invalid principal'})
 
-        # Already provisioned? Return the existing endpoint — but only if it's
-        # still ALIVE. A stale entry (container deleted/crashed, or its route was
-        # never written) would otherwise hand the user a dead endpoint forever and
-        # make every Provision click a no-op. Probe /health on the container's
-        # private IP first; if it's dead, fall through and re-provision a fresh one.
+        # Already provisioned? Three cases for an entry on record:
+        #   • healthy  → return the live endpoint (no-op, instant).
+        #   • on record but not answering → it was idle-reaped (INACTIVE) or is
+        #     briefly unreachable. WAKE it (cheap ~30s, preserves the instance +
+        #     vault) instead of building a brand-new container. fleet-manager
+        #     provision is a no-op for an existing principal, so the OLD code's
+        #     "re-provision" fell through to a silent no-op that handed back a
+        #     dead endpoint — this is that bug's fix.
+        #   • container gone (deleted/failed) → the wake worker `forget`s the
+        #     stale entry and reports phase:'gone'; the browser's follow-up
+        #     provision then finds no entry and builds a fresh one.
         full     = _load_fleet_full()
         existing = full.get('users', {}).get(principal)
-        if existing and existing.get('ip'):
-            _eip   = existing.get('private_ip') or existing.get('ip')
-            _eport = existing.get('port', 8787)
-            _alive = False
-            try:
-                import urllib.request
-                with urllib.request.urlopen(
-                        f'http://{_eip}:{_eport}/health', timeout=5) as _r:
-                    _alive = getattr(_r, 'status', _r.getcode()) == 200
-            except Exception:
-                _alive = False
-            if _alive:
+        if existing and existing.get('ip') and existing.get('container_instance_id'):
+            if _probe_health(existing):
                 return self._send_json(200, {
                     'status':       'existing',
                     'principal':    principal,
@@ -425,10 +502,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     'gateway_url':  _gateway_url_for_principal(full, principal),
                     'container_id': existing.get('container_instance_id'),
                 })
-            log.warning(f'existing entry for {principal} is dead '
-                        f'({_eip}:{_eport}) — re-provisioning')
+            log.info(f'provision: existing entry for {principal} not healthy — waking')
+            return self._start_wake_job(principal)
 
-        # Spawn a job — provisioning takes ~60-90s end-to-end.
+        # No usable entry → provision fresh. Takes ~60-90s end-to-end.
         job_id = uuid.uuid4().hex[:16]
         now    = int(time.time())
         with _jobs_lock:
@@ -447,6 +524,98 @@ class Handler(http.server.BaseHTTPRequestHandler):
             args=(job_id, principal),
             daemon=True
         ).start()
+        return self._send_json(202, {
+            'job_id':    job_id,
+            'principal': principal,
+            'status':    'queued',
+            'poll':      f'/fleet/job/{job_id}',
+        })
+
+    def _handle_wake(self):
+        """POST /fleet/wake — start (wake) a user's stopped container so the
+        browser can reach it again. Same credential model as provision:
+          • { token }     → self-service; principal taken FROM the on-chain
+            session token (you can only wake your OWN container). No X-Fleet-Auth.
+          • { principal } → admin override; requires a REAL X-Fleet-Auth secret.
+
+        Already-healthy (5s /health probe) → 200 {status:'ready', endpoint, …}.
+        Otherwise 202 {job_id, poll} + a background worker that starts the
+        container and polls /health (≤120s). No registry entry → 404
+        not_provisioned. Concurrent wakes for one principal share a single job.
+        """
+        length = int(self.headers.get('Content-Length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+
+        token = str(req.get('token', '')).strip()
+        if token:
+            secret = hq_token.secret_bytes()
+            if not secret:
+                return self._send_json(503, {'error': 'sessions not configured'})
+            claims = hq_token.verify(token, secret)
+            if not claims:
+                return self._send_json(401, {'error': 'invalid or expired token'})
+            principal = claims['principal']
+        else:
+            if not SHARED_SECRET or self.headers.get('X-Fleet-Auth') != SHARED_SECRET:
+                return self._send_json(401, {'error': 'token required (or admin X-Fleet-Auth)'})
+            principal = (req.get('principal') or '').strip()
+        if not _validate_principal(principal):
+            return self._send_json(400, {'error': 'invalid principal'})
+
+        full     = _load_fleet_full()
+        existing = full.get('users', {}).get(principal)
+        if not existing:
+            return self._send_json(404, {
+                'error':     'no container for principal',
+                'code':      'not_provisioned',
+                'principal': principal,
+            })
+
+        # Already healthy → skip the wake, hand back the live endpoint.
+        if _probe_health(existing):
+            return self._send_json(200, {
+                'status':       'ready',
+                'principal':    principal,
+                'endpoint':     _user_to_endpoint(existing),
+                'gateway_url':  _gateway_url_for_principal(full, principal),
+                'container_id': existing.get('container_instance_id'),
+            })
+
+        return self._start_wake_job(principal)
+
+    def _start_wake_job(self, principal: str):
+        """Create (or join) the wake job for `principal` and return 202. A wake
+        already in flight for the same principal is reused (dedup) so a double
+        click / a provision-then-wake race doesn't start two `fleet-manager
+        start` subprocesses."""
+        now   = int(time.time())
+        spawn = False
+        with _jobs_lock:
+            existing_id = _active_wakes.get(principal)
+            if (existing_id and existing_id in _jobs and
+                    _jobs[existing_id].get('status') in ('queued', 'waking')):
+                job_id = existing_id
+            else:
+                job_id = uuid.uuid4().hex[:16]
+                _jobs[job_id] = {
+                    'job_id':     job_id,
+                    'principal':  principal,
+                    'kind':       'wake',
+                    'status':     'queued',
+                    'phase':      'waking',
+                    'started_at': now,
+                    'updated_at': now,
+                    'endpoint':   None,
+                    'error':      None,
+                }
+                _active_wakes[principal] = job_id
+                spawn = True
+        if spawn:
+            threading.Thread(target=_wake_worker, args=(job_id, principal),
+                             daemon=True).start()
         return self._send_json(202, {
             'job_id':    job_id,
             'principal': principal,
@@ -674,12 +843,78 @@ def _reload_caddy_with_new_routes() -> tuple[bool, str]:
         return False, f'unexpected: {e}'
 
 
-# ── Provision worker ────────────────────────────────────────────────────────
+# ── Provision / wake workers ─────────────────────────────────────────────────
 def _set_job(job_id: str, **fields):
     with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id].update(fields)
             _jobs[job_id]['updated_at'] = int(time.time())
+
+
+def _wake_worker(job_id: str, principal: str):
+    """Start a stopped container via `fleet-manager start`, then poll the
+    container's /health until it answers (≤120s). Relies on fleet-manager's
+    exit-code protocol:
+      0 → started (or already running)   2 → container GONE (re-provision)
+      1 → transient failure
+    """
+    log.info(f'[{job_id}] waking {principal}')
+    _set_job(job_id, status='waking', phase='waking')
+    try:
+        env = dict(os.environ)
+        env.setdefault('PYTHONUTF8', '1')
+        proc = subprocess.run(
+            [sys.executable, str(FLEET_MANAGER), 'start', principal],
+            capture_output=True, text=True, encoding='utf-8',
+            timeout=180, env=env, cwd=str(FLEET_DIR.parent),
+        )
+        if proc.returncode == 2:
+            # Container is gone (deleted/failed). Drop the stale registry entry so
+            # a re-provision isn't blocked, and signal the client to re-provision.
+            log.warning(f'[{job_id}] container gone for {principal} — forgetting entry')
+            try:
+                subprocess.run(
+                    [sys.executable, str(FLEET_MANAGER), 'forget', principal],
+                    capture_output=True, text=True, timeout=30,
+                    env=env, cwd=str(FLEET_DIR.parent))
+            except Exception as fe:
+                log.warning(f'[{job_id}] forget failed (non-fatal): {fe}')
+            return _set_job(job_id, status='error', phase='gone',
+                            error='container is gone — re-provision needed')
+        if proc.returncode != 0:
+            msg = (proc.stderr or proc.stdout or '').strip()
+            log.error(f'[{job_id}] wake start failed: {msg[:300]}')
+            return _set_job(job_id, status='error', phase='failed',
+                            error=msg[:500] or 'start failed')
+
+        # Started — now wait for serve.py inside the container to answer /health.
+        _set_job(job_id, phase='waking_boot')
+        full = _load_fleet_full()
+        user = full.get('users', {}).get(principal)
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            if _probe_health(user, timeout=4):
+                endpoint    = _user_to_endpoint(user)
+                gateway_url = _gateway_url_for_principal(full, principal)
+                log.info(f'[{job_id}] awake: {endpoint}')
+                return _set_job(job_id, status='ready', phase='ready',
+                                endpoint=endpoint, gateway_url=gateway_url,
+                                container_id=user.get('container_instance_id'))
+            time.sleep(3)
+        _set_job(job_id, status='error', phase='timeout',
+                 error='container started but /health did not answer within 120s')
+    except subprocess.TimeoutExpired:
+        log.error(f'[{job_id}] wake timed out')
+        _set_job(job_id, status='error', phase='timeout', error='wake exceeded 180s')
+    except Exception as e:
+        log.exception(f'[{job_id}] wake error')
+        _set_job(job_id, status='error', phase='exception', error=str(e))
+    finally:
+        # Release the dedup slot so a future wake (after this job ages out) can
+        # start fresh. The job dict stays in _jobs for the client to keep polling.
+        with _jobs_lock:
+            if _active_wakes.get(principal) == job_id:
+                del _active_wakes[principal]
 
 
 def _provision_worker(job_id: str, principal: str):

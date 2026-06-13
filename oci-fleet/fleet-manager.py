@@ -523,7 +523,10 @@ def cmd_provision(args, fleet: dict):
 
 
 def cmd_stop(args, fleet: dict):
-    """Stop a running container (keeps config, stops billing compute)."""
+    """Stop a running container (keeps config, stops billing compute).
+    Exit 0 on success or already-stopped/gone; exit 1 on a real failure
+    (the old version printed FAILED but still exited 0, so the fleet-api
+    couldn't tell a stop apart from a no-op)."""
     principal = args.principal
     info = fleet['users'].get(principal)
     if not info:
@@ -539,12 +542,30 @@ def cmd_stop(args, fleet: dict):
         info['status'] = 'INACTIVE'
         save_fleet(fleet)
         print(ok('stopped'))
+    except oci.exceptions.ServiceError as e:
+        # 404 = container already gone, 409 = already stopping/stopped — both
+        # mean "not running", which is exactly the goal, so record + succeed.
+        if e.status in (404, 409):
+            info['status'] = 'INACTIVE'
+            save_fleet(fleet)
+            print(ok(f'already stopped ({e.status})'))
+        else:
+            print(err(f'FAILED: {e}'))
+            sys.exit(1)
     except Exception as e:
         print(err(f'FAILED: {e}'))
+        sys.exit(1)
 
 
 def cmd_start(args, fleet: dict):
-    """Start a stopped container."""
+    """Start (wake) a stopped container. Exit codes the fleet-api wake worker
+    relies on:
+      0 → running now (freshly started, or already ACTIVE — idempotent)
+      2 → container is GONE (deleted/failed/404); caller should `forget` +
+          re-provision rather than keep retrying a dead instance
+      1 → transient failure (retryable)
+    The old version printed FAILED but exited 0, so callers couldn't detect
+    failure at all."""
     principal = args.principal
     info = fleet['users'].get(principal)
     if not info:
@@ -555,13 +576,64 @@ def cmd_start(args, fleet: dict):
     cid = info.get('container_instance_id')
     cli = container_client(fleet)
     print(f'Starting {hi(info["display_name"])}… ', end='', flush=True)
+
+    # Pre-check lifecycle so wake is idempotent and can detect a dead container.
+    try:
+        state = cli.get_container_instance(cid).data.lifecycle_state
+    except oci.exceptions.ServiceError as e:
+        if e.status == 404:
+            print(err('WAKE_GONE (container not found)'))
+            sys.exit(2)
+        print(err(f'FAILED: {e}'))
+        sys.exit(1)
+    except Exception as e:
+        print(err(f'FAILED: {e}'))
+        sys.exit(1)
+
+    if state == 'ACTIVE':
+        info['status'] = 'ACTIVE'
+        save_fleet(fleet)
+        print(ok('already running'))
+        sys.exit(0)
+    if state in ('DELETED', 'DELETING', 'FAILED'):
+        print(err(f'WAKE_GONE ({state})'))
+        sys.exit(2)
+
+    # INACTIVE (or a transient CREATING/UPDATING) → request a start.
     try:
         cli.start_container_instance(cid)
         info['status'] = 'ACTIVE'
         save_fleet(fleet)
         print(ok('started'))
+        sys.exit(0)
+    except oci.exceptions.ServiceError as e:
+        # 409 Conflict = a concurrent start already moved it out of INACTIVE
+        # (two wake requests raced) — that's the outcome we wanted.
+        if e.status == 409:
+            info['status'] = 'ACTIVE'
+            save_fleet(fleet)
+            print(ok('started (already starting)'))
+            sys.exit(0)
+        print(err(f'FAILED: {e}'))
+        sys.exit(1)
     except Exception as e:
         print(err(f'FAILED: {e}'))
+        sys.exit(1)
+
+
+def cmd_forget(args, fleet: dict):
+    """Registry-only removal — drop a user's entry from fleet.json with NO OCI
+    calls. Used by the wake path when the underlying container is gone
+    (deleted/failed) so a fresh provision isn't blocked by the stale entry.
+    Vault data in Object Storage is untouched — a re-provision reattaches it."""
+    principal = args.principal
+    if principal not in fleet.get('users', {}):
+        print(dim(f'No registry entry for {principal} — nothing to forget.'))
+        sys.exit(0)
+    name = fleet['users'][principal].get('display_name', principal)
+    del fleet['users'][principal]
+    save_fleet(fleet)
+    print(ok(f'Forgot {name} (registry only — vault preserved).'))
 
 
 def cmd_delete(args, fleet: dict):
@@ -1323,8 +1395,9 @@ def main():
     setplan_p = sub.add_parser('set-plan', help="Change a user's plan (Stripe webhook target)")
     add_principal(setplan_p)
     setplan_p.add_argument('plan', choices=['free', 'pro', 'always-on'])
-    add_principal(sub.add_parser('start',     help='Start a stopped container'))
+    add_principal(sub.add_parser('start',     help='Start (wake) a stopped container'))
     add_principal(sub.add_parser('stop',      help='Stop a running container'))
+    add_principal(sub.add_parser('forget',    help='Drop a user from the registry (no OCI calls) — used when the container is gone'))
     del_p = sub.add_parser('delete',    help='Delete a user\'s container')
     add_principal(del_p)
     del_p.add_argument('--force', action='store_true',
@@ -1365,6 +1438,7 @@ def main():
         'provision':   cmd_provision,
         'start':       cmd_start,
         'stop':        cmd_stop,
+        'forget':      cmd_forget,
         'delete':      cmd_delete,
         'status':      cmd_status,
         'health':      cmd_health,
