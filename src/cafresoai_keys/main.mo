@@ -145,25 +145,20 @@ actor CafresoaiKeys {
     stable var hqSecret : Blob = "";
 
     // ── CafresoPages order ledger (for plan proofs) ──────────────────────────
-    // The IndexCanister holds the on-chain order ledger. getOrder is a public
-    // query; GlobalOrder.buyer is server-set + unforgeable, and an order only
-    // reaches status "paid" after the canister verifies the ICP block on-chain.
-    // We read it here to mint plan proofs the fleet trusts (see mintPlanToken).
-    type GlobalOrder = {
+    // The IndexCanister holds the on-chain order ledger. We read a paid order
+    // via getOrderForMint — a least-privilege accessor the IndexCanister exposes
+    // to THIS canister's principal ONLY (the public getOrder is buyer/admin-gated
+    // and would return null for us). GlobalOrder.buyer is server-set + unforgeable,
+    // and an order only reaches status "paid" after a real ICP transfer (the
+    // canister pulls the price via icrc2_transfer_from). See mintPlanToken.
+    type MintOrder = {
       buyer : Text;
-      id : Int;
-      itemsJson : Text;
-      note : Text;
-      paidBlock : Int;
-      paymentMethod : Text;
-      shippingJson : Text;
       status : Text;
-      timestampCreated : Int;
+      itemsJson : Text;
       timestampUpdated : Int;
-      totalNanas : Int;
     };
     let orderIndex : actor {
-      getOrder : (Int) -> async (?GlobalOrder);
+      getOrderForMint : (Int) -> async (?MintOrder);
     } = actor ("bek5d-2qaaa-aaaab-agqrq-cai");
 
     let PLAN_PERIOD_NS : Int = 30 * 24 * 60 * 60 * 1_000_000_000; // 30 days
@@ -250,7 +245,7 @@ actor CafresoaiKeys {
       if (hqSecret.size() == 0) {
         throw Error.reject("HQ sessions are not configured yet");
       };
-      let found = await orderIndex.getOrder(orderId);
+      let found = await orderIndex.getOrderForMint(orderId);
       let order = switch (found) {
         case (null) { throw Error.reject("order not found") };
         case (?o) { o };
@@ -261,12 +256,15 @@ actor CafresoaiKeys {
       if (order.status != "paid") {
         throw Error.reject("order is not paid");
       };
-      // Derive the plan tier from the order's items (most specific first).
+      // Derive the plan tier from the order's items. Match the QUOTE-DELIMITED
+      // slug (not a bare substring) so a tier can't be confused by a longer
+      // slug that merely contains a tier name (e.g. "cafresohq-pro-promo").
+      // Most-specific first; the two canonical slugs don't contain each other.
       let items = order.itemsJson;
       let plan : Text =
-        if (Text.contains(items, #text "cafresohq-always-on")) { "always-on" }
-        else if (Text.contains(items, #text "cafresohq-pro")) { "pro" }
-        else if (Text.contains(items, #text "cafresohq-free")) { "free" }
+        if (Text.contains(items, #text "\"cafresohq-always-on\"")) { "always-on" }
+        else if (Text.contains(items, #text "\"cafresohq-pro\"")) { "pro" }
+        else if (Text.contains(items, #text "\"cafresohq-free\"")) { "free" }
         else { throw Error.reject("order has no CafresoHQ plan item") };
       // Still within the subscription period?
       if (Time.now() - order.timestampUpdated > PLAN_PERIOD_NS) {

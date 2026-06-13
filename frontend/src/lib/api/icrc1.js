@@ -294,14 +294,17 @@ export async function approve({ tokenKey, spenderPrincipalText, amount }) {
   }
 
   const rawAmount = typeof amount === 'bigint' ? amount : toRawAmount(tokenKey, amount);
-  if (rawAmount <= 0n) return { err: 'Amount must be > 0.' };
+  if (rawAmount < 0n) return { err: 'Amount must be ≥ 0.' };   // 0 = revoke the allowance
 
+  // Expire the allowance in 10 minutes — if the purchase doesn't complete, no
+  // standing pull authorization is left dangling for the spender canister.
+  const expiresAtNs = BigInt(Date.now()) * 1_000_000n + 600_000_000_000n;
   const arg = {
     from_subaccount: [],
     spender,
     amount: rawAmount,
     expected_allowance: [],
-    expires_at: [],
+    expires_at: rawAmount === 0n ? [] : [expiresAtNs],
     fee: [],
     memo: [],
     created_at_time: []

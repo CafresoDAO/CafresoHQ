@@ -93,9 +93,12 @@ export async function subscribeWithIcp(planId) {
   const priceE8s = await getPlanPriceE8s(plan.slug);
   if (priceE8s == null) return { err: 'ICP pricing not available yet — try again shortly.' };
 
-  // 1. Approve the index canister to pull (price + ledger transfer fee).
+  // 1. Approve the index canister to pull (price + a small fee margin so a
+  //    ledger-fee bump between this cached read and the pull can't strand the
+  //    approve). The allowance auto-expires in ~10 min (see approve()).
   const fee = (await getFee('ICP')) ?? 10_000n;
-  const approveAmount = BigInt(priceE8s) + BigInt(fee);
+  const margin = fee > 100_000n ? fee : 100_000n;
+  const approveAmount = BigInt(priceE8s) + margin;
   const ap = await approve({
     tokenKey: 'ICP',
     spenderPrincipalText: INDEX_CANISTER_ID,
@@ -105,9 +108,15 @@ export async function subscribeWithIcp(planId) {
 
   // 2. The canister pulls EXACTLY the price and records the paid order. A buyer
   //    can never underpay (the canister sets the amount) or pay someone else
-  //    (it pulls to the configured HQ treasury).
+  //    (it pulls to the configured HQ treasury), and a double-submit returns the
+  //    existing paid order (the canister is idempotent per buyer+plan+period).
   const res = await purchasePlanIcp(plan.slug);
-  if (res.err) return { err: res.err };
+  if (res.err) {
+    // Best-effort: revoke the leftover allowance so no standing pull
+    // authorization lingers if the purchase didn't complete.
+    approve({ tokenKey: 'ICP', spenderPrincipalText: INDEX_CANISTER_ID, amount: 0n }).catch(() => {});
+    return { err: res.err };
+  }
   return { ok: true, plan: planId, order: res.ok };
 }
 

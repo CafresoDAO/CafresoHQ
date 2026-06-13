@@ -33,6 +33,7 @@
   let msg = null;       // { kind: 'ok'|'err', text }
   let loading = true;
   let icpWhole = {};    // plan id → fixed ICP price (whole units) | null if unpriced
+  let pendingApplyOrderId = null;  // set when an order is PAID but fleet activation failed
 
   $: icpUsd = Number($prices?.ICP) || 0;
   // The fixed ICP price the canister enforces — the exact amount charged. null
@@ -98,14 +99,35 @@
   $: if ($isAuthenticated) { /* re-check when auth flips */ }
 
   async function payIcp(planId) {
-    msg = null; busy = planId;
+    msg = null; busy = planId; pendingApplyOrderId = null;
     try {
       const r = await subscribeWithIcp(planId);
       if (r.err) { msg = { kind: 'err', text: r.err }; return; }
       const applied = await notifyFleet(r.order?.id);
-      msg = applied.ok
-        ? { kind: 'ok', text: `Subscribed to ${PLANS[planId].label}! Your HQ is updating (~10s).` }
-        : { kind: 'ok', text: `Paid! ${PLANS[planId].label} will apply to your HQ momentarily.${applied.reason ? '' : ''}` };
+      if (applied.ok) {
+        msg = { kind: 'ok', text: `Subscribed to ${PLANS[planId].label}! Your HQ is updating (~10s).` };
+      } else {
+        // Paid ON-CHAIN but applying it to the fleet didn't complete. Let the
+        // user retry activation WITHOUT paying again (the order is already paid).
+        pendingApplyOrderId = r.order?.id ?? null;
+        msg = { kind: 'warn', text: `Payment received for ${PLANS[planId].label}, but activating your HQ didn't finish${applied.reason ? ` (${applied.reason})` : ''}. Use “Apply plan” to retry — you won't be charged again.` };
+      }
+      await refresh();
+    } finally { busy = ''; }
+  }
+
+  // Retry fleet activation for an already-PAID order (no re-charge).
+  async function applyPlan() {
+    if (pendingApplyOrderId == null) return;
+    msg = null; busy = 'apply';
+    try {
+      const applied = await notifyFleet(pendingApplyOrderId);
+      if (applied.ok) {
+        msg = { kind: 'ok', text: 'Plan applied! Your HQ is updating (~10s).' };
+        pendingApplyOrderId = null;
+      } else {
+        msg = { kind: 'warn', text: `Still couldn't apply${applied.reason ? ` (${applied.reason})` : ''}. Try again in a moment.` };
+      }
       await refresh();
     } finally { busy = ''; }
   }
@@ -143,7 +165,14 @@
   </header>
 
   {#if msg}
-    <div class="card p-4 text-sm {msg.kind === 'ok' ? 'text-emerald-300' : 'text-rose-300'}">{msg.text}</div>
+    <div class="card p-4 text-sm {msg.kind === 'ok' ? 'text-emerald-300' : msg.kind === 'warn' ? 'text-amber-300' : 'text-rose-300'}">
+      {msg.text}
+      {#if pendingApplyOrderId != null}
+        <button class="btn-ghost btn-sm mt-2" disabled={busy === 'apply'} on:click={applyPlan}>
+          {busy === 'apply' ? 'Applying…' : 'Apply plan'}
+        </button>
+      {/if}
+    </div>
   {/if}
 
   {#if !$isAuthenticated}
