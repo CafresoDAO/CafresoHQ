@@ -6,6 +6,7 @@
   import {
     PLANS, getPlan, subscribeWithIcp, subscribeWithCard, notifyFleet, usdToIcp
   } from '$lib/api/hqPlans.js';
+  import { getPlanPriceE8s } from '$lib/api/store.js';
 
   // Display order + per-plan blurbs (logic lives in hqPlans.js).
   const TIERS = [
@@ -31,11 +32,27 @@
   let busy = '';        // plan id currently processing
   let msg = null;       // { kind: 'ok'|'err', text }
   let loading = true;
+  let icpWhole = {};    // plan id → fixed ICP price (whole units) | null if unpriced
 
   $: icpUsd = Number($prices?.ICP) || 0;
-  function icpFor(usd) {
-    const v = usdToIcp(usd);
-    return v == null ? null : v;
+  // The fixed ICP price the canister enforces — the exact amount charged. null
+  // until an admin has set it on-chain (then the ICP button is disabled).
+  function icpFor(id) {
+    const e8s = icpWhole[id];
+    return e8s == null ? null : e8s;
+  }
+
+  async function loadIcpPrices() {
+    const next = {};
+    for (const t of TIERS) {
+      const plan = PLANS[t.id];
+      if (!plan || plan.usd <= 0) continue;
+      try {
+        const e8s = await getPlanPriceE8s(plan.slug);   // BigInt e8s | null
+        next[t.id] = e8s == null ? null : Number(e8s) / 1e8;
+      } catch (_) { next[t.id] = null; }
+    }
+    icpWhole = next;
   }
 
   async function refresh() {
@@ -44,6 +61,7 @@
       const p = await getPlan();
       current = p.plan; activeUntil = p.activeUntil;
     }
+    await loadIcpPrices();
     loading = false;
   }
 
@@ -138,7 +156,7 @@
       {#each TIERS as t}
         {@const plan = PLANS[t.id]}
         {@const isCurrent = current === t.id}
-        {@const icp = icpFor(plan.usd)}
+        {@const icp = icpFor(t.id)}
         <div class="card p-5 flex flex-col {t.featured ? 'ring-2 ring-brand-500' : ''}">
           <div class="page-kicker">{t.tagline}</div>
           <div class="mt-2 flex items-baseline gap-2">
@@ -148,9 +166,12 @@
           <div class="mt-2 text-lg">
             {#if plan.usd === 0}
               Free
+            {:else if icp != null}
+              {icp.toFixed(4)}<span class="text-ink-400 text-sm"> ICP/mo</span>
+              <div class="text-xs text-ink-400">≈ ${plan.usd}</div>
             {:else}
               ${plan.usd}<span class="text-ink-400 text-sm">/mo</span>
-              {#if icp != null}<div class="text-xs text-ink-400">≈ {icp.toFixed(3)} ICP</div>{/if}
+              <div class="text-xs text-ink-400">ICP price loading…</div>
             {/if}
           </div>
           <ul class="mt-4 space-y-1.5 text-sm text-ink-300 flex-1">
@@ -162,9 +183,9 @@
             {:else if plan.usd === 0}
               <span class="text-xs text-ink-400">Default — no payment needed</span>
             {:else}
-              <button class="btn-primary w-full" disabled={busy === t.id}
+              <button class="btn-primary w-full" disabled={busy === t.id || icp == null}
                       on:click={() => payIcp(t.id)}>
-                {busy === t.id ? 'Processing…' : `Pay with ICP${icp != null ? ` (${icp.toFixed(3)})` : ''}`}
+                {busy === t.id ? 'Processing…' : (icp != null ? `Pay ${icp.toFixed(4)} ICP` : 'ICP pricing coming soon')}
               </button>
               {#if CARD_ENABLED}
                 <button class="btn-ghost w-full" disabled={busy === t.id}

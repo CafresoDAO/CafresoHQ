@@ -14,8 +14,8 @@
 // Pricing: ICP-first. USD list price is converted to ICP at the live rate from
 // stores/prices.js so the catalog stays in USD but users pay in ICP today.
 
-import { transfer as icrcTransfer, TOKENS } from '$lib/api/icrc1.js';
-import { recordOrder, getTreasury, listMyOrders } from '$lib/api/store.js';
+import { approve, getFee } from '$lib/api/icrc1.js';
+import { listMyOrders, purchasePlanIcp, getPlanPriceE8s, INDEX_CANISTER_ID } from '$lib/api/store.js';
 import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
 import { fleetApiUrl } from '$lib/api/fleetClient.js';
 import { get } from 'svelte/store';
@@ -78,42 +78,37 @@ export async function getPlan() {
   }
 }
 
-/** Subscribe by paying in ICP. Transfers the ICP-equivalent of the plan's USD
- *  price to the treasury, then records the order on-chain. Returns
- *  { ok, plan, block } or { err }. After this, the success path should call the
- *  fleet bridge (set-plan) — see notifyFleet(). */
+/** Subscribe by paying in ICP — trustless, fully on-chain (no admin, no oracle).
+ *  The buyer APPROVES the index canister to spend the fixed plan price, then the
+ *  canister pulls exactly that price (icrc2_transfer_from buyer → HQ treasury)
+ *  and records a PAID order in one shot. The ledger debit is the proof, so the
+ *  resulting order is immediately `paid` and mintPlanToken accepts it.
+ *  Returns { ok, plan, order } or { err }. The success path calls notifyFleet(). */
 export async function subscribeWithIcp(planId) {
   const plan = PLANS[planId];
   if (!plan || plan.usd <= 0) return { err: 'Pick a paid plan.' };
 
-  // HQ revenue → admin principal (falls back to the Pages store treasury).
-  const treasury = HQ_TREASURY || await getTreasury();
-  if (!treasury) return { err: 'Treasury not configured — contact support.' };
+  // Fixed ICP price lives ON the canister (single source of truth — the same
+  // value the canister will enforce when it pulls the funds).
+  const priceE8s = await getPlanPriceE8s(plan.slug);
+  if (priceE8s == null) return { err: 'ICP pricing not available yet — try again shortly.' };
 
-  const icpAmount = usdToIcp(plan.usd);
-  if (icpAmount == null) return { err: 'ICP price unavailable — try again in a moment.' };
-
-  // 1. Pay: ICRC-1 transfer user → treasury (authed II identity).
-  const pay = await icrcTransfer({
+  // 1. Approve the index canister to pull (price + ledger transfer fee).
+  const fee = (await getFee('ICP')) ?? 10_000n;
+  const approveAmount = BigInt(priceE8s) + BigInt(fee);
+  const ap = await approve({
     tokenKey: 'ICP',
-    toPrincipalText: treasury,
-    amount: icpAmount,
-    memoText: `cafresohq:${planId}`,
+    spenderPrincipalText: INDEX_CANISTER_ID,
+    amount: approveAmount,
   });
-  if (pay.err) return { err: `Payment failed: ${pay.err}` };
+  if (ap.err) return { err: `Approval failed: ${ap.err}` };
 
-  // 2. Record on-chain: order ledger, buyer = caller principal (unforgeable).
-  const rec = await recordOrder({
-    items: [{ slug: plan.slug, qty: 1, priceNanas: 0, price: plan.usd }],
-    shipping: {},
-    paidBlock: pay.ok,            // ledger block index = receipt
-    paymentMethod: 'icp',
-  });
-  if (rec.err) {
-    // Payment went through but recording failed — surface block for support.
-    return { err: `Paid (block ${pay.ok}) but order record failed: ${rec.err}. Save this block #.`, block: pay.ok };
-  }
-  return { ok: true, plan: planId, block: pay.ok, order: rec.ok };
+  // 2. The canister pulls EXACTLY the price and records the paid order. A buyer
+  //    can never underpay (the canister sets the amount) or pay someone else
+  //    (it pulls to the configured HQ treasury).
+  const res = await purchasePlanIcp(plan.slug);
+  if (res.err) return { err: res.err };
+  return { ok: true, plan: planId, order: res.ok };
 }
 
 /** Subscribe by card via the existing Stripe Worker. Redirects the browser to

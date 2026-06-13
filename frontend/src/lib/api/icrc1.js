@@ -83,12 +83,38 @@ function idlFactory({ IDL: _IDL }) {
     InsufficientFunds: _IDL.Record({ balance: _IDL.Nat })
   });
   const TransferResult = _IDL.Variant({ Ok: _IDL.Nat, Err: TransferError });
+  // ICRC-2 approve — authorises a spender (a canister) to pull up to `amount`
+  // from the caller's account. Used for trustless plan purchase: the buyer
+  // approves the index canister, which then icrc2_transfer_from's the price.
+  const ApproveArgs = _IDL.Record({
+    from_subaccount: _IDL.Opt(Subaccount),
+    spender: Account_,
+    amount: _IDL.Nat,
+    expected_allowance: _IDL.Opt(_IDL.Nat),
+    expires_at: _IDL.Opt(_IDL.Nat64),
+    fee: _IDL.Opt(_IDL.Nat),
+    memo: _IDL.Opt(_IDL.Vec(_IDL.Nat8)),
+    created_at_time: _IDL.Opt(_IDL.Nat64)
+  });
+  const ApproveError = _IDL.Variant({
+    GenericError: _IDL.Record({ error_code: _IDL.Nat, message: _IDL.Text }),
+    TemporarilyUnavailable: _IDL.Null,
+    Duplicate: _IDL.Record({ duplicate_of: _IDL.Nat }),
+    BadFee: _IDL.Record({ expected_fee: _IDL.Nat }),
+    AllowanceChanged: _IDL.Record({ current_allowance: _IDL.Nat }),
+    CreatedInFuture: _IDL.Record({ ledger_time: _IDL.Nat64 }),
+    TooOld: _IDL.Null,
+    Expired: _IDL.Record({ ledger_time: _IDL.Nat64 }),
+    InsufficientFunds: _IDL.Record({ balance: _IDL.Nat })
+  });
+  const ApproveResult = _IDL.Variant({ Ok: _IDL.Nat, Err: ApproveError });
   return _IDL.Service({
     icrc1_balance_of: _IDL.Func([Account_], [_IDL.Nat], ['query']),
     icrc1_decimals: _IDL.Func([], [_IDL.Nat8], ['query']),
     icrc1_symbol: _IDL.Func([], [_IDL.Text], ['query']),
     icrc1_fee: _IDL.Func([], [_IDL.Nat], ['query']),
-    icrc1_transfer: _IDL.Func([TransferArg], [TransferResult], [])
+    icrc1_transfer: _IDL.Func([TransferArg], [TransferResult], []),
+    icrc2_approve: _IDL.Func([ApproveArgs], [ApproveResult], [])
   });
 }
 
@@ -243,6 +269,54 @@ export async function transfer({ tokenKey, toPrincipalText, amount, memoText }) 
     return { err: `Transfer failed: ${key}` };
   } catch (e) {
     console.warn('[icrc1] transfer failed', e);
+    return { err: String(e?.message || e) };
+  }
+}
+
+// ICRC-2 approve: authorise `spenderPrincipalText` (the index canister) to pull
+// up to `amount` (raw e8s) from the signed-in user. The spender then calls
+// icrc2_transfer_from to collect the exact plan price. Returns { ok: blockIndex }
+// or { err }. The user must be II-authenticated.
+export async function approve({ tokenKey, spenderPrincipalText, amount }) {
+  if (!browser) return { err: 'Not available server-side.' };
+  const token = TOKENS[tokenKey];
+  if (!token) return { err: `Unknown token: ${tokenKey}` };
+  const identity = currentIdentity();
+  if (!identity) return { err: 'Sign in first.' };
+  const actor = authedLedgerActor(token.canister, identity);
+  if (!actor) return { err: 'Ledger unreachable.' };
+
+  let spender;
+  try {
+    spender = { owner: Principal.fromText(spenderPrincipalText), subaccount: [] };
+  } catch {
+    return { err: `Bad spender principal: ${spenderPrincipalText}` };
+  }
+
+  const rawAmount = typeof amount === 'bigint' ? amount : toRawAmount(tokenKey, amount);
+  if (rawAmount <= 0n) return { err: 'Amount must be > 0.' };
+
+  const arg = {
+    from_subaccount: [],
+    spender,
+    amount: rawAmount,
+    expected_allowance: [],
+    expires_at: [],
+    fee: [],
+    memo: [],
+    created_at_time: []
+  };
+
+  try {
+    const res = await actor.icrc2_approve(arg);
+    if ('Ok' in res) return { ok: Number(res.Ok) };
+    const key = Object.keys(res.Err)[0];
+    const detail = res.Err[key];
+    if (key === 'InsufficientFunds') return { err: `Insufficient ICP (balance: ${detail.balance}).` };
+    if (key === 'GenericError') return { err: detail.message || 'Ledger error.' };
+    return { err: `Approve failed: ${key}` };
+  } catch (e) {
+    console.warn('[icrc1] approve failed', e);
     return { err: String(e?.message || e) };
   }
 }

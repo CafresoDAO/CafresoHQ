@@ -11,6 +11,9 @@ import { PRODUCTS as SEED_PRODUCTS } from '$lib/data/products.js';
 const MAINNET_INDEX = 'bek5d-2qaaa-aaaab-agqrq-cai';
 const canisterId =
   import.meta.env.PUBLIC_INDEX_CANISTER_ID || MAINNET_INDEX;
+// The index canister principal — the spender the buyer approves for ICRC-2
+// plan purchase (it calls icrc2_transfer_from to collect the fixed plan price).
+export const INDEX_CANISTER_ID = canisterId;
 const network = import.meta.env.PUBLIC_DFX_NETWORK || 'ic';
 const host = network === 'local' ? 'http://127.0.0.1:4943' : 'https://icp0.io';
 
@@ -186,6 +189,34 @@ export async function recordOrder({ items, shipping, paidBlock = 0, paymentMetho
     return { err: res.err };
   } catch (e) {
     return { err: String(e?.message || e) };
+  }
+}
+
+// Trustless self-service ICP plan purchase: the index canister pulls the fixed
+// plan price (icrc2_transfer_from) from the buyer — who must have approved it
+// first — and records a PAID order. Returns { ok: order } | { err }.
+export async function purchasePlanIcp(slug) {
+  const a = actor({ authed: true });
+  if (!a) return { err: 'Sign in to subscribe.' };
+  try {
+    const res = await a.purchasePlanIcp(slug);
+    if ('ok' in res) return { ok: canisterToOrder(res.ok) };
+    return { err: res.err };
+  } catch (e) {
+    return { err: String(e?.message || e) };
+  }
+}
+
+// Fixed ICP price (raw e8s, BigInt) for a plan slug, or null if unpriced.
+export async function getPlanPriceE8s(slug) {
+  const a = actor();
+  if (!a) return null;
+  try {
+    const out = await a.getPlanPriceE8s(slug);   // opt nat → [] | [BigInt]
+    return (out && out.length) ? out[0] : null;
+  } catch (e) {
+    console.warn('[store] getPlanPriceE8s failed', e);
+    return null;
   }
 }
 
