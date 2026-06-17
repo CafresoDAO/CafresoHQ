@@ -1,0 +1,20 @@
+{
+  "name": "cafreso-stripe-oracle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CafresoHQ card-payment oracle — verifies Stripe webhooks and confirms orders on the bek5d canister. Self-hosted twin of docs/stripe-worker.js.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@dfinity/agent": "^3.4.3",
+    "@dfinity/candid": "^3.4.3",
+    "@dfinity/identity": "^3.4.3",
+    "@dfinity/principal": "^3.4.3"
+  }
+}

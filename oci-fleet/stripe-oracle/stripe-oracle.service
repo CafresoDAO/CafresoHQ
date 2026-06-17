@@ -1,0 +1,33 @@
+[Unit]
+Description=CafresoHQ Stripe Oracle (card-payment confirmer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stripe-oracle
+ExecStart=/usr/bin/node /opt/stripe-oracle/server.js
+Restart=on-failure
+RestartSec=5
+# Non-secret config. Secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+# ORACLE_SEED_HEX) come from the EnvironmentFile below (mode 600, root-owned).
+Environment=STRIPE_ORACLE_PORT=8788
+Environment=STRIPE_ORACLE_BIND=127.0.0.1
+Environment=IC_HOST=https://icp0.io
+Environment=INDEX_CANISTER_ID=bek5d-2qaaa-aaaab-agqrq-cai
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/cafresoai/stripe-oracle.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stripe-oracle
+# Hardening — this service only needs outbound network + its own dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/stripe-oracle
+
+[Install]
+WantedBy=multi-user.target

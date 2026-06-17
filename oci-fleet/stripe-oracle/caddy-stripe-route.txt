@@ -1,0 +1,22 @@
+Caddy route for the Stripe oracle.
+
+Add this block to the STATIC section of /opt/fleet-api/caddyfile.template, inside
+the `hq.cafreso.com { ... }` server block, immediately AFTER the `/fleet/*` handle
+and BEFORE the `__USER_ROUTES__` placeholder. Putting it above __USER_ROUTES__
+(i.e. in the static part) means `fleet-manager.py caddy-sync` preserves it on
+every regenerate.
+
+    # Stripe card-payment oracle (Node on localhost:8788). Prefix stripped so
+    # the service sees /session and /webhook. In the template's static section,
+    # so it survives caddy-sync.
+    handle_path /stripe/* {
+        reverse_proxy localhost:8788
+    }
+
+Resulting public paths (HTTPS only — deliberately NOT exposed on :80):
+    POST https://hq.cafreso.com/stripe/session   -> oracle /session  (browser)
+    POST https://hq.cafreso.com/stripe/webhook   -> oracle /webhook  (Stripe)
+    GET  https://hq.cafreso.com/stripe/health    -> oracle /health   (liveness)
+
+Frontend env:  PUBLIC_STRIPE_WORKER_URL=https://hq.cafreso.com/stripe/session
+Stripe webhook endpoint:  https://hq.cafreso.com/stripe/webhook

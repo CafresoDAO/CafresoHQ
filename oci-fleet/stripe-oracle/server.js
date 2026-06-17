@@ -1,70 +1,50 @@
 /**
  * ============================================================================
- *  CafresoHQ Stripe Worker — card payments oracle (Cloudflare Worker)
+ *  CafresoHQ Stripe Oracle — card-payment confirmer (self-hosted Node service)
  * ============================================================================
  *
- *  >>> DEPLOYMENT NOTE (2026-06-17): CafresoHQ ships the SELF-HOSTED twin of
- *  this file, oci-fleet/stripe-oracle/server.js, running as the `stripe-oracle`
- *  systemd service on the gateway VM behind Caddy (no Cloudflare account). The
- *  money logic is identical. This Cloudflare version is kept as a drop-in
- *  alternative if you ever want to move the oracle off the VM. <<<
+ *  This is the OCI-hosted twin of docs/stripe-worker.js. Instead of a
+ *  Cloudflare Worker it runs as a tiny Node service on the gateway VM behind
+ *  Caddy (no new vendor / login). The money logic is IDENTICAL and was
+ *  adversarially reviewed — only the runtime shell changed:
  *
- *  Card money lives off-chain in Stripe, so the order canister (bek5d) can't
- *  observe a card payment directly. This Worker is the trusted ORACLE:
+ *    - The Cloudflare `export default { fetch(request, env) }` handler is kept
+ *      VERBATIM as `handleRequest(request, env)`. Node 20 provides global
+ *      `fetch`, `Request`, `Response`, `Headers`, `crypto.subtle`, `TextEncoder`,
+ *      so the Fetch-API handler code runs unchanged.
+ *    - A small `http.createServer` adapter (bottom of file) turns each Node
+ *      request into a Fetch `Request`, calls `handleRequest`, and writes the
+ *      `Response` back. The raw body bytes are preserved so Stripe's HMAC
+ *      signature check verifies exactly as on Cloudflare.
+ *    - `env` is `process.env` (loaded by systemd from
+ *      /etc/cafresoai/stripe-oracle.env).
  *
- *    POST /session  (from the browser)
- *        → creates a Stripe Checkout Session priced from PLAN_PRICES (NOT the
- *          client) and stamps {icOrderId, principal, plan} into its metadata.
+ *  Caddy routes  https://hq.cafreso.com/stripe/*  →  127.0.0.1:8788  (prefix
+ *  stripped), so this service still sees  POST /session  and  POST /webhook.
  *
- *    POST /webhook  (from Stripe)
- *        → verifies Stripe's signature, and on `checkout.session.completed`
- *          (payment_status=paid) calls bek5d.confirmCardOrder(icOrderId,
- *          amount_total_cents) as the ORACLE identity. The canister still
- *          enforces amount >= the plan's on-chain USD price, so a tampered
- *          session can't buy a tier cheaply — the oracle is only trusted to
- *          relay the true, Stripe-signed amount.
+ *  Flow:
+ *    POST /session  (browser)  → create a Stripe Checkout Session priced from
+ *        PLAN_PRICES (never the client) with {icOrderId, principal, plan} in
+ *        the session metadata.
+ *    POST /webhook  (Stripe)   → verify Stripe's signature, and on a paid
+ *        checkout.session.completed call bek5d.confirmCardOrder as the ORACLE
+ *        identity. The canister independently re-checks amount >= the plan's
+ *        on-chain USD price, so a tampered session can't buy a tier cheaply.
  *
  *  The flow only confirms; it never moves crypto. Worst case if the oracle key
- *  leaks is free plans (not theft) — keep ORACLE_SEED_HEX in Cloudflare secrets.
+ *  leaks is free plans (not theft) — keep ORACLE_SEED_HEX in the env file 600.
  *
- * ----------------------------------------------------------------------------
- *  DEPLOY (wrangler)
- * ----------------------------------------------------------------------------
- *  1. npm i -g wrangler && wrangler login
- *  2. Project deps:  npm i @dfinity/agent @dfinity/identity @dfinity/candid @dfinity/principal
- *  3. wrangler.toml:
- *         name = "cafreso-stripe"
- *         main = "stripe-worker.js"
- *         compatibility_date = "2024-09-23"
- *         compatibility_flags = ["nodejs_compat"]
- *         [vars]
- *         IC_HOST = "https://icp0.io"
- *         INDEX_CANISTER_ID = "bek5d-2qaaa-aaaab-agqrq-cai"
- *  4. Generate the ORACLE identity + its principal (run once, locally):
- *         node -e "const{Ed25519KeyIdentity}=require('@dfinity/identity');const s=require('crypto').randomBytes(32);const id=Ed25519KeyIdentity.generate(s);console.log('SEED_HEX=',s.toString('hex'));console.log('PRINCIPAL=',id.getPrincipal().toText())"
- *  5. Secrets:
- *         wrangler secret put STRIPE_SECRET_KEY        # sk_test_… then sk_live_…
- *         wrangler secret put STRIPE_WEBHOOK_SECRET    # whsec_… (from step 7)
- *         wrangler secret put ORACLE_SEED_HEX          # the SEED_HEX from step 4
- *  6. wrangler deploy   →  note the workers.dev URL.
- *  7. Stripe dashboard → Developers → Webhooks → Add endpoint:
- *         URL: <worker-url>/webhook   Events: checkout.session.completed
- *         Copy the signing secret into STRIPE_WEBHOOK_SECRET (step 5), redeploy.
- *  8. ON-CHAIN: an admin authorises this Worker's PRINCIPAL (step 4) on bek5d:
- *         dfx canister --network ic call index setOraclePrincipal '(principal "<PRINCIPAL>")' --identity <admin>
- *  9. Frontend: set PUBLIC_STRIPE_WORKER_URL=<worker-url>, redeploy.
- * 10. Test in Stripe TEST mode (card 4242 4242 4242 4242), confirm the order
- *     flips to "paid" on-chain and the plan applies. THEN flip
- *     PUBLIC_CARD_PAYMENTS=on and switch STRIPE_SECRET_KEY to sk_live_.
+ *  See ./README.md for the full deploy + go-live checklist.
  * ============================================================================
  */
 
+import http from 'node:http';
 import { Actor, HttpAgent } from '@dfinity/agent';
 import { Ed25519KeyIdentity } from '@dfinity/identity';
 import { IDL } from '@dfinity/candid';
 
 // Plan prices in USD cents — MUST match the canister's planPriceUsdCents. The
-// Worker prices the Stripe session from THIS map (never the client), and the
+// service prices the Stripe session from THIS map (never the client), and the
 // canister independently re-checks amount_total >= its own price.
 const PLAN_PRICES = {
   'cafresohq-pro': 900,
@@ -138,11 +118,20 @@ async function verifyStripeSignature(rawBody, sigHeader, secret) {
 }
 
 // ── Oracle actor (calls bek5d.confirmCardOrder) ────────────────────────────
-function oracleActor(env) {
-  const seed = Uint8Array.from((env.ORACLE_SEED_HEX || '').match(/.{1,2}/g).map((h) => parseInt(h, 16)));
+// @dfinity/agent v3: HttpAgent.create() is async (it syncs time). Mainnet →
+// never fetchRootKey. The identity is derived deterministically from the seed,
+// so the principal is stable across restarts (that's what we register on-chain).
+async function oracleActor(env) {
+  const hex = (env.ORACLE_SEED_HEX || '').trim();
+  const m = hex.match(/.{1,2}/g);
+  if (!m || m.length !== 32) throw new Error('ORACLE_SEED_HEX must be 32 bytes (64 hex chars)');
+  const seed = Uint8Array.from(m.map((h) => parseInt(h, 16)));
   const identity = Ed25519KeyIdentity.generate(seed);
-  const agent = new HttpAgent({ host: env.IC_HOST || 'https://icp0.io', identity });
-  // Mainnet only — do NOT fetchRootKey in production.
+  const agent = await HttpAgent.create({
+    host: env.IC_HOST || 'https://icp0.io',
+    identity,
+    shouldFetchRootKey: false, // mainnet — do NOT fetch the root key
+  });
   return Actor.createActor(idlFactory, { agent, canisterId: env.INDEX_CANISTER_ID });
 }
 
@@ -206,27 +195,67 @@ async function handleWebhook(request, env) {
   if (!Number.isFinite(amountCents) || amountCents <= 0) return new Response('bad amount', { status: 200 });
 
   try {
-    const actor = oracleActor(env);
+    const actor = await oracleActor(env);
     const res = await actor.confirmCardOrder(BigInt(icOrderId), BigInt(Math.round(amountCents)), session.id || '');
     if ('ok' in res) return new Response('confirmed', { status: 200 });
     // Business rejection (e.g. amount < price, wrong status) → do NOT retry.
     console.log('confirmCardOrder rejected:', res.err);
     return new Response('rejected: ' + res.err, { status: 200 });
   } catch (e) {
-    // Transient IC failure → 500 so Stripe retries (its retry window ~3 days
-    // is the outage-recovery path).
+    // Transient IC failure (or oracle not yet configured) → 500 so Stripe
+    // retries (its retry window ~3 days is the outage-recovery path).
     console.log('confirmCardOrder error:', String(e));
     return new Response('ic error', { status: 500 });
   }
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const origin = request.headers.get('Origin') || ALLOWED_ORIGINS[0];
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
-    if (request.method === 'POST' && url.pathname === '/webhook') return handleWebhook(request, env);
-    if (request.method === 'POST') return handleSession(request, env, origin); // / or /session
-    return new Response('CafresoHQ Stripe Worker', { status: 200 });
-  },
-};
+// ── Router (was the Cloudflare `export default { fetch }`) ──────────────────
+async function handleRequest(request, env) {
+  const url = new URL(request.url);
+  const origin = request.headers.get('Origin') || ALLOWED_ORIGINS[0];
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  if (request.method === 'GET' && url.pathname === '/health') return new Response('ok', { status: 200 });
+  if (request.method === 'POST' && url.pathname === '/webhook') return handleWebhook(request, env);
+  if (request.method === 'POST') return handleSession(request, env, origin); // / or /session
+  return new Response('CafresoHQ Stripe Oracle', { status: 200 });
+}
+
+// ── Node HTTP adapter ──────────────────────────────────────────────────────
+// Buffer the raw body (Stripe's signature is over the exact bytes), build a
+// Fetch Request, run the unchanged handler, stream the Response back.
+const PORT = Number(process.env.STRIPE_ORACLE_PORT || 8788);
+const HOST = process.env.STRIPE_ORACLE_BIND || '127.0.0.1';
+
+const server = http.createServer((nodeReq, nodeRes) => {
+  const chunks = [];
+  nodeReq.on('data', (c) => chunks.push(c));
+  nodeReq.on('end', async () => {
+    try {
+      const bodyBuf = Buffer.concat(chunks);
+      const hasBody = nodeReq.method !== 'GET' && nodeReq.method !== 'HEAD' && bodyBuf.length > 0;
+      const request = new Request(`http://localhost${nodeReq.url}`, {
+        method: nodeReq.method,
+        headers: nodeReq.headers,
+        body: hasBody ? bodyBuf : undefined,
+      });
+      const response = await handleRequest(request, process.env);
+      const headers = {};
+      response.headers.forEach((v, k) => { headers[k] = v; });
+      const out = Buffer.from(await response.arrayBuffer());
+      nodeRes.writeHead(response.status, headers);
+      nodeRes.end(out);
+    } catch (e) {
+      console.log('handler error:', String(e && e.stack || e));
+      nodeRes.writeHead(500, { 'Content-Type': 'text/plain' });
+      nodeRes.end('internal error');
+    }
+  });
+  nodeReq.on('error', (e) => {
+    console.log('request stream error:', String(e));
+    try { nodeRes.writeHead(400); nodeRes.end('bad request'); } catch (_) {}
+  });
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`CafresoHQ Stripe Oracle listening on ${HOST}:${PORT}`);
+});

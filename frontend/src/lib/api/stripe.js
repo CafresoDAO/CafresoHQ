@@ -6,16 +6,15 @@
  * Stripe's hosted page, they are redirected back to /success where we record
  * the order on-chain using their live Internet Identity.
  *
- * To set up your Worker:
- *   1. Go to workers.cloudflare.com → Create Worker
- *   2. Paste the worker code from docs/stripe-worker.js
- *   3. Add secret: STRIPE_SECRET_KEY = sk_live_...
- *   4. Set WORKER_URL below (or in .env as PUBLIC_STRIPE_WORKER_URL)
+ * The oracle is self-hosted on the gateway VM (oci-fleet/stripe-oracle),
+ * fronted by Caddy at https://hq.cafreso.com/stripe/*. Set
+ *   PUBLIC_STRIPE_WORKER_URL=https://hq.cafreso.com/stripe/session
+ * (a Cloudflare Worker twin lives in docs/stripe-worker.js as a fallback).
  */
 
 const WORKER_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.PUBLIC_STRIPE_WORKER_URL) ||
-  'https://cafreso-stripe.YOUR-SUBDOMAIN.workers.dev';
+  'https://hq.cafreso.com/stripe/session';
 
 /**
  * Ask the Worker to create a Stripe Checkout Session. The Worker prices the
