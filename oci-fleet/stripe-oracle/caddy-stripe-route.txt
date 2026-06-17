@@ -8,8 +8,12 @@ every regenerate.
 
     # Stripe card-payment oracle (Node on localhost:8788). Prefix stripped so
     # the service sees /session and /webhook. In the template's static section,
-    # so it survives caddy-sync.
+    # so it survives caddy-sync. request_body caps the body at the edge (the
+    # Node adapter caps it again) — Stripe events + /session JSON are tiny.
     handle_path /stripe/* {
+        request_body {
+            max_size 256KB
+        }
         reverse_proxy localhost:8788
     }
 

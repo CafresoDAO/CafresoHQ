@@ -2,6 +2,9 @@
 Description=CafresoHQ Stripe Oracle (card-payment confirmer)
 After=network-online.target
 Wants=network-online.target
+# A transient crash loop should back off, not wedge the unit in failed state.
+StartLimitIntervalSec=60
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -11,6 +14,17 @@ WorkingDirectory=/opt/stripe-oracle
 ExecStart=/usr/bin/node /opt/stripe-oracle/server.js
 Restart=on-failure
 RestartSec=5
+
+# Resource containment — keep any overrun INSIDE this service's cgroup so the
+# kernel OOM killer can't select the co-hosted fleet-api gateway / verifier.
+# Caps are generous vs the real footprint (Node + @dfinity ~150 MB); the 256 KB
+# body cap means legitimate per-request memory is tiny.
+MemoryAccounting=true
+MemoryMax=512M
+MemoryHigh=400M
+CPUQuota=75%
+TasksMax=64
+LimitNOFILE=1024
 # Non-secret config. Secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
 # ORACLE_SEED_HEX) come from the EnvironmentFile below (mode 600, root-owned).
 Environment=STRIPE_ORACLE_PORT=8788
@@ -28,6 +42,18 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/stripe-oracle
+# Syscall / namespace / kernel hardening. AF_NETLINK is kept for getaddrinfo
+# (DNS); MemoryDenyWriteExecute is deliberately NOT set (it breaks V8's JIT).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
 
 [Install]
 WantedBy=multi-user.target

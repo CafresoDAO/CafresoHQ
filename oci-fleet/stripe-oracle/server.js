@@ -84,6 +84,25 @@ function json(body, status, extra) {
   });
 }
 
+// Max accepted request body. Stripe events + the tiny /session JSON are well
+// under this; anything larger is an abuse/DoS attempt and is rejected early
+// (the adapter enforces it BEFORE buffering, so a huge body can't balloon RSS).
+const MAX_BODY = 256 * 1024; // 256 KB
+
+// Lightweight per-IP rate limit for /session (the one unauthenticated path that
+// makes an outbound Stripe call). Fixed window; bounded map so spraying many
+// IPs can't grow it without limit.
+const RL_MAX = 30, RL_WINDOW_MS = 60_000;
+const rlBuckets = new Map(); // ip -> { count, resetAt }
+function sessionRateLimited(ip) {
+  const now = Date.now();
+  if (rlBuckets.size > 10_000) rlBuckets.clear(); // crude prune; ample for real traffic
+  let b = rlBuckets.get(ip);
+  if (!b || now > b.resetAt) { b = { count: 0, resetAt: now + RL_WINDOW_MS }; rlBuckets.set(ip, b); }
+  b.count += 1;
+  return b.count > RL_MAX;
+}
+
 // ── Stripe webhook signature (manual HMAC-SHA256 via Web Crypto) ───────────
 function timingSafeEqualHex(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
@@ -137,6 +156,8 @@ async function oracleActor(env) {
 
 // ── POST /session — create a Stripe Checkout Session ───────────────────────
 async function handleSession(request, env, origin) {
+  const ip = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
+  if (sessionRateLimited(ip)) return json({ error: 'rate limited' }, 429, corsHeaders(origin));
   let body;
   try { body = await request.json(); } catch (_) { return json({ error: 'bad json' }, 400, corsHeaders(origin)); }
   const meta = body.metadata || {};
@@ -164,11 +185,23 @@ async function handleSession(request, env, origin) {
   p.append('payment_intent_data[metadata][icOrderId]', String(icOrderId));
   p.append('payment_intent_data[metadata][plan]', plan);
 
-  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: p,
-  });
+  // Bound the outbound Stripe call so a slow/hung Stripe response can't pile up
+  // awaited handlers.
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 10_000);
+  let r;
+  try {
+    r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: p,
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    return json({ error: 'stripe unreachable' }, 504, corsHeaders(origin));
+  } finally {
+    clearTimeout(to);
+  }
   const session = await r.json();
   if (!r.ok) return json({ error: session?.error?.message || 'stripe error' }, 502, corsHeaders(origin));
   return json({ url: session.url }, 200, corsHeaders(origin));
@@ -227,9 +260,32 @@ const PORT = Number(process.env.STRIPE_ORACLE_PORT || 8788);
 const HOST = process.env.STRIPE_ORACLE_BIND || '127.0.0.1';
 
 const server = http.createServer((nodeReq, nodeRes) => {
+  // Reject an oversized DECLARED body up front…
+  const declared = Number(nodeReq.headers['content-length']);
+  if (Number.isFinite(declared) && declared > MAX_BODY) {
+    try { nodeRes.writeHead(413, { 'Content-Type': 'text/plain' }); nodeRes.end('payload too large'); } catch (_) {}
+    nodeReq.destroy();
+    return;
+  }
   const chunks = [];
-  nodeReq.on('data', (c) => chunks.push(c));
+  let total = 0;
+  let aborted = false;
+  nodeReq.on('data', (c) => {
+    if (aborted) return;
+    total += c.length;
+    // …and cap the ACTUAL bytes during streaming (defeats chunked/undeclared
+    // bodies). This runs BEFORE any buffering completes, so a huge body can't
+    // balloon RSS and pressure the co-hosted gateway.
+    if (total > MAX_BODY) {
+      aborted = true;
+      try { nodeRes.writeHead(413, { 'Content-Type': 'text/plain' }); nodeRes.end('payload too large'); } catch (_) {}
+      nodeReq.destroy();
+      return;
+    }
+    chunks.push(c);
+  });
   nodeReq.on('end', async () => {
+    if (aborted) return;
     try {
       const bodyBuf = Buffer.concat(chunks);
       const hasBody = nodeReq.method !== 'GET' && nodeReq.method !== 'HEAD' && bodyBuf.length > 0;
@@ -246,16 +302,32 @@ const server = http.createServer((nodeReq, nodeRes) => {
       nodeRes.end(out);
     } catch (e) {
       console.log('handler error:', String(e && e.stack || e));
-      nodeRes.writeHead(500, { 'Content-Type': 'text/plain' });
-      nodeRes.end('internal error');
+      // Only write a status if headers aren't already committed (avoids
+      // ERR_HTTP_HEADERS_SENT throwing out of the catch).
+      if (!nodeRes.headersSent) {
+        try { nodeRes.writeHead(500, { 'Content-Type': 'text/plain' }); nodeRes.end('internal error'); } catch (_) {}
+      } else {
+        try { nodeRes.end(); } catch (_) {}
+      }
     }
   });
   nodeReq.on('error', (e) => {
     console.log('request stream error:', String(e));
-    try { nodeRes.writeHead(400); nodeRes.end('bad request'); } catch (_) {}
+    try { if (!nodeRes.headersSent) { nodeRes.writeHead(400); nodeRes.end('bad request'); } } catch (_) {}
   });
 });
 
+// Bound slow-header / slow-body holds. Caddy fronts us (so these are defense in
+// depth), but cheap to set at the origin too.
+server.requestTimeout = 20_000;   // full request must complete in 20s
+server.headersTimeout = 10_000;   // headers must arrive in 10s
+server.keepAliveTimeout = 5_000;
+
 server.listen(PORT, HOST, () => {
-  console.log(`CafresoHQ Stripe Oracle listening on ${HOST}:${PORT}`);
+  console.log(`CafresoHQ Stripe Oracle listening on ${HOST}:${PORT} (max body ${MAX_BODY}B)`);
 });
+
+// A long-lived money relay must not die on a stray async fault — log loudly and
+// keep serving. The per-request work is already wrapped in try/catch above.
+process.on('unhandledRejection', (e) => console.log('unhandledRejection:', String((e && e.stack) || e)));
+process.on('uncaughtException', (e) => console.log('uncaughtException:', String((e && e.stack) || e)));
