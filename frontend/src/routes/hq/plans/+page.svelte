@@ -66,31 +66,40 @@
     loading = false;
   }
 
-  // Stripe return: ?paid=<plan> → record the order on-chain + notify the fleet.
-  // (The pending order was stashed in sessionStorage before the redirect.)
+  // Stripe card return: ?paid=<plan>&order=<id>. The order was already recorded
+  // PENDING before redirect; the Stripe webhook → confirmCardOrder flips it to
+  // "paid". We poll until that lands, then apply the plan. NO recordOrder here
+  // (that was the old double-record bug) and no auto re-apply on every load.
+  let handledReturn = false;
   async function handleStripeReturn() {
+    if (handledReturn) return;
     const params = new URLSearchParams(window.location.search);
     const paidPlan = params.get('paid');
-    if (!paidPlan || !PLANS[paidPlan]) return;
-    busy = paidPlan;
+    const orderParam = params.get('order');
+    if (!paidPlan || !PLANS[paidPlan] || !orderParam) return;
+    handledReturn = true;
+    const icOrderId = Number(orderParam);
+    // Strip the params immediately so a refresh can't re-enter.
+    window.history.replaceState({}, '', '/hq/plans');
+    busy = paidPlan; pendingApplyOrderId = null;
+    msg = { kind: 'warn', text: `Confirming your ${PLANS[paidPlan].label} card payment on-chain…` };
     try {
-      const { consumePendingStripeOrder } = await import('$lib/api/stripe.js');
-      const { recordOrder } = await import('$lib/api/store.js');
-      consumePendingStripeOrder();  // clear it
-      const rec = await recordOrder({
-        items: [{ slug: PLANS[paidPlan].slug, qty: 1, priceNanas: 0, price: PLANS[paidPlan].usd }],
-        shipping: {}, paidBlock: 0, paymentMethod: 'stripe',
-      });
-      if (!rec.err) {
-        const applied = await notifyFleet(rec.ok?.id);
-        msg = applied.ok
-          ? { kind: 'ok', text: `${PLANS[paidPlan].label} active! Your HQ is updating (~10s).` }
-          : { kind: 'ok', text: `Payment recorded. Your ${PLANS[paidPlan].label} plan activates once the card charge is confirmed on-chain.` };
+      const { waitForOrderPaid } = await import('$lib/api/hqPlans.js');
+      const paid = await waitForOrderPaid(icOrderId, { pollMs: 3000, timeoutMs: 90000 });
+      if (paid) {
+        const applied = await notifyFleet(icOrderId);
+        if (applied.ok) {
+          msg = { kind: 'ok', text: `${PLANS[paidPlan].label} active! Your HQ is updating (~10s).` };
+        } else {
+          pendingApplyOrderId = icOrderId;
+          msg = { kind: 'warn', text: `Payment confirmed, but activating your HQ didn't finish. Use “Apply plan” to retry — you won't be charged again.` };
+        }
       } else {
-        msg = { kind: 'err', text: `Payment ok but recording failed: ${rec.err}` };
+        // Webhook hasn't landed yet (it retries up to ~3 days). Plan activates
+        // automatically; offer a manual retry.
+        pendingApplyOrderId = icOrderId;
+        msg = { kind: 'warn', text: `Payment received — still confirming on-chain. Your ${PLANS[paidPlan].label} plan activates automatically; use “Apply plan” to retry.` };
       }
-      // strip the query param so a refresh doesn't double-record
-      window.history.replaceState({}, '', '/hq/plans');
       await refresh();
     } finally { busy = ''; }
   }

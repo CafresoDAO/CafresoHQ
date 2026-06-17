@@ -207,6 +207,21 @@ export async function purchasePlanIcp(slug) {
   }
 }
 
+// Create a PENDING Stripe (card) order for an allowlisted plan slug, on-chain,
+// before redirecting to Stripe. Returns { ok: order } | { err }. The order id
+// is stamped into the Stripe session so the webhook oracle can confirm it.
+export async function createCardOrder(slug) {
+  const a = actor({ authed: true });
+  if (!a) return { err: 'Sign in to subscribe.' };
+  try {
+    const res = await a.createCardOrder(slug);
+    if ('ok' in res) return { ok: canisterToOrder(res.ok) };
+    return { err: res.err };
+  } catch (e) {
+    return { err: String(e?.message || e) };
+  }
+}
+
 // USD-cents price (BigInt) for a plan slug, or null if unpriced. The canister
 // charges the live-rate ICP equivalent at purchase (via the XRC oracle).
 export async function getPlanPriceUsdCents(slug) {

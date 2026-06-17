@@ -18,12 +18,13 @@ const WORKER_URL =
   'https://cafreso-stripe.YOUR-SUBDOMAIN.workers.dev';
 
 /**
- * Ask the Worker to create a Stripe Checkout Session.
+ * Ask the Worker to create a Stripe Checkout Session. The Worker prices the
+ * session server-side from the plan in `metadata` (never a client price) and
+ * stamps `metadata` onto the session + payment_intent so its /webhook can
+ * confirm the on-chain order. See docs/stripe-worker.js.
  *
  * @param {{
- *   items: Array<{name: string, price: number, qty: number}>,
- *   shipping: {name: string, email: string, street: string, city: string, postal: string},
- *   orderId: string,
+ *   metadata: { icOrderId: string, principal: string, plan: string },
  *   successUrl: string,
  *   cancelUrl: string
  * }} payload

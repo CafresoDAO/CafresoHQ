@@ -15,9 +15,10 @@
 // stores/prices.js so the catalog stays in USD but users pay in ICP today.
 
 import { approve, getFee } from '$lib/api/icrc1.js';
-import { listMyOrders, purchasePlanIcp, getPlanPriceUsdCents, INDEX_CANISTER_ID } from '$lib/api/store.js';
-import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
+import { listMyOrders, purchasePlanIcp, createCardOrder, getPlanPriceUsdCents, INDEX_CANISTER_ID } from '$lib/api/store.js';
+import { createStripeSession } from '$lib/api/stripe.js';
 import { fleetApiUrl } from '$lib/api/fleetClient.js';
+import { principalText } from '$lib/stores/auth.js';
 import { get } from 'svelte/store';
 import { prices } from '$lib/stores/prices.js';
 
@@ -124,27 +125,44 @@ export async function subscribeWithIcp(planId) {
   return { ok: true, plan: planId, order: res.ok };
 }
 
-/** Subscribe by card via the existing Stripe Worker. Redirects the browser to
- *  Stripe Checkout; the /success page records the order + notifies the fleet. */
+/** Subscribe by card via the Stripe Worker. Records a PENDING order on-chain
+ *  FIRST (so the webhook oracle has a real order id to confirm), then redirects
+ *  to Stripe Checkout. On return, handleStripeReturn polls until the webhook has
+ *  flipped the order to "paid", then applies the plan. */
 export async function subscribeWithCard(planId, { successUrl, cancelUrl }) {
   const plan = PLANS[planId];
   if (!plan || plan.usd <= 0) return { err: 'Pick a paid plan.' };
-  const orderId = `hq-${planId}-${Date.now()}`;
-  savePendingStripeOrder({
-    orderId,
-    items: [{ name: `CafresoHQ ${plan.label}`, price: plan.usd, qty: 1 }],
-    shipping: {},
-  });
+
+  // 1. On-chain pending order — buyer principal is unforgeable, slug allowlisted.
+  const rec = await createCardOrder(plan.slug);
+  if (rec.err) return { err: rec.err };
+  const icOrderId = rec.ok.id;
+
+  // 2. Stripe Checkout session. The Worker prices it server-side from the plan
+  //    (not us) and stamps the order id into metadata; the canister re-checks
+  //    the paid amount on confirm. successUrl carries ?paid + &order so the
+  //    return handler knows which order to poll.
   const session = await createStripeSession({
-    items: [{ name: `CafresoHQ ${plan.label} (monthly)`, price: plan.usd, qty: 1 }],
-    shipping: {},
-    orderId,
-    successUrl,
+    metadata: { icOrderId: String(icOrderId), principal: get(principalText) || '', plan: plan.slug },
+    successUrl: `${successUrl}${successUrl.includes('?') ? '&' : '?'}order=${icOrderId}`,
     cancelUrl,
   });
   if (session.error) return { err: session.error };
   if (session.url) { window.location.href = session.url; return { ok: true, redirecting: true }; }
   return { err: 'No checkout URL returned.' };
+}
+
+/** Poll the on-chain order ledger until `orderId` is "paid" (the Stripe webhook
+ *  oracle flips it) or the timeout elapses. Returns true if paid. */
+export async function waitForOrderPaid(orderId, { pollMs = 3000, timeoutMs = 90000 } = {}) {
+  const id = Number(orderId);
+  const isPaid = (orders) => (orders || []).some((o) => Number(o.id) === id && o.status === 'paid');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (isPaid(await listMyOrders())) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return isPaid(await listMyOrders());
 }
 
 /** Tell the fleet to apply the user's plan to their container (idle policy +
