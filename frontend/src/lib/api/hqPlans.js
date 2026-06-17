@@ -15,7 +15,7 @@
 // stores/prices.js so the catalog stays in USD but users pay in ICP today.
 
 import { approve, getFee } from '$lib/api/icrc1.js';
-import { listMyOrders, purchasePlanIcp, getPlanPriceE8s, INDEX_CANISTER_ID } from '$lib/api/store.js';
+import { listMyOrders, purchasePlanIcp, getPlanPriceUsdCents, INDEX_CANISTER_ID } from '$lib/api/store.js';
 import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
 import { fleetApiUrl } from '$lib/api/fleetClient.js';
 import { get } from 'svelte/store';
@@ -88,28 +88,32 @@ export async function subscribeWithIcp(planId) {
   const plan = PLANS[planId];
   if (!plan || plan.usd <= 0) return { err: 'Pick a paid plan.' };
 
-  // Fixed ICP price lives ON the canister (single source of truth — the same
-  // value the canister will enforce when it pulls the funds).
-  const priceE8s = await getPlanPriceE8s(plan.slug);
-  if (priceE8s == null) return { err: 'ICP pricing not available yet — try again shortly.' };
+  // The canister prices plans in USD cents and charges the live-rate ICP at
+  // purchase (via the on-chain XRC oracle). We approve a margined ICP estimate
+  // from the live display rate so the canister's exact pull always fits; the
+  // canister decides the real amount, and any leftover allowance auto-expires.
+  const cents = await getPlanPriceUsdCents(plan.slug);
+  if (cents == null) return { err: 'Plan pricing not available yet — try again shortly.' };
+  const usd = Number(cents) / 100;
 
-  // 1. Approve the index canister to pull (price + a small fee margin so a
-  //    ledger-fee bump between this cached read and the pull can't strand the
-  //    approve). The allowance auto-expires in ~10 min (see approve()).
+  const icpUsd = Number(get(prices)?.ICP);
+  if (!Number.isFinite(icpUsd) || icpUsd <= 0) return { err: 'ICP price unavailable — try again in a moment.' };
+  const icpEstimate = usd / icpUsd;                       // whole ICP at the live rate
+
+  // 1. Approve estimate + 25% margin + fee (covers rate divergence/movement).
   const fee = (await getFee('ICP')) ?? 10_000n;
-  const margin = fee > 100_000n ? fee : 100_000n;
-  const approveAmount = BigInt(priceE8s) + margin;
+  const approveE8s = BigInt(Math.ceil(icpEstimate * 1.25 * 1e8)) + BigInt(fee);
   const ap = await approve({
     tokenKey: 'ICP',
     spenderPrincipalText: INDEX_CANISTER_ID,
-    amount: approveAmount,
+    amount: approveE8s,
   });
   if (ap.err) return { err: `Approval failed: ${ap.err}` };
 
-  // 2. The canister pulls EXACTLY the price and records the paid order. A buyer
-  //    can never underpay (the canister sets the amount) or pay someone else
-  //    (it pulls to the configured HQ treasury), and a double-submit returns the
-  //    existing paid order (the canister is idempotent per buyer+plan+period).
+  // 2. The canister reads the live rate, pulls the EXACT matching ICP, and
+  //    records the paid order. A buyer can never underpay (the canister sets the
+  //    amount from XRC) or pay someone else (it pulls to the configured HQ
+  //    treasury); a double-submit returns the existing paid order (idempotent).
   const res = await purchasePlanIcp(plan.slug);
   if (res.err) {
     // Best-effort: revoke the leftover allowance so no standing pull

@@ -207,15 +207,16 @@ export async function purchasePlanIcp(slug) {
   }
 }
 
-// Fixed ICP price (raw e8s, BigInt) for a plan slug, or null if unpriced.
-export async function getPlanPriceE8s(slug) {
+// USD-cents price (BigInt) for a plan slug, or null if unpriced. The canister
+// charges the live-rate ICP equivalent at purchase (via the XRC oracle).
+export async function getPlanPriceUsdCents(slug) {
   const a = actor();
   if (!a) return null;
   try {
-    const out = await a.getPlanPriceE8s(slug);   // opt nat → [] | [BigInt]
+    const out = await a.getPlanPriceUsdCents(slug);   // opt nat → [] | [BigInt cents]
     return (out && out.length) ? out[0] : null;
   } catch (e) {
-    console.warn('[store] getPlanPriceE8s failed', e);
+    console.warn('[store] getPlanPriceUsdCents failed', e);
     return null;
   }
 }
