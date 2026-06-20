@@ -165,21 +165,42 @@ export async function probeHealth({ timeoutMs = 8000 } = {}) {
  * the condition under which the local app can also be embedded in an iframe.
  * The HTTP fallback keeps working when the shell itself is served over HTTP.
  */
-export async function detectLocalCompanion({ timeoutMs = 1500, allowPrompt = false } = {}) {
-  const candidates = ['https://localhost:8787', 'http://localhost:8787'];
+// Ports auto-probed when looking for a Local Companion. 8787 is the default in
+// the docker one-liner; 8788 is the most common alt when 8787 is taken. Users
+// on any other port connect explicitly via the "custom port" field (which
+// persists, so subsequent loads find it without scanning).
+export const DEFAULT_LOCAL_PORTS = [8787, 8788];
+
+export async function detectLocalCompanion({ timeoutMs = 1500, allowPrompt = false, ports = DEFAULT_LOCAL_PORTS } = {}) {
+  // https before http, lower ports before higher — candidate[i] order = preference.
+  const candidates = [];
+  for (const p of ports) candidates.push(`https://localhost:${p}`, `http://localhost:${p}`);
   // While Chrome's local-network permission prompt is pending, only a probe
   // initiated from a user gesture should wait on it (allowPrompt) — the quiet
   // background re-poll must not stack 45s requests.
   let effective = timeoutMs;
-  if (allowPrompt) effective = await _lnaAwareTimeout(timeoutMs, candidates[1]);
-  for (const candidate of candidates) {
+  if (allowPrompt) effective = await _lnaAwareTimeout(timeoutMs, `http://localhost:${ports[0]}`);
+  // Probe concurrently so adding ports doesn't multiply the wall-clock wait;
+  // worst case stays ~one timeout regardless of how many ports we check.
+  const probe = (candidate) => new Promise((resolve) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), effective);
-    try {
-      const r = await fetch(candidate + '/health', { signal: ctrl.signal });
-      if (r.ok) return candidate;
-    } catch (_) { /* not running / blocked / untrusted cert — try next */ }
-    finally { clearTimeout(timer); }
-  }
-  return null;
+    fetch(candidate + '/health', { signal: ctrl.signal })
+      .then((r) => resolve(r.ok ? candidate : null))
+      .catch(() => resolve(null))          // not running / blocked / untrusted cert
+      .finally(() => clearTimeout(timer));
+  });
+  const results = await Promise.all(candidates.map(probe));
+  return results.find(Boolean) || null;    // earliest (most-preferred) responder
+}
+
+/**
+ * Turn whatever the user typed in the "custom port / URL" field into a probe-able
+ * URL: a bare port ("8788") -> http://localhost:8788; a host or full URL -> normalized.
+ */
+export function localUrlFromInput(raw) {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  if (/^\d{2,5}$/.test(s)) return `http://localhost:${s}`;   // bare port number
+  return normalizeUrl(s);                                     // host or full URL
 }
