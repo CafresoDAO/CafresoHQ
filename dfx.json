@@ -23,6 +23,15 @@
         "node_compatibility": true,
         "output": "frontend/src/lib/declarations/cafresoai_keys"
       }
+    },
+    "cafresohq_state": {
+      "//": "Phase 2: on-chain per-user state (HQ docs + vetKeys-encrypted vault ciphertext), keyed by II principal. Browser is the only caller; makes the OCI container stateless. See docs/PHASE2_STATE_CANISTER.md.",
+      "type": "motoko",
+      "main": "src/cafresohq_state/main.mo",
+      "declarations": {
+        "node_compatibility": true,
+        "output": "frontend/src/lib/declarations/cafresohq_state"
+      }
     }
   },
   "defaults": {
