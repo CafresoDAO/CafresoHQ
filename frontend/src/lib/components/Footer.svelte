@@ -33,7 +33,7 @@
       grid-template-columns: 1.2fr 0.9fr 1fr 0.9fr 1.2fr;
       gap: 28px;
       font-size: 14px;
-      color: hsl(26 18% 72%);
+      color: hsl(26 35% 88%);
       box-shadow: 0 20px 40px -24px hsl(24 40% 8% / 0.55);"
   >
     <div
@@ -68,7 +68,7 @@
         <a
           href={l.href}
           class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-          style="color: hsl(26 18% 72%); transition: color .18s, transform .18s;"
+          style="color: hsl(26 35% 88%); transition: color .18s, transform .18s;"
         >
           <Icon name={l.i} size={16} style="color: hsl(45 95% 62%);" /> {l.t}
         </a>
@@ -89,7 +89,7 @@
           data-sveltekit-reload="on"
           rel="noopener"
           class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-          style="color: hsl(26 18% 72%);"
+          style="color: hsl(26 35% 88%);"
         >
           <Icon name={l.i} size={16} style="color: hsl(45 95% 62%);" />
           <span>
@@ -111,7 +111,7 @@
         <a
           href={l.href}
           class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-          style="color: hsl(26 18% 72%);"
+          style="color: hsl(26 35% 88%);"
         >
           <Icon name={l.i} size={16} style="color: hsl(45 95% 62%);" /> {l.t}
         </a>
@@ -124,32 +124,34 @@
         style="letter-spacing: 0.08em; color: hsl(45 60% 85%);"
       >Connect</h4>
       <a
-        href="/"
+        href="https://oc.app/"
+        rel="noopener"
         class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-        style="color: hsl(26 18% 72%);"
+        style="color: hsl(26 35% 88%);"
       >
         <img src="/assets/open-chat.jpg" alt="" class="w-[18px] rounded-[3px]" /> Open Chat
       </a>
       <a
-        href="/"
+        href="https://forum.dfinity.org/"
+        rel="noopener"
         class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-        style="color: hsl(26 18% 72%);"
+        style="color: hsl(26 35% 88%);"
       >
         <img src="/assets/icp.png" alt="" class="w-4" /> Dfinity Forum
       </a>
       <a
         href="/"
         class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-        style="color: hsl(26 18% 72%);"
+        style="color: hsl(26 35% 88%);"
       >
         <Icon name="map-pin" size={16} style="color: hsl(45 95% 62%);" /> San Miguel, El Salvador
       </a>
       <a
-        href="mailto:Anthony@cafreso.com"
+        href="mailto:hello@cafreso.com"
         class="flex items-center gap-2.5 no-underline mb-2.5 cursor-pointer"
-        style="color: hsl(26 18% 72%);"
+        style="color: hsl(26 35% 88%);"
       >
-        <Icon name="envelope" size={16} style="color: hsl(45 95% 62%);" /> Anthony@cafreso.com
+        <Icon name="envelope" size={16} style="color: hsl(45 95% 62%);" /> hello@cafreso.com
       </a>
     </div>
 
@@ -159,8 +161,8 @@
     >
       <span>© 2026 Cafreso DAO × Minegold · Powered by the Internet Computer</span>
       <span class="inline-flex gap-[18px]">
-        <a href="/" style="color: hsl(26 18% 72%);" class="no-underline">Privacy</a>
-        <a href="/" style="color: hsl(26 18% 72%);" class="no-underline">Terms</a>
+        <a href="/" title="Coming soon" aria-disabled="true" style="color: hsl(26 35% 88%);" class="no-underline">Privacy</a>
+        <a href="/" title="Coming soon" aria-disabled="true" style="color: hsl(26 35% 88%);" class="no-underline">Terms</a>
       </span>
     </div>
   </div>

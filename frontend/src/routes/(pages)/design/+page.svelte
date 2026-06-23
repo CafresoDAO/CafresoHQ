@@ -93,7 +93,10 @@
   ];
 </script>
 
-<svelte:head><title>Design System · Cafreso</title></svelte:head>
+<svelte:head>
+  <title>Design System · Cafreso</title>
+  <meta name="description" content="The Cafreso design system — color tokens, typography, buttons, badges, forms, icons, logos, and components used across the dapp." />
+</svelte:head>
 
 <div class="design-container mx-auto px-6 py-10" style="max-width: 1100px;">
   <header class="mb-8">

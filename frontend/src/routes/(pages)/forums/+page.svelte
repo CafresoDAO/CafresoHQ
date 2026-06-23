@@ -31,7 +31,10 @@
   );
 </script>
 
-<svelte:head><title>Forums · Cafreso</title></svelte:head>
+<svelte:head>
+  <title>Forums · Cafreso</title>
+  <meta name="description" content="Community forums where anyone with an Internet Identity can start threads, comment, and tip authors in $nanas. Coffee, DAO proposals, and mining strategy." />
+</svelte:head>
 
 <div class="mx-auto" style="max-width: 900px; padding: 28px 18px 48px;">
   <div class="text-center mb-6 sm:mb-8">
@@ -58,6 +61,7 @@
       <input
         bind:value={q}
         placeholder="Search threads…"
+        aria-label="Search threads"
         class="flex-1 min-w-0 text-[13.5px] bg-transparent border-none outline-none"
         style="color: hsl(222 47% 11%);"
       />

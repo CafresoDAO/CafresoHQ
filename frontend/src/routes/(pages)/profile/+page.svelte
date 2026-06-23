@@ -315,7 +315,7 @@
           style="background: hsl({accentHue()} 55% 30%); color: white; border: none;"
         >
           <Icon name={copied ? 'check' : 'copy'} size={13} />
-          <span class="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+          <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
     </div>
@@ -472,9 +472,9 @@
             type="button"
             onclick={() => openSend(key)}
             disabled={!raw || raw === 0n}
-            aria-label="Send {t.symbol}"
+            aria-label={`Send ${t.symbol}`}
             title={!raw || raw === 0n ? 'No balance to send' : `Send ${t.symbol}`}
-            class="h-9 w-9 shrink-0 rounded-[10px] cursor-pointer inline-flex items-center justify-center transition-opacity"
+            class="h-10 w-10 shrink-0 rounded-[10px] cursor-pointer inline-flex items-center justify-center transition-opacity"
             style="background: hsl(222 47% 11%); color: white; border: none; opacity: {!raw || raw === 0n ? 0.35 : 1};"
           >
             <Icon name="paper-plane-tilt" size={14} />

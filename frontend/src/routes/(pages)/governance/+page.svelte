@@ -33,6 +33,7 @@
 
 <svelte:head>
   <title>Governance · Cafreso</title>
+  <meta name="description" content="Browse Cafreso DAO governance proposals, explore the context behind each vote, and engage with the community before the SNS DAO goes live." />
 </svelte:head>
 
 <!-- DAO Hero Banner -->
@@ -120,6 +121,7 @@
         type="search"
         bind:value={searchQuery}
         placeholder="Search proposals…"
+        aria-label="Search proposals"
         style="
           width: 100%; padding: 8px 12px 8px 32px; border-radius: 10px;
           border: 1px solid hsl(26 30% 85%); font-size: 13px; font-family: inherit;

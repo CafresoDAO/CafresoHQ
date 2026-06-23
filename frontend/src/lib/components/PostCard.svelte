@@ -119,7 +119,7 @@
       >
         <img
           src={postHeroImg(post.hero)}
-          alt=""
+          alt={post.title}
           style="
             width: 86%; height: 86%; object-fit: contain;
             image-rendering: {post.hero === 'farm' ? 'pixelated' : 'auto'};
@@ -152,7 +152,7 @@
     >
       <img
         src={postHeroImg(post.hero)}
-        alt=""
+        alt={post.title}
         style="
           width: 70%; height: 70%; object-fit: contain;
           image-rendering: {post.hero === 'farm' ? 'pixelated' : 'auto'};

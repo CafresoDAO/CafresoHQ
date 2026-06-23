@@ -24,7 +24,10 @@
   });
 </script>
 
-<svelte:head><title>Contest · Cafreso</title></svelte:head>
+<svelte:head>
+  <title>Leaderboard · Cafreso</title>
+  <meta name="description" content="See the Cafreso community leaderboard, ranked by on-chain activity — $nanas burned on dev-log tips plus UNI mined on Banking.Brave." />
+</svelte:head>
 
 <div class="mx-auto px-4 py-6 md:p-10" style="max-width: 960px;">
   <div class="text-center">
@@ -39,7 +42,22 @@
     </p>
   </div>
 
-  {#if rows.length === 0}
+  {#if loading}
+    <div
+      class="mt-8 rounded-[16px] p-6 sm:p-10 text-center"
+      style="background: hsl(26 40% 98%); border: 1px dashed hsl(26 30% 75%);"
+    >
+      <div
+        class="w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-full flex items-center justify-center mb-4"
+        style="background: hsl(45 80% 92%); color: hsl(32 56% 25%);"
+      >
+        <Icon name="trophy" size={28} />
+      </div>
+      <p class="text-[13.5px] sm:text-[14px] leading-[1.55] mx-auto" style="max-width: 460px; color: hsl(215 16% 47%);">
+        Loading the leaderboard…
+      </p>
+    </div>
+  {:else if rows.length === 0}
     <div
       class="mt-8 rounded-[16px] p-6 sm:p-10 text-center"
       style="background: hsl(26 40% 98%); border: 1px dashed hsl(26 30% 75%);"

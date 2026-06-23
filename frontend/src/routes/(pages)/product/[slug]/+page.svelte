@@ -26,7 +26,16 @@
   }
 </script>
 
-<svelte:head><title>{p ? p.name : 'Product'} · Cafreso</title></svelte:head>
+<svelte:head>
+  <title>{p ? p.name : 'Product'} · Cafreso</title>
+  {#if p}
+    <meta property="og:title" content={p.name} />
+    <meta property="og:description" content={p.desc || p.excerpt || ''} />
+    <meta property="og:type" content="product" />
+    <meta property="og:image" content={p.img ? productImage(p.img) : '/assets/cafreso-wordmark.png'} />
+    <meta name="twitter:card" content="summary_large_image" />
+  {/if}
+</svelte:head>
 
 {#if p}
   <div class="mx-auto px-4 py-6 md:p-10" style="max-width: 1280px;">
@@ -38,7 +47,7 @@
     </button>
     <div class="pdp-layout flex gap-10 flex-col md:flex-row">
       <div class="pdp-gallery flex-1 flex justify-center items-start p-6">
-        <img src={productImage(p.img)} alt="" style="max-width: 100%; max-height: 420px;" />
+        <img src={productImage(p.img)} alt={p.name} style="max-width: 100%; max-height: 420px;" />
       </div>
       <div class="pdp-copy flex-1 flex flex-col gap-4 p-6">
         <h1 class="text-[36px] font-extrabold m-0 mt-3 leading-[1.1]">{p.name}</h1>
@@ -82,7 +91,7 @@
           >Add to cart</Button>
         </div>
         {#if p.unavailable}
-          <p class="text-sm text-muted-foreground m-0">This product is not yet unavailable.</p>
+          <p class="text-sm text-muted-foreground m-0">This product is coming soon.</p>
         {:else}
           <div class="flex gap-2 items-center text-sm text-primary">
             <span>{total.toLocaleString()}</span>

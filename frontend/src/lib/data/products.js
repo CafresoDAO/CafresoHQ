@@ -17,6 +17,7 @@ export const PRODUCTS = [
     excerpt: 'Handpicked medium roast, grown on volcanic soil near San Miguel. 12oz whole bean.',
     desc: 'Handpicked medium roast, grown on volcanic soil near San Miguel. 12oz whole bean.',
     soon: false,
+    unavailable: false,
     stock: null
   },
   {
@@ -31,6 +32,7 @@ export const PRODUCTS = [
     excerpt: 'Our house blend. Roasted this week.',
     desc: 'Our house blend. Roasted this week.',
     soon: true,
+    unavailable: true,
     stock: null
   },
   {
@@ -45,6 +47,7 @@ export const PRODUCTS = [
     excerpt: 'Slow-steeped for 18 hours. Just add water.',
     desc: 'Slow-steeped for 18 hours. Just add water.',
     soon: false,
+    unavailable: false,
     stock: null
   },
   {
@@ -59,6 +62,7 @@ export const PRODUCTS = [
     excerpt: 'Soft 100% cotton. Cf script mark, screen printed in San Salvador.',
     desc: 'Soft 100% cotton. Cf script mark, screen printed in San Salvador.',
     soon: false,
+    unavailable: false,
     stock: null
   },
   {
@@ -73,6 +77,7 @@ export const PRODUCTS = [
     excerpt: 'Burn $nanas, claim a roaster, climb the leaderboard. 100% of proceeds fund the farm.',
     desc: 'Burn $nanas, claim a roaster, climb the leaderboard. 100% of proceeds fund the farm.',
     soon: false,
+    unavailable: false,
     stock: null
   },
   {
@@ -87,6 +92,7 @@ export const PRODUCTS = [
     excerpt: 'Lock $CF for governance voting and revenue share from the café.',
     desc: 'Lock $CF for governance voting and revenue share from the café.',
     soon: true,
+    unavailable: true,
     stock: null
   }
 ];

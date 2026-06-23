@@ -79,7 +79,7 @@
     <img
       bind:this={imgEl}
       src={productImage(p.img)}
-      alt=""
+      alt={p.name}
       style="max-width: 100%; max-height: 100%; object-fit: contain;
         filter: {p.unavailable ? 'grayscale(1) opacity(0.55)' : 'none'};
         transition: transform .5s cubic-bezier(.2,.8,.2,1);"
@@ -100,7 +100,7 @@
   >
     <span class="inline-flex items-center gap-1.5 text-[15px] font-semibold">
       {p.price.toLocaleString()}
-      <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
+      <img src="/assets/nanas-coin.png" alt="" aria-hidden="true" class="w-[18px]" />
     </span>
     <span class="text-xs text-muted-foreground">${usd(p.price)} USD</span>
   </div>
