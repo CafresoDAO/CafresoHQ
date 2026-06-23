@@ -89,6 +89,11 @@ async function _putBlob(id, ciphertextB64) {
     body: ciphertextB64,
   });
   if (!r.ok) throw new Error(`PUT blob ${id} → HTTP ${r.status}`);
+  // Phase 2: best-effort dual-write of the ciphertext on-chain. No-op unless
+  // PUBLIC_STATE_CANISTER is enabled AND cafresohq_state is deployed.
+  import('$lib/api/stateSync.js')
+    .then((m) => { if (m.stateEnabled()) m.mirrorVaultObject(id, ciphertextB64).catch(() => {}); })
+    .catch(() => {});
   return r.json().catch(() => ({}));
 }
 
@@ -107,6 +112,9 @@ async function _deleteBlob(id) {
     method: 'DELETE',
   });
   if (!r.ok && r.status !== 404) throw new Error(`DELETE blob ${id} → HTTP ${r.status}`);
+  import('$lib/api/stateSync.js')
+    .then((m) => { if (m.stateEnabled()) m.deleteVaultObject(id).catch(() => {}); })
+    .catch(() => {});
 }
 
 // ── Index lifecycle ─────────────────────────────────────────────────────────
