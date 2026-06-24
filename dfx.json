@@ -10,6 +10,15 @@
       "build": "echo 'NOTE: run `npm --prefix frontend run build` before `dfx deploy`'",
       "dependencies": ["cafresoai_keys"]
     },
+    "cafreso_pages": {
+      "//": "cafreso.com deployment. Serves the SAME unified frontend/build as cafresoai_frontend (v4tdv), but to the legacy Pages canister dqcmv-… that cafreso.com's custom domain points at (we control it; `default` is a controller). Deploy with: npm --prefix frontend run build && dfx deploy cafreso_pages --network ic --identity default. Kept until cafreso.com is consolidated onto a single canister (see docs/strategy/07-pages-cafresoai-merge.md).",
+      "type": "assets",
+      "source": ["frontend/build"],
+      "frontend": {
+        "entrypoint": "frontend/build/index.html"
+      },
+      "build": "echo 'NOTE: run `npm --prefix frontend run build` before `dfx deploy`'"
+    },
     "cafresohq_ui": {
       "//": "The HQ app UI (hq.html + jsx + css + assets), served from ICP so UI updates are a ~1-min dfx deploy instead of a container rebuild. serve.py becomes API-only; this UI calls it cross-origin (?api=<base>). build_hq_ui.py assembles hq-ui/ from the repo-root UI files.",
       "type": "assets",
