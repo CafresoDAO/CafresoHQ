@@ -28,7 +28,7 @@ export const ECOSYSTEM = {
   cafreso_ai: 'https://ai.cafreso.com',     // CafresoAI control plane (this app)
   hq_gateway: 'https://hq.cafreso.com',     // Per-user OCI containers (Phase 5)
   banking:  'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io', // Banking.Brave (II anchor)
-  minegold: 'https://minegold.defi'         // Minegold.defi
+  minegold: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/mine'  // Mine (Banking.Brave canister; minegold.defi domain currently down)
 };
 
 /**

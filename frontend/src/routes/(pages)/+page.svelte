@@ -1,19 +1,42 @@
 <script>
+  import { onMount } from 'svelte';
   import { bbLinks, aiCafresoOrigin, bankingBraveOrigin } from '$lib/links.js';
   import Icon from '$lib/components/Icon.svelte';
   import Avatar from '$lib/components/Avatar.svelte';
   import { POSTS, fmtDate } from '$lib/data/blog.js';
   import { PROPOSALS, PROPOSAL_STATUSES, PROPOSAL_TYPES } from '$lib/data/governance.js';
+  import { listPosts, listForumPosts, getLeaderboard } from '$lib/api/devlog.js';
   import { aiSearchOpen } from '$lib/stores/blog.js';
 
-  // Activity hub data — derived from seed data (replaced by canister fetch when live)
-  const latestPost = POSTS[0] ?? null;
+  // Governance is still seed-backed — no governance canister yet (roadmap Phase 4).
   const openProposals = PROPOSALS.filter((p) => p.status === 'open');
   const featuredProposal = openProposals[0] ?? null;
   const totalProposals = PROPOSALS.length;
-  // Forum seed count matches governance.js forum slugs
-  const forumThreadCount = 5;
-  const communitySize = 247;
+
+  // Activity hub: live from the IndexCanister, with seed as first-paint fallback
+  // so SSR/preview never blanks. Hydrated on mount; falls back silently offline.
+  let latestPost = POSTS[0] ?? null;
+  let devLogCount = POSTS.length;
+  let forumThreadCount = 0;
+  let nanasBurned = 0;
+
+  onMount(async () => {
+    try {
+      const [posts, forums, leaderboard] = await Promise.all([
+        listPosts(),
+        listForumPosts(),
+        getLeaderboard(500),
+      ]);
+      if (posts?.length) {
+        latestPost = [...posts].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0] ?? latestPost;
+        devLogCount = posts.length;
+      }
+      forumThreadCount = forums?.length ?? 0;
+      nanasBurned = (leaderboard || []).reduce((sum, r) => sum + (r.burned || 0), 0);
+    } catch (e) {
+      console.warn('[home] live activity fetch failed, using seed', e);
+    }
+  });
 </script>
 
 <svelte:head>
@@ -145,7 +168,7 @@
         </div>
         <div class="ah-card-title" style="margin-top: 10px;">Join the conversation</div>
         <div class="ah-card-meta" style="margin-top: 4px; margin-bottom: 14px;">
-          {forumThreadCount} active threads · Discuss proposals, share ideas
+          {forumThreadCount > 0 ? `${forumThreadCount} active threads · ` : ''}Discuss proposals, share ideas
         </div>
         <div class="ah-forum-pills">
           {#each ['DAO talk', 'Tokenomics', 'Banking.Brave', 'Community'] as tag}
@@ -170,12 +193,12 @@
         </div>
         <div class="ah-stat-div"></div>
         <div class="ah-stat">
-          <div class="ah-stat-num">{communitySize}</div>
-          <div class="ah-stat-label">Members</div>
+          <div class="ah-stat-num">{nanasBurned.toLocaleString()}</div>
+          <div class="ah-stat-label">$nanas burned</div>
         </div>
         <div class="ah-stat-div"></div>
         <div class="ah-stat">
-          <div class="ah-stat-num">{POSTS.length}</div>
+          <div class="ah-stat-num">{devLogCount}</div>
           <div class="ah-stat-label">Dev Log posts</div>
         </div>
       </div>
