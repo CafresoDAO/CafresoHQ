@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CafresoAI — in-container Hermes Agent bootstrap.
+"""CafresoHQ — in-container Hermes Agent bootstrap.
 
 Runs once at container start (from entrypoint.sh) BEFORE `hermes gateway`.
 Idempotently seeds $HERMES_HOME with:
@@ -222,7 +222,7 @@ def _write_config():
     mode = os.environ.get('HERMES_CAPABILITY_MODE', 'lite').strip().lower()
     _log(f'capability mode: {mode}')
     body = (
-        '# CafresoAI — auto-generated minimal Hermes config (in-container).\n'
+        '# CafresoHQ — auto-generated minimal Hermes config (in-container).\n'
         '# Backend chosen by key precedence at first boot; edit to customize.\n'
         '# capability_mode controls system-prompt size (lite=free-tier-safe).\n'
         + _model_block() +

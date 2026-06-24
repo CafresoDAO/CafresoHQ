@@ -1,4 +1,4 @@
-// ── CafresoAI fleet API client ──────────────────────────────────────────────
+// ── CafresoHQ fleet API client ──────────────────────────────────────────────
 // Talks to oci-fleet/fleet-api.py — looks up + provisions per-user OCI
 // containers keyed by ICP Internet Identity principals.
 //
@@ -6,7 +6,7 @@
 
 import { writable, get } from 'svelte/store';
 
-const STORAGE_KEY    = 'cafresoai.fleet_api_url';
+const STORAGE_KEY    = 'cafresohq.fleet_api_url';
 // In dev (localhost), hit local fleet-api.py; in production (ICP canister),
 // hit the gateway VM where fleet-api.py is deployed behind Caddy.
 // HTTPS is required when the shell is served from an HTTPS origin (mixed-content).
@@ -31,13 +31,13 @@ if (browser()) {
 }
 
 export const fleetApiAuthToken = writable(
-  (browser() && localStorage.getItem('cafresoai.fleet_api_token')) || ''
+  (browser() && localStorage.getItem('cafresohq.fleet_api_token')) || ''
 );
 if (browser()) {
   fleetApiAuthToken.subscribe((v) => {
     try {
-      if (v) localStorage.setItem('cafresoai.fleet_api_token', v);
-      else   localStorage.removeItem('cafresoai.fleet_api_token');
+      if (v) localStorage.setItem('cafresohq.fleet_api_token', v);
+      else   localStorage.removeItem('cafresohq.fleet_api_token');
     } catch (_) { /* private mode */ }
   });
 }

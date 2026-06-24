@@ -1,34 +1,34 @@
 /* ==========================================================================
-   CafresoAI — Agent Runner Shim
+   CafresoHQ — Agent Runner Shim
    --------------------------------------------------------------------------
    Bridges UI-fired graph actions (right-click, multi-select, ghost-edge
    confirmations, cluster labeling) into actual LLM work via the existing
-   window.OpenclawClient.stream() API.
+   window.CafresoHQClient.stream() API.
 
    Listens for:
-     - 'openclaw:agentAction' { kind, nodeId|nodeIds, agentId?, ...extra }
+     - 'cafresohq:agentAction' { kind, nodeId|nodeIds, agentId?, ...extra }
 
    Emits, while running:
-     - 'openclaw:agentActivity' { nodeId, agentId, agentName, color, kind }
+     - 'cafresohq:agentActivity' { nodeId, agentId, agentName, color, kind }
 
    Some actions write artifacts to the vault. Summaries can also return
    directly to the floating chat window via responseMode: 'chat'.
 
    The runner picks an agent the user hired if `agentId` is provided. Otherwise
-   it falls back to the OpenclawClient's currently configured provider/model.
+   it falls back to the CafresoHQClient's currently configured provider/model.
    ========================================================================== */
 
 (function () {
   if (typeof window === 'undefined') return;
-  if (window.__openclawAgentRunnerInstalled) return; // idempotent
-  window.__openclawAgentRunnerInstalled = true;
+  if (window.__cafresohqAgentRunnerInstalled) return; // idempotent
+  window.__cafresohqAgentRunnerInstalled = true;
 
   /* Look up an agent by id from the live app state. The host app should
      register its current agents list via setAgents() so the runner can
      pick the right model. */
   let _agents = [];
   let _addMemoryFn = null; // optional hook to push runner notes to the agent's memory
-  window.OpenclawAgentRunner = {
+  window.CafresoHQAgentRunner = {
     setAgents(list) { _agents = Array.isArray(list) ? list : []; },
     getAgents()    { return _agents.slice(); },
     setAddMemoryFn(fn) { _addMemoryFn = typeof fn === 'function' ? fn : null; },
@@ -41,7 +41,7 @@
 
   function emitActivity(nodeId, agent, kind) {
     try {
-      window.dispatchEvent(new CustomEvent('openclaw:agentActivity', {
+      window.dispatchEvent(new CustomEvent('cafresohq:agentActivity', {
         detail: {
           nodeId,
           agentId: agent ? agent.id : null,
@@ -55,7 +55,7 @@
 
   function emitChatResponse({ text, nodeId, agent, kind }) {
     try {
-      window.dispatchEvent(new CustomEvent('openclaw:agentChatResponse', {
+      window.dispatchEvent(new CustomEvent('cafresohq:agentChatResponse', {
         detail: {
           text, nodeId, kind: kind || 'summarize',
           agentId: agent ? agent.id : null,
@@ -69,7 +69,7 @@
   /* Read with activity overlay. */
   async function readWithBeacon(path, agent) {
     emitActivity(path, agent, 'read');
-    try { return await window.OpenclawClient.vaultRead(path); }
+    try { return await window.CafresoHQClient.vaultRead(path); }
     catch (_) { return ''; }
   }
 
@@ -86,7 +86,7 @@
     if (agent && agent.model)    opts.model    = agent.model;
     if (agent && agent.elevated) opts.elevated = true;
     if (agent && agent.name)     opts.agentName = agent.name;
-    await window.OpenclawClient.stream(opts);
+    await window.CafresoHQClient.stream(opts);
     return text.trim();
   }
 
@@ -105,8 +105,8 @@
     const own = await readWithBeacon(nodeId, agent);
     let neighbors = [];
     if (includeNeighbors) {
-      // Use the graph's adjacency: ask the OpenclawGraph API.
-      const g = (window.OpenclawGraph && window.OpenclawGraph._lastGraph) || null;
+      // Use the graph's adjacency: ask the CafresoHQGraph API.
+      const g = (window.CafresoHQGraph && window.CafresoHQGraph._lastGraph) || null;
       if (g && g.edges) {
         for (const e of g.edges) {
           const s = e.source.id || e.source, t = e.target.id || e.target;
@@ -146,8 +146,8 @@
         ? `\n## Linked context\n${neighborBodies.map(n => `- [[${n.id}]]`).join('\n')}\n`
         : '');
     emitActivity(path, agent, 'write');
-    await window.OpenclawClient.vaultWrite(path, out, 'write');
-    if (window.OpenclawGraph && window.OpenclawGraph.refresh) await window.OpenclawGraph.refresh();
+    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
   async function handleSuggestTags({ nodeId, agent }) {
@@ -170,15 +170,15 @@
       tags.map(t => `- ${t}`).join('\n') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
     emitActivity(path, agent, 'write');
-    await window.OpenclawClient.vaultWrite(path, out, 'write');
-    if (window.OpenclawGraph && window.OpenclawGraph.refresh) await window.OpenclawGraph.refresh();
+    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
   async function handleFindMissingLinks({ nodeId, agent }) {
     if (!nodeId) return;
     const own = await readWithBeacon(nodeId, agent);
     // Build candidate list from the graph's other titles.
-    const g = (window.OpenclawGraph && window.OpenclawGraph._lastGraph) || null;
+    const g = (window.CafresoHQGraph && window.CafresoHQGraph._lastGraph) || null;
     const candidates = (g && g.nodes ? g.nodes : [])
       .filter(n => n.id !== nodeId)
       .map(n => n.title || n.id)
@@ -202,8 +202,8 @@
       (suggestions.length ? suggestions.map(t => `- [[${t}]]`).join('\n') : '_No suggestions._') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
     emitActivity(path, agent, 'write');
-    await window.OpenclawClient.vaultWrite(path, out, 'write');
-    if (window.OpenclawGraph && window.OpenclawGraph.refresh) await window.OpenclawGraph.refresh();
+    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
   async function handleGenerateChild({ nodeId, agent }) {
@@ -220,22 +220,22 @@
     const folder = nodeId.split('/').slice(0, -1).join('/') || 'Inbox';
     const path = `${folder}/${slug(title)}.md`;
     emitActivity(path, agent, 'write');
-    await window.OpenclawClient.vaultWrite(path, `# ${title}\n\nParent: [[${nodeId}]]\n\n${body}\n`, 'write');
+    await window.CafresoHQClient.vaultWrite(path, `# ${title}\n\nParent: [[${nodeId}]]\n\n${body}\n`, 'write');
     // Also link from the parent.
     try {
-      const parentBody = await window.OpenclawClient.vaultRead(nodeId);
+      const parentBody = await window.CafresoHQClient.vaultRead(nodeId);
       const linkText = `[[${title}]]`;
       if (!parentBody.includes(linkText)) {
-        await window.OpenclawClient.vaultWrite(nodeId, parentBody.replace(/\s*$/, '\n\n') + linkText + '\n', 'write');
+        await window.CafresoHQClient.vaultWrite(nodeId, parentBody.replace(/\s*$/, '\n\n') + linkText + '\n', 'write');
       }
     } catch (_) {}
-    if (window.OpenclawGraph && window.OpenclawGraph.refresh) await window.OpenclawGraph.refresh();
+    if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
   async function handleExplainConnections({ nodeId, agent }) {
     if (!nodeId) return;
     const own = await readWithBeacon(nodeId, agent);
-    const g = (window.OpenclawGraph && window.OpenclawGraph._lastGraph) || null;
+    const g = (window.CafresoHQGraph && window.CafresoHQGraph._lastGraph) || null;
     const links = [];
     if (g && g.edges) {
       for (const e of g.edges) {
@@ -258,8 +258,8 @@
       `---\nsource: "[[${nodeId}]]"\ngenerated: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n---\n\n` +
       `# How [[${nodeId}]] connects\n\n${explanation}\n`;
     emitActivity(path, agent, 'write');
-    await window.OpenclawClient.vaultWrite(path, out, 'write');
-    if (window.OpenclawGraph && window.OpenclawGraph.refresh) await window.OpenclawGraph.refresh();
+    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
   async function handleLabelClusters({ clusters, agent }) {
@@ -279,7 +279,7 @@
     if (Object.keys(labels).length) {
       // Hand back to the GraphView to display.
       try {
-        window.dispatchEvent(new CustomEvent('openclaw:clusterLabelsResolved', { detail: { labels } }));
+        window.dispatchEvent(new CustomEvent('cafresohq:clusterLabelsResolved', { detail: { labels } }));
       } catch (_) {}
     }
   }
@@ -312,13 +312,13 @@
       }
     } catch (err) {
       console.error('[agent_runner] action failed:', detail.kind, err);
-      window.dispatchEvent(new CustomEvent('openclaw:agentRunnerError', {
+      window.dispatchEvent(new CustomEvent('cafresohq:agentRunnerError', {
         detail: { kind: detail.kind, message: err && err.message || String(err) },
       }));
     }
   }
 
-  window.addEventListener('openclaw:agentAction', (e) => {
+  window.addEventListener('cafresohq:agentAction', (e) => {
     const detail = e && e.detail;
     if (!detail || !detail.kind) return;
     /* Fire-and-forget — UI already shows a status toast. */
@@ -326,24 +326,24 @@
   });
 
   /* Cache the most recent graph on the side so action handlers can read it. */
-  (function patchOpenclawGraph() {
+  (function patchCafresoHQGraph() {
     const tryHook = () => {
-      const gApi = window.OpenclawGraph;
+      const gApi = window.CafresoHQGraph;
       if (!gApi) { setTimeout(tryHook, 200); return; }
       const origRefresh = gApi.refresh;
       gApi.refresh = async function (...args) {
         const r = origRefresh ? await origRefresh.apply(this, args) : null;
         try {
-          const g = await window.OpenclawClient.vaultGraph();
+          const g = await window.CafresoHQClient.vaultGraph();
           gApi._lastGraph = g;
         } catch (_) {}
         return r;
       };
       // Prime once.
-      window.OpenclawClient.vaultGraph().then(g => { gApi._lastGraph = g; }).catch(() => {});
+      window.CafresoHQClient.vaultGraph().then(g => { gApi._lastGraph = g; }).catch(() => {});
     };
     tryHook();
   })();
 
-  console.info('[agent_runner] installed — listening for openclaw:agentAction');
+  console.info('[agent_runner] installed — listening for cafresohq:agentAction');
 })();

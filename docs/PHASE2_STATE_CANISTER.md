@@ -75,7 +75,7 @@ let usage       = Map.init<Principal, Usage>    (mm.get(3));
 
 Key points:
 - **HQ docs** = the *same UTF-8 JSON bytes* serve.py writes to disk today (`tasks`, `projects`, `missions`, `receipts`, `messages`, `agents`, `memory/*`). Non-secret app state, stored whole, versioned per `(owner,name)` for optimistic concurrency.
-- **Vault** = exactly the base64-decoded ciphertext (`[iv||AES-GCM ct+tag]`) the browser produces today via `vaultKey.js`. The encrypted index (`objId = "iiii…"`) is just another vault object. The canister never decrypts; the vetKeys master key never leaves the browser. **vetKeys/`vaultKey.js`/`cafresoai_keys` derivation is untouched.**
+- **Vault** = exactly the base64-decoded ciphertext (`[iv||AES-GCM ct+tag]`) the browser produces today via `vaultKey.js`. The encrypted index (`objId = "iiii…"`) is just another vault object. The canister never decrypts; the vetKeys master key never leaves the browser. **vetKeys/`vaultKey.js`/`cafresohq_keys` derivation is untouched.**
 - **`sealed`** lets writers publish atomically: write chunks first, set `sealed=true` last; readers ignore objects with `sealed=false` or fewer stored chunks than `chunkCount`.
 - **Usage** carries `quotaBytes`/`plan` (set from the existing HMAC plan token) and a `migratedAt` cursor for the backfill.
 
@@ -138,7 +138,7 @@ Three independent layers, all already in the repo except the new browser→canis
 The browser builds an authenticated actor exactly like `keysActor.js`: `new HttpAgent({ identity, host })` + `Actor.createActor(stateIdl, { agent, canisterId })`, cached per principal, reset in `auth.js _adopt` on principal change. The IC verifies the II delegation and sets `msg.caller`. Every storage key derives from `Principal.toBlob(msg.caller)`. **Unforgeable, no shared secret, no header trust** — the same model already trusted for `vault_encrypted_key`/`mintHqSession`. This is the *only* authority path for canister state.
 
 **Layer 2 — Browser → Container (UNCHANGED HMAC session + slug).**
-Browser mints `v1.<principal>.<exp>.<hmac>` via `cafresoai_keys.mintHqSession()` → `POST /fleet/session` → `hq_session` cookie → Caddy `forward_auth` → `verifier.py` checks HMAC and `slug_for(principal)==slug` → container receives `X-Hq-Principal`. The container uses this **only** to gate HTTP read/write of its *ephemeral local cache* (`/data` working copy + op-log), never to prove identity to the chain. This is byte-for-byte the existing flow (`hq_token.py`, `verifier.py`, `hqSession.js`) — no new verifier, no mirrored `hqSecret` for data access.
+Browser mints `v1.<principal>.<exp>.<hmac>` via `cafresohq_keys.mintHqSession()` → `POST /fleet/session` → `hq_session` cookie → Caddy `forward_auth` → `verifier.py` checks HMAC and `slug_for(principal)==slug` → container receives `X-Hq-Principal`. The container uses this **only** to gate HTTP read/write of its *ephemeral local cache* (`/data` working copy + op-log), never to prove identity to the chain. This is byte-for-byte the existing flow (`hq_token.py`, `verifier.py`, `hqSession.js`) — no new verifier, no mirrored `hqSecret` for data access.
 
 **Layer 3 — `setPlan` plan-token re-verification (optional defense-in-depth).**
 The canister re-verifies the existing `v1plan.<principal>.<plan>.<exp>.<hmac>` token with a mirrored secret so a user cannot self-grant a higher quota. Gates quota only, never data.
@@ -195,7 +195,7 @@ Roles: **BROWSER** = identity + courier; **CONTAINER** = stateless compute, ephe
 **Cost (2026; 13-node app subnet ≈ $0.45/GiB/month; 1T cycles = 1 XDR ≈ $1.35):**
 - Storage: light user (1 MB) ≈ $0.0004/mo; 50 MB vault ≈ $0.022/mo; 1 GB ≈ $0.45/mo; 2 GB cap ≈ $0.90/mo.
 - Writes (update calls): ~1.9 MiB chunk put ≈ 1–3 B cycles ≈ $0.0014–$0.004; full 50 MB initial upload (~27 chunks) ≈ $0.05–$0.11 one-time; HQ doc write ≈ ~1.5 M cycles (negligible). Queries free.
-- **No vetKD spend in this canister** (derivation stays in `cafresoai_keys`).
+- **No vetKD spend in this canister** (derivation stays in `cafresohq_keys`).
 - **Fleet @ 10k users** (illustrative 70% light@50 MB, 25% @2 GB, 5% @20 GB w/ quota): storage ≈ **~$900/mo** + a few tens of $/mo writes. **No per-canister creation fee, no parked float** (the explicit A-over-B win). Budget +20% headroom for the freezing threshold; top up per active GiB.
 
 ---
@@ -204,7 +204,7 @@ Roles: **BROWSER** = identity + courier; **CONTAINER** = stateless compute, ephe
 
 Container keeps serving its existing HTTP API throughout; only *where durability lives* changes. Dual-write never deletes from OCI/disk until the final step, so **every stage rolls back**.
 
-0. **Scaffold (no behavior change).** Add `cafresohq_state` to `dfx.json` (`type motoko`, declarations → `frontend/src/lib/declarations/cafresohq_state`) next to `cafresoai_keys`; copy `Sha256.mo` for `setPlan` verification. Implement the Candid above. `dfx deploy cafresohq_state --network ic`; record id in `canister_ids.json`. Add `stateActor.js` (clone `keysActor.js`); reset it in `auth.js _adopt`. (Optionally) `setPlanSecret(<same hex>)`; verify `planConfigured()`.
+0. **Scaffold (no behavior change).** Add `cafresohq_state` to `dfx.json` (`type motoko`, declarations → `frontend/src/lib/declarations/cafresohq_state`) next to `cafresohq_keys`; copy `Sha256.mo` for `setPlan` verification. Implement the Candid above. `dfx deploy cafresohq_state --network ic`; record id in `canister_ids.json`. Add `stateActor.js` (clone `keysActor.js`); reset it in `auth.js _adopt`. (Optionally) `setPlanSecret(<same hex>)`; verify `planConfigured()`.
 
 1. **Shard pin (no-op at N=1).** Browser resolves/caches shard id on login (trivial at one shard; router added later).
 
@@ -222,9 +222,9 @@ Container keeps serving its existing HTTP API throughout; only *where durability
 
 ## 7. New Files + serve.py Integration Points
 
-**New canister (mirror `src/cafresoai_keys`):**
+**New canister (mirror `src/cafresohq_keys`):**
 - `src/cafresohq_state/main.mo` — actor implementing the Candid in §2 (~400 LOC).
-- `src/cafresohq_state/Sha256.mo` — copied from `cafresoai_keys` (for `setPlan` HMAC verify only).
+- `src/cafresohq_state/Sha256.mo` — copied from `cafresohq_keys` (for `setPlan` HMAC verify only).
 - *(deferred)* `src/cafresohq_router/main.mo` — principal→shard pin map; add at first watermark trip.
 
 **dfx.json** — add under `canisters`:

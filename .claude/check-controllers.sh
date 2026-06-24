@@ -14,5 +14,5 @@ dfx identity use default 2>&1
 dfx identity get-principal 2>&1
 dfx wallet --network ic balance 2>&1 | head -3
 echo ""
-echo "=== controllers of cafresoai_frontend (v4tdv) ==="
+echo "=== controllers of cafresohq_frontend (v4tdv) ==="
 dfx canister --network ic info v4tdv-riaaa-aaaab-agtfa-cai 2>&1 | head -10

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ── CafresoAI container entrypoint ──────────────────────────────────────────
+# ── CafresoHQ container entrypoint ──────────────────────────────────────────
 # Configures CLI tool auth from environment variables, then starts serve.py.
 # This runs on every container start, so auth setup is always fresh.
 #
@@ -19,10 +19,10 @@ set -e
 # so detect the bare run and fall back to local-friendly defaults — otherwise
 # the vault points at Object Storage it can't reach (writes hang) and the
 # Hermes gateway never starts (no API key).
-if [ "${OPENCLAW_VAULT_BACKEND}" = "oci" ] && [ -z "${OCI_TENANCY_OCID}" ]; then
+if [ "${CAFRESOHQ_VAULT_BACKEND}" = "oci" ] && [ -z "${OCI_TENANCY_OCID}" ]; then
   echo "[entrypoint] No OCI credentials — self-host run: vault backend → fs, mode → local"
-  export OPENCLAW_VAULT_BACKEND=fs
-  export OPENCLAW_FLEET_MODE=local
+  export CAFRESOHQ_VAULT_BACKEND=fs
+  export CAFRESOHQ_FLEET_MODE=local
 fi
 if [ -z "${API_SERVER_KEY}" ]; then
   # Reuse the key persisted on the data volume from a prior boot, else mint one.
@@ -56,7 +56,7 @@ fi
 mkdir -p /root/.codex
 if [ ! -f /root/.codex/config.toml ]; then
   cat > /root/.codex/config.toml << 'TOML'
-# CafresoAI — codex CLI base config
+# CafresoHQ — codex CLI base config
 # Provider and model are overridden per-request by serve.py via -c flags.
 # Codex talks directly to OpenAI; the user supplies OPENAI_API_KEY via HQ
 # Settings (BYOK) or the operator sets it in the container env.

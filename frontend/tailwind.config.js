@@ -18,7 +18,7 @@ export default {
         accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
         popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
         card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
-        // ── CafresoAI numeric scale + Cafreso Pages named aliases, unified under `brand` ──
+        // ── CafresoHQ numeric scale + Cafreso Pages named aliases, unified under `brand` ──
         brand: {
           50:  'hsl(var(--brand-50) / <alpha-value>)',
           100: 'hsl(var(--brand-100) / <alpha-value>)',

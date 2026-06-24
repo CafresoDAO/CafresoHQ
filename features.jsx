@@ -1,13 +1,13 @@
 /* ==========================================================================
-   CafresoAI — features v2
+   CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
    ========================================================================== */
 
 const { useState: useSF, useEffect: useEF, useRef: useRF, useMemo: useMF } = React;
 
-/* Pulled from OpenclawModals so the modals defined in this file can use the
+/* Pulled from CafresoHQModals so the modals defined in this file can use the
    shared <Modal> shell (focus trap, scroll lock, animated entry). */
-const { Modal: OcModal } = window.OpenclawModals;
+const { Modal: OcModal } = window.CafresoHQModals;
 
 /* ---------------- Seed data ----------------
    Empty in production: fake demo tasks/memories used to be written into every
@@ -185,7 +185,7 @@ function MemoryShelf({ open, onClose, memory, onAdd, onRemove }) {
       open={open}
       onClose={onClose}
       title="📁 MEMORY SHELF"
-      subtitle="What CafresoAI remembers about you"
+      subtitle="What CafresoHQ remembers about you"
       size="lg"
     >
       <div className="memshelf">
@@ -234,7 +234,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
     const placeholders = participants.map(a => ({
       id: newId(), who: a.name, color: a.color, text: '', streaming: true, agentRef: a,
     }));
-    const ceoPlaceholder = { id: newId(), who: 'CafresoAI', color: 'openclaw', text: '', streaming: true };
+    const ceoPlaceholder = { id: newId(), who: 'CafresoHQ', color: 'cafresohq', text: '', streaming: true };
     setMsgs(m => [...m, youMsg, ...placeholders, ceoPlaceholder]);
 
     const updateById = (id, patch) =>
@@ -302,14 +302,14 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
       open={true}
       onClose={onClose}
       title="🪑 MEETING ROOM"
-      subtitle={`${participants.length + 1} in the room · CafresoAI moderating`}
+      subtitle={`${participants.length + 1} in the room · CafresoHQ moderating`}
       size="xl"
     >
       <div style={{margin: 'calc(-1 * var(--sp-6))'}}>
         <div className="meeting-table">
           <div className="seat seat-head">
-            <Sprite data="openclaw" scale={2}/>
-            <div className="seat-name">CafresoAI</div>
+            <Sprite data="cafresohq" scale={2}/>
+            <div className="seat-name">CafresoHQ</div>
             <div className="seat-role">Moderator</div>
           </div>
           {participants.map(p => (
@@ -361,7 +361,7 @@ function FocusMode({ active, onClose, chat, setChat }) {
     setChat(pending);
     setStreaming(true);
     const ceoId = 'm_'+Math.random().toString(36).slice(2,7);
-    setChat(p => [...p, { id: ceoId, from:'ceo', name:'CafresoAI', text:'', streaming:true }]);
+    setChat(p => [...p, { id: ceoId, from:'ceo', name:'CafresoHQ', text:'', streaming:true }]);
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = MOCK.throttleTokens(setChat, ceoId);
@@ -382,9 +382,9 @@ function FocusMode({ active, onClose, chat, setChat }) {
   return (
     <div className="focus-overlay">
       <div className="focus-head">
-        <Sprite data="openclaw" scale={3}/>
+        <Sprite data="cafresohq" scale={3}/>
         <div>
-          <div className="focus-title">1:1 WITH CAFRESOAI</div>
+          <div className="focus-title">1:1 WITH CAFRESOHQ</div>
           <div className="focus-sub">quiet room · no distractions</div>
         </div>
         <button className="px-btn secondary" onClick={onClose}>LEAVE ROOM ✕</button>
@@ -395,7 +395,7 @@ function FocusMode({ active, onClose, chat, setChat }) {
             <div className="who">
               {m.from === 'user'
                 ? <div style={{width:22,height:22,background:'var(--accent-sun)',border:'2px solid var(--ink)',display:'grid',placeItems:'center',fontFamily:'Press Start 2P',fontSize:10}}>B</div>
-                : <Sprite data="openclaw" scale={1}/>}
+                : <Sprite data="cafresohq" scale={1}/>}
             </div>
             <div className="bubble" style={{maxWidth: '70%'}}>
               <div className="name">{m.name}</div>
@@ -530,7 +530,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
       lines.push('');
     });
     if (summary) {
-      lines.push('## Synthesis (CafresoAI)');
+      lines.push('## Synthesis (CafresoHQ)');
       lines.push(summary);
     }
     return lines.join('\n');
@@ -563,7 +563,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
       title="🌅 END-OF-DAY STAND-UP"
       subtitle={phase === 'idle' ? 'click START to gather reports'
         : phase === 'running' ? 'agents are reporting…'
-        : phase === 'summarizing' ? 'CafresoAI is synthesizing…'
+        : phase === 'summarizing' ? 'CafresoHQ is synthesizing…'
         : 'done — archive or copy'}
       size="lg"
       footer={
@@ -626,7 +626,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
               ))}
               {(summary || phase === 'summarizing') && (
                 <div className="standup-summary">
-                  <div className="su-name">CafresoAI · synthesis</div>
+                  <div className="su-name">CafresoHQ · synthesis</div>
                   <div className="su-text">{summary || ''}{phase==='summarizing' ? <span className="typing"><span/><span/><span/></span> : null}</div>
                 </div>
               )}
@@ -727,4 +727,4 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-window.OpenclawV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+window.CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY };

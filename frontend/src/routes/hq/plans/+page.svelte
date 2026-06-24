@@ -157,7 +157,7 @@
 
 <section class="space-y-5">
   <header class="card p-6 sm:p-8">
-    <div class="page-kicker">CafresoAI / Plans</div>
+    <div class="page-kicker">CafresoHQ / Plans</div>
     <h1 class="page-title mt-4">Choose your HQ<span class="text-brand-500">.</span></h1>
     <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
       Your HQ runs in a private container. Pay in <strong>ICP</strong> or by card —

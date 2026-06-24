@@ -28,7 +28,7 @@ User → ai.cafreso.com (II login)
      → fleet-api /fleet/lookup or /fleet/provision  (principal → container)
      → SvelteKit iframes  hq.cafreso.com/u/<slug>/hq.html
         → Caddy → container:8787 (serve.py serves hq.html + .jsx)
-     → HQ app boots (React via CDN+Babel), window.OpenclawClient.stream()
+     → HQ app boots (React via CDN+Babel), window.CafresoHQClient.stream()
         → serve.py /hermes/v1/* proxy (injects API_SERVER_KEY)
         → hermes gateway :8642 → Groq (default) / Anthropic / Gemini (BYOK)
      → vault ops bridge via postMessage → SvelteKit → ICP canister (E2E encrypted)
@@ -48,10 +48,10 @@ User → ai.cafreso.com (II login)
 │  └─ routes/hq/app → <iframe src=.../hq.html>          │  │                 │
 │                                                       │  ▼                 │
 │  HQ app (CDN React + in-browser Babel, no bundler)    │  hq.html           │
-│  ├─ window.OpenclawClient (claude-client.jsx) ────────┼─ stream()          │
-│  ├─ window.OpenclawUI / V2 / Views / Modals (globals) │  (8 providers)     │
+│  ├─ window.CafresoHQClient (claude-client.jsx) ────────┼─ stream()          │
+│  ├─ window.CafresoHQUI / V2 / Views / Modals (globals) │  (8 providers)     │
 │  ├─ OfficeView pixel-art agents (ui.jsx + sprites)    │                    │
-│  └─ custom events: openclaw:agentAction / :activity   │                    │
+│  └─ custom events: cafresohq:agentAction / :activity   │                    │
 └───────────────────────────────────────────────────────┼────────────────── ┘
                          │ https                          │ postMessage(vault:*)
                          ▼                                 
@@ -66,7 +66,7 @@ User → ai.cafreso.com (II login)
 │ OCI CONTAINER (per user, 1 vCPU / 6 GB, ALWAYS ON)                         │
 │  serve.py :8787  (BaseHTTPRequestHandler + ThreadingMixIn, ~5400 LOC)      │
 │   ├─ /hermes/v1/* ─► hermes gateway :8642 ─► Groq/Anthropic/Gemini         │
-│   ├─ /claudecode /openclaw /codex (spawn CLIs, SSE)  ← 4× duplicated       │
+│   ├─ /claudecode /cafresohq /codex (spawn CLIs, SSE)  ← 4× duplicated       │
 │   ├─ /vault/* ─► OCI Object Storage (no encryption at FS layer)            │
 │   ├─ /terminal/pty (WebSocket + PTY)                                       │
 │   ├─ /approvals/external/* (long-poll bridge → ApprovalTray)              │
@@ -101,10 +101,10 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 
 | # | Finding | Sev |
 |---|---|---|
-| D1 | **4× near-identical stream handlers** in serve.py: `_claudecode_stream`, `_openclaw_stream`, `_codex_stream`, `_terminal_stream` (~200 lines each). Same parse→validate→spawn→SSE shape. | 🟠 |
+| D1 | **4× near-identical stream handlers** in serve.py: `_claudecode_stream`, `_cafresohq_stream`, `_codex_stream`, `_terminal_stream` (~200 lines each). Same parse→validate→spawn→SSE shape. | 🟠 |
 | D2 | **BYOK env-injection** repeated in all 4 stream handlers; **path validation** repeated 3×; **configure** endpoints duplicated. | 🟡 |
 | D3 | **`_render_caddyfile()` + `_principal_slug()` duplicated** across `fleet-manager.py` and `fleet-api.py` — and they've **already diverged** (fleet-api's version is missing the `/u/<slug>` redirect rules, so a gateway-side re-render can silently break routing). | 🟠 |
-| D4 | **Provider stream parsing** in `claude-client.jsx` repeats the SSE/`usage` decode across claudecode/openclaw/codex. | 🟡 |
+| D4 | **Provider stream parsing** in `claude-client.jsx` repeats the SSE/`usage` decode across claudecode/cafresohq/codex. | 🟡 |
 
 ### 2.3 Performance bottlenecks
 
@@ -130,7 +130,7 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 | # | Finding | Sev |
 |---|---|---|
 | M1 | **God files**: `views.jsx` ~6.4 k LOC, `app.jsx` ~3.8 k, `ui.jsx` ~3.4 k, `serve.py` ~5.4 k. No code-splitting, hard to test. | 🟠 |
-| M2 | **`window.*` global namespaces** (OpenclawUI/V2/Views/...) instead of modules — zero static analysis, fragile load-order coupling, crashes if one script fails. | 🟠 |
+| M2 | **`window.*` global namespaces** (CafresoHQUI/V2/Views/...) instead of modules — zero static analysis, fragile load-order coupling, crashes if one script fails. | 🟠 |
 | M3 | **Magic numbers everywhere** (TTLs, buffer caps, size limits) — should be named constants/config. | 🟡 |
 | M4 | **Mutable globals without locks** (`_vault_root`, `_vault_backend`, …) — reconfigure races. | 🟡 |
 | M5 | **Mock data (80 KB, 50+ agents) shipped to prod**; **capabilities inferred by string-matching role names**; **elevation enforced client-side only**. | 🟡 |

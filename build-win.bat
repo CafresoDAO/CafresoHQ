@@ -1,11 +1,11 @@
 @echo off
 setlocal
-title CafresoAI — Windows Build
+title CafresoHQ — Windows Build
 color 0A
 
 echo.
 echo  ==========================================
-echo    CafresoAI  ^|  Windows Installer Build
+echo    CafresoHQ  ^|  Windows Installer Build
 echo  ==========================================
 echo.
 
@@ -72,7 +72,7 @@ echo.
 echo  ==========================================
 echo    BUILD COMPLETE
 echo.
-echo    Installer: dist\CafresoAI Setup.exe
+echo    Installer: dist\CafresoHQ Setup.exe
 echo  ==========================================
 echo.
 cd /d "%~dp0"

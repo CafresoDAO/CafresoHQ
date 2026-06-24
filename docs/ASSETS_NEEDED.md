@@ -41,4 +41,4 @@ badges — **not** final art). Regenerate any with `python3 scripts/gen_placehol
 ## To replace a placeholder
 1. Put the real file (same name) into repo-root `assets/`.
 2. `npm --prefix frontend run build` (prebuild sync copies it into `static/assets/`).
-3. Deploy: `dfx deploy cafresoai_frontend --network ic --identity default`.
+3. Deploy: `dfx deploy cafresohq_frontend --network ic --identity default`.

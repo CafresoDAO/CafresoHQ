@@ -18,10 +18,10 @@ KEY_ID       = f"{TENANCY_OCID}/{USER_OCID}/{FINGERPRINT}"
 
 IDENTITY_HOST = f"identity.{REGION}.oraclecloud.com"
 
-DG_NAME       = "cafresoai-container-instances"
-DG_DESC       = "CafresoAI OCI Container Instances (fleet)"
-POLICY_NAME   = "cafresoai-container-vault-access"
-POLICY_DESC   = "Allow CafresoAI containers to access Object Storage vault bucket"
+DG_NAME       = "cafresohq-container-instances"
+DG_DESC       = "CafresoHQ OCI Container Instances (fleet)"
+POLICY_NAME   = "cafresohq-container-vault-access"
+POLICY_DESC   = "Allow CafresoHQ containers to access Object Storage vault bucket"
 BUCKET_NAME   = "cafresoai-fleet-vault"
 
 # Dynamic group rule: all Container Instances in our tenancy (root compartment)

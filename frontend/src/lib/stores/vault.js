@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CafresoAI — encrypted vault store
+// CafresoHQ — encrypted vault store
 //
 // Zero-knowledge vault. The container's serve.py only sees:
 //   • An "index.bin" blob (the encrypted directory listing)
@@ -119,8 +119,8 @@ async function _deleteBlob(id) {
 
 // ── Index lifecycle ─────────────────────────────────────────────────────────
 
-const _INDEX_CACHE_KEY = 'cafresoai.vault_index_cache';
-const _INDEX_ETAG_KEY  = 'cafresoai.vault_index_etag';
+const _INDEX_CACHE_KEY = 'cafresohq.vault_index_cache';
+const _INDEX_ETAG_KEY  = 'cafresohq.vault_index_etag';
 
 function _emptyIndex() {
   return { version: 1, files: [], tombstones: [] };

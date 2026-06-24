@@ -7,7 +7,7 @@
 >
 > **Chosen mechanism (resolves §3): canister-minted HMAC token.** Ownership is
 > proven natively by the IC — the signed-in user calls `mintHqSession()` on the
-> `cafresoai_keys` canister, which (since `msg.caller` is the unforgeable II
+> `cafresohq_keys` canister, which (since `msg.caller` is the unforgeable II
 > principal) HMAC-signs `v1.<principal>.<exp>` with a secret shared only with the
 > gateway. The shell installs that token as an `HttpOnly; Secure; SameSite=None`
 > cookie via `POST /fleet/session`; Caddy `forward_auth` → `verifier.py` (:9090)
@@ -15,7 +15,7 @@
 > proxying. No Node sidecar, no secret in the browser, no delegation-chain
 > verification needed on the server. Crypto verified against FIPS/RFC vectors.
 >
-> Components shipped: `src/cafresoai_keys/Sha256.mo` (vendored SHA-256/HMAC),
+> Components shipped: `src/cafresohq_keys/Sha256.mo` (vendored SHA-256/HMAC),
 > `mintHqSession`/`setHqSessionSecret` in the keys canister, `oci-fleet/hq_token.py`,
 > `oci-fleet/verifier.py` (+`verifier.service`), `POST /fleet/session` in fleet-api,
 > `forward_auth` in both Caddy renderers, `frontend/src/lib/api/hqSession.js`
@@ -155,7 +155,7 @@ The container had a **public IP** serving `:8787` directly, bypassing the gatewa
 2. Add `POST /fleet/session` to fleet-api.py; keep old open routes during cutover.
 3. Update `caddyfile.template` with `forward_auth`; `caddy-sync`; verify a valid
    session passes and anonymous gets 401.
-4. Frontend: mint-on-login + refresh; redeploy `cafresoai_frontend`.
+4. Frontend: mint-on-login + refresh; redeploy `cafresohq_frontend`.
 5. Lock the container network path (§5): NSG to gateway-only, drop public IP.
 6. Remove any interim open-access allowances.
 

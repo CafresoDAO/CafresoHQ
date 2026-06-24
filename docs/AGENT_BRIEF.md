@@ -13,7 +13,7 @@ A unified **SvelteKit** dapp + **Motoko** canisters + an **OCI** compute fleet:
 - `frontend/` — one SvelteKit app (adapter-static SPA), two route groups:
   - `(pages)` → **cafreso.com** "Pages": blog, forums, shop/subscriptions, governance, leaderboard, profile/wallet.
   - `(hq)` → **ai.cafreso.com** "CafresoHQ": the per-user AI agent SaaS.
-- `src/cafresoai_keys/` — vetKeys (BLS12-381 threshold) vault key derivation (Motoko).
+- `src/cafresohq_keys/` — vetKeys (BLS12-381 threshold) vault key derivation (Motoko).
 - `src/cafresohq_state/` — **new**, Phase 2 on-chain per-user state (HQ docs + vault ciphertext). Scaffolded, **not yet deployed** (PR #6).
 - `oci-fleet/` — per-user container fleet, Caddy TLS gateway, Stripe oracle. The only load-bearing off-chain compute (LLM inference, PTY/terminal, agent runtime).
 - `serve.py` / `scripts/` — container API + HQ-UI asset build.
@@ -31,8 +31,8 @@ onto canisters so the container becomes stateless ("cattle, not pets"). Full pla
 ## 2. Branch model — READ BEFORE OPENING PRs
 
 - GitHub default branch is `master`, but the **active integration branch is
-  `merge/pages-cafresoai`**. All recent PRs target it. **Base your PRs on
-  `merge/pages-cafresoai`, not `master`.**
+  `merge/pages-cafresohq`**. All recent PRs target it. **Base your PRs on
+  `merge/pages-cafresohq`, not `master`.**
 - One concern per branch/PR (the existing PRs follow this).
 
 ## 3. Open PRs (don't duplicate these)
@@ -53,9 +53,9 @@ onto canisters so the container becomes stateless ("cattle, not pets"). Full pla
 
 | Canister | ID | Role | Status |
 |----------|----|------|--------|
-| cafresoai_frontend | `v4tdv-riaaa-aaaab-agtfa-cai` | Unified Pages+HQ frontend → **ai.cafreso.com** | ✅ active pipeline |
+| cafresohq_frontend | `v4tdv-riaaa-aaaab-agtfa-cai` | Unified Pages+HQ frontend → **ai.cafreso.com** | ✅ active pipeline |
 | (old Pages) | `dqcmv-zqaaa-aaaab-agp2a-cai` | Pre-merge Pages canister → **cafreso.com** | ⚠️ superseded, retire (see §5) |
-| cafresoai_keys | `vhw7q-lqaaa-aaaab-agthq-cai` | vetKeys vault key derivation | ✅ live |
+| cafresohq_keys | `vhw7q-lqaaa-aaaab-agthq-cai` | vetKeys vault key derivation | ✅ live |
 | cafresohq_ui | `vhoil-eyaaa-aaaal-qxc7q-cai` | HQ UI asset canister | ✅ live |
 | cafresohq_state | *(not deployed)* | Phase 2 per-user state (HQ docs + vault ciphertext) | 🟡 PR #6, deploy-gated on cycles |
 | IndexCanister | `bek5d-2qaaa-aaaab-agqrq-cai` | blog/forum/products/orders/burns/leaderboard | ✅ live |
@@ -83,7 +83,7 @@ Two SEPARATE canisters serve the two domains:
 
 So cafreso.com isn't getting updates because it's pinned to a superseded canister,
 not because the build pipeline is broken. **Remediation (founder-run, already TODO
-in `docs/strategy/07-pages-cafresoai-merge.md` step 2):** register `cafreso.com` as a
+in `docs/strategy/07-pages-cafresohq-merge.md` step 2):** register `cafreso.com` as a
 custom domain on `v4tdv` + repoint DNS (`CNAME` + `_canister-id` TXT) from `dqcmv` →
 `v4tdv`, then retire/redirect `dqcmv`. `ic-domains` on `v4tdv` already lists both
 hosts. This is a DNS/boundary-node action — **not a code change** — so an agent

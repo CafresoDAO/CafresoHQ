@@ -3,7 +3,7 @@ CafresoHQ — production-grade agent streaming (reference refactor).
 
 PROBLEM (from the architecture review, finding D1/D2):
   serve.py has FOUR near-identical ~200-line handlers —
-  _claudecode_stream, _openclaw_stream, _codex_stream, _terminal_stream —
+  _claudecode_stream, _cafresohq_stream, _codex_stream, _terminal_stream —
   each doing: parse JSON → validate cwd → resolve CLI → inject BYOK env →
   spawn subprocess → translate the CLI's JSON events into OpenAI-compatible SSE.
   BYOK injection is copy-pasted 4×; path validation 3×.
@@ -52,7 +52,7 @@ class AgentSpec:
     Replaces a whole ~200-line handler. `build_cmd` returns argv given the
     resolved binary + request; `parse_event` maps one line of the CLI's JSON
     output to assistant text (or None to ignore)."""
-    name: str                                   # 'claudecode' | 'openclaw' | 'codex'
+    name: str                                   # 'claudecode' | 'cafresohq' | 'codex'
     binary_candidates: tuple[str, ...]          # e.g. ('claude',) or ('codex','codex.cmd')
     build_cmd: Callable[[str, "AgentRequest"], list[str]]
     parse_event: Callable[[dict], Optional[str]]
@@ -266,7 +266,7 @@ CLAUDE_CODE = AgentSpec(
 )
 
 OPENCLAW = AgentSpec(           # elevated Claude Code (tools enabled, sandboxed)
-    name="openclaw",
+    name="cafresohq",
     binary_candidates=("claude",),
     build_cmd=lambda b, r: [b, "--print", "--output-format=stream-json",
                             "--model", r.model or "sonnet"],
@@ -291,7 +291,7 @@ REGISTRY = {s.name: s for s in (CODEX, CLAUDE_CODE, OPENCLAW)}
 #           agent_name=body.get('agentName', 'agent'),
 #           elevated=bool(body.get('elevated')),
 #           byok={k: v for k, v in (body.get('byok') or {}).items()},
-#           allowed_dirs=tuple(_openclaw_allowed_dirs),
+#           allowed_dirs=tuple(_cafresohq_allowed_dirs),
 #       )
 #       self.send_response(200)
 #       self.send_header('Content-Type', 'text/event-stream')
@@ -304,5 +304,5 @@ REGISTRY = {s.name: s for s in (CODEX, CLAUDE_CODE, OPENCLAW)}
 #       except AgentError as e:
 #           emit({'choices': [{'index': 0, 'delta': {'content': f'\n\n⚠ {e}'}}]}); emit('[DONE]')
 #
-# This single method replaces _claudecode_stream + _openclaw_stream +
+# This single method replaces _claudecode_stream + _cafresohq_stream +
 # _codex_stream (~600 lines → ~25).

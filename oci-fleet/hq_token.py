@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hq_token.py — verify HQ session tokens minted by the cafresoai_keys canister.
+hq_token.py — verify HQ session tokens minted by the cafresohq_keys canister.
 
 Shared by fleet-api.py (POST /fleet/session cookie setter) and verifier.py
 (Caddy forward_auth). Pure Python stdlib — no deps.

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   CafresoAI — research missions
+   CafresoHQ — research missions
 
    A "mission" is a long-running, scheduled loop that hands an agent a
    research prompt every N minutes for up to D hours. Each iteration uses
@@ -14,7 +14,7 @@
    ========================================================================== */
 
 const { useState: useSM, useEffect: useEMission, useRef: useRMission } = React;
-const { Modal: OcModalM } = window.OpenclawModals;
+const { Modal: OcModalM } = window.CafresoHQModals;
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -194,7 +194,7 @@ async function runMissionIteration(ctx) {
      what's already there. Cheap call (just file list). */
   let notesIndex = [];
   try {
-    const all = await window.OpenclawClient.vaultList();
+    const all = await window.CafresoHQClient.vaultList();
     const prefix = mission.vaultFolder + '/';
     notesIndex = all
       .filter(f => f.path.startsWith(prefix))
@@ -755,6 +755,6 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
   );
 }
 
-window.OpenclawMissions = {
+window.CafresoHQMissions = {
   MissionsModal, useMissionRunner, runMissionIteration, MIN, HOUR,
 };

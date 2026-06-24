@@ -2,7 +2,7 @@
 
 > **Generated 2026-05-29** for the founder, overnight. This is the entry point to a 6-doc strategy package in `docs/strategy/`. Read this first; it links to everything else.
 > **Scope:** deep research on (a) ICP DAO/SNS fundraising and (b) the agentic-tooling market, a competitive read of CafresoHQ, a brainstorm to make HQ accessible to the masses via the SNS DAO, and a rough-draft roadmap to MVP across the whole ecosystem.
-> **Ecosystem note (corrected 2026-05-29):** the ecosystem is ~3 codebases under `Documents` — **Pages** (`cafreso.com`), **CafresoAI** (control plane + embedded **HQ**), and **Minegold.defi / Banking.Brave** (frontend canister `cqyto-…` is the Internet Identity anchor; Banking.Brave is the homepage, Minegold.defi the protocol). "5 apps" elsewhere is loose shorthand. See `06-app-update-todo.md`.
+> **Ecosystem note (corrected 2026-05-29):** the ecosystem is ~3 codebases under `Documents` — **Pages** (`cafreso.com`), **CafresoHQ** (control plane + embedded **HQ**), and **Minegold.defi / Banking.Brave** (frontend canister `cqyto-…` is the Internet Identity anchor; Banking.Brave is the homepage, Minegold.defi the protocol). "5 apps" elsewhere is loose shorthand. See `06-app-update-todo.md`.
 
 ---
 
@@ -12,7 +12,7 @@ Cafreso has built something most teams never get to: a **genuinely differentiate
 ---
 
 ## Where you are today (honest snapshot)
-- ✅ **Strong, real foundation, live on mainnet:** Internet Identity auth + ecosystem-shared principal, and a **production-quality zero-knowledge vetKeys vault** (`cafresoai_keys`). The frontend shell, encrypted vault, and Claude chat all work. **This is your wedge — lead with it.**
+- ✅ **Strong, real foundation, live on mainnet:** Internet Identity auth + ecosystem-shared principal, and a **production-quality zero-knowledge vetKeys vault** (`cafresohq_keys`). The frontend shell, encrypted vault, and Claude chat all work. **This is your wedge — lead with it.**
 - ⚠️ **The "agent command center" is mostly a mockup:** the office agents (Mira/Kip/Bop) are hardcoded UI; no live task execution yet.
 - ⚠️ **Fleet provisioning works but can't bill or meter** — you can't safely open the doors (every signup spends your money invisibly).
 - ❌ **The "one ecosystem" promise isn't wired:** `ii-alternative-origins` is empty, so the shared-identity story across the 5 apps doesn't actually function yet.

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook -> Openclaw HQ ApprovalTray bridge.
+"""Claude Code PreToolUse hook -> CafresoHQ ApprovalTray bridge.
 
 How it works:
   1. Claude Code invokes this script before any tool call.
   2. Script reads the hook payload (JSON on stdin) — tool name, inputs, cwd.
-  3. POSTs the request to the local Openclaw HQ server at /approvals/external.
+  3. POSTs the request to the local CafresoHQ server at /approvals/external.
   4. Long-polls /approvals/external/wait?id=... until the boss clicks
      APPROVE or REJECT in the HQ corner ApprovalTray.
   5. Prints the matching hook output JSON ("permissionDecision": allow|deny)
@@ -27,9 +27,9 @@ Wire it up in your settings.json:
   }
 
 Env knobs:
-  OPENCLAW_HQ_URL    base URL (default http://127.0.0.1:8787)
-  OPENCLAW_HQ_TIMEOUT  total seconds to wait before auto-deny (default 1800)
-  OPENCLAW_HQ_FAILOPEN if "1", allow when the HQ server is unreachable
+  CAFRESOHQ_HQ_URL    base URL (default http://127.0.0.1:8787)
+  CAFRESOHQ_HQ_TIMEOUT  total seconds to wait before auto-deny (default 1800)
+  CAFRESOHQ_HQ_FAILOPEN if "1", allow when the HQ server is unreachable
                        (default deny — fail closed).
 """
 import json
@@ -40,9 +40,9 @@ import urllib.error
 import urllib.request
 
 
-HQ_URL    = os.environ.get('OPENCLAW_HQ_URL', 'http://127.0.0.1:8787').rstrip('/')
-TIMEOUT_S = int(os.environ.get('OPENCLAW_HQ_TIMEOUT', '1800'))
-FAIL_OPEN = os.environ.get('OPENCLAW_HQ_FAILOPEN', '0') == '1'
+HQ_URL    = os.environ.get('CAFRESOHQ_HQ_URL', 'http://127.0.0.1:8787').rstrip('/')
+TIMEOUT_S = int(os.environ.get('CAFRESOHQ_HQ_TIMEOUT', '1800'))
+FAIL_OPEN = os.environ.get('CAFRESOHQ_HQ_FAILOPEN', '0') == '1'
 POLL_S    = 25  # per long-poll round; server caps at 55
 
 

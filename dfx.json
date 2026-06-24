@@ -1,17 +1,17 @@
 {
   "version": 1,
   "canisters": {
-    "cafresoai_frontend": {
+    "cafresohq_frontend": {
       "type": "assets",
       "source": ["frontend/build"],
       "frontend": {
         "entrypoint": "frontend/build/index.html"
       },
       "build": "echo 'NOTE: run `npm --prefix frontend run build` before `dfx deploy`'",
-      "dependencies": ["cafresoai_keys"]
+      "dependencies": ["cafresohq_keys"]
     },
     "cafreso_pages": {
-      "//": "cafreso.com deployment. Serves the SAME unified frontend/build as cafresoai_frontend (v4tdv), but to the legacy Pages canister dqcmv-… that cafreso.com's custom domain points at (we control it; `default` is a controller). Deploy with: npm --prefix frontend run build && dfx deploy cafreso_pages --network ic --identity default. Kept until cafreso.com is consolidated onto a single canister (see docs/strategy/07-pages-cafresoai-merge.md).",
+      "//": "cafreso.com deployment. Serves the SAME unified frontend/build as cafresohq_frontend (v4tdv), but to the legacy Pages canister dqcmv-… that cafreso.com's custom domain points at (we control it; `default` is a controller). Deploy with: npm --prefix frontend run build && dfx deploy cafreso_pages --network ic --identity default. Kept until cafreso.com is consolidated onto a single canister (see docs/strategy/07-pages-cafresohq-merge.md).",
       "type": "assets",
       "source": ["frontend/build"],
       "frontend": {
@@ -25,12 +25,12 @@
       "source": ["hq-ui"],
       "build": "python3 scripts/build_hq_ui.py || python scripts/build_hq_ui.py"
     },
-    "cafresoai_keys": {
+    "cafresohq_keys": {
       "type": "motoko",
-      "main": "src/cafresoai_keys/main.mo",
+      "main": "src/cafresohq_keys/main.mo",
       "declarations": {
         "node_compatibility": true,
-        "output": "frontend/src/lib/declarations/cafresoai_keys"
+        "output": "frontend/src/lib/declarations/cafresohq_keys"
       }
     },
     "cafresohq_state": {

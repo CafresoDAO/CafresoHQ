@@ -69,7 +69,7 @@ actor CafresoHQState {
   stable var vaultChunks : OrderedMap.Map<Principal, ChunkMap> = pOps.empty<ChunkMap>();
   stable var usageMap : OrderedMap.Map<Principal, Usage> = pOps.empty<Usage>();
 
-  // Plan-quota HMAC secret (mirrors cafresoai_keys; gates QUOTA only, never data).
+  // Plan-quota HMAC secret (mirrors cafresohq_keys; gates QUOTA only, never data).
   stable var planSecret : Blob = "";
   // First caller of setPlanSecret becomes the plan admin (the deployer).
   stable var planAdmin : ?Principal = null;
@@ -283,7 +283,7 @@ actor CafresoHQState {
     else { DEFAULT_VAULT_QUOTA };                              // free = 2 GiB
   };
 
-  /// Apply a plan tier from the same HMAC token cafresoai_keys mints
+  /// Apply a plan tier from the same HMAC token cafresohq_keys mints
   /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
   public shared (msg) func setPlan(token : Text) : async Bool {
     let caller = msg.caller;

@@ -200,7 +200,7 @@
     <iframe
       bind:this={iframe}
       src={appUrl}
-      title="CafresoAI HQ"
+      title="CafresoHQ HQ"
       on:load={onIframeLoad}
       class="block h-full w-full border-0 bg-ink-900"
       allow="clipboard-write *; clipboard-read *; fullscreen *"
@@ -239,8 +239,8 @@
 {:else}
   <section class="space-y-5">
     <header class="card p-6 sm:p-8">
-      <div class="page-kicker">CafresoAI / HQ</div>
-      <h1 class="page-title mt-4">CafresoAI HQ<span class="text-brand-500">.</span></h1>
+      <div class="page-kicker">CafresoHQ / HQ</div>
+      <h1 class="page-title mt-4">CafresoHQ HQ<span class="text-brand-500">.</span></h1>
       <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
         The full agent command center, running in your private OCI container.
       </p>

@@ -1,11 +1,11 @@
 /* ==========================================================================
-   CafresoAI — real backend client
+   CafresoHQ — real backend client
    Dispatches streaming chat to:
      - Hermes Agent (DEFAULT — OpenAI-compatible via /hermes/v1 proxy, SSE)
      - Anthropic Messages API (browser-direct, stream SSE)
      - LM Studio / Ollama (OpenAI-compatible /v1/chat/completions, SSE)
-     - Claude Code / Openclaw / Codex CLIs, Google Gemini
-   Settings persisted in localStorage. window.OpenclawClient is the surface.
+     - Claude Code / CafresoHQ / Codex CLIs, Google Gemini
+   Settings persisted in localStorage. window.CafresoHQClient is the surface.
    ========================================================================== */
 
 // ── API base resolution ─────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
   };
 })();
 
-const LS_KEY = 'openclaw_client_v1';
+const LS_KEY = 'cafresohq_client_v1';
 
 const ANTHROPIC_MODELS = [
   'claude-opus-4-7',
@@ -152,10 +152,10 @@ const CLAUDECODE_MODELS = [
   'haiku',
 ];
 
-/* OpenClaw (elevated) — same Claude Code CLI but with file/shell tools
+/* CafresoHQ (elevated) — same Claude Code CLI but with file/shell tools
    enabled. Server-side allowlist governs paths and tool names; the
    client just picks a model. Same accepted IDs as CLAUDECODE_MODELS. */
-const OPENCLAW_MODELS = CLAUDECODE_MODELS;
+const CAFRESOHQ_MODELS = CLAUDECODE_MODELS;
 
 /* Codex CLI elevated agent — talks directly to OpenAI (model_provider=openai)
    via OPENAI_API_KEY (BYOK / operator env). Models are real OpenAI ids. */
@@ -224,8 +224,8 @@ function loadSettings() {
 function saveSettings(s) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(s)); }
   catch (err) {
-    console.warn('[openclaw] saveSettings failed:', err);
-    try { window.dispatchEvent(new CustomEvent('openclaw:storage-error', { detail: { key: LS_KEY, error: err } })); } catch (_e) {}
+    console.warn('[cafresohq] saveSettings failed:', err);
+    try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: LS_KEY, error: err } })); } catch (_e) {}
   }
 }
 
@@ -699,18 +699,18 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
   });
 }
 
-/* Same as streamClaudeCode but hits /openclaw/stream — proxy spawns the
+/* Same as streamClaudeCode but hits /cafresohq/stream — proxy spawns the
    CLI with file/shell tools enabled and a server-side path/tool allowlist.
    Used for ELEVATED agents only. The agent name is forwarded so the
    server-side audit log records who's making the call. */
-async function streamOpenclaw({ system, messages, model, temperature, maxTokens, agentName, elevated, onToken, onUsage, signal, cwd }) {
+async function streamCafresoHQ({ system, messages, model, temperature, maxTokens, agentName, elevated, onToken, onUsage, signal, cwd }) {
   /* The elevated flag is set by mock-data.jsx from agent.elevated. It's a
      belt-and-suspenders check: the UI already prevents picking an
-     openclaw: model on a non-elevated agent, but if that ever fails, a
+     cafresohq: model on a non-elevated agent, but if that ever fails, a
      runtime refusal here keeps a non-elevated agent from getting
      computer access. */
   if (!elevated) {
-    throw new Error('CafresoAI elevated provider requires the agent to be elevated. Toggle 🛡 in Settings first.');
+    throw new Error('CafresoHQ elevated provider requires the agent to be elevated. Toggle 🛡 in Settings first.');
   }
   const body = {
     system,
@@ -721,14 +721,14 @@ async function streamOpenclaw({ system, messages, model, temperature, maxTokens,
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/openclaw/stream', {
+  const res = await fetch(_API_BASE + '/cafresohq/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`CafresoAI ${res.status}: ${t.slice(0, 400)}`);
+    throw new Error(`CafresoHQ ${res.status}: ${t.slice(0, 400)}`);
   }
   await parseSSE(res.body, (_event, data) => {
     if (!data || data === '[DONE]') return;
@@ -747,15 +747,15 @@ async function streamOpenclaw({ system, messages, model, temperature, maxTokens,
   });
 }
 
-async function openclawStatus() {
+async function cafresohqStatus() {
   try {
-    const r = await fetch(_API_BASE + '/openclaw/status');
+    const r = await fetch(_API_BASE + '/cafresohq/status');
     if (!r.ok) return { configured: false };
     return await r.json();
   } catch (_e) { return { configured: false }; }
 }
 
-/* Same SSE wire format as streamOpenclaw but hits /codex/stream — the
+/* Same SSE wire format as streamCafresoHQ but hits /codex/stream — the
    server spawns `codex exec --json` and maps Codex JSONL events to the
    same SSE shape. Auth comes from ~/.codex/config.toml; no key is passed. */
 async function streamCodex({ system, messages, model, temperature, maxTokens, agentName, elevated, onToken, onUsage, signal, cwd }) {
@@ -809,7 +809,7 @@ async function codexStatus() {
    back to whatever provider the user picked in Settings. */
 function parseModelId(id) {
   if (!id) return { provider: null, model: null };
-  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'openclaw:', 'codex:', 'google:']) {
+  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'cafresohq:', 'codex:', 'google:']) {
     if (id.startsWith(p)) return { provider: p.slice(0, -1), model: id.slice(p.length) };
   }
   return { provider: null, model: id };
@@ -823,7 +823,7 @@ async function stream(opts) {
   if (provider === 'hermes')     return streamHermes(next);
   if (provider === 'anthropic')  return streamAnthropic(next);
   if (provider === 'claudecode') return streamClaudeCode(next);
-  if (provider === 'openclaw')   return streamOpenclaw(next);
+  if (provider === 'cafresohq')   return streamCafresoHQ(next);
   if (provider === 'codex')      return streamCodex(next);
   if (provider === 'google')     return streamGoogle(next);
   if (provider === 'ollama')     return streamOllama(next);
@@ -1106,9 +1106,9 @@ async function localModelOptions() {
         options: CLAUDECODE_MODELS.map(m => ({ id: 'claudecode:' + m, label: m })),
       });
       groups.push({
-        label: 'CafresoAI · elevated (Claude Code + tools)',
-        provider: 'openclaw',
-        options: OPENCLAW_MODELS.map(m => ({ id: 'openclaw:' + m, label: m })),
+        label: 'CafresoHQ · elevated (Claude Code + tools)',
+        provider: 'cafresohq',
+        options: CAFRESOHQ_MODELS.map(m => ({ id: 'cafresohq:' + m, label: m })),
       });
     }
   } catch (_e) {}
@@ -1323,8 +1323,8 @@ async function vaultProbe() {
 //     const vetKey = await VetAesGcmKey.fromCanister(agent, canisterId, derivationPath);
 //     // then replace crypto.subtle.generateKey / importKey with vetKey.asCryptoKey()
 
-const _VAULT_DEVICE_KEY  = 'cafresoai_device_key_v1';   // raw AES key, base64
-const _VAULT_AGENT_STORE = 'cafresoai_agent_keys_v1';   // encrypted key blob map
+const _VAULT_DEVICE_KEY  = 'cafresohq_device_key_v1';   // raw AES key, base64
+const _VAULT_AGENT_STORE = 'cafresohq_agent_keys_v1';   // encrypted key blob map
 
 let _vaultCryptoKey = null; // CryptoKey — cached in memory for the session
 
@@ -1485,7 +1485,7 @@ async function exportPdf(path, content) {
 
 /* Read media provider/model from settings. Falls back to OpenAI/dall-e-3. */
 function _mediaConfig(kind /* 'image' | 'video' */) {
-  const s = (typeof getSettings === 'function') ? getSettings() : (window.OpenclawClient && window.OpenclawClient.getSettings ? window.OpenclawClient.getSettings() : {});
+  const s = (typeof getSettings === 'function') ? getSettings() : (window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {});
   const provider = (kind === 'video' ? s.videoProvider : s.imageProvider) || 'openai';
   const model = (kind === 'video' ? s.videoModel : s.imageModel) || (kind === 'video' ? '' : 'dall-e-3');
   return { provider, model };
@@ -1675,7 +1675,7 @@ async function backendHealth() {
 /** The resolved backend base URL (gateway when cross-origin, '' when same-origin). */
 function backendBase() { return _API_BASE || ''; }
 
-window.OpenclawClient = {
+window.CafresoHQClient = {
   getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
@@ -1693,6 +1693,6 @@ window.OpenclawClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  openclawStatus, codexStatus, toolExec, cloneRepo,
-  ANTHROPIC_MODELS, CLAUDECODE_MODELS, OPENCLAW_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo,
+  ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   CafresoAI -- OCI Fleet Manager                            ║
+║   CafresoHQ -- OCI Fleet Manager                            ║
 ║   Manage per-user OCI Container Instances                    ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -155,7 +155,7 @@ def principal_to_name(principal: str) -> str:
     safe = principal.replace(':', '-').replace(' ', '-').lower()
     # Use last 20 chars which are most unique
     short = safe[-20:] if len(safe) > 20 else safe
-    return f'cafresoai-{short}'
+    return f'cafresohq-{short}'
 
 
 def principal_to_prefix(principal: str) -> str:
@@ -349,15 +349,15 @@ def cmd_provision(args, fleet: dict):
     api_server_key = _secrets.token_urlsafe(24)
 
     env_vars = {
-        'OPENCLAW_FLEET_MODE':    'oci-fleet',
-        'OPENCLAW_BIND':          '0.0.0.0',   # fleet listens on all interfaces (gateway reaches it by private IP)
-        'OPENCLAW_VAULT_BACKEND': 'oci',
+        'CAFRESOHQ_FLEET_MODE':    'oci-fleet',
+        'CAFRESOHQ_BIND':          '0.0.0.0',   # fleet listens on all interfaces (gateway reaches it by private IP)
+        'CAFRESOHQ_VAULT_BACKEND': 'oci',
         'OCI_VAULT_NAMESPACE':    fleet['vault_namespace'],
         'OCI_VAULT_BUCKET':       fleet['vault_bucket'],
         'OCI_VAULT_PREFIX':       vault_prefix,
         'USER_PRINCIPAL':         principal,
-        'OPENCLAW_HQ_STATE_DIR':  '/data/hq-state',
-        'OPENCLAW_VAULT':         '/data/vault',
+        'CAFRESOHQ_HQ_STATE_DIR':  '/data/hq-state',
+        'CAFRESOHQ_VAULT':         '/data/vault',
         # OCI credentials for serve.py Object Storage client
         'OCI_TENANCY_OCID':       _oci_cfg.get('tenancy', ''),
         'OCI_USER_OCID':          _oci_cfg.get('user', ''),
@@ -374,8 +374,8 @@ def cmd_provision(args, fleet: dict):
         # API so the session cookie is first-party); the raw *.icp0.io origin is
         # kept too for direct canister access. Override via the operator env
         # (comma-separated origins).
-        'OPENCLAW_ALLOWED_WS_ORIGINS': os.environ.get(
-            'OPENCLAW_ALLOWED_WS_ORIGINS',
+        'CAFRESOHQ_ALLOWED_WS_ORIGINS': os.environ.get(
+            'CAFRESOHQ_ALLOWED_WS_ORIGINS',
             'https://hq-ui.cafreso.com,https://vhoil-eyaaa-aaaal-qxc7q-cai.icp0.io'),
     }
     # Backend key passthrough: give the in-container Hermes a working LLM
@@ -424,7 +424,7 @@ def cmd_provision(args, fleet: dict):
             )
         ],
         freeform_tags      = {
-            'cafresoai': 'true',
+            'cafresohq': 'true',
             'principal': principal[:256],
         },
     )
@@ -813,7 +813,7 @@ def cmd_bucket_init(args, fleet: dict):
                 compartment_id    = fleet['compartment_id'],
                 storage_tier      = 'Standard',
                 versioning        = 'Disabled',
-                freeform_tags     = {'cafresoai': 'fleet-vault'},
+                freeform_tags     = {'cafresohq': 'fleet-vault'},
             )
         )
         print(ok('created'))
@@ -876,7 +876,7 @@ def cmd_ocir_login(args, fleet: dict):
     # Generate an auth token via OCI Identity
     id_client = oci.identity.IdentityClient(cfg)
     user_id   = cfg['user']
-    token_desc = 'cafresoai-fleet-docker-token'
+    token_desc = 'cafresohq-fleet-docker-token'
 
     if getattr(args, 'token', None):
         token = args.token.strip()
@@ -942,7 +942,7 @@ def cmd_image_push(args, fleet: dict):
     """Build the Docker image and push it to OCIR.
     Uses WSL Ubuntu-24.04 Docker if native docker isn't available."""
     img       = image_url(fleet)
-    repo_root = pathlib.Path(__file__).parent.parent  # openclawhq/
+    repo_root = pathlib.Path(__file__).parent.parent  # cafresohq/
     docker    = _docker_cmd()
     using_wsl = docker[0] == 'wsl'
 
@@ -965,14 +965,14 @@ def cmd_image_push(args, fleet: dict):
     # --provenance=false: OCI Container Instances reject image indexes (multi-manifest);
     #   provenance off forces a plain single-platform manifest.
     # Builder selection:
-    #   * On WSL we created the `cafresoai-builder` docker-container driver
+    #   * On WSL we created the `cafresohq-builder` docker-container driver
     #     (which has its own auth store; ocir-login writes to WSL ~/.docker/config.json
     #     so buildx forwards correctly).
     #   * On native Docker Desktop the default builder shares the host's auth
     #     directly with the Docker daemon, so we don't pass --builder. A custom
     #     docker-container builder there would NOT inherit auth and push fails 401.
     print(f'{BOLD}docker buildx build…{RESET}')
-    builder_args = ['--builder', 'cafresoai-builder'] if using_wsl else []
+    builder_args = ['--builder', 'cafresohq-builder'] if using_wsl else []
     build_cmd = docker + [
         'docker', 'buildx', 'build',
         *builder_args,
@@ -1095,7 +1095,7 @@ def cmd_caddy_sync(args, fleet: dict):
 
     # Upload via scp, then reload Caddy via ssh
     import tempfile as _tmp
-    tmp = pathlib.Path(_tmp.gettempdir()) / 'cafresoai_Caddyfile'
+    tmp = pathlib.Path(_tmp.gettempdir()) / 'cafresohq_Caddyfile'
     tmp.write_text(rendered, encoding='utf-8')
 
     ssh_opts = ['-o', 'StrictHostKeyChecking=accept-new',
@@ -1364,7 +1364,7 @@ def cmd_reap_expired(args, fleet: dict):
 def main():
     parser = argparse.ArgumentParser(
         prog='fleet-manager',
-        description='Openclaw HQ — OCI Fleet Manager',
+        description='CafresoHQ — OCI Fleet Manager',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest='command', metavar='COMMAND')

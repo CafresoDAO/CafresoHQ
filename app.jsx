@@ -1,13 +1,30 @@
 /* ==========================================================================
-   CafresoAI — root app
+   CafresoHQ — root app
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.OpenclawUI;
-const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.OpenclawModals;
-const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.OpenclawV2;
-const { MissionsModal, useMissionRunner } = window.OpenclawMissions;
-const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.OpenclawViews;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.CafresoHQUI;
+const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.CafresoHQModals;
+const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
+const { MissionsModal, useMissionRunner } = window.CafresoHQMissions;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
+
+/* One-time storage-key migration: legacy openclaw_* / cafresoai. keys -> cafresohq.*
+   Copies (never deletes) so existing sessions keep working. Idempotent. */
+(function _migrateCafresoHQStorage(){
+  try{
+    for(const store of [window.localStorage, window.sessionStorage]){
+      if(!store) continue;
+      for(const k of Object.keys(store)){
+        let nk=null;
+        if(k.indexOf('openclaw')===0) nk='cafresohq'+k.slice(8);
+        else if(k.indexOf('cafresoai.')===0) nk='cafresohq.'+k.slice(10);
+        if(nk && store.getItem(nk)===null) store.setItem(nk, store.getItem(k));
+      }
+    }
+  }catch(_){}
+})();
+
 
 /* localStorage-backed useState. Reads on mount; writes are DEBOUNCED so a
    streaming-token burst doesn't hammer JSON.stringify on every frame. The
@@ -32,8 +49,8 @@ function useStored(key, initial, transform) {
         const out = transform ? transform(v) : v;
         localStorage.setItem(key, JSON.stringify(out));
       } catch (err) {
-        console.warn('[openclaw] localStorage save failed for', key, err);
-        try { window.dispatchEvent(new CustomEvent('openclaw:storage-error', { detail: { key, error: err } })); } catch (_e) {}
+        console.warn('[cafresohq] localStorage save failed for', key, err);
+        try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key, error: err } })); } catch (_e) {}
       }
     }, 300);
     return () => { if (timer.current) clearTimeout(timer.current); };
@@ -94,7 +111,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   return [val, setter];
 }
 
-const STORE_KEY = 'openclaw_hq_v1';
+const STORE_KEY = 'cafresohq_hq_v1';
 const k = (n) => STORE_KEY + ':' + n;
 // Per-HQ-container key: scopes a flag by the user's container slug (from the
 // /u/<slug>/ API base). Used for onboarding flags so a NEW user/container shows
@@ -483,11 +500,11 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
    Sub-agents and assistants are deliberately non-elevated for safety
    (no shell, no file write). But they often inherit their spawner /
    senior's model. If that model lives in an elevation-only provider
-   (`openclaw:` or `codex:`), the upstream stream() refuses the request:
-     "OpenClaw provider requires the agent to be elevated."
+   (`cafresohq:` or `codex:`), the upstream stream() refuses the request:
+     "CafresoHQ provider requires the agent to be elevated."
 
    Rather than fail, we swap to the closest non-elevated equivalent:
-     openclaw:claude-sonnet-4-5  → claudecode:claude-sonnet-4-5
+     cafresohq:claude-sonnet-4-5  → claudecode:claude-sonnet-4-5
      codex:gpt-5.5               → oca:oca/gpt-5.5
    If no clean swap exists (or settings are missing), fall back to
    the user's globally-configured anthropic / claudecode model, then
@@ -499,14 +516,14 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
    ───────────────────────────────────────────────────────────────────── */
 function downgradeElevatedModel(model, settings) {
   if (!model) return { model: 'haiku', swapped: false, why: '' };
-  const m = /^(openclaw|codex):(.+)$/.exec(model);
+  const m = /^(cafresohq|codex):(.+)$/.exec(model);
   if (!m) return { model, swapped: false, why: '' };
   const proto = m[1], tail = m[2];
   let swap = null;
   let why = '';
-  if (proto === 'openclaw') {
+  if (proto === 'cafresohq') {
     swap = 'claudecode:' + tail;
-    why = 'CafresoAI elevated provider is elevation-only';
+    why = 'CafresoHQ elevated provider is elevation-only';
   } else if (proto === 'codex') {
     const ocaTail = tail.startsWith('oca/') ? tail : 'oca/' + tail;
     swap = 'oca:' + ocaTail;
@@ -766,7 +783,7 @@ function AppGlobalCommands({
         const q = window.prompt('Find agents who can do…\n(e.g. "code review", "docs", "deployment")', '');
         if (!q || !q.trim()) return;
         const hits = whoCan(agents, q);
-        const toast = window.openclawToast;
+        const toast = window.cafresohqToast;
         if (!hits.length) {
           toast && toast.warn(`No agent claims "${q}". (Hire one or set capabilities on an existing agent.)`);
           return;
@@ -779,12 +796,12 @@ function AppGlobalCommands({
 
     /* Help / discovery. */
     { id: 'help.shortcuts', label: 'Keyboard shortcuts', section: 'Help', icon: '⌨',
-      run: () => window.openclawToast && window.openclawToast.info(
+      run: () => window.cafresohqToast && window.cafresohqToast.info(
         'Cmd/Ctrl-K — palette · / — graph filter · Esc — close · ⌘P — graph palette',
         { duration: 8000 })
     },
     { id: 'help.tour', label: 'Replay onboarding tour', section: 'Help', icon: '🎓',
-      run: () => window.dispatchEvent(new CustomEvent('openclaw:replayTour'))
+      run: () => window.dispatchEvent(new CustomEvent('cafresohq:replayTour'))
     },
   ];
 
@@ -815,8 +832,8 @@ function App() {
   // Keep the agent_runner shim aware of the current hired agents so it can
   // pick the right model when graph actions are dispatched.
   React.useEffect(() => {
-    if (window.OpenclawAgentRunner && window.OpenclawAgentRunner.setAgents) {
-      window.OpenclawAgentRunner.setAgents(agents);
+    if (window.CafresoHQAgentRunner && window.CafresoHQAgentRunner.setAgents) {
+      window.CafresoHQAgentRunner.setAgents(agents);
     }
   }, [agents]);
 
@@ -842,7 +859,7 @@ function App() {
     };
     let cancelled = false;
     const sync = async () => {
-      const oc = window.OpenclawClient;
+      const oc = window.CafresoHQClient;
       if (cancelled || !oc || !oc.agentsStatus) return;
       let detected;
       try { detected = (await oc.agentsStatus()).agents || []; } catch (_e) { return; }
@@ -885,7 +902,7 @@ function App() {
   }, []);
   const [chat, setChat] = useStored(k('chat'), MOCK.INITIAL_CHAT, persistableChat);
 
-  /* One-time migration: rename "CafresoAI" → "CafresoHQ" on any persisted
+  /* One-time migration: rename "CafresoHQ" → "CafresoHQ" on any persisted
      chat messages so users with old localStorage state don't see the legacy
      name. Runs once per session via a sessionStorage flag. */
   React.useEffect(() => {
@@ -1019,12 +1036,12 @@ function App() {
   // tree) and any future debug surface can read messages without
   // prop-drilling through 4+ component layers.
   React.useEffect(() => {
-    window.OpenclawMessages = {
+    window.CafresoHQMessages = {
       ...MessageRegistry,
       list: () => messagesRef.current || [],
       states: MSG_STATES,
     };
-    return () => { delete window.OpenclawMessages; };
+    return () => { delete window.CafresoHQMessages; };
   }, [MessageRegistry]);
 
   /* ─── Escalation watcher (Phase 3) ───────────────────────────────────
@@ -1051,7 +1068,7 @@ function App() {
     const now = Date.now();
     const WINDOW_MS = 5 * 60_000;
     const COOLDOWN_MS = 90_000;
-    const toast = window.openclawToast;
+    const toast = window.cafresohqToast;
     if (!toast) return;
     // Find newly-failed messages we haven't evaluated yet.
     const newFails = list.filter(m =>
@@ -1125,8 +1142,8 @@ function App() {
      ProjectsView "TALK ↗" button) can pop the floating chat window
      without us prop-drilling setChatWinOpen through three layers. */
   React.useEffect(() => {
-    window.openclawSetChatOpen = (v) => setChatWinOpen(v);
-    return () => { delete window.openclawSetChatOpen; };
+    window.cafresohqSetChatOpen = (v) => setChatWinOpen(v);
+    return () => { delete window.cafresohqSetChatOpen; };
   }, []);
   const [chatWinGeo, setChatWinGeo] = useStored(k('chatWinGeoV2'), () => {
     const W = typeof window !== 'undefined' ? window.innerWidth  : 1280;
@@ -1186,8 +1203,8 @@ function App() {
   /* Allow palette command + future button to replay the tour. */
   useEffectA(() => {
     const onReplay = () => setTourOpen(true);
-    window.addEventListener('openclaw:replayTour', onReplay);
-    return () => window.removeEventListener('openclaw:replayTour', onReplay);
+    window.addEventListener('cafresohq:replayTour', onReplay);
+    return () => window.removeEventListener('cafresohq:replayTour', onReplay);
   }, []);
 
   /* Persistent getting-started checklist (survives a tour-skip). */
@@ -1195,15 +1212,15 @@ function App() {
   const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
   useEffectA(() => {
     const onPub = () => setPublishedGraph(true);
-    window.addEventListener('openclaw:graph-published', onPub);
-    return () => window.removeEventListener('openclaw:graph-published', onPub);
+    window.addEventListener('cafresohq:graph-published', onPub);
+    return () => window.removeEventListener('cafresohq:graph-published', onPub);
   }, []);
 
   /* Listen for messages from the Graph popout window so clicks in the
      popout open notes in the main window. */
   useEffectA(() => {
     if (typeof BroadcastChannel === 'undefined') return;
-    const ch = new BroadcastChannel('openclaw-graph');
+    const ch = new BroadcastChannel('cafresohq-graph');
     ch.onmessage = (e) => {
       const m = e.data || {};
       if (m.type === 'open-note' && m.path) {
@@ -1211,7 +1228,7 @@ function App() {
            opens the file. The vault listens on this event already. */
         setActiveView('vault');
         setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: m.path } }));
+          window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: m.path } }));
         }, 80);
       }
     };
@@ -1221,9 +1238,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
   // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
-  const [hasKey, setHasKey] = useStateA(() => { try { return window.OpenclawClient.hasUsableKey(); } catch (_e) { return true; } });
+  const [hasKey, setHasKey] = useStateA(() => { try { return window.CafresoHQClient.hasUsableKey(); } catch (_e) { return true; } });
   React.useEffect(() => {
-    const C = window.OpenclawClient;
+    const C = window.CafresoHQClient;
     const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
     recompute();
     return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
@@ -1248,7 +1265,7 @@ function App() {
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const C = window.OpenclawClient;
+      const C = window.CafresoHQClient;
       setBackendProbing(true);
       for (let i = 0; i < 3; i++) {
         let ok = false;
@@ -1281,11 +1298,11 @@ function App() {
     const tick = async () => {
       if (stopped) return;
       let ok = false;
-      try { ok = await window.OpenclawClient.backendHealth(); } catch (_e) {}
+      try { ok = await window.CafresoHQClient.backendHealth(); } catch (_e) {}
       if (stopped) return;
       if (ok) {
         setBackendDown(false);
-        try { if (window.OpenclawClient.hermesEnsureProvider) window.OpenclawClient.hermesEnsureProvider(); } catch (_e) {}
+        try { if (window.CafresoHQClient.hermesEnsureProvider) window.CafresoHQClient.hermesEnsureProvider(); } catch (_e) {}
         return;   // effect cleanup will fire on backendDown→false
       }
       delay = Math.min(30000, Math.round(delay * 1.5));
@@ -1417,7 +1434,7 @@ function App() {
     say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
   };
 
-  /* One-time migration: bump every existing agent to elevated + openclaw:sonnet.
+  /* One-time migration: bump every existing agent to elevated + cafresohq:sonnet.
      Gated by a localStorage flag so a later opt-out in Settings is durable —
      this can never re-elevate an agent the boss has explicitly de-elevated. */
   useEffectA(() => {
@@ -1426,10 +1443,10 @@ function App() {
     setAgents(prev => prev.map(a => ({
       ...a,
       elevated: true,
-      model: a.model && a.model.startsWith('openclaw:') ? a.model : 'openclaw:sonnet',
+      model: a.model && a.model.startsWith('cafresohq:') ? a.model : 'cafresohq:sonnet',
     })));
     try { localStorage.setItem(FLAG, '1'); } catch (_e) {}
-    say('All agents elevated · openclaw:sonnet pinned', 'ELEVATE');
+    say('All agents elevated · cafresohq:sonnet pinned', 'ELEVATE');
   }, []);
 
   useEffectA(() => { document.body.classList.toggle('no-scanlines', !scanlines); }, [scanlines]);
@@ -1474,13 +1491,13 @@ ${d.text}` : d.text,
       }]);
       setChatWinOpen(true);
     };
-    window.addEventListener('openclaw:agentActivity', onActivity);
-    window.addEventListener('openclaw:agentRunnerError', onRunnerErr);
-    window.addEventListener('openclaw:agentChatResponse', onAgentChatResponse);
+    window.addEventListener('cafresohq:agentActivity', onActivity);
+    window.addEventListener('cafresohq:agentRunnerError', onRunnerErr);
+    window.addEventListener('cafresohq:agentChatResponse', onAgentChatResponse);
     return () => {
-      window.removeEventListener('openclaw:agentActivity', onActivity);
-      window.removeEventListener('openclaw:agentRunnerError', onRunnerErr);
-      window.removeEventListener('openclaw:agentChatResponse', onAgentChatResponse);
+      window.removeEventListener('cafresohq:agentActivity', onActivity);
+      window.removeEventListener('cafresohq:agentRunnerError', onRunnerErr);
+      window.removeEventListener('cafresohq:agentChatResponse', onAgentChatResponse);
     };
   }, [setChat, setChatWinOpen, logActivity]);
   useEffectA(() => {
@@ -1518,8 +1535,8 @@ ${d.text}` : d.text,
         : 'save failed';
       say(`⚠ Local ${reason} — recent changes may not persist`, 'STORAGE');
     };
-    window.addEventListener('openclaw:storage-error', handler);
-    return () => window.removeEventListener('openclaw:storage-error', handler);
+    window.addEventListener('cafresohq:storage-error', handler);
+    return () => window.removeEventListener('cafresohq:storage-error', handler);
   }, []);
   useEffectA(() => {
     const h = new Date().getHours();
@@ -1635,7 +1652,7 @@ ${d.text}` : d.text,
       else if (c === 'transfer' || c === 'keep' || c === 'reassign') cascadeAction = 'transfer';
       else {
         // Unknown response — bail safely rather than guess.
-        if (window.openclawToast) window.openclawToast.warn(`Unknown choice "${choice}" — aborting dismissal.`);
+        if (window.cafresohqToast) window.cafresohqToast.warn(`Unknown choice "${choice}" — aborting dismissal.`);
         return;
       }
     }
@@ -2165,7 +2182,7 @@ ${d.text}` : d.text,
         });
       }
       if (taskUpdates.length) {
-        const toast = window.openclawToast;
+        const toast = window.cafresohqToast;
         setTasks(prev => prev.map(t => {
           const upd = taskUpdates.find(u => u.id === t.id);
           if (!upd) return t;
@@ -2410,7 +2427,7 @@ ${d.text}` : d.text,
       }
       const role = roleRaw.slice(0, 60);
       // Resolve final model: per-spawn override > global pinned > inherit.
-      const settings = window.OpenclawClient && window.OpenclawClient.getSettings ? window.OpenclawClient.getSettings() : {};
+      const settings = window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {};
       const globalSub = settings.subagentModel;
       let subModel = perSpawnModel
         || (globalSub && globalSub !== 'inherit' ? globalSub : null)
@@ -2524,7 +2541,7 @@ ${d.text}` : d.text,
         proposedName = `Junior ${proposedRole.split(/\s+/)[0]}`.slice(0, 40);
       }
       if (!proposedName) {
-        const toast = window.openclawToast;
+        const toast = window.cafresohqToast;
         if (toast) toast.warn(
           `${agent.name} tried to propose a hire but didn't include a name or role. ` +
           `Ask them to retry with [HIRE_AGENT: <name> · <role>].`,
@@ -2596,7 +2613,7 @@ ${d.text}` : d.text,
       if (!proposedName) {
         // Last resort — surface a visible warning so neither the user nor
         // the agent thinks the request was approved.
-        const toast = window.openclawToast;
+        const toast = window.cafresohqToast;
         if (toast) toast.warn(
           `${agent.name} tried to hire an assistant but didn't include a name or role. ` +
           `Ask them to retry with [HIRE_ASSISTANT: <name> · <role>].`,
@@ -2677,7 +2694,7 @@ ${d.text}` : d.text,
      touching the knowledge web in real time. Search hits pulse all returned
      paths; reads/writes pulse the single targeted note. */
   const pulseGraph = (ev) => {
-    const g = window.OpenclawGraph;
+    const g = window.CafresoHQGraph;
     if (!g || !g.pulse) return;
     const name = ev.name;
     if (name === 'VAULT_READ' || name === 'VAULT_APPEND' || name === 'VAULT_NEW') {
@@ -2783,7 +2800,7 @@ ${d.text}` : d.text,
     say(`Cleared ${a.name}'s context`, 'COFFEE');
   };
   const onAddSticky = () => {
-    const text = prompt('New sticky note for CafresoAI:');
+    const text = prompt('New sticky note for CafresoHQ:');
     if (!text || !text.trim()) return;
     setPins(prev => [{ id: MOCK.uid('pin'), kind: 'sticky', text: text.trim(), addedAt: Date.now() }, ...prev]);
     say('Pinned a note to the CEO desk', 'NOTE');
@@ -2801,7 +2818,7 @@ ${d.text}` : d.text,
     const pool = (messagesRef.current || []).filter(m => m.state === 'failed');
     const failed = agentId ? pool.filter(m => m.toAgentId === agentId) : pool;
     if (!failed.length) {
-      window.openclawToast && window.openclawToast.warn(
+      window.cafresohqToast && window.cafresohqToast.warn(
         agentId ? 'No failed message on record for this agent to retry.'
                 : 'No failed messages to retry.');
       return;
@@ -2810,7 +2827,7 @@ ${d.text}` : d.text,
     const m = failed[0];
     const agent = agents.find(a => a.id === m.toAgentId);
     if (!agent) {
-      window.openclawToast && window.openclawToast.error(
+      window.cafresohqToast && window.cafresohqToast.error(
         `Recipient (${m.toAgentName}) is no longer hired — can't retry.`);
       return;
     }
@@ -2818,7 +2835,7 @@ ${d.text}` : d.text,
       parentMessageId: m.id,
       dmFrom: (m.fromAgentId !== 'boss') ? agents.find(a => a.id === m.fromAgentId) || null : null,
     });
-    window.openclawToast && window.openclawToast.success(`Retrying → ${agent.name}…`);
+    window.cafresohqToast && window.cafresohqToast.success(`Retrying → ${agent.name}…`);
   };
 
   // Tasks
@@ -2833,15 +2850,15 @@ ${d.text}` : d.text,
      side-effect — once you assign, it's in flight. */
   const onAssignTaskToChat = (task) => {
     if (!task) return;
-    if (window.openclawSetChatOpen) window.openclawSetChatOpen(true);
-    window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'direct' }));
+    if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
+    window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' }));
     const assignee = task.assignedTo ? agents.find(a => a.id === task.assignedTo) : null;
     const prefix = assignee ? `@${assignee.name} ` : '';
     const detail = task.detail ? `\n\n${task.detail}` : '';
     const text = `${prefix}${task.title}${detail}\n\n_(from task ${task.id})_`;
     /* Cross-component bridge — ChatPanel listens and prefills its
        composer, focuses, ready for the boss to hit Enter. */
-    window.dispatchEvent(new CustomEvent('openclaw:prefill-composer', { detail: text }));
+    window.dispatchEvent(new CustomEvent('cafresohq:prefill-composer', { detail: text }));
     if (task.status === 'inbox') onMoveTask(task.id, 'doing');
     say(`Sent "${task.title.slice(0, 30)}" to chat`, 'TASK');
   };
@@ -2855,7 +2872,7 @@ ${d.text}` : d.text,
     if (!task) return;
     /* Stash the prefill on window for MeetingRoomModal to pick up on
        next open. Cleared after consumption. */
-    window._openclawMeetingPrefill = {
+    window._cafresohqMeetingPrefill = {
       name: task.title.slice(0, 60),
       topic: task.detail || task.title,
       agentIds: task.assignedTo ? [task.assignedTo] : [],
@@ -3159,7 +3176,7 @@ ${d.text}` : d.text,
         // Downgrade if the senior's model needs elevation — assistants are
         // never elevated, so they need a non-elevated equivalent.
         const dg = downgradeElevatedModel(p.inheritModel,
-          window.OpenclawClient && window.OpenclawClient.getSettings ? window.OpenclawClient.getSettings() : {});
+          window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {});
         const finalModel = dg.model;
         if (dg.swapped) {
           setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
@@ -3477,7 +3494,7 @@ ${d.text}` : d.text,
     if (s.theme != null)          setTheme(s.theme);
     if (s.night != null)          setNight(s.night);
     setActiveWorkspace(ws.id);
-    if (window.openclawToast) window.openclawToast.success(`Workspace: ${ws.name}`);
+    if (window.cafresohqToast) window.cafresohqToast.success(`Workspace: ${ws.name}`);
   }, [setActiveView, setRailCollapsed, setChatWinOpen, setDensity, setTheme, setNight, setActiveWorkspace]);
 
   /* Capture current state into a new user workspace. */
@@ -3491,7 +3508,7 @@ ${d.text}` : d.text,
     };
     setSavedWorkspaces(list => [...list, ws]);
     setActiveWorkspace(id);
-    if (window.openclawToast) window.openclawToast.success(`Saved workspace "${name}"`);
+    if (window.cafresohqToast) window.cafresohqToast.success(`Saved workspace "${name}"`);
   }, [activeView, railCollapsed, chatWinOpen, density, theme, night, setSavedWorkspaces, setActiveWorkspace]);
 
   const deleteWorkspace = useCallbackA((id) => {
@@ -3554,7 +3571,7 @@ ${d.text}` : d.text,
     () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
   const openAttention = useCallbackA(() => {
     setActiveView('team');
-    setTimeout(() => window.dispatchEvent(new CustomEvent('openclaw:openAgentInbox')), 60);
+    setTimeout(() => window.dispatchEvent(new CustomEvent('cafresohq:openAgentInbox')), 60);
   }, [setActiveView]);
 
   const vocab = getVocab(theme);
@@ -3589,24 +3606,24 @@ ${d.text}` : d.text,
         // Open chat thread + prefill composer with @-mention
         setActiveView('visual');
         try { localStorage.setItem(k('composer_prefill'), '@' + (agent.name || '') + ' '); } catch(_e) {}
-        if (window.openclawToast) window.openclawToast.info(`Composer ready for @${agent.name}`);
+        if (window.cafresohqToast) window.cafresohqToast.info(`Composer ready for @${agent.name}`);
       }}
       onJumpToMessage={(msg) => {
         // Switch to chat view and toast the matched line
         setActiveView('visual');
-        if (window.openclawToast) window.openclawToast.info(`From ${msg.name}: ${String(msg.text || '').slice(0, 80)}…`, { duration: 6000 });
+        if (window.cafresohqToast) window.cafresohqToast.info(`From ${msg.name}: ${String(msg.text || '').slice(0, 80)}…`, { duration: 6000 });
       }}
       messages={messages}
       onOpenInbox={(filter) => {
         // Persist the requested filter so InboxModal picks it up on open.
         // Cleared next render so a manual click goes back to default 'active'.
-        if (filter) try { sessionStorage.setItem('openclaw:inbox-filter', filter); } catch(_e) {}
+        if (filter) try { sessionStorage.setItem('cafresohq:inbox-filter', filter); } catch(_e) {}
         setInboxOpen(true);
       }}
       onRetryFailed={() => {
         const failed = (messagesRef.current || []).filter(m => m.state === 'failed');
         if (!failed.length) {
-          window.openclawToast && window.openclawToast.warn('No failed messages to retry.');
+          window.cafresohqToast && window.cafresohqToast.warn('No failed messages to retry.');
           return;
         }
         // Most recent failure first.
@@ -3614,7 +3631,7 @@ ${d.text}` : d.text,
         const m = failed[0];
         const agent = agents.find(a => a.id === m.toAgentId);
         if (!agent) {
-          window.openclawToast && window.openclawToast.error(
+          window.cafresohqToast && window.cafresohqToast.error(
             `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
           return;
         }
@@ -3640,8 +3657,8 @@ ${d.text}` : d.text,
         collapsed={railCollapsed}
         onToggle={() => setRailCollapsed(v => !v)}
       />
-      {window.OpenclawUI && window.OpenclawUI.MobileTabBar ? (
-        <window.OpenclawUI.MobileTabBar
+      {window.CafresoHQUI && window.CafresoHQUI.MobileTabBar ? (
+        <window.CafresoHQUI.MobileTabBar
           active={activeView}
           setActive={setActiveView}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -3813,7 +3830,7 @@ ${d.text}` : d.text,
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}/>
       <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
-        onMessage={(a)=>{ setInspect(null); if (window.openclawSetChatOpen) window.openclawSetChatOpen(true); window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'direct' })); window.openclawToast && window.openclawToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
+        onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
       <CEOPanel
         open={ceoShown}
         onClose={() => setCeoShown(false)}
@@ -3879,7 +3896,7 @@ ${d.text}` : d.text,
             {
               id: 'chat',
               title: 'Chat with your team',
-              body: 'The Chat view is where you talk to CafresoAI and your crew. Swipe a message left to Reply or DM a specific agent directly.',
+              body: 'The Chat view is where you talk to CafresoHQ and your crew. Swipe a message left to Reply or DM a specific agent directly.',
               action: () => setActiveView('chat'),
             },
             {
@@ -3923,7 +3940,7 @@ ${d.text}` : d.text,
             {
               id: 'meet-ceo',
               title: 'Meet your CEO',
-              body: 'This is CafresoAI, your chief of staff. The 1:1 chair at the CEO desk opens a private chat — ask for anything and it gets routed to the right specialist. The desk lights up while she\'s replying.',
+              body: 'This is CafresoHQ, your chief of staff. The 1:1 chair at the CEO desk opens a private chat — ask for anything and it gets routed to the right specialist. The desk lights up while she\'s replying.',
               target: () => document.querySelector('.room.ceo .guest-chair') || document.querySelector('.room.ceo'),
               action: () => setActiveView('visual'),
             },
@@ -3937,7 +3954,7 @@ ${d.text}` : d.text,
             {
               id: 'chat',
               title: 'Chat with your team',
-              body: 'Chat is where you brief CafresoAI and your crew. Ask questions, delegate, or DM a single agent — they reply using the free AI key you just set.',
+              body: 'Chat is where you brief CafresoHQ and your crew. Ask questions, delegate, or DM a single agent — they reply using the free AI key you just set.',
               action: () => setActiveView('chat'),
             },
             {
@@ -3984,7 +4001,7 @@ ${d.text}` : d.text,
              activeThread state and we don't want to lift it just for
              this one cross-cutting hand-off. */
           setChatWinOpen(true);   // pop the floating chat (Projects/Vault views)
-          window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'meeting:' + id }));
+          window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'meeting:' + id }));
         }}
       />
       <WorkflowModal
@@ -4018,7 +4035,7 @@ ${d.text}` : d.text,
             <window.TweakToggle label="Sound FX" value={sound} onChange={setSound}/>
           </window.TweakSection>
           <window.TweakSection title="Copy">
-            <window.TweakText label="CafresoAI greeting" value={tweaks.greeting} onChange={v=>setTweaks({greeting:v})}/>
+            <window.TweakText label="CafresoHQ greeting" value={tweaks.greeting} onChange={v=>setTweaks({greeting:v})}/>
           </window.TweakSection>
         </window.TweaksPanel>
       )}
@@ -4033,18 +4050,18 @@ ${d.text}` : d.text,
    When the URL includes `?popout=graph`, mount a stripped-down app
    that renders only the GraphView fullscreen. This is the target of
    window.open() from the gear panel's "Pop out" button.
-   The popout listens on BroadcastChannel('openclaw-graph') for any
+   The popout listens on BroadcastChannel('cafresohq-graph') for any
    openNote requests sent by the parent window so clicks sync across.
    ─────────────────────────────────────────────────────────────── */
 function GraphPopout() {
-  const { GraphView } = window.OpenclawViews;
-  const { ToastProvider } = window.OpenclawUI;
+  const { GraphView } = window.CafresoHQViews;
+  const { ToastProvider } = window.CafresoHQUI;
   const [activePath, setActivePath] = React.useState(null);
 
   React.useEffect(() => {
     document.title = 'Vault Graph (popout)';
     if (typeof BroadcastChannel === 'undefined') return;
-    const ch = new BroadcastChannel('openclaw-graph');
+    const ch = new BroadcastChannel('cafresohq-graph');
     ch.onmessage = (e) => {
       const m = e.data || {};
       if (m.type === 'set-active' && m.path) setActivePath(m.path);
@@ -4061,7 +4078,7 @@ function GraphPopout() {
   const onOpenNote = React.useCallback((path) => {
     setActivePath(path);
     if (typeof BroadcastChannel !== 'undefined') {
-      const ch = new BroadcastChannel('openclaw-graph');
+      const ch = new BroadcastChannel('cafresohq-graph');
       try { ch.postMessage({ type: 'open-note', path }); } finally { ch.close(); }
     }
   }, []);

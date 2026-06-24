@@ -7,11 +7,11 @@
 ## Ecosystem mapping (corrected)
 The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\Anthony\Documents`:
 - **Pages** — `Documents\CafresoPages` → `cafreso.com`
-- **CafresoAI** (control plane + embedded HQ) — `Documents\CafresoHQLocal` → `ai.cafreso.com`; per-user **HQ** containers at `hq.cafreso.com/u/{slug}`
+- **CafresoHQ** (control plane + embedded HQ) — `Documents\CafresoHQLocal` → `ai.cafreso.com`; per-user **HQ** containers at `hq.cafreso.com/u/{slug}`
 - **Minegold.defi / Banking.Brave** — `Documents\minegold.defi` → frontend canister `cqyto-…` is the **Internet Identity anchor** (`derivationOrigin`). Banking.Brave is the app's homepage; Minegold.defi is the protocol hosted under the Banking.Brave domain.
 
 ## ✅ Safe wins already executed (2026-05-29)
-- ✅ **`serve.py` portability** — replaced the hardcoded `C:\Users\Anthony\.claude\…\memory` default with a repo-relative `hq-state/memory` default (env `OPENCLAW_MEMORY_DIR` still overrides). `serve.py:~186`.
+- ✅ **`serve.py` portability** — replaced the hardcoded `C:\Users\Anthony\.claude\…\memory` default with a repo-relative `hq-state/memory` default (env `CAFRESOHQ_MEMORY_DIR` still overrides). `serve.py:~186`.
 - ✅ **Ecosystem identity unblocked** — added the custom domains (`cafreso.com`, `ai.cafreso.com`, `hq.cafreso.com`, `minegold.defi`) to the Banking.Brave anchor's `ii-alternative-origins` (`minegold.defi\src\frontend\public\.well-known\`), keeping the existing canister URLs. **Purely additive.** Takes effect on the next deploy of the `cqyto-…` canister.
 - ✅ **Workspace consolidation** — stray older duplicate moved out of `Downloads` into `Documents\_archive\` (reversible; see Track 0).
 - ✅ **Docs corrected** — strategy docs updated for the Banking.Brave/Minegold mapping above.
@@ -33,7 +33,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - 🔴 **Agents / missions / tasks aren't durably persisted** — hired agents are in-memory (only the 3 seed agents survive reload, `mock-data.jsx`); missions read seed data; tasks use `useFileStored` (`app.jsx:49`) → localStorage + local `/hq/state/`, lost on container restart. *Fix:* persist to the encrypted vault / a state endpoint + an agent registry. **This is the gap between "demo" and "product."**
 
 ### Security & ops (flag)
-- 🔴 **`subprocess.run(arg, shell=True)`** for the BASH tool (`serve.py:~2258`). Gated by `OPENCLAW_ALLOWED_TOOLS` (default read-only), but shell-injection is real if Bash is enabled. *Fix:* drop `shell=True`/use arg lists; keep allowlist default-deny.
+- 🔴 **`subprocess.run(arg, shell=True)`** for the BASH tool (`serve.py:~2258`). Gated by `CAFRESOHQ_ALLOWED_TOOLS` (default read-only), but shell-injection is real if Bash is enabled. *Fix:* drop `shell=True`/use arg lists; keep allowlist default-deny.
 - 🟡 **Open LLM proxies without auth** (`serve.py:41–43`). *Fix:* require auth before any public exposure.
 - ✅ **Non-portable hardcoded path** (`serve.py:187`) — **fixed** (see above).
 

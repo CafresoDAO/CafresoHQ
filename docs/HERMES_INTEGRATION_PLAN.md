@@ -1,8 +1,8 @@
 # Hermes Agent Integration Plan — CafresoHQ Revamp
 
 > Goal: make **Nous Research's Hermes Agent (v0.15.1, released 2026-05-29)** the
-> **default** agent runtime for CafresoHQ (codename *Openclaw HQ*), while keeping
-> Claude Code, Gemini CLI, Openclaw, and Codex CLI as user-selectable providers.
+> **default** agent runtime for CafresoHQ (codename *CafresoHQ*), while keeping
+> Claude Code, Gemini CLI, CafresoHQ, and Codex CLI as user-selectable providers.
 >
 > Status: architecture + integration plan. Sources are a deep-research pass over
 > the Hermes GitHub repo + official docs, **reconciled against the v0.15.1 source
@@ -15,7 +15,7 @@
 
 | Decision | Choice |
 |---|---|
-| Default runtime | **Hermes** (others remain selectable: Claude Code, Gemini CLI, Openclaw, Codex CLI) |
+| Default runtime | **Hermes** (others remain selectable: Claude Code, Gemini CLI, CafresoHQ, Codex CLI) |
 | Lead integration surfaces | **(1) OpenAI-compatible API server** + **(4) tui_gateway WebSocket embed** |
 | Secondary / future | ACP adapter, MCP serve |
 | Per-container execution | **Hybrid**: one always-on `hermes gateway` + on-demand `hermes chat -q` |
@@ -85,8 +85,8 @@ Add a Hermes proxy mirroring the existing LM Studio/Ollama proxies:
 ### `claude-client.jsx` changes
 - Register a **`hermes`** provider; make it the **default** selection.
 - Point it at the same-origin `/hermes/v1/chat/completions` (Caddy routes per-principal).
-- Keep `claudecode`, `codex`, `openclaw`, `gemini` in the provider list (selectable).
-- Map `hermes.tool.progress` SSE events into the existing `openclaw:agentActivity` event
+- Keep `claudecode`, `codex`, `cafresohq`, `gemini` in the provider list (selectable).
+- Map `hermes.tool.progress` SSE events into the existing `cafresohq:agentActivity` event
   so office agents animate on tool use with no UI rewrite.
 - Point Hermes' own LLM backend (in `config.yaml` `model` / `custom_providers`, `api_mode:
   chat_completions|anthropic_messages`) at CafresoHQ's existing Anthropic/OCA/LM Studio
@@ -193,7 +193,7 @@ and avoids two PID-1 init systems fighting.
 
 **Phase 1 — API proxy + provider.** `serve.py` `/hermes/v1/*` proxy (key injection +
 `usage`/`tool.progress` parsing); `claude-client.jsx` registers `hermes`, **set as
-default**, others kept selectable; map `hermes.tool.progress` → `openclaw:agentActivity`.
+default**, others kept selectable; map `hermes.tool.progress` → `cafresohq:agentActivity`.
 
 **Phase 2 — Approvals.** Wire `hermes.tool.progress` + WS approval messages into
 ApprovalTray; set `approvals.mode=manual|smart` per user.
@@ -208,7 +208,7 @@ and document new components in `DESIGN_SYSTEM.md`.
 **Phase 5 — Metering + quotas.** Persist per-principal token+compute usage; enforce
 quotas; ship the paywall (the documented launch blocker).
 
-**Phase 6 — Cleanup.** Keep Claude Code/Codex/Openclaw/Gemini as fallbacks; deprecate
+**Phase 6 — Cleanup.** Keep Claude Code/Codex/CafresoHQ/Gemini as fallbacks; deprecate
 the old default path once Hermes is stable.
 
 ### File touch-list

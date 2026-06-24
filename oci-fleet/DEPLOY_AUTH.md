@@ -24,9 +24,9 @@ The upgrade only ADDS methods (`mintHqSession`, `setHqSessionSecret`,
 
 ```bash
 # from repo root, WSL (deploy identity tzw3r-… is a controller + allowed setter)
-dfx deploy cafresoai_keys --network ic
-dfx canister call cafresoai_keys setHqSessionSecret '("<SECRET>")' --network ic
-dfx canister call cafresoai_keys hqSessionConfigured --network ic    # → (true)
+dfx deploy cafresohq_keys --network ic
+dfx canister call cafresohq_keys setHqSessionSecret '("<SECRET>")' --network ic
+dfx canister call cafresohq_keys hqSessionConfigured --network ic    # → (true)
 ```
 
 ## 2. Gateway VM: env + verifier service
@@ -70,7 +70,7 @@ curl -s https://hq.cafreso.com/u/<slug>/health
 
 ```bash
 npm --prefix frontend run build
-dfx deploy cafresoai_frontend --network ic
+dfx deploy cafresohq_frontend --network ic
 ```
 
 Sign in at https://ai.cafreso.com/hq/app → the shell mints a token, installs the
@@ -88,5 +88,5 @@ The container still has a public IP on :8787 (bypasses the gateway). Close it:
 
 - Revert the Caddyfile (`git checkout` the template, re-run caddy-sync) → routes
   open again.
-- Or `dfx canister call cafresoai_keys setHqSessionSecret '("")'` is NOT allowed
+- Or `dfx canister call cafresohq_keys setHqSessionSecret '("")'` is NOT allowed
   (min length); instead stop `verifier` and remove forward_auth to fully open.

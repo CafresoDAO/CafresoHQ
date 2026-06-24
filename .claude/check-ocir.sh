@@ -13,7 +13,7 @@ for h, v in auths.items():
 echo ""
 echo "=== test push (without re-login) ==="
 docker buildx build \
-    --builder cafresoai-builder \
+    --builder cafresohq-builder \
     --platform linux/arm64 \
     --provenance=false \
     -t iad.ocir.io/idwv6126novh/cafresoai-serve:latest \

@@ -1,7 +1,7 @@
 # 05 · Design Cohesion — Making CafresoHQ Feel Like the Ecosystem
 
 > **Status:** Draft for founder review · Generated 2026-05-29
-> **Scope:** How the Cafreso apps (~3 codebases: Pages, CafresoAI/HQ, and Minegold.defi/Banking.Brave) relate visually today, where they diverge, and a concrete plan to make CafresoHQ read as a sibling of `ai.cafreso.com`, `cafreso.com`, and `Banking.Brave` — without throwing away the pixel‑art office that gives HQ its personality.
+> **Scope:** How the Cafreso apps (~3 codebases: Pages, CafresoHQ/HQ, and Minegold.defi/Banking.Brave) relate visually today, where they diverge, and a concrete plan to make CafresoHQ read as a sibling of `ai.cafreso.com`, `cafreso.com`, and `Banking.Brave` — without throwing away the pixel‑art office that gives HQ its personality.
 > **This is the one section that is purely a design audit.** Strategy, tokenomics, roadmap, and market research live in the sibling docs (`00`–`04`).
 
 ---

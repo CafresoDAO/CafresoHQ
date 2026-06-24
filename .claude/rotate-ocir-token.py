@@ -26,7 +26,7 @@ IDENTITY_HOST  = f"identity.{REGION}.oraclecloud.com"
 KEY_ID         = f"{TENANCY_OCID}/{USER_OCID}/{FINGERPRINT}"
 
 # Token description for the new auth token
-NEW_TOKEN_DESC = "cafresoai-ocir-push"
+NEW_TOKEN_DESC = "cafresohq-ocir-push"
 
 # ── OCI Request Signing ──────────────────────────────────────────────────────
 

@@ -1,12 +1,12 @@
 [Unit]
-Description=CafresoAI HQ session verifier (Caddy forward_auth backend)
+Description=CafresoHQ HQ session verifier (Caddy forward_auth backend)
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/cafresoai/oci-fleet
-# Shared env file holds HQ_SESSION_SECRET (same hex set on the cafresoai_keys
+# Shared env file holds HQ_SESSION_SECRET (same hex set on the cafresohq_keys
 # canister) and is also sourced by the fleet-api service.
 EnvironmentFile=/etc/cafresoai/hq.env
 ExecStart=/usr/bin/python3 /opt/cafresoai/oci-fleet/verifier.py

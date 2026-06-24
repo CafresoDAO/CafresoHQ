@@ -1,4 +1,4 @@
-// ── CafresoAI OCI client ────────────────────────────────────────────────────
+// ── CafresoHQ OCI client ────────────────────────────────────────────────────
 // Thin fetch wrapper that prepends the user's container endpoint URL and
 // attaches their ecosystem-derived principal as `X-User-Principal`.
 //

@@ -4,7 +4,7 @@
 
 /* =========================================================================
    Cafreso unified design tokens.
-   Merges the CafresoAI control-plane scale (brand 50–900 / ink 50–900 /
+   Merges the CafresoHQ control-plane scale (brand 50–900 / ink 50–900 /
    surfaces + component layer) with the Cafreso Pages semantic tokens
    (shadcn / bits-ui: --background/--foreground/--primary/… + named
    --brand-* aliases). One stylesheet powers both the (pages) consumer

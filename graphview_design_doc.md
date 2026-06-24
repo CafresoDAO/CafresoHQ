@@ -1,6 +1,6 @@
 # GraphView Update: Design & Implementation Plan
 
-This document outlines the plan for updating the OpenclawHQ GraphView, combining architectural vision with performance-first engineering.
+This document outlines the plan for updating the CafresoHQ GraphView, combining architectural vision with performance-first engineering.
 
 ## 1. Goals / Non-goals
 *   **Goal:** Create a knowledge operating system, not just a visualizer.

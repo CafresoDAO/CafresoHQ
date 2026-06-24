@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── Deploy fleet-api.py to the CafresoAI TLS gateway VM ─────────────────────
+# ── Deploy fleet-api.py to the CafresoHQ TLS gateway VM ─────────────────────
 # Run from Windows via WSL:
 #   bash oci-fleet/deploy-fleet-api.sh   (config from <repo>/.env — see .env.example)
 #
@@ -27,7 +27,7 @@ chmod 600 "$SSH_KEY"
 SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 SCP_CMD="scp -i $SSH_KEY -o StrictHostKeyChecking=accept-new"
 
-echo "═══ CafresoAI Fleet API Deployment ═══"
+echo "═══ CafresoHQ Fleet API Deployment ═══"
 echo "  Target: $SSH_USER@$GATEWAY_IP"
 echo ""
 
@@ -91,15 +91,15 @@ fi
 echo ""
 echo "3c/5  Granting ubuntu NOPASSWD sudo for Caddyfile + reload..."
 $SSH_CMD $SSH_USER@$GATEWAY_IP sudo bash -s <<'REMOTE_SUDO'
-cat > /etc/sudoers.d/cafresoai-fleet-api <<EOF
+cat > /etc/sudoers.d/cafresohq-fleet-api <<EOF
 # Allows fleet-api.py to re-render the Caddyfile when a new user is provisioned
 # without prompting. Only specific commands — not blanket sudo.
-ubuntu ALL=(root) NOPASSWD: /usr/bin/cp /tmp/cafresoai_Caddyfile.new /etc/caddy/Caddyfile
+ubuntu ALL=(root) NOPASSWD: /usr/bin/cp /tmp/cafresohq_Caddyfile.new /etc/caddy/Caddyfile
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl reload caddy
-ubuntu ALL=(root) NOPASSWD: /usr/sbin/caddy validate --config /tmp/cafresoai_Caddyfile.new
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/caddy validate --config /tmp/cafresohq_Caddyfile.new
 EOF
-chmod 440 /etc/sudoers.d/cafresoai-fleet-api
-visudo -c -f /etc/sudoers.d/cafresoai-fleet-api && echo "  sudoers entry valid"
+chmod 440 /etc/sudoers.d/cafresohq-fleet-api
+visudo -c -f /etc/sudoers.d/cafresohq-fleet-api && echo "  sudoers entry valid"
 REMOTE_SUDO
 echo "  done."
 
@@ -109,7 +109,7 @@ echo "4/5  Creating systemd service..."
 $SSH_CMD $SSH_USER@$GATEWAY_IP sudo bash -s <<'REMOTE_SERVICE'
 cat > /etc/systemd/system/fleet-api.service <<EOF
 [Unit]
-Description=CafresoAI Fleet API
+Description=CafresoHQ Fleet API
 After=network-online.target
 Wants=network-online.target
 

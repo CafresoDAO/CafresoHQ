@@ -80,7 +80,7 @@ Your analysis correctly says the headline split is meaningless until these are s
 **Gates (from your `sns-launch-readiness` note + DFINITY checklist) — none are closed yet:**
 - [ ] Dapp live on mainnet, **upgrade round-trip tested**
 - [ ] **NNS Root added as co-controller** of every dapp canister; fallback controllers set to team principals
-- [ ] **Third-party security audit** of `cafresoai_keys` + any payment/ledger canister
+- [ ] **Third-party security audit** of `cafresohq_keys` + any payment/ledger canister
 - [ ] `sns_init.yaml` validated on a **local testflight**
 - [ ] **Tokenomics published with rationale** (this doc → a forum post)
 - [ ] **Team vesting + dissolve-delay table** published per principal

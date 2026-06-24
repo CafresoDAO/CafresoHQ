@@ -72,14 +72,14 @@
 </script>
 
 <svelte:head>
-  <title>CafresoPages Search - CafresoAI</title>
+  <title>CafresoPages Search - CafresoHQ</title>
 </svelte:head>
 
 <section class="space-y-6">
   <header class="card p-6 sm:p-8">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <div class="page-kicker">CafresoAI / Search</div>
+        <div class="page-kicker">CafresoHQ / Search</div>
         <h1 class="page-title mt-4">CafresoPages<span class="text-brand-500">.</span></h1>
         <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
           Semantic search powered by the local AI vault. Results get smarter with every query.
