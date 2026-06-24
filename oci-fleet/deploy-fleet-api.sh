@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # ── Deploy fleet-api.py to the CafresoAI TLS gateway VM ─────────────────────
 # Run from Windows via WSL:
-#   wsl -d Ubuntu-24.04 -- bash -lc "bash /mnt/c/Users/Anthony/Documents/CafresoHQ/oci-fleet/deploy-fleet-api.sh"
+#   bash oci-fleet/deploy-fleet-api.sh   (config from <repo>/.env — see .env.example)
 #
 # Prerequisites:
-#   - Gateway VM SSH key at ~/.ssh/cafreso_tls_gateway (or /mnt/c/Users/Anthony/.ssh/...)
+#   - Gateway VM SSH key at $GATEWAY_SSH_KEY (default ~/.ssh/cafreso_tls_gateway)
 #   - OCI config at ~/.oci/config + key file
 #   - fleet.json with gateway info
 set -euo pipefail
 
-GATEWAY_IP="129.80.230.53"
-SSH_USER="ubuntu"
-SSH_KEY_WIN="/mnt/c/Users/Anthony/.ssh/cafreso_tls_gateway"
-SSH_KEY="/tmp/_deploy_gw_key"
-FLEET_DIR="/mnt/c/Users/Anthony/Documents/CafresoHQ/oci-fleet"
-OCI_CONFIG="/mnt/c/Users/Anthony/.oci/config"
-OCI_KEY="/mnt/c/Users/Anthony/.oci/oci_api_key.pem"
+# Deploy config (gitignored): GATEWAY_IP, GATEWAY_SSH_KEY, OCI_CONFIG, OCI_KEY. See .env.example.
+[ -f "$(dirname "$0")/../.env" ] && . "$(dirname "$0")/../.env"
+
+GATEWAY_IP="${GATEWAY_IP:?set GATEWAY_IP in <repo>/.env or environment}"
+SSH_USER="${GATEWAY_SSH_USER:-ubuntu}"
+SSH_KEY_WIN="${GATEWAY_SSH_KEY:-$HOME/.ssh/cafreso_tls_gateway}"
+SSH_KEY="$(mktemp /tmp/_deploy_gw_key.XXXXXX)"
+FLEET_DIR="$(cd "$(dirname "$0")" && pwd)"
+OCI_CONFIG="${OCI_CONFIG:-$HOME/.oci/config}"
+OCI_KEY="${OCI_KEY:-$HOME/.oci/oci_api_key.pem}"
 
 # Copy SSH key with correct perms
 cp "$SSH_KEY_WIN" "$SSH_KEY"
@@ -75,7 +78,7 @@ echo "  done."
 echo ""
 echo "3b/5  Copying OCIR pull credentials..."
 # Read from WSL's Docker config (where ocir-login writes)
-DOCKER_CFG=$(wsl -d Ubuntu-24.04 -- cat /home/anthony/.docker/config.json 2>/dev/null || echo "")
+DOCKER_CFG=$(cat "${DOCKER_CONFIG_JSON:-$HOME/.docker/config.json}" 2>/dev/null || echo "")
 if [ -n "$DOCKER_CFG" ]; then
     echo "$DOCKER_CFG" | $SSH_CMD $SSH_USER@$GATEWAY_IP "mkdir -p ~/.docker && cat > ~/.docker/config.json && chmod 600 ~/.docker/config.json"
     echo "  OCIR credentials copied."
@@ -120,7 +123,7 @@ Restart=on-failure
 RestartSec=5
 Environment=FLEET_API_PORT=8080
 Environment=FLEET_API_SECRET=
-Environment=FLEET_API_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,https://v4tdv-riaaa-aaaab-agtfa-cai.icp0.io,https://ai.cafreso.com,https://cafreso.com,http://129.80.230.53
+Environment=FLEET_API_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,https://v4tdv-riaaa-aaaab-agtfa-cai.icp0.io,https://ai.cafreso.com,https://cafreso.com
 Environment=PYTHONUTF8=1
 StandardOutput=journal
 StandardError=journal
