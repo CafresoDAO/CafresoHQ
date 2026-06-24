@@ -89,9 +89,11 @@ function _adopt(identity) {
     Promise.all([
       import('$lib/stores/vault.js'),
       import('$lib/api/keysActor.js'),
-    ]).then(([{ lockVault }, { resetKeysActor }]) => {
+      import('$lib/api/stateActor.js'),
+    ]).then(([{ lockVault }, { resetKeysActor }, { resetStateActor }]) => {
       lockVault();
       resetKeysActor();
+      resetStateActor();
     }).catch(() => { /* best effort */ });
   }
 }
@@ -168,14 +170,16 @@ export async function logout() {
     // logout, trying to mint sessions for a signed-out user).
     // Lazy-load to avoid a circular import at module init time.
     try {
-      const [{ lockVault }, { resetKeysActor }, { stopHqSession }] = await Promise.all([
+      const [{ lockVault }, { resetKeysActor }, { stopHqSession }, { resetStateActor }] = await Promise.all([
         import('$lib/stores/vault.js'),
         import('$lib/api/keysActor.js'),
         import('$lib/api/hqSession.js'),
+        import('$lib/api/stateActor.js'),
       ]);
       lockVault();
       resetKeysActor();
       stopHqSession();
+      resetStateActor();
     } catch (_) { /* best effort */ }
   }
 }

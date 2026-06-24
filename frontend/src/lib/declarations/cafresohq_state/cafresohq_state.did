@@ -1,0 +1,63 @@
+type VaultMeta = 
+ record {
+   chunkCount: nat;
+   sealed: bool;
+   sha256: blob;
+   totalSize: nat;
+   updatedAt: int;
+   version: nat;
+ };
+type Usage = 
+ record {
+   docBytes: nat;
+   objCount: nat;
+   plan: text;
+   quotaBytes: nat;
+   updatedAt: int;
+   vaultBytes: nat;
+ };
+type PutResult = 
+ variant {
+   conflict: record {current: nat;};
+   ok: record {version: nat;};
+   quota: text;
+ };
+type HqDoc = 
+ record {
+   body: blob;
+   sha256: blob;
+   updatedAt: int;
+   version: nat;
+ };
+type DocSummary = 
+ record {
+   name: text;
+   sha256: blob;
+   updatedAt: int;
+   version: nat;
+ };
+service : {
+  cycle_balance: () -> (nat) query;
+  deleteHqDoc: (text) -> (bool);
+  deleteVault: (text) -> (bool);
+  getHqDoc: (text) -> (opt HqDoc) query;
+  getVaultChunk: (text, nat) -> (opt blob) query;
+  getVaultMeta: (text) -> (opt VaultMeta) query;
+  /// Monotonic per-user version — cheap int the container/browser compare to
+  /// decide who is ahead (see design §4-E).
+  hqVersion: () -> (nat) query;
+  listHqDocs: () -> (vec DocSummary) query;
+  myUsage: () -> (Usage) query;
+  planConfigured: () -> (bool) query;
+  /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
+  /// expectVersion = 0 for first write; otherwise must match current or you get #conflict.
+  putHqDoc: (text, blob, blob, nat) -> (PutResult);
+  putVaultChunk: (text, nat, nat, blob) -> (PutResult);
+  putVaultMeta: (text, nat, nat, blob, nat) -> (PutResult);
+  /// Publish atomically: flip sealed=true once all chunks are stored.
+  sealVault: (text, nat) -> (PutResult);
+  /// Apply a plan tier from the same HMAC token cafresoai_keys mints
+  /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
+  setPlan: (text) -> (bool);
+  setPlanSecret: (text) -> ();
+}
