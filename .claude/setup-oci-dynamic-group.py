@@ -13,7 +13,7 @@ USER_OCID    = "ocid1.user.oc1..aaaaaaaa2szrls3vtki3t3ilwfzakogjwbheyctaolaln6re
 TENANCY_OCID = "ocid1.tenancy.oc1..aaaaaaaazx7gtqeqvbdvsbjcwo2r6gqz7sp4iqxfai3vzgvqt7kswvnbggkq"
 FINGERPRINT  = "c3:e7:63:0e:03:02:63:6e:ec:47:bf:a8:84:29:c2:22"
 REGION       = "us-ashburn-1"
-KEY_FILE     = "/mnt/c/Users/Anthony/.oci/oci_api_key.pem"
+KEY_FILE     = os.environ.get("OCI_KEY_FILE", os.path.expanduser("~/.oci/oci_api_key.pem"))
 KEY_ID       = f"{TENANCY_OCID}/{USER_OCID}/{FINGERPRINT}"
 
 IDENTITY_HOST = f"identity.{REGION}.oraclecloud.com"

@@ -4,9 +4,11 @@
 # npm install, systemd unit, starts it INERT (no Stripe secrets yet), verifies
 # localhost:8788/health.
 set -uo pipefail
-KEY=/home/anthony/.ssh/cafreso_tls_gateway
-VM=ubuntu@129.80.230.53
-SRC=/mnt/c/Users/Anthony/Desktop/CafresoHQHermez/oci-fleet/stripe-oracle
+# Load deploy config (gitignored): GATEWAY_IP, GATEWAY_SSH_KEY, ORACLE_SRC, …
+[ -f "$(dirname "$0")/../.env" ] && . "$(dirname "$0")/../.env"
+KEY="${GATEWAY_SSH_KEY:-$HOME/.ssh/cafreso_tls_gateway}"
+VM="ubuntu@${GATEWAY_IP:?set GATEWAY_IP in <repo>/.env or environment}"
+SRC="${ORACLE_SRC:-$(cd "$(dirname "$0")/.." && pwd)/oci-fleet/stripe-oracle}"
 SSHOPT=(-i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 
 echo "===== uploading oracle files to /tmp on VM ====="
@@ -18,6 +20,8 @@ scp "${SSHOPT[@]}" \
 echo "===== remote setup ====="
 ssh "${SSHOPT[@]}" "$VM" 'bash -s' <<'REMOTE'
 set -uo pipefail
+# Load deploy config (gitignored): GATEWAY_IP, GATEWAY_SSH_KEY, ORACLE_SRC, …
+[ -f "$(dirname "$0")/../.env" ] && . "$(dirname "$0")/../.env"
 echo "--- node check ---"
 if ! command -v node >/dev/null 2>&1; then
   echo "node not found — installing Node 20 (NodeSource)…"

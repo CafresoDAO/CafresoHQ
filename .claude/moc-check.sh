@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 DFX_VER=0.24.3
 V="$HOME/.cache/dfinity/versions/$DFX_VER"
 MOC="$V/moc"
 BASE="$V/base"
-TARGET="/mnt/c/Users/Anthony/Documents/CafresoHQ/src/cafresoai_keys/main.mo"
+TARGET="$REPO_ROOT/src/cafresoai_keys/main.mo"
 echo "moc: $MOC"
 echo "base: $BASE"
 echo "target: $TARGET"

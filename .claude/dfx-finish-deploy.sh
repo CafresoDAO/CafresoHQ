@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-cd /mnt/c/Users/Anthony/Documents/CafresoHQ
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+cd $REPO_ROOT
 
 KEYS_ID=vhw7q-lqaaa-aaaab-agthq-cai
 

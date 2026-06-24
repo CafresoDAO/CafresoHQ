@@ -3,8 +3,9 @@
 # AND the template (so caddy-sync preserves it). Backup first, validate before
 # reload, auto-restore on validation failure. Idempotent.
 set -uo pipefail
-KEY=/home/anthony/.ssh/cafreso_tls_gateway
-VM=ubuntu@129.80.230.53
+[ -f "$(dirname "$0")/../.env" ] && . "$(dirname "$0")/../.env"
+KEY="${GATEWAY_SSH_KEY:-$HOME/.ssh/cafreso_tls_gateway}"
+VM="ubuntu@${GATEWAY_IP:?set GATEWAY_IP in <repo>/.env or environment}"
 SSHOPT=(-i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 
 ssh "${SSHOPT[@]}" "$VM" 'bash -s' <<'REMOTE'
@@ -65,7 +66,7 @@ curl -s -o /dev/null -w "  /fleet/health  HTTP %{http_code}\n" https://hq.cafres
 echo "--- verify NEW /stripe route (through Caddy, public HTTPS) ---"
 curl -s -w "  -> HTTP %{http_code}\n" https://hq.cafreso.com/stripe/health
 echo "--- confirm /stripe is NOT on plain :80 (expect not 200) ---"
-curl -s -o /dev/null -w "  http://129.80.230.53/stripe/health  HTTP %{http_code}\n" http://129.80.230.53/stripe/health
+curl -s -o /dev/null -w "  http://127.0.0.1/stripe/health  HTTP %{http_code}\n" http://127.0.0.1/stripe/health
 REMOTE
 rc=$?
 echo "===== stage2 exit $rc ====="

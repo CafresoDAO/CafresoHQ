@@ -19,7 +19,7 @@ Wire it up in your settings.json:
           "matcher": "*",
           "hooks": [
             { "type": "command",
-              "command": "python C:\\Users\\Anthony\\Documents\\openclawhq\\claude_approval_hook.py" }
+              "command": "python <repo-root>/claude_approval_hook.py" }
           ]
         }
       ]

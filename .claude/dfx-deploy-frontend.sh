@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-cd /mnt/c/Users/Anthony/Documents/CafresoHQ
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+cd $REPO_ROOT
 
 echo "▶ verify frontend/build/ is fresh"
 ls -la frontend/build/index.html 2>&1 | head -2

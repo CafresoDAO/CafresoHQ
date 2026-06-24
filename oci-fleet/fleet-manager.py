@@ -20,7 +20,7 @@ Commands:
   config                      Show current fleet config
 
 Usage:
-  cd C:\\Users\\Anthony\\Documents\\openclawhq
+  cd <repo-root>
   python oci-fleet/fleet-manager.py list
   python oci-fleet/fleet-manager.py provision 2vxsx-fae3l-principal
   python oci-fleet/fleet-manager.py stop 2vxsx-fae3l-principal
@@ -250,7 +250,8 @@ def _read_ocir_pull_secret(fleet: dict):
     # Fall back to WSL Docker config (Windows dev machine)
     if not docker_cfg and sys.platform == 'win32':
         try:
-            r = subprocess.run(['wsl', '-d', 'Ubuntu-24.04', '--', 'cat', '/home/anthony/.docker/config.json'],
+            r = subprocess.run(['wsl', '-d', os.environ.get('WSL_DISTRO', 'Ubuntu-24.04'), '--',
+                                'bash', '-lc', 'cat "${WSL_DOCKER_CONFIG:-$HOME/.docker/config.json}"'],
                                capture_output=True, timeout=15)
             if r.returncode == 0:
                 docker_cfg = json.loads(r.stdout.decode('utf-8', 'replace'))

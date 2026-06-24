@@ -1,4 +1,5 @@
 #!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 echo "=== docker config auths ==="
 cat ~/.docker/config.json 2>&1 | python3 -c '
 import json, sys
@@ -16,6 +17,6 @@ docker buildx build \
     --platform linux/arm64 \
     --provenance=false \
     -t iad.ocir.io/idwv6126novh/cafresoai-serve:latest \
-    -f /mnt/c/Users/Anthony/Documents/CafresoHQ/oci-fleet/Dockerfile \
+    -f $REPO_ROOT/oci-fleet/Dockerfile \
     --push \
-    /mnt/c/Users/Anthony/Documents/CafresoHQ 2>&1 | tail -8
+    $REPO_ROOT 2>&1 | tail -8
