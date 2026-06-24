@@ -6,6 +6,9 @@
   "private": true,
   "scripts": {
     "dev": "vite dev --host",
+    "sync-assets": "node scripts/sync-static-assets.mjs",
+    "predev": "node scripts/sync-static-assets.mjs",
+    "prebuild": "node scripts/sync-static-assets.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./jsconfig.json",
