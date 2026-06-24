@@ -20,12 +20,13 @@ import { writable, get } from 'svelte/store';
 import { authIdentity, isAuthenticated } from '$lib/stores/auth.js';
 import { idlFactory as stateIdl } from '$lib/declarations/cafresohq_state/cafresohq_state.did.js';
 
-// Not deployed yet — set after first mainnet deploy. dfx injects
-// VITE_CANISTER_ID_CAFRESOHQ_STATE into frontend/.env on `dfx deploy`.
+// Deployed to mainnet 2026-06-24. Pinned so the canister id is available in the
+// built bundle without relying on a build-time env var (Vite's default env prefix
+// is VITE_, so a bare PUBLIC_/dfx-injected var isn't guaranteed to reach the build).
 const MAINNET_CANISTER_ID =
   import.meta.env?.VITE_CANISTER_ID_CAFRESOHQ_STATE ||
   import.meta.env?.VITE_CAFRESOHQ_STATE_CANISTER_ID ||
-  ''; // TODO: pin the mainnet id here after first deploy
+  'ydacz-riaaa-aaaal-qxeja-cai';
 
 const isLocalDev = typeof window !== 'undefined'
   && /localhost|127\.0\.0\.1/.test(window.location?.hostname);
