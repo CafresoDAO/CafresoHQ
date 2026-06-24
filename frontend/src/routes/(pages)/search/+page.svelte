@@ -77,6 +77,7 @@
 
 <svelte:head>
   <title>{query ? `"${query}" — Search` : 'Search'} · Cafreso</title>
+  <meta name="description" content="Search the Cafreso ecosystem — Dev Log posts, forum threads, and governance proposals — or ask AI Search to query the CafresoDAO vault and the web." />
 </svelte:head>
 
 <div style="max-width: 800px; margin: 0 auto; padding: 36px 18px 80px;">
@@ -94,6 +95,7 @@
         oninput={onInput}
         type="search"
         placeholder="Search posts, proposals, discussions…"
+        aria-label="Search posts, proposals, discussions"
         autofocus
         style="
           width: 100%; padding: 14px 48px 14px 46px; border-radius: 14px;
@@ -116,6 +118,7 @@
         <button
           type="button"
           onclick={() => { draftQuery = ''; goto('/search', { replaceState: true }); inputEl?.focus(); }}
+          aria-label="Clear search"
           style="
             position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
             background: hsl(215 16% 80%); border: none; border-radius: 50%;

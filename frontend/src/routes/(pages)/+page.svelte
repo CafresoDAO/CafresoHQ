@@ -45,6 +45,25 @@
     name="description"
     content="Cafreso is a DAO of coffee-loving developers governing the Banking.Brave protocols on the Internet Computer. Buy coffee with $nanas, mine sGLDT, bridge ckUNI — all in one Internet Identity."
   />
+  <link rel="canonical" href="https://cafreso.com" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Cafreso · A Blockchain DAO" />
+  <meta
+    property="og:description"
+    content="Cafreso is a DAO of coffee-loving developers governing the Banking.Brave protocols on the Internet Computer. Buy coffee with $nanas, mine sGLDT, bridge ckUNI — all in one Internet Identity."
+  />
+  <meta property="og:url" content="https://cafreso.com" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/assets/cafreso-wordmark.png" />
+
+  <!-- Twitter card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Cafreso · A Blockchain DAO" />
+  <meta
+    name="twitter:description"
+    content="Cafreso is a DAO of coffee-loving developers governing the Banking.Brave protocols on the Internet Computer. Buy coffee with $nanas, mine sGLDT, bridge ckUNI — all in one Internet Identity."
+  />
 </svelte:head>
 
 <div class="homepage">
@@ -75,6 +94,7 @@
       <button
         type="button"
         class="hero-btn search"
+        aria-label="Search"
         on:click={() => aiSearchOpen.set(true)}
       >
         <Icon name="magnifying-glass" size={18} weight="bold" />
@@ -381,7 +401,7 @@
         </p>
       </div>
       <div class="farming-img-wrap">
-        <img src="/assets/cafreso-roaster.png" alt="Cafreso roaster" class="farming-img" />
+        <img src="/assets/cafreso-roaster.png" alt="Cafreso roaster" class="farming-img" loading="lazy" />
       </div>
     </div>
   </section>
@@ -396,7 +416,7 @@
         { src: '/assets/banking-brave-logo.png', alt: 'Banking.Brave' },
         { src: '/assets/cf-black.png', alt: 'Cafreso' }
       ] as logo}
-        <img src={logo.src} alt={logo.alt} class="partner-logo" />
+        <img src={logo.src} alt={logo.alt} class="partner-logo" loading="lazy" />
       {/each}
     </div>
   </section>
@@ -667,6 +687,7 @@
   .eco-card--pages { border-top: 3px solid hsl(32 72% 50%); }
   .eco-card--ai    { border-top: 3px solid hsl(260 70% 55%); }
   .eco-card--banking { border-top: 3px solid hsl(220 78% 44%); }
+  .eco-card--pages:hover { border-color: hsl(32 65% 60%); }
   .eco-card--ai:hover    { border-color: hsl(260 60% 65%); }
   .eco-card--banking:hover { border-color: hsl(220 70% 55%); }
 
@@ -685,7 +706,7 @@
     display: flex; align-items: center; gap: 3px;
   }
   .eco-card--pages .eco-card-label   { color: hsl(32 60% 44%); }
-  .eco-card--ai .eco-card-label      { color: hsl(260 60% 46%); }
+  .eco-card--ai .eco-card-label      { color: hsl(260 65% 35%); }
   .eco-card--banking .eco-card-label { color: hsl(220 70% 40%); }
 
   .eco-card-title {

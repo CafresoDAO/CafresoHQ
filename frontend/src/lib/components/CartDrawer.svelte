@@ -64,7 +64,7 @@
             </div>
             <button
               on:click={() => cart.remove(ix)}
-              aria-label="Remove"
+              aria-label={`Remove ${it.name} from cart`}
               class="bg-transparent border-none cursor-pointer text-muted-foreground"
             ><Icon name="trash" size={18} /></button>
           </div>

@@ -359,7 +359,7 @@
       <div class="relative">
         <button
           on:click={() => cartOpen.set(true)}
-          aria-label="Cart"
+          aria-label={`Cart (${$cartCount} items)`}
           class="w-[38px] h-[38px] inline-flex items-center justify-center border-none bg-transparent rounded-[10px] text-primary cursor-pointer"
           style="transition: background .2s, transform .25s cubic-bezier(.2,.8,.2,1);"
           on:mouseenter={(e) => {

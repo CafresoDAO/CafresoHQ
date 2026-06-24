@@ -115,8 +115,8 @@
   {/if}
 
   <div class="flex flex-col sm:flex-row gap-2 justify-center">
-    <Button onclick={() => goto('/shop')}>Back to shop</Button>
-    <Button variant="outline" onclick={() => goto('/profile')}>
+    <Button on:click={() => goto('/shop')}>Back to shop</Button>
+    <Button variant="outline" on:click={() => goto('/profile')}>
       <Icon name="user-circle" size={14} /> View wallet
     </Button>
   </div>

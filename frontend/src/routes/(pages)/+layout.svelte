@@ -20,9 +20,11 @@
   });
 </script>
 
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
 <div class="min-h-screen flex flex-col">
   <PageHeader />
-  <main class="flex-1"><slot /></main>
+  <main id="main-content" class="flex-1"><slot /></main>
   <Footer />
 </div>
 
@@ -32,3 +34,32 @@
 <BurnTipModal />
 <BBWaitlistModal />
 <AISearchModal />
+
+<style>
+  /* Visually hidden until keyboard focus — lets keyboard/screen-reader
+     users jump straight past the header to the page content. */
+  .skip-link {
+    position: absolute;
+    left: 12px;
+    top: -48px;
+    z-index: 100;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: hsl(260 70% 50%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: top 0.18s ease;
+  }
+  .skip-link:focus {
+    top: 12px;
+  }
+
+  /* Visible focus ring for keyboard users across the app. */
+  :global(a:focus-visible),
+  :global(button:focus-visible) {
+    outline: 2px solid hsl(260 70% 50%);
+    outline-offset: 2px;
+  }
+</style>

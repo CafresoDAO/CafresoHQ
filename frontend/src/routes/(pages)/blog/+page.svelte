@@ -6,7 +6,7 @@
   import Chip from '$lib/components/Chip.svelte';
   import PostCard from '$lib/components/PostCard.svelte';
   import Button from '$lib/components/Button.svelte';
-  import { tweaks } from '$lib/stores/blog.js';
+  import { tweaks, burnTarget } from '$lib/stores/blog.js';
   import { principalText } from '$lib/stores/auth.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
 
@@ -43,9 +43,23 @@
   });
 
   $: filters = [['all', 'list', 'All posts'], ...Object.entries(CATEGORIES).map(([k, m]) => [k, m.icon, m.label])];
+
+  // Subscribing reuses the existing burn flow (the same global BurnTipModal
+  // that PostReactionBar/onTip drives via burnTarget). Burn against the most
+  // recent post so the modal has a valid on-chain target.
+  function onSubscribe() {
+    const target = posts[0]?.slug;
+    if (target) burnTarget.set(target);
+  }
 </script>
 
-<svelte:head><title>Dev Log · Cafreso</title></svelte:head>
+<svelte:head>
+  <title>Dev Log · Cafreso</title>
+  <meta
+    name="description"
+    content="Every Cafreso build, proposal, and bag of beans — shipped here first, signed on-chain, tippable in $nanas, open to the community."
+  />
+</svelte:head>
 
 <div class="blog-container mx-auto" style="max-width: 1280px; padding: 28px 18px 24px;">
   <!-- Masthead -->
@@ -106,6 +120,7 @@
       <input
         bind:value={query}
         placeholder="Search posts"
+        aria-label="Search posts"
         class="border-none outline-none bg-transparent flex-1 text-[13px]"
         style="font-family: inherit;"
       />
@@ -154,7 +169,7 @@
             Burn 500 $nanas once, and every new post lands on-chain in your inbox — no email, no tracking, just canister-signed updates.
           </p>
         </div>
-        <Button variant="default" size="lg" class="!bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]">
+        <Button variant="default" size="lg" class="!bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]" on:click={onSubscribe}>
           <Icon name="fire" size={16} /> Burn 500 to subscribe
         </Button>
       </div>

@@ -88,6 +88,7 @@
 
 <svelte:head>
   <title>My Drafts · Cafreso</title>
+  <meta name="robots" content="noindex" />
 </svelte:head>
 
 <div style="max-width: 760px; margin: 0 auto; padding: 36px 18px 80px;">

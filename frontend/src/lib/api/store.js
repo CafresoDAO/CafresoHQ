@@ -78,6 +78,7 @@ function canisterToProduct(p) {
     price: Number(p.priceNanas) || 0,
     priceCentsUSD,
     soon,
+    unavailable: soon,
     stock,
   };
 }

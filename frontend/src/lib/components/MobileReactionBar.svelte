@@ -4,6 +4,23 @@
   export let post;
   export let userBurned = 0;
   export let onTip = () => {};
+
+  function scrollToComments() {
+    document.querySelector('#comments')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function share() {
+    const url = typeof location !== 'undefined' ? location.href : '';
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: post.title, url });
+      } catch {}
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {}
+    }
+  }
 </script>
 
 <div
@@ -32,10 +49,10 @@
     <div class="font-semibold">{(post.burned + userBurned).toLocaleString()} burned</div>
     <div style="color: hsl(215 16% 47%);">{post.comments} comments</div>
   </div>
-  <button class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Comments">
+  <button on:click={scrollToComments} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Comments">
     <Icon name="chat-circle" size={18} />
   </button>
-  <button class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Share">
+  <button on:click={share} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Share">
     <Icon name="share-network" size={18} />
   </button>
 </div>

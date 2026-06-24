@@ -85,6 +85,12 @@
 
 <svelte:head>
   <title>{post ? post.title : 'Post'} · Cafreso Dev Log</title>
+  {#if post}
+    <meta property="og:title" content={post.title} />
+    <meta property="og:description" content={post.excerpt} />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary_large_image" />
+  {/if}
 </svelte:head>
 
 {#if loading}
@@ -173,7 +179,7 @@
         >
           <img
             src={postHeroImg(post.hero)}
-            alt=""
+            alt={post.title}
             style="width: 72%; height: 82%; object-fit: contain; image-rendering: {post.hero === 'farm' ? 'pixelated' : 'auto'};"
           />
           <div
@@ -194,11 +200,8 @@
         <PostRenderer blocks={body} {theme} />
 
         <div
-          class="flex justify-between items-center flex-wrap gap-3.5 mt-3 px-1"
+          class="flex justify-end items-center flex-wrap gap-3.5 mt-3 px-1"
         >
-          <div class="text-[13px]" style="color: hsl(215 16% 47%);">
-            Last edited block #{(post.block + 37).toLocaleString()} · content hash <code style="font-size: 11.5px;">0x9c3f…a21d</code>
-          </div>
           <Button
             variant="default"
             size="sm"

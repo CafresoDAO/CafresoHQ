@@ -208,8 +208,20 @@
       </div>
     {/if}
 
+    {#if treasury == null}
+      <a
+        href="#treasury"
+        class="flex items-center gap-2 rounded-[10px] px-3 py-2.5 text-[13px] mb-4 no-underline"
+        style="background: hsl(42 80% 92%); color: hsl(32 56% 25%); border: 1px solid hsl(42 70% 70%);"
+      >
+        <Icon name="warning" size={14} />
+        <span>No treasury principal is set — $nanas checkouts will fail until you configure one below.</span>
+      </a>
+    {/if}
+
     <!-- Treasury -->
     <div
+      id="treasury"
       class="rounded-[14px] p-4 sm:p-5 mb-6"
       style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
     >
@@ -228,8 +240,10 @@
           No treasury set yet. Checkouts will fail until you configure one.
         </p>
       {/if}
+      <label for="treasury-principal" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Treasury principal</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <input
+          id="treasury-principal"
           bind:value={treasuryDraft}
           placeholder="<principal> (e.g. xip3r-…-mae)"
           class="flex-1 text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none min-w-0"
@@ -407,12 +421,13 @@
 
       <div class="space-y-3">
         <div>
-          <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Title</label>
-          <input bind:value={editing.title} class="w-full text-[14px] bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+          <label for="product-title" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Title</label>
+          <input id="product-title" bind:value={editing.title} required class="w-full text-[14px] bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
         </div>
         <div>
-          <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Slug</label>
-          <input bind:value={editing.slug} placeholder="url-safe-slug" class="w-full text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+          <label for="product-slug" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Slug</label>
+          <input id="product-slug" bind:value={editing.slug} required pattern="[a-z0-9-]+" placeholder="url-safe-slug" class="w-full text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+          <p class="text-[10.5px] mt-1" style="color: hsl(215 16% 47%);">Lowercase letters, numbers, and hyphens only.</p>
         </div>
         <div>
           <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Excerpt</label>

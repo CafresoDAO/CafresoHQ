@@ -162,7 +162,7 @@
       {#each $cart as it}
         <div class="flex gap-3 p-3 items-center rounded-[12px] bg-white"
           style="border: 1px solid hsl(26 30% 90%);">
-          <img src={productImage(it.img)} alt="" class="w-12 h-12 object-contain" />
+          <img src={productImage(it.img)} alt={it.name || 'Product image'} class="w-12 h-12 object-contain" />
           <div class="flex-1 min-w-0">
             <div class="font-medium truncate">{it.name}</div>
             <div class="text-[12.5px]" style="color: hsl(215 16% 47%);">Qty {it.qty}</div>

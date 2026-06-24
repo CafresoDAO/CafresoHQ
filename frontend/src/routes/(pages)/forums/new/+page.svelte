@@ -327,6 +327,7 @@
             <button
               type="button"
               on:click={() => (theme = t.key)}
+              aria-label={`Select ${t.label} theme`}
               class="rounded-[12px] overflow-hidden text-left cursor-pointer border-2 transition-all"
               style="
                 border-color: {theme === t.key ? 'hsl(32 72% 50%)' : 'transparent'};
