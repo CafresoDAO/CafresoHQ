@@ -459,7 +459,13 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
   const [interval, setInterval_] = useSM(5 * MIN);
   const [folder, setFolder] = useSM('');
   const [allowSelfComplete, setAllowSelfComplete] = useSM(false);
-  const localProjects = (projects || []).filter(p => p.type === 'local');
+  // A project is studyable if it has a local filesystem path — that's true for
+  // both folder-added projects (source 'local') and cloned GitHub repos
+  // (source 'github:<url>'), since the agent reads files via the container's
+  // DIR_LIST/FILE_READ on `projectPath`. NOTE: the old check `p.type === 'local'`
+  // never matched — projects carry `source`, not `type`, so this list was always
+  // empty and the STUDY PROJECT dropdown never populated.
+  const localProjects = (projects || []).filter(p => p && p.path);
   const selectedProject = localProjects.find(p => p.id === projectId);
   /* Elevated agents are locked out of missions unless the operator explicitly
      authorizes unattended computer access. Resets whenever the picked agent
