@@ -19,6 +19,21 @@
 #   docker tag cafresoai-serve:latest iad.ocir.io/idwv6126novh/cafresoai-serve:latest
 #   docker push iad.ocir.io/idwv6126novh/cafresoai-serve:latest
 
+# ── Stage 1: Build the HQ UI bundle ──────────────────────────────────────────
+# serve.py serves the app from dist-ui/ (manifest + esbuild bundle produced by
+# scripts/build_ui_bundle.mjs). Without this, /hq.html returns 500 "HQ UI not
+# built". Done in a throwaway Node stage so the final image carries only the
+# built assets — no node_modules, no build toolchain.
+FROM node:20-slim AS ui-build
+WORKDIR /ui
+COPY package.json package-lock.json ./
+RUN npm ci
+# UI source: the 13 HQ .jsx files + the npm-importing engine/worker/viewer entries.
+COPY scripts/build_ui_bundle.mjs ./scripts/build_ui_bundle.mjs
+COPY *.jsx ./
+COPY graph-engine.js analytics.worker.js graph-viewer.js ./
+RUN npm run build          # -> /ui/dist-ui (manifest.json + bundle/*)
+
 FROM python:3.11-slim-bookworm
 
 # ── System deps ──────────────────────────────────────────────────────────────
@@ -90,6 +105,9 @@ COPY manifest.webmanifest     ./manifest.webmanifest
 # Static images (logo marks, favicons, PWA icons, office sprites). Referenced
 # via RELATIVE paths so they resolve under the gateway prefix /u/<slug>/assets/.
 COPY assets/                  ./assets/
+
+# ── HQ UI bundle (built in the ui-build stage) — serve.py reads dist-ui/ ──────
+COPY --from=ui-build /ui/dist-ui ./dist-ui
 
 # ── Container entrypoint + Hermes bootstrap ──────────────────────────────────
 COPY oci-fleet/entrypoint.sh      ./entrypoint.sh
