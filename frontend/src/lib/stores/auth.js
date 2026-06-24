@@ -1,4 +1,4 @@
-// ── CafresoAI auth store ─────────────────────────────────────────────────────
+// ── CafresoHQ auth store ─────────────────────────────────────────────────────
 // Internet Identity authentication that produces an *ecosystem-shared* principal —
 // the same principal a user gets across Banking.Brave, Cafreso combined-dapp,
 // and Minegold.defi. Achieved by setting II's `derivationOrigin` to the
@@ -13,7 +13,7 @@ import { ECOSYSTEM } from '$lib/config.js';
 
 // ── Ecosystem constants ──────────────────────────────────────────────────────
 // Banking.Brave canister — the ecosystem's canonical II derivationOrigin.
-// Cafreso combined-dapp + Minegold.defi both anchor here, so when CafresoAI
+// Cafreso combined-dapp + Minegold.defi both anchor here, so when CafresoHQ
 // at ai.cafreso.com sets derivationOrigin to this URL, the user gets the
 // SAME principal across cafreso.com, ai.cafreso.com, minegold.defi, etc.
 //
@@ -26,7 +26,7 @@ export const II_PROVIDER_URL              = 'https://identity.ic0.app';
 // 30 days, in nanoseconds — matches Cafreso combined-dapp session length
 const MAX_SESSION_NS = BigInt(30 * 24 * 60 * 60 * 1_000_000_000);
 
-const ECO_FLAG_KEY = 'cafresoai.use_ecosystem_principal';
+const ECO_FLAG_KEY = 'cafresohq.use_ecosystem_principal';
 const browser_     = () => typeof window !== 'undefined';
 
 function _initialEcoFlag() {
@@ -46,7 +46,7 @@ export const principalText  = writable('');    // string form, persistable
 
 /**
  * When true (default), II login passes derivationOrigin → ecosystem-shared
- * principal across Banking.Brave / Cafreso / Minegold / CafresoAI.
+ * principal across Banking.Brave / Cafreso / Minegold / CafresoHQ.
  * Requires Banking.Brave's `/.well-known/ii-alternative-origins` to list
  * this dapp's URL. Toggle off to test on a non-whitelisted host.
  */

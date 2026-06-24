@@ -1,5 +1,5 @@
 /**
- * CafresoAI — Electron main process
+ * CafresoHQ — Electron main process
  *
  * Startup sequence:
  *   1. Single-instance lock (second launch focuses existing window)
@@ -50,7 +50,7 @@ function findPython() {
       if (m) {
         const [, maj, min] = m.map(Number);
         if (maj >= MIN_PYTHON_MAJOR && min >= MIN_PYTHON_MINOR) {
-          console.log(`[openclaw] Python found: ${cmd} (${maj}.${min})`);
+          console.log(`[cafresohq] Python found: ${cmd} (${maj}.${min})`);
           return cmd;
         }
       }
@@ -118,7 +118,7 @@ function getTrayIcon() {
 async function startServer() {
   // Skip if port is already in use (user ran serve.py manually, or double-launched)
   if (await isPortBound(PORT)) {
-    console.log('[openclaw] Port already bound — skipping server spawn');
+    console.log('[cafresohq] Port already bound — skipping server spawn');
     return;
   }
 
@@ -127,12 +127,12 @@ async function startServer() {
     const { response } = await dialog.showMessageBox({
       type: 'error',
       title: 'Python 3 Required',
-      message: `CafresoAI needs Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+`,
+      message: `CafresoHQ needs Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+`,
       detail:
         'Python was not found on your system.\n\n' +
         '1. Download Python from python.org\n' +
         '2. During install, check "Add Python to PATH"\n' +
-        '3. Restart CafresoAI',
+        '3. Restart CafresoHQ',
       buttons: ['Download Python', 'Quit'],
       defaultId: 0,
     });
@@ -150,7 +150,7 @@ async function startServer() {
     return false;
   }
 
-  console.log(`[openclaw] Starting: ${python} ${servePy}`);
+  console.log(`[cafresohq] Starting: ${python} ${servePy}`);
 
   serverProc = spawn(python, [servePy], {
     cwd: serveDir,
@@ -159,7 +159,7 @@ async function startServer() {
       ...process.env,
       // Override hardcoded memory path so a new user gets a clean slate
       // in their own AppData rather than hitting Anthony's path.
-      OPENCLAW_HQ_STATE_DIR: path.join(app.getPath('userData'), 'hq-state'),
+      CAFRESOHQ_HQ_STATE_DIR: path.join(app.getPath('userData'), 'hq-state'),
     },
   });
 
@@ -202,7 +202,7 @@ const LOADING_HTML = `<!DOCTYPE html><html><head>
   @keyframes grow { 0%{width:0} 60%{width:100%} 100%{width:100%} }
 </style></head><body>
   <div class="logo">🦞</div>
-  <h1>CafresoAI</h1>
+  <h1>CafresoHQ</h1>
   <p>Starting server<span class="dots" id="d">...</span></p>
   <div class="bar"><div class="fill"></div></div>
   <script>
@@ -229,7 +229,7 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280, height: 820,
     minWidth: 375, minHeight: 600,
-    title: 'CafresoAI',
+    title: 'CafresoHQ',
     backgroundColor: '#fff8ee',
     show: false,
     icon: getIconPath(),
@@ -255,7 +255,7 @@ function createMainWindow() {
       mainWindow.hide();
       if (tray) {
         tray.displayBalloon?.({
-          title: 'CafresoAI',
+          title: 'CafresoHQ',
           content: 'Still running in the system tray. Right-click the tray icon to quit.',
           iconType: 'info',
         });
@@ -278,10 +278,10 @@ function createMainWindow() {
 // ─── System tray ─────────────────────────────────────────────────────────────
 function createTray() {
   tray = new Tray(getTrayIcon());
-  tray.setToolTip('CafresoAI');
+  tray.setToolTip('CafresoHQ');
 
   const rebuild = () => tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '🦞  CafresoAI', enabled: false },
+    { label: '🦞  CafresoHQ', enabled: false },
     { type: 'separator' },
     {
       label: 'Open Window',
@@ -332,7 +332,7 @@ if (!gotLock) {
       const { response } = await dialog.showMessageBox({
         type: 'error',
         title: 'Server Timeout',
-        message: 'CafresoAI server did not respond within 25 seconds.',
+        message: 'CafresoHQ server did not respond within 25 seconds.',
         detail: err.message + '\n\nCheck that Python 3 is in PATH and port 8787 is not blocked.',
         buttons: ['Retry', 'Quit'],
       });

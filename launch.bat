@@ -1,5 +1,5 @@
 @echo off
-:: CafresoAI -- quick launcher
+:: CafresoHQ -- quick launcher
 :: For HTTPS (required for iOS service worker + full PWA):
 ::   1. Run once:  winget install FiloSottile.mkcert
 ::                 mkcert -install
@@ -11,8 +11,8 @@
 ::
 :: Leave blank to run plain HTTP (still works on same-network or via Twingate).
 
-set OPENCLAW_TLS_CERT=
-set OPENCLAW_TLS_KEY=
+set CAFRESOHQ_TLS_CERT=
+set CAFRESOHQ_TLS_KEY=
 
 cd /d "%~dp0"
 python serve.py

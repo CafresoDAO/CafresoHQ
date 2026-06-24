@@ -3,13 +3,13 @@ import sys as _sys
 if hasattr(_sys.stdout, 'reconfigure'):
     _sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     _sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-"""Serve Openclaw HQ static files and proxy local LM Studio / Ollama / Brave / Vault.
+"""Serve CafresoHQ static files and proxy local LM Studio / Ollama / Brave / Vault.
 
 Same-origin proxy avoids browser CORS. SSE streams pass through unbuffered.
 Brave proxy:  /brave/search?q=...   forwards to api.search.brave.com with the
 caller's X-Brave-Key header rewritten to X-Subscription-Token.
 Vault proxy:  /vault/*              read/write Markdown notes under a configured
-root directory. Root set via OPENCLAW_VAULT env or POST /vault/configure.
+root directory. Root set via CAFRESOHQ_VAULT env or POST /vault/configure.
 """
 import base64
 import hashlib
@@ -17,6 +17,12 @@ import http.client
 import http.server
 import json
 import os
+# ── env compat shim: mirror legacy OPENCLAW_* vars to CAFRESOHQ_* ───────────────
+# Deployed container/entrypoint still export OPENCLAW_* names; mirror them so the
+# renamed CAFRESOHQ_* reads keep working until images are rebuilt. Remove later.
+for _k, _v in list(os.environ.items()):
+    if _k.startswith('OPENCLAW_'):
+        os.environ.setdefault('CAFRESOHQ_' + _k[len('OPENCLAW_'):], _v)
 import pathlib
 import re
 import secrets
@@ -69,31 +75,31 @@ HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
 # Claude Code (Pro/Max subscription) — invoked as a subprocess so the user's
 # already-authenticated CLI does the auth. Path is overridable; if blank we
 # look up `claude` in PATH at request time.
-_claudecode_bin = os.environ.get('OPENCLAW_CLAUDE_BIN', '').strip()
+_claudecode_bin = os.environ.get('CAFRESOHQ_CLAUDE_BIN', '').strip()
 
 # Codex CLI — alternative elevated agent backend. Uses `codex exec --json`
 # with the same allowed-dirs sandbox. Auth is read from ~/.codex/config.toml
 # automatically; no API key is passed by serve.py.
-# Override binary path with OPENCLAW_CODEX_BIN env var.
-_codex_bin = os.environ.get('OPENCLAW_CODEX_BIN', '').strip()
+# Override binary path with CAFRESOHQ_CODEX_BIN env var.
+_codex_bin = os.environ.get('CAFRESOHQ_CODEX_BIN', '').strip()
 
 # Hermes CLI (Nous Research) — the container's default agent runtime. Normally
 # on PATH (pip-installed in the image, or in the user's WSL/unix env). Override
-# the binary path with OPENCLAW_HERMES_BIN. Hermes is unix-only (its gateway +
+# the binary path with CAFRESOHQ_HERMES_BIN. Hermes is unix-only (its gateway +
 # pty_bridge import termios/pty/fcntl) so it never resolves on native Windows —
 # the supported Windows path runs the whole stack inside WSL (see Start-CafresoHQ).
-_hermes_bin = os.environ.get('OPENCLAW_HERMES_BIN', '').strip()
+_hermes_bin = os.environ.get('CAFRESOHQ_HERMES_BIN', '').strip()
 
 # Gemini CLI (Google) — npm `@google/gemini-cli`, native on every platform.
-# Override the binary path with OPENCLAW_GEMINI_BIN.
-_gemini_bin = os.environ.get('OPENCLAW_GEMINI_BIN', '').strip()
+# Override the binary path with CAFRESOHQ_GEMINI_BIN.
+_gemini_bin = os.environ.get('CAFRESOHQ_GEMINI_BIN', '').strip()
 
 # Extra browser origins allowed to open the terminal WebSocket and fetch the PTY
 # nonce. Needed when the HQ UI is served cross-origin from an ICP asset canister
 # (the frontend/backend split). Comma-separated, e.g.
-#   OPENCLAW_ALLOWED_WS_ORIGINS=https://<canister>.icp0.io,https://ai.cafreso.com
+#   CAFRESOHQ_ALLOWED_WS_ORIGINS=https://<canister>.icp0.io,https://ai.cafreso.com
 _extra_app_origins = {o.strip() for o in
-                      os.environ.get('OPENCLAW_ALLOWED_WS_ORIGINS', '').split(',')
+                      os.environ.get('CAFRESOHQ_ALLOWED_WS_ORIGINS', '').split(',')
                       if o.strip()}
 
 # API contract version between the (canister-served) UI and this backend. Bump
@@ -123,29 +129,29 @@ def _client_path(p):
         return f'/mnt/{m2.group(1).lower()}'
     return p
 
-# /openclaw/stream — elevated agent endpoint with computer access. Same
+# /cafresohq/stream — elevated agent endpoint with computer access. Same
 # `claude` CLI as /claudecode/stream but tools are ENABLED and constrained
 # by a server-side allowlist (paths and tool names). Both lists are env-
 # only — the client can't widen them by sending a bigger spec. If either
 # allowlist is empty the endpoint refuses requests, so the unconfigured
 # default is safe.
 #
-#   OPENCLAW_ALLOWED_DIRS: os.pathsep-separated absolute paths claude can
+#   CAFRESOHQ_ALLOWED_DIRS: os.pathsep-separated absolute paths claude can
 #                          read/write. Empty → endpoint disabled.
-#   OPENCLAW_ALLOWED_TOOLS: comma-separated tool names Claude Code accepts
+#   CAFRESOHQ_ALLOWED_TOOLS: comma-separated tool names Claude Code accepts
 #                          (Read, Write, Edit, Glob, Grep, Bash, ...).
 #                          Default is read-only ("Read,Glob,Grep") so the
 #                          first-time experience can't mutate the disk
 #                          without an explicit opt-in.
-_ALLOWED_DIRS_EXPLICIT = 'OPENCLAW_ALLOWED_DIRS' in os.environ
-_openclaw_allowed_dirs = [d.strip() for d in
-                          os.environ.get('OPENCLAW_ALLOWED_DIRS',
+_ALLOWED_DIRS_EXPLICIT = 'CAFRESOHQ_ALLOWED_DIRS' in os.environ
+_cafresohq_allowed_dirs = [d.strip() for d in
+                          os.environ.get('CAFRESOHQ_ALLOWED_DIRS',
                               os.path.expanduser('~') + os.pathsep +
                               os.path.join(os.path.expanduser('~'), 'Documents')
                           ).split(os.pathsep)
                           if d.strip()]
-_openclaw_allowed_tools = [t.strip() for t in
-                           os.environ.get('OPENCLAW_ALLOWED_TOOLS',
+_cafresohq_allowed_tools = [t.strip() for t in
+                           os.environ.get('CAFRESOHQ_ALLOWED_TOOLS',
                                # Default expanded set — gives elevated agents
                                # a real workshop instead of read-only browsing.
                                # Bash + Edit + Write enable code edits; Glob +
@@ -182,16 +188,16 @@ def _detect_runtime():
 _RUNTIME_ENV = _detect_runtime()
 
 # ── Bearer-key auth for local / BYO deployments ──────────────────────────────
-# When OPENCLAW_API_KEY is set, the dangerous routes (terminal, agents, vault,
+# When CAFRESOHQ_API_KEY is set, the dangerous routes (terminal, agents, vault,
 # code-agent streams, hq-state) require it via an X-API-Key header or a ?k=
 # query param (WebSocket handshakes can't set custom headers). In OCI-fleet mode
 # the Caddy gateway + verifier already gate access, so the key stays unset/optional
 # there — this is the security floor for Local-native/WSL and any non-loopback
 # exposure (the terminal PTY is effectively RCE). Static UI + /health stay open
 # so the app shell can bootstrap.
-OPENCLAW_API_KEY = os.environ.get('OPENCLAW_API_KEY', '').strip()
+CAFRESOHQ_API_KEY = os.environ.get('CAFRESOHQ_API_KEY', '').strip()
 _KEY_PROTECTED_PREFIXES = (
-    '/vault', '/hermes', '/terminal', '/openclaw', '/codex', '/claudecode',
+    '/vault', '/hermes', '/terminal', '/cafresohq', '/codex', '/claudecode',
     '/agents', '/hq/', '/spawn', '/graph/publish', '/approvals', '/browser',
 )
 
@@ -234,9 +240,9 @@ def _pty_reaper():
 threading.Thread(target=_pty_reaper, daemon=True).start()
 
 # HQ state persistence
-_hq_state_dir   = pathlib.Path(os.environ.get('OPENCLAW_HQ_STATE_DIR',
+_hq_state_dir   = pathlib.Path(os.environ.get('CAFRESOHQ_HQ_STATE_DIR',
                     os.path.join(os.path.dirname(__file__), 'hq-state')))
-_hq_memory_dir  = pathlib.Path(os.environ.get('OPENCLAW_MEMORY_DIR',
+_hq_memory_dir  = pathlib.Path(os.environ.get('CAFRESOHQ_MEMORY_DIR',
                     os.path.join(os.path.dirname(__file__), 'hq-state', 'memory')))
 
 
@@ -286,20 +292,20 @@ def _gc_approvals():
 
 
 # Vault config: env vars at startup, can be re-set at runtime via POST /vault/configure.
-# By default Openclaw owns a plain Markdown vault under hq-state, so Obsidian is
+# By default CafresoHQ owns a plain Markdown vault under hq-state, so Obsidian is
 # optional instead of required for notes to work.
 _default_vault_root = _hq_state_dir / 'vault'
-_vault_root     = os.environ.get('OPENCLAW_VAULT', str(_default_vault_root)).strip()
-_vault_backend  = os.environ.get('OPENCLAW_VAULT_BACKEND', 'fs').strip() or 'fs'
-_vault_rest_url = os.environ.get('OPENCLAW_OBSIDIAN_URL', 'https://127.0.0.1:27124').strip()
-_vault_rest_key = os.environ.get('OPENCLAW_OBSIDIAN_KEY', '').strip()
+_vault_root     = os.environ.get('CAFRESOHQ_VAULT', str(_default_vault_root)).strip()
+_vault_backend  = os.environ.get('CAFRESOHQ_VAULT_BACKEND', 'fs').strip() or 'fs'
+_vault_rest_url = os.environ.get('CAFRESOHQ_OBSIDIAN_URL', 'https://127.0.0.1:27124').strip()
+_vault_rest_key = os.environ.get('CAFRESOHQ_OBSIDIAN_KEY', '').strip()
 
-# ── OCI Object Storage vault config (OPENCLAW_VAULT_BACKEND=oci) ─────────────
+# ── OCI Object Storage vault config (CAFRESOHQ_VAULT_BACKEND=oci) ─────────────
 # Used by OCI Fleet containers.  serve.py never reads ~/.oci/config on its own;
 # the Container Instance's instance-principal auth or a mounted config file
 # provides credentials.  All three vars must be set for OCI vault to work.
 _oci_vault_namespace = os.environ.get('OCI_VAULT_NAMESPACE', '').strip()
-_oci_vault_bucket    = os.environ.get('OCI_VAULT_BUCKET', 'openclaw-fleet-vault').strip()
+_oci_vault_bucket    = os.environ.get('OCI_VAULT_BUCKET', 'cafresohq-fleet-vault').strip()
 # Prefix isolates this user's objects: e.g. "2vxsx-principal-hash/"
 _oci_vault_prefix    = os.environ.get('OCI_VAULT_PREFIX', '').strip()
 _oci_client_lock     = threading.Lock()
@@ -360,13 +366,13 @@ def _oci_obj_key(rel: str) -> str:
     return prefix + rel.lstrip('/')
 
 # Fleet identity (set by fleet-manager when provisioning the container)
-_fleet_mode      = os.environ.get('OPENCLAW_FLEET_MODE', 'local').strip()
+_fleet_mode      = os.environ.get('CAFRESOHQ_FLEET_MODE', 'local').strip()
 _fleet_user_principal = os.environ.get('USER_PRINCIPAL', '').strip()
 
 # Uptime tracking for /health
 _server_start_time = time.time()
 
-if not os.environ.get('OPENCLAW_VAULT'):
+if not os.environ.get('CAFRESOHQ_VAULT'):
     try:
         pathlib.Path(_vault_root).mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -1007,7 +1013,7 @@ def _build_graph_fs() -> dict:
 
     # ── HQ-state ingestion: tasks/projects/missions/receipts/agents ────
     # The graph stops being a vault-only viewer and starts representing
-    # everything OpenclawHQ knows. New nodes use prefixed IDs (`task:`,
+    # everything CafresoHQ knows. New nodes use prefixed IDs (`task:`,
     # `agent:` etc) so they never collide with vault paths. Edges link
     # them to each other AND to vault notes when references resolve.
     hq_nodes, hq_edges = _build_hq_state_graph(all_paths, seen_typed_edge)
@@ -1093,7 +1099,7 @@ def _build_graph_fs_cached() -> dict:
 #
 # Reads the JSON files in hq-state/ and turns them into typed graph nodes,
 # with edges to each other AND to vault notes when references resolve. This
-# is what makes GraphView the unified "everything OpenclawHQ knows" view
+# is what makes GraphView the unified "everything CafresoHQ knows" view
 # rather than just a markdown vault visualizer.
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -1118,7 +1124,7 @@ def _load_hq_state(name: str):
 
 def _load_hq_memory(name: str):
     """Safely load `<hq-memory>/<name>.json`. Same shape contract as
-    _load_hq_state but reads from _hq_memory_dir (where the OpenclawHQ
+    _load_hq_state but reads from _hq_memory_dir (where the CafresoHQ
     frontend persists agents, journals, etc via useFileStored('memory', ...))."""
     p = _hq_memory_dir / f'{name}.json'
     if not p.exists():
@@ -1133,7 +1139,7 @@ def _load_hq_memory(name: str):
 
 def _load_authoritative_agents() -> dict:
     """Load the canonical agents list from hq-memory/agents.json (where the
-    OpenclawHQ frontend persists hired agents). Returns a dict keyed by both
+    CafresoHQ frontend persists hired agents). Returns a dict keyed by both
     the agent id (e.g. 'a_nykw53') AND its name (e.g. 'Selvin'), with the
     agent dict as value. This lets the graph builder upgrade synthesised
     agent nodes — which would otherwise show as 'a_nykw53' — to friendly
@@ -1545,7 +1551,7 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
         # mtime: agent's lastRun if available, else hiredAt — for time-scrub
         # correctness. Both fields may legitimately be strings like
         # "just hired" or "never" (they're free-form display labels in some
-        # OpenclawHQ states), so int() must be defensive — fall back to 0
+        # CafresoHQ states), so int() must be defensive — fall back to 0
         # whenever the field isn't a numeric timestamp.
         def _safe_ts(v):
             try: return int(v)
@@ -1859,11 +1865,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None, None
 
     def _api_key_ok(self):
-        """Bearer-key gate (see OPENCLAW_API_KEY). No key configured → open.
+        """Bearer-key gate (see CAFRESOHQ_API_KEY). No key configured → open.
         Otherwise a request to a protected prefix must present the key via the
         X-API-Key header or a ?k= query param (for WebSocket handshakes). Public
         paths (static UI, /health, /idle) are exempt."""
-        if not OPENCLAW_API_KEY:
+        if not CAFRESOHQ_API_KEY:
             return True
         path = self.path.split('?', 1)[0]
         if not path.startswith(_KEY_PROTECTED_PREFIXES):
@@ -1876,7 +1882,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 supplied = ''
         import hmac as _hmac
-        return bool(supplied) and _hmac.compare_digest(str(supplied), OPENCLAW_API_KEY)
+        return bool(supplied) and _hmac.compare_digest(str(supplied), CAFRESOHQ_API_KEY)
 
     def do_GET(self):
         if not self._api_key_ok():
@@ -1909,8 +1915,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._vault('GET')
         if self.path == '/claudecode/status':
             return self._claudecode_status()
-        if self.path == '/openclaw/status':
-            return self._openclaw_status()
+        if self.path == '/cafresohq/status':
+            return self._cafresohq_status()
         if self.path == '/codex/status':
             return self._codex_status()
         if self.path.startswith('/agents/install/status'):
@@ -2020,7 +2026,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # renders it read-only via ?g=/graph/snapshot/<slug>. (Production target is an
     # ICP asset/Motoko canister — same URL contract, swappable storage.)
     def _public_graph_dir(self):
-        base = os.environ.get('OPENCLAW_HQ_STATE_DIR') or os.path.join(os.getcwd(), 'hq-state')
+        base = os.environ.get('CAFRESOHQ_HQ_STATE_DIR') or os.path.join(os.getcwd(), 'hq-state')
         d = os.path.join(base, 'public-graphs')
         os.makedirs(d, exist_ok=True)
         return d
@@ -2115,8 +2121,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._codex_configure()
         if self.path == '/claudecode/stream':
             return self._claudecode_stream()
-        if self.path == '/openclaw/stream':
-            return self._openclaw_stream()
+        if self.path == '/cafresohq/stream':
+            return self._cafresohq_stream()
         if self.path == '/codex/stream':
             return self._codex_stream()
         if self.path == '/terminal/stream':
@@ -2204,7 +2210,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'hermes':           bool(_hermes_bin or shutil.which('hermes')),
             'gemini':           bool(_gemini_bin or shutil.which('gemini')),
             'runtime_env':      _RUNTIME_ENV,
-            'auth_required':    bool(OPENCLAW_API_KEY),
+            'auth_required':    bool(CAFRESOHQ_API_KEY),
             'oci_vault_ready':  oci_ready,
         })
 
@@ -2243,7 +2249,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         bin_ = self._claudecode_resolve()
         if not bin_:
             return self._send_json(503, {
-                'error': 'claude CLI not found — install Claude Code or set OPENCLAW_CLAUDE_BIN'
+                'error': 'claude CLI not found — install Claude Code or set CAFRESOHQ_CLAUDE_BIN'
             })
         length = int(self.headers.get('content-length', 0) or 0)
         try:
@@ -2284,12 +2290,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             cmd += ['--append-system-prompt', system]
 
         # Use project cwd if provided and valid, otherwise first allowed dir.
-        _cc_cwd = _openclaw_allowed_dirs[0] if _openclaw_allowed_dirs else None
+        _cc_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else None
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
                 cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
-                for d in _openclaw_allowed_dirs:
+                for d in _cafresohq_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
                         if cwd_p.is_dir():
@@ -2418,16 +2424,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ---- Tool execution proxy (bracket-format tools for any provider) ------
     def _validate_path(self, path):
-        """Resolve path and verify it falls within OPENCLAW_ALLOWED_DIRS.
-        In local mode with no explicit OPENCLAW_ALLOWED_DIRS env var the check
+        """Resolve path and verify it falls within CAFRESOHQ_ALLOWED_DIRS.
+        In local mode with no explicit CAFRESOHQ_ALLOWED_DIRS env var the check
         is skipped — the user is developing locally and can access their own files.
-        In container mode or when the admin explicitly set OPENCLAW_ALLOWED_DIRS
+        In container mode or when the admin explicitly set CAFRESOHQ_ALLOWED_DIRS
         the strict whitelist is enforced.
         """
         p = pathlib.Path(_client_path(path)).resolve()
         if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
             return p  # local default: no restriction, user accesses own files
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             try:
                 p.relative_to(pathlib.Path(d).resolve())
                 return p
@@ -2443,9 +2449,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
           depth — 1 (default, shallow) or 0 (full history)
         Returns: {ok, path, name, stderr?}
         """
-        if not _openclaw_allowed_dirs:
+        if not _cafresohq_allowed_dirs:
             return self._send_json(503, {'ok': False,
-                'error': 'OPENCLAW_ALLOWED_DIRS not set — clone disabled'})
+                'error': 'CAFRESOHQ_ALLOWED_DIRS not set — clone disabled'})
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
@@ -2476,11 +2482,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'ok': False, 'error': 'invalid repo name'})
         repo_name = safe
 
-        target = pathlib.Path(_openclaw_allowed_dirs[0]) / repo_name
+        target = pathlib.Path(_cafresohq_allowed_dirs[0]) / repo_name
         try:
             target = target.resolve()
             # Must remain inside the allowed dir
-            target.relative_to(pathlib.Path(_openclaw_allowed_dirs[0]).resolve())
+            target.relative_to(pathlib.Path(_cafresohq_allowed_dirs[0]).resolve())
         except (ValueError, OSError) as e:
             return self._send_json(400, {'ok': False, 'error': f'invalid target: {e}'})
 
@@ -2523,12 +2529,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _tool_exec(self):
         """Execute a bracket-format tool call dispatched by the frontend.
         Body: {tool, arg, body?}
-        Requires OPENCLAW_ALLOWED_DIRS to be configured (same gate as /openclaw/stream).
-        BASH additionally requires 'Bash' in OPENCLAW_ALLOWED_TOOLS.
+        Requires CAFRESOHQ_ALLOWED_DIRS to be configured (same gate as /cafresohq/stream).
+        BASH additionally requires 'Bash' in CAFRESOHQ_ALLOWED_TOOLS.
         """
-        if not _openclaw_allowed_dirs:
+        if not _cafresohq_allowed_dirs:
             return self._send_json(503, {'ok': False,
-                'error': 'OPENCLAW_ALLOWED_DIRS not set — tool execution disabled'})
+                'error': 'CAFRESOHQ_ALLOWED_DIRS not set — tool execution disabled'})
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
@@ -2542,7 +2548,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Optional project cwd — if supplied and valid (within allowed dirs),
         # use it as the base for relative paths and BASH cwd.
         req_cwd = (req.get('cwd') or '').strip()
-        tool_cwd = _openclaw_allowed_dirs[0] if _openclaw_allowed_dirs else os.getcwd()
+        tool_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else os.getcwd()
         if req_cwd:
             try:
                 cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
@@ -2550,7 +2556,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
                         tool_cwd = str(cwd_p)  # local default: trust any existing dir
                     else:
-                        for d in _openclaw_allowed_dirs:
+                        for d in _cafresohq_allowed_dirs:
                             try:
                                 cwd_p.relative_to(pathlib.Path(d).resolve())
                                 tool_cwd = str(cwd_p)
@@ -2598,9 +2604,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 result = f'Wrote {len(content)} chars → {p}'
 
             elif tool == 'BASH':
-                if 'Bash' not in _openclaw_allowed_tools:
+                if 'Bash' not in _cafresohq_allowed_tools:
                     return self._send_json(403, {'ok': False,
-                        'error': 'Bash not in OPENCLAW_ALLOWED_TOOLS — add it to enable shell access'})
+                        'error': 'Bash not in CAFRESOHQ_ALLOWED_TOOLS — add it to enable shell access'})
                 proc = subprocess.run(
                     arg, shell=True, capture_output=True, text=True, timeout=30,
                     cwd=tool_cwd,
@@ -2626,8 +2632,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'ok': False, 'error': str(e)})
 
-    # ---- OpenClaw (elevated agent: Claude Code with constrained tools) ---
-    def _openclaw_status(self):
+    # ---- CafresoHQ (elevated agent: Claude Code with constrained tools) ---
+    def _cafresohq_status(self):
         """Report whether the elevated endpoint is wired up. The client uses
         this to disable the 🛡 toggle when no allowlist is configured."""
         bin_ = self._claudecode_resolve()
@@ -2635,21 +2641,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # silent landmine (claude would just refuse the read).
         dirs_ok = []
         dirs_bad = []
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             (dirs_ok if pathlib.Path(d).is_dir() else dirs_bad).append(d)
         return self._send_json(200, {
-            'configured': bool(bin_) and bool(dirs_ok) and bool(_openclaw_allowed_tools),
+            'configured': bool(bin_) and bool(dirs_ok) and bool(_cafresohq_allowed_tools),
             'binary': bin_ or '',
             'allowedDirs': dirs_ok,
             'badDirs': dirs_bad,
-            'allowedTools': list(_openclaw_allowed_tools),
+            'allowedTools': list(_cafresohq_allowed_tools),
         })
 
     def _codex_status(self):
         """Report whether the Codex elevated endpoint is wired up."""
         bin_ = self._codex_resolve()
         dirs_ok, dirs_bad = [], []
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             (dirs_ok if pathlib.Path(d).is_dir() else dirs_bad).append(d)
         return self._send_json(200, {
             'configured': bool(bin_) and bool(dirs_ok),
@@ -2657,7 +2663,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'override': _codex_bin or '',
             'allowedDirs': dirs_ok,
             'badDirs': dirs_bad,
-            'allowedTools': list(_openclaw_allowed_tools),
+            'allowedTools': list(_cafresohq_allowed_tools),
         })
 
     # ──────────────────────────────────────────────────────────────────────
@@ -2844,7 +2850,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     full = ((proc.stderr or '') + '\n' + (proc.stdout or '')).strip()
                     # Persist the FULL log — truncating to 600 chars hid the real cause.
                     try:
-                        _sd = os.environ.get('OPENCLAW_HQ_STATE_DIR', '/data/hq-state')
+                        _sd = os.environ.get('CAFRESOHQ_HQ_STATE_DIR', '/data/hq-state')
                         os.makedirs(_sd, exist_ok=True)
                         with open(os.path.join(_sd, 'agent-install-errors.log'), 'a') as _f:
                             _f.write('=== %s :: %s ===\n%s\n\n' % (agent, ' '.join(cmd), full))
@@ -2909,7 +2915,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     #                               the Chrome DevTools Protocol (CDP). The
     #                               user must have launched Brave/Chrome
     #                               with --remote-debugging-port=9222 OR
-    #                               OPENCLAW_BROWSER_CDP_URL must be set.
+    #                               CAFRESOHQ_BROWSER_CDP_URL must be set.
     #                               Returns base64 PNG inside JSON. If no
     #                               CDP target is reachable we return 503
     #                               with a clear "how to enable" hint
@@ -2928,16 +2934,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'cdp': cdp_info,
             'cdpHint': (
                 'Launch Brave/Chrome with --remote-debugging-port=9222, or '
-                'set OPENCLAW_BROWSER_CDP_URL=http://host:port to enable '
+                'set CAFRESOHQ_BROWSER_CDP_URL=http://host:port to enable '
                 'screenshots and JS-rendered fetch.'
             ),
         })
 
     def _browser_cdp_probe(self):
-        """Find a CDP endpoint. Tries OPENCLAW_BROWSER_CDP_URL first,
+        """Find a CDP endpoint. Tries CAFRESOHQ_BROWSER_CDP_URL first,
         then localhost:9222 (Brave/Chrome default). Returns (ok, info)."""
         candidates = []
-        env_url = os.environ.get('OPENCLAW_BROWSER_CDP_URL', '').strip()
+        env_url = os.environ.get('CAFRESOHQ_BROWSER_CDP_URL', '').strip()
         if env_url:
             candidates.append(env_url.rstrip('/'))
         candidates.append('http://127.0.0.1:9222')
@@ -2977,7 +2983,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'url must start with http:// or https://'})
         try:
             req = urllib.request.Request(url, headers={
-                'User-Agent': 'OpenclawHQ/1.0 (+browser-shim)',
+                'User-Agent': 'CafresoHQ/1.0 (+browser-shim)',
                 'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
             })
@@ -3035,7 +3041,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Drives a Chromium-based browser via CDP to navigate + screenshot.
         Returns { url, width, height, png } where png is a data: URL.
         Requires a running browser with --remote-debugging-port=9222
-        (or OPENCLAW_BROWSER_CDP_URL pointing at one).
+        (or CAFRESOHQ_BROWSER_CDP_URL pointing at one).
 
         We use the lightweight HTTP+WS subset of CDP via stdlib only:
           1. GET /json/version  → discover webSocketDebuggerUrl
@@ -3050,7 +3056,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'error': 'No CDP-enabled browser detected.',
                 'hint': (
                     'Launch Brave or Chrome with --remote-debugging-port=9222 '
-                    '(or set OPENCLAW_BROWSER_CDP_URL to a different host:port).'
+                    '(or set CAFRESOHQ_BROWSER_CDP_URL to a different host:port).'
                 ),
             })
         qs = urllib.parse.urlparse(self.path).query
@@ -3112,7 +3118,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
-    def _openclaw_stream(self):
+    def _cafresohq_stream(self):
         """Streaming chat for ELEVATED agents. Same SSE-shaped output as
         /claudecode/stream so the client uses one parser. Differences:
           - tools enabled (--allowed-tools <server-side allowlist>)
@@ -3122,22 +3128,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         bin_ = self._claudecode_resolve()
         if not bin_:
             return self._send_json(503, {
-                'error': 'claude CLI not found — install Claude Code or set OPENCLAW_CLAUDE_BIN'
+                'error': 'claude CLI not found — install Claude Code or set CAFRESOHQ_CLAUDE_BIN'
             })
-        if not _openclaw_allowed_dirs:
+        if not _cafresohq_allowed_dirs:
             return self._send_json(503, {
-                'error': 'OPENCLAW_ALLOWED_DIRS not set — elevated endpoint disabled'
+                'error': 'CAFRESOHQ_ALLOWED_DIRS not set — elevated endpoint disabled'
             })
-        if not _openclaw_allowed_tools:
+        if not _cafresohq_allowed_tools:
             return self._send_json(503, {
-                'error': 'OPENCLAW_ALLOWED_TOOLS empty — elevated endpoint disabled'
+                'error': 'CAFRESOHQ_ALLOWED_TOOLS empty — elevated endpoint disabled'
             })
         # Refuse if any configured dir is missing — easier to fix typos than
         # to debug a silent permission error.
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             if not pathlib.Path(d).is_dir():
                 return self._send_json(503, {
-                    'error': f'OPENCLAW_ALLOWED_DIRS includes missing dir: {d}'
+                    'error': f'CAFRESOHQ_ALLOWED_DIRS includes missing dir: {d}'
                 })
 
         length = int(self.headers.get('content-length', 0) or 0)
@@ -3168,9 +3174,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cmd = [bin_, '--print',
                '--output-format', 'stream-json',
                '--verbose',
-               '--allowed-tools', ','.join(_openclaw_allowed_tools),
+               '--allowed-tools', ','.join(_cafresohq_allowed_tools),
                '--input-format', 'text']
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             cmd += ['--add-dir', d]
         if model:
             cmd += ['--model', model]
@@ -3178,7 +3184,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # it's running under HQ's authority and what its boundaries are.
         guard = (
             f'You are {agent}, an elevated HQ agent with computer access. '
-            f'You are restricted to these directories: {", ".join(_openclaw_allowed_dirs)}. '
+            f'You are restricted to these directories: {", ".join(_cafresohq_allowed_dirs)}. '
             'When you intend to perform an action with side effects, first emit '
             '[NEEDS_APPROVAL: <one-line description>] and stop until the boss replies.'
         )
@@ -3187,16 +3193,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # Audit: log every elevated invocation server-side so there's a
         # tamper-resistant record outside the browser.
-        sys.stderr.write(f'[openclaw] elevated stream: agent={agent} model={model or "(default)"} '
-                         f'dirs={_openclaw_allowed_dirs} tools={_openclaw_allowed_tools}\n')
+        sys.stderr.write(f'[cafresohq] elevated stream: agent={agent} model={model or "(default)"} '
+                         f'dirs={_cafresohq_allowed_dirs} tools={_cafresohq_allowed_tools}\n')
 
         # Use project cwd if provided and valid, otherwise first allowed dir.
-        agent_cwd = _openclaw_allowed_dirs[0] if _openclaw_allowed_dirs else None
+        agent_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else None
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
                 cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
-                for d in _openclaw_allowed_dirs:
+                for d in _cafresohq_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
                         if cwd_p.is_dir():
@@ -3300,7 +3306,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     out_tokens = u.get('output_tokens', out_tokens)
                 elif t == 'error':
                     write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f"\n\n⚠ OpenClaw error: {ev.get('message') or ev}"}}]})
+                        'content': f"\n\n⚠ CafresoHQ error: {ev.get('message') or ev}"}}]})
             if in_tokens or out_tokens:
                 write_sse({
                     'choices': [],
@@ -3318,7 +3324,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
                 err_text = ('\n'.join(stderr_buf))[:600] or f'exit {proc.returncode}'
                 write_sse({'choices': [{'index': 0, 'delta': {
-                    'content': f"\n\n⚠ OpenClaw exited {proc.returncode}: {err_text}"}}]})
+                    'content': f"\n\n⚠ CafresoHQ exited {proc.returncode}: {err_text}"}}]})
 
     # ---- Codex CLI elevated agent ----------------------------------------
     def _codex_resolve(self):
@@ -3338,7 +3344,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _hermes_resolve(self):
         """Find the hermes binary. Returns absolute path or ''.
-        OPENCLAW_HERMES_BIN overrides; otherwise PATH lookup. In the container
+        CAFRESOHQ_HERMES_BIN overrides; otherwise PATH lookup. In the container
         and in WSL/unix this resolves natively; on native Windows it returns ''
         (hermes is unix-only — run the stack in WSL instead)."""
         if _hermes_bin and pathlib.Path(_hermes_bin).is_file():
@@ -3347,7 +3353,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _gemini_resolve(self):
         """Find the gemini binary (npm @google/gemini-cli). Returns path or ''.
-        OPENCLAW_GEMINI_BIN overrides. On Windows prefer the .cmd npm wrapper
+        CAFRESOHQ_GEMINI_BIN overrides. On Windows prefer the .cmd npm wrapper
         (same OSError-193 reasoning as _codex_resolve)."""
         if _gemini_bin and pathlib.Path(_gemini_bin).is_file():
             return _gemini_bin
@@ -3374,16 +3380,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _codex_stream(self):
         """Streaming elevated agent backed by Codex CLI (codex exec --json).
         Auth comes from ~/.codex/config.toml — serve.py never touches API keys.
-        Same SSE output shape as /openclaw/stream so the UI uses one parser.
+        Same SSE output shape as /cafresohq/stream so the UI uses one parser.
         """
         bin_ = self._codex_resolve()
         if not bin_:
             return self._send_json(503, {
-                'error': 'codex CLI not found — install via npm i -g @openai/codex or set OPENCLAW_CODEX_BIN'
+                'error': 'codex CLI not found — install via npm i -g @openai/codex or set CAFRESOHQ_CODEX_BIN'
             })
-        if not _openclaw_allowed_dirs:
+        if not _cafresohq_allowed_dirs:
             return self._send_json(503, {
-                'error': 'OPENCLAW_ALLOWED_DIRS not set — codex endpoint disabled'
+                'error': 'CAFRESOHQ_ALLOWED_DIRS not set — codex endpoint disabled'
             })
 
         length = int(self.headers.get('content-length', 0) or 0)
@@ -3392,10 +3398,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._send_json(400, {'error': 'bad json'})
 
-        for d in _openclaw_allowed_dirs:
+        for d in _cafresohq_allowed_dirs:
             if not pathlib.Path(d).is_dir():
                 return self._send_json(503, {
-                    'error': f'OPENCLAW_ALLOWED_DIRS includes missing dir: {d}'
+                    'error': f'CAFRESOHQ_ALLOWED_DIRS includes missing dir: {d}'
                 })
 
         messages = body.get('messages') or []
@@ -3403,7 +3409,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         system   = (body.get('system') or '').strip()
         agent    = (body.get('agentName') or body.get('agent') or 'elevated-agent').strip()[:60]
 
-        # Build prompt from message history (same as openclaw handler)
+        # Build prompt from message history (same as cafresohq handler)
         history_lines = []
         for m in messages:
             role = (m.get('role') or 'user').upper()
@@ -3415,12 +3421,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'no prompt'})
 
         # Use project cwd if provided and valid, otherwise first allowed dir.
-        primary_dir = _openclaw_allowed_dirs[0]
+        primary_dir = _cafresohq_allowed_dirs[0]
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
                 cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
-                for d in _openclaw_allowed_dirs:
+                for d in _cafresohq_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
                         if cwd_p.is_dir():
@@ -3435,7 +3441,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                '--skip-git-repo-check',
                '--sandbox', 'workspace-write',
                '-C', primary_dir]
-        for d in _openclaw_allowed_dirs[1:]:
+        for d in _cafresohq_allowed_dirs[1:]:
             cmd += ['--add-dir', d]
         # Codex talks directly to OpenAI (default provider). Auth via
         # OPENAI_API_KEY (user-supplied through HQ settings / operator env).
@@ -3453,7 +3459,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         guard = (
             f'You are {agent}, an elevated HQ agent with computer access. '
-            f'You are restricted to these directories: {", ".join(_openclaw_allowed_dirs)}. '
+            f'You are restricted to these directories: {", ".join(_cafresohq_allowed_dirs)}. '
             'When you intend to perform an action with side effects, first emit '
             '[NEEDS_APPROVAL: <one-line description>] and stop until the boss replies.'
         )
@@ -3461,7 +3467,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         sys.stderr.write(f'[codex] stream: agent={agent} model={model or "(default)"} '
                          f'wire_model={wire_model or "(default)"} '
-                         f'dirs={_openclaw_allowed_dirs}\n')
+                         f'dirs={_cafresohq_allowed_dirs}\n')
 
         # Inherit env + Git Bash paths so shell tools work on Windows.
         # Codex talks to OpenAI directly via OPENAI_API_KEY (BYOK / operator env).
@@ -3744,7 +3750,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _fs_browse(self):
         """GET /fs/browse?path=<dir>
         Returns a directory listing for the path picker popup.
-        In container mode: restricted to OPENCLAW_ALLOWED_DIRS subtrees.
+        In container mode: restricted to CAFRESOHQ_ALLOWED_DIRS subtrees.
         In local mode: any readable path is allowed.
         Response: {path, parent, entries:[{name, type:'dir'|'file', path}]}
         """
@@ -3754,8 +3760,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # Default starting location: first allowed dir → home → cwd
         if not req_path:
-            if _openclaw_allowed_dirs:
-                req_path = _openclaw_allowed_dirs[0]
+            if _cafresohq_allowed_dirs:
+                req_path = _cafresohq_allowed_dirs[0]
             else:
                 try:
                     req_path = str(pathlib.Path.home())
@@ -3771,18 +3777,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'not a directory'})
 
         # Container: only browse within allowed dirs
-        if _RUNTIME_ENV == 'container' and _openclaw_allowed_dirs:
+        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
             try:
                 allowed = any(
                     str(p).startswith(str(pathlib.Path(d).resolve()))
-                    for d in _openclaw_allowed_dirs
+                    for d in _cafresohq_allowed_dirs
                 )
             except Exception:
                 allowed = False
             if not allowed:
                 return self._send_json(403, {
-                    'error': 'path is outside OPENCLAW_ALLOWED_DIRS',
-                    'allowed': _openclaw_allowed_dirs,
+                    'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
+                    'allowed': _cafresohq_allowed_dirs,
                 })
 
         try:
@@ -3875,7 +3881,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _app_origins(self):
         """Browser origins permitted to open the terminal WebSocket and fetch the
         PTY nonce: same-origin, the production gateway, localhost dev, plus any
-        canister origins configured via OPENCLAW_ALLOWED_WS_ORIGINS (cross-origin
+        canister origins configured via CAFRESOHQ_ALLOWED_WS_ORIGINS (cross-origin
         frontend/backend split)."""
         host   = self.headers.get('Host', '').strip()
         scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
@@ -3897,7 +3903,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         param. Same-origin callers (no Origin header on same-origin XHR, or an
         Origin in the allowlist) get it; a cross-origin Origin that isn't in the
         allowlist is refused, so only the HQ app — same-origin or an approved
-        canister origin (OPENCLAW_ALLOWED_WS_ORIGINS) — can obtain it.
+        canister origin (CAFRESOHQ_ALLOWED_WS_ORIGINS) — can obtain it.
         """
         _origin = self.headers.get('Origin', '').strip()
         if _origin and _origin not in self._app_origins():
@@ -4425,7 +4431,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if cli == 'claude':
             bin_ = self._claudecode_resolve()
             if not bin_:
-                return self._send_json(503, {'error': 'claude CLI not found — install Claude Code or set OPENCLAW_CLAUDE_BIN'})
+                return self._send_json(503, {'error': 'claude CLI not found — install Claude Code or set CAFRESOHQ_CLAUDE_BIN'})
             if auth_method == 'subscription':
                 # Strip any ANTHROPIC_API_KEY so the CLI falls through to its
                 # own OAuth / subscription credentials (Pro/Max plan).
@@ -4443,7 +4449,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif cli == 'gemini':
             bin_ = self._gemini_resolve()
             if not bin_:
-                return self._send_json(503, {'error': 'gemini CLI not found — npm i -g @google/gemini-cli or set OPENCLAW_GEMINI_BIN'})
+                return self._send_json(503, {'error': 'gemini CLI not found — npm i -g @google/gemini-cli or set CAFRESOHQ_GEMINI_BIN'})
             # Auth mirrors the PTY path: 'subscription' = the gemini CLI's own
             # Google login (stored creds), otherwise inject the BYOK key into
             # GEMINI_API_KEY/GOOGLE_API_KEY (both lookups the CLI honours).
@@ -4465,7 +4471,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             bin_ = self._codex_resolve()
             if not bin_:
-                return self._send_json(503, {'error': 'codex CLI not found — npm i -g @openai/codex or set OPENCLAW_CODEX_BIN'})
+                return self._send_json(503, {'error': 'codex CLI not found — npm i -g @openai/codex or set CAFRESOHQ_CODEX_BIN'})
             path_key = next((k for k in agent_env.keys() if k.lower() == 'path'), 'Path')
             path_value = agent_env.get(path_key, '')
             path_value = os.pathsep.join(
@@ -5384,7 +5390,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             from datetime import datetime, timezone
             lines = [
-                '# OpenclawHQ Agent Roster',
+                '# CafresoHQ Agent Roster',
                 f'_Updated: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}_',
                 '',
             ]
@@ -6003,7 +6009,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'Accept': 'application/json',
                 'Accept-Encoding': 'identity',
                 'X-Subscription-Token': key,
-                'User-Agent': 'OpenclawHQ/1.0',
+                'User-Agent': 'CafresoHQ/1.0',
             })
             resp = conn.getresponse()
             self.send_response(resp.status)
@@ -6358,7 +6364,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if _os.path.exists(cfg_path):
                 with open(cfg_path, 'r', encoding='utf-8') as f:
                     cfg = f.read()
-            header = ('# CafresoAI — Hermes config (provider set via HQ Settings).\n'
+            header = ('# CafresoHQ — Hermes config (provider set via HQ Settings).\n'
                       '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
             block = self._hermes_model_block(provider, model)
             m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
@@ -6712,7 +6718,7 @@ def _ensure_local_tls(state_dir, lan_ip='', allow_selfsigned=True):
       1. mkcert — issues a cert signed by a CA installed in the OS/browser trust
          store, so the embed works with NO warning. Used if `mkcert` is on PATH.
       2. self-signed (openssl, then the `cryptography` lib) — only when
-         allow_selfsigned=True (OPENCLAW_TLS_AUTO=1). HTTPS works after the user
+         allow_selfsigned=True (CAFRESOHQ_TLS_AUTO=1). HTTPS works after the user
          manually trusts the cert; NOT used by default because a TLS-only server
          with an untrusted cert is unreachable (worse than plain HTTP).
 
@@ -6847,7 +6853,7 @@ if __name__ == '__main__':
 
     # TLS — explicit cert/key (mkcert or any trusted pair) win. Otherwise, for a
     # local deployment (anything NOT behind the OCI Fleet gateway — native run
-    # OR `docker run -e OPENCLAW_FLEET_MODE=local`), auto-provision a localhost
+    # OR `docker run -e CAFRESOHQ_FLEET_MODE=local`), auto-provision a localhost
     # cert so the app serves HTTPS and embeds in https://ai.cafreso.com.
     #
     # CRITICAL default: auto only upgrades to HTTPS when the cert is
@@ -6857,14 +6863,14 @@ if __name__ == '__main__':
     # cert, and the app turns unreachable (esp. in Docker, where mkcert can't
     # install a CA into the HOST browser). And http://localhost is already a
     # secure context in Chrome/Edge/Firefox, so self-signed buys nothing there.
-    # OPENCLAW_TLS_AUTO=1 forces HTTPS incl. the self-signed fallback (power
+    # CAFRESOHQ_TLS_AUTO=1 forces HTTPS incl. the self-signed fallback (power
     # users who will trust the cert manually); =0 disables auto entirely.
     _local_deploy = _fleet_mode not in ('oci-fleet', 'fleet')
-    _tls_cert = os.environ.get('OPENCLAW_TLS_CERT', '').strip()
-    _tls_key  = os.environ.get('OPENCLAW_TLS_KEY',  '').strip()
+    _tls_cert = os.environ.get('CAFRESOHQ_TLS_CERT', '').strip()
+    _tls_key  = os.environ.get('CAFRESOHQ_TLS_KEY',  '').strip()
     _tls_trusted = bool(_tls_cert and _tls_key)   # operator-supplied → assume managed
     if not (_tls_cert and _tls_key):
-        _auto = os.environ.get('OPENCLAW_TLS_AUTO', '').strip().lower()
+        _auto = os.environ.get('CAFRESOHQ_TLS_AUTO', '').strip().lower()
         _tls_forced   = _auto in ('1', 'true', 'yes', 'on')
         _tls_disabled = _auto in ('0', 'false', 'no', 'off')
         if not _tls_disabled and (_tls_forced or _local_deploy):
@@ -6882,15 +6888,15 @@ if __name__ == '__main__':
     # port map doesn't expose the (RCE-capable) terminal. NOTE: OCI Container
     # Instances detect as runtime_env='local' (none of the docker markers exist),
     # so gate the loopback default on the FLEET MODE too — a fleet/container
-    # deploy (OPENCLAW_FLEET_MODE=oci-fleet) MUST bind all interfaces or the
-    # gateway gets 502. Override with OPENCLAW_BIND.
-    _bind_host = os.environ.get('OPENCLAW_BIND', '').strip()
+    # deploy (CAFRESOHQ_FLEET_MODE=oci-fleet) MUST bind all interfaces or the
+    # gateway gets 502. Override with CAFRESOHQ_BIND.
+    _bind_host = os.environ.get('CAFRESOHQ_BIND', '').strip()
     if not _bind_host:
         _bind_host = '127.0.0.1' if _is_local_run else ''
     if _is_local_run and _bind_host not in ('127.0.0.1', 'localhost') \
-            and not OPENCLAW_API_KEY:
-        print('  ⚠  bound to a non-loopback interface with NO OPENCLAW_API_KEY — '
-              'the terminal PTY is exposed. Set OPENCLAW_API_KEY to lock it down.')
+            and not CAFRESOHQ_API_KEY:
+        print('  ⚠  bound to a non-loopback interface with NO CAFRESOHQ_API_KEY — '
+              'the terminal PTY is exposed. Set CAFRESOHQ_API_KEY to lock it down.')
     with ThreadedServer((_bind_host, PORT), Handler) as httpd:
         if _tls_on:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -6900,7 +6906,7 @@ if __name__ == '__main__':
                   + ('  (browser-trusted)' if _tls_trusted else '  (self-signed)'))
 
         lan = _local_ip()
-        print(f'Openclaw HQ -> {_scheme}://localhost:{PORT}/hq.html')
+        print(f'CafresoHQ -> {_scheme}://localhost:{PORT}/hq.html')
         if lan:
             print(f'  📱 Mobile / LAN  -> {_scheme}://{lan}:{PORT}/hq.html')
         if _tls_on and _local_deploy:
@@ -6913,20 +6919,20 @@ if __name__ == '__main__':
                       'and restart — or open https://localhost:%d/hq.html once and '
                       'trust the cert.' % PORT)
         elif not _tls_on:
-            print('  💡 Set OPENCLAW_TLS_CERT + OPENCLAW_TLS_KEY (or install mkcert) '
+            print('  💡 Set CAFRESOHQ_TLS_CERT + CAFRESOHQ_TLS_KEY (or install mkcert) '
                   'for HTTPS — enables the ai.cafreso.com embed + iOS service worker')
         for prefix, (h, p) in ROUTES.items():
             print(f'  proxy {prefix}* -> {h}:{p}/*')
-        if _openclaw_allowed_dirs:
-            print(f'  /openclaw/stream  ELEVATED · tools={",".join(_openclaw_allowed_tools)}'
-                  f' · dirs={_openclaw_allowed_dirs}')
+        if _cafresohq_allowed_dirs:
+            print(f'  /cafresohq/stream  ELEVATED · tools={",".join(_cafresohq_allowed_tools)}'
+                  f' · dirs={_cafresohq_allowed_dirs}')
         else:
-            print('  /openclaw/stream  DISABLED (set OPENCLAW_ALLOWED_DIRS to enable)')
+            print('  /cafresohq/stream  DISABLED (set CAFRESOHQ_ALLOWED_DIRS to enable)')
         _codex_found = (_codex_bin if _codex_bin and pathlib.Path(_codex_bin).is_file() else '') \
             or shutil.which(_codex_bin or 'codex') or shutil.which('codex.cmd')
-        if _codex_found and _openclaw_allowed_dirs:
-            print(f'  /codex/stream     CODEX · dirs={_openclaw_allowed_dirs}')
+        if _codex_found and _cafresohq_allowed_dirs:
+            print(f'  /codex/stream     CODEX · dirs={_cafresohq_allowed_dirs}')
         else:
-            print('  /codex/stream     DISABLED (codex not found or OPENCLAW_ALLOWED_DIRS not set)')
+            print('  /codex/stream     DISABLED (codex not found or CAFRESOHQ_ALLOWED_DIRS not set)')
         print('  /approvals/external  Claude Code PreToolUse hook bridge')
         httpd.serve_forever()

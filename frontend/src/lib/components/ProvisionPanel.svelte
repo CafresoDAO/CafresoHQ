@@ -304,7 +304,7 @@
 <div class="card p-5">
   {#if !target}
     <!-- ── Step 1: choose where HQ runs ── -->
-    <div class="page-kicker">Your CafresoAI HQ</div>
+    <div class="page-kicker">Your CafresoHQ HQ</div>
     <div class="mt-2 text-xl font-semibold">Where should your HQ run?</div>
     <p class="mt-3 text-sm leading-6 text-ink-300">
       Pick where your private agent backend lives. You can change this anytime.
@@ -328,7 +328,7 @@
   {:else}
     <div class="flex items-center justify-between gap-3">
       <div class="page-kicker">
-        Your CafresoAI HQ · {target === 'local' ? 'Local machine' : 'OCI Cloud'}
+        Your CafresoHQ HQ · {target === 'local' ? 'Local machine' : 'OCI Cloud'}
       </div>
       <button class="text-xs text-ink-400 underline hover:text-ink-200" on:click={changeTarget}>Change</button>
     </div>
@@ -539,7 +539,7 @@
           </p>
         {/if}
         <p class="mt-3 text-sm leading-6 text-ink-300">
-          Your principal doesn't have a CafresoAI HQ yet. Provisioning takes about a minute.
+          Your principal doesn't have a CafresoHQ HQ yet. Provisioning takes about a minute.
           We'll spin up a private OCI container in Ashburn with 1 OCPU, 6 GB, and ARM64.
         </p>
         <button class="btn-primary mt-4" on:click={startProvision}>Provision my HQ</button>

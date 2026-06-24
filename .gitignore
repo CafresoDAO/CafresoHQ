@@ -40,7 +40,7 @@ icp/node_modules/
 
 # ── electron-builder cache ────────────────────────────────
 electron/.icon-ico
-electron/OpenclawHQ/
+electron/CafresoHQ/
 
 # ── Node / SvelteKit / Vite build artifacts ───────────────
 node_modules/

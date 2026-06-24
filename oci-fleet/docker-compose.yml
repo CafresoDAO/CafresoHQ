@@ -1,9 +1,9 @@
-# ── CafresoAI — OCI Fleet local test stack ───────────────────────────────────
+# ── CafresoHQ — OCI Fleet local test stack ───────────────────────────────────
 # Runs serve.py in the same Docker image used in production OCI Container Instances.
 # Uses 'fs' vault backend with a local volume (no real OCI credentials needed).
 #
 # Usage:
-#   cd openclawhq
+#   cd cafresohq
 #   docker-compose -f oci-fleet/docker-compose.yml up --build
 #
 # Then open:  http://localhost:8787/hq.html
@@ -11,24 +11,24 @@
 version: '3.9'
 
 services:
-  cafresoai:
+  cafresohq:
     build:
       context: ..                          # repo root (so COPY serve.py works)
       dockerfile: oci-fleet/Dockerfile
     image: cafresoai-serve:dev
-    container_name: cafresoai_dev
+    container_name: cafresohq_dev
     ports:
       - "8787:8787"
     environment:
       # ── Switch to 'oci' + fill OCI_* vars to test the real OCI vault ──────
-      OPENCLAW_FLEET_MODE:    "cafresoai-local-docker"
-      OPENCLAW_VAULT_BACKEND: "fs"          # change to 'oci' for OCI vault test
-      OPENCLAW_HQ_STATE_DIR:  "/data/hq-state"
-      OPENCLAW_VAULT:         "/data/vault"
+      CAFRESOHQ_FLEET_MODE:    "cafresohq-local-docker"
+      CAFRESOHQ_VAULT_BACKEND: "fs"          # change to 'oci' for OCI vault test
+      CAFRESOHQ_HQ_STATE_DIR:  "/data/hq-state"
+      CAFRESOHQ_VAULT:         "/data/vault"
       USER_PRINCIPAL:         "test-local-principal"
 
       # ── Uncomment and fill to test OCI vault backend ─────────────────────
-      # OPENCLAW_VAULT_BACKEND: "oci"
+      # CAFRESOHQ_VAULT_BACKEND: "oci"
       # OCI_VAULT_NAMESPACE:    "your-tenancy-namespace"
       # OCI_VAULT_BUCKET:       "cafresoai-fleet-vault"
       # OCI_VAULT_PREFIX:       "test-principal/"

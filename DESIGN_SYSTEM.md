@@ -1,4 +1,4 @@
-# Openclaw HQ — Design System
+# CafresoHQ — Design System
 
 > Single source of truth for visual language, components, and patterns.
 > Started **Session 1** (foundations). Components and patterns sections grow each session.
@@ -101,7 +101,7 @@ Line-heights: `--lh-tight` (1.25), `--lh-normal` (1.5), `--lh-loose` (1.7).
 
 ### `<Modal>` — Dialog shell
 
-Defined in [`modals.jsx`](./modals.jsx). Exposed as `window.OpenclawModals.Modal`.
+Defined in [`modals.jsx`](./modals.jsx). Exposed as `window.CafresoHQModals.Modal`.
 
 #### Variants
 None directly — variation comes from the `size` prop.
@@ -169,7 +169,7 @@ None directly — variation comes from the `size` prop.
 
 ### `<Btn>` — Buttons
 
-Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.OpenclawUI.Btn`.
+Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.CafresoHQUI.Btn`.
 
 Wraps the existing `.px-btn` CSS — same pixel-art identity (square corners, drop shadow, pop-up hover, push-down active) — but with a uniform JSX surface that handles sizes, loading state, and disabled state.
 
@@ -235,7 +235,7 @@ Wraps the existing `.px-btn` CSS — same pixel-art identity (square corners, dr
 
 ### `<Card>` — Layout primitive
 
-Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.OpenclawUI.Card`.
+Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.CafresoHQUI.Card`.
 
 #### Variants
 | Variant | Visual | Use |
@@ -275,7 +275,7 @@ Composed via `<Card.Header actions={…}>`, `<Card.Body>`, `<Card.Footer>` slots
 
 ### Input primitives — `<Field>`, `<TextField>`, `<TextArea>`, `<Select>`, `<Checkbox>`, `<Toggle>`, `<SearchField>`
 
-All in [`ui.jsx`](./ui.jsx), exposed via `window.OpenclawUI`.
+All in [`ui.jsx`](./ui.jsx), exposed via `window.CafresoHQUI`.
 
 Every input is wrapped by `<Field>` which renders the label / hint / error structure. Input components compose `<Field>` + a styled HTML element.
 
@@ -356,7 +356,7 @@ All inputs get a 2px gold accent ring (`--accent-sun`) on focus. Errors get a tr
 
 ### `<Tabs>` — Tab strip
 
-Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.OpenclawUI.Tabs` + `Tab`.
+Defined in [`ui.jsx`](./ui.jsx). Exposed as `window.CafresoHQUI.Tabs` + `Tab`.
 
 #### Variants
 | Variant | Visual | Use |
@@ -419,10 +419,10 @@ toast.dismissAll();   // clear queue + visible
 #### Imperative escape hatch
 For non-React callers (event listeners, runners, timers):
 ```js
-window.openclawToast.info('Hello from outside React');
+window.cafresohqToast.info('Hello from outside React');
 ```
 
-The provider sets/clears `window.openclawToast` on mount/unmount.
+The provider sets/clears `window.cafresohqToast` on mount/unmount.
 
 #### Toast object shape
 | Field | Default | Description |
@@ -443,7 +443,7 @@ The provider sets/clears `window.openclawToast` on mount/unmount.
 - Hover doesn't auto-pause yet — Session 3 polish
 
 #### Migrated callers
-- Vault Graph: `setStatusMsg({ text, kind })` now routes through `window.openclawToast` automatically (kept the same shape so call sites didn't need rewrites)
+- Vault Graph: `setStatusMsg({ text, kind })` now routes through `window.cafresohqToast` automatically (kept the same shape so call sites didn't need rewrites)
 - Future migrations: Hire flow, agent runner errors, settings save confirmations
 
 ---
@@ -454,7 +454,7 @@ Defined in [`ui.jsx`](./ui.jsx). Mounted **once** at app root inside `<ToastProv
 
 #### Opening
 - **Cmd-K** (Mac) or **Ctrl-K** (Win/Linux) anywhere in the app
-- Programmatically: `window.openclawPalette.open()`
+- Programmatically: `window.cafresohqPalette.open()`
 
 #### Registering commands
 Any component can register commands while it's mounted:
@@ -483,10 +483,10 @@ Commands automatically deregister when the component unmounts. Section is option
 
 #### Imperative escape hatch
 ```js
-window.openclawPalette.open()
-window.openclawPalette.close()
-window.openclawPalette.run('nav.vault')
-window.openclawPalette.list()  // → [{id, label, section}, …]
+window.cafresohqPalette.open()
+window.cafresohqPalette.close()
+window.cafresohqPalette.run('nav.vault')
+window.cafresohqPalette.list()  // → [{id, label, section}, …]
 ```
 
 #### UX
@@ -520,7 +520,7 @@ Defined in [`ui.jsx`](./ui.jsx). Bell renders in the topbar; clicking opens a sl
 The app folds three streams into one:
 - **Approvals** (top-priority unread) — pending approval requests
 - **Receipts** — every approval/rejection + tool-execution audit entry
-- **Live event feed** — `openclaw:agentActivity` (throttled to one per node per 4s) + `openclaw:agentRunnerError`
+- **Live event feed** — `cafresohq:agentActivity` (throttled to one per node per 4s) + `cafresohq:agentRunnerError`
 
 #### Notification shape
 ```js
@@ -563,9 +563,9 @@ Defined in [`ui.jsx`](./ui.jsx). Multi-step coach-mark flow.
 - Without `target`, the card sits centered
 - Arrow keys navigate (← back, → next), Enter advances, Esc skips
 - Progress dots at the bottom
-- Triggered once on first launch (with 800ms warm-up). Replay anytime via the palette command "Replay onboarding tour" (which fires `openclaw:replayTour`).
+- Triggered once on first launch (with 800ms warm-up). Replay anytime via the palette command "Replay onboarding tour" (which fires `cafresohq:replayTour`).
 
-#### Default tour (Openclaw HQ)
+#### Default tour (CafresoHQ)
 6 steps: **Welcome** → **Rail** → **Topbar** → **Palette** → **Notifications** → **Hire** — each scoped to a real DOM target where useful.
 
 ---
@@ -629,14 +629,14 @@ Visual feedback: dashed yellow outline appears on the panel during dragover; cle
 
 ### `<AgentInbox>`
 
-Per-agent activity stream — a live feed of every `openclaw:agentActivity` event grouped by agent. Lives in the right side of the Team view, toggleable via the **📥 INBOX** button in the section header (or the per-agent `📥` button on each agent card).
+Per-agent activity stream — a live feed of every `cafresohq:agentActivity` event grouped by agent. Lives in the right side of the Team view, toggleable via the **📥 INBOX** button in the section header (or the per-agent `📥` button on each agent card).
 
 **Event shape** consumed:
 ```js
 { nodeId, agentId, agentName, color, kind: 'read'|'write'|'link' }
 ```
 
-Renders the most recent ~250 events. Filter chips at the top let you narrow to one agent. Click any row → fires `openclaw:openNote` so the vault opens that note in the active view. Time-ago labels (`5s` / `2m` / `4h` / `1d`).
+Renders the most recent ~250 events. Filter chips at the top let you narrow to one agent. Click any row → fires `cafresohq:openNote` so the vault opens that note in the active view. Time-ago labels (`5s` / `2m` / `4h` / `1d`).
 
 This complements the **Notification Center** (which is throttled to one per node per 4s for high-level awareness). The inbox is the firehose — every event, ungrouped, surfaced where the user already manages the team.
 
@@ -649,8 +649,8 @@ Multi-monitor support for the graph. Click **🪟 POP OUT** in the gear panel to
 **Architecture**:
 - New window opens at `?popout=graph` on the same origin
 - `app.jsx` checks the URL param and mounts a stripped-down `<GraphPopout>` component (just `<ToastProvider>` + a header bar + `<GraphView>` standalone)
-- Both windows share state via `BroadcastChannel('openclaw-graph')`:
-  - **popout → parent**: `{ type: 'open-note', path }` when a node is clicked → parent switches to vault view + dispatches `openclaw:openNote`
+- Both windows share state via `BroadcastChannel('cafresohq-graph')`:
+  - **popout → parent**: `{ type: 'open-note', path }` when a node is clicked → parent switches to vault view + dispatches `cafresohq:openNote`
   - **parent → popout**: `{ type: 'set-active', path }` to sync the active note (future)
   - `{ type: 'close' }` to programmatically close the popout
 
@@ -703,7 +703,7 @@ Common find-and-replace patterns:
 | Bare `<select>` | `<Select options={[…]} />` |
 | `<input type="checkbox">` + manual label | `<Checkbox label />` |
 | Custom `pxswitch` toggle | `<Toggle label checked onChange />` |
-| Manual `setStatusMsg(…)` + auto-dismiss effect | `useToast().info(…)` or `window.openclawToast.info(…)` |
+| Manual `setStatusMsg(…)` + auto-dismiss effect | `useToast().info(…)` or `window.cafresohqToast.info(…)` |
 | Inline-styled tabs (3+ buttons + active class) | `<Tabs value onChange items={…}>` |
 | Hand-rolled card divs | `<Card variant header footer>` |
 | Per-view keyboard shortcuts | `useCommands([{ id, label, run }, …], deps)` — discoverable via Cmd-K |
@@ -711,7 +711,7 @@ Common find-and-replace patterns:
 | Floating receipts tray + ad-hoc bottom-right widgets | `<NotificationBell>` + `<NotificationCenter>` |
 | Single-color palette baked into components | `--paper` / `--ink` / `--accent-*` tokens — auto-respond to `body.theme-*` |
 | Bookmarking layouts via screenshot/notes | `Save current state as workspace…` → palette command applies it cleanly |
-| `event.dispatchEvent('openclaw:agentActivity', …)` rendered as one-off pulses | Now also fed automatically into `<NotificationCenter>` and `<AgentInbox>` |
+| `event.dispatchEvent('cafresohq:agentActivity', …)` rendered as one-off pulses | Now also fed automatically into `<NotificationCenter>` and `<AgentInbox>` |
 
 ---
 
@@ -743,7 +743,7 @@ Common find-and-replace patterns:
 - ✅ Built input primitives: `<TextField>`, `<TextArea>` (with mono variant for code), `<Select>`, `<Checkbox>`, `<Toggle>`, `<SearchField>` — all sharing label/hint/error structure via `<Field>`
 - ✅ Universal **focus ring** for all inputs (2px `--accent-sun` outline) — first time the app has had consistent focus styling
 - ✅ Built `<Tabs>` + `<Tab>` with 3 variants (default / underline / pill), arrow-key nav, badge support, items-array shorthand
-- ✅ Built **toast system** — `<ToastProvider>` + `useToast()` hook + imperative `window.openclawToast` escape hatch
+- ✅ Built **toast system** — `<ToastProvider>` + `useToast()` hook + imperative `window.cafresohqToast` escape hatch
 - ✅ 5 toast kinds (info/success/warn/error/action) with color-coded left borders, countdown progress bar, auto-dismiss queue (max 3 visible), action buttons
 - ✅ Wired `<ToastProvider>` at app root
 - ✅ Migrated Vault Graph's local `statusMsg` system to global toasts (kept the existing `setStatusMsg` shape so 24+ call sites didn't need rewrites — adapter delegates to the new toast queue)
@@ -751,7 +751,7 @@ Common find-and-replace patterns:
 
 ### Session 3 — 2026-05-01
 
-- ✅ Built **global Command Palette** — `<CommandPaletteProvider>` + `useCommands()` hook + `window.openclawPalette` escape hatch
+- ✅ Built **global Command Palette** — `<CommandPaletteProvider>` + `useCommands()` hook + `window.cafresohqPalette` escape hatch
 - ✅ Cmd/Ctrl-K shortcut from anywhere · arrow-key + Enter run · Esc close · backdrop click closes · auto-grouped sections · fuzzy ranking
 - ✅ 23 built-in commands across Navigation / Actions / Toggles / Density / Help sections
 - ✅ Added **density modes** — Comfortable (default) / Compact / Spacious — token-multiplier overrides on the body class. Persists. Toggle via palette.
@@ -767,6 +767,6 @@ Common find-and-replace patterns:
 - ✅ Added **4 theme variants** — Sepia · Solarized · Dracula · High contrast. Pure CSS class swaps on `body.theme-*` overriding all color/tag tokens. Each ~30 lines.
 - ✅ Built **Workspaces** system — built-in (Coding, Research, Standup, Reading) + user-saved layouts. Each workspace captures `{ activeView, railCollapsed, chatWinOpen, density, theme, night }`. Switchable via palette in one diff.
 - ✅ **Drag-drop folder → Projects** with visual dashed-outline feedback during dragover. Browser security limits absolute paths — drop suggests folder name, user confirms path. `+ ADD` button mirrors the same flow.
-- ✅ Built **`<AgentInbox>`** — live per-agent activity stream in Team view. Filter chips by agent. Click rows to dispatch `openclaw:openNote`. Toggleable via 📥 INBOX header button or the per-card icon.
-- ✅ Implemented **Popout Vault Graph** — `?popout=graph` URL flag triggers a separate React tree in a new window. Two-way sync via `BroadcastChannel('openclaw-graph')`. Popout-of-popout prevented via `window.opener` check.
+- ✅ Built **`<AgentInbox>`** — live per-agent activity stream in Team view. Filter chips by agent. Click rows to dispatch `cafresohq:openNote`. Toggleable via 📥 INBOX header button or the per-card icon.
+- ✅ Implemented **Popout Vault Graph** — `?popout=graph` URL flag triggers a separate React tree in a new window. Two-way sync via `BroadcastChannel('cafresohq-graph')`. Popout-of-popout prevented via `window.opener` check.
 - ✅ Smoke test passed: 32 palette commands registered (up from 23) across 7 sections (now including Theme + Workspaces). Dracula applied via palette → `--paper: #282a36`, `--ink: #f8f8f2`. Coding workspace applied → rail collapsed + density compact. `+ ADD`, `📥 INBOX`, `🪟 POP OUT` buttons all confirmed in the rendered DOM.

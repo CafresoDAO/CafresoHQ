@@ -5,7 +5,7 @@ DFX_VER=0.24.3
 V="$HOME/.cache/dfinity/versions/$DFX_VER"
 MOC="$V/moc"
 BASE="$V/base"
-TARGET="$REPO_ROOT/src/cafresoai_keys/main.mo"
+TARGET="$REPO_ROOT/src/cafresohq_keys/main.mo"
 echo "moc: $MOC"
 echo "base: $BASE"
 echo "target: $TARGET"

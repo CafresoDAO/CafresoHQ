@@ -1,4 +1,4 @@
-# ── CafresoAI — Multi-platform Docker build + push ───────────────────────────
+# ── CafresoHQ — Multi-platform Docker build + push ───────────────────────────
 # Builds a fat manifest covering linux/amd64 + linux/arm64 so the image runs
 # natively on x86-64 Linux servers, OCI Fleet nodes, AND Apple Silicon Macs
 # without any "platform mismatch" warning or QEMU emulation penalty.

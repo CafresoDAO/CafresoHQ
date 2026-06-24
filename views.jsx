@@ -1,5 +1,5 @@
 ﻿/* ==========================================================================
-   CafresoAI — main-area views (one per sidebar item)
+   CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
    ========================================================================== */
 
@@ -39,7 +39,7 @@ function hexToRgb(hex) {
     b: parseInt(result[3], 16),
   };
 }
-const { TaskBoard } = window.OpenclawV2;
+const { TaskBoard } = window.CafresoHQV2;
 
 const VIEW_LABELS = {
   visual:    'AGENT OFFICE',
@@ -108,7 +108,7 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
     <div className="view-memory">
       <div className="section-title">
         📁 LONG-TERM MEMORY
-        <span className="tag">{memory.length} entries · folded into every prompt CafresoAI and the team see</span>
+        <span className="tag">{memory.length} entries · folded into every prompt CafresoHQ and the team see</span>
       </div>
       <div className="view-toolbar">
         <div className="memtag-row">
@@ -152,10 +152,10 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
 }
 
 /* ---------------- Team grid ---------------- */
-/* AgentInbox — per-agent activity stream collected from openclaw:agentActivity
+/* AgentInbox — per-agent activity stream collected from cafresohq:agentActivity
    events fired by the agent_runner shim. Listens globally and groups by agent.
    Shows the most recent ~50 events per agent. Click a row → fires
-   openclaw:openNote so the vault opens that note in the active view.
+   cafresohq:openNote so the vault opens that note in the active view.
    Optionally filterable to a single agent (when selectedAgentId is set). */
 /* Action → icon for the inbox rows. */
 const ACT_ICON = {
@@ -209,10 +209,10 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     setExpandedId(prev => prev === e.id ? null : e.id);
     if (e.priority === 'attention' && e.unread && onMarkRead) onMarkRead(e.id);
     if (e.action === 'vault' && e.nodeId)
-      window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: e.nodeId } }));
+      window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: e.nodeId } }));
   };
   const openChat = () => {
-    if (window.openclawSetChatOpen) window.openclawSetChatOpen(true);
+    if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
   };
 
   const TABS = [
@@ -316,7 +316,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                     <div className="oc-act-jumps">
                       {e.action === 'failed' && onRetry && <button className="px-btn primary" onClick={() => onRetry(e)}>↻ Retry</button>}
                       {e.taskId && onOpenTasks && <button className="px-btn ghost" onClick={onOpenTasks}>Open task board →</button>}
-                      {e.nodeId && <button className="px-btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('openclaw:openNote', { detail: { path: e.nodeId } }))}>Open note →</button>}
+                      {e.nodeId && <button className="px-btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: e.nodeId } }))}>Open note →</button>}
                       <button className="px-btn ghost" onClick={openChat}>Open chat →</button>
                     </div>
                   </div>
@@ -337,8 +337,8 @@ function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowC
   // The office attention pill / nav badge fires this to force the inbox open.
   React.useEffect(() => {
     const open = () => setShowInbox(true);
-    window.addEventListener('openclaw:openAgentInbox', open);
-    return () => window.removeEventListener('openclaw:openAgentInbox', open);
+    window.addEventListener('cafresohq:openAgentInbox', open);
+    return () => window.removeEventListener('cafresohq:openAgentInbox', open);
   }, []);
 
   return (
@@ -355,7 +355,7 @@ function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowC
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onShowCEO(); } }}
           title="Open the CEO panel"
         >
-          <div className="team-ceo-sprite"><Sprite data="openclaw" scale={3} className="bob"/></div>
+          <div className="team-ceo-sprite"><Sprite data="cafresohq" scale={3} className="bob"/></div>
           <div className="team-ceo-info">
             <div className="team-ceo-name">CafresoHQ-CEO</div>
             <div className="team-ceo-role">Orchestrator · routes work · 1:1s available</div>
@@ -630,17 +630,17 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       return;
     }
     try {
-      const s = await window.OpenclawClient.vaultStatus();
+      const s = await window.CafresoHQClient.vaultStatus();
       setStatus(s);
       if (!s.configured) { setFiles([]); return; }
       try {
-        setFiles(await window.OpenclawClient.vaultList());
+        setFiles(await window.CafresoHQClient.vaultList());
       } catch (e) {
         setFiles([]);
         setErr(e.message || 'Could not list vault notes.');
       }
     } catch (e) {
-      const message = e.message || 'CafresoAI bridge is not reachable.';
+      const message = e.message || 'CafresoHQ bridge is not reachable.';
       setFiles([]);
       setStatus({ configured: false, unavailable: true, error: message });
       setErr(message);
@@ -664,8 +664,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   React.useEffect(() => {
     const handler = (e) => { if (e.detail && e.detail.path) openByPath(e.detail.path); };
-    window.addEventListener('openclaw:openNote', handler);
-    return () => window.removeEventListener('openclaw:openNote', handler);
+    window.addEventListener('cafresohq:openNote', handler);
+    return () => window.removeEventListener('cafresohq:openNote', handler);
   }, []);
 
   // Esc closes the open note (so the graph can re-expand to fullspan).
@@ -684,7 +684,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const search = async () => {
     if (!q.trim()) { setHits(null); return; }
-    try { setHits(await window.OpenclawClient.vaultSearch(q.trim())); }
+    try { setHits(await window.CafresoHQClient.vaultSearch(q.trim())); }
     catch (e) { setErr(e.message); setHits([]); }
   };
 
@@ -708,7 +708,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         if (!id) throw new Error('File not found in vault index: ' + path);
         text = await _bridge.read(id);
       } else {
-        text = await window.OpenclawClient.vaultRead(path);
+        text = await window.CafresoHQClient.vaultRead(path);
       }
       setOpenNote({ path, id: _pathToId.current[path] || null, content: text, dirty: false });
       if (_isMobileV) setVaultTab('editor');
@@ -741,7 +741,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           setOpenNote(n => (n && n.path === note.path ? { ...n, id: meta.id } : n));
         }
       } else {
-        await window.OpenclawClient.vaultWrite(note.path, note.content, 'write');
+        await window.CafresoHQClient.vaultWrite(note.path, note.content, 'write');
       }
       // Clear dirty only if nothing was typed while the save was in flight.
       setOpenNote(n => (n && n.path === note.path && n.content === note.content)
@@ -787,7 +787,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!list.length) return;
     setBusy(true);
     try {
-      const r = await window.OpenclawClient.vaultUpload(list);
+      const r = await window.CafresoHQClient.vaultUpload(list);
       await refresh();
       if (r && r.failed && r.failed.length) {
         alert(`Uploaded ${r.count}, failed ${r.failed.length}:\n` +
@@ -803,7 +803,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!to || to.trim() === n.path) return;
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
-      await window.OpenclawClient.vaultRename(n.path, to.trim());
+      await window.CafresoHQClient.vaultRename(n.path, to.trim());
       setOpenNote(o => o ? { ...o, path: to.trim() } : o);
       await refresh();
     } catch (e) { alert('Rename failed: ' + e.message); }
@@ -813,7 +813,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!n) return;
     if (!window.confirm(`Delete "${n.path}"? This cannot be undone.`)) return;
     try {
-      await window.OpenclawClient.vaultDelete(n.path);
+      await window.CafresoHQClient.vaultDelete(n.path);
       setSaveState('');
       setOpenNote(null);
       await refresh();
@@ -830,7 +830,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openInObsidian = async () => {
     if (!openNote) return;
-    try { await window.OpenclawClient.vaultOpenInObsidian(openNote.path); }
+    try { await window.CafresoHQClient.vaultOpenInObsidian(openNote.path); }
     catch (e) { alert('Could not open in Obsidian: ' + e.message); }
   };
 
@@ -1092,7 +1092,7 @@ const DEFAULT_SETTINGS = {
   colorEdgesByType: false,
 };
 
-const GRAPH_PREFS_KEY = 'openclaw:graph:prefs';
+const GRAPH_PREFS_KEY = 'cafresohq:graph:prefs';
 
 function loadGraphPrefs() {
   try {
@@ -1122,7 +1122,7 @@ const CONCEPT_NOTE_CAP = 120;
 /* InfraNodus-grade WebGL graph view (sigma.js + graphology via
    window.CafresoGraphEngine). Replaces the legacy Canvas-2D renderer below.
    Keeps the external contract: props {onOpenNote, embedded, activePath,
-   onMinimize, agents}, the window.OpenclawGraph API, and the popout. Adds an
+   onMinimize, agents}, the window.CafresoHQGraph API, and the popout. Adds an
    analytics side panel (communities, betweenness, structure, gaps) and a second
    data source — a concept co-occurrence map (window.CafresoCooccur) — that drops
    into the same engine/analytics/publish path. */
@@ -1208,7 +1208,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
   // Pull note bodies for the concept map (scoped + capped to bound the fetches).
   const loadConceptDocs = async () => {
-    const all = await window.OpenclawClient.vaultList();
+    const all = await window.CafresoHQClient.vaultList();
     let files = (all || []).filter((f) => /\.md$/i.test(f.path || ''));
     const sc = scopeRef.current;
     if (sc && sc !== '__all__') files = files.filter((f) => f.path === sc || f.path.startsWith(sc.replace(/\/$/, '') + '/'));
@@ -1217,7 +1217,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     const CONC = 6;
     for (let i = 0; i < files.length; i += CONC) {
       const got = await Promise.all(files.slice(i, i + CONC).map(async (f) => {
-        try { return { id: f.path, title: f.title || titleFor(f.path), text: await window.OpenclawClient.vaultRead(f.path) }; }
+        try { return { id: f.path, title: f.title || titleFor(f.path), text: await window.CafresoHQClient.vaultRead(f.path) }; }
         catch (_) { return null; }
       }));
       for (const d of got) if (d) docs.push(d);
@@ -1235,7 +1235,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       return built;
     }
     setConceptMeta(null);
-    return await window.OpenclawClient.vaultGraph();
+    return await window.CafresoHQClient.vaultGraph();
   };
 
   // (Re)mount the engine on fresh data, re-applying controls a remount drops.
@@ -1268,7 +1268,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         const eng = mountData(g);
         setLoading(false);
         if (!eng) return;
-        window.OpenclawGraph = {
+        window.CafresoHQGraph = {
           _lastGraph: g,
           pulse: (id) => { try { engineRef.current && engineRef.current.focusNode(id); } catch (_) {} },
           refresh: async () => {
@@ -1276,7 +1276,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
               const g2 = await loadData();
               if (!containerRef.current) return;
               const e2 = mountData(g2);
-              if (e2) window.OpenclawGraph._lastGraph = g2;
+              if (e2) window.CafresoHQGraph._lastGraph = g2;
             } catch (_) {}
           },
         };
@@ -1290,7 +1290,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     let cancelled = false;
     (async () => {
       try {
-        const all = await window.OpenclawClient.vaultList();
+        const all = await window.CafresoHQClient.vaultList();
         if (cancelled) return;
         const set = new Set();
         for (const f of all || []) { const i = (f.path || '').indexOf('/'); if (i > 0) set.add(f.path.slice(0, i)); }
@@ -1303,7 +1303,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   // Destroy the engine on unmount.
   React.useEffect(() => () => {
     try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
-    if (window.OpenclawGraph) { try { delete window.OpenclawGraph; } catch (_) {} }
+    if (window.CafresoHQGraph) { try { delete window.CafresoHQGraph; } catch (_) {} }
   }, []);
 
   // Control → engine wiring.
@@ -1351,7 +1351,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         setShareUrl(full);
         try { await navigator.clipboard.writeText(full); } catch (_) {}
         // Onboarding: mark "publish your first graph" complete.
-        try { localStorage.setItem('openclaw_hq_v1:publishedGraph', '1'); window.dispatchEvent(new CustomEvent('openclaw:graph-published')); } catch (_) {}
+        try { localStorage.setItem('cafresohq_hq_v1:publishedGraph', '1'); window.dispatchEvent(new CustomEvent('cafresohq:graph-published')); } catch (_) {}
       }
     } catch (err) { console.warn('publish graph:', err); }
     finally { setSharing(false); }
@@ -1397,7 +1397,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
             [['global', 'Whole graph'], ['1', '1 hop'], ['2', '2 hops'], ['3', '3 hops']].map(([v, l]) => React.createElement('option', { key: v, value: v }, l))),
       React.createElement('button', { onClick: () => setEdgesHover((v) => !v), title: edgesHover ? 'Edges appear on hover' : 'Edges always visible — click to calm', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto', ...(edgesHover ? { color: '#F5D25D', borderColor: 'rgba(245,210,93,0.55)' } : {}) } }, edgesHover ? 'Edges: hover' : 'Edges: on'),
       source === 'concepts'
-        ? React.createElement('button', { onClick: () => { const a = window.OpenclawGraph; if (a && a.refresh) a.refresh(); }, title: 'Re-read notes and rebuild the concept map', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Rebuild')
+        ? React.createElement('button', { onClick: () => { const a = window.CafresoHQGraph; if (a && a.refresh) a.refresh(); }, title: 'Re-read notes and rebuild the concept map', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Rebuild')
         : React.createElement('button', { onClick: () => { const e = engineRef.current; if (e) e.refreshLayout(); }, title: 'Re-run layout', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Layout'),
       React.createElement('button', { onClick: publish, title: 'Publish a shareable public graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, sharing ? 'Publishing…' : '⤴ Share'),
       React.createElement('div', { style: { flex: 1 } }),
@@ -1524,7 +1524,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
      translates them into the new toast queue. */
   const setStatusMsg = React.useCallback((msg) => {
     if (!msg) return;
-    const toast = window.openclawToast;
+    const toast = window.cafresohqToast;
     if (!toast) return;
     const k = msg.kind || 'info';
     if (k === 'error')      toast.error(msg.text, { detail: msg.detail });
@@ -1719,7 +1719,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
   React.useEffect(() => {
     const fetchGraph = async () => {
       try {
-        const g = await window.OpenclawClient.vaultGraph();
+        const g = await window.CafresoHQClient.vaultGraph();
         const r = Math.max(120, 30 + Math.sqrt(g.nodes.length) * 40);
         const wantZ = !!state.is3D;
         const nodes = g.nodes.map((n, i) => {
@@ -1775,7 +1775,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
           setTimeout(runGhostEdges, 250);
         }
         // Cache the raw graph payload for the agent runner shim.
-        if (window.OpenclawGraph) window.OpenclawGraph._lastGraph = g;
+        if (window.CafresoHQGraph) window.CafresoHQGraph._lastGraph = g;
         centeredOnRef.current = null; // allow re-centering on the active note when data lands
         // Hold the seed circle layout for ~1.4s, then ease physics in slowly
         // over ~2.4s so nodes drift into place rather than snapping.
@@ -1789,7 +1789,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
   }, []);
 
   React.useEffect(() => {
-    window.OpenclawGraph = {
+    window.CafresoHQGraph = {
       pulse: (nodeId) => {
         for (const edge of state.edges) {
           if (edge.source === nodeId || edge.target === nodeId) {
@@ -1800,7 +1800,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
       },
       refresh: async () => {
         try {
-          const g = await window.OpenclawClient.vaultGraph();
+          const g = await window.CafresoHQClient.vaultGraph();
           const r = 200;
           const nodes = g.nodes.map((n, i) => {
             const angle = (i / Math.max(1, g.nodes.length)) * Math.PI * 2;
@@ -1815,7 +1815,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         } catch (e) {}
       },
     };
-    return () => { delete window.OpenclawGraph; };
+    return () => { delete window.CafresoHQGraph; };
   }, []);
 
   React.useEffect(() => {
@@ -1860,7 +1860,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
       compareSet, compareDepth, showGhostEdges, ghostEdgesReady, is3D]);
 
   /* Live agent activity overlay. The rest of the app dispatches:
-       window.dispatchEvent(new CustomEvent('openclaw:agentActivity', {
+       window.dispatchEvent(new CustomEvent('cafresohq:agentActivity', {
          detail: { nodeId, agentId, agentName, color, kind: 'read'|'write'|'link', linkTo? }
        }))
      We track the recent activity per node so render() can draw avatars/pulses. */
@@ -1877,12 +1877,12 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         until: Date.now() + 5000,
       });
       // Trigger pulses for write/link too.
-      if ((d.kind === 'write' || d.kind === 'link') && window.OpenclawGraph) {
-        window.OpenclawGraph.pulse(d.nodeId);
+      if ((d.kind === 'write' || d.kind === 'link') && window.CafresoHQGraph) {
+        window.CafresoHQGraph.pulse(d.nodeId);
       }
       setActivityTick(t => t + 1);
     };
-    window.addEventListener('openclaw:agentActivity', handler);
+    window.addEventListener('cafresohq:agentActivity', handler);
     // Sweeper — drop expired entries and bump tick at ~12fps while activity
     // exists so the halo pulse keeps animating.
     const sweep = setInterval(() => {
@@ -1902,11 +1902,11 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         setClusterLabels(prev => ({ ...prev, ...norm }));
       }
     };
-    window.addEventListener('openclaw:clusterLabelsResolved', labelHandler);
+    window.addEventListener('cafresohq:clusterLabelsResolved', labelHandler);
 
     return () => {
-      window.removeEventListener('openclaw:agentActivity', handler);
-      window.removeEventListener('openclaw:clusterLabelsResolved', labelHandler);
+      window.removeEventListener('cafresohq:agentActivity', handler);
+      window.removeEventListener('cafresohq:clusterLabelsResolved', labelHandler);
       clearInterval(sweep);
     };
   }, []);
@@ -1927,7 +1927,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
       let content = cache.get(hover);
       if (content === undefined) {
         try {
-          content = await window.OpenclawClient.vaultRead(hover);
+          content = await window.CafresoHQClient.vaultRead(hover);
         } catch (_) { content = null; }
         cache.set(hover, content);
       }
@@ -1985,7 +1985,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     setClusterLabels(labels);
     // Also dispatch for an LLM agent to refine (the app can listen and
     // overwrite later with smarter labels).
-    const ev = new CustomEvent('openclaw:agentAction', {
+    const ev = new CustomEvent('cafresohq:agentAction', {
       detail: {
         kind: 'labelClusters',
         clusters: buckets.map((members, idx) => ({
@@ -2012,7 +2012,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     clearSelection();
   };
   const sendSelectionToAgent = (agent) => {
-    const ev = new CustomEvent('openclaw:agentAction', {
+    const ev = new CustomEvent('cafresohq:agentAction', {
       detail: {
         kind: 'batchMission',
         nodeIds: [...selectedSet],
@@ -2078,7 +2078,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
   /* Agent actions — dispatched as CustomEvents so the rest of the app can hook
      in. Summaries request chat responses instead of writing Markdown files. */
   const dispatchAgentAction = (kind, payload) => {
-    const ev = new CustomEvent('openclaw:agentAction', { detail: { kind, ...payload } });
+    const ev = new CustomEvent('cafresohq:agentAction', { detail: { kind, ...payload } });
     window.dispatchEvent(ev);
   };
 
@@ -2086,7 +2086,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     setContextMenu(null);
     setStatusMsg({ text: `Reading ${node.id}…`, kind: 'info' });
     try {
-      const own = await window.OpenclawClient.vaultRead(node.id);
+      const own = await window.CafresoHQClient.vaultRead(node.id);
       let neighbors = [];
       if (includeNeighbors) {
         for (const e of state.edges) {
@@ -2097,7 +2097,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         neighbors = [...new Set(neighbors)];
       }
       const neighborContents = await Promise.all(neighbors.slice(0, 8).map(async id => {
-        try { return { id, body: await window.OpenclawClient.vaultRead(id) }; }
+        try { return { id, body: await window.CafresoHQClient.vaultRead(id) }; }
         catch (_) { return null; }
       }));
       // Dispatch event for app-level runner. The runner will answer in the
@@ -2109,7 +2109,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         neighbors: neighborContents.filter(Boolean),
       });
       setStatusMsg({ text: 'Summarizing in chat…', kind: 'info' });
-      if (window.openclawSetChatOpen) window.openclawSetChatOpen(true);
+      if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
     } catch (err) {
       setStatusMsg({ text: 'Summarize failed: ' + err.message, kind: 'error' });
     }
@@ -2133,9 +2133,9 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     const path = `05-Projects/GraphView Tasks/${title}-task.md`;
     const body = `---\ntype: task\nsource: "[[${node.id}]]"\nstatus: proposed\ncreated: ${new Date().toISOString()}\n---\n\n# Task: Improve ${title}\n\n## Source\n[[${node.id}]]\n\n## Goal\nUse this graph node as context and define the next concrete implementation step.\n\n## Acceptance Criteria\n- [ ] Explain why this task exists\n- [ ] Link supporting research or decisions\n- [ ] Define a testable done state\n`;
     try {
-      await window.OpenclawClient.vaultWrite(path, body, 'write');
+      await window.CafresoHQClient.vaultWrite(path, body, 'write');
       setStatusMsg({ text: `Created task · ${path}`, kind: 'success' });
-      if (window.OpenclawGraph && window.OpenclawGraph.refresh) window.OpenclawGraph.refresh();
+      if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) window.CafresoHQGraph.refresh();
     } catch (err) { setStatusMsg({ text: 'Task creation failed: ' + err.message, kind: 'error' }); }
   };
 
@@ -2145,9 +2145,9 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     const path = `Research/Graphviewupdate/Proposals/${title}-proposal.md`;
     const body = `---\ntype: proposal\nsource: "[[${node.id}]]"\nstatus: draft\ncreated: ${new Date().toISOString()}\n---\n\n# Proposal: ${title}\n\n## Research / Source\n[[${node.id}]]\n\n## Insight\nWhat does this source teach us?\n\n## Proposed GraphView Behavior\nWhat should change in the UI or workflow?\n\n## Implementation Task\nWhat concrete task should be created?\n\n## Acceptance Criteria\n- [ ] User can understand why this exists\n- [ ] Behavior is visible in GraphView\n- [ ] Provenance is preserved\n`;
     try {
-      await window.OpenclawClient.vaultWrite(path, body, 'write');
+      await window.CafresoHQClient.vaultWrite(path, body, 'write');
       setStatusMsg({ text: `Created proposal · ${path}`, kind: 'success' });
-      if (window.OpenclawGraph && window.OpenclawGraph.refresh) window.OpenclawGraph.refresh();
+      if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) window.CafresoHQGraph.refresh();
     } catch (err) { setStatusMsg({ text: 'Proposal creation failed: ' + err.message, kind: 'error' }); }
   };
 
@@ -2324,14 +2324,14 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
       setLinkDrag(null);
       if (target && target.id !== fromId) {
         try {
-          const body = await window.OpenclawClient.vaultRead(fromId);
+          const body = await window.CafresoHQClient.vaultRead(fromId);
           // Prevent duplicate links.
           const linkText = `[[${target.title || target.id.replace(/\.md$/, '')}]]`;
           if (!body.includes(linkText)) {
             const newBody = body.replace(/\s*$/, '\n\n') + linkText + '\n';
-            await window.OpenclawClient.vaultWrite(fromId, newBody, 'write');
+            await window.CafresoHQClient.vaultWrite(fromId, newBody, 'write');
             setStatusMsg({ text: `Linked → ${target.title || target.id}`, kind: 'info' });
-            if (window.OpenclawGraph && window.OpenclawGraph.refresh) window.OpenclawGraph.refresh();
+            if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) window.CafresoHQGraph.refresh();
           } else {
             setStatusMsg({ text: 'Link already exists', kind: 'warn' });
           }
@@ -2406,13 +2406,13 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
         if (a && b && window.confirm(`Add link from "${a.title || a.id}" to "${b.title || b.id}"? (similarity ${(best.score*100).toFixed(0)}%)`)) {
           (async () => {
             try {
-              const body = await window.OpenclawClient.vaultRead(a.id);
+              const body = await window.CafresoHQClient.vaultRead(a.id);
               const linkText = `[[${b.title || b.id.replace(/\.md$/,'')}]]`;
               if (!body.includes(linkText)) {
                 const newBody = body.replace(/\s*$/, '\n\n') + linkText + '\n';
-                await window.OpenclawClient.vaultWrite(a.id, newBody, 'write');
+                await window.CafresoHQClient.vaultWrite(a.id, newBody, 'write');
                 setStatusMsg({ text: `Linked → ${b.title || b.id}`, kind: 'info' });
-                if (window.OpenclawGraph && window.OpenclawGraph.refresh) window.OpenclawGraph.refresh();
+                if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) window.CafresoHQGraph.refresh();
               }
             } catch (err) {
               setStatusMsg({ text: 'Link failed: ' + err.message, kind: 'error' });
@@ -2448,11 +2448,11 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     const path = name.endsWith('.md') ? name : name + '.md';
     try {
       const title = path.split('/').pop().replace(/\.md$/, '');
-      await window.OpenclawClient.vaultWrite(path, `# ${title}\n\n`, 'write');
+      await window.CafresoHQClient.vaultWrite(path, `# ${title}\n\n`, 'write');
       setStatusMsg({ text: `Created ${path}`, kind: 'info' });
       // Refresh graph data; the new node will appear at the canvas-center coords.
-      if (window.OpenclawGraph && window.OpenclawGraph.refresh) {
-        await window.OpenclawGraph.refresh();
+      if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) {
+        await window.CafresoHQGraph.refresh();
       }
       // Place it near the click point so it's visible immediately.
       setTimeout(() => {
@@ -2521,7 +2521,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
   const showAllHidden = () => setHiddenIds(new Set());
 
   const openNodeInObsidian = async (node) => {
-    try { await window.OpenclawClient.vaultOpenInObsidian(node.id); }
+    try { await window.CafresoHQClient.vaultOpenInObsidian(node.id); }
     catch (e) { /* swallow */ }
     setContextMenu(null);
   };
@@ -2759,14 +2759,14 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
             <button
               onClick={() => {
                 /* Open the popout window — same origin, popout=graph flag.
-                   The popout listens on BroadcastChannel('openclaw-graph')
+                   The popout listens on BroadcastChannel('cafresohq-graph')
                    so click sync works in both directions. */
                 const url = window.location.pathname + '?popout=graph';
-                const w = window.open(url, 'openclawGraphPopout', 'width=900,height=700,menubar=no,toolbar=no');
+                const w = window.open(url, 'cafresohqGraphPopout', 'width=900,height=700,menubar=no,toolbar=no');
                 if (w) {
-                  if (window.openclawToast) window.openclawToast.success('Graph popped out · drag to your second monitor');
+                  if (window.cafresohqToast) window.cafresohqToast.success('Graph popped out · drag to your second monitor');
                 } else {
-                  if (window.openclawToast) window.openclawToast.warn('Popup blocked — allow popups for this site');
+                  if (window.cafresohqToast) window.cafresohqToast.warn('Popup blocked — allow popups for this site');
                 }
               }}
               style={{flex:1,fontSize:10,padding:'4px 6px',border:'1px solid var(--rule)',borderRadius:3,background:'var(--paper-2)',color:'var(--ink)',cursor:'pointer'}}
@@ -3324,7 +3324,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
     { label: 'Clear filter',   run: () => setFilter('') },
     { label: 'Clear shortest path', run: () => { setShortestPath(null); setPathEndpoints([]); } },
     { label: 'Show all hidden nodes', run: () => setHiddenIds(new Set()) },
-    { label: 'Refresh graph data', run: () => window.OpenclawGraph && window.OpenclawGraph.refresh && window.OpenclawGraph.refresh() },
+    { label: 'Refresh graph data', run: () => window.CafresoHQGraph && window.CafresoHQGraph.refresh && window.CafresoHQGraph.refresh() },
     ...savedViews.map(v => ({ label: `View: ${v.name}`, run: () => applyView(v) })),
   ];
   const filteredCmds = paletteQuery.trim()
@@ -3384,7 +3384,7 @@ function GraphViewLegacy({ onOpenNote, embedded = false, activePath = null, onMi
   );
 
   /* Local status toast removed in Session 2 — graph statuses now go through
-     the global ToastProvider via window.openclawToast (see setStatusMsg above). */
+     the global ToastProvider via window.cafresohqToast (see setStatusMsg above). */
   const statusToastJsx = null;
 
   /* Multi-select action bar — appears bottom-center when ≥1 node is lasso'd. */
@@ -4998,14 +4998,14 @@ function LocalTree({ path, onSelectFile }) {
     if (!path) return;
     setLoading(true);
     setErr(null);
-    window.OpenclawClient.toolExec('DIR_LIST', path)
+    window.CafresoHQClient.toolExec('DIR_LIST', path)
       .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
       .catch(e => { setErr(e.message || String(e)); setLoading(false); });
   }, [path]);
 
   const loadSub = (subPath) => {
     if (subEntries[subPath]) return;
-    window.OpenclawClient.toolExec('DIR_LIST', subPath)
+    window.CafresoHQClient.toolExec('DIR_LIST', subPath)
       .then(text => { setSubEntries(prev => ({ ...prev, [subPath]: parseDirEntries(text, subPath) })); })
       .catch(() => { setSubEntries(prev => ({ ...prev, [subPath]: [] })); });
   };
@@ -5354,7 +5354,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       // The server waits up to 2 s for this frame before spawning the PTY;
       // sending it right away eliminates the 2-second blank-screen delay.
       ws.onopen = async () => {
-        const oc = window.OpenclawClient;
+        const oc = window.CafresoHQClient;
         let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
           ak = await oc.getAgentKey('anthropic').catch(() => '');
@@ -5498,7 +5498,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
      context. msgs are the visible chat history; the backend gets sessionId in
      the request so the orchestrator can attach long-running context too. */
   const pid = project?.id || project?.path || '';
-  const sKey = (suffix) => pid && sessionId ? `openclaw_terminal:${suffix}:${pid}:${sessionId}` : null;
+  const sKey = (suffix) => pid && sessionId ? `cafresohq_terminal:${suffix}:${pid}:${sessionId}` : null;
 
   /* Every CLI is now dual-mode: a conversational Chat view and the raw PTY.
      - claude / codex / gemini stream Chat via their CLI's non-interactive
@@ -5527,7 +5527,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const ctrlRef   = React.useRef(null);
 
   React.useEffect(() => {
-    const oc = window.OpenclawClient;
+    const oc = window.CafresoHQClient;
     if (!oc || !oc.hasAgentKey) return;
     setKeyStored({
       anthropic: oc.hasAgentKey('anthropic'),
@@ -5594,7 +5594,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         // Hermes Chat streams through its always-on OpenAI-compatible gateway
         // (/hermes/v1/chat/completions). Model is server-configured; passing the
         // 'hermes:' prefix forces the provider without overriding the model.
-        await window.OpenclawClient.stream({
+        await window.CafresoHQClient.stream({
           model: model.trim() ? 'hermes:' + model.trim() : 'hermes:',
           messages: wireMessages,
           signal: ctrl.signal,
@@ -5603,7 +5603,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
       } else {
         // claude / codex / gemini → the CLI's non-interactive mode, scoped to
         // the project dir, using the CLI's own login (subscription) or BYOK.
-        await window.OpenclawClient.terminalStream({
+        await window.CafresoHQClient.terminalStream({
           messages: wireMessages,
           cli,
           cwd: project.path,
@@ -5631,7 +5631,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const clear = () => { setMsgs([]); setErr(null); };
 
   const launchTerminal = async () => {
-    const oc = window.OpenclawClient;
+    const oc = window.CafresoHQClient;
     if (!oc || !oc.spawnTerminal) return;
     setSpawnMsg(''); setErr(null);
     try {
@@ -5643,7 +5643,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   };
 
   const saveKey = async () => {
-    const oc = window.OpenclawClient;
+    const oc = window.CafresoHQClient;
     if (!oc || !oc.setAgentKey) return;
     await oc.setAgentKey(provider, keyInput.trim());
     setKeyStored(prev => ({ ...prev, [provider]: !!keyInput.trim() }));
@@ -5652,7 +5652,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   };
 
   const clearKey = async () => {
-    const oc = window.OpenclawClient;
+    const oc = window.CafresoHQClient;
     if (!oc || !oc.setAgentKey) return;
     await oc.setAgentKey(provider, '');
     setKeyStored(prev => ({ ...prev, [provider]: false }));
@@ -6020,8 +6020,8 @@ function ProjectTerminal({ project, visible }) {
      wipe the user's terminal tabs. Keyed on project.id; if the project has no
      id (shouldn't happen but be defensive) we fall back to in-memory only. */
   const pid = project?.id || project?.path || null;
-  const sessKey = pid ? `openclaw_terminal:sessions:${pid}` : null;
-  const activeKey = pid ? `openclaw_terminal:active:${pid}` : null;
+  const sessKey = pid ? `cafresohq_terminal:sessions:${pid}` : null;
+  const activeKey = pid ? `cafresohq_terminal:active:${pid}` : null;
 
   const [sessions, setSessions] = useStoredV(sessKey, () => {
     const id = `s${++_sessionCounter}`;
@@ -6103,7 +6103,7 @@ function ProjectTerminal({ project, visible }) {
     if (closing && pid) {
       try {
         ['mode', 'msgs', 'model', 'auth'].forEach(suffix => {
-          localStorage.removeItem(`openclaw_terminal:${suffix}:${pid}:${closing.sessionId}`);
+          localStorage.removeItem(`cafresohq_terminal:${suffix}:${pid}:${closing.sessionId}`);
         });
       } catch (_e) {}
     }
@@ -6312,7 +6312,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (!renamingId) return;
     if (!draft) { setRenamingId(null); return; }
     setProjects(prev => prev.map(p => p.id === renamingId ? { ...p, name: draft } : p));
-    if (window.openclawToast) window.openclawToast.success(`Project renamed to "${draft}"`);
+    if (window.cafresohqToast) window.cafresohqToast.success(`Project renamed to "${draft}"`);
     setRenamingId(null);
   };
   const cancelRename = () => { setRenamingId(null); setRenameDraft(''); };
@@ -6330,7 +6330,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (!window.confirm(msg)) return;
     setProjects(prev => (prev || []).filter(x => x.id !== p.id));
     if (selected === p.id) { setSelected(null); setOpenFile(null); }
-    if (window.openclawToast) window.openclawToast.info(`Deleted project "${p.name}"`);
+    if (window.cafresohqToast) window.cafresohqToast.info(`Deleted project "${p.name}"`);
   };
 
   /* Add a new project — opens the AddProjectModal. */
@@ -6345,7 +6345,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     setSelected(id);
     setShowAdd(false);
-    if (window.openclawToast) window.openclawToast.success(`Added project "${name}"`);
+    if (window.cafresohqToast) window.cafresohqToast.success(`Added project "${name}"`);
   };
 
   const onDropFolder = (e) => {
@@ -6370,7 +6370,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   const readFile = async (path) => {
     setBusy(true); setErr(null);
     try {
-      const text = await window.OpenclawClient.toolExec('FILE_READ', path);
+      const text = await window.CafresoHQClient.toolExec('FILE_READ', path);
       setOpenFile({
         path,
         content: typeof text === 'string' ? text : String(text || ''),
@@ -6384,7 +6384,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (!openFile) return;
     setBusy(true); setErr(null);
     try {
-      await window.OpenclawClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
+      await window.CafresoHQClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
       setOpenFile({ ...openFile, dirty: false });
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
@@ -6710,8 +6710,8 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                        and switch its active thread to this project's room.
                        Cross-component event lets ChatPanel set itself
                        without us lifting state. */
-                    if (window.openclawSetChatOpen) window.openclawSetChatOpen(true);
-                    window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'project:' + project.id }));
+                    if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
+                    window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id }));
                   }}
                   title="Open the multi-agent chat room for this project"
                 >TALK ↗</button>
@@ -6973,7 +6973,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     if (!url) return setErr('repo URL or owner/repo required');
     setBusy(true);
     try {
-      const r = await window.OpenclawClient.cloneRepo({
+      const r = await window.CafresoHQClient.cloneRepo({
         url,
         name: name.trim() || undefined,
         depth: shallow ? 1 : 0,
@@ -7017,7 +7017,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   >📁 Browse</button>
                 </div>
               </label>
-              <small>Path must be inside OPENCLAW_ALLOWED_DIRS for agents to access it.</small>
+              <small>Path must be inside CAFRESOHQ_ALLOWED_DIRS for agents to access it.</small>
               {err ? <div className="addproj-err">{err}</div> : null}
               <div className="addproj-actions">
                 <button type="button" className="px-btn secondary" onClick={onClose}>Cancel</button>
@@ -7077,7 +7077,7 @@ function TerminalView() {
   // A non-empty path is required — the embedded PTY bails on a falsy project.path
   // (that's why the standalone Terminal tab loaded blank while Projects worked).
   // /root/Documents is the container's code-agent sandbox dir (created in the
-  // Dockerfile); local runs override via OPENCLAW_TERMINAL_CWD if they want.
+  // Dockerfile); local runs override via CAFRESOHQ_TERMINAL_CWD if they want.
   const HQ_PROJECT = React.useMemo(() => ({
     id: 'hq-global-terminal',
     path: (typeof window !== 'undefined' && window._TERMINAL_CWD) || '/root/Documents',
@@ -7114,7 +7114,7 @@ function TerminalView() {
 /* ================================================================
    Export all views for app.jsx
    ================================================================ */
-window.OpenclawViews = {
+window.CafresoHQViews = {
   TasksView,
   MemoryPage,
   TeamView,

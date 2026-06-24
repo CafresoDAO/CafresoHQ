@@ -1,5 +1,5 @@
 /* ==========================================================================
-   CafresoAI — mock data + small utilities
+   CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
    ========================================================================== */
 
@@ -29,7 +29,7 @@ const TOOLS_CATALOG = [
 ];
 
 /* Legacy unprefixed IDs — kept for any callers still reading MOCK.MODELS.
-   The live ModelPicker (window.OpenclawClient.localModelOptions) is the
+   The live ModelPicker (window.CafresoHQClient.localModelOptions) is the
    source of truth for new code; agents store provider-prefixed ids. */
 const MODELS = [
   'anthropic:claude-opus-4-7',
@@ -46,7 +46,7 @@ const INITIAL_AGENTS = [
     status: 'busy',
     task: 'triaging 23 emails',
     tools: ['web','email','cal'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     elevated: true,
     temperature: 0.4,
     hiredAt: Date.now() - 1000 * 60 * 60 * 18,
@@ -61,7 +61,7 @@ const INITIAL_AGENTS = [
     status: 'active',
     task: 'scanning Q3 reports',
     tools: ['web','files','db'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     elevated: true,
     temperature: 0.6,
     hiredAt: Date.now() - 1000 * 60 * 60 * 56,
@@ -76,7 +76,7 @@ const INITIAL_AGENTS = [
     status: 'idle',
     task: 'standing by',
     tools: ['cal','email'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     elevated: true,
     temperature: 0.2,
     hiredAt: Date.now() - 1000 * 60 * 60 * 120,
@@ -86,7 +86,7 @@ const INITIAL_AGENTS = [
 ];
 
 /* OpenSwarm-style specialist roster.
-   Seven specialists modeled on github.com/VRSEN/openswarm. CafresoAI (CEO) is
+   Seven specialists modeled on github.com/VRSEN/openswarm. CafresoHQ (CEO) is
    the orchestrator; these are the workers. Each template provides a name, a
    crisp role, a tailored system prompt, and the tools they need.
    Tools currently wired in CafresoHQ: 'web' (search), 'vault' (notes), 'files'
@@ -98,17 +98,17 @@ const OPENSWARM_ROSTER = [
     role: 'Virtual Assistant',
     color: 'rose',
     tools: ['web','email','cal','vault'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.4,
     systemPrompt:
-      "You are Vera, the Virtual Assistant on CafresoAI's team. You handle everyday operational work: writing short-form copy, scheduling, messaging, task management, and external system queries. Be concise (2-4 sentences). For composed messages or scheduling drafts longer than ~200 words, save to the vault under Drafts/<slug>.md via [VAULT_NEW] and return just the path + a one-line summary. Flag anything that needs the boss's decision.",
+      "You are Vera, the Virtual Assistant on CafresoHQ's team. You handle everyday operational work: writing short-form copy, scheduling, messaging, task management, and external system queries. Be concise (2-4 sentences). For composed messages or scheduling drafts longer than ~200 words, save to the vault under Drafts/<slug>.md via [VAULT_NEW] and return just the path + a one-line summary. Flag anything that needs the boss's decision.",
   },
   {
     name: 'Kip',
     role: 'Deep Research',
     color: 'teal',
     tools: ['web','vault'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.5,
     systemPrompt:
       "You are Kip, the Deep Research specialist. You conduct evidence-based research with citations and balanced analysis. Use [SEARCH] to gather sources, then synthesize into a research note saved to Research/<topic>.md via [VAULT_NEW]. In chat, return ONLY a 2-4 sentence executive summary + the vault path. Always cite at least 3 distinct sources. Flag conflicting evidence rather than hiding it.",
@@ -118,7 +118,7 @@ const OPENSWARM_ROSTER = [
     role: 'Data Analyst',
     color: 'sun',
     tools: ['files','vault','db'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.2,
     elevated: true,
     systemPrompt:
@@ -129,7 +129,7 @@ const OPENSWARM_ROSTER = [
     role: 'Slides Agent',
     color: 'lavender',
     tools: ['vault','files'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.5,
     elevated: true,
     systemPrompt:
@@ -140,7 +140,7 @@ const OPENSWARM_ROSTER = [
     role: 'Docs Agent',
     color: 'leaf',
     tools: ['vault','files'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.4,
     elevated: true,
     systemPrompt:
@@ -151,7 +151,7 @@ const OPENSWARM_ROSTER = [
     role: 'Image Generation',
     color: 'rose',
     tools: ['vault'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.8,
     systemPrompt:
       "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The server calls the configured backend and saves the rendered image to the vault. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image vault path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
@@ -161,7 +161,7 @@ const OPENSWARM_ROSTER = [
     role: 'Video Generation',
     color: 'lavender',
     tools: ['vault'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.7,
     systemPrompt:
       "You are Reel, the Video Generation specialist. You generate REAL videos via [GENERATE_VIDEO: Videos/<slug>.mp4]\\n<detailed video prompt>\\n[/GENERATE_VIDEO]. Provider+model come from Settings → Media. Cloud: fal.ai (Seedance/Veo/Kling recommended; Sora gated). Local: ComfyUI running an AnimateDiff/SVD/Mochi/Hunyuan workflow (the boss must export the workflow JSON from Comfy first — you don't author workflows yourself). Write the prompt as a single coherent scene description: subject, action, camera, style, mood. Most providers cap at ~5-10s — keep scope tight. The render takes minutes; the server saves the .mp4 to the vault. In chat, return: prompt summary + duration + the vault path. For longer pieces, emit multiple GENERATE_VIDEO blocks (separate scenes).",
@@ -171,7 +171,7 @@ const OPENSWARM_ROSTER = [
     role: 'News Mapper',
     color: 'teal',
     tools: ['web', 'vault'],
-    model: 'openclaw:sonnet',
+    model: 'cafresohq:sonnet',
     temperature: 0.3,
     systemPrompt:
       "You are Atlas, the News Mapper. Run on a schedule (start a Research mission with a news beat as the topic) and turn a stream of headlines into an explorable CONCEPT MAP. Each cycle: [SEARCH:] the beat for the latest developments, pick ONE story you haven't covered, and write a tight note to News/<beat-slug>/<story-slug>.md via [VAULT_NEW]. Write in plain declarative sentences DENSE with concrete named entities — people, organizations, places, products, technologies, events — because those entities become the nodes of the concept map and their co-occurrence becomes the edges. Avoid filler and hedging; one fact per sentence. Add frontmatter '---\\ntags: [news, <beat-slug>]\\n---' and a few [[wikilinks]] to related notes. In chat return a 1-2 sentence digest + the vault path. The boss views your map in 🧠 Graph → 🧠 Concepts, scoped to your News/ folder, and can publish it as a shareable public graph.",
@@ -313,16 +313,16 @@ function extractAllDMs(text) {
 }
 
 /* Find a [HANDOFF_TO: name]\n<body>\n[/HANDOFF_TO] block. Returns {to, body}
-   or null. Used by CafresoAI to transfer thread ownership to a single
+   or null. Used by CafresoHQ to transfer thread ownership to a single
    specialist — after the handoff the user's next messages go directly to
-   that specialist with CafresoAI out of the loop. */
+   that specialist with CafresoHQ out of the loop. */
 function extractHandoff(text) {
   if (!text) return null;
   const m = String(text).match(/\[\s*HANDOFF_TO\s*:\s*([^\]\n]+)\]\s*\n?([\s\S]*?)\n?\[\s*\/\s*HANDOFF_TO\s*\]/i);
   return m ? { to: m[1].trim(), body: (m[2] || '').trim() } : null;
 }
 
-/* Strip handoff blocks from text so we can render CafresoAI's reply without
+/* Strip handoff blocks from text so we can render CafresoHQ's reply without
    showing the raw bracket markup. */
 function stripHandoff(text) {
   if (!text) return text;
@@ -379,7 +379,7 @@ async function isVaultReady() {
   const now = Date.now();
   if (now - _vaultConfiguredCache.at < 5000) return _vaultConfiguredCache.ok;
   try {
-    const s = await window.OpenclawClient.vaultStatus();
+    const s = await window.CafresoHQClient.vaultStatus();
     _vaultConfiguredCache = { at: now, ok: !!(s.configured && s.exists) };
   } catch (_e) { _vaultConfiguredCache = { at: now, ok: false }; }
   return _vaultConfiguredCache.ok;
@@ -390,11 +390,11 @@ const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
     re: /\[\s*SEARCH\s*:\s*([^\]\n]+)\]/i,
-    requires: () => window.OpenclawClient.getSettings().braveEnabled && window.OpenclawClient.getSettings().braveKey,
+    requires: () => window.CafresoHQClient.getSettings().braveEnabled && window.CafresoHQClient.getSettings().braveKey,
     doc: '- [SEARCH: <query>] — Brave web search. Use for facts, news, current state. Stop after the line; results will be appended.',
     docShort: 'Web search via Brave. Use for facts, news, current state.',
     run: async (query, { signal }) => {
-      const results = await window.OpenclawClient.braveSearch(query.trim(), { count: 6, signal });
+      const results = await window.CafresoHQClient.braveSearch(query.trim(), { count: 6, signal });
       if (!results.length) return 'No results.';
       return results.map((r, i) =>
         `${i+1}. ${r.title}\n   ${r.url}\n   ${r.description}`
@@ -408,7 +408,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_SEARCH: <query>] — search the boss\'s Obsidian vault for notes mentioning the query. Returns top matches with snippets.',
     docShort: 'Search the Obsidian vault for notes matching a query. Returns paths and snippets.',
     run: async (query) => {
-      const hits = await window.OpenclawClient.vaultSearch(query.trim(), { limit: 8 });
+      const hits = await window.CafresoHQClient.vaultSearch(query.trim(), { limit: 8 });
       if (!hits.length) return 'No matches in vault.';
       return hits.map(h => `• ${h.path}\n  ${h.snippet}`).join('\n\n');
     },
@@ -420,7 +420,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_READ: <path>] — read full contents of a vault note (e.g. "Daily/2026-04-25.md"). Use after VAULT_SEARCH narrows the right file.',
     docShort: 'Read the full contents of a vault note by path. Use after VAULT_SEARCH.',
     run: async (path) => {
-      const text = await window.OpenclawClient.vaultRead(path.trim());
+      const text = await window.CafresoHQClient.vaultRead(path.trim());
       // Cap to keep context costs sane.
       return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
     },
@@ -433,7 +433,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_APPEND: <path>]\n<content>\n[/VAULT_APPEND] — append content to an existing note (creates if missing). Body can be multi-line markdown.',
     docShort: 'Append multi-line markdown content to an existing vault note (creates if missing).',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.vaultWrite(path.trim(), body || '', 'append');
+      const r = await window.CafresoHQClient.vaultWrite(path.trim(), body || '', 'append');
       return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
     },
   },
@@ -444,7 +444,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts.',
     docShort: 'Create or overwrite a vault note at the given path with provided content.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.vaultWrite(path.trim(), body || '', 'write');
+      const r = await window.CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
       return `Wrote ${(body||'').length} chars → ${r.path}`;
     },
   },
@@ -462,7 +462,7 @@ const TOOL_REGISTRY = {
       '  Returns the saved vault path. Use this for any deck deliverable — do NOT save as plain .md.',
     docShort: 'Render markdown into a real .pptx PowerPoint deck and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.exportPptx(path.trim(), body || '');
+      const r = await window.CafresoHQClient.exportPptx(path.trim(), body || '');
       return `Saved PowerPoint (${r.slides || '?'} slide${r.slides === 1 ? '' : 's'}) → ${r.path}`;
     },
   },
@@ -475,7 +475,7 @@ const TOOL_REGISTRY = {
       '  Use headings (`#` / `##` / `###`), bullets (`-` / `*`), and numbered lists (`1.`). Returns the saved vault path.',
     docShort: 'Render markdown into a real .docx Word document and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.exportDocx(path.trim(), body || '');
+      const r = await window.CafresoHQClient.exportDocx(path.trim(), body || '');
       return `Saved Word doc → ${r.path}`;
     },
   },
@@ -488,7 +488,7 @@ const TOOL_REGISTRY = {
       '  Renderer: weasyprint if available (better typography), reportlab fallback. Returns the saved vault path.',
     docShort: 'Render markdown into a real .pdf and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.exportPdf(path.trim(), body || '');
+      const r = await window.CafresoHQClient.exportPdf(path.trim(), body || '');
       return `Saved PDF (${r.renderer || '?'}) → ${r.path}`;
     },
   },
@@ -505,7 +505,7 @@ const TOOL_REGISTRY = {
       '  Uses the provider/model from Settings → Media. Returns the saved vault path.',
     docShort: 'Generate a real image using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.generateImage(path.trim(), (body || '').trim());
+      const r = await window.CafresoHQClient.generateImage(path.trim(), (body || '').trim());
       return `Generated image (${r.provider}) → ${r.path}`;
     },
   },
@@ -518,20 +518,20 @@ const TOOL_REGISTRY = {
       '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved vault path.',
     docShort: 'Generate a real video using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.OpenclawClient.generateVideo(path.trim(), (body || '').trim());
+      const r = await window.CafresoHQClient.generateVideo(path.trim(), (body || '').trim());
       return `Generated video (${r.provider}) → ${r.path}`;
     },
   },
   /* File / shell tools — only enabled for elevated agents regardless of LLM
      provider. Execution is handled by serve.py /tools/exec, which validates
-     paths against OPENCLAW_ALLOWED_DIRS server-side. */
+     paths against CAFRESOHQ_ALLOWED_DIRS server-side. */
   file_read: {
     name: 'FILE_READ',
     re: /\[\s*FILE_READ\s*:\s*([^\]\n]+)\]/i,
     requires: () => true,
     doc: '- [FILE_READ: <path>] — read a local file. Path must be within the configured allowed directories.',
     docShort: 'Read a local file by absolute path within the allowed directories.',
-    run: async (path, { signal, cwd }) => window.OpenclawClient.toolExec('FILE_READ', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd }) => window.CafresoHQClient.toolExec('FILE_READ', path.trim(), { signal, cwd }),
   },
   dir_list: {
     name: 'DIR_LIST',
@@ -539,7 +539,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [DIR_LIST: <path>] — list files and subdirectories at a path. Use to explore project structure before reading files.',
     docShort: 'List files and subdirectories at a path. Use to explore structure before reading.',
-    run: async (path, { signal, cwd }) => window.OpenclawClient.toolExec('DIR_LIST', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd }) => window.CafresoHQClient.toolExec('DIR_LIST', path.trim(), { signal, cwd }),
   },
   file_write: {
     name: 'FILE_WRITE',
@@ -547,15 +547,15 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [FILE_WRITE: <path>]\n<content>\n[/FILE_WRITE] — write (create or overwrite) a local file. Path must be within allowed directories.',
     docShort: 'Write (create or overwrite) a local file; body goes in the "body" field.',
-    run: async (path, { cwd }, body) => window.OpenclawClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd }),
+    run: async (path, { cwd }, body) => window.CafresoHQClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd }),
   },
   bash: {
     name: 'BASH',
     re: /\[\s*BASH\s*:\s*([^\]\n]+)\]/i,
     requires: () => true,
-    doc: '- [BASH: <command>] — run a shell command on the proxy machine (cwd = project dir or first allowed dir). Requires Bash in OPENCLAW_ALLOWED_TOOLS.',
-    docShort: 'Run a shell command on the proxy machine. Requires Bash in OPENCLAW_ALLOWED_TOOLS.',
-    run: async (cmd, { signal, cwd }) => window.OpenclawClient.toolExec('BASH', cmd.trim(), { signal, cwd }),
+    doc: '- [BASH: <command>] — run a shell command on the proxy machine (cwd = project dir or first allowed dir). Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
+    docShort: 'Run a shell command on the proxy machine. Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
+    run: async (cmd, { signal, cwd }) => window.CafresoHQClient.toolExec('BASH', cmd.trim(), { signal, cwd }),
   },
   /* Per-agent memory — each agent gets a private vault folder at
      `Agents/<Name>/`. Provides persistent notes that survive across
@@ -759,7 +759,7 @@ const TOOL_REGISTRY = {
       return 'Message queued for delivery to coworker.';
     },
   },
-  /* HANDOFF_TO — transfer thread ownership from CafresoAI to ONE specialist.
+  /* HANDOFF_TO — transfer thread ownership from CafresoHQ to ONE specialist.
      After the marker, the user converses directly with the specialist until
      they say "back to CafresoHQ". Host-dispatched. */
   handoff_to: {
@@ -795,7 +795,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   // in settings (Settings → Media). Otherwise agents would happily emit the
   // marker and the call would 400 with "provider required".
   try {
-    const s = (window.OpenclawClient && window.OpenclawClient.getSettings) ? window.OpenclawClient.getSettings() : {};
+    const s = (window.CafresoHQClient && window.CafresoHQClient.getSettings) ? window.CafresoHQClient.getSettings() : {};
     if (s && s.imageProvider) out.push(TOOL_REGISTRY.generate_image);
     if (s && s.videoProvider) out.push(TOOL_REGISTRY.generate_video);
   } catch (_e) { /* settings store may not be ready during init */ }
@@ -828,7 +828,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     out.push({
       ...TOOL_REGISTRY.memory_list,
       run: async () => {
-        const all = await window.OpenclawClient.vaultList();
+        const all = await window.CafresoHQClient.vaultList();
         const mine = (all || []).filter(p => p.startsWith(root + '/'));
         if (!mine.length) return `(your memory is empty — write your first note with [MEMORY_WRITE: notes/foo.md]…[/MEMORY_WRITE])`;
         return mine.map(p => '• ' + p.slice(root.length + 1)).join('\n');
@@ -838,7 +838,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       ...TOOL_REGISTRY.memory_read,
       run: async (rel) => {
         try {
-          const text = await window.OpenclawClient.vaultRead(scope(rel));
+          const text = await window.CafresoHQClient.vaultRead(scope(rel));
           return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
         } catch (e) {
           if (String(e.message || '').includes('404') || String(e.message || '').toLowerCase().includes('not found')) {
@@ -852,7 +852,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       ...TOOL_REGISTRY.memory_write,
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
-        const r = await window.OpenclawClient.vaultWrite(target, body || '', 'write');
+        const r = await window.CafresoHQClient.vaultWrite(target, body || '', 'write');
         return `Wrote ${(body||'').length} chars → ${r.path}`;
       },
     });
@@ -861,7 +861,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
         const stamped = `\n\n## ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\n${body || ''}\n`;
-        const r = await window.OpenclawClient.vaultWrite(target, stamped, 'append');
+        const r = await window.CafresoHQClient.vaultWrite(target, stamped, 'append');
         return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
       },
     });
@@ -1028,8 +1028,8 @@ function detectToolCall(text, tools) {
    models get JSON; everything else falls back to bracket format. */
 function supportsJsonToolFormat(model) {
   if (!model) return false;
-  const { provider } = window.OpenclawClient.parseModelId(model);
-  if (['anthropic', 'openclaw', 'claudecode', 'codex', 'google'].includes(provider)) return true;
+  const { provider } = window.CafresoHQClient.parseModelId(model);
+  if (['anthropic', 'cafresohq', 'claudecode', 'codex', 'google'].includes(provider)) return true;
   const capableLocal = ['qwen3', 'mistral-nemo', 'llama-3.3', 'deepseek'];
   return capableLocal.some(n => (model || '').toLowerCase().includes(n));
 }
@@ -1101,7 +1101,7 @@ function harmonyArgsFor(tool, payload) {
   }
 }
 
-const CEO_SYSTEM = `You are CafresoHQ, the CEO and ORCHESTRATOR for the boss's team of AI sub-agents. You are a warm, decisive chief of staff — direct, concise, with light personality. Sign messages as "CafresoHQ" (not "CafresoAI"). Keep replies tight (2-4 sentences).
+const CEO_SYSTEM = `You are CafresoHQ, the CEO and ORCHESTRATOR for the boss's team of AI sub-agents. You are a warm, decisive chief of staff — direct, concise, with light personality. Sign messages as "CafresoHQ" (not "CafresoHQ"). Keep replies tight (2-4 sentences).
 
 ═══════════════════════════════════════════════════════════════
 ROUTING-ONLY (CRITICAL)
@@ -1196,7 +1196,7 @@ function rosterSummary(agents) {
 
 function memorySummary(memory) {
   if (!memory || !memory.length) return '';
-  return 'Long-term memory (notes CafresoAI has saved about the boss & ongoing work):\n' +
+  return 'Long-term memory (notes CafresoHQ has saved about the boss & ongoing work):\n' +
     memory.slice(0, 24).map(m => `  [${m.tag}] ${m.text}`).join('\n');
 }
 
@@ -1230,8 +1230,8 @@ function buildCeoSystem(agents, extra) {
    Invalidated whenever settings change (provider/URL swaps, etc.). */
 const REGISTRY_TTL_MS = 10_000;
 let _registryCache = { at: 0, value: '', inflight: null };
-if (window.OpenclawClient && window.OpenclawClient.onSettingsChange) {
-  window.OpenclawClient.onSettingsChange(() => {
+if (window.CafresoHQClient && window.CafresoHQClient.onSettingsChange) {
+  window.CafresoHQClient.onSettingsChange(() => {
     _registryCache = { at: 0, value: '', inflight: null };
   });
 }
@@ -1241,8 +1241,8 @@ async function registrySnippet() {
   if (_registryCache.inflight) return _registryCache.inflight;
   _registryCache.inflight = (async () => {
     try {
-      const reg = await window.OpenclawClient.localRegistry();
-      const value = window.OpenclawClient.formatRegistry(reg);
+      const reg = await window.CafresoHQClient.localRegistry();
+      const value = window.CafresoHQClient.formatRegistry(reg);
       _registryCache = { at: Date.now(), value, inflight: null };
       return value;
     } catch (_e) {
@@ -1277,7 +1277,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let buf = '';
-    await window.OpenclawClient.stream({
+    await window.CafresoHQClient.stream({
       system: sys,
       messages,
       model: resolveModel(model),
@@ -1346,7 +1346,7 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const enabledTools = await toolsForAgent(agent, { peers });
   const enabledNames = enabledTools.map(t => t.name).join(', ') || 'none';
 
-  const base = agent.systemPrompt || `You are ${agent.name}, a specialist sub-agent at CafresoAI. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
+  const base = agent.systemPrompt || `You are ${agent.name}, a specialist sub-agent at CafresoHQ. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
 
 FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`;
   const toolsNote = enabledTools.length
@@ -1368,7 +1368,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   try {
     const safeName = String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
     const root = `Agents/${safeName}/`;
-    const all = await window.OpenclawClient.vaultList();
+    const all = await window.CafresoHQClient.vaultList();
     const mine = (all || []).filter(p => p.startsWith(root)).map(p => p.slice(root.length));
     if (mine.length) {
       const shown = mine.slice(0, 12).map(p => '• ' + p).join('\n');
@@ -1394,7 +1394,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   let toolsExecuted = 0;
   for (let hop = 0; hop < maxToolHops; hop++) {
     let buf = '';
-    await window.OpenclawClient.stream({
+    await window.CafresoHQClient.stream({
       system: sys,
       messages,
       model: resolveModel(agent.model),
@@ -1403,7 +1403,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
       onUsage,
       signal,
       maxTokens,
-      // Forwarded only by the openclaw provider — others ignore it.
+      // Forwarded only by the cafresohq provider — others ignore it.
       agentName: agent.name,
       elevated: !!agent.elevated,
       cwd,

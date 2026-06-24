@@ -1,7 +1,7 @@
 @echo off
 setlocal
 echo ================================================
-echo  CafresoAI -- Build Standalone .exe
+echo  CafresoHQ -- Build Standalone .exe
 echo ================================================
 echo.
 
@@ -15,7 +15,7 @@ if errorlevel 1 (
 :: Build -- onedir so static files sit alongside the exe and can be edited live.
 :: Semicolon separates source;dest on Windows (colon on Mac/Linux).
 pyinstaller ^
-    --name "OpenclawHQ" ^
+    --name "CafresoHQ" ^
     --onedir ^
     --noconfirm ^
     --clean ^
@@ -44,10 +44,10 @@ if errorlevel 1 (
 echo.
 echo ================================================
 echo  Build complete!
-echo  Location: dist\OpenclawHQ\OpenclawHQ.exe
+echo  Location: dist\CafresoHQ\CafresoHQ.exe
 echo.
-echo  To run:  double-click OpenclawHQ.exe
-echo           or: dist\OpenclawHQ\OpenclawHQ.exe
+echo  To run:  double-click CafresoHQ.exe
+echo           or: dist\CafresoHQ\CafresoHQ.exe
 echo.
 echo  Mobile access: the exe prints your LAN IP on startup.
 echo  Share that URL with any phone on the same Wi-Fi.

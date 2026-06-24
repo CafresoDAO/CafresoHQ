@@ -61,6 +61,6 @@ fi
 # serve.py binds 127.0.0.1 by default in local mode (loopback-only = safe, no key
 # needed). To reach HQ from another device you must expose it AND set a key — the
 # terminal is effectively remote code execution:
-#   OPENCLAW_BIND=0.0.0.0 OPENCLAW_API_KEY=<secret> sh Start-CafresoHQ.sh
+#   CAFRESOHQ_BIND=0.0.0.0 CAFRESOHQ_API_KEY=<secret> sh Start-CafresoHQ.sh
 echo "[start] serving CafresoHQ on :${PORT}  (loopback-only; serve.py prints the exact URL + scheme)"
 exec python3 serve.py

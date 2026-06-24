@@ -8,7 +8,7 @@
  *      addon) from node_modules — drops the unpkg dependency.
  *   2. esbuild-TRANSFORMS each .jsx -> .js (JSX -> React.createElement) with
  *      whitespace/syntax minify but NO identifier renaming. The 11 HQ files rely
- *      on separate-classic-script scoping (cross-file comms are via window.Openclaw*
+ *      on separate-classic-script scoping (cross-file comms are via window.CafresoHQ*
  *      globals; component defs live on the global object, consumers take `const`
  *      bindings). Transforming each file independently and loading them as the
  *      SAME ordered <script> tags preserves that runtime model exactly — bundling
@@ -75,7 +75,7 @@ async function bundleApp() {
   // NOT share a global lexical env. Loading them as plain classic scripts would
   // collapse them into one shared scope and throw "already declared". A bundle
   // gives each module its own closure — matching Babel — while cross-file comms
-  // stay via window.Openclaw* globals. React/ReactDOM/xterm are read as window
+  // stay via window.CafresoHQ* globals. React/ReactDOM/xterm are read as window
   // globals provided by the vendor UMD scripts loaded before this bundle.
   const entry = APP_FILES.map((n) => `import './${n}.jsx';`).join('\n');
   const r = await esbuild.build({

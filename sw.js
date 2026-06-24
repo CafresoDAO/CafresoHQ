@@ -1,7 +1,7 @@
-/* CafresoAI — minimal service worker.
+/* CafresoHQ — minimal service worker.
  * Network-first for everything (so chat/streaming endpoints always go live),
  * with an offline shell fallback for the main HTML when offline.
- * Stream endpoints (/openclaw/stream, /codex/stream, /claudecode/stream,
+ * Stream endpoints (/cafresohq/stream, /codex/stream, /claudecode/stream,
  * /oca/, /lmstudio/, /ollama/, /vault/, /tools/) are NEVER cached.
  *
  * Cross-origin scope: when the UI is served from an ICP canister and the API
@@ -11,7 +11,7 @@
  * whose origin isn't this SW's own origin, so it only ever manages the
  * same-origin UI shell.
  */
-const CACHE_NAME = 'openclaw-shell-v3';
+const CACHE_NAME = 'cafresohq-shell-v3';
 const SHELL_URLS = [
   '/hq.html',
   '/styles.css',
@@ -37,7 +37,7 @@ self.addEventListener('activate', (event) => {
 });
 
 const NEVER_CACHE_PREFIXES = [
-  '/openclaw/', '/codex/', '/claudecode/', '/oca/', '/lmstudio/', '/ollama/',
+  '/cafresohq/', '/codex/', '/claudecode/', '/oca/', '/lmstudio/', '/ollama/',
   '/vault/', '/tools/', '/projects/', '/approvals/', '/hq/', '/brave/',
   '/terminal/',
 ];

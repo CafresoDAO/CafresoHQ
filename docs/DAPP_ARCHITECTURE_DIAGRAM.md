@@ -13,7 +13,7 @@
                                    │            INTERNET COMPUTER (ICP)     │
                                    │                                        │
   ┌──────────────┐  II login       │  ┌────────────────────────────────┐   │
-  │   End user    │───────────────▶│  │ cafresoai_frontend  (canister)  │   │
+  │   End user    │───────────────▶│  │ cafresohq_frontend  (canister)  │   │
   │  (browser)    │   derivation    │  │  ai.cafreso.com SvelteKit shell │   │
   └──────┬────────┘   origin →      │  │  • Internet Identity auth       │   │
          │            shared        │  │  • principal (ecosystem-shared) │   │
@@ -21,7 +21,7 @@
          │                          │  │  • vault E2E crypto (vetKeys)   │   │
          │                          │  └───────────────┬────────────────┘   │
          │                          │  ┌───────────────▼────────────────┐   │
-         │                          │  │ cafresoai_keys (Motoko canister)│   │
+         │                          │  │ cafresohq_keys (Motoko canister)│   │
          │                          │  │  zero-knowledge key/vault store │   │
          │                          │  └─────────────────────────────────┘   │
          │                          └──────────────────────────────────────┘
@@ -50,7 +50,7 @@
 │   │ /hermes/capability (lite/full)│         └────────────┬─────────────┘  │    │
 │   │ /hermes/openrouter-key (rec.) │                      │ HTTPS          │    │
 │   │ /vault/*  ──▶ OCI Object Store │                      ▼                │    │
-│   │ /claudecode /openclaw /codex  │         ┌──────────────────────────┐  │    │
+│   │ /claudecode /cafresohq /codex  │         ┌──────────────────────────┐  │    │
 │   │ /terminal/pty (WebSocket+PTY) │         │  OpenRouter (DEFAULT)     │  │    │
 │   │ /approvals/external/* (tray)  │         │  free open-weights:       │  │    │
 │   │ _record_hermes_usage (meter)  │         │  gpt-oss-120b / nemotron  │  │    │
@@ -71,7 +71,7 @@
 ## 2. Request data flow — a chat message
 
 ```
-1. User types in HQ app (iframe)        app.jsx → window.OpenclawClient.stream()
+1. User types in HQ app (iframe)        app.jsx → window.CafresoHQClient.stream()
 2. claude-client.jsx                     provider='hermes' → POST _API_BASE/hermes/v1/chat/completions
 3. Browser → Caddy                       https://hq.cafreso.com/u/<slug>/hermes/v1/chat/completions
 4. Caddy handle_path                     strips /u/<slug> → container:8787/hermes/v1/chat/completions
@@ -89,7 +89,7 @@
 HQ app (iframe)  ──postMessage(vault:*)──▶  SvelteKit shell (parent)
                                               │  E2E encrypt (vetKeys, principal-derived)
                                               ▼
-                                            cafresoai_keys canister (ciphertext only)
+                                            cafresohq_keys canister (ciphertext only)
    OR (fleet mode, large blobs):
 HQ app ──▶ serve.py /vault/* ──▶ OCI Object Storage (bucket, per-user prefix)
 ```
@@ -114,8 +114,8 @@ ai.cafreso.com  ──POST /fleet/provision {principal}──▶  Caddy ──�
 
 | Layer | Component | Responsibility |
 |---|---|---|
-| Identity/UI | `cafresoai_frontend` (ICP) | II auth, ecosystem principal, shell, vault crypto, iframe host |
-| Keys | `cafresoai_keys` (ICP Motoko) | zero-knowledge vault/key store |
+| Identity/UI | `cafresohq_frontend` (ICP) | II auth, ecosystem principal, shell, vault crypto, iframe host |
+| Keys | `cafresohq_keys` (ICP Motoko) | zero-knowledge vault/key store |
 | Edge | Caddy gateway (OCI VM) | TLS, per-user routing, fleet API proxy |
 | Compute | OCI Container (per user) | the user's private HQ runtime |
 | ↳ front door | `serve.py` :8787 | serve app, proxy LLM, vault, terminal, approvals, metering |

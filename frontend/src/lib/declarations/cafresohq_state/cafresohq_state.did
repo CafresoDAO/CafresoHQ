@@ -56,7 +56,7 @@ service : {
   putVaultMeta: (text, nat, nat, blob, nat) -> (PutResult);
   /// Publish atomically: flip sealed=true once all chunks are stored.
   sealVault: (text, nat) -> (PutResult);
-  /// Apply a plan tier from the same HMAC token cafresoai_keys mints
+  /// Apply a plan tier from the same HMAC token cafresohq_keys mints
   /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
   setPlan: (text) -> (bool);
   setPlanSecret: (text) -> ();

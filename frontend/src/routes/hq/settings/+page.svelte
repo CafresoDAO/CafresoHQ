@@ -97,7 +97,7 @@
         <div class="page-kicker">Control Panel / Settings</div>
         <h1 class="page-title mt-4">Settings<span class="text-brand-500">.</span></h1>
         <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
-          Connect CafresoAI to your private serve.py instance. Your data stays
+          Connect CafresoHQ to your private serve.py instance. Your data stays
           on your container; this app remains the polished command surface.
         </p>
       </div>
@@ -111,7 +111,7 @@
         <div class="page-kicker">Cloud Endpoint</div>
         <h2 class="mt-2 text-xl font-semibold">Container connection</h2>
         <p class="mt-1 text-sm leading-6 text-ink-400">
-          URL of your CafresoAI serve.py instance: Local Companion, OCI self-deploy,
+          URL of your CafresoHQ serve.py instance: Local Companion, OCI self-deploy,
           or OCI Fleet container.
         </p>
       </div>
@@ -197,7 +197,7 @@
           <p class="text-sm font-semibold text-ink-100">Signed in via Internet Identity</p>
           <p class="mt-0.5 text-xs text-ink-400">
             Your identity is shared seamlessly across the Cafreso ecosystem —
-            Banking.Brave, Cafreso Pages, Minegold.defi, and CafresoAI all
+            Banking.Brave, Cafreso Pages, Minegold.defi, and CafresoHQ all
             recognize the same account.
           </p>
         </div>

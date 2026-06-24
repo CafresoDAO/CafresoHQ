@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   CafresoAI -- Fleet API                                     ║
+║   CafresoHQ -- Fleet API                                     ║
 ║   Bridges the SvelteKit shell to per-user OCI containers     ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -60,7 +60,7 @@ PORT             = int(os.environ.get('FLEET_API_PORT', '8080'))
 ALLOWED_ORIGINS  = os.environ.get(
     'FLEET_API_ALLOWED_ORIGINS',
     'http://localhost:5174,http://127.0.0.1:5174,'
-    'https://v4tdv-riaaa-aaaab-agtfa-cai.icp0.io,'      # CafresoAI mainnet shell
+    'https://v4tdv-riaaa-aaaab-agtfa-cai.icp0.io,'      # CafresoHQ mainnet shell
     'https://6cajv-qqaaa-aaaab-qactq-cai.icp0.io,'      # earlier playground
     'https://ai.cafreso.com,https://cafreso.com'
 ).split(',')
@@ -219,7 +219,7 @@ def _validate_principal(p: str) -> bool:
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 class Handler(http.server.BaseHTTPRequestHandler):
-    server_version = 'CafresoAI-Fleet-API/1.0'
+    server_version = 'CafresoHQ-Fleet-API/1.0'
 
     def log_message(self, fmt, *args):
         log.info(f'{self.address_string()} - {fmt % args}')
@@ -270,7 +270,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == '/fleet/health':
             return self._send_json(200, {
                 'status':  'ok',
-                'service': 'cafresoai-fleet-api',
+                'service': 'cafresohq-fleet-api',
                 'auth':    'configured' if SHARED_SECRET else 'dev-mode',
                 'fleet_file': str(FLEET_FILE),
                 'fleet_file_exists': FLEET_FILE.exists(),
@@ -801,7 +801,7 @@ def _reload_caddy_with_new_routes() -> tuple[bool, str]:
     # Write rendered file to a temp path the ubuntu user owns, then sudo-tee
     # it into /etc/caddy/Caddyfile. Avoids `echo "$rendered" | sudo tee`
     # which mangles backticks/$ in Caddyfile blocks.
-    tmp = pathlib.Path('/tmp/cafresoai_Caddyfile.new')
+    tmp = pathlib.Path('/tmp/cafresohq_Caddyfile.new')
     try:
         tmp.write_text(rendered, encoding='utf-8')
     except OSError as e:
@@ -990,7 +990,7 @@ def main():
         auth_line = 'FAIL-CLOSED — admin routes DENIED (set FLEET_API_SECRET)'
 
     print('-' * 60, flush=True)
-    print(f'  CafresoAI Fleet API — http://{addr[0]}:{addr[1]}', flush=True)
+    print(f'  CafresoHQ Fleet API — http://{addr[0]}:{addr[1]}', flush=True)
     print(f'  Auth:    {auth_line}', flush=True)
     print(f'  Fleet:   {FLEET_FILE}', flush=True)
     print(f'  Origins: {", ".join(ALLOWED_ORIGINS) or "(any)"}', flush=True)

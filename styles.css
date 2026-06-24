@@ -1,5 +1,5 @@
 /* ========================================================================
-   CafresoAI — pixel office command center
+   CafresoHQ — pixel office command center
    Warm pastel palette, Stardew-adjacent. Business-polished typography.
    ======================================================================== */
 
@@ -142,7 +142,7 @@
   --warn:        var(--brand-banana-rim);
   --error:       var(--brand-cart-badge);
 
-  /* CEO / CafresoAI brand (deep plum → warm) */
+  /* CEO / CafresoHQ brand (deep plum → warm) */
   --ceo:         #8a5a9b;
   --ceo-dk:      #5e3e6c;
 
@@ -4879,7 +4879,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
   gap: 12px;
 }
 .ceo-panel-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.ceo-panel-identity .openclaw-sprite,
+.ceo-panel-identity .cafresohq-sprite,
 .ceo-panel-identity > div:first-child { flex: 0 0 auto; }
 .ceo-panel-title {
   font-family: 'Playfair Display', serif;

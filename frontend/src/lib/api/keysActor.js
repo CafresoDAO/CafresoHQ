@@ -1,25 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CafresoAI — actor for the cafresoai_keys vetKeys canister
+// CafresoHQ — actor for the cafresohq_keys vetKeys canister
 //
 // Builds an authenticated actor (using the user's II identity) that can call:
 //   • vault_public_key()        — query, returns canister BLS pubkey
 //   • vault_encrypted_key(pk)   — update, ~26B cycles, returns user's enc key
 //   • cycle_balance()           — query, diagnostics
 //
-// dfx-generated declarations live at $lib/declarations/cafresoai_keys/ —
+// dfx-generated declarations live at $lib/declarations/cafresohq_keys/ —
 // regenerated on every `dfx deploy` via `node_compatibility: true` in dfx.json.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Actor, HttpAgent } from '@dfinity/agent';
 import { writable, get } from 'svelte/store';
 import { authIdentity, isAuthenticated } from '$lib/stores/auth.js';
-import { idlFactory as keysIdl } from '$lib/declarations/cafresoai_keys/cafresoai_keys.did.js';
+import { idlFactory as keysIdl } from '$lib/declarations/cafresohq_keys/cafresohq_keys.did.js';
 
 // Mainnet canister id is injected by dfx into frontend/.env at build time
-// as VITE_CAFRESOAI_KEYS_CANISTER_ID. Falls back to canister_ids.json.
+// as VITE_CAFRESOHQ_KEYS_CANISTER_ID. Falls back to canister_ids.json.
 const MAINNET_CANISTER_ID =
-  import.meta.env?.VITE_CAFRESOAI_KEYS_CANISTER_ID ||
-  import.meta.env?.VITE_CANISTER_ID_CAFRESOAI_KEYS ||
+  import.meta.env?.VITE_CAFRESOHQ_KEYS_CANISTER_ID ||
+  import.meta.env?.VITE_CANISTER_ID_CAFRESOHQ_KEYS ||
   // Pinned mainnet id (deploy: 2026-05-08, controllers: tzw3r-vl... + xip3r-mh...)
   'vhw7q-lqaaa-aaaab-agthq-cai';
 
@@ -47,7 +47,7 @@ export async function getKeysActor() {
 
   const canisterId = get(keysCanisterId);
   if (!canisterId) {
-    throw new Error('cafresoai_keys canister id is not configured');
+    throw new Error('cafresohq_keys canister id is not configured');
   }
 
   const agent = new HttpAgent({ identity, host: HOST });

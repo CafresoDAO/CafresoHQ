@@ -12,8 +12,8 @@ Grounded in the code as of this review. **The cryptographic and identity foundat
 
 | Layer | Status | Evidence / Notes |
 |---|---|---|
-| ICP frontend canister | ✅ Live | `cafresoai_frontend` = `v4tdv-riaaa-aaaab-agtfa-cai` |
-| vetKeys vault canister | ✅ Live, production‑quality | `cafresoai_keys` = `vhw7q-lqaaa-aaaab-agthq-cai`; real threshold BLS12‑381, ~26.15B cycles/derive (~$0.03/day/user) |
+| ICP frontend canister | ✅ Live | `cafresohq_frontend` = `v4tdv-riaaa-aaaab-agtfa-cai` |
+| vetKeys vault canister | ✅ Live, production‑quality | `cafresohq_keys` = `vhw7q-lqaaa-aaaab-agthq-cai`; real threshold BLS12‑381, ~26.15B cycles/derive (~$0.03/day/user) |
 | Internet Identity auth + ecosystem derivation | ✅ Working | `frontend/src/lib/stores/auth.js`; derives shared principal via Banking.Brave origin |
 | Zero‑knowledge vault (E2E encrypt) | ✅ Working | `crypto/vaultKey.js` (HKDF + AES‑GCM), `stores/vault.js` (encrypted index, 200MB cap) |
 | Frontend shell + routes (dashboard, chat, vault, search, settings) | ✅ Working | SvelteKit; stores wired |
@@ -101,7 +101,7 @@ This framing lets you launch in weeks, not quarters, and gives the DAO a *real p
 **Exit:** the DAO has a defensible value‑capture story: the token pays for the thing the product actually does.
 
 ### Phase 4 — "SNS‑ready" (parallel track; see `04` for detail)
-- [ ] Security audit of `cafresoai_keys` (and any payment/ledger canister) by a recognized ICP auditor.
+- [ ] Security audit of `cafresohq_keys` (and any payment/ledger canister) by a recognized ICP auditor.
 - [ ] Add NNS Root as co‑controller of dapp canisters; set fallback controllers; test an upgrade round‑trip under SNS control.
 - [ ] Finalize & publish tokenomics (reconcile **100M / 15‑30‑55** vault model vs **$CF 46/27/22** public page — `04`), dev vesting + dissolve‑delay table, swap parameters, NF stance.
 - [ ] Open the forum thread, complete ≥1 revision round, publish a decentralization roadmap, and size ≥90 days cycle runway.
@@ -115,7 +115,7 @@ This framing lets you launch in weeks, not quarters, and gives the DAO a *real p
 | App | Role | MVP must‑haves | Status |
 |---|---|---|---|
 | **Cafreso Pages** (`cafreso.com`) | Storefront + dev log + community front door | Working checkout (coffee/sub), dev‑log live, ecosystem nav, link to AI/HQ | Storefront/checkout partial; admin/treasury view missing |
-| **CafresoAI** (`ai.cafreso.com`) | Control plane / shell | II login, ecosystem nav, vault, chat, provisioning + usage, onboarding | Shell done; provisioning/billing + onboarding are the gaps |
+| **CafresoHQ** (`ai.cafreso.com`) | Control plane / shell | II login, ecosystem nav, vault, chat, provisioning + usage, onboarding | Shell done; provisioning/billing + onboarding are the gaps |
 | **CafresoHQ** (`hq.cafreso.com`) | Per‑user agent workspace | One real agent loop, vault‑persisted state, cohesive chrome | Agents mock; chrome diverged |
 | **Minegold.defi / Banking.Brave** (one app) | II anchor + treasury/yield — Banking.Brave is the homepage, Minegold.defi the protocol under that domain | Add custom domains to `ii-alternative-origins` (done); show DAO/treasury balances; admin dashboard | Backend live `c626g-…`; frontend canister `cqyto-…` = II anchor; admin UI missing |
 

@@ -1,5 +1,5 @@
 ﻿/* ==========================================================================
-   CafresoAI — modals (Hire / Settings)
+   CafresoHQ — modals (Hire / Settings)
    ========================================================================== */
 
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
@@ -8,11 +8,11 @@ const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
    any component using this hook re-renders whenever setSettings() is called,
    even from a different component tree. */
 function useSettingsStore() {
-  const [s, setS] = useStateM(() => window.OpenclawClient.getSettings());
+  const [s, setS] = useStateM(() => window.CafresoHQClient.getSettings());
   useEffectM(() => {
-    return window.OpenclawClient.onSettingsChange(fresh => setS({ ...fresh }));
+    return window.CafresoHQClient.onSettingsChange(fresh => setS({ ...fresh }));
   }, []);
-  return [s, patch => window.OpenclawClient.setSettings(patch)];
+  return [s, patch => window.CafresoHQClient.setSettings(patch)];
 }
 
 /* Live model picker — loads all providers from localModelOptions(), which now
@@ -27,7 +27,7 @@ function ModelPicker({ value, onChange, refreshKey }) {
     let live = true;
     setLoading(true);
     setError(false);
-    window.OpenclawClient.localModelOptions()
+    window.CafresoHQClient.localModelOptions()
       .then(g => {
         if (!live) return;
         setGroups(g);
@@ -37,14 +37,14 @@ function ModelPicker({ value, onChange, refreshKey }) {
         if (!live) return;
         /* Last-resort fallback — all static model lists so the picker
            is never blank. Static lists only. */
-        const s = window.OpenclawClient.getSettings();
+        const s = window.CafresoHQClient.getSettings();
         const fallback = [
           { label: 'Anthropic (Claude API)', provider: 'anthropic',
-            options: window.OpenclawClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
+            options: window.CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
           { label: 'Google (Gemini API)', provider: 'google',
-            options: window.OpenclawClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
+            options: window.CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
           { label: 'Codex CLI', provider: 'codex',
-            options: window.OpenclawClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
+            options: window.CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
         ];
         setGroups(fallback);
         setLoading(false);
@@ -68,7 +68,7 @@ function ModelPicker({ value, onChange, refreshKey }) {
   );
 }
 
-const TEMPLATES_KEY = 'openclaw_hire_templates_v1';
+const TEMPLATES_KEY = 'cafresohq_hire_templates_v1';
 function loadTemplates() {
   try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '[]'); }
   catch (_e) { return []; }
@@ -76,8 +76,8 @@ function loadTemplates() {
 function saveTemplates(ts) {
   try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(ts)); }
   catch (err) {
-    console.warn('[openclaw] saveTemplates failed:', err);
-    try { window.dispatchEvent(new CustomEvent('openclaw:storage-error', { detail: { key: TEMPLATES_KEY, error: err } })); } catch (_e) {}
+    console.warn('[cafresohq] saveTemplates failed:', err);
+    try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: TEMPLATES_KEY, error: err } })); } catch (_e) {}
   }
 }
 
@@ -264,7 +264,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [avatar, setAvatar] = useStateM('rose');
   const [model, setModel] = useStateM('anthropic:claude-haiku-4-5-20251001');
   const [temp, setTemp] = useStateM(0.4);
-  /* elevated = the agent will be backed by an OpenClaw session with file/shell
+  /* elevated = the agent will be backed by an CafresoHQ session with file/shell
      access on the host computer. Off by default — a deliberate, scary opt-in. */
   const [elevated, setElevated] = useStateM(false);
   const [templates, setTemplates] = useStateM(loadTemplates);
@@ -302,7 +302,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     if (!name.trim()) return;
     if (elevated && !window.confirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
-      `This agent will be backed by an elevated CafresoAI session that can read/write files and run shell commands on this machine.\n\n` +
+      `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
       `· Inter-agent DMs cannot reach them (only your direct dispatches will).\n` +
       `· Research missions are blocked unless you explicitly authorize unattended access.\n` +
       `· Every tool call they make will be logged to Receipts.\n` +
@@ -454,7 +454,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 <span>
                   <b style={{color: elevated ? '#c44' : 'inherit'}}>🛡 ELEVATED — computer access</b><br/>
                   <span className="hint" style={{display:'block',marginTop:2}}>
-                    Backed by an elevated CafresoAI session that can read/write files and run shell commands on this machine. DMs blocked, missions opt-in, every action logged.
+                    Backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. DMs blocked, missions opt-in, every action logged.
                   </span>
                 </span>
               </label>
@@ -482,7 +482,7 @@ const SETTINGS_TAB_ALIAS = { global: 'appearance' }; // old id → new id
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
-  { tab:'keys', label:'Backend provider', hint:'which brain powers CafresoAI & crew', kw:'provider brain hermes anthropic google lmstudio ollama claudecode codex' },
+  { tab:'keys', label:'Backend provider', hint:'which brain powers CafresoHQ & crew', kw:'provider brain hermes anthropic google lmstudio ollama claudecode codex' },
   { tab:'keys', label:'Hermes model', hint:'free open-weights model presets', kw:'model preset gpt-oss nemotron llama' },
   { tab:'keys', label:'Backend service', hint:'OpenRouter · Gemini · Groq (free keys)', kw:'openrouter gemini groq free reliable service' },
   { tab:'keys', label:'Service API key', hint:'your personal free key for the backend service', kw:'key api sk-or aiza gsk openrouter gemini groq' },
@@ -539,7 +539,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
   useEffectM(() => {
     if (!open) return;
     let live = true;
-    const C = window.OpenclawClient;
+    const C = window.CafresoHQClient;
     (async () => {
       const stat = {};
       try { stat.backend = !!(await C.backendHealth()); } catch (_e) { stat.backend = false; }
@@ -714,7 +714,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                         if (!sel.elevated) {
                           if (!window.confirm(
                             `Grant ${sel.name} COMPUTER ACCESS?\n\n` +
-                            `They will be backed by an elevated CafresoAI session that can read/write files and run shell commands on this machine. ` +
+                            `They will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. ` +
                             `DMs from other agents will be blocked, missions require explicit authorization, and every tool call is logged.\n\n` +
                             `Continue?`
                           )) return;
@@ -779,7 +779,7 @@ function SystemTab() {
       setHealth(r.ok ? await r.json() : false);
     } catch (_e) { setHealth(false); }
     try {
-      const C = window.OpenclawClient;
+      const C = window.CafresoHQClient;
       if (C.hermesGetProvider) setProv(await C.hermesGetProvider());
     } catch (_e) { setProv(null); }
     setBusy(false);
@@ -806,7 +806,7 @@ function SystemTab() {
   const [importBusy, setImportBusy] = useStateM(false);
   const exportConfig = async () => {
     try {
-      const C = window.OpenclawClient;
+      const C = window.CafresoHQClient;
       const data = await C.hermesExportConfig();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -824,7 +824,7 @@ function SystemTab() {
     setImportBusy(true); setNote('');
     try {
       const text = await file.text();
-      const C = window.OpenclawClient;
+      const C = window.CafresoHQClient;
       const r = await C.hermesImportConfig(text);
       setNote(r.restarted
         ? '✓ config imported — agent reloading (~10s). Re-enter your key in Connections if needed.'
@@ -1138,7 +1138,7 @@ function MediaTab() {
    runs synchronously and can take 30-60 s. Backed by GET /agents and
    POST /agents/install (claude-client: agentsStatus / agentsInstall). */
 function AgentClisTab() {
-  const C = window.OpenclawClient;
+  const C = window.CafresoHQClient;
   const [agents, setAgents] = useStateM(null);   // null = loading
   const [loadErr, setLoadErr] = useStateM(null);
   const [busyId, setBusyId] = useStateM(null);    // agent id currently installing
@@ -1304,7 +1304,7 @@ const HBACKENDS = {
 };
 
 function ApiTab() {
-  const C = window.OpenclawClient;
+  const C = window.CafresoHQClient;
   const [s, update] = useSettingsStore();
   const [probing, setProbing] = useStateM(false);
   const [probeResult, setProbeResult] = useStateM(null);
@@ -1367,21 +1367,21 @@ function ApiTab() {
 
   useEffectM(() => {
     if (s.provider === 'lmstudio') {
-      window.OpenclawClient.listLMStudioModels().then(setLmModels).catch(() => setLmModels([]));
+      window.CafresoHQClient.listLMStudioModels().then(setLmModels).catch(() => setLmModels([]));
     } else if (s.provider === 'ollama') {
-      window.OpenclawClient.listOllamaModels().then(ms => setOlModels(ms.map(m => m.name))).catch(() => setOlModels([]));
+      window.CafresoHQClient.listOllamaModels().then(ms => setOlModels(ms.map(m => m.name))).catch(() => setOlModels([]));
     }
   }, [s.provider, s.lmstudioUrl, s.ollamaUrl]);
 
   const runProbe = async () => {
     setProbing(true); setProbeResult(null);
     try {
-      const r = await window.OpenclawClient.probe();
+      const r = await window.CafresoHQClient.probe();
       setProbeResult(r);
       if (s.provider === 'lmstudio') {
-        setLmModels(await window.OpenclawClient.listLMStudioModels());
+        setLmModels(await window.CafresoHQClient.listLMStudioModels());
       } else if (s.provider === 'ollama') {
-        const ms = await window.OpenclawClient.listOllamaModels();
+        const ms = await window.CafresoHQClient.listOllamaModels();
         setOlModels(ms.map(m => m.name));
       } else if (s.provider === 'google') { // Add this block for Google models
         // No specific model listing needed here as it's done in claude-client.jsx
@@ -1395,7 +1395,7 @@ function ApiTab() {
       <div className="cb-panel">
         <h4>PROVIDER</h4>
         <div className="row-knob">
-          <div><div className="lbl">Backend</div><div className="sub">which brain powers CafresoAI & crew</div></div>
+          <div><div className="lbl">Backend</div><div className="sub">which brain powers CafresoHQ & crew</div></div>
           <select value={s.provider} onChange={e=>update({provider:e.target.value})}>
             <option value="lmstudio">LM Studio (local)</option>
             <option value="ollama">Ollama (local)</option>
@@ -1512,7 +1512,7 @@ function ApiTab() {
           </div>
           {s.subagentModel === 'inherit' ? (
             <button className="px-btn secondary"
-                    onClick={() => update({ subagentModel: window.OpenclawClient.getSettings().anthropicModel ? 'anthropic:' + window.OpenclawClient.getSettings().anthropicModel : 'inherit' })}>
+                    onClick={() => update({ subagentModel: window.CafresoHQClient.getSettings().anthropicModel ? 'anthropic:' + window.CafresoHQClient.getSettings().anthropicModel : 'inherit' })}>
               PIN A MODEL…
             </button>
           ) : (
@@ -1560,7 +1560,7 @@ function ApiTab() {
           <div className="form-row">
             <label>MODEL</label>
             <select value={s.anthropicModel} onChange={e=>update({anthropicModel: e.target.value})}>
-              {window.OpenclawClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              {window.CafresoHQClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
           </div>
@@ -1579,7 +1579,7 @@ function ApiTab() {
           <div className="form-row">
             <label>MODEL</label>
             <select value={s.googleModel} onChange={e=>update({googleModel: e.target.value})}>
-              {window.OpenclawClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              {window.CafresoHQClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
           </div>
@@ -1651,7 +1651,7 @@ function ClaudeCodePanel({ s, update }) {
 
   const refresh = async () => {
     try {
-      const st = await window.OpenclawClient.claudecodeStatus();
+      const st = await window.CafresoHQClient.claudecodeStatus();
       setStatus(st);
       if (!draft) setDraft(st.override || '');
     } catch (_e) {}
@@ -1661,7 +1661,7 @@ function ClaudeCodePanel({ s, update }) {
   const save = async () => {
     setBusy(true); setMsg(null);
     try {
-      await window.OpenclawClient.claudecodeConfigure(draft.trim());
+      await window.CafresoHQClient.claudecodeConfigure(draft.trim());
       await refresh();
       setMsg({ ok: true, text: draft.trim() ? 'override saved' : 'cleared (using PATH)' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -1675,7 +1675,7 @@ function ClaudeCodePanel({ s, update }) {
         Routes calls through your locally-installed <code>claude</code> CLI, which is already
         authenticated against your Pro/Max subscription. Each call spawns a subprocess on the
         proxy machine, so requests are slightly slower than direct API but use your subscription
-        instead of API credits. Tool use inside Claude Code is disabled so CafresoAI's own
+        instead of API credits. Tool use inside Claude Code is disabled so CafresoHQ's own
         tool loop stays in charge.
       </div>
       <div className="row-knob">
@@ -1698,11 +1698,11 @@ function ClaudeCodePanel({ s, update }) {
       <div className="row-knob">
         <div><div className="lbl">Default model</div><div className="sub">used when an agent hasn't pinned one</div></div>
         <select value={s.claudecodeModel} onChange={e=>update({claudecodeModel: e.target.value})}>
-          {window.OpenclawClient.CLAUDECODE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          {window.CafresoHQClient.CLAUDECODE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       <div className="row-knob">
-        <div><div className="lbl">Save override</div><div className="sub">stored in the proxy's memory; re-set on restart unless OPENCLAW_CLAUDE_BIN env var</div></div>
+        <div><div className="lbl">Save override</div><div className="sub">stored in the proxy's memory; re-set on restart unless CAFRESOHQ_CLAUDE_BIN env var</div></div>
         <button className="px-btn secondary" onClick={save} disabled={busy}>{busy ? '…' : 'SAVE'}</button>
       </div>
     </div>
@@ -1717,7 +1717,7 @@ function CodexPanel({ s, update }) {
 
   const refresh = async () => {
     try {
-      const st = await window.OpenclawClient.codexStatus();
+      const st = await window.CafresoHQClient.codexStatus();
       setStatus(st);
       if (!draft) setDraft(st.override || '');
     } catch (_e) {}
@@ -1727,7 +1727,7 @@ function CodexPanel({ s, update }) {
   const save = async () => {
     setBusy(true); setMsg(null);
     try {
-      await window.OpenclawClient.codexConfigure(draft.trim());
+      await window.CafresoHQClient.codexConfigure(draft.trim());
       await refresh();
       setMsg({ ok: true, text: draft.trim() ? 'override saved' : 'cleared (using PATH)' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -1753,7 +1753,7 @@ function CodexPanel({ s, update }) {
           </div>
           {!!status.badDirs?.length && (
             <div className="sub" style={{color:'var(--warning, #c97b2a)', marginTop:4}}>
-              invalid OPENCLAW_ALLOWED_DIRS: {status.badDirs.join(', ')}
+              invalid CAFRESOHQ_ALLOWED_DIRS: {status.badDirs.join(', ')}
             </div>
           )}
         </div>
@@ -1770,11 +1770,11 @@ function CodexPanel({ s, update }) {
           <div className="sub">maps to a profile in <code>~/.codex/config.toml</code></div>
         </div>
         <select value={s.codexModel} onChange={e=>update({codexModel: e.target.value})}>
-          {window.OpenclawClient.CODEX_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          {window.CafresoHQClient.CODEX_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       <div className="row-knob">
-        <div><div className="lbl">Save override</div><div className="sub">stored in the proxy's memory; re-set on restart unless OPENCLAW_CODEX_BIN env var</div></div>
+        <div><div className="lbl">Save override</div><div className="sub">stored in the proxy's memory; re-set on restart unless CAFRESOHQ_CODEX_BIN env var</div></div>
         <button className="px-btn secondary" onClick={save} disabled={busy}>{busy ? '...' : 'SAVE'}</button>
       </div>
     </div>
@@ -1795,17 +1795,17 @@ function VaultTab() {
 
   const refresh = async () => {
     try {
-      const s = await window.OpenclawClient.vaultStatus();
+      const s = await window.CafresoHQClient.vaultStatus();
       setStatus({ ...s, unavailable: false, error: '' });
       setDraftRoot(s.root || '');
       setDraftUrl(s.restUrl || '');
       // We never get the actual key back from the server; only the masked sentinel.
       if (!draftKey) setDraftKey('');
       if (s.configured) {
-        try { setFiles(await window.OpenclawClient.vaultList()); } catch (_e) { setFiles(null); }
+        try { setFiles(await window.CafresoHQClient.vaultList()); } catch (_e) { setFiles(null); }
       } else { setFiles(null); }
     } catch (e) {
-      const message = e.message || 'CafresoAI bridge is not reachable.';
+      const message = e.message || 'CafresoHQ bridge is not reachable.';
       setStatus({
         configured: false, backend: 'fs', root: draftRoot || '', defaultRoot: '', restUrl: draftUrl || '', restKey: '',
         fsExists: false, restReachable: false, restDetail: '', unavailable: true, error: message,
@@ -1821,7 +1821,7 @@ function VaultTab() {
   const setBackend = async (backend) => {
     setBusy(true); setMsg(null);
     try {
-      await window.OpenclawClient.vaultConfigure({ backend });
+      await window.CafresoHQClient.vaultConfigure({ backend });
       window.MOCK.clearVaultReadyCache();
       await refresh();
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -1832,7 +1832,7 @@ function VaultTab() {
     const root = cleanLocalRoot(draftRoot);
     setBusy(true); setMsg(null);
     try {
-      await window.OpenclawClient.vaultConfigure({ backend: 'fs', root });
+      await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
       window.MOCK.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: root ? 'configured' : 'cleared' });
@@ -1840,16 +1840,16 @@ function VaultTab() {
     setBusy(false);
   };
 
-  const useOpenclawVault = async () => {
+  const useCafresoHQVault = async () => {
     const root = status.defaultRoot || draftRoot.trim();
     if (!root) return;
     setBusy(true); setMsg(null);
     try {
       setDraftRoot(root);
-      await window.OpenclawClient.vaultConfigure({ backend: 'fs', root });
+      await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
       window.MOCK.clearVaultReadyCache();
       await refresh();
-      setMsg({ ok: true, text: 'using CafresoAI vault' });
+      setMsg({ ok: true, text: 'using CafresoHQ vault' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy(false);
   };
@@ -1857,7 +1857,7 @@ function VaultTab() {
   const detectObsidianVault = async () => {
     setBusy(true); setMsg(null);
     try {
-      const found = await window.OpenclawClient.vaultDiscover();
+      const found = await window.CafresoHQClient.vaultDiscover();
       const vaults = found.vaults || [];
       const pick = vaults.find(v => v.exists) || vaults[0];
       if (!pick) {
@@ -1866,7 +1866,7 @@ function VaultTab() {
         setMsg({ ok: false, text: `found ${pick.name}, but path is missing` });
       } else {
         setDraftRoot(pick.path);
-        await window.OpenclawClient.vaultConfigure({ backend: 'fs', root: pick.path });
+        await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root: pick.path });
         window.MOCK.clearVaultReadyCache();
         await refresh();
         setMsg({ ok: true, text: `using ${pick.name}` });
@@ -1880,7 +1880,7 @@ function VaultTab() {
     try {
       const patch = { restUrl: draftUrl.trim() };
       if (draftKey.trim()) patch.restKey = draftKey.trim();
-      await window.OpenclawClient.vaultConfigure(patch);
+      await window.CafresoHQClient.vaultConfigure(patch);
       setDraftKey(''); // clear the in-memory draft so we don't redisplay
       window.MOCK.clearVaultReadyCache();
       await refresh();
@@ -1895,7 +1895,7 @@ function VaultTab() {
     <div className="cb-panel">
       <h4>MARKDOWN VAULT</h4>
       <div className="row-knob">
-        <div><div className="lbl">Storage</div><div className="sub">CafresoAI works with a plain Markdown folder; Obsidian is optional</div></div>
+        <div><div className="lbl">Storage</div><div className="sub">CafresoHQ works with a plain Markdown folder; Obsidian is optional</div></div>
         <div style={{display:'flex',gap:6}}>
           <button className={`px-btn ${!isRest?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setBackend('fs')} disabled={busy}>LOCAL DIRECTORY</button>
           <button className={`px-btn ${isRest?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setBackend('rest')} disabled={busy}>OBSIDIAN REST</button>
@@ -1905,9 +1905,9 @@ function VaultTab() {
       {!isRest && (<>
         <div className="form-row" style={{marginBottom:8,marginTop:6}}>
           <label>VAULT DIRECTORY</label>
-          <input placeholder={status.defaultRoot || 'C:/Users/you/Documents/openclawhq/hq-state/vault'}
+          <input placeholder={status.defaultRoot || 'C:/Users/you/Documents/cafresohq/hq-state/vault'}
             value={draftRoot} onChange={e=>setDraftRoot(e.target.value)}/>
-          <span className="hint">absolute path to a Markdown folder; the default lives inside OpenclawHQ under <code>hq-state/vault</code></span>
+          <span className="hint">absolute path to a Markdown folder; the default lives inside CafresoHQ under <code>hq-state/vault</code></span>
         </div>
         <div className="row-knob">
           <div>
@@ -1920,7 +1920,7 @@ function VaultTab() {
             </div>
           </div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
-            <button className="px-btn secondary" style={{fontSize:9}} onClick={useOpenclawVault} disabled={busy}>{busy ? '...' : 'USE APP VAULT'}</button>
+            <button className="px-btn secondary" style={{fontSize:9}} onClick={useCafresoHQVault} disabled={busy}>{busy ? '...' : 'USE APP VAULT'}</button>
             <button className="px-btn secondary" style={{fontSize:9}} onClick={detectObsidianVault} disabled={busy}>{busy ? '...' : 'DETECT OBSIDIAN'}</button>
             <button className="px-btn secondary" style={{fontSize:9}} onClick={saveFs} disabled={busy}>{busy ? '...' : 'SAVE'}</button>
           </div>
@@ -1960,7 +1960,7 @@ function VaultTab() {
 
       <div className="hint" style={{marginTop:8,fontSize:11}}>
         Agents whose role includes the <strong>Vault Notes</strong> tool can search/read/append/create Markdown notes from the local directory.
-        Tip: pass <code>OPENCLAW_VAULT</code> to override the app vault, or <code>OPENCLAW_OBSIDIAN_URL</code> / <code>OPENCLAW_OBSIDIAN_KEY</code> for optional Obsidian REST.
+        Tip: pass <code>CAFRESOHQ_VAULT</code> to override the app vault, or <code>CAFRESOHQ_OBSIDIAN_URL</code> / <code>CAFRESOHQ_OBSIDIAN_KEY</code> for optional Obsidian REST.
       </div>
     </div>
   );
@@ -1971,7 +1971,7 @@ function BraveTab({ s, update }) {
   const [result, setResult] = useStateM(null);
   const test = async () => {
     setProbing(true); setResult(null);
-    try { setResult(await window.OpenclawClient.braveProbe()); }
+    try { setResult(await window.CafresoHQClient.braveProbe()); }
     catch (e) { setResult({ ok:false, detail: e.message }); }
     setProbing(false);
   };
@@ -2117,12 +2117,12 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
       /* If something stashed a prefill on window (Tasks "📋 ROOM" button
          does this — fills name/topic/agentIds from a task), consume and
          clear it. Otherwise generate a default timestamp name. */
-      const pre = (typeof window !== 'undefined') ? window._openclawMeetingPrefill : null;
+      const pre = (typeof window !== 'undefined') ? window._cafresohqMeetingPrefill : null;
       if (pre && pre.name) {
         setName(pre.name);
         setTopic(pre.topic || '');
         setSelectedIds(Array.isArray(pre.agentIds) ? pre.agentIds : []);
-        try { delete window._openclawMeetingPrefill; } catch (_) { window._openclawMeetingPrefill = null; }
+        try { delete window._cafresohqMeetingPrefill; } catch (_) { window._cafresohqMeetingPrefill = null; }
         return;
       }
       const stamp = new Date();
@@ -2206,7 +2206,7 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
 
 /* ─────────────────────────────────────────────────────────────────────
    InboxModal — shows the durable message registry (Phase 1 of the agent-
-   communication refactor). Reads from window.OpenclawMessages which is
+   communication refactor). Reads from window.CafresoHQMessages which is
    exposed by app.jsx's MessageRegistry. Message records persist
    independently of the chat scrollback so the boss can always trace what
    happened to a handoff: who sent it, what state it's in, what artifacts
@@ -2222,9 +2222,9 @@ function InboxModal({ open, onClose }) {
   const initialFilter = React.useMemo(() => {
     if (!open) return 'active';
     try {
-      const v = sessionStorage.getItem('openclaw:inbox-filter');
+      const v = sessionStorage.getItem('cafresohq:inbox-filter');
       if (v) {
-        sessionStorage.removeItem('openclaw:inbox-filter');
+        sessionStorage.removeItem('cafresohq:inbox-filter');
         return v;
       }
     } catch(_e) {}
@@ -2250,7 +2250,7 @@ function InboxModal({ open, onClose }) {
   }, [open]);
 
   if (!open) return null;
-  const reg = window.OpenclawMessages;
+  const reg = window.CafresoHQMessages;
   if (!reg) {
     return (
       <Modal open={open} onClose={onClose} title="📬 INBOX" subtitle="message registry unavailable" size="md">
@@ -2447,4 +2447,4 @@ function InboxModal({ open, onClose }) {
   );
 }
 
-window.OpenclawModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal };
+window.CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal };

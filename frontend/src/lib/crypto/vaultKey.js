@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CafresoAI — vault crypto module (vetKeys + AES-GCM + AES-SIV-style names)
+// CafresoHQ — vault crypto module (vetKeys + AES-GCM + AES-SIV-style names)
 //
 // Zero-knowledge vault. The user's master key is derived via ICP vetKeys keyed
 // on their Internet Identity principal. Per-file content keys and per-name
@@ -37,11 +37,11 @@ import {
 import { get } from 'svelte/store';
 import { authIdentity, principalText, currentPrincipal } from '$lib/stores/auth.js';
 
-const SESSION_CACHE_KEY = 'cafresoai.vault_master_key';
-const SESSION_PRINCIPAL_KEY = 'cafresoai.vault_master_principal';
+const SESSION_CACHE_KEY = 'cafresohq.vault_master_key';
+const SESSION_PRINCIPAL_KEY = 'cafresohq.vault_master_principal';
 
 let _masterKeyCache = null;     // Uint8Array — in-memory copy of the derived master
-let _cachedActor = null;        // memoised cafresoai_keys actor
+let _cachedActor = null;        // memoised cafresohq_keys actor
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ async function hkdfDerive(masterBytes, info, saltBytes, lengthBits = 256) {
 
 async function deriveFileContentKey(masterBytes, fileId) {
   const salt = unhex(fileId);
-  const bits = await hkdfDerive(masterBytes, 'cafresoai-vault-content-v1', salt);
+  const bits = await hkdfDerive(masterBytes, 'cafresohq-vault-content-v1', salt);
   return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
@@ -104,8 +104,8 @@ async function deriveFileContentKey(masterBytes, fileId) {
 async function deriveNameKey(masterBytes) {
   const bits = await hkdfDerive(
     masterBytes,
-    'cafresoai-vault-names-v1',
-    new TextEncoder().encode('cafresoai-vault-names-salt-v1')
+    'cafresohq-vault-names-v1',
+    new TextEncoder().encode('cafresohq-vault-names-salt-v1')
   );
   return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
@@ -113,8 +113,8 @@ async function deriveNameKey(masterBytes) {
 async function deriveNameMacKey(masterBytes) {
   const bits = await hkdfDerive(
     masterBytes,
-    'cafresoai-vault-name-mac-v1',
-    new TextEncoder().encode('cafresoai-vault-name-mac-salt-v1')
+    'cafresohq-vault-name-mac-v1',
+    new TextEncoder().encode('cafresohq-vault-name-mac-salt-v1')
   );
   return crypto.subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 }
@@ -169,13 +169,13 @@ export function forgetMasterKey() {
  * Derive (or fetch from cache) the vault master key for the signed-in user.
  * One vetKeys call per session — cached in sessionStorage thereafter.
  *
- * @param {any} keysActor  The cafresoai_keys actor (built with the user's identity)
+ * @param {any} keysActor  The cafresohq_keys actor (built with the user's identity)
  * @returns {Promise<Uint8Array>} 32-byte master key
  */
 export async function getMasterKey(keysActor) {
   if (_masterKeyCache) return _masterKeyCache;
   if (_tryHydrate()) return _masterKeyCache;
-  if (!keysActor) throw new Error('cafresoai_keys actor required to derive master key');
+  if (!keysActor) throw new Error('cafresohq_keys actor required to derive master key');
 
   const principal = currentPrincipal();
   if (!principal) throw new Error('sign in with Internet Identity first');
@@ -201,7 +201,7 @@ export async function getMasterKey(keysActor) {
   //    The domain separator scopes this material to the vault subsystem so
   //    future features (BYOK, messaging) using the same vetKey produce
   //    independent keys — see vetKeys docs "Security Considerations".
-  const master = vetKey.deriveSymmetricKey('cafresoai-vault-master-v1', 32);
+  const master = vetKey.deriveSymmetricKey('cafresohq-vault-master-v1', 32);
 
   _masterKeyCache = master;
   _persist(master);

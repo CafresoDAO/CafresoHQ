@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────────────────────────────
-// CafresoAI — vetKeys vault key derivation canister
+// CafresoHQ — vetKeys vault key derivation canister
 //
 // Per-user encryption keys derived via ICP vetKeys (threshold BLS12-381).
 // Each user's vault key is keyed on their Internet Identity principal, so:
@@ -29,7 +29,7 @@ import Char "mo:base/Char";
 import Buffer "mo:base/Buffer";
 import Sha256 "Sha256";
 
-actor CafresoaiKeys {
+actor CafresoHQKeys {
 
     // ── Management canister vetKD interface ────────────────────────────────
     // Production interface (verified empirically May 2026 — error msg from
@@ -72,7 +72,7 @@ actor CafresoaiKeys {
     // Domain-separation tag scoping this key family to the vault subsystem.
     // Future BYOK / messaging features should use distinct contexts so a
     // vault-key compromise can't widen blast radius.
-    let VAULT_CONTEXT : Blob = Text.encodeUtf8("cafresoai-vault-v1");
+    let VAULT_CONTEXT : Blob = Text.encodeUtf8("cafresohq-vault-v1");
 
     // vetkd_derive_encrypted_key cost on mainnet (subject to NNS proposals).
     let VETKD_CALL_CYCLES : Nat = 26_153_846_153;

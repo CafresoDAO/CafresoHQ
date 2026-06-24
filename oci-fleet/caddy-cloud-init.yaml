@@ -30,7 +30,7 @@ runcmd:
     # Placeholder — fleet-manager populates this on each provision.
     # Listens on port 80 only until DNS is pointed at this VM.
     :80 {
-      respond / "CafresoAI TLS gateway — awaiting fleet sync" 200
+      respond / "CafresoHQ TLS gateway — awaiting fleet sync" 200
       respond /healthz "ok" 200
     }
     EOF
@@ -50,4 +50,4 @@ write_files:
       *
     permissions: '0644'
 
-final_message: "CafresoAI TLS gateway ready. Caddy running on :80. Sync fleet config to /etc/caddy/Caddyfile + caddy reload."
+final_message: "CafresoHQ TLS gateway ready. Caddy running on :80. Sync fleet config to /etc/caddy/Caddyfile + caddy reload."

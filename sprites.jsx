@@ -62,7 +62,7 @@ function render(palette) {
 
 // Human sprite variants — differ in hair + shirt
 const HUMANS = {
-  openclaw: makePal({ h:'#4b2e1f', H:'#2a1510', c:'#8a5a9b', C:'#5e3e6c' }), // plum blazer — the CEO
+  cafresohq: makePal({ h:'#4b2e1f', H:'#2a1510', c:'#8a5a9b', C:'#5e3e6c' }), // plum blazer — the CEO
   rose:     makePal({ h:'#3a2420', H:'#1e1410', c:'#e8a9a9', C:'#b36b6b' }),
   teal:     makePal({ h:'#2e1c14', H:'#15100a', c:'#7db5b5', C:'#4d8a8a' }),
   sun:      makePal({ h:'#c48a3e', H:'#7a5120', c:'#f0c674', C:'#b38a44' }),
@@ -101,7 +101,7 @@ const DOGS = {
 function Sprite({ data, scale = 3, className = '', style = {} }) {
   // `data` can be a palette key (string) or a palette object.
   const isDog = typeof data === 'string' && !!DOGS[data];
-  const palette = typeof data === 'string' ? (DOGS[data] || HUMANS[data] || HUMANS.openclaw) : (data || HUMANS.openclaw);
+  const palette = typeof data === 'string' ? (DOGS[data] || HUMANS[data] || HUMANS.cafresohq) : (data || HUMANS.cafresohq);
   const template = isDog ? CHAR_16_DOG : CHAR_16;
   const rows = 16, cols = 16;
   const grid = {
@@ -126,7 +126,7 @@ function Sprite({ data, scale = 3, className = '', style = {} }) {
 
 // SPRITES map kept for back-compat with existing calls
 const SPRITES = {
-  openclaw: 'openclaw',
+  cafresohq: 'cafresohq',
   maximus: 'maximus',
   rose: 'rose',
   teal: 'teal',

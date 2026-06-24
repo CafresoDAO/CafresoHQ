@@ -1,7 +1,7 @@
 {
-  "name": "cafresoai-frontend",
+  "name": "cafresohq-frontend",
   "version": "1.0.0",
-  "description": "CafresoAI — SvelteKit frontend that authenticates with Internet Identity (ecosystem-shared principal) and connects users to their OCI Container Instance.",
+  "description": "CafresoHQ — SvelteKit frontend that authenticates with Internet Identity (ecosystem-shared principal) and connects users to their OCI Container Instance.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -13,10 +13,10 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./jsconfig.json",
     "predeploy:ic": "npm run build",
-    "deploy:ic": "cd .. && dfx deploy --network ic cafresoai_frontend",
+    "deploy:ic": "cd .. && dfx deploy --network ic cafresohq_frontend",
     "predeploy:local": "npm run build",
-    "deploy:local": "cd .. && dfx deploy --network local cafresoai_frontend",
-    "deploy:playground": "npm run build && cd .. && dfx deploy --playground cafresoai_frontend"
+    "deploy:local": "cd .. && dfx deploy --network local cafresohq_frontend",
+    "deploy:playground": "npm run build && cd .. && dfx deploy --playground cafresohq_frontend"
   },
   "devDependencies": {
     "@polka/url": "^1.0.0-next.29",

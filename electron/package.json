@@ -1,8 +1,8 @@
 {
-  "name": "cafresoai",
-  "productName": "CafresoAI",
+  "name": "cafresohq",
+  "productName": "CafresoHQ",
   "version": "1.0.0",
-  "description": "CafresoAI — AI Agent Command Center",
+  "description": "CafresoHQ — AI Agent Command Center",
   "main": "main.js",
   "author": "Cafreso",
   "license": "MIT",
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.cafreso.ai",
-    "productName": "CafresoAI",
+    "productName": "CafresoHQ",
     "copyright": "Copyright © 2026 Cafreso",
     "directories": {
       "output": "../dist"
@@ -31,7 +31,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CafresoAI",
+      "shortcutName": "CafresoHQ",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "license": null

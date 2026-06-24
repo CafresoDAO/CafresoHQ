@@ -10,7 +10,7 @@ import { writable } from 'svelte/store';
 
 export const DEPLOY_TARGETS = { LOCAL: 'local', OCI: 'oci-fleet' };
 
-const STORAGE_KEY = 'cafresoai.deploy_target';
+const STORAGE_KEY = 'cafresohq.deploy_target';
 const browser = () => typeof window !== 'undefined';
 
 function _initial() {

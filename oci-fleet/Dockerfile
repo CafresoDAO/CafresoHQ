@@ -1,4 +1,4 @@
-# ── CafresoAI — OCI Fleet Container Image ────────────────────────────────────
+# ── CafresoHQ — OCI Fleet Container Image ────────────────────────────────────
 # Builds a self-contained serve.py image that runs inside OCI Container Instances.
 # Each user gets their own isolated instance of this image.
 #
@@ -115,20 +115,20 @@ COPY oci-fleet/hermes-bootstrap.py ./hermes-bootstrap.py
 RUN chmod +x entrypoint.sh
 
 # ── Runtime data dirs (override with OCI Block Volume or Object Storage) ─────
-# /root/Documents is in the Codex/Openclaw allowed-dirs sandbox; create it so
+# /root/Documents is in the Codex/CafresoHQ allowed-dirs sandbox; create it so
 # code-agent sessions have a valid working directory (was a "badDir" otherwise).
 RUN mkdir -p /data/hq-state /data/vault /data/hermes /root/Documents
 
 # ── Environment ──────────────────────────────────────────────────────────────
 # These defaults are overridden per-container by fleet-manager.py
-LABEL org.opencontainers.image.title="CafresoAI Serve"
-LABEL org.opencontainers.image.description="CafresoAI — AI Agent Fleet Node"
+LABEL org.opencontainers.image.title="CafresoHQ Serve"
+LABEL org.opencontainers.image.description="CafresoHQ — AI Agent Fleet Node"
 LABEL org.opencontainers.image.vendor="Cafreso"
 
-ENV OPENCLAW_FLEET_MODE=oci-fleet
-ENV OPENCLAW_VAULT_BACKEND=oci
-ENV OPENCLAW_HQ_STATE_DIR=/data/hq-state
-ENV OPENCLAW_VAULT=/data/vault
+ENV CAFRESOHQ_FLEET_MODE=oci-fleet
+ENV CAFRESOHQ_VAULT_BACKEND=oci
+ENV CAFRESOHQ_HQ_STATE_DIR=/data/hq-state
+ENV CAFRESOHQ_VAULT=/data/vault
 ENV PORT=8787
 
 # Hermes Agent state (config.yaml, memories/, cron/, .env) on the data volume

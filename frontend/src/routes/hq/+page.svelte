@@ -18,7 +18,7 @@
   <header class="card overflow-hidden p-6 sm:p-8">
     <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
       <div class="max-w-3xl">
-        <div class="page-kicker">CafresoAI / Control Plane</div>
+        <div class="page-kicker">CafresoHQ / Control Plane</div>
         <h1 class="page-title mt-5">Command Center<span class="text-brand-500">.</span></h1>
         <p class="mt-5 max-w-2xl text-base leading-7 text-ink-300">
           Your private OCI container, encrypted vault, and ecosystem-shared Internet
@@ -69,7 +69,7 @@
       {:else}
         <p class="mt-4 text-sm leading-6 text-ink-300">
           Sign in with Internet Identity to derive your ecosystem principal and
-          unlock your CafresoAI container.
+          unlock your CafresoHQ container.
         </p>
         <button class="btn-primary mt-5" on:click={login}>
           Sign in with Internet Identity

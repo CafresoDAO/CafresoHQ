@@ -1,5 +1,5 @@
 /* ==========================================================================
-   CafresoAI — main app components (chat, office, cards, modals)
+   CafresoHQ — main app components (chat, office, cards, modals)
    ========================================================================== */
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
@@ -555,7 +555,7 @@ function Tabs({
 
    For non-React code (event listeners, setInterval handlers, etc.) call
    the global imperative escape hatch:
-       window.openclawToast.info('Hello from outside React');
+       window.cafresohqToast.info('Hello from outside React');
 
    Implementation: a tiny pub/sub backed by a ref'd queue. Each toast has an
    id, kind, title, optional detail, optional action button, and a duration.
@@ -681,8 +681,8 @@ function ToastProvider({ children }) {
   /* Expose imperative entry point for non-React callers (legacy event
      listeners, runners, etc.). Last provider wins. */
   React.useEffect(() => {
-    window.openclawToast = api;
-    return () => { if (window.openclawToast === api) delete window.openclawToast; };
+    window.cafresohqToast = api;
+    return () => { if (window.cafresohqToast === api) delete window.cafresohqToast; };
   }, [api]);
 
   return (
@@ -742,7 +742,7 @@ function useToast() {
     /* If something tries to toast before the provider mounts, fall back to
        the imperative window handle (which may also be missing — return a
        no-op shape so callers don't crash). */
-    return window.openclawToast || {
+    return window.cafresohqToast || {
       push: () => {}, info: () => {}, success: () => {},
       warn: () => {}, error: () => {}, action: () => {},
       dismiss: () => {}, dismissAll: () => {},
@@ -773,9 +773,9 @@ function useToast() {
      hidden    bool      pre-filtered out (use for transient cmds)
 
    Imperative escape hatch:
-     window.openclawPalette.open()    — open the palette
-     window.openclawPalette.close()   — close it
-     window.openclawPalette.run(id)   — invoke a command by id
+     window.cafresohqPalette.open()    — open the palette
+     window.cafresohqPalette.close()   — close it
+     window.cafresohqPalette.run(id)   — invoke a command by id
    ───────────────────────────────────────────────────────────────────── */
 const PaletteCtx = React.createContext(null);
 
@@ -884,11 +884,11 @@ function CommandPaletteProvider({ children }) {
 
   /* Imperative window handle. */
   React.useEffect(() => {
-    window.openclawPalette = {
+    window.cafresohqPalette = {
       open: openIt, close, run: runById,
       list: () => flatCommands.map(c => ({ id: c.id, label: c.label, section: c.section })),
     };
-    return () => { if (window.openclawPalette) delete window.openclawPalette; };
+    return () => { if (window.cafresohqPalette) delete window.cafresohqPalette; };
   }, [openIt, close, runById, flatCommands]);
 
   const api = React.useMemo(() => ({
@@ -911,7 +911,7 @@ function CommandPaletteProvider({ children }) {
 function PaletteFab() {
   return (
     <button className="palette-fab" aria-label="Open command palette"
-      onClick={() => window.openclawPalette && window.openclawPalette.open()}>
+      onClick={() => window.cafresohqPalette && window.cafresohqPalette.open()}>
       <span style={{fontSize: 22, lineHeight: 1}}>🛠️</span>
     </button>
   );
@@ -1201,12 +1201,12 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
    <OnboardingKeyStep>
    The "Get your free AI key" body used inside a tour step. Walks the user
    through creating a free OpenRouter key and pasting it in. Persists via
-   window.OpenclawClient.hermesSetOpenRouterKey() (server-side container env
+   window.CafresoHQClient.hermesSetOpenRouterKey() (server-side container env
    when the endpoint exists; otherwise local settings — see client helper).
    Styled with the same tokens as the rest of the tour card.
    ───────────────────────────────────────────────────────────────────── */
 function OnboardingKeyStep() {
-  const C = window.OpenclawClient;
+  const C = window.CafresoHQClient;
   const existing = (C && C.getSettings && C.getSettings().openrouterKey) || '';
   const [key, setKey] = useState(existing);
   const [saving, setSaving] = useState(false);
@@ -1506,7 +1506,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         onKeyDown={onShowCEO ? brandKeyDown : undefined}
         title={onShowCEO ? 'Open CEO panel' : undefined}
       >
-        <Sprite data={SPRITES.openclaw} scale={collapsed ? 1 : 2} className="bob" />
+        <Sprite data={SPRITES.cafresohq} scale={collapsed ? 1 : 2} className="bob" />
         {!collapsed && <div className="title">CAFRESO<br/>HQ</div>}
         {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
       </div>
@@ -1812,9 +1812,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       {isMobileOffice && (
         <div className="mobile-agent-strip">
           <div className="mas-scroll">
-            <div className="mas-item" onClick={onSitWithCEO} title="CafresoAI CEO">
+            <div className="mas-item" onClick={onSitWithCEO} title="CafresoHQ CEO">
               <div className="sprite-wrap"><Sprite data="ceo" scale={1.5}/></div>
-              <span className="mas-name">CafresoAI</span>
+              <span className="mas-name">CafresoHQ</span>
             </div>
             {agents.map(a => (
               <div key={a.id} className="mas-item" onClick={() => onInspect && onInspect(a)} title={a.name}>
@@ -1931,12 +1931,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             {/* Trash bin between desk and filing cabinet */}
             <div className="trash-bin" title="Trash" aria-hidden="true"/>
             {/* Clickable filing cabinet → memory shelf */}
-            <div className="filing clickable" title="Browse CafresoAI's memory" onClick={(e)=>{e.stopPropagation(); onOpenMemory();}}>
+            <div className="filing clickable" title="Browse CafresoHQ's memory" onClick={(e)=>{e.stopPropagation(); onOpenMemory();}}>
               <span/><span/><span/>
               <div className="tag">MEMORY</div>
             </div>
             {/* Guest chair — click to start 1:1 */}
-            <div className="guest-chair" title="Sit down with CafresoAI" onClick={(e)=>{e.stopPropagation(); onSitWithCEO();}}/>
+            <div className="guest-chair" title="Sit down with CafresoHQ" onClick={(e)=>{e.stopPropagation(); onSitWithCEO();}}/>
             <div className="guest-chair-label">↑ 1:1 CHAIR</div>
             {/* Meeting room door */}
             <div className="meeting-door" title="Open meeting room" onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}}/>
@@ -1978,7 +1978,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             <div className="office-chair" aria-hidden="true"/>
             <div className="sprite-slot">
               {ceoBusy ? <div className="bubble t-body">replying to you…</div> : null}
-              <Sprite data="openclaw" scale={2} className="bob slow"/>
+              <Sprite data="cafresohq" scale={2} className="bob slow"/>
             </div>
           </div>
         </div>
@@ -2158,7 +2158,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const [showDelegate, setShowDelegate] = useState(false);
   /* activeThread persists across reloads / view switches so navigating away
      from chat and back doesn't dump the user into the 'direct' thread. */
-  const _ACTIVE_THREAD_KEY = 'openclaw_chat_active_thread_v1';
+  const _ACTIVE_THREAD_KEY = 'cafresohq_chat_active_thread_v1';
   const [activeThread, _setActiveThread] = useState(() => {
     try {
       const saved = localStorage.getItem(_ACTIVE_THREAD_KEY);
@@ -2173,11 +2173,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     });
   }, []);
 
-  /* Handoff mode: when CafresoAI emits [HANDOFF_TO: name], the user converses
-     directly with that specialist until they say "back to CafresoAI" or click
+  /* Handoff mode: when CafresoHQ emits [HANDOFF_TO: name], the user converses
+     directly with that specialist until they say "back to CafresoHQ" or click
      the Return button. Persisted per-thread so navigation/reload doesn't drop
      the boss back to the orchestrator mid-conversation. */
-  const _HANDOFF_KEY = 'openclaw_chat_handoffs_v1';
+  const _HANDOFF_KEY = 'cafresohq_chat_handoffs_v1';
   const [handoffMap, _setHandoffMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem(_HANDOFF_KEY) || '{}') || {}; }
     catch (_e) { return {}; }
@@ -2221,7 +2221,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const composerRef = useRef(null);
 
   /* Cross-component bridge: anyone can dispatch
-       window.dispatchEvent(new CustomEvent('openclaw:set-active-thread', { detail: 'meeting:xxx' }))
+       window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'meeting:xxx' }))
      to switch the chat panel to a specific thread. Used by the meeting
      create modal and the project assignment UI to jump straight into a
      newly-opened room. */
@@ -2245,11 +2245,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
       });
     };
-    window.addEventListener('openclaw:set-active-thread', onSet);
-    window.addEventListener('openclaw:prefill-composer', onPrefill);
+    window.addEventListener('cafresohq:set-active-thread', onSet);
+    window.addEventListener('cafresohq:prefill-composer', onPrefill);
     return () => {
-      window.removeEventListener('openclaw:set-active-thread', onSet);
-      window.removeEventListener('openclaw:prefill-composer', onPrefill);
+      window.removeEventListener('cafresohq:set-active-thread', onSet);
+      window.removeEventListener('cafresohq:prefill-composer', onPrefill);
     };
   }, []);
 
@@ -2511,11 +2511,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     setInput('');
 
     /* If a handoff is active for this thread, the user is talking to the
-       specialist directly — skip CafresoAI entirely. Magic phrase "back to
-       CafresoAI" returns control. */
+       specialist directly — skip CafresoHQ entirely. Magic phrase "back to
+       CafresoHQ" returns control. */
     if (handoffAgent) {
       const lower = text.toLowerCase();
-      if (lower.includes('back to cafresohq') || lower.includes('back to cafresoai') || lower.includes('back to ceo')) {
+      if (lower.includes('back to cafresohq') || lower.includes('back to cafresohq') || lower.includes('back to ceo')) {
         returnToCEO();
         return;
       }
@@ -2547,7 +2547,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = MOCK.throttleTokens(setChat, ceoId);
-    /* Track DMs and handoff that CafresoAI emits during the stream so the
+    /* Track DMs and handoff that CafresoHQ emits during the stream so the
        host can dispatch to specialists / switch the active responder after
        the orchestrator finishes its turn. */
     const ceoDms = [];
@@ -2623,7 +2623,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     } else if (ceoDms.length && onDispatchToAgent) {
       /* Parallel DM_TO fan-out from the orchestrator. Dispatch each in parallel;
          specialists stream into the same thread with coParticipants context.
-         When 2+ specialists reply, CafresoAI synthesizes one combined response. */
+         When 2+ specialists reply, CafresoHQ synthesizes one combined response. */
       const targets = ceoDms.map(d => ({
         agent: agents.find(a => a.name.toLowerCase() === d.to.toLowerCase()),
         body: d.body,
@@ -2796,7 +2796,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     <div className="monitor">
       <div className="bezel">
         <div className="left">
-          <div className="avatar-mini"><Sprite data={activeThread === 'direct' ? 'openclaw' : 'teal'} scale={1} /></div>
+          <div className="avatar-mini"><Sprite data={activeThread === 'direct' ? 'cafresohq' : 'teal'} scale={1} /></div>
           <div className="ceo-label">
             {activeThreadDef.label}<br/>
             <span className="sub">{activeThreadDef.desc}</span>
@@ -2975,7 +2975,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       <button title="Copy" onClick={() => {
                         try { navigator.clipboard.writeText(m.text); }
                         catch(_e) {}
-                        if (window.openclawToast) window.openclawToast.success('Copied');
+                        if (window.cafresohqToast) window.cafresohqToast.success('Copied');
                       }}>📋</button>
                       <button title="Quote-reply" onClick={quoteReply}>↩</button>
                       {m.from !== 'user' ? (
@@ -2998,7 +2998,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       {onPinAsTask && (
                         <button title="Pin as a task in the backlog" onClick={() => {
                           onPinAsTask({ msg: m });
-                          if (window.openclawToast) window.openclawToast.success('Pinned to Tasks');
+                          if (window.cafresohqToast) window.cafresohqToast.success('Pinned to Tasks');
                         }}>📋+</button>
                       )}
                     </div>
@@ -3166,7 +3166,7 @@ function CodeBlock({ lang, body }) {
   const copy = () => {
     try { navigator.clipboard.writeText(body); }
     catch (_) {}
-    if (window.openclawToast) window.openclawToast.success('Copied');
+    if (window.cafresohqToast) window.cafresohqToast.success('Copied');
   };
   return (
     <div className="cb-wrap">
@@ -3315,7 +3315,7 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
   );
 }
 
-window.OpenclawUI = {
+window.CafresoHQUI = {
   Rail, MobileTabBar, OfficeView, Ticker, ChatPanel, AgentCards, Ico, NAV_ITEMS,
   Btn, Card,
   Field, TextField, TextArea, Select, Checkbox, Toggle, SearchField,
@@ -3332,7 +3332,7 @@ window.OpenclawUI = {
 /* Lightweight server-status fetch — shows the *real* tool/dir allowlist
    for elevated agents. Cached for 30s so reopening the inspector doesn't
    re-poll. The data comes from /codex/status (works whether Codex or
-   OpenClaw is the elevated backend — both share the OPENCLAW_ALLOWED_*
+   CafresoHQ is the elevated backend — both share the CAFRESOHQ_ALLOWED_*
    env vars). */
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -3418,7 +3418,7 @@ function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMe
         </div>
         {agent.elevated && (
           <div className="elevated-banner">
-            🛡 <b>ELEVATED</b> — backed by a CafresoAI / Codex session with computer access. Every tool call is logged to Receipts.
+            🛡 <b>ELEVATED</b> — backed by a CafresoHQ / Codex session with computer access. Every tool call is logged to Receipts.
             <ElevatedToolkit />
           </div>
         )}
@@ -3500,7 +3500,7 @@ function ShortcutHud({ open, setOpen }) {
             <kbd>M</kbd><span>Memory shelf</span>
             <kbd>N</kbd><span>Add sticky note</span>
             <kbd>U</kbd><span>End-of-day stand-up</span>
-            <kbd>F</kbd><span>1:1 with CafresoAI</span>
+            <kbd>F</kbd><span>1:1 with CafresoHQ</span>
             <kbd>D</kbd><span>Day / night</span>
             <kbd>/</kbd><span>Focus chat</span>
           </div>
@@ -3539,7 +3539,7 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
       <div className="ceo-panel" onClick={(e) => e.stopPropagation()}>
         <header className="ceo-panel-head">
           <div className="ceo-panel-identity">
-            <Sprite data={SPRITES.openclaw} scale={2}/>
+            <Sprite data={SPRITES.cafresohq} scale={2}/>
             <div>
               <div className="ceo-panel-title">CafresoHQ-CEO</div>
               <div className="ceo-panel-sub">Orchestrator · Cafreso HQ</div>
@@ -3617,7 +3617,7 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
               <div className="desk"/>
               <div className="office-chair" aria-hidden="true"/>
               <div className="sprite-slot">
-                <Sprite data={SPRITES.openclaw} scale={1}/>
+                <Sprite data={SPRITES.cafresohq} scale={1}/>
               </div>
             </div>
           </div>
@@ -3651,8 +3651,8 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
   );
 }
 
-window.OpenclawUI.CEOPanel = CEOPanel;
-window.OpenclawUI.InspectPanel = InspectPanel;
-window.OpenclawUI.TokenHUD = TokenHUD;
-window.OpenclawUI.ShortcutHud = ShortcutHud;
-window.OpenclawUI.Toast = Toast;
+window.CafresoHQUI.CEOPanel = CEOPanel;
+window.CafresoHQUI.InspectPanel = InspectPanel;
+window.CafresoHQUI.TokenHUD = TokenHUD;
+window.CafresoHQUI.ShortcutHud = ShortcutHud;
+window.CafresoHQUI.Toast = Toast;

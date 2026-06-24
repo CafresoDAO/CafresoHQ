@@ -4,7 +4,7 @@ verifier.py — Caddy forward_auth backend for per-container access control.
 
 Runs on the gateway VM (localhost:9090). Caddy calls it before proxying any
 /u/<slug>/* request (except /health). It reads the `hq_session` cookie, verifies
-the HMAC token (minted on-chain by the cafresoai_keys canister), and confirms the
+the HMAC token (minted on-chain by the cafresohq_keys canister), and confirms the
 token's principal owns the requested slug. On success → 200 + X-Hq-Principal
 (copied onto the upstream request for defense-in-depth). Otherwise → 401, and the
 request never reaches the container.
@@ -39,7 +39,7 @@ log = logging.getLogger('verifier')
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    server_version = 'CafresoAI-Verifier/1.0'
+    server_version = 'CafresoHQ-Verifier/1.0'
     protocol_version = 'HTTP/1.1'
 
     def log_message(self, fmt, *args):  # quieter access log
@@ -124,7 +124,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     addr = (BIND, PORT)
     print('-' * 60, flush=True)
-    print(f'  CafresoAI Verifier — http://{addr[0]}:{addr[1]}', flush=True)
+    print(f'  CafresoHQ Verifier — http://{addr[0]}:{addr[1]}', flush=True)
     print(f'  Secret: {"configured" if hq_token.secret_bytes() else "MISSING (denies all)"}',
           flush=True)
     print('-' * 60, flush=True)

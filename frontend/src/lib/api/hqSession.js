@@ -1,5 +1,5 @@
-// ── CafresoAI HQ container session ───────────────────────────────────────────
-// Mints a short-lived, principal-bound session token ON-CHAIN (the cafresoai_keys
+// ── CafresoHQ HQ container session ───────────────────────────────────────────
+// Mints a short-lived, principal-bound session token ON-CHAIN (the cafresohq_keys
 // canister verifies II ownership natively, then HMAC-signs principal+exp) and
 // installs it as a cookie on the OCI gateway. The gateway's Caddy forward_auth →
 // verifier.py then gates every /u/<slug>/* request with it, so only the signed-in

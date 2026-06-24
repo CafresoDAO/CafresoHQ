@@ -168,7 +168,7 @@ export async function waitForOrderPaid(orderId, { pollMs = 3000, timeoutMs = 900
 /** Tell the fleet to apply the user's plan to their container (idle policy +
  *  capability) — proven by an ON-CHAIN plan token.
  *
- *  We mint the token from the cafresoai_keys canister, which reads the paid
+ *  We mint the token from the cafresohq_keys canister, which reads the paid
  *  order (`orderId`) from the unforgeable ledger, confirms it belongs to the
  *  caller + is paid + within the period, and HMAC-signs the tier. The fleet
  *  applies the plan only on a valid token, so the client can't self-assign.

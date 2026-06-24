@@ -1,6 +1,6 @@
-// ── CafresoAI cloud endpoint store ───────────────────────────────────────────
+// ── CafresoHQ cloud endpoint store ───────────────────────────────────────────
 // Tracks the URL of the user's OCI Container Instance (their personal
-// CafresoAI serve.py instance) and probes /health to confirm it's alive.
+// CafresoHQ serve.py instance) and probes /health to confirm it's alive.
 //
 // Three deployment modes detected automatically:
 //   1. Local Companion  → http://localhost:8787
@@ -10,7 +10,7 @@
 // The endpoint is persisted in localStorage so it survives reloads.
 import { writable, derived, get } from 'svelte/store';
 
-const STORAGE_KEY = 'cafresoai.endpoint';
+const STORAGE_KEY = 'cafresohq.endpoint';
 
 // ── Stores ───────────────────────────────────────────────────────────────────
 

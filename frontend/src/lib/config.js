@@ -1,4 +1,4 @@
-// ── CafresoAI deployment config ─────────────────────────────────────────────
+// ── CafresoHQ deployment config ─────────────────────────────────────────────
 // Single source of truth for the URLs that vary by environment.
 // `import.meta.env.PROD` is true in `vite build`; false in `vite dev`.
 
@@ -25,7 +25,7 @@ export const APP_ORIGIN = (typeof window !== 'undefined' && window.location?.ori
  */
 export const ECOSYSTEM = {
   pages:    'https://cafreso.com',          // Cafreso Pages (Dev/Forum/Shop)
-  cafreso_ai: 'https://ai.cafreso.com',     // CafresoAI control plane (this app)
+  cafreso_ai: 'https://ai.cafreso.com',     // CafresoHQ control plane (this app)
   hq_gateway: 'https://hq.cafreso.com',     // Per-user OCI containers (Phase 5)
   banking:  'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io', // Banking.Brave (II anchor)
   minegold: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/mine'  // Mine (Banking.Brave canister; minegold.defi domain currently down)

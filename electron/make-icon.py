@@ -1,4 +1,4 @@
-"""Generate build/icon.png — a 256x256 Openclaw icon (pure Python stdlib, no PIL)."""
+"""Generate build/icon.png — a 256x256 CafresoHQ icon (pure Python stdlib, no PIL)."""
 import struct, zlib, os, math
 
 W = H = 256
