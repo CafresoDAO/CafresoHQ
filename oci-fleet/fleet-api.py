@@ -52,6 +52,10 @@ FLEET_DIR        = pathlib.Path(__file__).parent
 FLEET_FILE       = FLEET_DIR / 'fleet.json'
 FLEET_MANAGER    = FLEET_DIR / 'fleet-manager.py'
 SHARED_SECRET    = os.environ.get('FLEET_API_SECRET', '').strip()
+# Fail-closed by default: with no FLEET_API_SECRET, admin-gated routes are denied
+# unless the operator EXPLICITLY opts into dev mode (FLEET_DEV_MODE=1). This stops
+# a forgotten env var in prod from silently disabling auth on provision/delete.
+DEV_MODE         = os.environ.get('FLEET_DEV_MODE', '').strip().lower() in ('1', 'true', 'yes')
 PORT             = int(os.environ.get('FLEET_API_PORT', '8080'))
 ALLOWED_ORIGINS  = os.environ.get(
     'FLEET_API_ALLOWED_ORIGINS',
@@ -247,8 +251,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pass
 
     def _check_auth(self) -> bool:
-        if not SHARED_SECRET:  # DEV mode
-            return True
+        if not SHARED_SECRET:
+            # No shared secret configured. Only wave through when the operator has
+            # EXPLICITLY enabled dev mode; otherwise fail closed so a missing env
+            # var in prod can't silently open admin routes to the world.
+            return DEV_MODE
         return self.headers.get('X-Fleet-Auth') == SHARED_SECRET
 
     # ── routes ──────────────────────────────────────────────────────────────
@@ -975,12 +982,26 @@ def _provision_worker(job_id: str, principal: str):
 # ── main ────────────────────────────────────────────────────────────────────
 def main():
     addr = ('0.0.0.0', PORT)
+    if SHARED_SECRET:
+        auth_line = 'shared-secret'
+    elif DEV_MODE:
+        auth_line = 'DEV MODE (FLEET_DEV_MODE=1) — admin routes UNAUTHENTICATED'
+    else:
+        auth_line = 'FAIL-CLOSED — admin routes DENIED (set FLEET_API_SECRET)'
+
     print('-' * 60, flush=True)
     print(f'  CafresoAI Fleet API — http://{addr[0]}:{addr[1]}', flush=True)
-    print(f'  Auth:    {"shared-secret" if SHARED_SECRET else "DEV MODE (no auth)"}', flush=True)
+    print(f'  Auth:    {auth_line}', flush=True)
     print(f'  Fleet:   {FLEET_FILE}', flush=True)
     print(f'  Origins: {", ".join(ALLOWED_ORIGINS) or "(any)"}', flush=True)
     print('-' * 60, flush=True)
+    if not SHARED_SECRET and DEV_MODE:
+        print('  ⚠  WARNING: dev mode — anyone who can reach this port can '
+              'provision/delete containers. Never expose this publicly.', flush=True)
+    elif not SHARED_SECRET:
+        print('  ⚠  No FLEET_API_SECRET set: admin (X-Fleet-Auth) routes will be '
+              'refused. Token-protected routes still work. Set FLEET_API_SECRET '
+              'for ops access, or FLEET_DEV_MODE=1 to allow local dev.', flush=True)
 
     srv = http.server.ThreadingHTTPServer(addr, Handler)
     try:
