@@ -1,7 +1,7 @@
 <script>
   import { onDestroy } from 'svelte';
   import { isAuthenticated, principalText } from '$lib/stores/auth.js';
-  import { setEndpoint, clearEndpoint, detectLocalCompanion, localNetworkPermission, probeHealth } from '$lib/stores/endpoint.js';
+  import { setEndpoint, clearEndpoint, detectLocalCompanion, localNetworkPermission, probeHealth, localUrlFromInput } from '$lib/stores/endpoint.js';
   import { deployTarget, setDeployTarget } from '$lib/stores/deployTarget.js';
   import { lookup, provisionAndWait, wakeAndWait, deprovision, fleetHealth, FleetApiError, fleetApiUrl }
     from '$lib/api/fleetClient.js';
@@ -26,6 +26,29 @@
   // 'prompt', probes hang on the browser's Allow dialog; while 'denied', every
   // probe fails instantly even with a healthy local HQ — surface both.
   let lnaState = '';
+
+  // ── Custom local port / URL (when the user ran HQ on something other than
+  // 8787/8788, e.g. `-p 9000:8787`). Connecting persists the endpoint, so later
+  // loads reconnect to it without scanning. ──
+  let customInput = '';
+  let customState = '';   // '' | 'connecting' | 'error'
+  let customError = '';
+  async function connectCustom() {
+    const url = localUrlFromInput(customInput);
+    if (!url) { customState = 'error'; customError = 'Enter a port (e.g. 8788) or a full URL.'; return; }
+    customState = 'connecting'; customError = '';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const r = await fetch(url + '/health', { signal: ctrl.signal });
+      if (!r.ok) throw new Error('unhealthy');
+      setEndpoint(url); endpoint = url; localState = 'found'; customState = '';
+    } catch (_) {
+      customState = 'error';
+      customError = `Couldn’t reach a CafresoHQ at ${url}. Check the port and that it’s running` +
+        (lnaState === 'denied' ? ' (and allow local network access).' : '.');
+    } finally { clearTimeout(timer); }
+  }
 
   // OS-aware self-host instructions. Docker is the recommended path — the
   // public image runs identically on macOS / Windows / Linux and includes
@@ -316,7 +339,7 @@
         <div class="mt-2 flex items-center gap-2 text-xl font-semibold">
           <span class="glow-dot text-amber-400 animate-pulse"></span> Looking for your local HQ…
         </div>
-        <p class="mt-3 text-sm leading-6 text-ink-300">Probing <code class="font-mono">{LOCAL_URL}</code>.</p>
+        <p class="mt-3 text-sm leading-6 text-ink-300">Probing <code class="font-mono">localhost:8787</code> and <code class="font-mono">:8788</code>.</p>
         {#if lnaState === 'prompt'}
           <p class="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
             🔐 Your browser is asking to <strong>“access devices on your local network”</strong> —
@@ -383,6 +406,30 @@
         <p class="mt-3 text-sm leading-6 text-ink-300">
           No local HQ is running yet. Start one below — this page re-checks automatically.
         </p>
+
+        <!-- Already running on a non-default port? Connect to it directly. -->
+        <details class="mt-3 rounded-xl border border-ink-600/60 p-3">
+          <summary class="cursor-pointer text-sm font-semibold text-ink-200">
+            Already running on a different port?
+          </summary>
+          <p class="mt-1.5 text-xs leading-5 text-ink-400">
+            We auto-check ports <code class="font-mono">8787</code> and <code class="font-mono">8788</code>.
+            If you started HQ on another port (e.g. <code class="font-mono">-p 9000:8787</code>), enter it here.
+          </p>
+          <form class="mt-2 flex flex-wrap items-center gap-2" on:submit|preventDefault={connectCustom}>
+            <input
+              class="w-40 rounded-lg border border-ink-600/60 bg-ink-900/40 px-2.5 py-1.5 text-sm
+                     font-mono text-ink-100 placeholder:text-ink-500 focus:border-brand-500 focus:outline-none"
+              type="text" inputmode="text" placeholder="8788 or full URL"
+              bind:value={customInput} aria-label="Local HQ port or URL" />
+            <button class="btn-primary btn-sm" type="submit" disabled={customState === 'connecting'}>
+              {customState === 'connecting' ? 'Connecting…' : 'Connect'}
+            </button>
+          </form>
+          {#if customState === 'error'}
+            <p class="mt-2 text-xs leading-5 text-rose-600 dark:text-rose-400">{customError}</p>
+          {/if}
+        </details>
         {#if lnaState === 'prompt'}
           <p class="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
             🔐 Already running? Chrome asks to <strong>“access devices on your local network”</strong>
