@@ -1,12 +1,15 @@
 {
-  "cafresohq_frontend": {
-    "ic": "v4tdv-riaaa-aaaab-agtfa-cai"
-  },
   "cafreso_pages": {
     "ic": "dqcmv-zqaaa-aaaab-agp2a-cai"
   },
+  "cafresohq_frontend": {
+    "ic": "v4tdv-riaaa-aaaab-agtfa-cai"
+  },
   "cafresohq_keys": {
     "ic": "vhw7q-lqaaa-aaaab-agthq-cai"
+  },
+  "cafresohq_state": {
+    "ic": "ydacz-riaaa-aaaal-qxeja-cai"
   },
   "cafresohq_ui": {
     "ic": "vhoil-eyaaa-aaaal-qxc7q-cai"

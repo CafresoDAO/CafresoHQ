@@ -4,11 +4,13 @@
 // The browser (which holds the II delegation) couriers durable state to/from the
 // on-chain state canister. See docs/PHASE2_STATE_CANISTER.md §4.
 //
-// EVERYTHING here is gated behind PUBLIC_STATE_CANISTER:
-//   'off'     (default) → all functions are no-ops; ZERO behavior change.
-//   'mirror'  → dual-write to the canister after the container write (non-fatal).
+// Gated behind PUBLIC_STATE_CANISTER (default 'mirror' since the cafresohq_state
+// canister was deployed 2026-06-24 — Phase 2 active):
+//   'off'     → all functions are no-ops; ZERO behavior change (kill switch).
+//   'mirror'  → dual-write to the canister after the container write (non-fatal,
+//               best-effort — failures never break the primary flow). DEFAULT.
 //   'primary' → canister is authoritative; container cache hydrates from it.
-// It is also a no-op until the canister id is configured (post-deploy).
+// Still a no-op until the canister id is configured (stateActor pins it).
 //
 // Vault objects (base64 ciphertext blobs, never decrypted here) are chunked into
 // ≤1.9 MiB slices: putVaultMeta → putVaultChunk×N → sealVault. HQ docs (small
@@ -17,7 +19,7 @@
 
 import { getStateActor, stateCanisterConfigured } from '$lib/api/stateActor.js';
 
-const MODE = (import.meta.env?.PUBLIC_STATE_CANISTER || 'off').toLowerCase();
+const MODE = (import.meta.env?.PUBLIC_STATE_CANISTER || 'mirror').toLowerCase();
 const CHUNK = 1_900_000; // bytes; must stay ≤ canister MAX_CHUNK_BYTES
 
 export function stateMode() { return MODE; }
