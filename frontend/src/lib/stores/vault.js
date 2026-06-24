@@ -35,7 +35,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { endpointUrl } from '$lib/stores/endpoint.js';
-import { isAuthenticated } from '$lib/stores/auth.js';
+import { isAuthenticated, principalText } from '$lib/stores/auth.js';
 import { getKeysActor } from '$lib/api/keysActor.js';
 import {
   getMasterKey, forgetMasterKey,
@@ -117,6 +117,33 @@ async function _deleteBlob(id) {
     .catch(() => {});
 }
 
+// Phase 2 backfill: the live _putBlob mirror only catches NEW writes, so vault
+// objects written before mirror was enabled never reach the canister. This couriers
+// the existing index + every file blob up once per principal. Sequential, best-effort,
+// non-fatal — never blocks unlock, never throws into the UI. The flag is only set on a
+// fully-clean pass, so a transient failure simply retries on the next unlock.
+const _BACKFILL_KEY = 'cafresohq.vault_backfilled_v1';
+async function _backfillToCanister(idx) {
+  if (typeof window === 'undefined') return;
+  let m;
+  try { m = await import('$lib/api/stateSync.js'); } catch { return; }
+  if (!m.stateEnabled || !m.stateEnabled()) return;
+  const flag = `${_BACKFILL_KEY}:${get(principalText) || ''}`;
+  try { if (localStorage.getItem(flag)) return; } catch { /* private mode → just run */ }
+  const ids = [INDEX_FILE_ID, ...((idx && idx.files) || []).map((f) => f.id)];
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try {
+      const ct = await _getBlob(id);
+      if (!ct) continue;                         // already deleted / missing — skip
+      const r = await m.mirrorVaultObject(id, ct);
+      if (r && r.ok) ok++; else fail++;
+    } catch { fail++; }
+  }
+  if (fail === 0) { try { localStorage.setItem(flag, String(ok)); } catch {} }
+  console.info(`[vault] on-chain backfill: ${ok} mirrored, ${fail} failed of ${ids.length}`);
+}
+
 // ── Index lifecycle ─────────────────────────────────────────────────────────
 
 const _INDEX_CACHE_KEY = 'cafresohq.vault_index_cache';
@@ -190,6 +217,9 @@ export async function unlockVault() {
     const idx = await _loadIndex();
     vaultIndex.set(idx);
     vaultState.set('unlocked');
+    // Phase 2: one-time best-effort backfill of pre-existing vault objects. Not
+    // awaited — runs in the background after unlock so it never delays the UI.
+    _backfillToCanister(idx);
   } catch (err) {
     console.error('[vault] unlock failed:', err);
     vaultError.set(String(err?.message || err));
