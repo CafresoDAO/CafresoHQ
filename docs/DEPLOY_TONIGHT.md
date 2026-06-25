@@ -11,12 +11,16 @@ Source of the gaps: the multi-agent dapp assessment (2026-06-24). Detailed auth 
 
 ## A. No gateway needed — do these first (≈30–60 min)
 
-- [ ] **Push the rebuilt container image** (already built + smoke-tested healthy locally, tagged):
+- [ ] **Push the rebuilt container image** (rebuilt 2026-06-25 with the full `/fs/*` workspace —
+  upload / site / mkdir / rename / delete — + the latest HQ UI bundle `hq-app-6407786999.js`;
+  smoke-tested healthy locally: upload→200, site with relative assets→200, path-escape→403):
   ```bash
-  docker push docker.io/anthonycf1/cafresoai-serve:renamed-20260624
+  docker login                                                          # once
+  docker push docker.io/anthonycf1/cafresoai-serve:fs-workspace-20260625
   docker push docker.io/anthonycf1/cafresoai-serve:latest
   ```
-  (Carries the CafresoHQ rename onto the compute side. The env shim already bridges running containers.)
+  Image id `b57e97e167da`. Lights up image/PDF preview, file-drop, website preview, and the file
+  manager in every running fleet container. The env shim already bridges the CafresoHQ rename.
 
 - [ ] **Rotate the leaked LLM keys** (LAUNCH_TODO #6 — pasted in chat, not in git, but live):
   - OpenRouter `sk-or-v1-…` → revoke at openrouter.ai/keys, issue new.
