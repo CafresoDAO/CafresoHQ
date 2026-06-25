@@ -1563,6 +1563,21 @@ async function fsUpload(dirPath, files) {
   return j;
 }
 
+/* Working-tree file manager — mkdir / rename(move) / delete. Each is guarded
+   server-side by the same allowed-dirs whitelist as FILE_WRITE. */
+async function _fsMutate(route, body) {
+  const r = await fetch(_API_BASE + route, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function fsMkdir(path)      { return _fsMutate('/fs/mkdir', { path }); }
+function fsRename(from, to) { return _fsMutate('/fs/rename', { from, to }); }
+function fsDelete(path)     { return _fsMutate('/fs/delete', { path }); }
+
 async function vaultOciStatus() {
   const r = await fetch(_API_BASE + '/vault/oci/status');
   const j = await r.json().catch(() => ({}));
@@ -1706,6 +1721,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

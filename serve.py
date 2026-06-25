@@ -2137,6 +2137,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._tool_exec()
         if self.path.startswith('/fs/upload'):
             return self._fs_upload()
+        if self.path.startswith('/fs/mkdir'):
+            return self._fs_mkdir()
+        if self.path.startswith('/fs/rename'):
+            return self._fs_rename()
+        if self.path.startswith('/fs/delete'):
+            return self._fs_delete()
         if self.path == '/approvals/external':
             return self._approval_submit()
         if self.path == '/approvals/external/decide':
@@ -4032,6 +4038,121 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'uploaded': saved, 'count': len(saved),
                                      'dir': str(target_dir),
                                      **({'failed': errors} if errors else {})})
+
+    # ---- Working-tree file manager (mkdir / rename / delete) -------------
+    # All three share FILE_WRITE's posture: open in unrestricted local dev,
+    # else confined to CAFRESOHQ_ALLOWED_DIRS via _validate_path (resolve +
+    # .relative_to). They make the container feel like an OS the user owns.
+    def _fs_mutate_ok(self):
+        _unrestricted_local = (_RUNTIME_ENV == 'local' and not _ALLOWED_DIRS_EXPLICIT)
+        if not _cafresohq_allowed_dirs and not _unrestricted_local:
+            self._send_json(503, {'error': 'CAFRESOHQ_ALLOWED_DIRS not set — file ops disabled'})
+            return False
+        return True
+
+    def _fs_json_body(self):
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            return json.loads(self.rfile.read(length).decode('utf-8') or '{}')
+        except Exception:
+            return None
+
+    def _fs_mkdir(self):
+        """POST /fs/mkdir  {path}  — create a folder in the working tree."""
+        if not self._fs_mutate_ok():
+            return
+        req = self._fs_json_body()
+        if req is None:
+            return self._send_json(400, {'error': 'bad json'})
+        raw = (req.get('path') or '').strip()
+        if not raw:
+            return self._send_json(400, {'error': 'path required'})
+        try:
+            target = self._validate_path(raw)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if target.exists():
+            if target.is_dir():
+                return self._send_json(200, {'ok': True, 'path': str(target), 'existed': True})
+            return self._send_json(409, {'error': 'a file with that name exists'})
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except (NotADirectoryError, FileExistsError) as e:
+            return self._send_json(409, {'error': f'cannot create folder here: {e}'})
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        return self._send_json(200, {'ok': True, 'path': str(target)})
+
+    def _fs_rename(self):
+        """POST /fs/rename  {from, to}  — rename/move within the working tree."""
+        if not self._fs_mutate_ok():
+            return
+        req = self._fs_json_body()
+        if req is None:
+            return self._send_json(400, {'error': 'bad json'})
+        src = (req.get('from') or '').strip()
+        dst = (req.get('to') or '').strip()
+        if not src or not dst:
+            return self._send_json(400, {'error': 'from and to required'})
+        try:
+            sp = self._validate_path(src)
+            dp = self._validate_path(dst)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if not sp.exists():
+            return self._send_json(404, {'error': 'source not found'})
+        # Never move a workspace root itself (parallels _fs_delete; matters when
+        # more than one allowed dir is configured).
+        roots = {str(pathlib.Path(d).resolve()) for d in _cafresohq_allowed_dirs}
+        if str(sp) in roots:
+            return self._send_json(403, {'error': 'refusing to move a workspace root'})
+        if dp.exists():
+            return self._send_json(409, {'error': 'target already exists'})
+        try:
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(str(sp), str(dp))
+        except (NotADirectoryError, FileExistsError) as e:
+            return self._send_json(409, {'error': f'cannot move there: {e}'})
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        return self._send_json(200, {'ok': True, 'from': str(sp), 'to': str(dp)})
+
+    def _fs_delete(self):
+        """POST /fs/delete  {path}  — delete a file or directory (recursive)."""
+        if not self._fs_mutate_ok():
+            return
+        req = self._fs_json_body()
+        if req is None:
+            return self._send_json(400, {'error': 'bad json'})
+        raw = (req.get('path') or '').strip()
+        if not raw:
+            return self._send_json(400, {'error': 'path required'})
+        try:
+            target = self._validate_path(raw)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if not target.exists() and not target.is_symlink():
+            return self._send_json(404, {'error': 'not found'})
+        # Never delete an allowed-dir root itself.
+        roots = {str(pathlib.Path(d).resolve()) for d in _cafresohq_allowed_dirs}
+        if str(target) in roots:
+            return self._send_json(403, {'error': 'refusing to delete a workspace root'})
+        try:
+            # Follow-the-link guard: a symlinked dir is unlinked (remove the
+            # link), never rmtree'd (which would wipe the link's target).
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(str(target))
+            else:
+                target.unlink()
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        return self._send_json(200, {'ok': True, 'deleted': str(target)})
 
     # ---- Project Terminal (Claude Code / Codex CLI runner) ---------------
     def _terminal_spawn(self):
