@@ -1246,6 +1246,15 @@ function App() {
     return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
   }, []);
   const openSettings = React.useCallback((tab) => { setSettingsTab(tab || null); setSettingsOpen(true); }, []);
+  /* Let any component (e.g. the onboarding key step's "bring your own key"
+     link) deep-link into Settings without prop-drilling openSettings. */
+  React.useEffect(() => {
+    // Close the onboarding tour first — otherwise its overlay (same z-index,
+    // later in the DOM) paints over the Settings modal and swallows clicks.
+    const onOpen = (e) => { setTourOpen(false); openSettings((e && e.detail && e.detail.tab) || null); };
+    window.addEventListener('cafresohq:openSettings', onOpen);
+    return () => window.removeEventListener('cafresohq:openSettings', onOpen);
+  }, [openSettings]);
 
   // Backend reachability — surfaces a clear banner instead of silently failing
   // (empty graph/vault, dead chat/terminal) when the canister UI was opened
@@ -3867,11 +3876,13 @@ ${d.text}` : d.text,
           hired={agents.length > 0}
           chatted={(chat || []).some(m => m.from === 'user')}
           assigned={tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned')}
+          built={(projects || []).length > 0}
           sawWork={activity.some(e => e.action === 'done')}
           onAddKey={() => openSettings('keys')}
           onHire={() => setHireOpen(true)}
           onChat={() => setActiveView('chat')}
           onTasks={() => setActiveView('tasks')}
+          onProjects={() => setActiveView('projects')}
           onWatch={() => setActiveView('visual')}
           onDismiss={() => setGsDismissed(true)}
         />
@@ -3916,6 +3927,12 @@ ${d.text}` : d.text,
               title: 'Tasks — track the work',
               body: 'The Tasks board tracks everything in flight: what you\'ve delegated, what agents are working on, and what\'s done.',
               action: () => setActiveView('tasks'),
+            },
+            {
+              id: 'projects',
+              title: 'Projects — build real things',
+              body: 'Projects is your shared workspace: agents write real files here — docs, decks, code, even whole websites. Tap a file and hit Preview to see it render live, and drop in files to share with your agents.',
+              action: () => setActiveView('projects'),
             },
             {
               id: 'palette',
@@ -3974,6 +3991,12 @@ ${d.text}` : d.text,
               title: 'Tasks — track the work',
               body: 'The Tasks board shows everything in flight — what you\'ve delegated, what agents are doing, and what\'s done. The left rail switches between all your views.',
               action: () => setActiveView('tasks'),
+            },
+            {
+              id: 'projects',
+              title: 'Projects — where agents build you things',
+              body: 'Projects is your shared workspace. Hand an agent a project and it writes real files right beside you — docs, decks, code, whole websites. Open any file and hit Preview to watch it render live, drop in files to share with your agents, and a built site serves with all its assets intact.',
+              action: () => setActiveView('projects'),
             },
             {
               id: 'palette',
