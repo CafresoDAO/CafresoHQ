@@ -230,7 +230,7 @@ async function runMissionIteration(ctx) {
      scroll the mission timeline separately from team chatter and direct
      chat. Each mission iteration is its own message; they all share the
      'research' thread so the user can read the whole research feed. */
-  const msgId = MOCK.uid('m');
+  const msgId = HQ.uid('m');
   setChat(prev => [...prev, {
     id: msgId,
     from: 'agent',
@@ -240,13 +240,13 @@ async function runMissionIteration(ctx) {
     missionId: mission.id,
   }]);
 
-  const flush = MOCK.throttleTokens(setChat, msgId);
+  const flush = HQ.throttleTokens(setChat, msgId);
   let buf = '';
   let usedTokens = 0;
   let writesThisIter = [];
 
   try {
-    await MOCK.agentStream(agent, prompt, tok => { buf += tok; flush(tok); }, {
+    await HQ.agentStream(agent, prompt, tok => { buf += tok; flush(tok); }, {
       onUsage: u => { usedTokens = u.total || 0; },
       onHint: flush.note,
       onTool: ev => {
@@ -295,7 +295,7 @@ async function runMissionIteration(ctx) {
 
   setChat(prev => prev.map(m => m.id === msgId ? { ...m, streaming: false } : m));
 
-  const cleaned = MOCK.cleanHarmony(buf);
+  const cleaned = HQ.cleanHarmony(buf);
   /* Self-completion is OFF by default. When a mission has it enabled, we
      also require the agent to have actually run a meaningful number of
      iterations — at least 60% of the planned schedule — before honoring

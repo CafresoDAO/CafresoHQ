@@ -704,7 +704,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
    Used for ELEVATED agents only. The agent name is forwarded so the
    server-side audit log records who's making the call. */
 async function streamCafresoHQ({ system, messages, model, temperature, maxTokens, agentName, elevated, onToken, onUsage, signal, cwd }) {
-  /* The elevated flag is set by mock-data.jsx from agent.elevated. It's a
+  /* The elevated flag is set by hq-runtime.jsx from agent.elevated. It's a
      belt-and-suspenders check: the UI already prevents picking an
      cafresohq: model on a non-elevated agent, but if that ever fails, a
      runtime refusal here keeps a non-elevated agent from getting

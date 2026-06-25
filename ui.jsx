@@ -2198,7 +2198,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const returnToCEO = React.useCallback(() => {
     if (handoffAgentName) {
       setHandoffFor(activeThread, null);
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(returned to CafresoHQ from ${handoffAgentName})`, thread: activeThread }]);
     }
   }, [activeThread, handoffAgentName, setHandoffFor, setChat]);
@@ -2362,7 +2362,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        via extractAllMentions and respect the active thread). */
     if (activeRoom && activeRoom.participants.length) {
       // Explicit @mentions inside a room override the default "send to all"
-      const explicit = MOCK.extractAllMentions(text);
+      const explicit = HQ.extractAllMentions(text);
       const recipients = explicit
         ? activeRoom.participants.filter(a => explicit.targetNames.some(n => n.toLowerCase() === a.name.toLowerCase()))
         : activeRoom.participants;
@@ -2371,7 +2371,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         setInput('');
         const targetLabel = recipients.map(a => '@' + a.name).join(' ');
         setChat(prev => [...prev, {
-          id: MOCK.uid('m'), from: 'user', name: 'You',
+          id: HQ.uid('m'), from: 'user', name: 'You',
           text, target: targetLabel, thread: activeThread,
         }]);
         setStreaming(true);
@@ -2382,7 +2382,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               threadOverride: activeThread,
               coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
             }).catch(err => {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${a.name} bowed out: ${err && err.message || err})`, thread: activeThread }]);
             })
           ));
@@ -2394,7 +2394,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       // Mentions referenced names not in this room — fall through with a
       // hint so the boss knows why nothing fired.
       setChat(prev => [...prev, {
-        id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(none of those mentions are in this room — participants: ${activeRoom.participants.map(a => '@' + a.name).join(' ')})`,
         thread: activeThread,
       }]);
@@ -2406,12 +2406,12 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     if (text.toLowerCase().startsWith('/brainstorm')) {
       const topic = text.replace(/^\/brainstorm\s*/i, '').trim();
       if (!topic) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ', text: 'Usage: /brainstorm <topic>', thread: 'direct' }]);
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ', text: 'Usage: /brainstorm <topic>', thread: 'direct' }]);
         return;
       }
       setInput('');
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'user', name: 'You', text, thread: 'team' }]);
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: 'team' }]);
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `🧠 Brainstorm: "${topic}" — broadcasting to ${agents.length} agent${agents.length === 1 ? '' : 's'}. They will DM each other once and synthesize.`,
         thread: 'team' }]);
       const brainPrompt =
@@ -2426,7 +2426,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         await Promise.all(agents.map(a =>
           onDispatchToAgent && onDispatchToAgent(a, brainPrompt, { userText: null })
             .catch(err => {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${a.name} bowed out: ${err && err.message || err})`, thread: 'team' }]);
             })
         ));
@@ -2441,7 +2441,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        with both replies streaming inline into the SAME thread. Saves
        round-trips when the boss already knows who they want, and lets two
        agents weigh in on the same prompt without manually re-asking. */
-    const mentionAll = MOCK.extractAllMentions(text);
+    const mentionAll = HQ.extractAllMentions(text);
     if (mentionAll && onDispatchToAgent) {
       const matched = [];
       const unknown = [];
@@ -2462,7 +2462,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         const targetLabel = dedup.map(a => '@' + a.name).join(' ');
         setInput('');
         setChat(prev => [...prev, {
-          id: MOCK.uid('m'), from: 'user', name: 'You',
+          id: HQ.uid('m'), from: 'user', name: 'You',
           text, target: targetLabel, thread: targetThread,
         }]);
         /* If this chat message originated from "→ CHAT" on a task card,
@@ -2480,7 +2480,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
         if (unknown.length) {
           setChat(prev => [...prev, {
-            id: MOCK.uid('m'), from: 'system', name: 'HQ',
+            id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `(unknown teammate${unknown.length > 1 ? 's' : ''}: ${unknown.map(n => '@' + n).join(', ')})`,
             thread: targetThread,
           }]);
@@ -2496,7 +2496,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               threadOverride: targetThread,
               coParticipants: dedup.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
             }).catch(err => {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${a.name} bowed out: ${err && err.message || err})`, thread: targetThread }]);
             })
           ));
@@ -2520,7 +2520,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         return;
       }
       setChat(prev => [...prev, {
-        id: MOCK.uid('m'), from: 'user', name: 'You',
+        id: HQ.uid('m'), from: 'user', name: 'You',
         text, target: '@' + handoffAgent.name, thread: activeThread,
       }]);
       setStreaming(true);
@@ -2530,7 +2530,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           threadOverride: activeThread,
         });
       } catch (err) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${handoffAgent.name} bowed out: ${err && err.message || err})`, thread: activeThread }]);
       } finally {
         setStreaming(false);
@@ -2538,15 +2538,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       return;
     }
 
-    const userMsg = { id: MOCK.uid('m'), from: 'user', name: 'You', text };
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text };
     const pendingChat = [...chat, userMsg];
     setChat(pendingChat);
     setStreaming(true);
-    const ceoId = MOCK.uid('m');
+    const ceoId = HQ.uid('m');
     setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true }]);
     const controller = new AbortController();
     abortRef.current = controller;
-    const flush = MOCK.throttleTokens(setChat, ceoId);
+    const flush = HQ.throttleTokens(setChat, ceoId);
     /* Track DMs and handoff that CafresoHQ emits during the stream so the
        host can dispatch to specialists / switch the active responder after
        the orchestrator finishes its turn. */
@@ -2557,7 +2557,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       else if (ev.phase === 'handoff') ceoHandoff = { to: ev.arg, body: ev.body };
     };
     try {
-      await MOCK.ceoStream(text, flush, { chat: pendingChat, agents, signal: controller.signal,
+      await HQ.ceoStream(text, flush, { chat: pendingChat, agents, signal: controller.signal,
            onUsage: u => onCeoUsage && onCeoUsage(u),
            onTool,
            onHint: flush.note });
@@ -2576,7 +2576,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       finalText = ceoMsg?.text || '';
       return next;
     });
-    const approvalDesc = MOCK.extractApproval(finalText);
+    const approvalDesc = HQ.extractApproval(finalText);
     if (approvalDesc && onApprovalRequest) {
       onApprovalRequest({ title: approvalDesc, by: 'CafresoHQ', kind: 'awaiting stamp' });
     }
@@ -2602,7 +2602,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       const target = agents.find(a => a.name.toLowerCase() === ceoHandoff.to.toLowerCase());
       if (target) {
         setHandoffFor(activeThread, target.name);
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `↪ Handed off to ${target.name}. Talk to them directly — say "back to CafresoHQ" to return.`,
           thread: activeThread }]);
         try {
@@ -2611,12 +2611,12 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             threadOverride: activeThread,
           });
         } catch (err) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `(${target.name} couldn't take the handoff: ${err && err.message || err})`,
             thread: activeThread }]);
         }
       } else {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(CafresoHQ tried to hand off to "${ceoHandoff.to}" but no such teammate is hired)`,
           thread: activeThread }]);
       }
@@ -2630,7 +2630,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       })).filter(d => d.agent);
       const unknown = ceoDms.filter(d => !agents.find(a => a.name.toLowerCase() === d.to.toLowerCase()));
       for (const u of unknown) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(CafresoHQ tried to DM "${u.to}" but no such teammate is hired)`,
           thread: activeThread }]);
       }
@@ -2643,7 +2643,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               threadOverride: activeThread,
               coParticipants: targets.filter(o => o.agent.id !== t.agent.id).map(o => ({ name: o.agent.name, role: o.agent.role })),
             }).catch(err => {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${t.agent.name} bowed out: ${err && err.message || err})`,
                 thread: activeThread }]);
             })
@@ -2671,11 +2671,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               const synthPrompt = `The boss asked: "${text}"\n\nYou delegated to ${targets.map(t => t.agent.name).join(', ')} in parallel. Here are their replies:\n\n` +
                 replies.map(r => `[${r.from}]:\n${r.text}`).join('\n\n---\n\n') +
                 `\n\nNow synthesize ONE tight combined response for the boss (2-4 sentences). Don't paste the raw outputs — extract what matters, note any disagreement, and cite vault paths if any were saved. Do NOT emit DM_TO or HANDOFF_TO markers in this turn.`;
-              const synthId = MOCK.uid('m');
+              const synthId = HQ.uid('m');
               setChat(prev => [...prev, { id: synthId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
-              const synthFlush = MOCK.throttleTokens(setChat, synthId);
+              const synthFlush = HQ.throttleTokens(setChat, synthId);
               try {
-                await MOCK.ceoStream(synthPrompt, synthFlush, { chat: synthChat, agents, signal: controller.signal,
+                await HQ.ceoStream(synthPrompt, synthFlush, { chat: synthChat, agents, signal: controller.signal,
                      onUsage: u => onCeoUsage && onCeoUsage(u),
                      onHint: synthFlush.note });
                 synthFlush.flushNow();

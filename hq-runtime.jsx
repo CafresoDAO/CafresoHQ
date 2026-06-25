@@ -28,7 +28,7 @@ const TOOLS_CATALOG = [
   { id: 'img',   label: 'Image Gen'  },
 ];
 
-/* Legacy unprefixed IDs — kept for any callers still reading MOCK.MODELS.
+/* Legacy unprefixed IDs — kept for any callers still reading HQ.MODELS.
    The live ModelPicker (window.CafresoHQClient.localModelOptions) is the
    source of truth for new code; agents store provider-prefixed ids. */
 const MODELS = [
@@ -1219,7 +1219,7 @@ function journalSummary(agent) {
 
 function buildCeoSystem(agents, extra) {
   const parts = [CEO_SYSTEM, rosterSummary(agents)];
-  const mem = memorySummary(window.MOCK && window.MOCK._memory);
+  const mem = memorySummary(window.HQ && window.HQ._memory);
   if (mem) parts.push(mem);
   if (extra) parts.push(extra);
   return parts.join('\n\n');
@@ -1358,7 +1358,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     ? `\n\nELEVATED SESSION: You have native computer access through Claude Code on the proxy machine. Use your built-in agentic capabilities to work with files and run commands directly — do not claim you lack access.`
     : '';
   const journalNote = journalSummary(agent);
-  const mem = memorySummary(window.MOCK && window.MOCK._memory);
+  const mem = memorySummary(window.HQ && window.HQ._memory);
   /* Per-agent persistent memory listing — head-of-prompt so the agent
      knows what's in their private notes folder before they start. We
      fetch the actual file list from the vault (best effort; non-fatal
@@ -1510,11 +1510,11 @@ function resolveModel(m) {
   return m;
 }
 
-window.MOCK = {
+window.HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
-window.MOCK.mockStream = (prompt, onToken, opts) => ceoStream(prompt, onToken, opts);
+window.HQ.mockStream = (prompt, onToken, opts) => ceoStream(prompt, onToken, opts);

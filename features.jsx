@@ -243,7 +243,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    /* Local rAF throttle — same idea as MOCK.throttleTokens but the meeting
+    /* Local rAF throttle — same idea as HQ.throttleTokens but the meeting
        view writes via updateById(text=buf) rather than appending, so we
        just gate the update calls themselves to once per frame. */
     const makeRafGate = (id) => {
@@ -261,7 +261,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
       let buf = '';
       const update = makeRafGate(ph.id);
       try {
-        await window.MOCK.agentStream(
+        await window.HQ.agentStream(
           ph.agentRef,
           `Meeting transcript so far:\n${transcript}\n\nRespond briefly (1-2 sentences) from your role's perspective.`,
           tok => { buf += tok; update(buf); },
@@ -281,7 +281,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
     if (!controller.signal.aborted) {
       const update = makeRafGate(ceoPlaceholder.id);
       try {
-        await window.MOCK.ceoStream(
+        await window.HQ.ceoStream(
           `You are moderating a team meeting. Transcript:\n${transcript}\n\nSynthesize the discussion in 1-2 sentences and state the next action.`,
           tok => { buf += tok; update(buf); },
           { agents: participants, signal: controller.signal }
@@ -364,9 +364,9 @@ function FocusMode({ active, onClose, chat, setChat }) {
     setChat(p => [...p, { id: ceoId, from:'ceo', name:'CafresoHQ', text:'', streaming:true }]);
     const controller = new AbortController();
     abortRef.current = controller;
-    const flush = MOCK.throttleTokens(setChat, ceoId);
+    const flush = HQ.throttleTokens(setChat, ceoId);
     try {
-      await MOCK.ceoStream(text, flush,
+      await HQ.ceoStream(text, flush,
         { chat: pending, signal: controller.signal, onHint: flush.note });
       flush.flushNow();
     } catch (err) {
@@ -476,7 +476,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
       controller.signal.addEventListener('abort', onParentAbort);
       const timeoutId = setTimeout(() => perAgent.abort(), STANDUP_TIMEOUT_MS);
       try {
-        await window.MOCK.agentStream(a, STANDUP_PROMPT,
+        await window.HQ.agentStream(a, STANDUP_PROMPT,
           tok => { buf += tok; updateReport(buf); },
           { signal: perAgent.signal, maxTokens: STANDUP_MAX_TOKENS }
         );
@@ -504,7 +504,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
     const transcript = finished.map(f => `${f.name} (${f.role}):\n${f.text}`).join('\n\n');
     const sumTimeout = setTimeout(() => controller.abort(), STANDUP_TIMEOUT_MS);
     try {
-      await window.MOCK.ceoStream(
+      await window.HQ.ceoStream(
         `End-of-day stand-up reports:\n\n${transcript}\n\nSynthesize this in 2 sentences and call out the single most important next action for the boss.`,
         tok => { buf += tok; setSummary(buf); },
         { agents, signal: controller.signal, maxTokens: 200 }
@@ -655,10 +655,11 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
   const filtered = receipts.filter(r => {
     if (filter === 'all') return true;
     if (filter === 'tool-execution') return r.kind === 'tool-execution';
+    if (filter === 'deliverable') return r.kind === 'deliverable';
     return r.decision === filter;
   });
   const fmt = (ts) => new Date(ts).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
-  const stampFor = (r) => r.kind === 'tool-execution' ? '🛠' : (r.decision === 'approved' ? '✓' : '✕');
+  const stampFor = (r) => r.kind === 'deliverable' ? '📝' : (r.kind === 'tool-execution' ? '🛠' : (r.decision === 'approved' ? '✓' : '✕'));
   return (
     <OcModal
       open={open}
@@ -674,7 +675,7 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
       ) : null}
     >
       <div style={{display:'flex',gap: 'var(--sp-3)', marginBottom: 'var(--sp-4)', alignItems:'center'}}>
-        {['all','approved','rejected','tool-execution'].map(f => (
+        {['all','deliverable','approved','rejected','tool-execution'].map(f => (
           <button key={f} className={`px-btn ${filter===f?'primary':'secondary'}`} style={{fontSize: 'var(--text-9)'}} onClick={()=>setFilter(f)}>{f.toUpperCase().replace('-', ' ')}</button>
         ))}
         <span className="tiny" style={{marginLeft:'auto'}}>{filtered.length} of {receipts.length}</span>
