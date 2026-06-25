@@ -1550,6 +1550,19 @@ async function vaultUpload(files) {
   return j;
 }
 
+/* Drop files into a project's working directory so agents (FILE_READ /
+   DIR_LIST) and the preview pane can use them. dirPath is the project's path
+   (?path=); omitting it lands in the server's first allowed dir. */
+async function fsUpload(dirPath, files) {
+  const fd = new FormData();
+  for (const f of files) fd.append('file', f, f.name);
+  const qs = dirPath ? ('?path=' + encodeURIComponent(dirPath)) : '';
+  const r = await fetch(_API_BASE + '/fs/upload' + qs, { method: 'POST', body: fd });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
 async function vaultOciStatus() {
   const r = await fetch(_API_BASE + '/vault/oci/status');
   const j = await r.json().catch(() => ({}));
@@ -1693,6 +1706,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

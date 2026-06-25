@@ -2133,6 +2133,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._projects_clone()
         if self.path == '/tools/exec':
             return self._tool_exec()
+        if self.path.startswith('/fs/upload'):
+            return self._fs_upload()
         if self.path == '/approvals/external':
             return self._approval_submit()
         if self.path == '/approvals/external/decide':
@@ -3874,6 +3876,91 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data)
         except Exception:
             pass
+
+    def _fs_upload(self):
+        """POST /fs/upload?path=<dir>   (multipart/form-data)
+        Drop files into a project's working tree so the agents (FILE_READ /
+        DIR_LIST) and the preview pane can immediately use them — the
+        user-facing half of the "share files with agents" loop. Writes into
+        the REAL filesystem, guarded by the same CAFRESOHQ_ALLOWED_DIRS
+        whitelist as FILE_WRITE (via _validate_path), so it can't escape the
+        sandbox. Filenames are flattened + sanitized; the target dir is created
+        if missing; 50 MiB cap per request. ?path= defaults to the first
+        allowed dir.
+        """
+        # Same enable-gate as /tools/exec FILE_WRITE: allow in unrestricted
+        # local dev, otherwise require an explicit allow-list.
+        _unrestricted_local = (_RUNTIME_ENV == 'local' and not _ALLOWED_DIRS_EXPLICIT)
+        if not _cafresohq_allowed_dirs and not _unrestricted_local:
+            return self._send_json(503, {'error': 'CAFRESOHQ_ALLOWED_DIRS not set — upload disabled'})
+
+        ctype = self.headers.get('content-type', '')
+        if 'multipart/form-data' not in ctype:
+            return self._send_json(400, {'error': 'expected multipart/form-data'})
+        length = int(self.headers.get('content-length', 0) or 0)
+        if length <= 0:
+            return self._send_json(400, {'error': 'empty upload'})
+        if length > 50 * 1024 * 1024:
+            return self._send_json(413, {'error': 'upload too large (50 MiB max)'})
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        raw_dir = (qs.get('path') or [''])[0].strip()
+        if not raw_dir:
+            raw_dir = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else os.getcwd()
+        try:
+            target_dir = self._validate_path(raw_dir)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            # Malformed path (e.g. embedded null byte) — resolve() raises
+            # ValueError. Mirror _fs_browse/_fs_file: clean 400, not a dropped
+            # connection.
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if target_dir.exists() and not target_dir.is_dir():
+            return self._send_json(400, {'error': 'target path is not a directory'})
+
+        raw = self.rfile.read(length)
+        import email.parser as _ep
+        import re as _re
+        msg = _ep.BytesParser().parsebytes(
+            b'Content-Type: ' + ctype.encode('latin-1', 'replace') + b'\r\n\r\n' + raw)
+        if not msg.is_multipart():
+            return self._send_json(400, {'error': 'bad multipart body'})
+
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return self._send_json(500, {'error': f'mkdir failed: {e}'})
+
+        saved, errors = [], []
+        for part in msg.get_payload():
+            fname = part.get_filename()
+            if not fname:
+                continue
+            # Flatten any path components, then strip anything but a safe set.
+            fname = fname.replace('\\', '/').split('/')[-1]
+            fname = _re.sub(r'[^\w .()\[\]\-]+', '_', fname).strip()
+            if not fname or fname.startswith('.'):
+                continue
+            dest = (target_dir / fname).resolve()
+            # Defense-in-depth: re-assert the whitelist on the final path even
+            # though a sanitized basename can't traverse.
+            try:
+                self._validate_path(str(dest))
+            except PermissionError:
+                errors.append({'path': fname, 'error': 'outside allowed dirs'})
+                continue
+            data = part.get_payload(decode=True) or b''
+            try:
+                dest.write_bytes(data)
+                saved.append({'path': str(dest), 'name': fname, 'size': len(data)})
+            except Exception as e:
+                errors.append({'path': fname, 'error': str(e)})
+        if not saved and errors:
+            return self._send_json(500, {'error': errors[0]['error'], 'failed': errors})
+        return self._send_json(200, {'uploaded': saved, 'count': len(saved),
+                                     'dir': str(target_dir),
+                                     **({'failed': errors} if errors else {})})
 
     # ---- Project Terminal (Claude Code / Codex CLI runner) ---------------
     def _terminal_spawn(self):
