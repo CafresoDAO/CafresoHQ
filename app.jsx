@@ -819,7 +819,7 @@ function AppGlobalCommands({
 }
 
 function App() {
-  const seedAgents = MOCK.INITIAL_AGENTS.map((a, i) => ({
+  const seedAgents = HQ.INITIAL_AGENTS.map((a, i) => ({
     ...a,
     mood: ['thinking','done','idle'][i] || 'idle',
     tokens: [12400, 28100, 2200][i] || 0,
@@ -900,7 +900,7 @@ function App() {
     const t2 = setTimeout(sync, 10000);
     return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
   }, []);
-  const [chat, setChat] = useStored(k('chat'), MOCK.INITIAL_CHAT, persistableChat);
+  const [chat, setChat] = useStored(k('chat'), HQ.INITIAL_CHAT, persistableChat);
 
   /* One-time migration: rename "CafresoHQ" → "CafresoHQ" on any persisted
      chat messages so users with old localStorage state don't see the legacy
@@ -1114,7 +1114,7 @@ function App() {
         toast.error(`⚠ ${title}\n${detail}`, { duration: 12000 });
         // Also push a system note into chat so the boss sees it in context.
         setChat(prev => [...prev, {
-          id: MOCK.uid('m'),
+          id: HQ.uid('m'),
           from: 'system',
           name: 'HQ',
           text: `⚠ Escalation: ${title} — ${detail}. Check 📬 INBOX → Failed for details and retry.`,
@@ -1323,7 +1323,7 @@ function App() {
     (fetched) => mergeByIdCap(activityRef.current, fetched, 200));
   useEffectA(() => { activityRef.current = activity; }, [activity]);
   const logActivity = useCallbackA((entry) => setActivity(prev =>
-    [{ id: MOCK.uid('act'), ts: Date.now(), priority: 'routine', unread: true, ...entry },
+    [{ id: HQ.uid('act'), ts: Date.now(), priority: 'routine', unread: true, ...entry },
      ...prev].slice(0, 200)
   ), [setActivity]);
   const [night, setNight] = useStored(k('night'), false);
@@ -1390,7 +1390,7 @@ function App() {
       say('Already pinned', 'PIN');
       return;
     }
-    setPins(prev => [{ id: MOCK.uid('pin'), addedAt: Date.now(), ...pin }, ...prev].slice(0, 18));
+    setPins(prev => [{ id: HQ.uid('pin'), addedAt: Date.now(), ...pin }, ...prev].slice(0, 18));
     say('Pinned to corkboard', 'PIN');
   };
   const onUnpin = (id) => setPins(prev => prev.filter(p => p.id !== id));
@@ -1429,7 +1429,7 @@ function App() {
     agentAbortersRef.current.clear();
     setAgents(prev => prev.map(a => a.status === 'busy' ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
     setMissions(prev => prev.map(m => m.status === 'running' ? { ...m, status: 'paused', lastError: 'stopped by boss' } : m));
-    setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+    setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}.` }]);
     say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
   };
@@ -1482,7 +1482,7 @@ function App() {
       const d = e.detail || {};
       if (!d.text) return;
       setChat(prev => [...prev, {
-        id: MOCK.uid('m'),
+        id: HQ.uid('m'),
         from: 'agent',
         name: `${d.agentName || 'Graph Agent'} · ${d.agentRole || 'summarizer'}`,
         text: d.nodeId ? `**Summary of ${d.nodeId}**
@@ -1514,8 +1514,8 @@ ${d.text}` : d.text,
     cl.remove('theme-sepia', 'theme-solarized', 'theme-dracula', 'theme-highcontrast', 'theme-coffeeshop', 'theme-wallstreet');
     if (theme && theme !== 'default') cl.add('theme-' + theme);
   }, [theme]);
-  // Expose memory to MOCK so streams can fold it into the system prompt.
-  useEffectA(() => { window.MOCK._memory = memory; }, [memory]);
+  // Expose memory to HQ so streams can fold it into the system prompt.
+  useEffectA(() => { window.HQ._memory = memory; }, [memory]);
   // Hard ceiling on in-memory chat. Streaming setChat calls do prev.map(),
   // which is O(N) per token — keep the array small so that stays cheap.
   // 100 still gives plenty of scrollback (persistableChat caps saves at 80).
@@ -1575,7 +1575,7 @@ ${d.text}` : d.text,
 
   const onHire = (a) => {
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
-    setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
+    setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
     say(`Hired ${a.name}`, 'HIRE');
   };
@@ -1662,7 +1662,7 @@ ${d.text}` : d.text,
       for (const x of assistants) abortAgentRun(x.id);
       const dropIds = new Set([id, ...assistants.map(x => x.id)]);
       setAgents(prev => prev.filter(x => !dropIds.has(x.id)));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
         text: `${a.name} let go, along with their ${assistants.length} assistant${assistants.length === 1 ? '' : 's'} (${assistants.map(x=>x.name).join(', ')}).` }]);
     } else if (cascadeAction === 'transfer') {
       // Reassign assistants to report to the boss (clear reportsTo) and keep
@@ -1672,12 +1672,12 @@ ${d.text}` : d.text,
         .filter(x => x.id !== id)
         .map(x => x.reportsTo === id ? { ...x, reportsTo: null, parentAgentId: null,
           recent: `(reassigned from ${a.name})` } : x));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
         text: `${a.name} let go. Their ${assistants.length} assistant${assistants.length === 1 ? '' : 's'} (${assistants.map(x=>x.name).join(', ')}) now report directly to you.` }]);
     } else {
       // No assistants — straightforward dismissal.
       setAgents(prev => prev.filter(x => x.id !== id));
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `${a.name} has been let go.` }]);
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `${a.name} has been let go.` }]);
     }
     say(`${a.name} let go`, 'BYE');
   };
@@ -1732,7 +1732,7 @@ ${d.text}` : d.text,
   const dmBudgetExhaustedNote = () => {
     if (dmBudgetRef.current.notified) return;
     dmBudgetRef.current.notified = true;
-    setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+    setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: '(DM rate limit reached — pausing inter-agent chatter for ~1 min so we don\'t burn through the budget.)',
       thread: 'team' }]);
     say('DM budget hit — chatter paused', 'LIMIT');
@@ -1743,27 +1743,33 @@ ${d.text}` : d.text,
      shows up in the same Receipts modal the boss already trusts. Skipped
      for non-elevated agents (would just be noise). */
   const recordToolReceipt = (agent, ev) => {
-    if (!agent || !agent.elevated) return;
+    if (!agent) return;
     if (ev.phase !== 'done') return;
+    const isDeliverable = ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND';
+    /* Elevated agents get a full tool audit log. EVERY agent's vault deliverables
+       (e.g. a researcher's "wrote Research/x.md") are recorded too — otherwise the
+       real work non-elevated agents do is invisible in the receipts tray. */
+    if (!agent.elevated && !isDeliverable) return;
     const arg = String(ev.arg || '').trim();
     setReceipts(prev => {
       const next = [{
-        id: MOCK.uid('rc'),
-        title: `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`,
+        id: HQ.uid('rc'),
+        title: isDeliverable
+          ? `${ev.name === 'VAULT_NEW' ? 'Wrote' : 'Appended'} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
+          : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`,
         by: agent.name,
-        kind: 'tool-execution',
+        kind: isDeliverable ? 'deliverable' : 'tool-execution',
         decision: 'executed',
         decidedAt: Date.now(),
-        elevated: true,
+        elevated: !!agent.elevated,
       }, ...prev];
-      /* Cap tool-execution rows but keep ALL approval rows — approvals are
-         the legal record, tool calls are a high-volume audit log that can
-         truncate. Also caps total to keep localStorage write small. */
+      /* Keep approvals + deliverables (the real record); the high-volume
+         tool-execution audit log truncates. Caps total to keep the write small. */
       const tooLong = next.length > 300;
       if (!tooLong) return next;
-      const approvals = next.filter(r => r.kind !== 'tool-execution');
+      const keep = next.filter(r => r.kind !== 'tool-execution');
       const tools = next.filter(r => r.kind === 'tool-execution').slice(0, 200);
-      return [...approvals, ...tools].slice(0, 400);
+      return [...keep, ...tools].slice(0, 400);
     });
   };
 
@@ -1855,7 +1861,7 @@ ${d.text}` : d.text,
           actionNeeded: 'Boss can re-prompt either agent directly to continue the topic.',
         },
       });
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(DM chain between ${dmFrom ? dmFrom.name : 'sender'} and ${agent.name} stopped — depth ${dmDepth} > cap ${DM_DEPTH_CAP}. Re-prompt directly to continue.)`,
         thread: 'team' }]);
       return;
@@ -1864,7 +1870,7 @@ ${d.text}` : d.text,
        privileged peers (e.g. Selvin for code audits). A brief system note is
        added to the team thread so the boss can see the handoff. */
     if (dmFrom && agent.elevated) {
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(${dmFrom.name} → ${agent.name}: elevated handoff in progress)`,
         thread: 'team' }]);
     }
@@ -1873,18 +1879,18 @@ ${d.text}` : d.text,
        - otherwise: agent-to-agent DM lands in 'team', user dispatch in 'direct' */
     const thread = threadOverride || (dmFrom ? 'team' : 'direct');
     if (userText && !suppressUserEcho) {
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'user', name: 'You', text: userText, target: agent.name, thread }]);
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: userText, target: agent.name, thread }]);
     }
     if (dmFrom) {
       setChat(prev => [...prev, {
-        id: MOCK.uid('m'),
+        id: HQ.uid('m'),
         from: 'agent-dm',
         name: `${dmFrom.name} → ${agent.name}`,
         text: prompt,
         thread,
       }]);
     }
-    const agentMsgId = MOCK.uid('m');
+    const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true, thread, agentId: agent.id }]);
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: prompt.slice(0, 40) });
     logActivity({
@@ -2039,7 +2045,7 @@ ${d.text}` : d.text,
     const hireRequestQueue = [];             // [{nameAndRole, body}]
     const hireAssistantQueue = [];           // [{nameAndRole, body}]
     const elevationRequestQueue = [];        // [{reason, body}]
-    const flush = MOCK.throttleTokens(setChat, agentMsgId);
+    const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     // Mark in_progress as soon as the recipient agent's stream actually starts.
     MessageRegistry.transition(messageId, 'in_progress', { by: agent.name });
@@ -2052,7 +2058,7 @@ ${d.text}` : d.text,
        the design doc" the second the agent emits it.
 
        Dedup by regex match offset so the same ACK doesn't fire twice across
-       repeated scans. The ALLOWED set mirrors mock-data.jsx's extractAcks —
+       repeated scans. The ALLOWED set mirrors hq-runtime.jsx's extractAcks —
        agent-emitted `failed`/`cancelled`/`delivered`/`queued` are ignored
        (those states are system-set; an agent shouldn't be able to spoof
        them). */
@@ -2080,7 +2086,7 @@ ${d.text}` : d.text,
        holds longer-term memory. */
     const recentChat = chat.slice(-6);
     try {
-      await MOCK.agentStream(agent, framedPrompt, tok => {
+      await HQ.agentStream(agent, framedPrompt, tok => {
         buf += tok;
         flush(tok);
         scanForNewAcks();
@@ -2095,28 +2101,28 @@ ${d.text}` : d.text,
             // (depth=1 cap). The transient flag on `agent` is what tells
             // us we're already in a sub-agent context.
             if (agent.transient) {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${agent.name} tried to spawn a further sub-agent; blocked — sub-agents can't spawn)`, thread: 'team' }]);
             } else {
               subSpawnQueue.push({ role: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'hire-agent') {
             if (agent.transient || agent.assistant) {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${agent.name} tried to propose a peer hire; blocked — ${agent.transient ? 'transient sub-agents' : 'assistants'} cannot propose hires)`, thread: 'team' }]);
             } else {
               hireRequestQueue.push({ nameAndRole: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'hire-assistant') {
             if (agent.transient || agent.assistant) {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${agent.name} tried to hire an assistant; blocked — ${agent.transient ? 'transient sub-agents' : 'assistants'} cannot have their own assistants — depth-1 hierarchy)`, thread: 'team' }]);
             } else {
               hireAssistantQueue.push({ nameAndRole: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'request-elevation') {
             if (agent.elevated) {
-              setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${agent.name} requested elevation but is already elevated — ignored)`, thread: 'team' }]);
             } else {
               elevationRequestQueue.push({ reason: ev.arg, body: ev.body });
@@ -2149,9 +2155,9 @@ ${d.text}` : d.text,
       //   (2) strip the markers from the visible chat so the user sees
       //       clean text with state badges in the inbox, not raw brackets.
       // We do NOT re-transition here; that would duplicate history entries.
-      const acks = (MOCK.extractAcks ? MOCK.extractAcks(buf) : []);
+      const acks = (HQ.extractAcks ? HQ.extractAcks(buf) : []);
       if (acks.length) {
-        const cleaned = MOCK.stripAcks(buf).trim();
+        const cleaned = HQ.stripAcks(buf).trim();
         setChat(prev => prev.map(m => m.id === agentMsgId
           ? { ...m, text: cleaned || m.text }
           : m));
@@ -2227,7 +2233,7 @@ ${d.text}` : d.text,
           : m));
         buf = stripped;
       }
-      const cleanBuf = MOCK.cleanHarmony(buf);
+      const cleanBuf = HQ.cleanHarmony(buf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
         recent: cleanBuf.slice(0, 140) || prompt.slice(0, 80),
@@ -2240,7 +2246,7 @@ ${d.text}` : d.text,
         action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300),
       });
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, prompt.slice(0, 60));
-      const approvalDesc = MOCK.extractApproval(buf);
+      const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Message lifecycle resolution. The mid-stream scanner already
       // applied any agent-emitted ACK transitions — so we only need to
@@ -2327,7 +2333,7 @@ ${d.text}` : d.text,
       if (!targetName) continue;
       const target = agents.find(a => a.name.toLowerCase() === targetName.toLowerCase());
       if (!target) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} tried to DM "${targetName}" but no such teammate is hired)`, thread: 'team' }]);
         continue;
       }
@@ -2362,7 +2368,7 @@ ${d.text}` : d.text,
        Sub-agents are sandboxed (transient: true blocks further spawn/hire). */
     for (const sub of subSpawnQueue) {
       if (!consumeSubSpawnBudget(agent.id)) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name}'s sub-agent spawn budget exhausted — limit ${SUB_SPAWN_MAX} per ${SUB_SPAWN_WINDOW_MS/1000}s)`, thread: 'team' }]);
         break;
       }
@@ -2391,7 +2397,7 @@ ${d.text}` : d.text,
           return tokens.some(t => nm.includes(t) || rl.includes(t));
         });
       if (matchingAssistant) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `🔁 ${agent.name} tried to SPAWN_SUBAGENT for "${sub.role}" but already has assistant ${matchingAssistant.name} (${matchingAssistant.role}) covering this. Redirecting to DM_TO instead — assistants keep memory, sub-agents don't.`,
           thread: 'team' }]);
         // Re-dispatch as a DM to the existing assistant. Use the same
@@ -2435,13 +2441,13 @@ ${d.text}` : d.text,
         || 'haiku';
       const downgrade = downgradeElevatedModel(subModel, settings);
       if (downgrade.swapped) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `🔁 Sub-agent model swapped: ${subModel} → ${downgrade.model} (${downgrade.why} — sub-agents can't be elevated).`,
           thread: 'team' }]);
         subModel = downgrade.model;
       }
       const transientAgent = {
-        id: MOCK.uid('sub'),
+        id: HQ.uid('sub'),
         name: `Sub-${role.split(/\s+/)[0]}-${Math.random().toString(36).slice(2, 5)}`.slice(0, 32),
         role: `Transient: ${role}`,
         color: agent.color || 'sky',
@@ -2464,7 +2470,7 @@ ${d.text}` : d.text,
       };
       // Visible in UI immediately.
       setAgents(prev => [...prev, transientAgent]);
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `🌱 ${agent.name} spawned ${transientAgent.name} (${role}) for: "${(sub.body||'').split('\n')[0].slice(0, 80)}"`,
         thread: 'team' }]);
       // Create a parent message record explicitly so the inbox shows the spawn.
@@ -2491,7 +2497,7 @@ ${d.text}` : d.text,
       setTimeout(() => {
         abortAgentRun(transientAgent.id);
         setAgents(prev => prev.filter(a => a.id !== transientAgent.id));
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `🍂 ${transientAgent.name} (transient) dismissed — task complete.`, thread: 'team' }]);
       }, 30_000);
     }
@@ -2522,7 +2528,7 @@ ${d.text}` : d.text,
        confused agent can't flood the tray with proposals. */
     for (const hire of hireRequestQueue) {
       if (pendingHiresRef.current.has(agent.id)) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} already has a pending hire proposal — wait for the boss to decide on the previous one)`, thread: 'team' }]);
         continue;
       }
@@ -2547,7 +2553,7 @@ ${d.text}` : d.text,
           `Ask them to retry with [HIRE_AGENT: <name> · <role>].`,
           { duration: 10000 }
         );
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `⚠ ${agent.name}'s HIRE_AGENT was malformed (no name/role found). ` +
                 `Expected: [HIRE_AGENT: Name · Role]\\n<rationale>\\n[/HIRE_AGENT]. Request ignored.`,
           thread: 'team' }]);
@@ -2571,7 +2577,7 @@ ${d.text}` : d.text,
           rationale: String(hire.body || '').slice(0, 1200),
         },
       });
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `📨 ${agent.name} proposes hiring ${proposedName} (${proposedRole}) — see approval tray.`, thread: 'team' }]);
     }
 
@@ -2585,12 +2591,12 @@ ${d.text}` : d.text,
       // current agents list, not the all-time hire history).
       const currentAssistants = agents.filter(a => a.reportsTo === agent.id).length;
       if (currentAssistants >= ASSISTANT_CAP_PER_SENIOR) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} already has ${currentAssistants} assistants — cap is ${ASSISTANT_CAP_PER_SENIOR}. Dismiss one before hiring another.)`, thread: 'team' }]);
         continue;
       }
       if (pendingAssistantHiresRef.current.has(agent.id)) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} already has a pending assistant proposal — wait for the boss to decide on the previous one)`, thread: 'team' }]);
         continue;
       }
@@ -2619,7 +2625,7 @@ ${d.text}` : d.text,
           `Ask them to retry with [HIRE_ASSISTANT: <name> · <role>].`,
           { duration: 10000 }
         );
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `⚠ ${agent.name}'s HIRE_ASSISTANT was malformed (no name/role found). ` +
                 `Expected: [HIRE_ASSISTANT: Name · Role]\\n<rationale>\\n[/HIRE_ASSISTANT] ` +
                 `or JSON with "name" + "role" fields. Request ignored — ask ${agent.name} to retry.`,
@@ -2647,7 +2653,7 @@ ${d.text}` : d.text,
           inheritModel: agent.model || 'haiku',
         },
       });
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `🤝 ${agent.name} proposes hiring assistant ${proposedName} (${proposedRole}) reporting to them — see approval tray.`, thread: 'team' }]);
     }
 
@@ -2659,7 +2665,7 @@ ${d.text}` : d.text,
        tools — agent should re-request work in their next turn once granted. */
     for (const req of elevationRequestQueue) {
       if (pendingElevationRef.current.has(agent.id)) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} already has a pending elevation request — wait for the boss's decision)`, thread: 'team' }]);
         continue;
       }
@@ -2684,7 +2690,7 @@ ${d.text}` : d.text,
           reportsTo: agent.reportsTo || null,
         },
       });
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `🛡 ${agent.name} is requesting elevated access — see approval tray. Reason: ${reason}`,
         thread: 'team' }]);
     }
@@ -2722,19 +2728,19 @@ ${d.text}` : d.text,
     // Use the CEO's last ask (or most recent user message) as the brief.
     const lastUser = [...chat].reverse().find(m => m.from === 'user');
     const brief = lastUser ? lastUser.text : 'Standing order: review your backlog and report the top next step.';
-    const userMsg = { id: MOCK.uid('m'), from: 'user', name: 'You', text: `(delegated "${brief}" to ${a.name})` };
-    const agentId = MOCK.uid('m');
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text: `(delegated "${brief}" to ${a.name})` };
+    const agentId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);
     onUpdateAgent(a.id, { status: 'busy', mood: 'thinking', task: brief.slice(0, 40) });
     say(`Delegated to ${a.name}`, 'HANDOFF');
     let usedTokens = 0;
     let buf = '';
     const dmQueue = [];
-    const flush = MOCK.throttleTokens(setChat, agentId);
+    const flush = HQ.throttleTokens(setChat, agentId);
     const controller = beginAgentRun(a.id);
     const recentChat = chat.slice(-6);
     try {
-      await MOCK.agentStream(a, brief, tok => {
+      await HQ.agentStream(a, brief, tok => {
         buf += tok;
         flush(tok);
       }, {
@@ -2757,7 +2763,7 @@ ${d.text}` : d.text,
         signal: controller.signal,
       });
       flush.flushNow();
-      const cleanBuf = MOCK.cleanHarmony(buf);
+      const cleanBuf = HQ.cleanHarmony(buf);
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
         recent: brief.slice(0, 80),
@@ -2765,7 +2771,7 @@ ${d.text}` : d.text,
       });
       logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
-      const approvalDesc = MOCK.extractApproval(cleanBuf);
+      const approvalDesc = HQ.extractApproval(cleanBuf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
     } catch (err) {
       const aborted = err && err.name === 'AbortError';
@@ -2788,7 +2794,7 @@ ${d.text}` : d.text,
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
         await dispatchToAgent(target, dm.body, { dmFrom: a, dmDepth: 1 });
       } else if (!target) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${a.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);
       }
     }
@@ -2802,7 +2808,7 @@ ${d.text}` : d.text,
   const onAddSticky = () => {
     const text = prompt('New sticky note for CafresoHQ:');
     if (!text || !text.trim()) return;
-    setPins(prev => [{ id: MOCK.uid('pin'), kind: 'sticky', text: text.trim(), addedAt: Date.now() }, ...prev]);
+    setPins(prev => [{ id: HQ.uid('pin'), kind: 'sticky', text: text.trim(), addedAt: Date.now() }, ...prev]);
     say('Pinned a note to the CEO desk', 'NOTE');
   };
   const onRemoveSticky = (id) => setPins(prev => prev.filter(p => p.id !== id));
@@ -2924,18 +2930,18 @@ ${d.text}` : d.text,
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
 
     const brief = task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title;
-    const userMsg = { id: MOCK.uid('m'), from: 'user', name: 'You', text: `(dropped "${task.title}" on ${agent.name}'s desk)` };
-    const agentMsgId = MOCK.uid('m');
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text: `(dropped "${task.title}" on ${agent.name}'s desk)` };
+    const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true }]);
 
     let buf = '';
     let usedTokens = 0;
     const dmQueue = [];
-    const flush = MOCK.throttleTokens(setChat, agentMsgId);
+    const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     const recentChat = chat.slice(-6);
     try {
-      await MOCK.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence), then deliver the result. Keep it tight.`, tok => {
+      await HQ.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence), then deliver the result. Keep it tight.`, tok => {
         buf += tok;
         flush(tok);
       }, {
@@ -2958,7 +2964,7 @@ ${d.text}` : d.text,
         signal: controller.signal,
       });
       flush.flushNow();
-      const cleanBuf = MOCK.cleanHarmony(buf);
+      const cleanBuf = HQ.cleanHarmony(buf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
         recent: cleanBuf.slice(0, 140) || task.title,
@@ -2970,7 +2976,7 @@ ${d.text}` : d.text,
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
-      const approvalDesc = MOCK.extractApproval(cleanBuf);
+      const approvalDesc = HQ.extractApproval(cleanBuf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Chain: if this task has a chainTo, activate the next step
       if (task.chainTo) {
@@ -2986,7 +2992,7 @@ ${d.text}` : d.text,
               triggerChainStep(nextTask, cleanBuf, agent);
             } else {
               onApprovalRequest({
-                id: MOCK.uid('wf'),
+                id: HQ.uid('wf'),
                 title: `Workflow: run "${nextTask.title}"?`,
                 kind: 'workflow-step',
                 taskId: nextTask.id,
@@ -3019,7 +3025,7 @@ ${d.text}` : d.text,
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
         await dispatchToAgent(target, dm.body, { dmFrom: agent, dmDepth: 1 });
       } else if (!target) {
-        setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);
       }
     }
@@ -3052,7 +3058,7 @@ ${d.text}` : d.text,
 
   // Approvals
   const onApprovalRequest = (req) => {
-    const id = MOCK.uid('ap');
+    const id = HQ.uid('ap');
     setApprovals(prev => [...prev, { id, ...req }]);
     say(`Approval requested: ${req.title.slice(0, 30)}…`, 'STAMP');
     logActivity({ agentName: req.by || 'agent', action: 'attention', priority: 'attention',
@@ -3080,7 +3086,7 @@ ${d.text}` : d.text,
           const fresh = pending
             .filter(p => !haveIds.has(p.id))
             .map(p => ({
-              id: MOCK.uid('apx'),
+              id: HQ.uid('apx'),
               externalId: p.id,
               title: p.summary
                 ? `${p.tool}: ${p.summary}`
@@ -3112,7 +3118,7 @@ ${d.text}` : d.text,
   const recordReceipt = (ap, decision) => {
     if (!ap) return;
     const r = {
-      id: MOCK.uid('rc'),
+      id: HQ.uid('rc'),
       title: ap.title,
       by: ap.by,
       kind: ap.kind,
@@ -3130,7 +3136,7 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     recordReceipt(ap, 'approved');
     if (ap) {
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'user', name: 'You', text: `✓ APPROVED — ${ap.title}` }]);
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✓ APPROVED — ${ap.title}` }]);
       // Hire-agent proposal: construct the new agent and call onHire.
       // Permanent addition to the team. Cannot grant elevation through
       // this path — security/cost guardrail. The proposing agent gets
@@ -3141,10 +3147,10 @@ ${d.text}` : d.text,
         if (p.proposedBy) pendingHiresRef.current.delete(p.proposedBy);
         // Build a sane default agent record. Match HireModal's shape.
         const newAgent = {
-          id: MOCK.uid('a'),
+          id: HQ.uid('a'),
           name: p.name,
           role: p.role,
-          color: MOCK.AGENT_COLORS[Math.floor(Math.random() * MOCK.AGENT_COLORS.length)],
+          color: HQ.AGENT_COLORS[Math.floor(Math.random() * HQ.AGENT_COLORS.length)],
           status: 'idle',
           task: 'reporting for duty',
           tools: ['vault'],     // safe default; boss can edit later
@@ -3160,7 +3166,7 @@ ${d.text}` : d.text,
         // Notify the proposer so they can move on with their work.
         const proposer = agents.find(a => a.id === p.proposedBy);
         if (proposer) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `${p.name} hired (proposed by ${proposer.name}). Welcome aboard.`, thread: 'team' }]);
         }
         return;
@@ -3179,12 +3185,12 @@ ${d.text}` : d.text,
           window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {});
         const finalModel = dg.model;
         if (dg.swapped) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `🔁 Assistant model swapped: ${p.inheritModel} → ${finalModel} (${dg.why} — assistants can't be elevated).`,
             thread: 'team' }]);
         }
         const newAgent = {
-          id: MOCK.uid('a'),
+          id: HQ.uid('a'),
           name: p.name,
           role: p.role,
           color: p.inheritColor,
@@ -3208,7 +3214,7 @@ ${d.text}` : d.text,
         };
         onHire(newAgent);
         if (senior) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `${p.name} hired as assistant to ${senior.name}.`, thread: 'team' }]);
         }
         return;
@@ -3232,7 +3238,7 @@ ${d.text}` : d.text,
             elevated: true, tools: newTools,
             recent: 'elevation granted — file/shell available next turn',
           });
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `🛡 ${target.name} is now elevated. Their next dispatch will have file/shell access.`,
             thread: 'team' }]);
           // Auto-dispatch a follow-up so they know to proceed with the
@@ -3269,14 +3275,14 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     recordReceipt(ap, 'rejected');
     if (ap) {
-      setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'user', name: 'You', text: `✕ REJECTED — ${ap.title}` }]);
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✕ REJECTED — ${ap.title}` }]);
       // Hire-agent rejection: just release the proposer's pending-hire slot
       // so they can propose again later if circumstances change.
       if (ap.kind === 'hire-agent' && ap.hireProposal) {
         if (ap.hireProposal.proposedBy) pendingHiresRef.current.delete(ap.hireProposal.proposedBy);
         const proposer = agents.find(a => a.id === ap.hireProposal.proposedBy);
         if (proposer) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `Boss declined ${proposer.name}'s proposal to hire ${ap.hireProposal.name}.`, thread: 'team' }]);
         }
         return;
@@ -3286,7 +3292,7 @@ ${d.text}` : d.text,
         if (ap.assistantProposal.proposedBy) pendingAssistantHiresRef.current.delete(ap.assistantProposal.proposedBy);
         const senior = agents.find(a => a.id === ap.assistantProposal.proposedBy);
         if (senior) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `Boss declined ${senior.name}'s proposal to hire assistant ${ap.assistantProposal.name}.`, thread: 'team' }]);
         }
         return;
@@ -3298,7 +3304,7 @@ ${d.text}` : d.text,
         if (er.requestedBy) pendingElevationRef.current.delete(er.requestedBy);
         const target = agents.find(a => a.id === er.requestedBy);
         if (target) {
-          setChat(prev => [...prev, { id: MOCK.uid('m'), from: 'system', name: 'HQ',
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `🛡 Boss declined ${target.name}'s elevation request. They remain non-elevated.`,
             thread: 'team' }]);
           // Dispatch a follow-up so the agent knows to find another path.

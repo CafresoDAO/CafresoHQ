@@ -258,7 +258,7 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
 
 function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
-  const [role, setRole] = useStateM(MOCK.ROLES[0]);
+  const [role, setRole] = useStateM(HQ.ROLES[0]);
   const [prompt, setPrompt] = useStateM('You are a helpful sub-agent. Be concise and warm.');
   const [tools, setTools] = useStateM(['web','files']);
   const [avatar, setAvatar] = useStateM('rose');
@@ -321,7 +321,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
       `Continue?`
     )) return;
     onHire({
-      id: MOCK.uid('a'),
+      id: HQ.uid('a'),
       name: name.trim(),
       role,
       color: avatar,
@@ -388,14 +388,14 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               </div>
               {(() => {
                 const haveNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
-                const missing = (MOCK.OPENSWARM_ROSTER || []).filter(t => !haveNames.has(t.name.toLowerCase()));
+                const missing = (HQ.OPENSWARM_ROSTER || []).filter(t => !haveNames.has(t.name.toLowerCase()));
                 if (!missing.length) return null;
                 return (
                   <div
                     className="post-card hire-tile"
                     onClick={() => {
                       if (!window.confirm(`Hire ${missing.length} openswarm-style specialist${missing.length === 1 ? '' : 's'}: ${missing.map(t => t.name).join(', ')}?`)) return;
-                      MOCK.spawnOpenswarmRoster(currentAgents, onHire);
+                      HQ.spawnOpenswarmRoster(currentAgents, onHire);
                       onClose();
                     }}
                     style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
@@ -419,7 +419,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             <div className="form-row">
               <label>ROLE / TITLE</label>
               <select value={role} onChange={e=>setRole(e.target.value)}>
-                {MOCK.ROLES.map(r => <option key={r}>{r}</option>)}
+                {HQ.ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
               <span className="hint">make it playful</span>
             </div>
@@ -440,7 +440,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             <div className="form-row full">
               <label>ALLOWED TOOLS</label>
               <div className="tool-grid">
-                {MOCK.TOOLS_CATALOG.map(t => (
+                {HQ.TOOLS_CATALOG.map(t => (
                   <div key={t.id} className={`tool-chk ${tools.includes(t.id)?'on':''}`} onClick={()=>toggleTool(t.id)}>
                     <div className="box" />
                     <span>{t.label}</span>
@@ -451,7 +451,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             <div className="form-row full">
               <label>AVATAR</label>
               <div className="avatar-picker">
-                {MOCK.AGENT_COLORS.map(c => (
+                {HQ.AGENT_COLORS.map(c => (
                   <div key={c} className={`slot ${avatar===c?'selected':''}`} onClick={()=>setAvatar(c)}>
                     <Sprite data={c} scale={2}/>
                   </div>
@@ -695,7 +695,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                     <div style={{marginTop:6}}>
                       <div className="sub" style={{marginBottom:6}}>TOOLS</div>
                       <div className="tool-grid">
-                        {MOCK.TOOLS_CATALOG.map(t => (
+                        {HQ.TOOLS_CATALOG.map(t => (
                           <div key={t.id} className={`tool-chk ${sel.tools.includes(t.id)?'on':''}`}
                                onClick={()=>update({tools: sel.tools.includes(t.id)?sel.tools.filter(x=>x!==t.id):[...sel.tools,t.id]})}>
                             <div className="box"/><span>{t.label}</span>
@@ -1833,7 +1833,7 @@ function VaultTab() {
     setBusy(true); setMsg(null);
     try {
       await window.CafresoHQClient.vaultConfigure({ backend });
-      window.MOCK.clearVaultReadyCache();
+      window.HQ.clearVaultReadyCache();
       await refresh();
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy(false);
@@ -1844,7 +1844,7 @@ function VaultTab() {
     setBusy(true); setMsg(null);
     try {
       await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
-      window.MOCK.clearVaultReadyCache();
+      window.HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: root ? 'configured' : 'cleared' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -1858,7 +1858,7 @@ function VaultTab() {
     try {
       setDraftRoot(root);
       await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
-      window.MOCK.clearVaultReadyCache();
+      window.HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: 'using CafresoHQ vault' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -1878,7 +1878,7 @@ function VaultTab() {
       } else {
         setDraftRoot(pick.path);
         await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root: pick.path });
-        window.MOCK.clearVaultReadyCache();
+        window.HQ.clearVaultReadyCache();
         await refresh();
         setMsg({ ok: true, text: `using ${pick.name}` });
       }
@@ -1893,7 +1893,7 @@ function VaultTab() {
       if (draftKey.trim()) patch.restKey = draftKey.trim();
       await window.CafresoHQClient.vaultConfigure(patch);
       setDraftKey(''); // clear the in-memory draft so we don't redisplay
-      window.MOCK.clearVaultReadyCache();
+      window.HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: 'saved' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2035,7 +2035,7 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
 
   const submit = () => {
     if (!name.trim() || steps.length < 2) return;
-    const wfId = MOCK.uid('wf');
+    const wfId = HQ.uid('wf');
     // Link tasks: set chainTo for each step pointing to the next
     onSave({
       workflow: { id: wfId, name: name.trim(), description: desc.trim(), steps, createdAt: Date.now() },

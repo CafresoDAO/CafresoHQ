@@ -35,7 +35,7 @@ const TARGET = ['es2019'];
 
 // HQ app JSX files — ORDER IS LOAD-BEARING (mirrors the old hq.html script order).
 const APP_FILES = [
-  'tweaks-panel', 'sprites', 'claude-client', 'mock-data', 'ui',
+  'tweaks-panel', 'sprites', 'claude-client', 'hq-runtime', 'ui',
   'modals', 'features', 'cooccur', 'cafreso-ecobar', 'views', 'missions', 'agent_runner', 'app',
 ];
 

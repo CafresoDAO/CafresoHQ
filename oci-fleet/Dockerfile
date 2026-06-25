@@ -99,7 +99,7 @@ COPY agent_runner.jsx         ./agent_runner.jsx
 COPY claude-client.jsx        ./claude-client.jsx
 COPY sprites.jsx              ./sprites.jsx
 COPY tweaks-panel.jsx         ./tweaks-panel.jsx
-COPY mock-data.jsx            ./mock-data.jsx
+COPY hq-runtime.jsx            ./hq-runtime.jsx
 COPY sw.js                    ./sw.js
 COPY manifest.webmanifest     ./manifest.webmanifest
 # Static images (logo marks, favicons, PWA icons, office sprites). Referenced
