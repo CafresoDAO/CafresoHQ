@@ -1933,6 +1933,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_pty_ws()
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
+        if self.path.startswith('/fs/site/'):
+            return self._fs_site()
         if self.path.startswith('/fs/file'):
             return self._fs_file()
         if self.path == '/browser/status':
@@ -3869,6 +3871,75 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Content-Disposition', 'inline; filename="%s"' % p.name.replace('"', ''))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+
+    def _fs_site(self):
+        """GET /fs/site/<b64root>/<relpath>
+        Serve a multi-file site from a directory so an agent-built page's
+        RELATIVE refs (<link href=styles.css>, <script src=app.js>, <img
+        src=assets/x.png>) resolve — the preview pane points an iframe at
+        index.html here and the browser fetches every sibling/sub-asset back
+        through the same /fs/site/<b64root>/ prefix. <b64root> is urlsafe
+        base64 of the absolute site root; <relpath> is resolved under it. Both
+        the root and the final file are re-checked against CAFRESOHQ_ALLOWED_DIRS
+        via _validate_path, so it can't escape the sandbox. Read-only, embeddable
+        (no X-Frame-Options), 50 MiB/file cap. An empty relpath or a directory
+        falls back to index.html.
+        """
+        import base64, mimetypes
+        rest = self.path[len('/fs/site/'):]
+        rest = rest.split('?', 1)[0].split('#', 1)[0]
+        if '/' in rest:
+            b64root, relpath = rest.split('/', 1)
+        else:
+            b64root, relpath = rest, ''
+        if not b64root:
+            return self._send_json(400, {'error': 'site root required'})
+        try:
+            pad = '=' * (-len(b64root) % 4)
+            root = base64.urlsafe_b64decode(b64root + pad).decode('utf-8')
+        except Exception as e:
+            return self._send_json(400, {'error': f'bad site root: {e}'})
+        rel = urllib.parse.unquote(relpath).strip('/')
+        if not rel:
+            rel = 'index.html'
+        try:
+            root_p = self._validate_path(root)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid root: {e}'})
+        try:
+            target = self._validate_path(str(root_p / rel))
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if target.is_dir():
+            try:
+                target = self._validate_path(str(target / 'index.html'))
+            except Exception:
+                return self._send_json(404, {'error': 'no index.html in directory'})
+        if not target.is_file():
+            return self._send_json(404, {'error': 'not found'})
+        try:
+            if target.stat().st_size > 50 * 1024 * 1024:
+                return self._send_json(413, {'error': 'file too large to preview (>50 MiB)'})
+            data = target.read_bytes()
+        except PermissionError:
+            return self._send_json(403, {'error': 'permission denied'})
+        except Exception as e:
+            return self._send_json(500, {'error': f'read failed: {e}'})
+        ctype = mimetypes.guess_type(str(target))[0] or 'application/octet-stream'
+        self.send_response(200)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()

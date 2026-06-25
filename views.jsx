@@ -6282,6 +6282,38 @@ function previewKind(path) {
   return 'code';
 }
 
+/* Does this HTML reference sibling files (relative <link>/<script>/<img>)?
+   If so it's a multi-file site and must be served from its directory so those
+   refs resolve — a `srcDoc` blob has no base URL and would 404 every asset. */
+function htmlNeedsSiteServe(content) {
+  if (!content) return false;
+  const re = /(?:src|srcset|href)\s*=\s*["']([^"']*)["']/gi;
+  let m;
+  while ((m = re.exec(content))) {
+    const u = (m[1] || '').trim();
+    if (!u) continue;
+    if (/^(?:https?:|\/\/|data:|blob:|#|mailto:|tel:|javascript:)/i.test(u)) continue;
+    return true; // a relative / root-relative ref → needs real serving
+  }
+  return false;
+}
+
+/* Split an OS path (either separator) into { dir, base }. */
+function splitOsPath(p) {
+  p = String(p || '');
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
+}
+
+/* UTF-8-safe, URL-safe, unpadded base64 — matches serve.py's
+   base64.urlsafe_b64decode(b64 + padding) in /fs/site. */
+function b64urlUtf8(s) {
+  const bytes = new TextEncoder().encode(String(s || ''));
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function CsvPreview({ text, sep }) {
   const rows = String(text || '').replace(/\s+$/, '').split(/\r?\n/).slice(0, 500).map(l => l.split(sep));
   if (!rows.length || (rows.length === 1 && !rows[0][0])) return <div style={{padding:16,opacity:0.6}}>Empty file.</div>;
@@ -6305,8 +6337,20 @@ function FilePreview({ file }) {
   const fileUrl = apiBase + '/fs/file?path=' + encodeURIComponent(file.path);
   const frame = { flex:1, width:'100%', height:'100%', minHeight:0, border:0, background:'#fff' };
   const pad = { flex:1, overflow:'auto', display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'#fff' };
-  if (kind === 'html')
+  if (kind === 'html') {
+    // Multi-file site → serve from its directory so relative assets resolve;
+    // self-contained page → render inline (works without the /fs/site endpoint).
+    // A truncated FILE_READ also routes to site-serve: detection can't see refs
+    // past the 8000-char cap, and the iframe loads the FULL file from disk, so a
+    // long page renders complete instead of cut off.
+    const truncated = /\(truncated to \d+ chars\)\s*$/.test(file.content || '');
+    if (file.path && (htmlNeedsSiteServe(file.content) || truncated)) {
+      const { dir, base } = splitOsPath(file.path);
+      const siteUrl = apiBase + '/fs/site/' + b64urlUtf8(dir) + '/' + encodeURIComponent(base);
+      return <iframe title="Site preview" style={frame} sandbox="allow-scripts allow-popups allow-forms allow-modals" src={siteUrl} />;
+    }
     return <iframe title="HTML preview" style={frame} sandbox="allow-scripts allow-popups allow-forms allow-modals" srcDoc={file.content} />;
+  }
   if (kind === 'markdown')
     return <div className="vault-preview" style={{flex:1, overflow:'auto', padding:'16px 22px', background:'var(--paper,#fff)'}} dangerouslySetInnerHTML={{ __html: renderMarkdown(file.content || '') }} />;
   if (kind === 'svg')
