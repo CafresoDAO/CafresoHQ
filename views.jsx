@@ -4987,13 +4987,23 @@ function parseDirEntries(text, basePath) {
 }
 
 /* ---------------- Local file-tree with lazy sub-directory loading ---------------- */
-function LocalTree({ path, onSelectFile }) {
+function LocalTree({ path, onSelectFile, refreshNonce }) {
   const [entries, setEntries] = useSV(null);
   const [expanded, setExpanded] = useSV(new Set());
   const [subEntries, setSubEntries] = useSV({});
   const [loading, setLoading] = useSV(false);
   const [err, setErr] = useSV(null);
 
+  /* Collapse + clear cached sub-listings only when the project PATH changes.
+     A refresh (refreshNonce bump after an upload) deliberately keeps expanded
+     state: dropped files always land in the root, so only the root listing
+     needs to change — losing the user's open subfolders would be a regression. */
+  React.useEffect(() => {
+    setExpanded(new Set());
+    setSubEntries({});
+  }, [path]);
+
+  /* Re-fetch the root listing when the path changes OR refreshNonce bumps. */
   React.useEffect(() => {
     if (!path) return;
     setLoading(true);
@@ -5001,7 +5011,7 @@ function LocalTree({ path, onSelectFile }) {
     window.CafresoHQClient.toolExec('DIR_LIST', path)
       .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
       .catch(e => { setErr(e.message || String(e)); setLoading(false); });
-  }, [path]);
+  }, [path, refreshNonce]);
 
   const loadSub = (subPath) => {
     if (subEntries[subPath]) return;
@@ -6324,6 +6334,12 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   const [err, setErr] = useSV(null);
   const [rightTab, setRightTab] = useSV('files');
   const [openedTerminals, setOpenedTerminals] = React.useState([]);
+  /* File-drop / upload into the selected project's working dir. treeNonce
+     forces LocalTree to re-list after an upload; fileDragHover drives the
+     drop-zone highlight. */
+  const [treeNonce, setTreeNonce] = useSV(0);
+  const [fileDragHover, setFileDragHover] = useSV(false);
+  const uploadInputRef = React.useRef(null);
 
   React.useEffect(() => {
     if (rightTab === 'terminal' && selected) {
@@ -6461,6 +6477,37 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     setBusy(false);
   };
 
+  /* Upload (drop or picker) files into the selected project's working dir so
+     assigned agents can read them and the preview pane can render them. After
+     a successful upload we refresh the tree and auto-open the first file so the
+     hand-off is visible. */
+  const uploadFiles = async (fileList) => {
+    if (!project || !project.path) {
+      if (window.cafresohqToast) window.cafresohqToast.info('Select a project first to share files with it.');
+      return;
+    }
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+    if (!window.CafresoHQClient || !window.CafresoHQClient.fsUpload) {
+      setErr('Upload needs the updated container (ships /fs/upload) — rebuild the image.');
+      if (window.cafresohqToast) window.cafresohqToast.error('Upload unavailable — container needs a rebuild.');
+      return;
+    }
+    setBusy(true); setErr(null);
+    try {
+      const res = await window.CafresoHQClient.fsUpload(project.path, files);
+      setTreeNonce(n => n + 1);
+      const n = (res && res.count) || files.length;
+      if (window.cafresohqToast) window.cafresohqToast.success(`Shared ${n} file${n === 1 ? '' : 's'} with ${project.name}`);
+      const first = res && res.uploaded && res.uploaded[0];
+      if (first && first.path) readFile(first.path);
+    } catch (e) {
+      setErr(e.message || String(e));
+      if (window.cafresohqToast) window.cafresohqToast.error('Upload failed: ' + (e.message || e));
+    }
+    setBusy(false);
+  };
+
   /* ── Mobile drill-down navigation ── */
   if (_isMobile) {
     return (
@@ -6576,8 +6623,20 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
             </div>
 
             {mobileDetailTab === 'files' && (
-              <div style={{flex:1,overflow:'auto'}}>
-                <LocalTree path={project.path} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} />
+              <div style={{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}>
+                <div style={{display:'flex',justifyContent:'flex-end',padding:'6px 8px',borderBottom:'1px solid var(--rule)'}}>
+                  <button
+                    className="px-btn ghost"
+                    style={{fontSize:11,padding:'4px 10px'}}
+                    title="Upload files to share with this project's agents"
+                    onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
+                  >⬆ Share file</button>
+                </div>
+                <input ref={uploadInputRef} type="file" multiple style={{display:'none'}}
+                  onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+                <div style={{flex:1,overflow:'auto'}}>
+                  <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} />
+                </div>
               </div>
             )}
 
@@ -6767,9 +6826,40 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
         {/* Middle: file tree + agent assignment panel */}
         {project ? (
           <div style={{width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--rule)', overflow: 'hidden'}}>
-            <div className="proj-section-head" title={project.path}>{project.name}</div>
-            <div style={{overflowY: 'auto', flex: 1, padding: '4px 0'}}>
-              <LocalTree path={project.path} onSelectFile={readFile} />
+            <div className="proj-section-head" title={project.path} style={{display:'flex',alignItems:'center',gap:'var(--sp-2)'}}>
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{project.name}</span>
+              <button
+                className="px-btn ghost"
+                style={{fontSize:9,padding:'2px 7px',flexShrink:0}}
+                title="Upload files to this project — share them with the assigned agents"
+                onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
+              >⬆ Share</button>
+            </div>
+            <input ref={uploadInputRef} type="file" multiple style={{display:'none'}}
+              onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+            <div
+              style={{overflowY:'auto', flex:1, padding:'4px 0', position:'relative',
+                      background: fileDragHover ? 'rgba(240, 198, 116, 0.15)' : 'transparent',
+                      outline: fileDragHover ? '2px dashed var(--accent-sun)' : 'none', outlineOffset:'-2px',
+                      transition:'background var(--motion-fast) var(--ease-out)'}}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setFileDragHover(true); }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                // Ignore leaves that just cross onto a child tree row — only
+                // clear when the drag actually exits the container (no strobe).
+                if (!e.currentTarget.contains(e.relatedTarget)) setFileDragHover(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault(); e.stopPropagation(); setFileDragHover(false);
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+              }}
+            >
+              <LocalTree path={project.path} onSelectFile={readFile} refreshNonce={treeNonce} />
+              {fileDragHover && (
+                <div style={{position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+                             pointerEvents:'none', fontSize:11, fontWeight:600, color:'var(--accent-sun)',
+                             textShadow:'0 1px 2px var(--paper)'}}>Drop to share with agents</div>
+              )}
             </div>
             {/* Agent assignment — assigning at least one agent reveals a
                 "📁 <project name>" room in the chat panel's thread tabs.
