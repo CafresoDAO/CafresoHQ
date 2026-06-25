@@ -20,8 +20,10 @@
   let fleetApiData = null;
   let fleetApiError = '';
 
-  $: fleetApiInput = $fleetApiUrl;
-  $: fleetTokenInput = $fleetApiAuthToken;
+  // NOTE: these are initialized once (above) and only updated explicitly in
+  // saveAndProbeFleet(). A reactive `$: fleetApiInput = $fleetApiUrl` used to live
+  // here — it re-clobbered the field from the store and fought the user's typing,
+  // so the inputs couldn't hold an edit. Removed.
 
   async function saveAndProbeFleet() {
     fleetApiUrl.set((fleetApiInput || '').trim().replace(/\/+$/, ''));
