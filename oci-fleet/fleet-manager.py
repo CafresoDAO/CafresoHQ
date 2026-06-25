@@ -50,6 +50,12 @@ try:
 except Exception:
     pass
 
+# Silence the urllib3 `strict` FutureWarning (emitted via the OCI SDK on older
+# urllib3) — left on stderr it masks the real error when fleet-api surfaces a
+# failed run. Harmless deprecation noise; drop it at the source.
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning)
+
 # ── Optional deps ────────────────────────────────────────────────────────────
 try:
     import oci

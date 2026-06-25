@@ -368,9 +368,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             proc = subprocess.run(
                 [sys.executable, str(FLEET_MANAGER), 'set-plan', principal, plan],
                 capture_output=True, text=True, timeout=60,
-                env={**os.environ, 'PYTHONUTF8': '1'}, cwd=str(FLEET_DIR.parent))
+                env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONWARNINGS': 'ignore::FutureWarning'},
+                cwd=str(FLEET_DIR.parent))
             if proc.returncode != 0:
-                return self._send_json(500, {'error': (proc.stderr or proc.stdout or '')[:300]})
+                return self._send_json(500, {'error': _subproc_error(proc)})
         except Exception as e:
             return self._send_json(500, {'error': str(e)})
         return self._send_json(200, {'ok': True, 'principal': principal, 'plan': plan})
@@ -683,6 +684,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         log.info(f'deprovision {principal}')
         env = dict(os.environ)
         env.setdefault('PYTHONUTF8', '1')
+        env.setdefault('PYTHONWARNINGS', 'ignore::FutureWarning')
         try:
             proc = subprocess.run(
                 [sys.executable, str(FLEET_MANAGER), 'delete', principal, '--force'],
@@ -692,9 +694,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except subprocess.TimeoutExpired:
             return self._send_json(504, {'error': 'delete timed out after 120s'})
         if proc.returncode != 0:
-            msg = (proc.stderr or proc.stdout or '').strip()
+            msg = _subproc_error(proc)
             log.error(f'deprovision failed for {principal}: {msg[:500]}')
-            return self._send_json(502, {'error': msg[:600] or 'delete failed'})
+            return self._send_json(502, {'error': msg or 'delete failed'})
 
         # Remove the user's gateway route by re-rendering from the now-smaller
         # fleet.json. Non-fatal — the container is already gone either way.
@@ -924,6 +926,23 @@ def _wake_worker(job_id: str, principal: str):
                 del _active_wakes[principal]
 
 
+def _subproc_error(proc) -> str:
+    """Build a useful error string from a failed fleet-manager subprocess.
+
+    fleet-manager prints its real progress + errors to STDOUT (colored), while
+    library deprecation warnings (e.g. the urllib3 `strict` FutureWarning) land
+    on STDERR. The old `proc.stderr or proc.stdout` therefore surfaced ONLY the
+    warning and hid the actual failure. Merge both streams, drop the known
+    warning noise + ANSI colour codes, and keep the TAIL where the real error
+    lands."""
+    import re as _re
+    text = ((proc.stdout or '') + '\n' + (proc.stderr or '')).strip()
+    noise = ('FutureWarning', 'DeprecationWarning', 'warnings.warn', 'poolmanager.py')
+    lines = [ln for ln in text.splitlines() if ln.strip() and not any(n in ln for n in noise)]
+    cleaned = _re.sub(r'\x1b\[[0-9;]*m', '', '\n'.join(lines)).strip()
+    return (cleaned[-900:] if cleaned else 'unknown failure (no output)')
+
+
 def _provision_worker(job_id: str, principal: str):
     log.info(f'[{job_id}] provisioning {principal}')
     _set_job(job_id, status='provisioning', phase='spawning')
@@ -933,16 +952,17 @@ def _provision_worker(job_id: str, principal: str):
         # writes the IP to fleet.json, and prints colored progress.
         env = dict(os.environ)
         env.setdefault('PYTHONUTF8', '1')
+        env.setdefault('PYTHONWARNINGS', 'ignore::FutureWarning')   # keep the real error on top
         proc = subprocess.run(
             [sys.executable, str(FLEET_MANAGER), 'provision', principal],
             capture_output=True, text=True, encoding='utf-8',
             timeout=600, env=env, cwd=str(FLEET_DIR.parent),
         )
         if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or '').strip()
-            log.error(f'[{job_id}] provision failed: {err[:500]}')
+            err = _subproc_error(proc)
+            log.error(f'[{job_id}] provision failed: {err[:800]}')
             return _set_job(job_id, status='error', phase='failed',
-                            error=err[:1000] or 'unknown failure')
+                            error=err)
 
         # fleet.json now contains the new user. Read endpoint.
         full = _load_fleet_full()
