@@ -29,6 +29,9 @@
 
   const slug = $derived($page.params.slug);
   const userBurned = $derived($userBurns[slug] || 0);
+  // Comments scoped to THIS post (+ slug-less general comments). Without this the
+  // thread rendered the entire global COMMENTS list on every post.
+  const postComments = $derived(COMMENTS.filter((c) => c.slug === slug || !c.slug));
   const body = $derived(
     post?.body && post.body.length > 0
       ? post.body
@@ -212,7 +215,7 @@
           </Button>
         </div>
 
-        <CommentThread comments={COMMENTS} />
+        <CommentThread comments={postComments} />
 
         <!-- Next up -->
         <div class="grid mt-10" style="grid-template-columns: 1fr 1fr; gap: 16px;">

@@ -394,7 +394,7 @@
           <Icon name="info" size={16} style="color: {BB.gold};" />
           <span>
             Yield paid from café + farm revenue. APY governed by $CF holders via SNS proposal —
-            <a href="#" style="color: {BB.gold}; text-decoration: underline; margin-left: 4px;">proposal #141</a>
+            <a href="/governance" style="color: {BB.gold}; text-decoration: underline; margin-left: 4px;">proposal #141</a>
           </span>
         </div>
       </div>
