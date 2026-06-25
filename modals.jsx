@@ -270,6 +270,17 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [templates, setTemplates] = useStateM(loadTemplates);
   const [showBoard, setShowBoard] = useStateM(true);
 
+  /* Reset the form whenever the modal (re)opens so a previous draft never bleeds
+     into a fresh hire. Mirrors MeetingRoomModal's [open]-effect. */
+  useEffectM(() => {
+    if (!open) return;
+    setName(''); setRole(MOCK.ROLES[0]);
+    setPrompt('You are a helpful sub-agent. Be concise and warm.');
+    setTools(['web','files']); setAvatar('rose');
+    setModel('anthropic:claude-haiku-4-5-20251001'); setTemp(0.4);
+    setElevated(false); setShowBoard(true);
+  }, [open]);
+
   /* <Modal> handles open=false → returns null. We still bail before running
      the heavier setup logic when closed. */
   if (!open) return null;
@@ -2008,6 +2019,12 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
   const [desc, setDesc] = useStateM('');
   const [steps, setSteps] = useStateM([]); // array of task ids in order
   const [autoDispatch, setAutoDispatch] = useStateM(false);
+
+  /* Reset on (re)open so a previous workflow draft doesn't persist. */
+  useEffectM(() => {
+    if (!open) return;
+    setName(''); setDesc(''); setSteps([]); setAutoDispatch(false);
+  }, [open]);
 
   if (!open) return null;
 

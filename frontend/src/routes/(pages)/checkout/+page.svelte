@@ -180,7 +180,7 @@
       <div class="text-[11.5px] font-semibold uppercase mb-2" style="letter-spacing: 0.1em; color: hsl(215 16% 47%);">
         Payment method
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <!-- $nanas option -->
         <button
           type="button"

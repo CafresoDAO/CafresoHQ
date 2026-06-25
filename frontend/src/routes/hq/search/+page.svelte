@@ -134,6 +134,13 @@
         Make sure the CafresoPages server is running at
         <code class="font-mono">{SEARCH_API_BASE}</code>.
       </div>
+      <button
+        class="btn-ghost mt-3 text-xs"
+        on:click={doSearch}
+        disabled={loading || !query.trim()}
+      >
+        {loading ? 'Retrying…' : 'Retry search'}
+      </button>
     </div>
   {/if}
 
