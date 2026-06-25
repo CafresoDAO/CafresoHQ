@@ -1578,6 +1578,23 @@ function fsMkdir(path)      { return _fsMutate('/fs/mkdir', { path }); }
 function fsRename(from, to) { return _fsMutate('/fs/rename', { from, to }); }
 function fsDelete(path)     { return _fsMutate('/fs/delete', { path }); }
 
+/* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
+   The Workspace editor uses this instead of FILE_READ so it gets the whole file
+   (FILE_READ truncates at 8000) and the headers conflict-safety needs. */
+async function fsReadText(path) {
+  const r = await fetch(_API_BASE + '/fs/file?path=' + encodeURIComponent(path), { cache: 'no-store' });
+  if (!r.ok) { let j = {}; try { j = await r.json(); } catch (_e) {} throw new Error(j.error || `HTTP ${r.status}`); }
+  const content = await r.text();
+  return { content, mtime: r.headers.get('X-File-Mtime') || '', hash: r.headers.get('X-File-Hash') || '' };
+}
+/* Cheap stat for the pre-save conflict check — {ok, mtime, hash, size}, no body. */
+async function fsStat(path) {
+  const r = await fetch(_API_BASE + '/fs/stat?path=' + encodeURIComponent(path), { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
 async function vaultOciStatus() {
   const r = await fetch(_API_BASE + '/vault/oci/status');
   const j = await r.json().catch(() => ({}));
@@ -1721,6 +1738,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };
