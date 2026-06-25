@@ -6255,9 +6255,71 @@ function ProjectTerminal({ project, visible }) {
   );
 }
 
+/* ── Universal artifact preview ──────────────────────────────────────────────
+   Renders a file by type so users can SEE what an agent built — HTML pages/decks,
+   PDFs, images, markdown, CSV — right beside the editor. Text types render from the
+   already-read content (works anywhere); binary types (image/PDF) stream from
+   serve.py's /fs/file endpoint. The headline of the "agentic workspace" — view the
+   doc/site as the agent writes it. */
+function previewKind(path) {
+  const ext = (String(path || '').split('.').pop() || '').toLowerCase();
+  if (ext === 'html' || ext === 'htm') return 'html';
+  if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (ext === 'svg') return 'svg';
+  if (ext === 'pdf') return 'pdf';
+  if (['png','jpg','jpeg','gif','webp','bmp','ico','avif'].indexOf(ext) >= 0) return 'image';
+  if (ext === 'csv' || ext === 'tsv') return 'csv';
+  return 'code';
+}
+
+function CsvPreview({ text, sep }) {
+  const rows = String(text || '').replace(/\s+$/, '').split(/\r?\n/).slice(0, 500).map(l => l.split(sep));
+  if (!rows.length || (rows.length === 1 && !rows[0][0])) return <div style={{padding:16,opacity:0.6}}>Empty file.</div>;
+  const head = rows[0], body = rows.slice(1);
+  const cell = { border:'1px solid var(--rule,#d8cfb8)', padding:'3px 8px', fontSize:12, maxWidth:280, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' };
+  return (
+    <div style={{overflow:'auto', flex:1, padding:8, background:'var(--paper,#fff)'}}>
+      <table style={{borderCollapse:'collapse', fontFamily:'var(--mono,ui-monospace,monospace)'}}>
+        <thead><tr>{head.map((h,i) => <th key={i} style={{...cell, fontWeight:700, background:'var(--paper-2,#f0e9d8)', position:'sticky', top:0}}>{h}</th>)}</tr></thead>
+        <tbody>{body.map((r,i) => <tr key={i}>{r.map((c,j) => <td key={j} style={cell}>{c}</td>)}</tr>)}</tbody>
+      </table>
+      {rows.length >= 500 && <div style={{padding:8,opacity:0.6,fontSize:11}}>Showing first 500 rows.</div>}
+    </div>
+  );
+}
+
+function FilePreview({ file }) {
+  const [imgErr, setImgErr] = useSV(false);
+  const kind = previewKind(file.path);
+  const apiBase = (typeof window !== 'undefined' && window._API_BASE) || '';
+  const fileUrl = apiBase + '/fs/file?path=' + encodeURIComponent(file.path);
+  const frame = { flex:1, width:'100%', height:'100%', minHeight:0, border:0, background:'#fff' };
+  const pad = { flex:1, overflow:'auto', display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'#fff' };
+  if (kind === 'html')
+    return <iframe title="HTML preview" style={frame} sandbox="allow-scripts allow-popups allow-forms allow-modals" srcDoc={file.content} />;
+  if (kind === 'markdown')
+    return <div className="vault-preview" style={{flex:1, overflow:'auto', padding:'16px 22px', background:'var(--paper,#fff)'}} dangerouslySetInnerHTML={{ __html: renderMarkdown(file.content || '') }} />;
+  if (kind === 'svg')
+    return <div style={pad} dangerouslySetInnerHTML={{ __html: file.content }} />;
+  if (kind === 'csv')
+    return <CsvPreview text={file.content} sep={String(file.path).toLowerCase().endsWith('.tsv') ? '\t' : ','} />;
+  if (kind === 'image')
+    return (
+      <div style={pad}>
+        {imgErr
+          ? <div style={{textAlign:'center',opacity:0.6,fontSize:12}}>Couldn't load image.<br/>Needs the updated container (ships <code>/fs/file</code>) — rebuild the image.</div>
+          : <img src={fileUrl} alt={file.path} onError={() => setImgErr(true)} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} />}
+      </div>
+    );
+  if (kind === 'pdf')
+    return <iframe title="PDF preview" style={frame} src={fileUrl} />;
+  return <pre style={{flex:1, overflow:'auto', margin:0, padding:16, fontFamily:'var(--mono,ui-monospace,monospace)', fontSize:12, whiteSpace:'pre-wrap', wordBreak:'break-word', background:'var(--paper,#fff)'}}>{file.content}</pre>;
+}
+
 function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView }) {
   const [selected, setSelected] = useSV(null);
   const [openFile, setOpenFile] = useSV(null);
+  const [previewMode, setPreviewMode] = useSV(false);
   const [busy, setBusy] = useSV(false);
   const [err, setErr] = useSV(null);
   const [rightTab, setRightTab] = useSV('files');
@@ -6369,6 +6431,15 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
 
   const readFile = async (path) => {
     setBusy(true); setErr(null);
+    const kind = previewKind(path);
+    const isBinary = kind === 'image' || kind === 'pdf';
+    setPreviewMode(isBinary);   // binary auto-previews; text lands in the editor
+    if (isBinary) {
+      // Not text — don't FILE_READ; the preview pane streams it from /fs/file.
+      setOpenFile({ path, content: '', dirty: false, binary: true });
+      setBusy(false);
+      return;
+    }
     try {
       const text = await window.CafresoHQClient.toolExec('FILE_READ', path);
       setOpenFile({
@@ -6558,15 +6629,21 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                 {openFile.dirty && <span className="ide-tab-dot">●</span>}
               </span>
               {err && <span className="proj-edit-err">{err}</span>}
+              <span style={{display:'inline-flex', gap:2}}>
+                <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(false)}>Code</button>
+                <button className={`px-btn ${previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(true)}>Preview</button>
+              </span>
               <button className="px-btn primary" style={{fontSize:11,padding:'6px 14px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
                 {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
               </button>
             </div>
-            <IDEEditor
-              value={openFile.content}
-              onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
-              path={openFile.path}
-            />
+            {previewMode
+              ? <FilePreview file={openFile} />
+              : <IDEEditor
+                  value={openFile.content}
+                  onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
+                  path={openFile.path}
+                />}
           </div>
         )}
 
@@ -6799,18 +6876,26 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                   <span className="ide-tab-path">{openFile.path}</span>
                   {err && <span className="proj-edit-err">{err}</span>}
                   <span style={{flex:1}}/>
-                  <span className="ide-stats">
-                    {openFile.content.split('\n').length} ln · {openFile.content.length} ch · {ideLangFromPath(openFile.path).toUpperCase()}
+                  <span style={{display:'inline-flex', gap:2, marginRight:8}}>
+                    <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:9, padding:'3px 9px'}} onClick={() => setPreviewMode(false)}>Code</button>
+                    <button className={`px-btn ${previewMode ? 'primary' : 'secondary'}`} style={{fontSize:9, padding:'3px 9px'}} onClick={() => setPreviewMode(true)} title="Render this file (HTML, PDF, image, markdown…)">Preview</button>
                   </span>
+                  {!previewMode && (
+                    <span className="ide-stats">
+                      {openFile.content.split('\n').length} ln · {openFile.content.length} ch · {ideLangFromPath(openFile.path).toUpperCase()}
+                    </span>
+                  )}
                   <button className="px-btn primary" style={{fontSize: 10, padding: '3px 10px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
                     {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
                   </button>
                 </div>
-                <IDEEditor
-                  value={openFile.content}
-                  onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
-                  path={openFile.path}
-                />
+                {previewMode
+                  ? <FilePreview file={openFile} />
+                  : <IDEEditor
+                      value={openFile.content}
+                      onChange={(v) => setOpenFile({ ...openFile, content: v, dirty: true })}
+                      path={openFile.path}
+                    />}
               </div>
             ) : project ? (
               <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
