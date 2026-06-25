@@ -1933,6 +1933,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_pty_ws()
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
+        if self.path.startswith('/fs/file'):
+            return self._fs_file()
         if self.path == '/browser/status':
             return self._browser_status()
         if self.path.startswith('/browser/fetch'):
@@ -3822,6 +3824,56 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'parent':  parent,
             'entries': entries,
         })
+
+    def _fs_file(self):
+        """GET /fs/file?path=<file>
+        Serve a single file's raw bytes with a guessed content-type, INLINE so the
+        browser renders it directly — the enabler for the artifact preview pane
+        (HTML / PDF / image / SVG built by an agent). Read-only. Same allowed-dirs
+        gate as /fs/browse (container mode), so it can't traverse outside the
+        sandbox. Capped at 50 MiB to keep a runaway file from hanging the preview.
+        """
+        import mimetypes
+        qs = urllib.parse.urlparse(self.path).query
+        req_path = (urllib.parse.parse_qs(qs).get('path') or [''])[0].strip()
+        if not req_path:
+            return self._send_json(400, {'error': 'path required'})
+        try:
+            p = pathlib.Path(_client_path(req_path)).resolve()
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if not p.is_file():
+            return self._send_json(404, {'error': 'not a file'})
+        # Container: only serve files within CAFRESOHQ_ALLOWED_DIRS (path-traversal guard).
+        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
+            try:
+                allowed = any(str(p).startswith(str(pathlib.Path(d).resolve()))
+                              for d in _cafresohq_allowed_dirs)
+            except Exception:
+                allowed = False
+            if not allowed:
+                return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
+                                             'allowed': _cafresohq_allowed_dirs})
+        try:
+            if p.stat().st_size > 50 * 1024 * 1024:
+                return self._send_json(413, {'error': 'file too large to preview (>50 MiB)'})
+            data = p.read_bytes()
+        except PermissionError:
+            return self._send_json(403, {'error': 'permission denied'})
+        except Exception as e:
+            return self._send_json(500, {'error': f'read failed: {e}'})
+        ctype = mimetypes.guess_type(str(p))[0] or 'application/octet-stream'
+        self.send_response(200)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Content-Disposition', 'inline; filename="%s"' % p.name.replace('"', ''))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
 
     # ---- Project Terminal (Claude Code / Codex CLI runner) ---------------
     def _terminal_spawn(self):
