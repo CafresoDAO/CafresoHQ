@@ -1270,6 +1270,14 @@ function OnboardingKeyStep() {
         {saved === 'err'   && '✕ Couldn\'t save — check the key and try again.'}
         {!saved            && 'Free · unique to you · you can change it anytime in Settings → API.'}
       </div>
+      <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', color: 'var(--ink-3)' }}>
+        Want stronger output? Plug in your own Claude, GPT or paid key —{' '}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('cafresohq:openSettings', { detail: { tab: 'keys' } }))}
+          style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', ...linkStyle }}
+        >bring your own key →</button>
+      </div>
     </div>
   );
 }
@@ -1278,14 +1286,15 @@ function OnboardingKeyStep() {
    a tour-skip and stays until every step is done (or the user dismisses it), so
    a new user is never left at a dead end (e.g. agents that error with no key).
    Steps auto-check from live app state passed in as props. */
-function GettingStarted({ hasKey, hired, chatted, assigned, sawWork, onAddKey, onHire, onChat, onTasks, onWatch, onDismiss }) {
+function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAddKey, onHire, onChat, onTasks, onProjects, onWatch, onDismiss }) {
   const [collapsed, setCollapsed] = useState(false);
   const steps = [
     { k: 'key',   done: !!hasKey,   n: 1, label: 'Add your AI key',          hint: 'Free OpenRouter key — powers every agent.',         act: onAddKey, cta: 'Add key' },
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
-    { k: 'watch', done: !!sawWork,  n: 5, label: 'Watch them work',           hint: 'Desks light up; the Team inbox logs every action.', act: onWatch, cta: 'Open office' },
+    { k: 'build', done: !!built,    n: 5, label: 'Create your first Project',  hint: 'Agents build docs, decks, code & sites here — preview them live.', act: onProjects, cta: 'New Project' },
+    { k: 'watch', done: !!sawWork,  n: 6, label: 'Watch them work',           hint: 'Desks light up; the Team inbox logs every action.', act: onWatch, cta: 'Open office' },
   ];
   const doneCount = steps.filter(s => s.done).length;
   const allDone = doneCount === steps.length;
