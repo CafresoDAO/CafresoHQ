@@ -44,10 +44,21 @@
   );
   const authorHandle = $derived(post?.author?.name || 'Guest');
 
+  const draftKey = (s) => `cafresohq.forum_draft:${s}`;
   $effect(() => {
     if (!viewSlug || viewSlug === loadedSlug) return;
     loadedSlug = viewSlug;
+    try { commentDraft = localStorage.getItem(draftKey(viewSlug)) || ''; } catch (_) {}
     loadAll(viewSlug);
+  });
+  // Persist the comment draft per-thread so navigating away doesn't lose it;
+  // cleared automatically once the comment posts (submitComment sets it to '').
+  $effect(() => {
+    if (typeof localStorage === 'undefined' || !viewSlug) return;
+    try {
+      if (commentDraft.trim()) localStorage.setItem(draftKey(viewSlug), commentDraft);
+      else localStorage.removeItem(draftKey(viewSlug));
+    } catch (_) {}
   });
 
   async function loadAll(v) {

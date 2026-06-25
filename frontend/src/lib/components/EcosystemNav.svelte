@@ -12,7 +12,7 @@
   const apps = [
     { id: 'pages',   label: 'Pages',   url: 'https://cafreso.com',                                  icon: '📄', accent: 'var(--eco-pages)' },
     { id: 'ai',      label: 'AI',      url: 'https://ai.cafreso.com',                                icon: '🧠', accent: 'var(--eco-ai)' },
-    { id: 'hq',      label: 'HQ',      url: 'https://hq.cafreso.com',                                icon: '🏢', accent: 'var(--eco-hq)' },
+    { id: 'hq',      label: 'HQ',      url: 'https://ai.cafreso.com/hq',                             icon: '🏢', accent: 'var(--eco-hq)' },
     { id: 'mine',    label: 'Mine',    url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/',          icon: '⛏', accent: 'var(--eco-banking)' }
   ];
 
