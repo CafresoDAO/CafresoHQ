@@ -5832,6 +5832,19 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
   background: var(--accent-sun); border: 1px solid var(--ink);
   flex-shrink: 0;
 }
+/* File-manager row actions (rename / delete / upload-here). Always visible on
+   touch (no hover); hover-reveal on pointer devices to keep the tree clean. */
+.tree-actions { display: inline-flex; gap: 1px; margin-left: 6px; flex-shrink: 0; }
+.tree-act {
+  background: none; border: none; cursor: pointer; padding: 1px 4px;
+  font-size: 11px; line-height: 1; border-radius: 3px; color: var(--ink-2);
+}
+.tree-act:hover { background: rgba(0, 0, 0, 0.10); color: var(--ink); }
+.tree-row.drop-target { outline: 2px dashed var(--accent-sun); outline-offset: -2px; background: rgba(240, 198, 116, 0.18); }
+@media (hover: hover) {
+  .tree-actions { opacity: 0; transition: opacity var(--motion-fast, 0.12s) ease; }
+  .tree-row:hover .tree-actions { opacity: 1; }
+}
 
 /* ---- Projects view text styling --------------------------------------- */
 .proj-list-name {

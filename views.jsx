@@ -4987,12 +4987,13 @@ function parseDirEntries(text, basePath) {
 }
 
 /* ---------------- Local file-tree with lazy sub-directory loading ---------------- */
-function LocalTree({ path, onSelectFile, refreshNonce }) {
+function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUploadTo }) {
   const [entries, setEntries] = useSV(null);
   const [expanded, setExpanded] = useSV(new Set());
   const [subEntries, setSubEntries] = useSV({});
   const [loading, setLoading] = useSV(false);
   const [err, setErr] = useSV(null);
+  const [dropDir, setDropDir] = useSV(null);   // folder row being dragged over
 
   /* Collapse + clear cached sub-listings only when the project PATH changes.
      A refresh (refreshNonce bump after an upload) deliberately keeps expanded
@@ -5029,16 +5030,32 @@ function LocalTree({ path, onSelectFile, refreshNonce }) {
     });
   };
 
+  /* Hover/tap actions on a row: upload-here (folders only), rename, delete.
+     stopPropagation so they don't trigger the row's open/toggle. */
+  const rowActions = (e) => (
+    <span className="tree-actions" onClick={ev => ev.stopPropagation()}>
+      {onUploadTo && e.isDir && <button className="tree-act" title="Upload files here" onClick={ev => { ev.stopPropagation(); onUploadTo(e); }}>📤</button>}
+      {onRename && <button className="tree-act" title="Rename" onClick={ev => { ev.stopPropagation(); onRename(e); }}>✎</button>}
+      {onDelete && <button className="tree-act" title="Delete" onClick={ev => { ev.stopPropagation(); onDelete(e); }}>🗑</button>}
+    </span>
+  );
+
   const renderEntries = (list, depth) => list.map(e => {
     if (e.isDir) {
       const isOpen = expanded.has(e.path);
       const kids = subEntries[e.path];
+      const dropProps = onUploadTo ? {
+        onDragOver: (ev) => { ev.preventDefault(); ev.stopPropagation(); setDropDir(e.path); },
+        onDragLeave: (ev) => { if (!ev.currentTarget.contains(ev.relatedTarget)) setDropDir(null); },
+        onDrop: (ev) => { ev.preventDefault(); ev.stopPropagation(); setDropDir(null); if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) onUploadTo(e, ev.dataTransfer.files); },
+      } : {};
       return (
         <div key={e.path}>
-          <div className={'tree-row tree-folder' + (isOpen ? ' open' : '')} style={{paddingLeft: 10 + depth * 14}} onClick={() => toggle(e.path)}>
+          <div className={'tree-row tree-folder' + (isOpen ? ' open' : '') + (dropDir === e.path ? ' drop-target' : '')} style={{paddingLeft: 10 + depth * 14}} onClick={() => toggle(e.path)} {...dropProps}>
             <span className="tree-chev">{isOpen ? '▾' : '▸'}</span>
             <span className="tree-icon">{isOpen ? '📂' : '📁'}</span>
             <span className="tree-name">{e.name}</span>
+            {rowActions(e)}
           </div>
           {isOpen && kids && renderEntries(kids, depth + 1)}
           {isOpen && !kids && <div style={{paddingLeft: 6 + (depth + 1) * 14, fontSize: 9, opacity: 0.5}}>Loading…</div>}
@@ -5049,6 +5066,7 @@ function LocalTree({ path, onSelectFile, refreshNonce }) {
       <div key={e.path} className="tree-row tree-file" style={{paddingLeft: 10 + depth * 14 + 14}} onClick={() => onSelectFile && onSelectFile(e.path)}>
         <span className="tree-name">{e.name}</span>
         {e.size > 0 && <span className="tree-size">{e.size < 1024 ? `${e.size} B` : `${(e.size / 1024).toFixed(1)} KB`}</span>}
+        {rowActions(e)}
       </div>
     );
   });
@@ -6383,6 +6401,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
      drop-zone highlight. */
   const [treeNonce, setTreeNonce] = useSV(0);
   const [fileDragHover, setFileDragHover] = useSV(false);
+  const [uploadTargetDir, setUploadTargetDir] = useSV(null);  // subfolder target for 📤 picker
   const uploadInputRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -6521,35 +6540,115 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     setBusy(false);
   };
 
-  /* Upload (drop or picker) files into the selected project's working dir so
-     assigned agents can read them and the preview pane can render them. After
-     a successful upload we refresh the tree and auto-open the first file so the
-     hand-off is visible. */
-  const uploadFiles = async (fileList) => {
+  /* Join a dir + name using whichever separator the dir already uses (so
+     Windows paths stay Windows paths). */
+  const joinPath = (dir, name) => {
+    const d = String(dir || '');
+    const sep = (d.includes('\\') && !d.includes('/')) ? '\\' : '/';
+    return d.replace(/[\/\\]+$/, '') + sep + name;
+  };
+  /* Is `p` the path `base` itself, or a descendant of it? Separator-bounded so
+     /proj/foobar is NOT treated as living under /proj/foo. */
+  const isUnder = (p, base) => p === base || p.startsWith(base + '/') || p.startsWith(base + '\\');
+  const toast = (kind, msg) => { if (window.cafresohqToast && window.cafresohqToast[kind]) window.cafresohqToast[kind](msg); };
+
+  /* Upload (drop or picker) files into a working dir so assigned agents can
+     read them and the preview pane can render them. targetDir defaults to the
+     project root; a folder row's 📤 / drop passes a subfolder. After a
+     successful upload we refresh the tree and auto-open the first file. */
+  const uploadFiles = async (fileList, targetDir) => {
+    setFileDragHover(false);  // a folder-row drop stops propagation to the panel zone
     if (!project || !project.path) {
-      if (window.cafresohqToast) window.cafresohqToast.info('Select a project first to share files with it.');
+      toast('info', 'Select a project first to share files with it.');
       return;
     }
     const files = Array.from(fileList || []).filter(Boolean);
     if (!files.length) return;
     if (!window.CafresoHQClient || !window.CafresoHQClient.fsUpload) {
       setErr('Upload needs the updated container (ships /fs/upload) — rebuild the image.');
-      if (window.cafresohqToast) window.cafresohqToast.error('Upload unavailable — container needs a rebuild.');
+      toast('error', 'Upload unavailable — container needs a rebuild.');
       return;
     }
+    const dir = targetDir || project.path;
     setBusy(true); setErr(null);
     try {
-      const res = await window.CafresoHQClient.fsUpload(project.path, files);
+      const res = await window.CafresoHQClient.fsUpload(dir, files);
       setTreeNonce(n => n + 1);
       const n = (res && res.count) || files.length;
-      if (window.cafresohqToast) window.cafresohqToast.success(`Shared ${n} file${n === 1 ? '' : 's'} with ${project.name}`);
+      const where = dir === project.path ? project.name : ('…/' + dir.split(/[\/\\]/).pop());
+      toast('success', `Shared ${n} file${n === 1 ? '' : 's'} with ${where}`);
       const first = res && res.uploaded && res.uploaded[0];
       if (first && first.path) readFile(first.path);
     } catch (e) {
       setErr(e.message || String(e));
-      if (window.cafresohqToast) window.cafresohqToast.error('Upload failed: ' + (e.message || e));
+      toast('error', 'Upload failed: ' + (e.message || e));
     }
     setBusy(false);
+  };
+
+  /* ── File-manager actions over the working tree (new folder / rename /
+     delete / upload-into-subfolder). Each refreshes the tree on success. ── */
+  const fsClient = () => (window.CafresoHQClient && window.CafresoHQClient.fsMkdir) ? window.CafresoHQClient : null;
+
+  const newFolder = async () => {
+    if (!project || !project.path) return;
+    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    const name = (window.prompt('New folder name:') || '').trim();
+    if (!name) return;
+    if (/[\/\\]/.test(name)) { toast('error', 'Folder name can\'t contain slashes.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      await fsClient().fsMkdir(joinPath(project.path, name));
+      setTreeNonce(n => n + 1);
+      toast('success', `Created folder "${name}"`);
+    } catch (e) { setErr(e.message || String(e)); toast('error', 'Couldn\'t create folder: ' + (e.message || e)); }
+    setBusy(false);
+  };
+
+  const renameEntry = async (entry) => {
+    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    const cur = entry.name;
+    const next = (window.prompt('Rename to:', cur) || '').trim();
+    if (!next || next === cur) return;
+    if (/[\/\\]/.test(next)) { toast('error', 'Name can\'t contain slashes.'); return; }
+    const parent = entry.path.slice(0, Math.max(0, entry.path.length - cur.length));
+    const to = parent + next;
+    setBusy(true); setErr(null);
+    try {
+      await fsClient().fsRename(entry.path, to);
+      setTreeNonce(n => n + 1);
+      // Keep the editor's path live — including when a *folder* with the open
+      // file inside it was renamed (else the next Save writes a ghost copy at
+      // the old path). Rebase the open file's path prefix onto the new name.
+      if (openFile && openFile.path && isUnder(openFile.path, entry.path)) {
+        setOpenFile({ ...openFile, path: to + openFile.path.slice(entry.path.length) });
+      }
+      toast('success', `Renamed to "${next}"`);
+    } catch (e) { setErr(e.message || String(e)); toast('error', 'Rename failed: ' + (e.message || e)); }
+    setBusy(false);
+  };
+
+  const deleteEntry = async (entry) => {
+    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    const what = entry.isDir ? 'folder' : 'file';
+    const msg = `Delete ${what} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.';
+    if (!window.confirm(msg)) return;
+    setBusy(true); setErr(null);
+    try {
+      await fsClient().fsDelete(entry.path);
+      setTreeNonce(n => n + 1);
+      if (openFile && openFile.path && isUnder(openFile.path, entry.path)) setOpenFile(null);
+      toast('success', `Deleted "${entry.name}"`);
+    } catch (e) { setErr(e.message || String(e)); toast('error', 'Delete failed: ' + (e.message || e)); }
+    setBusy(false);
+  };
+
+  /* 📤 on a folder (no files) opens the picker targeting that folder; a drop
+     passes its files straight through. */
+  const uploadTo = (entry, files) => {
+    if (files && files.length) { uploadFiles(files, entry.path); return; }
+    setUploadTargetDir(entry.path);
+    if (uploadInputRef.current) uploadInputRef.current.click();
   };
 
   /* ── Mobile drill-down navigation ── */
@@ -6668,18 +6767,24 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
 
             {mobileDetailTab === 'files' && (
               <div style={{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}>
-                <div style={{display:'flex',justifyContent:'flex-end',padding:'6px 8px',borderBottom:'1px solid var(--rule)'}}>
+                <div style={{display:'flex',justifyContent:'flex-end',gap:6,padding:'6px 8px',borderBottom:'1px solid var(--rule)'}}>
+                  <button
+                    className="px-btn ghost"
+                    style={{fontSize:11,padding:'4px 10px'}}
+                    title="New folder in this project"
+                    onClick={newFolder}
+                  >＋ Folder</button>
                   <button
                     className="px-btn ghost"
                     style={{fontSize:11,padding:'4px 10px'}}
                     title="Upload files to share with this project's agents"
-                    onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
+                    onClick={() => { setUploadTargetDir(null); if (uploadInputRef.current) uploadInputRef.current.click(); }}
                   >⬆ Share file</button>
                 </div>
                 <input ref={uploadInputRef} type="file" multiple style={{display:'none'}}
-                  onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+                  onChange={(e) => { uploadFiles(e.target.files, uploadTargetDir); e.target.value = ''; setUploadTargetDir(null); }} />
                 <div style={{flex:1,overflow:'auto'}}>
-                  <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} />
+                  <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={(path) => { readFile(path); setMobileStep('editor'); }} onRename={renameEntry} onDelete={deleteEntry} onUploadTo={uploadTo} />
                 </div>
               </div>
             )}
@@ -6875,12 +6980,18 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
               <button
                 className="px-btn ghost"
                 style={{fontSize:9,padding:'2px 7px',flexShrink:0}}
+                title="New folder in this project"
+                onClick={newFolder}
+              >＋ Folder</button>
+              <button
+                className="px-btn ghost"
+                style={{fontSize:9,padding:'2px 7px',flexShrink:0}}
                 title="Upload files to this project — share them with the assigned agents"
-                onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
+                onClick={() => { setUploadTargetDir(null); if (uploadInputRef.current) uploadInputRef.current.click(); }}
               >⬆ Share</button>
             </div>
             <input ref={uploadInputRef} type="file" multiple style={{display:'none'}}
-              onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+              onChange={(e) => { uploadFiles(e.target.files, uploadTargetDir); e.target.value = ''; setUploadTargetDir(null); }} />
             <div
               style={{overflowY:'auto', flex:1, padding:'4px 0', position:'relative',
                       background: fileDragHover ? 'rgba(240, 198, 116, 0.15)' : 'transparent',
@@ -6898,7 +7009,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                 if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
               }}
             >
-              <LocalTree path={project.path} onSelectFile={readFile} refreshNonce={treeNonce} />
+              <LocalTree path={project.path} onSelectFile={readFile} refreshNonce={treeNonce} onRename={renameEntry} onDelete={deleteEntry} onUploadTo={uploadTo} />
               {fileDragHover && (
                 <div style={{position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
                              pointerEvents:'none', fontSize:11, fontWeight:600, color:'var(--accent-sun)',
