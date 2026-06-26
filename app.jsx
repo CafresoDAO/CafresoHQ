@@ -7,7 +7,7 @@ const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOP
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
 const { MissionsModal, useMissionRunner } = window.CafresoHQMissions;
-const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
 
 /* One-time storage-key migration: legacy openclaw_* / cafresoai. keys -> cafresohq.*
    Copies (never deletes) so existing sessions keep working. Idempotent. */
@@ -2709,6 +2709,14 @@ ${d.text}` : d.text,
      touching the knowledge web in real time. Search hits pulse all returned
      paths; reads/writes pulse the single targeted note. */
   const pulseGraph = (ev) => {
+    // Broadcast every agent tool event to the Workspace (tree refresh, preview
+    // chase, activity ledger, presence pulse, status pip). Fired before the
+    // graph early-return so it works even when the graph engine isn't loaded.
+    try {
+      window.dispatchEvent(new CustomEvent('cafresohq:agentTool', {
+        detail: { phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result },
+      }));
+    } catch (_e) {}
     const g = window.CafresoHQGraph;
     if (!g || !g.pulse) return;
     const name = ev.name;
@@ -3490,7 +3498,7 @@ ${d.text}` : d.text,
       case 'calendar':
         return <CalendarView tasks={tasks} agents={agents} />;
       case 'projects':
-        return <ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} />;
+        return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={setActiveView} />;
       case 'terminal':
         return <TerminalView />;
       default:

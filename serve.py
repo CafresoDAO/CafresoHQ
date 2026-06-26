@@ -1935,6 +1935,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._fs_browse()
         if self.path.startswith('/fs/site/'):
             return self._fs_site()
+        if self.path.startswith('/fs/stat'):
+            return self._fs_stat()
         if self.path.startswith('/fs/file'):
             return self._fs_file()
         if self.path == '/browser/status':
@@ -3873,10 +3875,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'error': f'read failed: {e}'})
         ctype = mimetypes.guess_type(str(p))[0] or 'application/octet-stream'
+        import hashlib as _hl
+        fhash = _hl.sha1(data).hexdigest()[:16]
+        try:
+            fmtime = int(p.stat().st_mtime)
+        except Exception:
+            fmtime = 0
         self.send_response(200)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Content-Disposition', 'inline; filename="%s"' % p.name.replace('"', ''))
+        # Conflict-safety: the editor captures these on read and re-checks before
+        # saving / on an agent write, so co-editing never silently clobbers.
+        self.send_header('X-File-Mtime', str(fmtime))
+        self.send_header('X-File-Hash', fhash)
+        self.send_header('Access-Control-Expose-Headers', 'X-File-Mtime, X-File-Hash')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
@@ -3884,6 +3897,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data)
         except Exception:
             pass
+
+    def _fs_stat(self):
+        """GET /fs/stat?path=<file>  ->  {ok, mtime, hash, size}
+        Cheap conflict-check for the editor (no content body): compare against the
+        X-File-Mtime / X-File-Hash captured at read time before saving or on an
+        agent write, so co-editing never silently clobbers. Same allowed-dirs
+        guard as /fs/file; hash matches /fs/file's (sha1, first 16 hex)."""
+        import hashlib as _hl
+        qs = urllib.parse.urlparse(self.path).query
+        req_path = (urllib.parse.parse_qs(qs).get('path') or [''])[0].strip()
+        if not req_path:
+            return self._send_json(400, {'error': 'path required'})
+        try:
+            p = pathlib.Path(_client_path(req_path)).resolve()
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
+            try:
+                allowed = any(str(p).startswith(str(pathlib.Path(d).resolve()))
+                              for d in _cafresohq_allowed_dirs)
+            except Exception:
+                allowed = False
+            if not allowed:
+                return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
+        if not p.is_file():
+            return self._send_json(404, {'ok': False, 'error': 'not a file'})
+        try:
+            st = p.stat()
+            h = _hl.sha1(p.read_bytes()).hexdigest()[:16]
+        except Exception as e:
+            return self._send_json(500, {'error': str(e)})
+        return self._send_json(200, {'ok': True, 'mtime': int(st.st_mtime), 'hash': h, 'size': st.st_size})
 
     def _fs_site(self):
         """GET /fs/site/<b64root>/<relpath>

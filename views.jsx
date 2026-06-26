@@ -49,7 +49,7 @@ const VIEW_LABELS = {
   graph:     'VAULT GRAPH',
   team:      'STAFF ROSTER',
   calendar:  'CALENDAR',
-  projects:  'PROJECTS',
+  projects:  'WORKSPACE',
   terminal:  'TERMINAL',
 };
 
@@ -4987,7 +4987,7 @@ function parseDirEntries(text, basePath) {
 }
 
 /* ---------------- Local file-tree with lazy sub-directory loading ---------------- */
-function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUploadTo }) {
+function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUploadTo, pulsePaths }) {
   const [entries, setEntries] = useSV(null);
   const [expanded, setExpanded] = useSV(new Set());
   const [subEntries, setSubEntries] = useSV({});
@@ -5051,10 +5051,11 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
       } : {};
       return (
         <div key={e.path}>
-          <div className={'tree-row tree-folder' + (isOpen ? ' open' : '') + (dropDir === e.path ? ' drop-target' : '')} style={{paddingLeft: 10 + depth * 14}} onClick={() => toggle(e.path)} {...dropProps}>
+          <div className={'tree-row tree-folder' + (isOpen ? ' open' : '') + (dropDir === e.path ? ' drop-target' : '') + (pulsePaths && pulsePaths.has(e.path) ? ' agent-wrote' : '')} style={{paddingLeft: 10 + depth * 14}} onClick={() => toggle(e.path)} {...dropProps}>
             <span className="tree-chev">{isOpen ? '▾' : '▸'}</span>
             <span className="tree-icon">{isOpen ? '📂' : '📁'}</span>
             <span className="tree-name">{e.name}</span>
+            {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by an agent">A</span>}
             {rowActions(e)}
           </div>
           {isOpen && kids && renderEntries(kids, depth + 1)}
@@ -5063,8 +5064,9 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
       );
     }
     return (
-      <div key={e.path} className="tree-row tree-file" style={{paddingLeft: 10 + depth * 14 + 14}} onClick={() => onSelectFile && onSelectFile(e.path)}>
+      <div key={e.path} className={'tree-row tree-file' + (pulsePaths && pulsePaths.has(e.path) ? ' agent-wrote' : '')} style={{paddingLeft: 10 + depth * 14 + 14}} onClick={() => onSelectFile && onSelectFile(e.path)}>
         <span className="tree-name">{e.name}</span>
+        {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by an agent">A</span>}
         {e.size > 0 && <span className="tree-size">{e.size < 1024 ? `${e.size} B` : `${(e.size / 1024).toFixed(1)} KB`}</span>}
         {rowActions(e)}
       </div>
@@ -6348,11 +6350,14 @@ function CsvPreview({ text, sep }) {
   );
 }
 
-function FilePreview({ file }) {
+function FilePreview({ file, nonce }) {
   const [imgErr, setImgErr] = useSV(false);
   const kind = previewKind(file.path);
   const apiBase = (typeof window !== 'undefined' && window._API_BASE) || '';
-  const fileUrl = apiBase + '/fs/file?path=' + encodeURIComponent(file.path);
+  // nonce (bumped when an agent rewrites the open file) cache-busts the streamed
+  // URLs so image/pdf/site previews actually reload — the "preview chases the agent" effect.
+  const bust = nonce ? ('&_n=' + nonce) : '';
+  const fileUrl = apiBase + '/fs/file?path=' + encodeURIComponent(file.path) + bust;
   const frame = { flex:1, width:'100%', height:'100%', minHeight:0, border:0, background:'#fff' };
   const pad = { flex:1, overflow:'auto', display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'#fff' };
   if (kind === 'html') {
@@ -6364,7 +6369,7 @@ function FilePreview({ file }) {
     const truncated = /\(truncated to \d+ chars\)\s*$/.test(file.content || '');
     if (file.path && (htmlNeedsSiteServe(file.content) || truncated)) {
       const { dir, base } = splitOsPath(file.path);
-      const siteUrl = apiBase + '/fs/site/' + b64urlUtf8(dir) + '/' + encodeURIComponent(base);
+      const siteUrl = apiBase + '/fs/site/' + b64urlUtf8(dir) + '/' + encodeURIComponent(base) + (nonce ? ('?_n=' + nonce) : '');
       return <iframe title="Site preview" style={frame} sandbox="allow-scripts allow-popups allow-forms allow-modals" src={siteUrl} />;
     }
     return <iframe title="HTML preview" style={frame} sandbox="allow-scripts allow-popups allow-forms allow-modals" srcDoc={file.content} />;
@@ -6386,6 +6391,255 @@ function FilePreview({ file }) {
   if (kind === 'pdf')
     return <iframe title="PDF preview" style={frame} src={fileUrl} />;
   return <pre style={{flex:1, overflow:'auto', margin:0, padding:16, fontFamily:'var(--mono,ui-monospace,monospace)', fontSize:12, whiteSpace:'pre-wrap', wordBreak:'break-word', background:'var(--paper,#fff)'}}>{file.content}</pre>;
+}
+
+/* ═══════════════════ Cohabit Workspace — the unified Agentic-OS surface ═══════
+   One screen where you and your agents are two operators on the SAME container
+   filesystem: a file tree, a center editor⇄live-preview deck, an integrated
+   terminal drawer, and an agent rail co-inhabit a single layout. The agent's
+   writes (via the cafresohq:agentTool event bus) light up the tree, refresh the
+   preview, and stream into a re-runnable activity ledger — conflict-safely, so a
+   live agent write never clobbers your unsaved edits. A top-bar toggle flips to
+   the classic Projects view (kept intact). */
+function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
+  const LS = (k, d) => { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch (_e) { return d; } };
+  const LSset = (k, v) => { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch (_e) {} };
+  const baseName = (p) => String(p || '').split(/[\/\\]/).pop();
+  const shortPath = (p) => { const s = String(p || '').split(/[\/\\]/).filter(Boolean); return s.slice(-2).join('/'); };
+  const joinPath = (dir, name) => { const d = String(dir || ''); const sep = (d.includes('\\') && !d.includes('/')) ? '\\' : '/'; return d.replace(/[\/\\]+$/, '') + sep + name; };
+  const isUnder = (p, base) => p === base || p.startsWith(base + '/') || p.startsWith(base + '\\');
+  const toast = (k, m) => { if (window.cafresohqToast && window.cafresohqToast[k]) window.cafresohqToast[k](m); };
+  const C = window.CafresoHQClient;
+
+  const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
+  const flipMode = (m) => { setMode(m); LSset('mode', m); };
+  const [selectedId, setSelectedId] = useSV(() => LS('selid', (projects[0] && projects[0].id) || null));
+  const project = projects.find(p => p.id === selectedId) || projects[0] || null;
+  React.useEffect(() => { if (project) LSset('selid', project.id); }, [project && project.id]);
+
+  const [openFile, setOpenFile] = useSV(null);   // {path, content, mtime, hash, dirty, binary}
+  const [previewMode, setPreviewMode] = useSV(false);
+  const [busy, setBusy] = useSV(false);
+  const [err, setErr] = useSV(null);
+  const [conflict, setConflict] = useSV(false);
+  const [treeNonce, setTreeNonce] = useSV(0);
+  const [previewNonce, setPreviewNonce] = useSV(0);
+  const [followAgent, setFollowAgent] = useSV(() => LS('follow', false));
+  const [agentStatus, setAgentStatus] = useSV('idle');   // idle | working
+  const [ledger, setLedger] = useSV([]);
+  const [pulse, setPulse] = useSV(() => new Set());      // paths the agent just touched
+  const [termOpen, setTermOpen] = useSV(() => LS('term', true));
+  const [fileDrag, setFileDrag] = useSV(false);
+  const uploadRef = React.useRef(null);
+  const uploadDirRef = React.useRef(null);
+
+  const openFileRef = React.useRef(null); React.useEffect(() => { openFileRef.current = openFile; }, [openFile]);
+  const followRef = React.useRef(false); React.useEffect(() => { followRef.current = followAgent; }, [followAgent]);
+  const pulseTimers = React.useRef({});
+  const idleTimer = React.useRef(null);
+
+  /* ── open a file into the deck (full content + conflict metadata) ── */
+  const openPath = async (path, opts) => {
+    const cur = openFileRef.current;
+    // Never silently drop unsaved edits when switching files. Auto-opens
+    // (Follow agent) skip; user-initiated opens confirm first.
+    if (cur && cur.dirty && cur.path !== path) {
+      if (opts && opts.auto) return;
+      if (!window.confirm('Discard unsaved changes to ' + baseName(cur.path) + '?')) return;
+    }
+    setErr(null); setConflict(false);
+    const kind = previewKind(path);
+    const binary = kind === 'image' || kind === 'pdf';
+    if (binary) { setOpenFile({ path, content: '', binary: true }); setPreviewMode(true); return; }
+    setBusy(true);
+    try {
+      const r = await C.fsReadText(path);
+      setOpenFile({ path, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false, binary: false });
+      setPreviewMode(false);
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy(false);
+  };
+  const onEdit = (val) => setOpenFile(f => f ? { ...f, content: val, dirty: true } : f);
+
+  /* ── conflict-safe save: re-stat before writing, never silently clobber ── */
+  const save = async (force) => {
+    const f = openFileRef.current; if (!f) return;
+    setBusy(true); setErr(null);
+    try {
+      if (!force && f.hash) {
+        try { const st = await C.fsStat(f.path); if (st && st.hash && st.hash !== f.hash) { setConflict(true); setBusy(false); return; } } catch (_e) {}
+      }
+      await C.toolExec('FILE_WRITE', f.path, { body: f.content });
+      let nh = f.hash, nm = f.mtime;
+      try { const st2 = await C.fsStat(f.path); if (st2 && st2.ok) { nh = st2.hash; nm = st2.mtime; } } catch (_e) {}
+      setOpenFile(o => (o && o.path === f.path) ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
+      setConflict(false); setTreeNonce(n => n + 1);
+      toast('success', 'Saved ' + baseName(f.path));
+    } catch (e) { setErr(e.message || String(e)); toast('error', 'Save failed: ' + (e.message || e)); }
+    setBusy(false);
+  };
+  const reloadOpen = async (path) => {
+    try { const r = await C.fsReadText(path); setOpenFile(o => (o && o.path === path) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o); setPreviewNonce(n => n + 1); } catch (_e) {}
+  };
+
+  /* ── live presence / ledger / status pip helpers ── */
+  const markPulse = (path) => {
+    if (!path) return;
+    setPulse(prev => { const n = new Set(prev); n.add(path); return n; });
+    clearTimeout(pulseTimers.current[path]);
+    pulseTimers.current[path] = setTimeout(() => setPulse(prev => { const n = new Set(prev); n.delete(path); return n; }), 2600);
+  };
+  const addLedger = (verb, name, arg) => setLedger(prev => [{ id: Math.random().toString(36).slice(2, 9), verb, name, path: arg, label: shortPath(arg), kind: verb }, ...prev].slice(0, 40));
+  const bumpIdle = () => { clearTimeout(idleTimer.current); idleTimer.current = setTimeout(() => setAgentStatus('idle'), 3500); };
+
+  /* ── the agent event bus: the heart of co-habitation ── */
+  React.useEffect(() => {
+    const onAgentTool = (e) => {
+      const d = e.detail || {}; const name = d.name, phase = d.phase, arg = String(d.arg || '').trim();
+      setAgentStatus('working'); bumpIdle();
+      if (phase === 'start') { markPulse(arg); return; }
+      if (phase !== 'done') return;
+      const isWrite = name === 'FILE_WRITE';
+      const isVault = name === 'VAULT_NEW' || name === 'VAULT_APPEND';
+      const isExport = name && name.indexOf('EXPORT') === 0;
+      const isBash = name === 'BASH';
+      if (isWrite || isVault || isExport) {
+        markPulse(arg); setTreeNonce(n => n + 1);
+        addLedger(isExport ? 'exported' : 'wrote', name, arg);
+        const cur = openFileRef.current;
+        if (isWrite && cur && cur.path === arg) {
+          if (cur.dirty) setConflict(true);   // surface banner — do not clobber
+          else reloadOpen(arg);               // clean buffer → silent reload + preview chase
+        } else if (isWrite && followRef.current && previewKind(arg) !== 'code') {
+          openPath(arg, { auto: true });       // follow the agent — but never clobber a dirty buffer
+        }
+      } else if (isBash) {
+        addLedger('ran', name, arg);
+      }
+    };
+    window.addEventListener('cafresohq:agentTool', onAgentTool);
+    return () => window.removeEventListener('cafresohq:agentTool', onAgentTool);
+  }, []);
+
+  /* Clear pending presence/idle timers on unmount (no setState-after-unmount). */
+  React.useEffect(() => () => {
+    try { Object.values(pulseTimers.current).forEach(clearTimeout); clearTimeout(idleTimer.current); } catch (_e) {}
+  }, []);
+
+  /* ── file-manager actions (same backbone as the classic Projects view) ── */
+  const fsOK = () => (C && C.fsMkdir) ? C : null;
+  const newFolder = async () => {
+    if (!project || !fsOK()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    const name = (window.prompt('New folder name:') || '').trim(); if (!name || /[\/\\]/.test(name)) return;
+    try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { toast('error', e.message || String(e)); }
+  };
+  const renameEntry = async (entry) => {
+    if (!fsOK()) return;
+    const next = (window.prompt('Rename to:', entry.name) || '').trim(); if (!next || next === entry.name || /[\/\\]/.test(next)) return;
+    const to = entry.path.slice(0, Math.max(0, entry.path.length - entry.name.length)) + next;
+    try { await C.fsRename(entry.path, to); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(o => ({ ...o, path: to + o.path.slice(entry.path.length) })); toast('success', `Renamed to "${next}"`); } catch (e) { toast('error', e.message || String(e)); }
+  };
+  const deleteEntry = async (entry) => {
+    if (!fsOK()) return;
+    if (!window.confirm(`Delete ${entry.isDir ? 'folder' : 'file'} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.')) return;
+    try { await C.fsDelete(entry.path); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(null); toast('success', `Deleted "${entry.name}"`); } catch (e) { toast('error', e.message || String(e)); }
+  };
+  const doUpload = async (fileList, dir) => {
+    setFileDrag(false);
+    if (!project) return; const files = Array.from(fileList || []).filter(Boolean); if (!files.length) return;
+    if (!C || !C.fsUpload) { toast('error', 'Upload needs the updated container.'); return; }
+    try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); toast('success', `Shared ${res.count || files.length} file${(res.count || files.length) === 1 ? '' : 's'}`); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { toast('error', 'Upload failed: ' + (e.message || e)); }
+  };
+  const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
+  const triggerUpload = () => { uploadDirRef.current = null; if (uploadRef.current) uploadRef.current.click(); };
+  const openChat = () => { if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id })); };
+  const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
+
+  const statusLabel = agentStatus === 'working' ? 'agent working…' : 'agent idle';
+
+  return (
+    <div className="ws-root">
+      <div className="ws-topbar">
+        <div className="ws-seg ws-modeseg">
+          <button className={mode === 'workspace' ? 'on' : ''} onClick={() => flipMode('workspace')} title="Unified Workspace — files, editor, terminal & agents on one screen">Workspace</button>
+          <button className={mode === 'classic' ? 'on' : ''} onClick={() => flipMode('classic')} title="The original Projects view">Classic</button>
+        </div>
+        {mode === 'workspace' && project && (
+          <>
+            <select className="ws-projsel" value={project.id} onChange={e => setSelectedId(e.target.value)}>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <span className="ws-env" title={project.path}><span className="ico">⬡</span> {project.source === 'github' ? 'repo' : 'local'} · {shortPath(project.path) || project.path}</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label className="ws-follow" title="Auto-open whatever file the agent is writing"><input type="checkbox" checked={followAgent} onChange={e => { setFollowAgent(e.target.checked); LSset('follow', e.target.checked); }} /> Follow agent</label>
+              <span className={'ws-pip ' + agentStatus}><span className="dot" />{statusLabel}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {mode === 'classic' ? (
+        <div className="ws-classic"><ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={onSwitchView} /></div>
+      ) : !project ? (
+        <div className="ws-noproj">No project yet — switch to <button className="px-btn" onClick={() => flipMode('classic')}>Classic</button> to create one.</div>
+      ) : (
+        <div className="ws-body">
+          <div className="ws-pane ws-files">
+            <div className="ws-pane-hd">📁 Files<div className="ws-hd-acts"><button onClick={newFolder} title="New folder">＋</button><button onClick={triggerUpload} title="Upload files">⬆</button></div></div>
+            <div className={'ws-tree' + (fileDrag ? ' drag' : '')}
+              onDragOver={e => { e.preventDefault(); setFileDrag(true); }}
+              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFileDrag(false); }}
+              onDrop={e => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) doUpload(e.dataTransfer.files, null); else setFileDrag(false); }}>
+              <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={openPath} onRename={renameEntry} onDelete={deleteEntry} onUploadTo={uploadTo} pulsePaths={pulse} />
+            </div>
+            <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} onChange={e => { doUpload(e.target.files, uploadDirRef.current); e.target.value = ''; uploadDirRef.current = null; }} />
+          </div>
+
+          <div className="ws-center">
+            <div className="ws-editorwrap">
+              {openFile ? (
+                <>
+                  <div className="ws-tabs">
+                    <span className="ws-tab on">{ideFileIcon ? ideFileIcon(openFile.path) : '📄'} <span className="nm">{baseName(openFile.path)}</span>{openFile.dirty ? <span className="dirty">•</span> : ''}</span>
+                    {!openFile.binary && <div className="ws-seg ws-cpseg"><button className={!previewMode ? 'on' : ''} onClick={() => setPreviewMode(false)}>Code</button><button className={previewMode ? 'on' : ''} onClick={() => setPreviewMode(true)}>Preview</button></div>}
+                    {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
+                  </div>
+                  {conflict && (
+                    <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
+                      <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
+                      <button onClick={() => save(true)}>Keep mine</button>
+                    </div>
+                  )}
+                  {err && <div className="ws-err">{err}</div>}
+                  <div className="ws-stage">
+                    {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
+                  </div>
+                </>
+              ) : (
+                <div className="ws-stage-empty">Open a file from the tree — or watch your agents build one.<br /><span className="dim">Code · Preview · live as it's written</span></div>
+              )}
+            </div>
+            <div className={'ws-term' + (termOpen ? '' : ' min')}>
+              <div className="ws-term-hd" onClick={() => { const v = !termOpen; setTermOpen(v); LSset('term', v); }}><span className="tl">⌁ Terminal · shared shell</span><span className="ch">{termOpen ? '▾' : '▸'}</span></div>
+              {termOpen && <div className="ws-term-body"><ProjectTerminal project={project} visible={termOpen} /></div>}
+            </div>
+          </div>
+
+          <div className="ws-pane ws-agent">
+            <div className="ws-pane-hd">Agents · co-operators<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open the multi-agent room for this project">TALK ↗</button></div></div>
+            <div className="ws-ledger">
+              {ledger.length === 0 && <div className="ws-led-empty">Your agents share this filesystem &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
+              {ledger.map(l => (
+                <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
+                  <span className="v">{l.kind}</span><span className="lb">{l.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView }) {
@@ -7453,6 +7707,7 @@ window.CafresoHQViews = {
   GraphView,
   ComingSoon,
   ProjectsView,
+  WorkspaceView,
   TerminalView,
   VIEW_LABELS,
 };
