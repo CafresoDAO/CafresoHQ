@@ -6439,7 +6439,14 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const idleTimer = React.useRef(null);
 
   /* ── open a file into the deck (full content + conflict metadata) ── */
-  const openPath = async (path) => {
+  const openPath = async (path, opts) => {
+    const cur = openFileRef.current;
+    // Never silently drop unsaved edits when switching files. Auto-opens
+    // (Follow agent) skip; user-initiated opens confirm first.
+    if (cur && cur.dirty && cur.path !== path) {
+      if (opts && opts.auto) return;
+      if (!window.confirm('Discard unsaved changes to ' + baseName(cur.path) + '?')) return;
+    }
     setErr(null); setConflict(false);
     const kind = previewKind(path);
     const binary = kind === 'image' || kind === 'pdf';
@@ -6504,7 +6511,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
           if (cur.dirty) setConflict(true);   // surface banner — do not clobber
           else reloadOpen(arg);               // clean buffer → silent reload + preview chase
         } else if (isWrite && followRef.current && previewKind(arg) !== 'code') {
-          openPath(arg);                       // follow the agent into its artifact
+          openPath(arg, { auto: true });       // follow the agent — but never clobber a dirty buffer
         }
       } else if (isBash) {
         addLedger('ran', name, arg);
@@ -6512,6 +6519,11 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     };
     window.addEventListener('cafresohq:agentTool', onAgentTool);
     return () => window.removeEventListener('cafresohq:agentTool', onAgentTool);
+  }, []);
+
+  /* Clear pending presence/idle timers on unmount (no setState-after-unmount). */
+  React.useEffect(() => () => {
+    try { Object.values(pulseTimers.current).forEach(clearTimeout); clearTimeout(idleTimer.current); } catch (_e) {}
   }, []);
 
   /* ── file-manager actions (same backbone as the classic Projects view) ── */
@@ -6573,7 +6585,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       ) : (
         <div className="ws-body">
           <div className="ws-pane ws-files">
-            <div className="ws-pane-hd"><span><i className="ti" /></span>Files<div className="ws-hd-acts"><button onClick={newFolder} title="New folder">＋</button><button onClick={triggerUpload} title="Upload files">⬆</button></div></div>
+            <div className="ws-pane-hd">📁 Files<div className="ws-hd-acts"><button onClick={newFolder} title="New folder">＋</button><button onClick={triggerUpload} title="Upload files">⬆</button></div></div>
             <div className={'ws-tree' + (fileDrag ? ' drag' : '')}
               onDragOver={e => { e.preventDefault(); setFileDrag(true); }}
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFileDrag(false); }}
@@ -6593,7 +6605,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
                     {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
                   </div>
                   {conflict && (
-                    <div className="ws-conflict"><i className="ti" />The agent changed this file on disk while you had edits.
+                    <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
                       <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
                       <button onClick={() => save(true)}>Keep mine</button>
                     </div>
