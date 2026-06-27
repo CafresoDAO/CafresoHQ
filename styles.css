@@ -8881,3 +8881,108 @@ body.night .meeting-table { filter: brightness(0.75); }
 .icp-in { width: 66px; padding: 3px 6px; font: inherit; font-size: 11px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper, #fff); color: var(--ink, #241a0e); }
 .icp-in:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: 1px; }
 .icp-bal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; line-height: 1.6; }
+
+/* ==========================================================================
+   Desktop window manager — "Living Floor" OS mode
+   Generic app windows (WindowFrame), a centered macOS-style dock, and the
+   office floor acting as the desktop wallpaper. Most window geometry is set
+   inline by WindowFrame; these rules add focus affordance, dock chrome, and
+   in-window sizing fixes for views that otherwise pin to the viewport.
+   ========================================================================== */
+.hq-window {
+  transition: box-shadow 140ms ease, border-color 140ms ease;
+}
+.hq-window.focused { border-color: var(--accent-teal, var(--ink)); }
+.hq-window:not(.focused) { filter: saturate(0.97); }
+.hq-window-titlebar:active { cursor: grabbing; }
+
+/* Views that hard-pin height to the viewport overflow inside a window.
+   Inside a window body, let them fill the window instead of the screen. */
+.hq-window-body { background: var(--paper); }
+.hq-window-body > .view-area,
+.hq-window-body > .office-wrap,
+.hq-window-body > .view-projects,
+.hq-window-body > .view-vault,
+.hq-window-body .view-projects,
+.hq-window-body .view-vault.unified {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto;
+}
+
+/* ---- Dock ---- */
+.hq-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 345; /* above the window band (300–340) so the dock stays clickable,
+                   below --z-dropdown (350) / --z-modal (400) */
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.26);
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+}
+.hq-dock-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px; height: 42px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 130ms cubic-bezier(.2,.8,.2,1), background 130ms ease, border-color 130ms ease;
+}
+.hq-dock-item:hover {
+  background: var(--paper-2);
+  border-color: var(--rule);
+  transform: translateY(-6px) scale(1.14);
+}
+.hq-dock-item:active { transform: translateY(-2px) scale(1.04); }
+.hq-dock-power { color: var(--accent-rose, var(--ink)); }
+.hq-dock-sep {
+  width: 2px; height: 30px;
+  align-self: center;
+  margin: 0 2px;
+  background: var(--rule);
+  border-radius: 2px;
+}
+/* Running / minimized indicator dot under the icon. */
+.hq-dock-dot {
+  position: absolute;
+  bottom: 2px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 130ms ease;
+}
+.hq-dock-item.running .hq-dock-dot { background: var(--accent-teal, var(--ink)); }
+.hq-dock-item.minimized .hq-dock-dot { background: var(--ink-3, var(--rule)); }
+
+/* Rail running-app marker in desktop mode (rail acts as a launcher). */
+.rail nav a.running {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-teal, var(--ink)) 16%, transparent);
+}
+
+body.night .hq-dock { background: color-mix(in srgb, var(--paper) 70%, transparent); }
+body.night .hq-window.focused { border-color: var(--accent-teal); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-dock-item, .hq-window { transition: none; }
+  .hq-dock-item:hover { transform: none; background: var(--paper-2); }
+}

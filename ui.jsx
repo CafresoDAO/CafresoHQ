@@ -32,6 +32,7 @@ function Ico({ kind, size=16 }) {
   if (kind === 'team') return (<svg {...common}><circle cx="5" cy="6" r="2" fill={K}/><circle cx="11" cy="6" r="2" fill={K}/><path d="M2 13 Q5 9 8 13" stroke={K} strokeWidth="2" fill="none"/><path d="M8 13 Q11 9 14 13" stroke={K} strokeWidth="2" fill="none"/></svg>);
   if (kind === 'visual') return (<svg {...common}><rect x="2" y="4" width="12" height="8" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="6" width="2" height="2" fill={K}/><rect x="9" y="6" width="2" height="2" fill={K}/></svg>);
   if (kind === 'workflows') return (<svg {...common}><rect x="1" y="3" width="4" height="3" fill={K}/><rect x="6" y="3" width="4" height="3" fill={K}/><rect x="11" y="3" width="4" height="3" fill={K}/><rect x="3" y="6" width="1" height="3" fill={K}/><rect x="3" y="9" width="10" height="1" fill={K}/><rect x="13" y="6" width="1" height="3" fill={K}/><rect x="7" y="6" width="2" height="3" fill={K}/><rect x="2" y="10" width="4" height="3" fill={K}/><rect x="6" y="10" width="4" height="3" fill={K}/><rect x="10" y="10" width="4" height="3" fill={K}/></svg>);
+  if (kind === 'terminal') return (<svg {...common}><rect x="2" y="3" width="12" height="10" fill="none" stroke={K} strokeWidth="2"/><polyline points="4,7 6,9 4,11" fill="none" stroke={K} strokeWidth="1.5"/><rect x="8" y="10" width="4" height="1.5" fill={K}/></svg>);
   if (kind === 'settings') return (<svg {...common}><rect x="7" y="2" width="2" height="12" fill={K}/><rect x="2" y="7" width="12" height="2" fill={K}/></svg>);
   if (kind === 'send') return (<svg {...common}><polygon points="2,2 14,8 2,14 5,8" fill={K}/></svg>);
   if (kind === 'delegate') return (<svg {...common}><rect x="2" y="7" width="8" height="2" fill={K}/><polygon points="8,4 13,8 8,12" fill={K}/></svg>);
@@ -1488,7 +1489,7 @@ function Tab({
   );
 }
 
-function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle }) {
+function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle, onLaunch, runningViews }) {
   // Brand card doubles as the CEO entry-point — clicking it opens the
   // CEOPanel modal (mini office + arcade + quick actions). Keyboard users
   // get the same behavior via Enter / Space.
@@ -1520,17 +1521,22 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
       </div>
       <nav>
-        {NAV_ITEMS.map(([k, label], i) => (
-          <a
-            key={k}
-            className={active===k?'active':''}
-            onClick={()=>setActive(k)}
-            title={collapsed ? `${label} (${i + 1})` : `Shortcut: ${i + 1}`}
-            aria-current={active===k ? 'page' : undefined}
-          >
-            <Ico kind={k}/> {!collapsed && label}
-          </a>
-        ))}
+        {NAV_ITEMS.map(([k, label], i) => {
+          // In desktop (window) mode the rail is a launcher: clicking opens
+          // or raises that app's window instead of switching the full view.
+          const running = onLaunch && runningViews && runningViews.indexOf(k) !== -1;
+          return (
+            <a
+              key={k}
+              className={(onLaunch ? (running ? 'running' : '') : (active===k?'active':''))}
+              onClick={()=> onLaunch ? onLaunch(k) : setActive(k)}
+              title={collapsed ? `${label} (${i + 1})` : `Shortcut: ${i + 1}`}
+              aria-current={active===k ? 'page' : undefined}
+            >
+              <Ico kind={k}/> {!collapsed && label}
+            </a>
+          );
+        })}
       </nav>
       <a
         onClick={onOpenSettings}
