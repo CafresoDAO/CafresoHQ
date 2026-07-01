@@ -5849,22 +5849,22 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 /* ═══════════ Cohabit Workspace — unified agentic-OS surface ═══════════ */
 .tree-row.agent-wrote { animation: ws-wrote 2.6s ease; }
 @keyframes ws-wrote { 0% { background: rgba(245, 210, 93, 0.34); } 70% { background: rgba(245, 210, 93, 0.10); } 100% { background: transparent; } }
-.tree-agent-dot { margin-left: auto; width: 13px; height: 13px; border-radius: 50%; background: var(--accent-sun); color: var(--ink); font-size: 8px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 4px; }
+.tree-agent-dot { margin-left: auto; width: 13px; height: 13px; border-radius: 50%; background: var(--accent-sun); color: #241a0e; font-size: 8px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 4px; }
 
 .ws-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--paper); }
 .ws-topbar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--rule); flex-shrink: 0; min-height: 42px; }
 .ws-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; flex-shrink: 0; }
 .ws-seg button { background: none; border: none; font: inherit; font-size: 11px; padding: 4px 12px; color: var(--ink-3); cursor: pointer; }
-.ws-seg button.on { background: var(--accent-sun); color: var(--ink); }
+.ws-seg button.on { background: var(--accent-sun); color: #241a0e; }
 .ws-cpseg button { font-size: 10px; padding: 3px 10px; }
 .ws-projsel { background: var(--paper-2, #f0e9d8); border: 1px solid var(--rule); border-radius: 6px; font: inherit; font-size: 11px; padding: 3px 8px; color: var(--ink); max-width: 160px; }
 .ws-env { font-size: 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .ws-env .ico { color: var(--accent-sun); }
 .ws-follow { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--ink-3); cursor: pointer; white-space: nowrap; }
 .ws-pip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--rule); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
-.ws-pip .dot { width: 7px; height: 7px; border-radius: 50%; background: #9a948a; }
-.ws-pip.working { color: #b88517; border-color: rgba(186, 117, 23, 0.4); }
-.ws-pip.working .dot { background: var(--accent-sun); animation: ws-blink 1s infinite; }
+.ws-pip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.ws-pip.working { background: var(--accent-sun); color: #241a0e; border-color: var(--accent-sun); }
+.ws-pip.working .dot { background: #241a0e; animation: ws-blink 1s infinite; }
 @keyframes ws-blink { 50% { opacity: 0.35; } }
 .ws-classic { flex: 1; min-height: 0; }
 .ws-noproj { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); font-size: 13px; }
@@ -5905,9 +5905,29 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 .ws-led-empty { font-size: 11px; color: var(--ink-3); line-height: 1.5; padding: 6px; }
 .ws-led { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 7px; font-size: 10px; cursor: pointer; background: var(--paper); }
 .ws-led:hover { background: rgba(240, 198, 116, 0.10); }
-.ws-led .v { font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--accent-sun); color: var(--ink); flex-shrink: 0; }
+.ws-led .v { font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--accent-sun); color: #241a0e; flex-shrink: 0; }
 .ws-led.k-ran .v { background: #9bbf8f; }
 .ws-led.k-exported .v { background: #7fb0d6; }
+/* Keyboard focus rings for Workspace controls (were missing). */
+.ws-seg button:focus-visible, .ws-projsel:focus-visible, .ws-save:focus-visible, .ws-talk:focus-visible,
+.ws-hd-acts button:focus-visible, .ws-led:focus-visible, .ws-follow input:focus-visible {
+  outline: 2px solid var(--accent-sun); outline-offset: 2px;
+}
+/* Mobile stopgap: the fixed tri-pane grid crushes a phone. Stack the panes into
+   a scrollable column, wrap the topbar, grow touch targets, and give the terminal
+   real height so xterm can size. (Full pane-switcher is the durable follow-up.) */
+@media (max-width: 768px) {
+  .ws-body { display: block; overflow-y: auto; }
+  .ws-topbar { flex-wrap: wrap; row-gap: 6px; }
+  .ws-files { height: 30vh; border-right: none; border-bottom: 1px solid var(--rule); }
+  .ws-center { border-right: none; border-bottom: 1px solid var(--rule); }
+  .ws-editorwrap { min-height: 42vh; }
+  .ws-term { height: 34vh; }
+  .ws-agent { height: 34vh; border-right: none; }
+  .ws-hd-acts button, .ws-talk { min-height: 40px; padding: 6px 12px; }
+  .ws-led { min-height: 40px; }
+  .ws-env, .ws-follow { display: none; }
+}
 .ws-led .lb { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- Projects view text styling --------------------------------------- */
