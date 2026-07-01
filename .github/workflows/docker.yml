@@ -1,0 +1,81 @@
+name: build-and-push-image
+
+# Builds the CafresoHQ serve image for BOTH architectures and publishes a single
+# multi-arch manifest to Docker Hub, so:
+#   - OCI A1 fleet containers (arm64) pull the native arm64 image
+#   - local Windows/Intel `docker run` pulls the native amd64 image
+# Keeps both arches current on every push to trunk (no more hand-builds).
+#
+# REQUIRED repo secrets (Settings -> Secrets and variables -> Actions):
+#   DOCKERHUB_USERNAME  - Docker Hub account (e.g. anthonycf1)
+#   DOCKERHUB_TOKEN     - Docker Hub access token with read/write (NOT your password)
+
+on:
+  push:
+    branches:
+      - merge/pages-cafresoai
+      - master
+  workflow_dispatch: {}
+
+env:
+  IMAGE: docker.io/anthonycf1/cafresoai-serve
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # entrypoint.sh / hermes-bootstrap.py must keep LF endings (a CRLF shebang
+      # breaks the container at startup). The Linux runner checks out LF anyway,
+      # but be explicit so a future .gitattributes change can't reintroduce CRLF.
+      - name: Enforce LF on shell entrypoints
+        run: |
+          file oci-fleet/*.sh || true
+          ! grep -rlIP '\r$' oci-fleet/*.sh oci-fleet/*.py 2>/dev/null || \
+            (echo "::error::CRLF detected in container entrypoints" && exit 1)
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/merge/pages-cafresoai' }}
+            type=sha,prefix=sha-
+            type=raw,value=ci-{{date 'YYYYMMDD'}}
+
+      - name: Build and push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: oci-fleet/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Pushed multi-arch image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
