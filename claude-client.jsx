@@ -1595,12 +1595,12 @@ function _splitOsPath(p) {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
 }
-/* Publish a built site. Prefers the HQ-owned public sites canister
-   (cafresohq_sites) — served at https://<sites>.icp0.io/<principal>/<project>/,
-   genuinely public — by collecting the files and asking the shell (which holds
-   II) to upload them. Falls back to the owner-scoped /fs/site preview link when
-   the shell/canister isn't available. Drops a clickable `<name>.url` deliverable
-   into the project either way. Returns { url, file, dir, mode }. */
+/* Publish a built site. Prefers the public HQ host (sites live in the
+   cafresohq_state canister) — served at https://<state>.icp0.io/<principal>/
+   <project>/, genuinely public — by collecting the files and asking the shell
+   (which holds II) to upload them. Falls back to the owner-scoped /fs/site
+   preview link when the shell/canister isn't available. Drops a clickable
+   `<name>.url` deliverable into the project either way. Returns { url, file, dir, mode }. */
 async function publishSite(path, opts = {}) {
   const isHtml = /\.html?$/i.test(path || '');
   const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };

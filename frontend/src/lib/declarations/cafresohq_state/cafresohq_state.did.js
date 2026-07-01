@@ -31,11 +31,31 @@ export const idlFactory = ({ IDL }) => {
     'updatedAt' : IDL.Int,
     'chunkCount' : IDL.Nat,
   });
+  const HeaderField = IDL.Tuple(IDL.Text, IDL.Text);
+  const HttpRequest = IDL.Record({
+    'url' : IDL.Text,
+    'method' : IDL.Text,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(HeaderField),
+  });
+  const HttpResponse = IDL.Record({
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(HeaderField),
+    'upgrade' : IDL.Opt(IDL.Bool),
+    'streaming_strategy' : IDL.Opt(IDL.Null),
+    'status_code' : IDL.Nat16,
+  });
   const DocSummary = IDL.Record({
     'sha256' : IDL.Vec(IDL.Nat8),
     'name' : IDL.Text,
     'version' : IDL.Nat,
     'updatedAt' : IDL.Int,
+  });
+  const SiteSummary = IDL.Record({
+    'fileCount' : IDL.Nat,
+    'updatedAt' : IDL.Int,
+    'totalBytes' : IDL.Nat,
+    'project' : IDL.Text,
   });
   const Usage = IDL.Record({
     'quotaBytes' : IDL.Nat,
@@ -50,6 +70,10 @@ export const idlFactory = ({ IDL }) => {
     'conflict' : IDL.Record({ 'current' : IDL.Nat }),
     'quota' : IDL.Text,
   });
+  const PutFileResult = IDL.Variant({
+    'ok' : IDL.Record({ 'bytes' : IDL.Nat }),
+    'err' : IDL.Text,
+  });
   const SpendResult = IDL.Variant({
     'ok' : IDL.Record({ 'windowSpent' : IDL.Nat, 'remaining' : IDL.Nat }),
     'over' : IDL.Record({ 'cap' : IDL.Nat, 'windowSpent' : IDL.Nat }),
@@ -60,6 +84,7 @@ export const idlFactory = ({ IDL }) => {
     'cycle_balance' : IDL.Func([], [IDL.Nat], ['query']),
     'deleteAgentWallet' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteHqDoc' : IDL.Func([IDL.Text], [IDL.Bool], []),
+    'deleteSite' : IDL.Func([IDL.Text], [IDL.Nat], []),
     'deleteVault' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'getAgentWallet' : IDL.Func([IDL.Text], [IDL.Opt(AgentWallet)], ['query']),
     'getHqDoc' : IDL.Func([IDL.Text], [IDL.Opt(HqDoc)], ['query']),
@@ -71,9 +96,13 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getVaultMeta' : IDL.Func([IDL.Text], [IDL.Opt(VaultMeta)], ['query']),
     'hqVersion' : IDL.Func([], [IDL.Nat], ['query']),
+    'http_request' : IDL.Func([HttpRequest], [HttpResponse], ['query']),
+    'http_request_update' : IDL.Func([HttpRequest], [HttpResponse], []),
     'listAgentWallets' : IDL.Func([], [IDL.Vec(AgentWallet)], ['query']),
     'listHqDocs' : IDL.Func([], [IDL.Vec(DocSummary)], ['query']),
+    'listMySites' : IDL.Func([], [IDL.Vec(SiteSummary)], ['query']),
     'listServiceFlags' : IDL.Func([], [IDL.Vec(ServiceFlag)], ['query']),
+    'mySiteBytes' : IDL.Func([], [IDL.Nat], ['query']),
     'myUsage' : IDL.Func([], [Usage], ['query']),
     'planConfigured' : IDL.Func([], [IDL.Bool], ['query']),
     'putAgentWallet' : IDL.Func(
@@ -87,6 +116,11 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'putServiceFlag' : IDL.Func([IDL.Text, IDL.Bool, IDL.Text], [], []),
+    'putSiteFile' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Nat8)],
+        [PutFileResult],
+        [],
+      ),
     'putVaultChunk' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat, IDL.Vec(IDL.Nat8)],
         [PutResult],

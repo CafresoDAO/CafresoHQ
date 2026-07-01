@@ -3843,7 +3843,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """GET /fs/collect?path=<dir>
         Walk a built-site directory and return every file as base64 + a guessed
         content-type, so the authenticated shell can upload the site to the
-        cafresohq_sites public asset canister (Publish-to-Canister). Same
+        cafresohq_state canister's site host (Publish-to-Canister). Same
         allowed-dirs guard as the other /fs endpoints (via _validate_path), so
         it can't read outside the sandbox. Skips hidden/.url files and files
         larger than the canister's ~2 MiB per-file cap (reported in `skipped`).
@@ -3863,7 +3863,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not root.is_dir():
             return self._send_json(400, {'error': 'not a directory'})
 
-        MAX_FILE = 2_000_000       # matches cafresohq_sites MAX_FILE_BYTES
+        MAX_FILE = 2_000_000       # matches cafresohq_state MAX_SITE_FILE_BYTES
         MAX_FILES = 300            # sanity cap on a single publish
         files, skipped = [], []
         for dirpath, dirnames, filenames in os.walk(root):
