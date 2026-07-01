@@ -41,6 +41,15 @@
         "node_compatibility": true,
         "output": "frontend/src/lib/declarations/cafresohq_state"
       }
+    },
+    "cafresohq_sites": {
+      "//": "Publish-to-Canister: ONE HQ-owned, DAO-funded public asset canister that hosts every user's published sites, keyed+isolated by II principal (msg.caller). Serves publicly at https://<canister>.icp0.io/<principal>/<project>/. Deploy: dfx deploy cafresohq_sites --network ic --identity default (fund once). See docs/PUBLISH_TO_CANISTER.md.",
+      "type": "motoko",
+      "main": "src/cafresohq_sites/main.mo",
+      "declarations": {
+        "node_compatibility": true,
+        "output": "frontend/src/lib/declarations/cafresohq_sites"
+      }
     }
   },
   "defaults": {

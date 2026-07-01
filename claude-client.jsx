@@ -1578,13 +1578,13 @@ function fsMkdir(path)      { return _fsMutate('/fs/mkdir', { path }); }
 function fsRename(from, to) { return _fsMutate('/fs/rename', { from, to }); }
 function fsDelete(path)     { return _fsMutate('/fs/delete', { path }); }
 
-/* Publish a built site: reuse the multi-file /fs/site serve URL and drop a
-   clickable `<name>.url` deliverable into the project so the boss can open the
-   live site in one click. Returns { url, file, dir }.
-   SCOPE: today's URL is served by the container's /fs/site (opens for the
-   authenticated owner). True public `*.icp0.io` hosting is the gated next step
-   — deploy a public sites asset-canister + set VITE_SITES_CANISTER_ID; see
-   docs/PUBLISH_TO_CANISTER.md. Structured so that path swaps in cleanly. */
+/* Collect a built site's files (base64 + content-type) for canister publish. */
+async function fsCollect(dir) {
+  const r = await fetch(_API_BASE + '/fs/collect?path=' + encodeURIComponent(dir), { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
 function _b64urlUtf8(s) {
   const bytes = new TextEncoder().encode(String(s || ''));
   let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -1595,19 +1595,40 @@ function _splitOsPath(p) {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
 }
+/* Publish a built site. Prefers the HQ-owned public sites canister
+   (cafresohq_sites) — served at https://<sites>.icp0.io/<principal>/<project>/,
+   genuinely public — by collecting the files and asking the shell (which holds
+   II) to upload them. Falls back to the owner-scoped /fs/site preview link when
+   the shell/canister isn't available. Drops a clickable `<name>.url` deliverable
+   into the project either way. Returns { url, file, dir, mode }. */
 async function publishSite(path, opts = {}) {
   const isHtml = /\.html?$/i.test(path || '');
   const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };
-  const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
-  const url = origin + '/fs/site/' + _b64urlUtf8(dir) + '/' + encodeURIComponent(base);
   const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
   const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
+
+  let url = null, mode = 'preview', skipped = [];
+  const chain = window.CafresoHQChain;
+  if (chain && chain.isAvailable && chain.isAvailable()) {
+    try {
+      const collected = await fsCollect(dir);
+      const res = await chain.publish(slug, collected.files || []);
+      if (res && res.mode === 'canister' && res.url) {
+        url = res.url; mode = 'canister';
+        skipped = (collected.skipped || []).concat(res.skipped || []);
+      }
+    } catch (_e) { /* fall through to the preview link */ }
+  }
+  if (!url) {
+    const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
+    url = origin + '/fs/site/' + _b64urlUtf8(dir) + '/' + encodeURIComponent(base);
+    mode = 'preview';
+  }
   const fname = slug + '.url';
-  // Windows .url shortcut format — clickable on Windows; a plain text link elsewhere.
-  const body = `[InternetShortcut]\r\nURL=${url}\r\n`;
+  const body = `[InternetShortcut]\r\nURL=${url}\r\n`;   // clickable on Windows; plain link elsewhere
   const file = new File([body], fname, { type: 'application/x-mswinurl' });
   await fsUpload(dir, [file]);
-  return { url, file: (dir ? dir + '/' : '') + fname, dir };
+  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped };
 }
 
 /* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
@@ -1786,6 +1807,9 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       pauseAll(paused) { return _req('chain:wallet:pause-all', { paused }); },
       pausedAll() { return _req('chain:wallet:paused-all', {}).then(r => !!r.paused); },
     },
+    /* Publish a collected site to the HQ public sites canister. Returns
+       { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */
+    publish(project, files) { return _req('chain:publish', { project, files }, 180000); },
   };
 })();
 
@@ -1820,6 +1844,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, publishSite,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

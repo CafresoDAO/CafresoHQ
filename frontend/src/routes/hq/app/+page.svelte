@@ -13,6 +13,7 @@
     agentBalances, fundAgent, agentSend,
     deriveAgentSubaccount, subaccountToHex
   } from '$lib/api/walletServices.js';
+  import { sitesConfigured, publishSiteToCanister } from '$lib/api/sitesActor.js';
   import {
     vaultFiles,
     vaultUnlocked,
@@ -265,6 +266,13 @@
         case 'chain:wallet:paused-all':
           reply({ type: 'chain:wallet:paused-all:response', paused: await spendPausedAll() });
           break;
+
+        case 'chain:publish': {
+          if (!sitesConfigured()) { reply({ type: 'chain:publish:response', mode: 'unconfigured' }); break; }
+          const res = await publishSiteToCanister({ project: d.project, files: d.files || [] });
+          reply({ type: 'chain:publish:response', mode: 'canister', ...res });
+          break;
+        }
 
         default:
           fail('Unknown chain request: ' + type);

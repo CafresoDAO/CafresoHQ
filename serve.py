@@ -1933,6 +1933,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_pty_ws()
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
+        if self.path.startswith('/fs/collect'):
+            return self._fs_collect()
         if self.path.startswith('/fs/site/'):
             return self._fs_site()
         if self.path.startswith('/fs/stat'):
@@ -3836,6 +3838,67 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'parent':  parent,
             'entries': entries,
         })
+
+    def _fs_collect(self):
+        """GET /fs/collect?path=<dir>
+        Walk a built-site directory and return every file as base64 + a guessed
+        content-type, so the authenticated shell can upload the site to the
+        cafresohq_sites public asset canister (Publish-to-Canister). Same
+        allowed-dirs guard as the other /fs endpoints (via _validate_path), so
+        it can't read outside the sandbox. Skips hidden/.url files and files
+        larger than the canister's ~2 MiB per-file cap (reported in `skipped`).
+        Response: {root, files:[{path, contentType, size, b64}], skipped:[...]}
+        """
+        import mimetypes, base64
+        qs = urllib.parse.urlparse(self.path).query
+        req_path = (urllib.parse.parse_qs(qs).get('path') or [''])[0].strip()
+        if not req_path:
+            return self._send_json(400, {'error': 'path required'})
+        try:
+            root = self._validate_path(req_path)
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+        if not root.is_dir():
+            return self._send_json(400, {'error': 'not a directory'})
+
+        MAX_FILE = 2_000_000       # matches cafresohq_sites MAX_FILE_BYTES
+        MAX_FILES = 300            # sanity cap on a single publish
+        files, skipped = [], []
+        for dirpath, dirnames, filenames in os.walk(root):
+            # prune hidden dirs (node_modules-style publishing is out of scope for MVP)
+            dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+            for name in filenames:
+                if name.startswith('.') or name.lower().endswith('.url'):
+                    continue
+                full = pathlib.Path(dirpath) / name
+                try:
+                    rel = full.relative_to(root).as_posix()
+                    size = full.stat().st_size
+                except Exception:
+                    continue
+                if size > MAX_FILE:
+                    skipped.append({'path': rel, 'reason': 'over 2 MiB'})
+                    continue
+                if len(files) >= MAX_FILES:
+                    skipped.append({'path': rel, 'reason': 'file limit reached'})
+                    continue
+                ctype = mimetypes.guess_type(name)[0] or 'application/octet-stream'
+                if ctype.startswith('text/') or ctype in ('application/javascript', 'application/json'):
+                    ctype = ctype + '; charset=utf-8'
+                try:
+                    data = full.read_bytes()
+                except Exception as e:
+                    skipped.append({'path': rel, 'reason': str(e)})
+                    continue
+                files.append({
+                    'path': rel,
+                    'contentType': ctype,
+                    'size': size,
+                    'b64': base64.b64encode(data).decode('ascii'),
+                })
+        return self._send_json(200, {'root': str(root), 'files': files, 'skipped': skipped})
 
     def _fs_file(self):
         """GET /fs/file?path=<file>

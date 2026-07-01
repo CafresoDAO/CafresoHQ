@@ -708,7 +708,9 @@ const TOOL_REGISTRY = {
     docShort: 'Publish a built site and write a clickable .url deliverable into the project.',
     run: async (arg) => {
       const r = await window.CafresoHQClient.publishSite(String(arg || '').trim());
-      return `Published → ${r.url}\nWrote clickable link: ${r.file}`;
+      const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
+      const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
+      return `Published — ${where}:\n${r.url}\nWrote clickable link: ${r.file}${skips}`;
     },
   },
   /* ACK is a lightweight status-update marker — it doesn't run anything,
