@@ -16,6 +16,27 @@ type Usage =
    updatedAt: int;
    vaultBytes: nat;
  };
+type SpendResult = 
+ variant {
+   noWallet;
+   ok: record {
+         remaining: nat;
+         windowSpent: nat;
+       };
+   over: record {
+           cap: nat;
+           windowSpent: nat;
+         };
+   paused;
+ };
+type ServiceFlag = 
+ record {
+   configJson: text;
+   enabled: bool;
+   enabledAt: int;
+   serviceId: text;
+   updatedAt: int;
+ };
 type PutResult = 
  variant {
    conflict: record {current: nat;};
@@ -36,28 +57,59 @@ type DocSummary =
    updatedAt: int;
    version: nat;
  };
+type AgentWallet = 
+ record {
+   agentId: text;
+   paused: bool;
+   spendCap: nat;
+   subaccountHex: text;
+   token: text;
+   updatedAt: int;
+   windowResetAt: int;
+   windowSecs: nat;
+   windowSpent: nat;
+ };
 service : {
   cycle_balance: () -> (nat) query;
+  deleteAgentWallet: (text) -> (bool);
   deleteHqDoc: (text) -> (bool);
   deleteVault: (text) -> (bool);
+  getAgentWallet: (text) -> (opt AgentWallet) query;
   getHqDoc: (text) -> (opt HqDoc) query;
+  getServiceFlag: (text) -> (opt ServiceFlag) query;
   getVaultChunk: (text, nat) -> (opt blob) query;
   getVaultMeta: (text) -> (opt VaultMeta) query;
   /// Monotonic per-user version — cheap int the container/browser compare to
   /// decide who is ahead (see design §4-E).
   hqVersion: () -> (nat) query;
+  listAgentWallets: () -> (vec AgentWallet) query;
   listHqDocs: () -> (vec DocSummary) query;
+  listServiceFlags: () -> (vec ServiceFlag) query;
   myUsage: () -> (Usage) query;
   planConfigured: () -> (bool) query;
+  /// Create/update an agent's wallet policy. Rolling-window accounting is
+  /// preserved across policy edits (changing the cap doesn't refill the window).
+  putAgentWallet: (text, text, text, nat, nat, bool) -> ();
   /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
   /// expectVersion = 0 for first write; otherwise must match current or you get #conflict.
   putHqDoc: (text, blob, blob, nat) -> (PutResult);
+  putServiceFlag: (text, bool, text) -> ();
   putVaultChunk: (text, nat, nat, blob) -> (PutResult);
   putVaultMeta: (text, nat, nat, blob, nat) -> (PutResult);
+  /// Atomic cap gate. The browser calls this BEFORE signing an autonomous
+  /// agent-initiated transfer:
+  ///   #ok       → within the rolling cap and recorded; go ahead and sign.
+  ///   #over     → exceeds the cap; nothing recorded — route to user approval.
+  ///   #paused   → agent or global kill switch is on; block.
+  ///   #noWallet → no policy for this agent; block.
+  recordSpend: (text, nat) -> (SpendResult);
   /// Publish atomically: flip sealed=true once all chunks are stored.
   sealVault: (text, nat) -> (PutResult);
+  /// Per-user global "pause all agent spending" kill switch.
+  setAllSpendPaused: (bool) -> ();
   /// Apply a plan tier from the same HMAC token cafresohq_keys mints
   /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
   setPlan: (text) -> (bool);
   setPlanSecret: (text) -> ();
+  spendPausedAll: () -> (bool) query;
 }

@@ -1707,6 +1707,56 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   };
 })();
 
+/* ── CafresoHQChain — ICP Services + agent-wallet bridge to the parent shell ──
+   Same pattern as VaultBridge: the embedded HQ app has no @dfinity client, so
+   on-chain reads/writes (service flags, wallet policy, ICRC transfers) are
+   proxied to the SvelteKit parent, which holds the II identity and signs. When
+   opened standalone (isAvailable()===false) the ICP Services UI shows a hint to
+   open the app at ai.cafreso.com instead. */
+(function () {
+  const _pending = new Map();
+  function _req(type, data, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      if (window.parent === window) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
+      const reqId = 'c_' + Math.random().toString(36).slice(2, 10);
+      const timer = setTimeout(() => { _pending.delete(reqId); reject(new Error('CafresoHQChain timeout: ' + type)); }, timeoutMs || 30000);
+      _pending.set(reqId, { resolve, reject, timer });
+      window.parent.postMessage({ type, reqId, ...data }, '*');
+    });
+  }
+  window.addEventListener('message', function (e) {
+    if (e.source !== window.parent) return;
+    const { type, reqId } = e.data || {};
+    if (!reqId || !_pending.has(reqId)) return;
+    const { resolve, reject, timer } = _pending.get(reqId);
+    clearTimeout(timer);
+    _pending.delete(reqId);
+    if (type === 'chain:error') reject(new Error(e.data.message || 'chain error'));
+    else resolve(e.data);
+  });
+
+  window.CafresoHQChain = {
+    /** True when running inside the SvelteKit shell (on-chain ops available). */
+    isAvailable() { try { return window.parent !== window; } catch { return false; } },
+    services: {
+      list() { return _req('chain:services:list', {}).then(r => r.services || []); },
+      set(serviceId, enabled, configJson) { return _req('chain:services:set', { serviceId, enabled, configJson }); },
+    },
+    wallet: {
+      list() { return _req('chain:wallet:list', {}).then(r => r.wallets || []); },
+      policy(agentId) { return _req('chain:wallet:policy', { agentId }).then(r => r.policy); },
+      put(p) { return _req('chain:wallet:put', p); },
+      remove(agentId) { return _req('chain:wallet:delete', { agentId }); },
+      address(agentId) { return _req('chain:wallet:address', { agentId }); },
+      balances(agentId, tokens) { return _req('chain:wallet:balances', { agentId, tokens }).then(r => r.balances || {}); },
+      fund(agentId, token, amount) { return _req('chain:wallet:fund', { agentId, token, amount }, 90000); },
+      send(agentId, token, amount, to, memo) { return _req('chain:wallet:send', { agentId, token, amount, to, memo }, 180000); },
+      pauseAll(paused) { return _req('chain:wallet:pause-all', { paused }); },
+      pausedAll() { return _req('chain:wallet:paused-all', {}).then(r => !!r.paused); },
+    },
+  };
+})();
+
 /* Is the backend (per-user container via the gateway) actually reachable?
    Probes _API_BASE + /health. On the asset canister WITHOUT a ?api gateway,
    _API_BASE is the canister origin which has no /health → false → the UI knows

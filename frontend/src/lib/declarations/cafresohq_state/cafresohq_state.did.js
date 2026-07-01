@@ -1,9 +1,27 @@
 export const idlFactory = ({ IDL }) => {
+  const AgentWallet = IDL.Record({
+    'token' : IDL.Text,
+    'windowResetAt' : IDL.Int,
+    'agentId' : IDL.Text,
+    'windowSpent' : IDL.Nat,
+    'updatedAt' : IDL.Int,
+    'subaccountHex' : IDL.Text,
+    'windowSecs' : IDL.Nat,
+    'spendCap' : IDL.Nat,
+    'paused' : IDL.Bool,
+  });
   const HqDoc = IDL.Record({
     'sha256' : IDL.Vec(IDL.Nat8),
     'body' : IDL.Vec(IDL.Nat8),
     'version' : IDL.Nat,
     'updatedAt' : IDL.Int,
+  });
+  const ServiceFlag = IDL.Record({
+    'enabledAt' : IDL.Int,
+    'configJson' : IDL.Text,
+    'enabled' : IDL.Bool,
+    'updatedAt' : IDL.Int,
+    'serviceId' : IDL.Text,
   });
   const VaultMeta = IDL.Record({
     'sha256' : IDL.Vec(IDL.Nat8),
@@ -32,11 +50,20 @@ export const idlFactory = ({ IDL }) => {
     'conflict' : IDL.Record({ 'current' : IDL.Nat }),
     'quota' : IDL.Text,
   });
+  const SpendResult = IDL.Variant({
+    'ok' : IDL.Record({ 'windowSpent' : IDL.Nat, 'remaining' : IDL.Nat }),
+    'over' : IDL.Record({ 'cap' : IDL.Nat, 'windowSpent' : IDL.Nat }),
+    'noWallet' : IDL.Null,
+    'paused' : IDL.Null,
+  });
   return IDL.Service({
     'cycle_balance' : IDL.Func([], [IDL.Nat], ['query']),
+    'deleteAgentWallet' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteHqDoc' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteVault' : IDL.Func([IDL.Text], [IDL.Bool], []),
+    'getAgentWallet' : IDL.Func([IDL.Text], [IDL.Opt(AgentWallet)], ['query']),
     'getHqDoc' : IDL.Func([IDL.Text], [IDL.Opt(HqDoc)], ['query']),
+    'getServiceFlag' : IDL.Func([IDL.Text], [IDL.Opt(ServiceFlag)], ['query']),
     'getVaultChunk' : IDL.Func(
         [IDL.Text, IDL.Nat],
         [IDL.Opt(IDL.Vec(IDL.Nat8))],
@@ -44,14 +71,22 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getVaultMeta' : IDL.Func([IDL.Text], [IDL.Opt(VaultMeta)], ['query']),
     'hqVersion' : IDL.Func([], [IDL.Nat], ['query']),
+    'listAgentWallets' : IDL.Func([], [IDL.Vec(AgentWallet)], ['query']),
     'listHqDocs' : IDL.Func([], [IDL.Vec(DocSummary)], ['query']),
+    'listServiceFlags' : IDL.Func([], [IDL.Vec(ServiceFlag)], ['query']),
     'myUsage' : IDL.Func([], [Usage], ['query']),
     'planConfigured' : IDL.Func([], [IDL.Bool], ['query']),
+    'putAgentWallet' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Bool],
+        [],
+        [],
+      ),
     'putHqDoc' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8), IDL.Vec(IDL.Nat8), IDL.Nat],
         [PutResult],
         [],
       ),
+    'putServiceFlag' : IDL.Func([IDL.Text, IDL.Bool, IDL.Text], [], []),
     'putVaultChunk' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat, IDL.Vec(IDL.Nat8)],
         [PutResult],
@@ -62,9 +97,12 @@ export const idlFactory = ({ IDL }) => {
         [PutResult],
         [],
       ),
+    'recordSpend' : IDL.Func([IDL.Text, IDL.Nat], [SpendResult], []),
     'sealVault' : IDL.Func([IDL.Text, IDL.Nat], [PutResult], []),
+    'setAllSpendPaused' : IDL.Func([IDL.Bool], [], []),
     'setPlan' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'setPlanSecret' : IDL.Func([IDL.Text], [], []),
+    'spendPausedAll' : IDL.Func([], [IDL.Bool], ['query']),
   });
 };
 export const init = ({ IDL }) => { return []; };
