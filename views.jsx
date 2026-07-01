@@ -6413,6 +6413,8 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
   const flipMode = (m) => { setMode(m); LSset('mode', m); };
+  const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+  const [mobilePane, setMobilePane] = useSV('files');   // mobile pane-switcher: files | editor | terminal | agents
   const [selectedId, setSelectedId] = useSV(() => LS('selid', (projects[0] && projects[0].id) || null));
   const project = projects.find(p => p.id === selectedId) || projects[0] || null;
   React.useEffect(() => { if (project) LSset('selid', project.id); }, [project && project.id]);
@@ -6557,6 +6559,59 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   const statusLabel = agentStatus === 'working' ? 'agent working…' : 'agent idle';
 
+  /* ── pane bodies, reused by the desktop grid AND the mobile pane-switcher.
+     Defined as functions so they're only evaluated when a project exists. ── */
+  const filesPane = () => (
+    <div className="ws-pane ws-files">
+      <div className="ws-pane-hd">📁 Files<div className="ws-hd-acts"><button onClick={newFolder} title="New folder">＋</button><button onClick={triggerUpload} title="Upload files">⬆</button></div></div>
+      <div className={'ws-tree' + (fileDrag ? ' drag' : '')}
+        onDragOver={e => { e.preventDefault(); setFileDrag(true); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFileDrag(false); }}
+        onDrop={e => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) doUpload(e.dataTransfer.files, null); else setFileDrag(false); }}>
+        <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={p => { openPath(p); if (_isMobile) setMobilePane('editor'); }} onRename={renameEntry} onDelete={deleteEntry} onUploadTo={uploadTo} pulsePaths={pulse} />
+      </div>
+      <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} onChange={e => { doUpload(e.target.files, uploadDirRef.current); e.target.value = ''; uploadDirRef.current = null; }} />
+    </div>
+  );
+  const editorPane = () => (
+    <div className="ws-editorwrap">
+      {openFile ? (
+        <>
+          <div className="ws-tabs">
+            <span className="ws-tab on">{ideFileIcon ? ideFileIcon(openFile.path) : '📄'} <span className="nm">{baseName(openFile.path)}</span>{openFile.dirty ? <span className="dirty">•</span> : ''}</span>
+            {!openFile.binary && <div className="ws-seg ws-cpseg"><button className={!previewMode ? 'on' : ''} onClick={() => setPreviewMode(false)}>Code</button><button className={previewMode ? 'on' : ''} onClick={() => setPreviewMode(true)}>Preview</button></div>}
+            {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
+          </div>
+          {conflict && (
+            <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
+              <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
+              <button onClick={() => save(true)}>Keep mine</button>
+            </div>
+          )}
+          {err && <div className="ws-err">{err}</div>}
+          <div className="ws-stage">
+            {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
+          </div>
+        </>
+      ) : (
+        <div className="ws-stage-empty">{_isMobile ? 'Tap a file in the Files tab — or watch your agents build one.' : 'Open a file from the tree — or watch your agents build one.'}<br /><span className="dim">Code · Preview · live as it's written</span></div>
+      )}
+    </div>
+  );
+  const agentPane = () => (
+    <div className="ws-pane ws-agent">
+      <div className="ws-pane-hd">Agents · co-operators<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open the multi-agent room for this project">TALK ↗</button></div></div>
+      <div className="ws-ledger">
+        {ledger.length === 0 && <div className="ws-led-empty">Your agents share this filesystem &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
+        {ledger.map(l => (
+          <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
+            <span className="v">{l.kind}</span><span className="lb">{l.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="ws-root">
       <div className="ws-topbar">
@@ -6582,60 +6637,36 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
         <div className="ws-classic"><ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={onSwitchView} /></div>
       ) : !project ? (
         <div className="ws-noproj">No project yet — switch to <button className="px-btn" onClick={() => flipMode('classic')}>Classic</button> to create one.</div>
+      ) : _isMobile ? (
+        <>
+          <div className="ws-mbody">
+            <div className="ws-mpane" style={{ display: mobilePane === 'files' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{filesPane()}</div>
+            <div className="ws-mpane" style={{ display: mobilePane === 'editor' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{editorPane()}</div>
+            {/* Terminal stays mounted (visibility/height toggle) so xterm can size when shown. */}
+            <div className="ws-mpane ws-mterm" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, visibility: mobilePane === 'terminal' ? 'visible' : 'hidden', height: mobilePane === 'terminal' ? undefined : 0, flex: mobilePane === 'terminal' ? 1 : undefined, pointerEvents: mobilePane === 'terminal' ? 'auto' : 'none' }}>
+              <ProjectTerminal project={project} visible={mobilePane === 'terminal'} />
+            </div>
+            <div className="ws-mpane" style={{ display: mobilePane === 'agents' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{agentPane()}</div>
+          </div>
+          <div className="ws-mtabs">
+            {[['files', '📁', 'Files'], ['editor', '📄', 'Editor'], ['terminal', '⌁', 'Terminal'], ['agents', '🤖', 'Agents']].map(([k, ic, lbl]) => (
+              <button key={k} className={mobilePane === k ? 'on' : ''} onClick={() => setMobilePane(k)}>
+                <span className="mi">{ic}{k === 'agents' && agentStatus === 'working' && <span className="mbadge" />}</span><span className="ml">{lbl}</span>
+              </button>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="ws-body">
-          <div className="ws-pane ws-files">
-            <div className="ws-pane-hd">📁 Files<div className="ws-hd-acts"><button onClick={newFolder} title="New folder">＋</button><button onClick={triggerUpload} title="Upload files">⬆</button></div></div>
-            <div className={'ws-tree' + (fileDrag ? ' drag' : '')}
-              onDragOver={e => { e.preventDefault(); setFileDrag(true); }}
-              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFileDrag(false); }}
-              onDrop={e => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) doUpload(e.dataTransfer.files, null); else setFileDrag(false); }}>
-              <LocalTree path={project.path} refreshNonce={treeNonce} onSelectFile={openPath} onRename={renameEntry} onDelete={deleteEntry} onUploadTo={uploadTo} pulsePaths={pulse} />
-            </div>
-            <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} onChange={e => { doUpload(e.target.files, uploadDirRef.current); e.target.value = ''; uploadDirRef.current = null; }} />
-          </div>
-
+          {filesPane()}
           <div className="ws-center">
-            <div className="ws-editorwrap">
-              {openFile ? (
-                <>
-                  <div className="ws-tabs">
-                    <span className="ws-tab on">{ideFileIcon ? ideFileIcon(openFile.path) : '📄'} <span className="nm">{baseName(openFile.path)}</span>{openFile.dirty ? <span className="dirty">•</span> : ''}</span>
-                    {!openFile.binary && <div className="ws-seg ws-cpseg"><button className={!previewMode ? 'on' : ''} onClick={() => setPreviewMode(false)}>Code</button><button className={previewMode ? 'on' : ''} onClick={() => setPreviewMode(true)}>Preview</button></div>}
-                    {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
-                  </div>
-                  {conflict && (
-                    <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
-                      <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
-                      <button onClick={() => save(true)}>Keep mine</button>
-                    </div>
-                  )}
-                  {err && <div className="ws-err">{err}</div>}
-                  <div className="ws-stage">
-                    {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
-                  </div>
-                </>
-              ) : (
-                <div className="ws-stage-empty">Open a file from the tree — or watch your agents build one.<br /><span className="dim">Code · Preview · live as it's written</span></div>
-              )}
-            </div>
+            {editorPane()}
             <div className={'ws-term' + (termOpen ? '' : ' min')}>
               <div className="ws-term-hd" onClick={() => { const v = !termOpen; setTermOpen(v); LSset('term', v); }}><span className="tl">⌁ Terminal · shared shell</span><span className="ch">{termOpen ? '▾' : '▸'}</span></div>
               {termOpen && <div className="ws-term-body"><ProjectTerminal project={project} visible={termOpen} /></div>}
             </div>
           </div>
-
-          <div className="ws-pane ws-agent">
-            <div className="ws-pane-hd">Agents · co-operators<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open the multi-agent room for this project">TALK ↗</button></div></div>
-            <div className="ws-ledger">
-              {ledger.length === 0 && <div className="ws-led-empty">Your agents share this filesystem &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
-              {ledger.map(l => (
-                <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
-                  <span className="v">{l.kind}</span><span className="lb">{l.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {agentPane()}
         </div>
       )}
     </div>

@@ -8640,3 +8640,14 @@ body.night .att-badge { border-color: var(--ink); }
 @media (max-width: 768px) {
   .walker, .meeting-cluster, .away-placard { display: none !important; }
 }
+
+/* Mobile pane-switcher (WorkspaceView renders this instead of the grid ≤768px). */
+.ws-mbody { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ws-mpane > .ws-pane, .ws-mpane > .ws-editorwrap { flex: 1; min-height: 0; border-right: none; }
+.ws-mterm > * { flex: 1; min-height: 0; }
+.ws-mtabs { display: flex; flex-shrink: 0; border-top: 1px solid var(--rule); background: var(--paper-2, #f0e9d8); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ws-mtabs button { flex: 1; background: none; border: none; cursor: pointer; padding: 7px 4px 9px; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--ink-3); font: inherit; }
+.ws-mtabs button.on { color: var(--accent-sun); }
+.ws-mtabs .mi { font-size: 17px; line-height: 1; position: relative; }
+.ws-mtabs .ml { font-size: 9px; letter-spacing: 0.02em; }
+.ws-mtabs .mbadge { position: absolute; top: -2px; right: -6px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sun); animation: ws-blink 1s infinite; }
