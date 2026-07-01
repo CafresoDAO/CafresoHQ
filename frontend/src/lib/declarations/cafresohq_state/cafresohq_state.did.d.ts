@@ -19,12 +19,28 @@ export interface DocSummary {
   'version' : bigint,
   'updatedAt' : bigint,
 }
+export type HeaderField = [string, string];
 export interface HqDoc {
   'sha256' : Uint8Array | number[],
   'body' : Uint8Array | number[],
   'version' : bigint,
   'updatedAt' : bigint,
 }
+export interface HttpRequest {
+  'url' : string,
+  'method' : string,
+  'body' : Uint8Array | number[],
+  'headers' : Array<HeaderField>,
+}
+export interface HttpResponse {
+  'body' : Uint8Array | number[],
+  'headers' : Array<HeaderField>,
+  'upgrade' : [] | [boolean],
+  'streaming_strategy' : [] | [null],
+  'status_code' : number,
+}
+export type PutFileResult = { 'ok' : { 'bytes' : bigint } } |
+  { 'err' : string };
 export type PutResult = { 'ok' : { 'version' : bigint } } |
   { 'conflict' : { 'current' : bigint } } |
   { 'quota' : string };
@@ -34,6 +50,12 @@ export interface ServiceFlag {
   'enabled' : boolean,
   'updatedAt' : bigint,
   'serviceId' : string,
+}
+export interface SiteSummary {
+  'fileCount' : bigint,
+  'updatedAt' : bigint,
+  'totalBytes' : bigint,
+  'project' : string,
 }
 export type SpendResult = {
     'ok' : { 'windowSpent' : bigint, 'remaining' : bigint }
@@ -61,6 +83,7 @@ export interface _SERVICE {
   'cycle_balance' : ActorMethod<[], bigint>,
   'deleteAgentWallet' : ActorMethod<[string], boolean>,
   'deleteHqDoc' : ActorMethod<[string], boolean>,
+  'deleteSite' : ActorMethod<[string], bigint>,
   'deleteVault' : ActorMethod<[string], boolean>,
   'getAgentWallet' : ActorMethod<[string], [] | [AgentWallet]>,
   'getHqDoc' : ActorMethod<[string], [] | [HqDoc]>,
@@ -68,9 +91,13 @@ export interface _SERVICE {
   'getVaultChunk' : ActorMethod<[string, bigint], [] | [Uint8Array | number[]]>,
   'getVaultMeta' : ActorMethod<[string], [] | [VaultMeta]>,
   'hqVersion' : ActorMethod<[], bigint>,
+  'http_request' : ActorMethod<[HttpRequest], HttpResponse>,
+  'http_request_update' : ActorMethod<[HttpRequest], HttpResponse>,
   'listAgentWallets' : ActorMethod<[], Array<AgentWallet>>,
   'listHqDocs' : ActorMethod<[], Array<DocSummary>>,
+  'listMySites' : ActorMethod<[], Array<SiteSummary>>,
   'listServiceFlags' : ActorMethod<[], Array<ServiceFlag>>,
+  'mySiteBytes' : ActorMethod<[], bigint>,
   'myUsage' : ActorMethod<[], Usage>,
   'planConfigured' : ActorMethod<[], boolean>,
   'putAgentWallet' : ActorMethod<
@@ -82,6 +109,10 @@ export interface _SERVICE {
     PutResult
   >,
   'putServiceFlag' : ActorMethod<[string, boolean, string], undefined>,
+  'putSiteFile' : ActorMethod<
+    [string, string, string, Uint8Array | number[]],
+    PutFileResult
+  >,
   'putVaultChunk' : ActorMethod<
     [string, bigint, bigint, Uint8Array | number[]],
     PutResult

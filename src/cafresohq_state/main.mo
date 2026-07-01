@@ -23,6 +23,7 @@ import Blob "mo:base/Blob";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Nat32 "mo:base/Nat32";
+import Nat16 "mo:base/Nat16";
 import Int "mo:base/Int";
 import Char "mo:base/Char";
 import Iter "mo:base/Iter";
@@ -76,6 +77,20 @@ actor CafresoHQState {
     serviceId : Text; enabled : Bool; configJson : Text; enabledAt : Int; updatedAt : Int;
   };
 
+  // ── Published sites (Publish-to-Canister; hosted here + served publicly) ────
+  // Reuses this canister instead of a separate one: same per-caller isolation,
+  // already deployed + funded. http_request below reads ONLY siteFiles — never
+  // the vault/doc maps — and the vault is client-encrypted ciphertext anyway.
+  public type SiteFile = { contentType : Text; body : Blob; updatedAt : Int };
+  public type PutFileResult = { #ok : { bytes : Nat }; #err : Text };
+  public type SiteSummary = { project : Text; fileCount : Nat; totalBytes : Nat; updatedAt : Int };
+  type HeaderField = (Text, Text);
+  public type HttpRequest = { method : Text; url : Text; headers : [HeaderField]; body : Blob };
+  public type HttpResponse = {
+    status_code : Nat16; headers : [HeaderField]; body : Blob;
+    streaming_strategy : ?Null; upgrade : ?Bool;
+  };
+
   // ── Limits / defaults ──────────────────────────────────────────────────────
   let MAX_DOC_BYTES : Nat = 1_900_000;        // < 2 MiB ingress cap (Candid headroom)
   let MAX_CHUNK_BYTES : Nat = 1_900_000;      // vault ciphertext slice cap
@@ -107,6 +122,13 @@ actor CafresoHQState {
   // Per-user global "pause all agent spending" kill switch.
   stable var allSpendPaused : OrderedMap.Map<Principal, Bool> = pOps.empty<Bool>();
 
+  // Published-site files, per principal. key = "<project>/<relpath>".
+  type SiteMap = OrderedMap.Map<Text, SiteFile>;
+  stable var siteFiles : OrderedMap.Map<Principal, SiteMap> = pOps.empty<SiteMap>();
+  stable var siteUsage : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
+  let MAX_SITE_FILE_BYTES : Nat = 2_000_000;             // ~2 MiB per file
+  let MAX_SITE_USER_BYTES : Nat = 200 * 1024 * 1024;     // 200 MiB of sites per user
+
   // Plan-quota HMAC secret (mirrors cafresohq_keys; gates QUOTA only, never data).
   stable var planSecret : Blob = "";
   // First caller of setPlanSecret becomes the plan admin (the deployer).
@@ -137,6 +159,22 @@ actor CafresoHQState {
   func walletsOf(p : Principal) : WalletMap { switch (pOps.get(agentWallets, p)) { case (?m) m; case null tOps.empty<AgentWallet>() } };
   func flagsOf(p : Principal) : FlagMap { switch (pOps.get(serviceFlags, p)) { case (?m) m; case null tOps.empty<ServiceFlag>() } };
   func isAllPaused(p : Principal) : Bool { switch (pOps.get(allSpendPaused, p)) { case (?b) b; case null false } };
+
+  func sitesOf(p : Principal) : SiteMap { switch (pOps.get(siteFiles, p)) { case (?m) m; case null tOps.empty<SiteFile>() } };
+  func siteUsageOf(p : Principal) : Nat { switch (pOps.get(siteUsage, p)) { case (?n) n; case null 0 } };
+  func siteSafe(c : Char) : Bool {
+    (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '-' or c == '_' or c == '.'
+  };
+  func validProject(p : Text) : Bool {
+    if (p.size() == 0 or p.size() > 64) { return false };
+    for (c in p.chars()) { if (not siteSafe(c)) { return false } };
+    not Text.contains(p, #text "..");
+  };
+  func normSitePath(path : Text) : ?Text {
+    let p = Text.trimStart(path, #char '/');
+    if (Text.contains(p, #text "..")) { return null };
+    if (p.size() == 0) { ?"index.html" } else { ?p };
+  };
 
   // ── HQ docs ────────────────────────────────────────────────────────────────
   /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
@@ -483,6 +521,102 @@ actor CafresoHQState {
     let out = Buffer.Buffer<ServiceFlag>(8);
     for ((_, f) in tOps.entries(flagsOf(msg.caller))) { out.add(f) };
     Buffer.toArray(out);
+  };
+
+  // ── Published sites (write API; per-caller — you write only your namespace) ─
+  public shared (msg) func putSiteFile(project : Text, path : Text, contentType : Text, body : Blob) : async PutFileResult {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in with Internet Identity") };
+    if (not validProject(project)) { return #err("bad project name") };
+    if (body.size() > MAX_SITE_FILE_BYTES) { return #err("file exceeds 2 MiB limit") };
+    let rel = switch (normSitePath(path)) { case (?r) r; case null { return #err("bad path") } };
+    let key = project # "/" # rel;
+    let files = sitesOf(caller);
+    let prevSize = switch (tOps.get(files, key)) { case (?f) f.body.size(); case null 0 };
+    let newUsed = subSat(siteUsageOf(caller), prevSize) + body.size();
+    if (newUsed > MAX_SITE_USER_BYTES) { return #err("site storage quota exceeded") };
+    let f : SiteFile = { contentType = contentType; body = body; updatedAt = now() };
+    siteFiles := pOps.put(siteFiles, caller, tOps.put(files, key, f));
+    siteUsage := pOps.put(siteUsage, caller, newUsed);
+    #ok({ bytes = body.size() });
+  };
+
+  /// Remove all files under a project (call before re-publishing to drop stale files).
+  public shared (msg) func deleteSite(project : Text) : async Nat {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let files = sitesOf(caller);
+    let prefix = project # "/";
+    var next = files; var freed : Nat = 0; var removed : Nat = 0;
+    for ((k, f) in tOps.entries(files)) {
+      if (Text.startsWith(k, #text prefix)) { next := tOps.delete(next, k); freed += f.body.size(); removed += 1 };
+    };
+    siteFiles := pOps.put(siteFiles, caller, next);
+    siteUsage := pOps.put(siteUsage, caller, subSat(siteUsageOf(caller), freed));
+    removed;
+  };
+
+  public shared query (msg) func listMySites() : async [SiteSummary] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    var agg : OrderedMap.Map<Text, SiteSummary> = tOps.empty<SiteSummary>();
+    for ((k, f) in tOps.entries(sitesOf(msg.caller))) {
+      let proj = switch (Text.split(k, #char '/').next()) { case (?p) p; case null k };
+      let prev = switch (tOps.get(agg, proj)) { case (?s) s; case null { { project = proj; fileCount = 0; totalBytes = 0; updatedAt = 0 } } };
+      agg := tOps.put(agg, proj, {
+        project = proj; fileCount = prev.fileCount + 1;
+        totalBytes = prev.totalBytes + f.body.size(); updatedAt = Int.max(prev.updatedAt, f.updatedAt);
+      });
+    };
+    Iter.toArray(tOps.vals(agg));
+  };
+
+  public shared query (msg) func mySiteBytes() : async Nat {
+    if (Principal.isAnonymous(msg.caller)) { return 0 };
+    siteUsageOf(msg.caller);
+  };
+
+  // ── Public serving — GET /<principalText>/<project>/<path...> ───────────────
+  // Reads ONLY siteFiles. Everything else in this canister is unreachable here.
+  func siteLookup(url : Text) : ?SiteFile {
+    var path = url;
+    switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
+    path := Text.trimStart(path, #char '/');
+    let parts = Iter.toArray(Text.split(path, #char '/'));
+    if (parts.size() < 2) { return null };
+    let owner = Principal.fromText(parts[0]);
+    let buf = Buffer.Buffer<Text>(parts.size());
+    var i = 1;
+    while (i < parts.size()) { if (parts[i].size() > 0) { buf.add(parts[i]) }; i += 1 };
+    if (buf.size() == 0) { return null };
+    var key = Text.join("/", buf.vals());
+    if (buf.size() == 1) { key := key # "/index.html" };       // /<p>/<project> → index.html
+    if (Text.endsWith(key, #text "/")) { key := key # "index.html" };
+    tOps.get(sitesOf(owner), key);
+  };
+
+  func serveSite(url : Text) : HttpResponse {
+    switch (siteLookup(url)) {
+      case (?f) {
+        {
+          status_code = 200;
+          headers = [("Content-Type", f.contentType), ("Cache-Control", "public, max-age=60"),
+                     ("Access-Control-Allow-Origin", "*")];
+          body = f.body; streaming_strategy = null; upgrade = null;
+        };
+      };
+      case null {
+        { status_code = 404; headers = [("Content-Type", "text/plain")];
+          body = Text.encodeUtf8("Not found"); streaming_strategy = null; upgrade = null };
+      };
+    };
+  };
+
+  // Upgrade GETs to an update call so we don't need asset certification (MVP).
+  public query func http_request(_req : HttpRequest) : async HttpResponse {
+    { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
+  };
+  public func http_request_update(req : HttpRequest) : async HttpResponse {
+    serveSite(req.url);
   };
 
   // ── Diagnostics ────────────────────────────────────────────────────────────
