@@ -1578,6 +1578,38 @@ function fsMkdir(path)      { return _fsMutate('/fs/mkdir', { path }); }
 function fsRename(from, to) { return _fsMutate('/fs/rename', { from, to }); }
 function fsDelete(path)     { return _fsMutate('/fs/delete', { path }); }
 
+/* Publish a built site: reuse the multi-file /fs/site serve URL and drop a
+   clickable `<name>.url` deliverable into the project so the boss can open the
+   live site in one click. Returns { url, file, dir }.
+   SCOPE: today's URL is served by the container's /fs/site (opens for the
+   authenticated owner). True public `*.icp0.io` hosting is the gated next step
+   — deploy a public sites asset-canister + set VITE_SITES_CANISTER_ID; see
+   docs/PUBLISH_TO_CANISTER.md. Structured so that path swaps in cleanly. */
+function _b64urlUtf8(s) {
+  const bytes = new TextEncoder().encode(String(s || ''));
+  let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _splitOsPath(p) {
+  p = String(p || '');
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
+}
+async function publishSite(path, opts = {}) {
+  const isHtml = /\.html?$/i.test(path || '');
+  const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };
+  const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
+  const url = origin + '/fs/site/' + _b64urlUtf8(dir) + '/' + encodeURIComponent(base);
+  const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
+  const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
+  const fname = slug + '.url';
+  // Windows .url shortcut format — clickable on Windows; a plain text link elsewhere.
+  const body = `[InternetShortcut]\r\nURL=${url}\r\n`;
+  const file = new File([body], fname, { type: 'application/x-mswinurl' });
+  await fsUpload(dir, [file]);
+  return { url, file: (dir ? dir + '/' : '') + fname, dir };
+}
+
 /* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
    The Workspace editor uses this instead of FILE_READ so it gets the whole file
    (FILE_READ truncates at 8000) and the headers conflict-safety needs. */
@@ -1788,6 +1820,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

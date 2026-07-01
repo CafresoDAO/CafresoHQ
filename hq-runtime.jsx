@@ -402,6 +402,15 @@ function icpWalletEnabled() {
   } catch (_e) { return false; }
 }
 
+/* Publish service — writes a clickable .url deliverable via the container's
+   /fs endpoints, so (unlike the wallet) it works without the shell bridge. */
+function icpPublishEnabled() {
+  try {
+    const s = window.CafresoHQClient.getSettings();
+    return !!(s && s.icpServices && s.icpServices.publish);
+  } catch (_e) { return false; }
+}
+
 const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
@@ -685,6 +694,23 @@ const TOOL_REGISTRY = {
     docShort: 'Send tokens from your HQ wallet (auto under your cap; over-cap asks the boss).',
     run: async () => '(WALLET_SEND is bound at agent-build time — see toolsForAgent)',
   },
+  /* PUBLISH_SITE — publish a built multi-file site and drop a clickable
+     `<name>.url` deliverable into the project dir. Available when the Publish
+     ICP-Service is installed. (Public *.icp0.io canister hosting is the gated
+     upgrade — see docs/PUBLISH_TO_CANISTER.md.) */
+  publish_site: {
+    name: 'PUBLISH_SITE',
+    re: /\[\s*PUBLISH_SITE\s*:\s*([^\]\n]+)\]/i,
+    requires: () => icpPublishEnabled(),
+    doc:
+      '- [PUBLISH_SITE: <dir or index.html path>] — publish a built site and write a clickable <name>.url link into the project for the boss.\n' +
+      '  Point it at the site\'s folder (or its index.html). Returns the shareable URL + the .url file path.',
+    docShort: 'Publish a built site and write a clickable .url deliverable into the project.',
+    run: async (arg) => {
+      const r = await window.CafresoHQClient.publishSite(String(arg || '').trim());
+      return `Published → ${r.url}\nWrote clickable link: ${r.file}`;
+    },
+  },
   /* ACK is a lightweight status-update marker — it doesn't run anything,
      it just tells the host (via post-stream extraction) what state to put
      the message in. Multiple ACKs in one reply are fine; the LAST allowed
@@ -945,6 +971,11 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         }
       },
     });
+  }
+  // PUBLISH_SITE — when the Publish ICP-Service is installed. Any agent that
+  // can build a site can ship it; the server enforces the allowed-dirs guard.
+  if (icpPublishEnabled()) {
+    out.push(TOOL_REGISTRY.publish_site);
   }
   // ACK is always available — every agent should be able to status-update
   // the message they're currently handling. No peer roster needed; this is
