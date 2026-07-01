@@ -43,6 +43,16 @@ export const TOKENS = {
     canister: 'mwen2-oqaaa-aaaam-adaca-cai',
     decimals: 8,
     logo: '/assets/nanas-coin.png'
+  },
+  // ckUSDT — the chain-key Tether stablecoin. NOTE: 6 decimals (not 8).
+  // Mainnet ledger: https://dashboard.internetcomputer.org/canister/cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae
+  // logo: null → renders the text-avatar fallback (like ckUNI/sGLDT); drop a
+  // /assets/ckusdt.png later for a real mark.
+  ckUSDT: {
+    symbol: 'ckUSDT',
+    canister: 'cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae',
+    decimals: 6,
+    logo: null
   }
 };
 

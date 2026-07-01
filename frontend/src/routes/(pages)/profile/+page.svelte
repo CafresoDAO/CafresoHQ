@@ -139,7 +139,7 @@
     return a?.hue ?? 45;
   }
 
-  const tokenOrder = ['ICP', 'ckUNI', 'sGLDT', 'nanas'];
+  const tokenOrder = ['ICP', 'ckUSDT', 'ckUNI', 'sGLDT', 'nanas'];
 
   // Seed audit events — replaced by canister fetch once audit log is live.
   const NOW_SEED = 1746662400000; // 2026-05-08 00:00 UTC
