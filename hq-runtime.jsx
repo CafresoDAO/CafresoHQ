@@ -17,15 +17,18 @@ const ROLES = [
 ];
 
 const TOOLS_CATALOG = [
-  { id: 'web',   label: 'Web Search' },
-  { id: 'vault', label: 'Vault Notes'},
-  { id: 'code',  label: 'Code Exec'  },
-  { id: 'files', label: 'File Access'},
-  { id: 'email', label: 'Email Send' },
-  { id: 'cal',   label: 'Calendar'   },
-  { id: 'db',    label: 'Database'   },
-  { id: 'slack', label: 'Slack'      },
-  { id: 'img',   label: 'Image Gen'  },
+  { id: 'web',    label: 'Web Search' },
+  { id: 'vault',  label: 'Vault Notes'},
+  { id: 'code',   label: 'Code Exec'  },
+  { id: 'files',  label: 'File Access'},
+  { id: 'email',  label: 'Email Send' },
+  { id: 'cal',    label: 'Calendar'   },
+  { id: 'db',     label: 'Database'   },
+  { id: 'slack',  label: 'Slack'      },
+  { id: 'img',    label: 'Image Gen'  },
+  // ICP wallet — only takes effect once the Wallet ICP-Service is installed
+  // (Settings → ICP Services) and the app runs inside the ai.cafreso.com shell.
+  { id: 'wallet', label: 'ICP Wallet' },
 ];
 
 /* Legacy unprefixed IDs — kept for any callers still reading HQ.MODELS.
@@ -386,6 +389,19 @@ async function isVaultReady() {
 }
 function clearVaultReadyCache() { _vaultConfiguredCache = { at: 0, ok: false }; }
 
+/* Whether the agent-wallet ICP-Service is installed AND the on-chain bridge is
+   reachable (i.e. we're inside the ai.cafreso.com shell that holds the II key).
+   The catalog mirrors the on-chain flag to settings.icpServices.wallet so tool
+   gating stays synchronous. */
+function icpWalletEnabled() {
+  try {
+    const s = window.CafresoHQClient.getSettings();
+    const installed = !!(s && s.icpServices && s.icpServices.wallet);
+    const bridge = !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());
+    return installed && bridge;
+  } catch (_e) { return false; }
+}
+
 const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
@@ -643,6 +659,32 @@ const TOOL_REGISTRY = {
     docShort: 'Read another agent\'s last 5 journal entries.',
     run: async (_name) => '(no peer roster bound)',
   },
+  /* WALLET_BALANCE / WALLET_SEND — the agent's own on-chain "HQ wallet"
+     (an ICRC subaccount of the boss's principal). Available only when the
+     Wallet ICP-Service is installed and the app runs inside the shell.
+     The `run`s are rebound per-agent in toolsForAgent (they need the agentId
+     to derive the subaccount + apply that agent's spend cap). Signing happens
+     in the authenticated shell — the agent only requests. */
+  wallet_balance: {
+    name: 'WALLET_BALANCE',
+    re: /\[\s*WALLET_BALANCE\s*(?::\s*([^\]\n]*))?\]/i,
+    requires: () => icpWalletEnabled(),
+    doc: '- [WALLET_BALANCE] — check your HQ wallet balances across all tokens. Optional filter: [WALLET_BALANCE: ICP].',
+    docShort: 'Check your HQ wallet balances (ICP, ckUSDT, ckUNI, sGLDT, $nanas).',
+    run: async () => '(WALLET_BALANCE is bound at agent-build time — see toolsForAgent)',
+  },
+  wallet_send: {
+    name: 'WALLET_SEND',
+    re: /\[\s*WALLET_SEND\s*:\s*([^\]\n]+)\]/i,
+    requires: () => icpWalletEnabled(),
+    doc:
+      '- [WALLET_SEND: <token> <amount> <to-principal> : <memo>] — send from your HQ wallet.\n' +
+      '  Within your spend cap it settles automatically; over the cap the boss is asked to approve first.\n' +
+      '  Tokens: ICP, ckUSDT, ckUNI, sGLDT, $nanas. Memo is optional.\n' +
+      '  Example: [WALLET_SEND: ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the design review]',
+    docShort: 'Send tokens from your HQ wallet (auto under your cap; over-cap asks the boss).',
+    run: async () => '(WALLET_SEND is bound at agent-build time — see toolsForAgent)',
+  },
   /* ACK is a lightweight status-update marker — it doesn't run anything,
      it just tells the host (via post-stream extraction) what state to put
      the message in. Multiple ACKs in one reply are fine; the LAST allowed
@@ -863,6 +905,44 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         const stamped = `\n\n## ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\n${body || ''}\n`;
         const r = await window.CafresoHQClient.vaultWrite(target, stamped, 'append');
         return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
+      },
+    });
+  }
+  // ICP wallet tools — only when the agent opted into 'wallet', the Wallet
+  // service is installed, and the on-chain bridge is reachable. Bound to the
+  // agent's id so spends hit its own subaccount + cap.
+  if (claimed.has('wallet') && icpWalletEnabled()) {
+    const walletAgentId = agent.id || String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
+    const WALLET_TOKENS = ['ICP', 'ckUSDT', 'ckUNI', 'sGLDT', 'nanas'];
+    out.push({
+      ...TOOL_REGISTRY.wallet_balance,
+      run: async (arg) => {
+        const filter = (arg || '').trim();
+        const tokens = filter && filter.toLowerCase() !== 'all' ? [filter] : WALLET_TOKENS;
+        const bals = await window.CafresoHQChain.wallet.balances(walletAgentId, tokens);
+        const lines = Object.entries(bals).map(([k, v]) => `• ${k}: ${v == null ? '—' : v}`);
+        return lines.length ? `Your HQ wallet (raw base units):\n${lines.join('\n')}` : '(no balances yet)';
+      },
+    });
+    out.push({
+      ...TOOL_REGISTRY.wallet_send,
+      run: async (arg) => {
+        // <token> <amount> <to-principal> : <memo>
+        const [mainPart, ...memoParts] = String(arg || '').split(':');
+        const memo = memoParts.join(':').trim();
+        const bits = mainPart.trim().split(/\s+/).filter(Boolean);
+        if (bits.length < 3) return 'Bad format. Use [WALLET_SEND: <token> <amount> <to-principal> : <memo>].';
+        const [token, amount, to] = bits;
+        const res = await window.CafresoHQChain.wallet.send(walletAgentId, token, amount, to, memo);
+        switch (res.status) {
+          case 'ok': return `Sent ${amount} ${token} → ${to} (block ${res.block}).`;
+          case 'needsApproval': return `Awaiting the boss's approval to send ${amount} ${token} → ${to} (${res.reason || 'over cap'}). Nothing sent yet.`;
+          case 'declined': return `The boss declined the ${amount} ${token} send to ${to}.`;
+          case 'paused': return `Wallet spending is paused — ask the boss to un-pause before sending.`;
+          case 'noWallet': return `You don't have a wallet yet — the boss can set one up in Settings → ICP Services.`;
+          case 'error': return `Send failed: ${res.error}`;
+          default: return `Send result: ${JSON.stringify(res)}`;
+        }
       },
     });
   }
