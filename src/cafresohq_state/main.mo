@@ -47,6 +47,35 @@ actor CafresoHQState {
   // Optimistic-concurrency result shared by every write.
   public type PutResult = { #ok : { version : Nat }; #conflict : { current : Nat }; #quota : Text };
 
+  // ── ICP Services + agent wallets ───────────────────────────────────────────
+  // Per-agent "HQ wallet" POLICY. The wallet itself is an ICRC subaccount of the
+  // user's principal (owner = user, subaccount = deterministic per-agent); this
+  // canister never holds keys and never signs — it stores the spend policy and
+  // does the rolling-window accounting so the cap is tamper-resistant (a user
+  // can't lift their own agent's cap by clearing browser storage).
+  public type AgentWallet = {
+    agentId : Text;
+    subaccountHex : Text;   // 64-hex (32-byte) ICRC subaccount for this agent
+    token : Text;           // default ledger symbol, e.g. "ICP" / "ckUSDT"
+    spendCap : Nat;         // autonomous cap per window, in the token's base units
+    windowSecs : Nat;       // rolling-window length (0 = per-transaction cap only)
+    windowSpent : Nat;      // spent in the current window (base units)
+    windowResetAt : Int;    // ns timestamp the current window started
+    paused : Bool;          // per-agent kill switch
+    updatedAt : Int;
+  };
+  // Atomic gate result for an autonomous agent spend.
+  public type SpendResult = {
+    #ok : { windowSpent : Nat; remaining : Nat };  // within cap, recorded
+    #over : { cap : Nat; windowSpent : Nat };       // exceeds cap → route to user approval
+    #paused;                                        // agent or global kill switch on
+    #noWallet;                                      // no policy for this agent
+  };
+  // One installed "ICP Service" (wallet, publish, …). configJson is opaque.
+  public type ServiceFlag = {
+    serviceId : Text; enabled : Bool; configJson : Text; enabledAt : Int; updatedAt : Int;
+  };
+
   // ── Limits / defaults ──────────────────────────────────────────────────────
   let MAX_DOC_BYTES : Nat = 1_900_000;        // < 2 MiB ingress cap (Candid headroom)
   let MAX_CHUNK_BYTES : Nat = 1_900_000;      // vault ciphertext slice cap
@@ -68,6 +97,15 @@ actor CafresoHQState {
   stable var vaultMetas : OrderedMap.Map<Principal, MetaMap> = pOps.empty<MetaMap>();
   stable var vaultChunks : OrderedMap.Map<Principal, ChunkMap> = pOps.empty<ChunkMap>();
   stable var usageMap : OrderedMap.Map<Principal, Usage> = pOps.empty<Usage>();
+
+  // Per-agent wallet policy + installed-services, both keyed by principal then
+  // by a Text id (agentId / serviceId).
+  type WalletMap = OrderedMap.Map<Text, AgentWallet>;
+  type FlagMap = OrderedMap.Map<Text, ServiceFlag>;
+  stable var agentWallets : OrderedMap.Map<Principal, WalletMap> = pOps.empty<WalletMap>();
+  stable var serviceFlags : OrderedMap.Map<Principal, FlagMap> = pOps.empty<FlagMap>();
+  // Per-user global "pause all agent spending" kill switch.
+  stable var allSpendPaused : OrderedMap.Map<Principal, Bool> = pOps.empty<Bool>();
 
   // Plan-quota HMAC secret (mirrors cafresohq_keys; gates QUOTA only, never data).
   stable var planSecret : Blob = "";
@@ -95,6 +133,10 @@ actor CafresoHQState {
   func bumpSeq(p : Principal) : Nat { let n = seqOf(p) + 1; docSeq := pOps.put(docSeq, p, n); n };
 
   func chunkKey(objId : Text, ix : Nat) : Text { objId # "#" # Nat.toText(ix) };
+
+  func walletsOf(p : Principal) : WalletMap { switch (pOps.get(agentWallets, p)) { case (?m) m; case null tOps.empty<AgentWallet>() } };
+  func flagsOf(p : Principal) : FlagMap { switch (pOps.get(serviceFlags, p)) { case (?m) m; case null tOps.empty<ServiceFlag>() } };
+  func isAllPaused(p : Principal) : Bool { switch (pOps.get(allSpendPaused, p)) { case (?b) b; case null false } };
 
   // ── HQ docs ────────────────────────────────────────────────────────────────
   /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
@@ -335,6 +377,113 @@ actor CafresoHQState {
   };
 
   public query func planConfigured() : async Bool { planSecret.size() > 0 };
+
+  // ── Agent wallets (policy + tamper-resistant spend accounting) ─────────────
+  /// Create/update an agent's wallet policy. Rolling-window accounting is
+  /// preserved across policy edits (changing the cap doesn't refill the window).
+  public shared (msg) func putAgentWallet(
+    agentId : Text, subaccountHex : Text, token : Text, spendCap : Nat, windowSecs : Nat, paused : Bool,
+  ) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let ws = walletsOf(caller);
+    let (spent, resetAt) = switch (tOps.get(ws, agentId)) {
+      case (?w) (w.windowSpent, w.windowResetAt);
+      case null (0, now());
+    };
+    let w : AgentWallet = {
+      agentId; subaccountHex; token; spendCap; windowSecs;
+      windowSpent = spent; windowResetAt = resetAt; paused; updatedAt = now();
+    };
+    agentWallets := pOps.put(agentWallets, caller, tOps.put(ws, agentId, w));
+  };
+
+  public shared query (msg) func getAgentWallet(agentId : Text) : async ?AgentWallet {
+    if (Principal.isAnonymous(msg.caller)) { return null };
+    tOps.get(walletsOf(msg.caller), agentId);
+  };
+
+  public shared query (msg) func listAgentWallets() : async [AgentWallet] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    let out = Buffer.Buffer<AgentWallet>(8);
+    for ((_, w) in tOps.entries(walletsOf(msg.caller))) { out.add(w) };
+    Buffer.toArray(out);
+  };
+
+  public shared (msg) func deleteAgentWallet(agentId : Text) : async Bool {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let ws = walletsOf(caller);
+    switch (tOps.get(ws, agentId)) {
+      case null { false };
+      case (?_) { agentWallets := pOps.put(agentWallets, caller, tOps.delete(ws, agentId)); true };
+    };
+  };
+
+  /// Per-user global "pause all agent spending" kill switch.
+  public shared (msg) func setAllSpendPaused(paused : Bool) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    allSpendPaused := pOps.put(allSpendPaused, caller, paused);
+  };
+
+  public shared query (msg) func spendPausedAll() : async Bool {
+    if (Principal.isAnonymous(msg.caller)) { return false };
+    isAllPaused(msg.caller);
+  };
+
+  /// Atomic cap gate. The browser calls this BEFORE signing an autonomous
+  /// agent-initiated transfer:
+  ///   #ok       → within the rolling cap and recorded; go ahead and sign.
+  ///   #over     → exceeds the cap; nothing recorded — route to user approval.
+  ///   #paused   → agent or global kill switch is on; block.
+  ///   #noWallet → no policy for this agent; block.
+  public shared (msg) func recordSpend(agentId : Text, amount : Nat) : async SpendResult {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    if (isAllPaused(caller)) { return #paused };
+    let ws = walletsOf(caller);
+    switch (tOps.get(ws, agentId)) {
+      case null { #noWallet };
+      case (?w) {
+        if (w.paused) { return #paused };
+        // Roll the window if it has fully elapsed.
+        let nowSecs = now() / 1_000_000_000;
+        let startSecs = w.windowResetAt / 1_000_000_000;
+        let rolled = w.windowSecs > 0 and nowSecs >= startSecs + w.windowSecs;
+        let spent0 = if (rolled) { 0 } else { w.windowSpent };
+        let reset0 = if (rolled) { now() } else { w.windowResetAt };
+        let projected = spent0 + amount;
+        if (projected > w.spendCap) { return #over({ cap = w.spendCap; windowSpent = spent0 }) };
+        let updated : AgentWallet = { w with windowSpent = projected; windowResetAt = reset0; updatedAt = now() };
+        agentWallets := pOps.put(agentWallets, caller, tOps.put(ws, agentId, updated));
+        #ok({ windowSpent = projected; remaining = subSat(w.spendCap, projected) });
+      };
+    };
+  };
+
+  // ── Installed ICP services ─────────────────────────────────────────────────
+  public shared (msg) func putServiceFlag(serviceId : Text, enabled : Bool, configJson : Text) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let fs = flagsOf(caller);
+    let prevEnabledAt = switch (tOps.get(fs, serviceId)) { case (?f) f.enabledAt; case null 0 };
+    let enabledAt = if (enabled and prevEnabledAt == 0) { now() } else { prevEnabledAt };
+    let f : ServiceFlag = { serviceId; enabled; configJson; enabledAt; updatedAt = now() };
+    serviceFlags := pOps.put(serviceFlags, caller, tOps.put(fs, serviceId, f));
+  };
+
+  public shared query (msg) func getServiceFlag(serviceId : Text) : async ?ServiceFlag {
+    if (Principal.isAnonymous(msg.caller)) { return null };
+    tOps.get(flagsOf(msg.caller), serviceId);
+  };
+
+  public shared query (msg) func listServiceFlags() : async [ServiceFlag] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    let out = Buffer.Buffer<ServiceFlag>(8);
+    for ((_, f) in tOps.entries(flagsOf(msg.caller))) { out.add(f) };
+    Buffer.toArray(out);
+  };
 
   // ── Diagnostics ────────────────────────────────────────────────────────────
   public query func cycle_balance() : async Nat { Cycles.balance() };

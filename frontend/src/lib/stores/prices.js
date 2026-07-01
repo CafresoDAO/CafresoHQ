@@ -21,17 +21,20 @@ const GT_ICP_TOKEN = (canisterId) =>
 // Canister IDs (mirrored in lib/api/icrc1.js — keep them in sync).
 const TOKEN_CANISTERS = {
   sGLDT: 'i2s4q-syaaa-aaaan-qz4sq-cai',
-  nanas: 'mwen2-oqaaa-aaaam-adaca-cai'
+  nanas: 'mwen2-oqaaa-aaaam-adaca-cai',
+  ckUSDT: 'cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae'
 };
 
 const CACHE_KEY = 'cafreso:prices';
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const REFRESH_MS = 60_000;
 
-// Shape: `{ ICP, ckUNI, sGLDT, nanas }` — USD price per whole unit.
+// Shape: `{ ICP, ckUNI, sGLDT, nanas, ckUSDT }` — USD price per whole unit.
 // `source` is 'live' | 'cache' | 'cache-stale' | 'default' so the UI can
 // badge stale data. `updatedAt` is an epoch ms for display.
-const DEFAULTS = { ICP: 0, ckUNI: 0, sGLDT: 0, nanas: 0 };
+// ckUSDT is a USD stablecoin — default to its $1 peg so a balance never shows
+// $0 when the feed is unavailable.
+const DEFAULTS = { ICP: 0, ckUNI: 0, sGLDT: 0, nanas: 0, ckUSDT: 1 };
 
 export const prices = writable({ ...DEFAULTS, source: 'default', updatedAt: null });
 
@@ -73,10 +76,11 @@ async function fetchGtToken(canisterId) {
 }
 
 async function fetchLive() {
-  const [cgRes, sgldtRes, nanasRes] = await Promise.allSettled([
+  const [cgRes, sgldtRes, nanasRes, cusdtRes] = await Promise.allSettled([
     fetch(COINGECKO_URL),
     fetchGtToken(TOKEN_CANISTERS.sGLDT),
-    fetchGtToken(TOKEN_CANISTERS.nanas)
+    fetchGtToken(TOKEN_CANISTERS.nanas),
+    fetchGtToken(TOKEN_CANISTERS.ckUSDT)
   ]);
 
   let icp = null;
@@ -91,16 +95,19 @@ async function fetchLive() {
 
   const sgldt = sgldtRes.status === 'fulfilled' ? sgldtRes.value : null;
   const nanas = nanasRes.status === 'fulfilled' ? nanasRes.value : null;
+  const cusdt = cusdtRes.status === 'fulfilled' ? cusdtRes.value : null;
 
   const anyLive =
-    (icp && icp > 0) || (uni && uni > 0) || (sgldt && sgldt > 0) || (nanas && nanas > 0);
+    (icp && icp > 0) || (uni && uni > 0) || (sgldt && sgldt > 0) ||
+    (nanas && nanas > 0) || (cusdt && cusdt > 0);
 
   if (anyLive) {
     const snap = {
       ICP: icp ?? 0,
       ckUNI: uni ?? 0, // ckUNI tracks UNI 1:1 by design
       sGLDT: sgldt ?? 0,
-      nanas: nanas ?? 0
+      nanas: nanas ?? 0,
+      ckUSDT: cusdt ?? 1 // stablecoin — fall back to the $1 peg
     };
     saveCache(snap);
     return { ...snap, source: 'live' };
@@ -113,6 +120,7 @@ async function fetchLive() {
       ckUNI: cached.ckUNI ?? 0,
       sGLDT: cached.sGLDT ?? 0,
       nanas: cached.nanas ?? 0,
+      ckUSDT: cached.ckUSDT ?? 1,
       source: cached.stale ? 'cache-stale' : 'cache'
     };
   }

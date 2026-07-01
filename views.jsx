@@ -6573,6 +6573,20 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} onChange={e => { doUpload(e.target.files, uploadDirRef.current); e.target.value = ''; uploadDirRef.current = null; }} />
     </div>
   );
+  const [pubMsg, setPubMsg] = useSV(null);
+  const canPublish = () => {
+    try { return !!window.CafresoHQClient.getSettings().icpServices?.publish; } catch (_e) { return false; }
+  };
+  const publishOpen = async () => {
+    if (!openFile) return;
+    setPubMsg('Publishing…');
+    try {
+      const r = await window.CafresoHQClient.publishSite(openFile.path);
+      setPubMsg(r.url);
+      try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
+    } catch (e) { setPubMsg('Publish failed: ' + (e.message || e)); }
+  };
+
   const editorPane = () => (
     <div className="ws-editorwrap">
       {openFile ? (
@@ -6581,11 +6595,21 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
             <span className="ws-tab on">{ideFileIcon ? ideFileIcon(openFile.path) : '📄'} <span className="nm">{baseName(openFile.path)}</span>{openFile.dirty ? <span className="dirty">•</span> : ''}</span>
             {!openFile.binary && <div className="ws-seg ws-cpseg"><button className={!previewMode ? 'on' : ''} onClick={() => setPreviewMode(false)}>Code</button><button className={previewMode ? 'on' : ''} onClick={() => setPreviewMode(true)}>Preview</button></div>}
             {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
+            {!openFile.binary && /\.html?$/i.test(openFile.path || '') && canPublish() &&
+              <button className="ws-save" title="Publish this site + drop a clickable .url link into the project" onClick={publishOpen}>🚀 Publish</button>}
           </div>
           {conflict && (
             <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
               <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
               <button onClick={() => save(true)}>Keep mine</button>
+            </div>
+          )}
+          {pubMsg && (
+            <div className="ws-conflict" style={{ background: 'var(--paper-2,#f0e9d8)' }}>
+              {/^https?:/.test(pubMsg)
+                ? <>Published — link copied. <a href={pubMsg} target="_blank" rel="noopener noreferrer">{pubMsg}</a></>
+                : pubMsg}
+              <button onClick={() => setPubMsg(null)}>✕</button>
             </div>
           )}
           {err && <div className="ws-err">{err}</div>}

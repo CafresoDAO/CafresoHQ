@@ -8651,3 +8651,10 @@ body.night .att-badge { border-color: var(--ink); }
 .ws-mtabs .mi { font-size: 17px; line-height: 1; position: relative; }
 .ws-mtabs .ml { font-size: 9px; letter-spacing: 0.02em; }
 .ws-mtabs .mbadge { position: absolute; top: -2px; right: -6px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sun); animation: ws-blink 1s infinite; }
+
+/* ── ICP Services / agent wallet cards (Settings → ICP Services) ── */
+.icp-wallet-card { margin-top: 8px; border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; background: var(--paper-2, #f0e9d8); }
+.icp-in-row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.icp-in { width: 66px; padding: 3px 6px; font: inherit; font-size: 11px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper, #fff); color: var(--ink, #241a0e); }
+.icp-in:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: 1px; }
+.icp-bal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; line-height: 1.6; }

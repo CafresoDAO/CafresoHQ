@@ -43,6 +43,16 @@ export const TOKENS = {
     canister: 'mwen2-oqaaa-aaaam-adaca-cai',
     decimals: 8,
     logo: '/assets/nanas-coin.png'
+  },
+  // ckUSDT — the chain-key Tether stablecoin. NOTE: 6 decimals (not 8).
+  // Mainnet ledger: https://dashboard.internetcomputer.org/canister/cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae
+  // logo: null → renders the text-avatar fallback (like ckUNI/sGLDT); drop a
+  // /assets/ckusdt.png later for a real mark.
+  ckUSDT: {
+    symbol: 'ckUSDT',
+    canister: 'cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae',
+    decimals: 6,
+    logo: null
   }
 };
 
@@ -157,7 +167,10 @@ function authedLedgerActor(canisterId, identity) {
   return actor;
 }
 
-export async function getBalance(tokenKey, principalText) {
+// `subaccount` (optional Uint8Array/number[]) reads a non-default subaccount of
+// `principalText` — used for per-agent "HQ wallet" balances (owner = user
+// principal, subaccount = deterministic per-agent). Omit for the main wallet.
+export async function getBalance(tokenKey, principalText, subaccount = null) {
   if (!principalText) return null;
   const token = TOKENS[tokenKey];
   if (!token) return null;
@@ -165,7 +178,8 @@ export async function getBalance(tokenKey, principalText) {
   if (!actor) return null;
   try {
     const owner = Principal.fromText(principalText);
-    return await actor.icrc1_balance_of({ owner, subaccount: [] });
+    const sub = subaccount ? [Array.from(subaccount)] : [];
+    return await actor.icrc1_balance_of({ owner, subaccount: sub });
   } catch (e) {
     console.warn(`[icrc1] ${tokenKey} balance lookup failed`, e);
     return null;
@@ -219,7 +233,10 @@ export function toRawAmount(tokenKey, wholeUnits) {
 // Execute an ICRC-1 transfer from the signed-in user to `toPrincipalText`.
 // Returns `{ ok: blockIndex }` on success or `{ err: string }` otherwise.
 // The caller MUST have been authenticated via II before calling.
-export async function transfer({ tokenKey, toPrincipalText, amount, memoText }) {
+// `fromSubaccount` / `toSubaccount` (optional Uint8Array/number[]) move funds
+// out of / into a non-default subaccount — used for agent-wallet spends
+// (from_subaccount = the agent's) and funding (to.subaccount = the agent's).
+export async function transfer({ tokenKey, toPrincipalText, amount, memoText, fromSubaccount = null, toSubaccount = null }) {
   if (!browser) return { err: 'Not available server-side.' };
   const token = TOKENS[tokenKey];
   if (!token) return { err: `Unknown token: ${tokenKey}` };
@@ -230,9 +247,12 @@ export async function transfer({ tokenKey, toPrincipalText, amount, memoText }) 
 
   let to;
   try {
-    to = { owner: Principal.fromText(toPrincipalText), subaccount: [] };
+    to = {
+      owner: Principal.fromText(toPrincipalText),
+      subaccount: toSubaccount ? [Array.from(toSubaccount)] : []
+    };
   } catch {
-    return { err: `Bad treasury principal: ${toPrincipalText}` };
+    return { err: `Bad recipient principal: ${toPrincipalText}` };
   }
 
   const rawAmount = typeof amount === 'bigint' ? amount : toRawAmount(tokenKey, amount);
@@ -243,7 +263,7 @@ export async function transfer({ tokenKey, toPrincipalText, amount, memoText }) 
     : [];
 
   const arg = {
-    from_subaccount: [],
+    from_subaccount: fromSubaccount ? [Array.from(fromSubaccount)] : [],
     to,
     amount: rawAmount,
     fee: [], // let the ledger pick the default

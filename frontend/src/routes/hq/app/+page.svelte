@@ -2,10 +2,18 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { endpointUrl, endpointHealth, endpointReady, probeHealth } from '$lib/stores/endpoint.js';
-  import { isAuthenticated } from '$lib/stores/auth.js';
+  import { isAuthenticated, authIdentity } from '$lib/stores/auth.js';
   import {
     ensureHqSession, hqSessionReady, hqSessionError, endpointNeedsSession
   } from '$lib/api/hqSession.js';
+  import {
+    listInstalledServices, setServiceInstalled,
+    listAgentWallets, getAgentWalletPolicy, putAgentWalletPolicy, deleteAgentWallet,
+    setAllSpendPaused, spendPausedAll,
+    agentBalances, fundAgent, agentSend,
+    deriveAgentSubaccount, subaccountToHex
+  } from '$lib/api/walletServices.js';
+  import { sitesConfigured, publishSiteToCanister } from '$lib/api/sitesActor.js';
   import {
     vaultFiles,
     vaultUnlocked,
@@ -145,6 +153,135 @@
     }
   }
 
+  // ── ICP Services + agent-wallet bridge ─────────────────────────────────────
+  // Mirrors onVaultMessage: the embedded HQ app (which has no on-chain client)
+  // posts `chain:*` requests; we run them here under the user's II identity and
+  // reply by reqId. Every real signature happens HERE — the agent only requests.
+  function principalText() {
+    try { return get(authIdentity)?.getPrincipal()?.toText() || null; } catch { return null; }
+  }
+  // postMessage's structured clone chokes on nothing here, but BigInt is awkward
+  // downstream — stringify all BigInts so the child gets predictable strings.
+  function clean(v) {
+    if (typeof v === 'bigint') return v.toString();
+    if (Array.isArray(v)) return v.map(clean);
+    if (v && typeof v === 'object') {
+      const o = {};
+      for (const k in v) o[k] = clean(v[k]);
+      return o;
+    }
+    return v;
+  }
+
+  async function onChainMessage(e) {
+    if (!iframe?.contentWindow || e.source !== iframe.contentWindow) return;
+    const origin = iframeOrigin();
+    if (origin && e.origin !== origin) return;
+    const { type, reqId } = e.data || {};
+    if (!type?.startsWith('chain:')) return;
+
+    const reply = (payload) =>
+      iframe.contentWindow?.postMessage({ ...clean(payload), reqId }, origin || '*');
+    const fail = (message) => reply({ type: 'chain:error', message });
+
+    if (!get(isAuthenticated)) return fail('Sign in at ai.cafreso.com to use ICP Services.');
+    const p = principalText();
+    if (!p) return fail('No Internet Identity principal available.');
+
+    try {
+      const d = e.data;
+      switch (type) {
+        case 'chain:services:list':
+          reply({ type: 'chain:services:list:response', services: await listInstalledServices() });
+          break;
+        case 'chain:services:set':
+          await setServiceInstalled(d.serviceId, !!d.enabled, d.configJson || '');
+          reply({ type: 'chain:services:set:response', serviceId: d.serviceId, enabled: !!d.enabled });
+          break;
+
+        case 'chain:wallet:list':
+          reply({ type: 'chain:wallet:list:response', wallets: await listAgentWallets() });
+          break;
+        case 'chain:wallet:policy':
+          reply({ type: 'chain:wallet:policy:response', policy: await getAgentWalletPolicy(d.agentId) });
+          break;
+        case 'chain:wallet:put': {
+          const sub = await deriveAgentSubaccount(p, d.agentId);
+          const subaccountHex = subaccountToHex(sub);
+          await putAgentWalletPolicy({
+            agentId: d.agentId, subaccountHex, token: d.token || 'ICP',
+            spendCap: d.spendCap || 0, windowSecs: d.windowSecs || 0, paused: !!d.paused
+          });
+          reply({ type: 'chain:wallet:put:response', agentId: d.agentId, subaccountHex });
+          break;
+        }
+        case 'chain:wallet:delete':
+          await deleteAgentWallet(d.agentId);
+          reply({ type: 'chain:wallet:delete:response', agentId: d.agentId, ok: true });
+          break;
+        case 'chain:wallet:address': {
+          const sub = await deriveAgentSubaccount(p, d.agentId);
+          reply({ type: 'chain:wallet:address:response', agentId: d.agentId, owner: p, subaccountHex: subaccountToHex(sub) });
+          break;
+        }
+        case 'chain:wallet:balances':
+          reply({
+            type: 'chain:wallet:balances:response', agentId: d.agentId,
+            balances: await agentBalances(p, d.agentId, d.tokens)
+          });
+          break;
+        case 'chain:wallet:fund': {
+          const res = await fundAgent({ principalText: p, agentId: d.agentId, tokenKey: d.token, amount: d.amount });
+          reply({ type: 'chain:wallet:fund:response', ...res });
+          break;
+        }
+        case 'chain:wallet:send': {
+          let res = await agentSend({
+            principalText: p, agentId: d.agentId, tokenKey: d.token,
+            amount: d.amount, to: d.to, memo: d.memo
+          });
+          // Over-cap / off-token → the shell asks the user to authorize the send
+          // (the one place a real signature is gated). Pause/noWallet are hard stops.
+          if (res.status === 'needsApproval') {
+            const ok = typeof window !== 'undefined' && window.confirm(
+              `Agent "${d.agentId}" wants to send ${d.amount} ${d.token} to:\n${d.to}\n\n` +
+              `This ${res.reason || 'needs your approval'}. Sign this transfer?`
+            );
+            if (ok) {
+              res = await agentSend({
+                principalText: p, agentId: d.agentId, tokenKey: d.token,
+                amount: d.amount, to: d.to, memo: d.memo, force: true
+              });
+            } else {
+              res = { status: 'declined' };
+            }
+          }
+          reply({ type: 'chain:wallet:send:response', ...res });
+          break;
+        }
+        case 'chain:wallet:pause-all':
+          await setAllSpendPaused(!!d.paused);
+          reply({ type: 'chain:wallet:pause-all:response', paused: !!d.paused });
+          break;
+        case 'chain:wallet:paused-all':
+          reply({ type: 'chain:wallet:paused-all:response', paused: await spendPausedAll() });
+          break;
+
+        case 'chain:publish': {
+          if (!sitesConfigured()) { reply({ type: 'chain:publish:response', mode: 'unconfigured' }); break; }
+          const res = await publishSiteToCanister({ project: d.project, files: d.files || [] });
+          reply({ type: 'chain:publish:response', mode: 'canister', ...res });
+          break;
+        }
+
+        default:
+          fail('Unknown chain request: ' + type);
+      }
+    } catch (err) {
+      fail(err?.message || String(err));
+    }
+  }
+
   // The embedded HQ posts this when the gateway starts 401ing — the
   // hq_session cookie expired mid-use. Re-mint and reload the iframe so the
   // user recovers in place instead of facing a frozen app.
@@ -166,6 +303,7 @@
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', onKey);
       window.addEventListener('message', onVaultMessage);
+      window.addEventListener('message', onChainMessage);
       window.addEventListener('message', onSessionExpired);
     }
     vaultUnsub = vaultFiles.subscribe((files) => pushFiles(files));
@@ -175,6 +313,7 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('message', onVaultMessage);
+      window.removeEventListener('message', onChainMessage);
       window.removeEventListener('message', onSessionExpired);
     }
     vaultUnsub?.();

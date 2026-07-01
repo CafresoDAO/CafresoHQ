@@ -481,12 +481,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
    description. Order = display order; first entry is the default tab (the
    most-actioned one — Connections). Legacy deep-link ids map via ALIAS. */
 const SETTINGS_TABS = [
-  { id: 'keys',       ico: '🔌', label: 'CONNECTIONS', desc: 'brain · keys · search' },
-  { id: 'agentcli',   ico: '🤖', label: 'CODE AGENTS', desc: 'CLIs in your container' },
-  { id: 'agents',     ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
-  { id: 'media',      ico: '🎨', label: 'MEDIA',       desc: 'image & video gen' },
-  { id: 'appearance', ico: '🖥', label: 'APPEARANCE',  desc: 'theme & ambience' },
-  { id: 'system',     ico: '🛰', label: 'SYSTEM',      desc: 'health & runtime' },
+  { id: 'keys',        ico: '🔌', label: 'CONNECTIONS', desc: 'brain · keys · search' },
+  { id: 'agentcli',    ico: '🤖', label: 'CODE AGENTS', desc: 'CLIs in your container' },
+  { id: 'icp-services',ico: '⛓', label: 'ICP SERVICES',desc: 'wallets · publish · on-chain' },
+  { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
+  { id: 'media',       ico: '🎨', label: 'MEDIA',       desc: 'image & video gen' },
+  { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme & ambience' },
+  { id: 'system',      ico: '🛰', label: 'SYSTEM',      desc: 'health & runtime' },
 ];
 const SETTINGS_TAB_ALIAS = { global: 'appearance' }; // old id → new id
 
@@ -508,6 +509,9 @@ const SETTINGS_INDEX = [
   { tab:'keys', label:'Brave web search', hint:'web search tool + API key', kw:'brave search web key' },
   { tab:'keys', label:'Vault backend', hint:'markdown vault storage + browser', kw:'vault notes markdown obsidian rest' },
   { tab:'agentcli', label:'Install code agents', hint:'add Claude Code / Codex / Gemini CLI on demand', kw:'install npm cli agents claude codex gemini version' },
+  { tab:'icp-services', label:'ICP Services catalog', hint:'install on-chain services like adding an MCP', kw:'icp internet computer dfinity service catalog install marketplace on-chain blockchain wallet publish canister' },
+  { tab:'icp-services', label:'Agent wallet', hint:'per-agent on-chain wallet + spend cap', kw:'wallet icp ckusdt ckuni token balance fund send cap spend agent money crypto' },
+  { tab:'icp-services', label:'Publish to canister', hint:'ship a site to a *.icp0.io URL', kw:'publish canister deploy site url icp0 web hosting' },
   { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
@@ -525,6 +529,249 @@ const SETTINGS_INDEX = [
   { tab:'system', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy' },
   { tab:'system', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
 ];
+
+/* ── ICP Services catalog ──────────────────────────────────────────────────
+   One-click install of on-chain capabilities — like adding an MCP server, but
+   for ICP. Installing flips a flag in cafresohq_state (via the shell bridge)
+   and mirrors it to settings.icpServices so agent-tool gating is synchronous.
+   Everything here needs the ai.cafreso.com shell (which holds Internet Identity);
+   standalone (no bridge) shows a hint. */
+const ICP_SERVICES = [
+  {
+    id: 'wallet', ico: '👛', name: 'Agent Wallet',
+    blurb: "Give each agent its own on-chain HQ wallet (ICP, ckUSDT, ckUNI, sGLDT, $nanas) with a spend cap you set. Agents spend within the cap automatically; anything over asks you first.",
+    tools: ['WALLET_BALANCE', 'WALLET_SEND'],
+  },
+  {
+    id: 'publish', ico: '🚀', name: 'Publish to Canister',
+    blurb: 'Publish an agent-built site to the Internet Computer and get back a verifiable *.icp0.io link your users can click.',
+    tools: ['PUBLISH_SITE'],
+  },
+];
+
+const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+function toBaseUnits(whole, decimals) {
+  const s = String(whole == null ? '' : whole).trim();
+  if (!s || isNaN(Number(s))) return '0';
+  const neg = s.startsWith('-'); const body = neg ? s.slice(1) : s;
+  const [i, f = ''] = body.split('.');
+  const frac = (f + '0'.repeat(decimals)).slice(0, decimals);
+  const digits = ((i || '0') + frac).replace(/^0+(?=\d)/, '') || '0';
+  return (neg ? '-' : '') + digits;
+}
+function fromBaseUnits(raw, decimals) {
+  try {
+    const n = BigInt(raw);
+    const base = BigInt(10) ** BigInt(decimals);
+    const int = n / base; const frac = n % base;
+    const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+    return fracStr ? `${int}.${fracStr}` : `${int}`;
+  } catch { return '0'; }
+}
+
+function AgentWalletCard({ agent }) {
+  const [policy, setPolicy] = useStateM(null);
+  const [bals, setBals] = useStateM(null);
+  const [busy, setBusy] = useStateM('');
+  const [msg, setMsg] = useStateM('');
+  const [capTok, setCapTok] = useStateM('ICP');
+  const [capAmt, setCapAmt] = useStateM('0.1');
+  const [capHrs, setCapHrs] = useStateM('24');
+  const [fundTok, setFundTok] = useStateM('ICP');
+  const [fundAmt, setFundAmt] = useStateM('0.05');
+  const chain = () => window.CafresoHQChain;
+  const agentId = agent.id || agent.name;
+
+  const load = async () => {
+    try {
+      const p = await chain().wallet.policy(agentId);
+      setPolicy(p || null);
+      if (p) {
+        setCapTok(p.token);
+        setCapAmt(fromBaseUnits(p.spendCap, WALLET_TOKEN_DECIMALS[p.token] ?? 8));
+        setCapHrs(String(Math.round((p.windowSecs || 0) / 3600) || 24));
+      }
+    } catch (_e) { /* not deployed / not signed in — leave defaults */ }
+  };
+  useEffectM(() => { load(); }, []);
+
+  const refreshBalances = async () => {
+    setBusy('bal'); setMsg('');
+    try { setBals(await chain().wallet.balances(agentId, Object.keys(WALLET_TOKEN_DECIMALS))); }
+    catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const saveCap = async () => {
+    setBusy('cap'); setMsg('');
+    try {
+      const dec = WALLET_TOKEN_DECIMALS[capTok] ?? 8;
+      await chain().wallet.put({
+        agentId, token: capTok, spendCap: toBaseUnits(capAmt, dec),
+        windowSecs: Math.max(0, Math.round(parseFloat(capHrs || '0') * 3600)),
+        paused: policy?.paused || false,
+      });
+      setMsg('Saved.'); await load();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const fund = async () => {
+    setBusy('fund'); setMsg('');
+    try {
+      const r = await chain().wallet.fund(agentId, fundTok, fundAmt);
+      setMsg(r && r.ok != null ? `Funded (block ${r.ok}).` : (r && r.err ? `Fund failed: ${r.err}` : 'Fund sent.'));
+      await refreshBalances();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const togglePause = async () => {
+    setBusy('pause');
+    try {
+      const dec = WALLET_TOKEN_DECIMALS[policy?.token || capTok] ?? 8;
+      await chain().wallet.put({
+        agentId, token: policy?.token || capTok,
+        spendCap: policy?.spendCap || toBaseUnits(capAmt, dec),
+        windowSecs: policy?.windowSecs || Math.round(parseFloat(capHrs || '0') * 3600),
+        paused: !(policy?.paused),
+      });
+      await load();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+
+  const toks = Object.keys(WALLET_TOKEN_DECIMALS);
+  return (
+    <div className="cb-panel icp-wallet-card">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="lbl">👛 {agent.name} <span className="tiny">· {agent.role}</span></span>
+        {policy && (
+          <button className={`px-btn ${policy.paused ? 'primary' : 'secondary'}`} style={{ fontSize: 8 }} disabled={busy === 'pause'} onClick={togglePause}>
+            {policy.paused ? '▶ RESUME' : '⏸ PAUSE'}
+          </button>
+        )}
+      </div>
+      {!policy && <div className="sub" style={{ marginTop: 4 }}>No wallet yet — set a spend cap to create one.</div>}
+      <div className="stack" style={{ marginTop: 6 }}>
+        <div className="row-knob icp-in-row">
+          <span className="lbl">Spend cap</span>
+          <input className="icp-in" style={{ width: 66 }} value={capAmt} onChange={e => setCapAmt(e.target.value)} />
+          <select value={capTok} onChange={e => setCapTok(e.target.value)}>{toks.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <span className="tiny">per</span>
+          <input className="icp-in" style={{ width: 40 }} value={capHrs} onChange={e => setCapHrs(e.target.value)} />
+          <span className="tiny">h</span>
+          <button className="px-btn primary" style={{ fontSize: 8 }} disabled={busy === 'cap'} onClick={saveCap}>{policy ? 'SAVE' : 'CREATE'}</button>
+        </div>
+        <div className="row-knob icp-in-row">
+          <span className="lbl">Fund</span>
+          <input className="icp-in" style={{ width: 66 }} value={fundAmt} onChange={e => setFundAmt(e.target.value)} />
+          <select value={fundTok} onChange={e => setFundTok(e.target.value)}>{toks.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <button className="px-btn" style={{ fontSize: 8 }} disabled={busy === 'fund'} onClick={fund}>⬆ FUND</button>
+        </div>
+        <div className="row-knob">
+          <span className="lbl">Balances</span>
+          <button className="px-btn secondary" style={{ fontSize: 8 }} disabled={busy === 'bal'} onClick={refreshBalances}>↻ REFRESH</button>
+        </div>
+        {bals && (
+          <div className="tiny icp-bal-grid">
+            {toks.map(t => <div key={t}>{t}: <b>{bals[t] == null ? '—' : fromBaseUnits(bals[t], WALLET_TOKEN_DECIMALS[t])}</b></div>)}
+          </div>
+        )}
+        {msg && <div className="tiny" style={{ color: 'var(--accent-leaf)' }}>{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
+function IcpServicesPanel({ agents }) {
+  const [installed, setInstalled] = useStateM({});
+  const [available, setAvailable] = useStateM(true);
+  const [pausedAll, setPausedAll] = useStateM(false);
+  const [loading, setLoading] = useStateM(true);
+  const [err, setErr] = useStateM('');
+  const chain = () => window.CafresoHQChain;
+
+  const load = async () => {
+    setLoading(true); setErr('');
+    const avail = !!(chain() && chain().isAvailable());
+    setAvailable(avail);
+    if (!avail) { setLoading(false); return; }
+    try {
+      const flags = await chain().services.list();
+      const map = {}; (flags || []).forEach(f => { map[f.serviceId] = !!f.enabled; });
+      setInstalled(map);
+      window.CafresoHQClient.setSettings({ icpServices: map });
+      setPausedAll(await chain().wallet.pausedAll());
+    } catch (e) { setErr(String(e.message || e)); }
+    setLoading(false);
+  };
+  useEffectM(() => { load(); }, []);
+
+  const toggleInstall = async (svc) => {
+    const next = !installed[svc.id];
+    try {
+      await chain().services.set(svc.id, next, '');
+      const map = { ...installed, [svc.id]: next };
+      setInstalled(map);
+      window.CafresoHQClient.setSettings({ icpServices: map });
+    } catch (e) { setErr(String(e.message || e)); }
+  };
+  const togglePauseAll = async () => {
+    try { const n = !pausedAll; await chain().wallet.pauseAll(n); setPausedAll(n); }
+    catch (e) { setErr(String(e.message || e)); }
+  };
+
+  if (!available) {
+    return (
+      <div className="control-board"><div className="cb-panel">
+        <h4>ICP SERVICES</h4>
+        <div className="muted" style={{ lineHeight: 1.6 }}>
+          ICP Services need your Internet Identity, which lives in the CafresoHQ shell.
+          Open your HQ at <b>ai.cafreso.com</b> (not the standalone container) to install
+          wallets, publish sites, and manage on-chain features.
+        </div>
+      </div></div>
+    );
+  }
+
+  const walletOn = !!installed.wallet;
+  const walletAgents = (agents || []).filter(a => (a.tools || []).includes('wallet'));
+
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>ICP SERVICES · CATALOG</h4>
+        {err && <div className="tiny" style={{ color: '#c44' }}>{err}</div>}
+        {loading && <div className="muted">Loading…</div>}
+        <div className="stack">
+          {ICP_SERVICES.map(svc => (
+            <div key={svc.id} className="row-knob" style={{ alignItems: 'flex-start' }}>
+              <div style={{ maxWidth: 300 }}>
+                <div className="lbl">{svc.ico} {svc.name}</div>
+                <div className="sub" style={{ marginTop: 2 }}>{svc.blurb}</div>
+                <div className="tiny" style={{ marginTop: 2, opacity: .7 }}>Agent tools: {svc.tools.join(', ')}</div>
+              </div>
+              <button className={`px-btn ${installed[svc.id] ? 'danger' : 'primary'}`} style={{ fontSize: 8, whiteSpace: 'nowrap' }} onClick={() => toggleInstall(svc)}>
+                {installed[svc.id] ? '✓ REMOVE' : '＋ INSTALL'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {walletOn && (
+        <div className="cb-panel">
+          <h4>AGENT WALLETS</h4>
+          <div className="row-knob">
+            <div><div className="lbl">Pause all agent spending</div><div className="sub">Global kill switch — blocks every agent send</div></div>
+            <div className={`pxswitch ${pausedAll ? 'on' : ''}`} onClick={togglePauseAll}><div className="nub" /></div>
+          </div>
+          {walletAgents.length === 0
+            ? <div className="muted" style={{ marginTop: 6 }}>Grant an agent the <b>ICP Wallet</b> tool in <b>Roster</b> to give it a wallet.</div>
+            : walletAgents.map(a => <AgentWalletCard key={a.id} agent={a} />)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, initialTab }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
@@ -655,6 +902,10 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                 );
               })}
             </div>
+          )}
+
+          {!terms.length && tab === 'icp-services' && (
+            <IcpServicesPanel agents={agents} />
           )}
 
           {!terms.length && tab === 'agents' && (

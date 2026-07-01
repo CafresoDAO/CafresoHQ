@@ -1578,6 +1578,59 @@ function fsMkdir(path)      { return _fsMutate('/fs/mkdir', { path }); }
 function fsRename(from, to) { return _fsMutate('/fs/rename', { from, to }); }
 function fsDelete(path)     { return _fsMutate('/fs/delete', { path }); }
 
+/* Collect a built site's files (base64 + content-type) for canister publish. */
+async function fsCollect(dir) {
+  const r = await fetch(_API_BASE + '/fs/collect?path=' + encodeURIComponent(dir), { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function _b64urlUtf8(s) {
+  const bytes = new TextEncoder().encode(String(s || ''));
+  let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _splitOsPath(p) {
+  p = String(p || '');
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
+}
+/* Publish a built site. Prefers the HQ-owned public sites canister
+   (cafresohq_sites) — served at https://<sites>.icp0.io/<principal>/<project>/,
+   genuinely public — by collecting the files and asking the shell (which holds
+   II) to upload them. Falls back to the owner-scoped /fs/site preview link when
+   the shell/canister isn't available. Drops a clickable `<name>.url` deliverable
+   into the project either way. Returns { url, file, dir, mode }. */
+async function publishSite(path, opts = {}) {
+  const isHtml = /\.html?$/i.test(path || '');
+  const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };
+  const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
+  const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
+
+  let url = null, mode = 'preview', skipped = [];
+  const chain = window.CafresoHQChain;
+  if (chain && chain.isAvailable && chain.isAvailable()) {
+    try {
+      const collected = await fsCollect(dir);
+      const res = await chain.publish(slug, collected.files || []);
+      if (res && res.mode === 'canister' && res.url) {
+        url = res.url; mode = 'canister';
+        skipped = (collected.skipped || []).concat(res.skipped || []);
+      }
+    } catch (_e) { /* fall through to the preview link */ }
+  }
+  if (!url) {
+    const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
+    url = origin + '/fs/site/' + _b64urlUtf8(dir) + '/' + encodeURIComponent(base);
+    mode = 'preview';
+  }
+  const fname = slug + '.url';
+  const body = `[InternetShortcut]\r\nURL=${url}\r\n`;   // clickable on Windows; plain link elsewhere
+  const file = new File([body], fname, { type: 'application/x-mswinurl' });
+  await fsUpload(dir, [file]);
+  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped };
+}
+
 /* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
    The Workspace editor uses this instead of FILE_READ so it gets the whole file
    (FILE_READ truncates at 8000) and the headers conflict-safety needs. */
@@ -1707,6 +1760,59 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   };
 })();
 
+/* ── CafresoHQChain — ICP Services + agent-wallet bridge to the parent shell ──
+   Same pattern as VaultBridge: the embedded HQ app has no @dfinity client, so
+   on-chain reads/writes (service flags, wallet policy, ICRC transfers) are
+   proxied to the SvelteKit parent, which holds the II identity and signs. When
+   opened standalone (isAvailable()===false) the ICP Services UI shows a hint to
+   open the app at ai.cafreso.com instead. */
+(function () {
+  const _pending = new Map();
+  function _req(type, data, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      if (window.parent === window) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
+      const reqId = 'c_' + Math.random().toString(36).slice(2, 10);
+      const timer = setTimeout(() => { _pending.delete(reqId); reject(new Error('CafresoHQChain timeout: ' + type)); }, timeoutMs || 30000);
+      _pending.set(reqId, { resolve, reject, timer });
+      window.parent.postMessage({ type, reqId, ...data }, '*');
+    });
+  }
+  window.addEventListener('message', function (e) {
+    if (e.source !== window.parent) return;
+    const { type, reqId } = e.data || {};
+    if (!reqId || !_pending.has(reqId)) return;
+    const { resolve, reject, timer } = _pending.get(reqId);
+    clearTimeout(timer);
+    _pending.delete(reqId);
+    if (type === 'chain:error') reject(new Error(e.data.message || 'chain error'));
+    else resolve(e.data);
+  });
+
+  window.CafresoHQChain = {
+    /** True when running inside the SvelteKit shell (on-chain ops available). */
+    isAvailable() { try { return window.parent !== window; } catch { return false; } },
+    services: {
+      list() { return _req('chain:services:list', {}).then(r => r.services || []); },
+      set(serviceId, enabled, configJson) { return _req('chain:services:set', { serviceId, enabled, configJson }); },
+    },
+    wallet: {
+      list() { return _req('chain:wallet:list', {}).then(r => r.wallets || []); },
+      policy(agentId) { return _req('chain:wallet:policy', { agentId }).then(r => r.policy); },
+      put(p) { return _req('chain:wallet:put', p); },
+      remove(agentId) { return _req('chain:wallet:delete', { agentId }); },
+      address(agentId) { return _req('chain:wallet:address', { agentId }); },
+      balances(agentId, tokens) { return _req('chain:wallet:balances', { agentId, tokens }).then(r => r.balances || {}); },
+      fund(agentId, token, amount) { return _req('chain:wallet:fund', { agentId, token, amount }, 90000); },
+      send(agentId, token, amount, to, memo) { return _req('chain:wallet:send', { agentId, token, amount, to, memo }, 180000); },
+      pauseAll(paused) { return _req('chain:wallet:pause-all', { paused }); },
+      pausedAll() { return _req('chain:wallet:paused-all', {}).then(r => !!r.paused); },
+    },
+    /* Publish a collected site to the HQ public sites canister. Returns
+       { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */
+    publish(project, files) { return _req('chain:publish', { project, files }, 180000); },
+  };
+})();
+
 /* Is the backend (per-user container via the gateway) actually reachable?
    Probes _API_BASE + /health. On the asset canister WITHOUT a ?api gateway,
    _API_BASE is the canister origin which has no /health → false → the UI knows
@@ -1738,6 +1844,6 @@ window.CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

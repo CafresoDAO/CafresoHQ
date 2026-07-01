@@ -1,0 +1,42 @@
+type SiteSummary = 
+ record {
+   fileCount: nat;
+   project: text;
+   totalBytes: nat;
+   updatedAt: int;
+ };
+type PutFileResult = 
+ variant {
+   err: text;
+   ok: record {bytes: nat;};
+ };
+type HttpResponse = 
+ record {
+   body: blob;
+   headers: vec HeaderField;
+   status_code: nat16;
+   streaming_strategy: opt null;
+   upgrade: opt bool;
+ };
+type HttpRequest = 
+ record {
+   body: blob;
+   headers: vec HeaderField;
+   method: text;
+   url: text;
+ };
+type HeaderField = 
+ record {
+   text;
+   text;
+ };
+service : {
+  cycle_balance: () -> (nat) query;
+  /// Remove all files under a project (call before re-publishing to drop stale files).
+  deleteSite: (text) -> (nat);
+  http_request: (HttpRequest) -> (HttpResponse) query;
+  http_request_update: (HttpRequest) -> (HttpResponse);
+  listMySites: () -> (vec SiteSummary) query;
+  myUsageBytes: () -> (nat) query;
+  putSiteFile: (text, text, text, blob) -> (PutFileResult);
+}
