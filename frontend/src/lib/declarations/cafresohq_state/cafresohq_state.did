@@ -44,6 +44,27 @@ type ServiceFlag =
    serviceId: text;
    updatedAt: int;
  };
+type SalaryMode = 
+ variant {
+   refill;
+   salary;
+ };
+type Salary = 
+ record {
+   active: bool;
+   agentId: text;
+   amount: nat;
+   fee: nat;
+   lastResult: text;
+   ledger: principal;
+   lowWatermark: nat;
+   mode: SalaryMode;
+   nextRunAt: int;
+   periodSecs: nat;
+   stalledSince: opt int;
+   token: text;
+   updatedAt: int;
+ };
 type PutResult = 
  variant {
    conflict: record {current: nat;};
@@ -54,6 +75,17 @@ type PutFileResult =
  variant {
    err: text;
    ok: record {bytes: nat;};
+ };
+type Payout = 
+ record {
+   agentId: text;
+   amount: nat;
+   blockIndex: opt nat;
+   key: text;
+   scheduledAt: int;
+   status: text;
+   token: text;
+   ts: int;
  };
 type HttpResponse = 
  record {
@@ -105,12 +137,21 @@ service : {
   cycle_balance: () -> (nat) query;
   deleteAgentWallet: (text) -> (bool);
   deleteHqDoc: (text) -> (bool);
+  deleteSalary: (text) -> (bool);
   /// Remove all files under a project (call before re-publishing to drop stale files).
   deleteSite: (text) -> (nat);
   deleteVault: (text) -> (bool);
   getAgentWallet: (text) -> (opt AgentWallet) query;
   getHqDoc: (text) -> (opt HqDoc) query;
   getServiceFlag: (text) -> (opt ServiceFlag) query;
+  /// Lifetime recorded agent spend: [(agentId, [(token, baseUnits)])].
+  getSpendTotals: () -> (vec record {
+                               text;
+                               vec record {
+                                     text;
+                                     nat;
+                                   };
+                             }) query;
   getVaultChunk: (text, nat) -> (opt blob) query;
   getVaultMeta: (text) -> (opt VaultMeta) query;
   /// Monotonic per-user version — cheap int the container/browser compare to
@@ -121,9 +162,12 @@ service : {
   listAgentWallets: () -> (vec AgentWallet) query;
   listHqDocs: () -> (vec DocSummary) query;
   listMySites: () -> (vec SiteSummary) query;
+  listPayouts: () -> (vec Payout) query;
+  listSalaries: () -> (vec Salary) query;
   listServiceFlags: () -> (vec ServiceFlag) query;
   mySiteBytes: () -> (nat) query;
   myUsage: () -> (Usage) query;
+  payrollPaused: () -> (bool) query;
   planConfigured: () -> (bool) query;
   /// Create/update an agent's wallet policy. Rolling-window accounting is
   /// preserved across policy edits (changing the cap doesn't refill the window).
@@ -131,6 +175,8 @@ service : {
   /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
   /// expectVersion = 0 for first write; otherwise must match current or you get #conflict.
   putHqDoc: (text, blob, blob, nat) -> (PutResult);
+  putSalary: (text, principal, text, nat, nat, nat, nat, SalaryMode, 
+   bool) -> ();
   putServiceFlag: (text, bool, text) -> ();
   putSiteFile: (text, text, text, blob) -> (PutFileResult);
   putVaultChunk: (text, nat, nat, blob) -> (PutResult);
@@ -142,10 +188,14 @@ service : {
   ///   #paused   → agent or global kill switch is on; block.
   ///   #noWallet → no policy for this agent; block.
   recordSpend: (text, nat) -> (SpendResult);
+  /// Manual "pay now" (smoke tests + catch-up). Respects active + pause switches.
+  runPayrollNow: (text) -> (text);
   /// Publish atomically: flip sealed=true once all chunks are stored.
   sealVault: (text, nat) -> (PutResult);
   /// Per-user global "pause all agent spending" kill switch.
   setAllSpendPaused: (bool) -> ();
+  /// Per-user payroll kill switch (independent of setAllSpendPaused).
+  setPayrollPaused: (bool) -> ();
   /// Apply a plan tier from the same HMAC token cafresohq_keys mints
   /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
   setPlan: (text) -> (bool);

@@ -7,14 +7,18 @@
 // can be stopped / recreated losslessly.
 //
 // AUTH MODEL (see docs/PHASE2_STATE_CANISTER.md §3):
-//   The browser — which holds the II delegation — is the ONLY caller. Every key
+//   The browser — which holds the II delegation — is the primary caller. Every key
 //   derives from `msg.caller`; NO method takes a principal argument, so no caller
 //   can address another user's rows. The OCI container holds no credential here.
+//   Sprint-2 exception: the PAYROLL timer below makes OUTBOUND calls to ICRC-2
+//   ledgers (icrc2_transfer_from) — but only under an allowance the user signed
+//   (icrc2_approve, spender = this canister), which is the hard spending ceiling.
 //
-// Storage uses mo:base/OrderedMap held in `stable` vars (enhanced orthogonal
-// persistence — no pre/post-upgrade). NOTE: this scaffold keeps data on the heap;
-// before scaling past a few GB of aggregate vault, migrate the vault chunk store
-// to mo:stable-structures (stable memory) per the design doc §5.
+// Storage uses mo:base/OrderedMap held in `stable` vars. NOTE: this scaffold
+// keeps data on the heap; before scaling past a few GB of aggregate vault,
+// migrate the vault chunk store to mo:stable-structures (stable memory) per the
+// design doc §5. `system func postupgrade` exists ONLY to re-arm the payroll
+// timer — timers never survive an upgrade.
 // ──────────────────────────────────────────────────────────────────────────
 
 import Principal "mo:base/Principal";
@@ -32,6 +36,9 @@ import Time "mo:base/Time";
 import Error "mo:base/Error";
 import Cycles "mo:base/ExperimentalCycles";
 import OrderedMap "mo:base/OrderedMap";
+import Nat64 "mo:base/Nat64";
+import Array "mo:base/Array";
+import Timer "mo:base/Timer";
 import Sha256 "Sha256";
 
 actor CafresoHQState {
@@ -51,9 +58,11 @@ actor CafresoHQState {
   // ── ICP Services + agent wallets ───────────────────────────────────────────
   // Per-agent "HQ wallet" POLICY. The wallet itself is an ICRC subaccount of the
   // user's principal (owner = user, subaccount = deterministic per-agent); this
-  // canister never holds keys and never signs — it stores the spend policy and
-  // does the rolling-window accounting so the cap is tamper-resistant (a user
-  // can't lift their own agent's cap by clearing browser storage).
+  // canister never holds keys — it stores the spend policy and does the
+  // rolling-window accounting so the cap is tamper-resistant (a user can't lift
+  // their own agent's cap by clearing browser storage). Payroll (below) is the
+  // one place this canister moves funds itself, and only via a user-signed
+  // ICRC-2 allowance that is itself the hard ceiling.
   public type AgentWallet = {
     agentId : Text;
     subaccountHex : Text;   // 64-hex (32-byte) ICRC subaccount for this agent
@@ -495,7 +504,383 @@ actor CafresoHQState {
         if (projected > w.spendCap) { return #over({ cap = w.spendCap; windowSpent = spent0 }) };
         let updated : AgentWallet = { w with windowSpent = projected; windowResetAt = reset0; updatedAt = now() };
         agentWallets := pOps.put(agentWallets, caller, tOps.put(ws, agentId, updated));
+        bumpSpendTotal(caller, agentId, w.token, amount);
         #ok({ windowSpent = projected; remaining = subSat(w.spendCap, projected) });
+      };
+    };
+  };
+
+  // ── Lifetime spend metering (advisory P&L display; caps stay the gate) ─────
+  type TokenTotals = OrderedMap.Map<Text, Nat>;      // token symbol → base units
+  type AgentTotals = OrderedMap.Map<Text, TokenTotals>; // agentId → totals
+  stable var spendTotals : OrderedMap.Map<Principal, AgentTotals> = pOps.empty<AgentTotals>();
+
+  func bumpSpendTotal(user : Principal, agentId : Text, token : Text, amount : Nat) {
+    let agents = switch (pOps.get(spendTotals, user)) { case (?m) m; case null tOps.empty<TokenTotals>() };
+    let tokens = switch (tOps.get(agents, agentId)) { case (?m) m; case null tOps.empty<Nat>() };
+    let cur = switch (tOps.get(tokens, token)) { case (?n) n; case null 0 };
+    spendTotals := pOps.put(spendTotals, user, tOps.put(agents, agentId, tOps.put(tokens, token, cur + amount)));
+  };
+
+  /// Lifetime recorded agent spend: [(agentId, [(token, baseUnits)])].
+  public shared query (msg) func getSpendTotals() : async [(Text, [(Text, Nat)])] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    switch (pOps.get(spendTotals, msg.caller)) {
+      case null { [] };
+      case (?agents) {
+        let out = Buffer.Buffer<(Text, [(Text, Nat)])>(8);
+        for ((aid, tokens) in tOps.entries(agents)) {
+          out.add((aid, Iter.toArray(tOps.entries(tokens))));
+        };
+        Buffer.toArray(out);
+      };
+    };
+  };
+
+  // ── Payroll (canister-timer salaries / auto-refill over ICRC-2) ─────────────
+  // The user signs ONE icrc2_approve(spender = THIS canister) on the ledger; the
+  // 5-minute timer below then pulls user-main-account → agent subaccount with
+  // icrc2_transfer_from. The allowance is the hard budget — this canister can
+  // never move more than the user approved, and `setPayrollPaused` is the
+  // per-user kill switch. Exactly-once: nextRunAt advances BEFORE the ledger
+  // await (reentrancy guard), a `pending` Payout keyed (agentId, scheduledAt) is
+  // written first, and created_at_time + memo derive from that key so ledger
+  // TX-window dedup makes retries safe. Failure mode is a MISSED payout
+  // (stalledSince + banner), never a double-pay.
+  public type SalaryMode = { #salary; #refill };
+  public type Salary = {
+    agentId : Text;
+    ledger : Principal;     // ICRC-2 ledger canister
+    token : Text;           // display symbol, e.g. "ICP"
+    amount : Nat;           // per-period pay / refill top-up (base units)
+    fee : Nat;              // ledger fee (base units); auto-corrected on #BadFee
+    lowWatermark : Nat;     // #refill: skip while agent balance >= this
+    periodSecs : Nat;
+    nextRunAt : Int;        // ns
+    mode : SalaryMode;
+    active : Bool;
+    stalledSince : ?Int;    // set on allowance/funds failures until a payout lands
+    lastResult : Text;      // "", "paid", "skip:funded", "running", "retrying", "stalled:*", "failed:*"
+    updatedAt : Int;
+  };
+  public type Payout = {
+    key : Text;             // agentId # "#" # scheduledAt — dedup key AND ledger memo
+    agentId : Text;
+    token : Text;
+    amount : Nat;
+    scheduledAt : Int;      // ns; also the ledger created_at_time (dedup window)
+    status : Text;          // "pending" | "paid" | "failed:<reason>"
+    blockIndex : ?Nat;
+    ts : Int;
+  };
+
+  // Minimal ICRC-1/2 ledger surface used by payroll.
+  type Icrc1Account = { owner : Principal; subaccount : ?Blob };
+  type TransferFromArgs = {
+    spender_subaccount : ?Blob;
+    from : Icrc1Account;
+    to : Icrc1Account;
+    amount : Nat;
+    fee : ?Nat;
+    memo : ?Blob;
+    created_at_time : ?Nat64;
+  };
+  type TransferFromError = {
+    #BadFee : { expected_fee : Nat };
+    #BadBurn : { min_burn_amount : Nat };
+    #InsufficientFunds : { balance : Nat };
+    #InsufficientAllowance : { allowance : Nat };
+    #TooOld;
+    #CreatedInFuture : { ledger_time : Nat64 };
+    #Duplicate : { duplicate_of : Nat };
+    #TemporarilyUnavailable;
+    #GenericError : { error_code : Nat; message : Text };
+  };
+  type LedgerActor = actor {
+    icrc1_balance_of : shared query (Icrc1Account) -> async Nat;
+    icrc2_transfer_from : shared (TransferFromArgs) -> async { #Ok : Nat; #Err : TransferFromError };
+  };
+
+  type SalaryMap = OrderedMap.Map<Text, Salary>;
+  stable var salaries : OrderedMap.Map<Principal, SalaryMap> = pOps.empty<SalaryMap>();
+  stable var payoutLog : OrderedMap.Map<Principal, [Payout]> = pOps.empty<[Payout]>();
+  stable var payrollPausedMap : OrderedMap.Map<Principal, Bool> = pOps.empty<Bool>();
+
+  let PAYROLL_SCAN_SECS : Nat = 300;
+  let MAX_PAYOUTS_KEPT : Nat = 200;
+  // Retry `pending` payouts only inside the ledger's 24h TX window (with slack).
+  let PENDING_RETRY_MAX_NS : Int = 22 * 3600 * 1_000_000_000;
+  // Don't re-attempt a pending created moments ago in this same scan.
+  let PENDING_RETRY_MIN_AGE_NS : Int = 60 * 1_000_000_000;
+
+  func secsToNs(s : Nat) : Int { s * 1_000_000_000 };
+  func salariesOf(p : Principal) : SalaryMap { switch (pOps.get(salaries, p)) { case (?m) m; case null tOps.empty<Salary>() } };
+  func payoutsOf(p : Principal) : [Payout] { switch (pOps.get(payoutLog, p)) { case (?a) a; case null [] } };
+  func isPayrollPaused(p : Principal) : Bool { switch (pOps.get(payrollPausedMap, p)) { case (?b) b; case null false } };
+
+  // Every write helper RE-READS the current map — scanPayroll spans awaits, and
+  // the functional snapshot-put pattern would otherwise clobber concurrent
+  // putSalary / pause edits (adversarial-review amendment).
+  func patchSalary(user : Principal, agentId : Text, f : Salary -> Salary) {
+    let m = salariesOf(user);
+    switch (tOps.get(m, agentId)) {
+      case (?s) { salaries := pOps.put(salaries, user, tOps.put(m, agentId, f(s))) };
+      case null {};
+    };
+  };
+  func appendPayout(user : Principal, po : Payout) {
+    let buf = Buffer.fromArray<Payout>(payoutsOf(user));
+    buf.add(po);
+    while (buf.size() > MAX_PAYOUTS_KEPT) { ignore buf.remove(0) };
+    payoutLog := pOps.put(payoutLog, user, Buffer.toArray(buf));
+  };
+  func setPayoutStatus(user : Principal, key : Text, status : Text, blockIndex : ?Nat) {
+    let out = Array.map<Payout, Payout>(payoutsOf(user), func(po) {
+      if (po.key == key) { { po with status; blockIndex; ts = now() } } else { po };
+    });
+    payoutLog := pOps.put(payoutLog, user, out);
+  };
+  func hasPayout(user : Principal, key : Text) : Bool {
+    switch (Array.find<Payout>(payoutsOf(user), func(po) { po.key == key })) { case (?_) true; case null false };
+  };
+  // Destination = the agent wallet's 32-byte subaccount (wallet-deleted → stall).
+  func agentSubOf(user : Principal, agentId : Text) : ?Blob {
+    switch (tOps.get(walletsOf(user), agentId)) {
+      case null { null };
+      case (?w) {
+        switch (hexToBytes(w.subaccountHex)) {
+          case (?b) { if (b.size() == 32) { ?Blob.fromArray(b) } else { null } };
+          case null { null };
+        };
+      };
+    };
+  };
+
+  func stallSalary(user : Principal, agentId : Text, reason : Text) {
+    patchSalary(user, agentId, func(x) {
+      { x with lastResult = "stalled:" # reason;
+        stalledSince = switch (x.stalledSince) { case (?t) ?t; case null ?now() };
+        updatedAt = now() };
+    });
+  };
+
+  /// One ledger attempt for an already-logged payout. Safe to retry with the
+  /// SAME key: memo + created_at_time make the ledger dedup replays.
+  func executeTransfer(user : Principal, s : Salary, key : Text, scheduledAt : Int, amount : Nat, sub : Blob) : async () {
+    let ledger : LedgerActor = actor (Principal.toText(s.ledger));
+    let args : TransferFromArgs = {
+      spender_subaccount = null;
+      from = { owner = user; subaccount = null };
+      to = { owner = user; subaccount = ?sub };
+      amount = amount;
+      fee = ?s.fee;
+      memo = ?Text.encodeUtf8(key);
+      created_at_time = ?Nat64.fromIntWrap(scheduledAt);
+    };
+    try {
+      let res = await ledger.icrc2_transfer_from(args);
+      // All writes below re-read state (patchSalary / setPayoutStatus do).
+      switch (res) {
+        case (#Ok(block)) {
+          setPayoutStatus(user, key, "paid", ?block);
+          patchSalary(user, s.agentId, func(x) { { x with lastResult = "paid"; stalledSince = null; updatedAt = now() } });
+        };
+        case (#Err(#Duplicate(d))) {
+          // A prior retry already landed — treat as paid.
+          setPayoutStatus(user, key, "paid", ?d.duplicate_of);
+          patchSalary(user, s.agentId, func(x) { { x with lastResult = "paid"; stalledSince = null; updatedAt = now() } });
+        };
+        case (#Err(#BadFee(e))) {
+          // Auto-correct the stored fee and LEAVE the payout pending — the next
+          // scan retries the same key with the right fee (dedup-safe).
+          patchSalary(user, s.agentId, func(x) { { x with fee = e.expected_fee; lastResult = "retrying:fee"; updatedAt = now() } });
+        };
+        case (#Err(#InsufficientAllowance(_))) {
+          setPayoutStatus(user, key, "failed:allowance", null);
+          stallSalary(user, s.agentId, "allowance");
+        };
+        case (#Err(#InsufficientFunds(_))) {
+          setPayoutStatus(user, key, "failed:funds", null);
+          stallSalary(user, s.agentId, "funds");
+        };
+        case (#Err(#TooOld)) {
+          setPayoutStatus(user, key, "failed:expired", null);
+          patchSalary(user, s.agentId, func(x) { { x with lastResult = "failed:expired"; updatedAt = now() } });
+        };
+        case (#Err(_)) {
+          setPayoutStatus(user, key, "failed:ledger", null);
+          stallSalary(user, s.agentId, "ledger");
+        };
+      };
+    } catch (_e) {
+      // Call trapped — outcome UNKNOWN. Leave the payout `pending`; the next
+      // scan retries with the same memo/created_at_time (exactly-once via
+      // ledger dedup). Never mark failed here: it may have landed.
+      patchSalary(user, s.agentId, func(x) { { x with lastResult = "retrying"; updatedAt = now() } });
+    };
+  };
+
+  /// Process one due salary. Re-validates everything from current state (the
+  /// caller's snapshot may be stale after earlier awaits in the same scan).
+  func processDue(user : Principal, agentId : Text) : async () {
+    let s0 = switch (tOps.get(salariesOf(user), agentId)) { case (?s) s; case null { return } };
+    if (not s0.active or isPayrollPaused(user) or s0.nextRunAt > now()) { return };
+    let scheduledAt = s0.nextRunAt;
+    let key = agentId # "#" # Int.toText(scheduledAt);
+    if (hasPayout(user, key)) {
+      // Already handled (e.g. runPayrollNow raced the timer) — just advance.
+      patchSalary(user, agentId, func(x) { { x with nextRunAt = now() + secsToNs(x.periodSecs); updatedAt = now() } });
+      return;
+    };
+    let sub = switch (agentSubOf(user, agentId)) {
+      case (?b) b;
+      case null {
+        patchSalary(user, agentId, func(x) { { x with nextRunAt = now() + secsToNs(x.periodSecs); updatedAt = now() } });
+        stallSalary(user, agentId, "wallet-missing");
+        return;
+      };
+    };
+    var amount = s0.amount;
+    if (s0.mode == #refill) {
+      let ledger : LedgerActor = actor (Principal.toText(s0.ledger));
+      let bal = try { await ledger.icrc1_balance_of({ owner = user; subaccount = ?sub }) } catch (_e) {
+        patchSalary(user, agentId, func(x) { { x with lastResult = "retrying:balance"; updatedAt = now() } });
+        return;
+      };
+      // RE-READ after the await — active/paused/amount may have changed mid-flight.
+      let s1 = switch (tOps.get(salariesOf(user), agentId)) { case (?s) s; case null { return } };
+      if (not s1.active or isPayrollPaused(user) or s1.nextRunAt != scheduledAt) { return };
+      if (bal >= s1.lowWatermark) {
+        patchSalary(user, agentId, func(x) { { x with nextRunAt = now() + secsToNs(x.periodSecs); lastResult = "skip:funded"; stalledSince = null; updatedAt = now() } });
+        return;
+      };
+      amount := s1.amount;
+    };
+    // Reentrancy guard + crash-safe intent: advance nextRunAt and log a
+    // `pending` payout BEFORE the ledger await. Catch-up policy: at most one
+    // period per scan (nextRunAt = now + period, not += period).
+    patchSalary(user, agentId, func(x) { { x with nextRunAt = now() + secsToNs(x.periodSecs); lastResult = "running"; updatedAt = now() } });
+    appendPayout(user, { key; agentId; token = s0.token; amount; scheduledAt; status = "pending"; blockIndex = null; ts = now() });
+    let sNow = switch (tOps.get(salariesOf(user), agentId)) { case (?x) x; case null s0 };
+    await executeTransfer(user, sNow, key, scheduledAt, amount, sub);
+  };
+
+  func scanPayroll() : async () {
+    // Snapshot due pairs; processDue re-validates each against live state.
+    let due = Buffer.Buffer<(Principal, Text)>(8);
+    for ((user, smap) in pOps.entries(salaries)) {
+      if (not isPayrollPaused(user)) {
+        for ((aid, s) in tOps.entries(smap)) {
+          if (s.active and s.nextRunAt <= now()) { due.add((user, aid)) };
+        };
+      };
+    };
+    for ((user, aid) in due.vals()) {
+      try { await processDue(user, aid) } catch (_e) {};
+    };
+    // Retry or expire stale `pending` payouts (left by trapped ledger calls).
+    let stale = Buffer.Buffer<(Principal, Payout)>(4);
+    for ((user, arr) in pOps.entries(payoutLog)) {
+      if (not isPayrollPaused(user)) {
+        for (po in arr.vals()) {
+          if (po.status == "pending" and now() - po.ts > PENDING_RETRY_MIN_AGE_NS) { stale.add((user, po)) };
+        };
+      };
+    };
+    for ((user, po) in stale.vals()) {
+      if (now() - po.scheduledAt > PENDING_RETRY_MAX_NS) {
+        setPayoutStatus(user, po.key, "failed:expired", null);
+      } else {
+        switch (tOps.get(salariesOf(user), po.agentId), agentSubOf(user, po.agentId)) {
+          case (?s, ?sub) { try { await executeTransfer(user, s, po.key, po.scheduledAt, po.amount, sub) } catch (_e) {} };
+          case _ { setPayoutStatus(user, po.key, "failed:orphaned", null) };
+        };
+      };
+    };
+  };
+
+  // Idempotent arming: cancel-then-set, TimerId held in a FLEXIBLE var (dies with
+  // its timer on upgrade — a stale stable flag could otherwise read armed-true
+  // while the timer is dead). postupgrade is the mandatory re-arm point.
+  var payrollTimerId : ?Timer.TimerId = null;
+  func armPayrollTimer<system>() {
+    switch (payrollTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, scanPayroll);
+  };
+  // Fresh install: arm at init. Upgrades: postupgrade (init does not re-run).
+  armPayrollTimer<system>();
+  system func postupgrade() { armPayrollTimer<system>() };
+
+  // ── Payroll public API (caller-keyed, like everything else here) ───────────
+  public shared (msg) func putSalary(
+    agentId : Text, ledgerId : Principal, token : Text, amount : Nat, fee : Nat,
+    lowWatermark : Nat, periodSecs : Nat, mode : SalaryMode, active : Bool,
+  ) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    if (amount == 0) { throw Error.reject("amount must be positive") };
+    if (periodSecs < 60) { throw Error.reject("period too short (min 60s)") };
+    let prev = tOps.get(salariesOf(caller), agentId);
+    // Keep the schedule phase across edits unless the period changed.
+    let nextRunAt = switch (prev) {
+      case (?p) { if (p.periodSecs == periodSecs) { p.nextRunAt } else { now() + secsToNs(periodSecs) } };
+      case null { now() + secsToNs(periodSecs) };
+    };
+    let s : Salary = {
+      agentId; ledger = ledgerId; token; amount; fee; lowWatermark; periodSecs;
+      nextRunAt; mode; active; stalledSince = null;
+      lastResult = switch (prev) { case (?p) p.lastResult; case null "" };
+      updatedAt = now();
+    };
+    salaries := pOps.put(salaries, caller, tOps.put(salariesOf(caller), agentId, s));
+    armPayrollTimer<system>();
+  };
+
+  public shared query (msg) func listSalaries() : async [Salary] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    Iter.toArray(tOps.vals(salariesOf(msg.caller)));
+  };
+
+  public shared (msg) func deleteSalary(agentId : Text) : async Bool {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let m = salariesOf(caller);
+    switch (tOps.get(m, agentId)) {
+      case null { false };
+      case (?_) { salaries := pOps.put(salaries, caller, tOps.delete(m, agentId)); true };
+    };
+  };
+
+  /// Per-user payroll kill switch (independent of setAllSpendPaused).
+  public shared (msg) func setPayrollPaused(paused : Bool) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    payrollPausedMap := pOps.put(payrollPausedMap, caller, paused);
+    if (not paused) { armPayrollTimer<system>() };
+  };
+
+  public shared query (msg) func payrollPaused() : async Bool {
+    if (Principal.isAnonymous(msg.caller)) { return false };
+    isPayrollPaused(msg.caller);
+  };
+
+  public shared query (msg) func listPayouts() : async [Payout] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    payoutsOf(msg.caller);
+  };
+
+  /// Manual "pay now" (smoke tests + catch-up). Respects active + pause switches.
+  public shared (msg) func runPayrollNow(agentId : Text) : async Text {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    switch (tOps.get(salariesOf(caller), agentId)) {
+      case null { "no-salary" };
+      case (?s) {
+        if (not s.active) { return "inactive" };
+        if (isPayrollPaused(caller)) { return "paused" };
+        patchSalary(caller, agentId, func(x) { { x with nextRunAt = now(); updatedAt = now() } });
+        await processDue(caller, agentId);
+        switch (tOps.get(salariesOf(caller), agentId)) { case (?x) x.lastResult; case null "deleted" };
       };
     };
   };

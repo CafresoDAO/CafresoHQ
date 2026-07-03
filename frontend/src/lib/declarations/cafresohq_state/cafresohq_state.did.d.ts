@@ -39,11 +39,38 @@ export interface HttpResponse {
   'streaming_strategy' : [] | [null],
   'status_code' : number,
 }
+export interface Payout {
+  'ts' : bigint,
+  'key' : string,
+  'status' : string,
+  'token' : string,
+  'agentId' : string,
+  'blockIndex' : [] | [bigint],
+  'amount' : bigint,
+  'scheduledAt' : bigint,
+}
 export type PutFileResult = { 'ok' : { 'bytes' : bigint } } |
   { 'err' : string };
 export type PutResult = { 'ok' : { 'version' : bigint } } |
   { 'conflict' : { 'current' : bigint } } |
   { 'quota' : string };
+export interface Salary {
+  'fee' : bigint,
+  'periodSecs' : bigint,
+  'token' : string,
+  'active' : boolean,
+  'mode' : SalaryMode,
+  'stalledSince' : [] | [bigint],
+  'agentId' : string,
+  'lowWatermark' : bigint,
+  'updatedAt' : bigint,
+  'ledger' : Principal,
+  'nextRunAt' : bigint,
+  'lastResult' : string,
+  'amount' : bigint,
+}
+export type SalaryMode = { 'salary' : null } |
+  { 'refill' : null };
 export interface ServiceFlag {
   'enabledAt' : bigint,
   'configJson' : string,
@@ -83,11 +110,13 @@ export interface _SERVICE {
   'cycle_balance' : ActorMethod<[], bigint>,
   'deleteAgentWallet' : ActorMethod<[string], boolean>,
   'deleteHqDoc' : ActorMethod<[string], boolean>,
+  'deleteSalary' : ActorMethod<[string], boolean>,
   'deleteSite' : ActorMethod<[string], bigint>,
   'deleteVault' : ActorMethod<[string], boolean>,
   'getAgentWallet' : ActorMethod<[string], [] | [AgentWallet]>,
   'getHqDoc' : ActorMethod<[string], [] | [HqDoc]>,
   'getServiceFlag' : ActorMethod<[string], [] | [ServiceFlag]>,
+  'getSpendTotals' : ActorMethod<[], Array<[string, Array<[string, bigint]>]>>,
   'getVaultChunk' : ActorMethod<[string, bigint], [] | [Uint8Array | number[]]>,
   'getVaultMeta' : ActorMethod<[string], [] | [VaultMeta]>,
   'hqVersion' : ActorMethod<[], bigint>,
@@ -96,9 +125,12 @@ export interface _SERVICE {
   'listAgentWallets' : ActorMethod<[], Array<AgentWallet>>,
   'listHqDocs' : ActorMethod<[], Array<DocSummary>>,
   'listMySites' : ActorMethod<[], Array<SiteSummary>>,
+  'listPayouts' : ActorMethod<[], Array<Payout>>,
+  'listSalaries' : ActorMethod<[], Array<Salary>>,
   'listServiceFlags' : ActorMethod<[], Array<ServiceFlag>>,
   'mySiteBytes' : ActorMethod<[], bigint>,
   'myUsage' : ActorMethod<[], Usage>,
+  'payrollPaused' : ActorMethod<[], boolean>,
   'planConfigured' : ActorMethod<[], boolean>,
   'putAgentWallet' : ActorMethod<
     [string, string, string, bigint, bigint, boolean],
@@ -107,6 +139,20 @@ export interface _SERVICE {
   'putHqDoc' : ActorMethod<
     [string, Uint8Array | number[], Uint8Array | number[], bigint],
     PutResult
+  >,
+  'putSalary' : ActorMethod<
+    [
+      string,
+      Principal,
+      string,
+      bigint,
+      bigint,
+      bigint,
+      bigint,
+      SalaryMode,
+      boolean,
+    ],
+    undefined
   >,
   'putServiceFlag' : ActorMethod<[string, boolean, string], undefined>,
   'putSiteFile' : ActorMethod<
@@ -122,8 +168,10 @@ export interface _SERVICE {
     PutResult
   >,
   'recordSpend' : ActorMethod<[string, bigint], SpendResult>,
+  'runPayrollNow' : ActorMethod<[string], string>,
   'sealVault' : ActorMethod<[string, bigint], PutResult>,
   'setAllSpendPaused' : ActorMethod<[boolean], undefined>,
+  'setPayrollPaused' : ActorMethod<[boolean], undefined>,
   'setPlan' : ActorMethod<[string], boolean>,
   'setPlanSecret' : ActorMethod<[string], undefined>,
   'spendPausedAll' : ActorMethod<[], boolean>,

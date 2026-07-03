@@ -15,8 +15,9 @@
 
 import { Principal } from '@dfinity/principal';
 import { sha224 } from '@noble/hashes/sha256';
-import { getBalance, transfer, toRawAmount, TOKENS } from '$lib/api/icrc1.js';
-import { getStateActor, stateCanisterConfigured } from '$lib/api/stateActor.js';
+import { getBalance, transfer, toRawAmount, getFee, approve, getAllowance, TOKENS } from '$lib/api/icrc1.js';
+import { getStateActor, stateCanisterConfigured, stateCanisterId } from '$lib/api/stateActor.js';
+import { get as _get } from 'svelte/store';
 
 // ── Deterministic per-agent subaccount ───────────────────────────────────────
 const SUBACCOUNT_CTX = 'cafresohq-agent-wallet-v1';
@@ -233,4 +234,127 @@ export async function agentSend({ principalText, agentId, tokenKey, amount, to, 
   const res = await transfer({ tokenKey, toPrincipalText: to, amount, fromSubaccount: sub, memoText: memo });
   if (res.err) return { status: 'error', error: res.err };
   return { status: 'ok', block: res.ok };
+}
+
+// ── Payroll (Sprint 2: canister-timer salaries over a user-signed allowance) ──
+// The user approves the STATE CANISTER as ICRC-2 spender; its 5-min timer then
+// pulls user main account → agent subaccount. The allowance is the hard budget.
+
+const variantKey = (v) => (v && typeof v === 'object' ? Object.keys(v)[0] : String(v ?? ''));
+const salaryOut = (s) =>
+  s && {
+    agentId: s.agentId,
+    ledger: s.ledger?.toText ? s.ledger.toText() : String(s.ledger),
+    token: s.token,
+    amount: s.amount.toString(),
+    fee: s.fee.toString(),
+    lowWatermark: s.lowWatermark.toString(),
+    periodSecs: Number(s.periodSecs),
+    nextRunAt: s.nextRunAt.toString(),
+    mode: variantKey(s.mode),
+    active: s.active,
+    stalledSince: Array.isArray(s.stalledSince) ? (s.stalledSince[0]?.toString() ?? null) : null,
+    lastResult: s.lastResult,
+    updatedAt: s.updatedAt.toString()
+  };
+const payoutOut = (p) =>
+  p && {
+    key: p.key,
+    agentId: p.agentId,
+    token: p.token,
+    amount: p.amount.toString(),
+    scheduledAt: p.scheduledAt.toString(),
+    status: p.status,
+    blockIndex: Array.isArray(p.blockIndex) ? (p.blockIndex[0]?.toString() ?? null) : null,
+    ts: p.ts.toString()
+  };
+
+/** Create/update a salary. Amounts in WHOLE token units; fee auto-read from the ledger. */
+export async function putSalary({ agentId, tokenKey, amount, lowWatermark = 0, periodSecs, mode = 'salary', active = true }) {
+  const token = TOKENS[tokenKey];
+  if (!token) throw new Error(`Unknown token: ${tokenKey}`);
+  const fee = (await getFee(tokenKey)) ?? 10_000n;
+  const a = await getStateActor();
+  await a.putSalary(
+    agentId,
+    Principal.fromText(token.canister),
+    token.symbol,
+    toRawAmount(tokenKey, amount),
+    BigInt(fee),
+    toRawAmount(tokenKey, lowWatermark),
+    BigInt(periodSecs),
+    mode === 'refill' ? { refill: null } : { salary: null },
+    !!active
+  );
+  return true;
+}
+export async function listSalaries() {
+  if (!stateCanisterConfigured()) return [];
+  try {
+    return (await (await getStateActor()).listSalaries()).map(salaryOut);
+  } catch (e) {
+    console.warn('[walletServices] listSalaries failed', e);
+    return [];
+  }
+}
+export async function deleteSalary(agentId) {
+  return (await getStateActor()).deleteSalary(agentId);
+}
+export async function setPayrollPaused(paused) {
+  return (await getStateActor()).setPayrollPaused(!!paused);
+}
+export async function payrollPaused() {
+  if (!stateCanisterConfigured()) return false;
+  try {
+    return await (await getStateActor()).payrollPaused();
+  } catch {
+    return false;
+  }
+}
+export async function listPayouts() {
+  if (!stateCanisterConfigured()) return [];
+  try {
+    return (await (await getStateActor()).listPayouts()).map(payoutOut);
+  } catch (e) {
+    console.warn('[walletServices] listPayouts failed', e);
+    return [];
+  }
+}
+export async function runPayrollNow(agentId) {
+  return (await getStateActor()).runPayrollNow(agentId);
+}
+
+/**
+ * Sign the payroll budget: icrc2_approve(spender = state canister). REAL
+ * signature — only call from an explicit user confirmation in the shell.
+ * `amount` in whole units. Remember: approve OVERWRITES the prior allowance,
+ * and each pull burns amount + fee of allowance — size as spend + pulls × fee.
+ */
+export async function approvePayroll({ tokenKey, amount, expiresAtMs = null, noExpiry = false }) {
+  const spender = _get(stateCanisterId);
+  if (!spender) return { err: 'state canister not configured' };
+  return approve({ tokenKey, spenderPrincipalText: spender, amount, expiresAtMs, noExpiry });
+}
+/** Current payroll allowance → { allowance, expiresAtNs } (BigInts) or null. */
+export async function payrollAllowance({ tokenKey, ownerPrincipalText }) {
+  const spender = _get(stateCanisterId);
+  if (!spender) return null;
+  return getAllowance({ tokenKey, ownerPrincipalText, spenderPrincipalText: spender });
+}
+
+/** Lifetime recorded agent spend → { [agentId]: { [token]: rawString } }. */
+export async function getSpendTotals() {
+  if (!stateCanisterConfigured()) return {};
+  try {
+    const rows = await (await getStateActor()).getSpendTotals();
+    const out = {};
+    for (const [agentId, tokens] of rows) {
+      out[agentId] = {};
+      for (const [tok, n] of tokens) out[agentId][tok] = n.toString();
+    }
+    return out;
+  } catch (e) {
+    console.warn('[walletServices] getSpendTotals failed', e);
+    return {};
+  }
 }

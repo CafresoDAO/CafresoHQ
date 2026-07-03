@@ -582,6 +582,15 @@ function AgentWalletCard({ agent }) {
   const chain = () => window.CafresoHQChain;
   const agentId = agent.id || agent.name;
 
+  // Payroll (Sprint 2): a standing salary/refill the state canister's timer
+  // pays from the user's main account under the signed ICRC-2 budget below.
+  const [sal, setSal] = useStateM(null);
+  const [payMode, setPayMode] = useStateM('salary');
+  const [payAmt, setPayAmt] = useStateM('0.01');
+  const [payTok, setPayTok] = useStateM('ICP');
+  const [payHrs, setPayHrs] = useStateM('24');
+  const [payWm, setPayWm] = useStateM('0.05');
+
   const load = async () => {
     try {
       const p = await chain().wallet.policy(agentId);
@@ -592,6 +601,18 @@ function AgentWalletCard({ agent }) {
         setCapHrs(String(Math.round((p.windowSecs || 0) / 3600) || 24));
       }
     } catch (_e) { /* not deployed / not signed in — leave defaults */ }
+    try {
+      const pr = await chain().payroll.list();
+      const s = (pr.salaries || []).find(x => x.agentId === agentId) || null;
+      setSal(s);
+      if (s) {
+        const dec = WALLET_TOKEN_DECIMALS[s.token] ?? 8;
+        setPayTok(s.token); setPayMode(s.mode);
+        setPayAmt(fromBaseUnits(s.amount, dec));
+        setPayHrs(String(Math.round(s.periodSecs / 3600) || 24));
+        setPayWm(fromBaseUnits(s.lowWatermark, dec));
+      }
+    } catch (_e) { /* canister not upgraded yet — payroll row still usable later */ }
   };
   useEffectM(() => { load(); }, []);
 
@@ -641,6 +662,36 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
 
+  const savePay = async () => {
+    setBusy('pay'); setMsg('');
+    try {
+      await chain().payroll.put({
+        agentId, token: payTok, amount: parseFloat(payAmt) || 0,
+        periodSecs: Math.max(60, Math.round(parseFloat(payHrs || '0') * 3600)),
+        lowWatermark: payMode === 'refill' ? (parseFloat(payWm) || 0) : 0,
+        mode: payMode, active: true,
+      });
+      setMsg('Payroll saved — first run in one period. Make sure a payroll budget is signed below.');
+      await load();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const payNow = async () => {
+    setBusy('paynow'); setMsg('');
+    try {
+      const r = await chain().payroll.run(agentId);
+      setMsg(`Payroll run: ${r}`);
+      await load(); await refreshBalances();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const stopPay = async () => {
+    setBusy('paystop'); setMsg('');
+    try { await chain().payroll.remove(agentId); setSal(null); setMsg('Payroll stopped.'); }
+    catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+
   const toks = Object.keys(WALLET_TOKEN_DECIMALS);
   return (
     <div className="cb-panel icp-wallet-card">
@@ -678,8 +729,123 @@ function AgentWalletCard({ agent }) {
             {toks.map(t => <div key={t}>{t}: <b>{bals[t] == null ? '—' : fromBaseUnits(bals[t], WALLET_TOKEN_DECIMALS[t])}</b></div>)}
           </div>
         )}
+        <div className="row-knob icp-in-row" style={{ flexWrap: 'wrap' }}>
+          <span className="lbl">Payroll</span>
+          <select value={payMode} onChange={e => setPayMode(e.target.value)}>
+            <option value="salary">salary</option>
+            <option value="refill">refill</option>
+          </select>
+          <input className="icp-in" style={{ width: 56 }} value={payAmt} onChange={e => setPayAmt(e.target.value)} />
+          <select value={payTok} onChange={e => setPayTok(e.target.value)}>{toks.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <span className="tiny">per</span>
+          <input className="icp-in" style={{ width: 40 }} value={payHrs} onChange={e => setPayHrs(e.target.value)} />
+          <span className="tiny">h</span>
+          {payMode === 'refill' && (<>
+            <span className="tiny">below</span>
+            <input className="icp-in" style={{ width: 56 }} value={payWm} onChange={e => setPayWm(e.target.value)} />
+          </>)}
+          <button className="px-btn primary" style={{ fontSize: 8 }} disabled={busy === 'pay'} onClick={savePay}>{sal ? 'SAVE' : 'START'}</button>
+          {sal && <button className="px-btn" style={{ fontSize: 8 }} disabled={busy === 'paynow'} onClick={payNow}>⚡ NOW</button>}
+          {sal && <button className="px-btn danger" style={{ fontSize: 8 }} disabled={busy === 'paystop'} onClick={stopPay}>✕ STOP</button>}
+        </div>
+        {sal && sal.stalledSince && (
+          <div className="tiny" style={{ color: '#c44' }}>
+            ⚠ PAYROLL STALLED ({sal.lastResult}) — sign or top up the payroll budget below, then ⚡ NOW.
+          </div>
+        )}
+        {sal && !sal.stalledSince && sal.lastResult && (
+          <div className="tiny" style={{ opacity: .7 }}>payroll: {sal.lastResult} · {sal.mode}</div>
+        )}
         {msg && <div className="tiny" style={{ color: 'var(--accent-leaf)' }}>{msg}</div>}
       </div>
+    </div>
+  );
+}
+
+/* Payroll budget = the ONE real signature (icrc2_approve, spender = the state
+   canister). It is the hard ceiling on everything the payroll timer can move;
+   the shell shows a confirm dialog before signing. Start tiny (0.05 ICP). */
+function PayrollBudgetPanel() {
+  const [allow, setAllow] = useStateM(null);
+  const [rows, setRows] = useStateM([]);
+  const [paused, setPaused] = useStateM(false);
+  const [tok, setTok] = useStateM('ICP');
+  const [amt, setAmt] = useStateM('0.05');
+  const [days, setDays] = useStateM('30');
+  const [busy, setBusy] = useStateM('');
+  const [msg, setMsg] = useStateM('');
+  const chain = () => window.CafresoHQChain;
+
+  const load = async () => {
+    try {
+      const [a, po, pr] = await Promise.all([
+        chain().payroll.allowance(tok),
+        chain().payroll.payouts(),
+        chain().payroll.list(),
+      ]);
+      setAllow(a || null);
+      setRows((po || []).slice(-6).reverse());
+      setPaused(!!pr.paused);
+    } catch (_e) { /* canister not upgraded yet */ }
+  };
+  useEffectM(() => { load(); }, [tok]);
+
+  const approve = async () => {
+    setBusy('appr'); setMsg('');
+    try {
+      const r = await chain().payroll.approve(tok, parseFloat(amt) || 0, parseInt(days, 10) || 0);
+      setMsg(r.status === 'ok' ? `Budget signed (block ${r.block}).`
+        : r.status === 'declined' ? 'Declined in the shell.'
+        : `Failed: ${r.error || '?'}`);
+      await load();
+    } catch (e) { setMsg(String(e.message || e)); }
+    setBusy('');
+  };
+  const togglePause = async () => {
+    try { await chain().payroll.pause(!paused); setPaused(!paused); }
+    catch (e) { setMsg(String(e.message || e)); }
+  };
+
+  const dec = (t) => WALLET_TOKEN_DECIMALS[t] ?? 8;
+  const toks = Object.keys(WALLET_TOKEN_DECIMALS);
+  return (
+    <div className="cb-panel icp-wallet-card">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="lbl">🏦 PAYROLL BUDGET</span>
+        <button className={`px-btn ${paused ? 'primary' : 'secondary'}`} style={{ fontSize: 8 }} onClick={togglePause}>
+          {paused ? '▶ RESUME PAYROLL' : '⏸ PAUSE PAYROLL'}
+        </button>
+      </div>
+      <div className="sub" style={{ marginTop: 4 }}>
+        One signature caps everything payroll can move. Allowance left:{' '}
+        <b>{allow ? `${fromBaseUnits(allow.allowance, dec(tok))} ${tok}` : '— none signed —'}</b>
+        {allow?.expiresAtNs ? <span className="tiny"> (expires {new Date(Number(BigInt(allow.expiresAtNs) / BigInt(1000000))).toLocaleDateString()})</span> : null}
+      </div>
+      <div className="row-knob icp-in-row" style={{ marginTop: 6 }}>
+        <span className="lbl">Approve</span>
+        <input className="icp-in" style={{ width: 66 }} value={amt} onChange={e => setAmt(e.target.value)} />
+        <select value={tok} onChange={e => setTok(e.target.value)}>{toks.map(t => <option key={t} value={t}>{t}</option>)}</select>
+        <span className="tiny">for</span>
+        <input className="icp-in" style={{ width: 40 }} value={days} onChange={e => setDays(e.target.value)} />
+        <span className="tiny">days</span>
+        <button className="px-btn primary" style={{ fontSize: 8 }} disabled={busy === 'appr'} onClick={approve}>✍ SIGN</button>
+      </div>
+      <div className="tiny" style={{ opacity: .7, marginTop: 2 }}>
+        Replaces the previous budget. Each payout also burns one ledger fee of allowance — size it as pay + runs × fee.
+      </div>
+      {rows.length > 0 && (
+        <div className="stack" style={{ marginTop: 6 }}>
+          <span className="lbl">Recent payouts</span>
+          {rows.map(p => (
+            <div key={p.key} className="tiny">
+              {p.status === 'paid' ? '✓' : p.status === 'pending' ? '…' : '✗'}{' '}
+              {p.agentId} · {fromBaseUnits(p.amount, dec(p.token))} {p.token} · {p.status}
+              {p.blockIndex != null ? ` · block ${p.blockIndex}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+      {msg && <div className="tiny" style={{ color: 'var(--accent-leaf)' }}>{msg}</div>}
     </div>
   );
 }
@@ -767,6 +933,7 @@ function IcpServicesPanel({ agents }) {
             <div><div className="lbl">Pause all agent spending</div><div className="sub">Global kill switch — blocks every agent send</div></div>
             <div className={`pxswitch ${pausedAll ? 'on' : ''}`} onClick={togglePauseAll}><div className="nub" /></div>
           </div>
+          <PayrollBudgetPanel />
           {walletAgents.length === 0
             ? <div className="muted" style={{ marginTop: 6 }}>Grant an agent the <b>ICP Wallet</b> tool in <b>Roster</b> to give it a wallet.</div>
             : walletAgents.map(a => <AgentWalletCard key={a.id} agent={a} />)}

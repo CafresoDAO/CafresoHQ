@@ -12,7 +12,9 @@
     setAllSpendPaused, spendPausedAll,
     agentBalances, fundAgent, agentSend,
     deriveAgentSubaccount, subaccountToHex,
-    encodeIcrcAccountText, legacyAccountIdText
+    encodeIcrcAccountText, legacyAccountIdText,
+    putSalary, listSalaries, deleteSalary, setPayrollPaused, payrollPaused,
+    listPayouts, runPayrollNow, approvePayroll, payrollAllowance, getSpendTotals
   } from '$lib/api/walletServices.js';
   import { sitesConfigured, publishSiteToCanister, listMySites } from '$lib/api/sitesActor.js';
   import { listHqDocs } from '$lib/api/stateSync.js';
@@ -309,6 +311,64 @@
           });
           break;
         }
+
+        // ── Payroll (Sprint 2) — the canister timer pays under a user-signed
+        // ICRC-2 allowance. Policy writes are unsigned config; the ONE real
+        // signature (icrc2_approve) is gated by an explicit confirm below.
+        case 'chain:payroll:list':
+          reply({
+            type: 'chain:payroll:list:response',
+            salaries: await listSalaries(), paused: await payrollPaused()
+          });
+          break;
+        case 'chain:payroll:put':
+          await putSalary({
+            agentId: d.agentId, tokenKey: d.token || 'ICP', amount: d.amount,
+            lowWatermark: d.lowWatermark || 0, periodSecs: d.periodSecs,
+            mode: d.mode === 'refill' ? 'refill' : 'salary', active: d.active !== false
+          });
+          reply({ type: 'chain:payroll:put:response', agentId: d.agentId, ok: true });
+          break;
+        case 'chain:payroll:delete':
+          reply({ type: 'chain:payroll:delete:response', agentId: d.agentId, ok: await deleteSalary(d.agentId) });
+          break;
+        case 'chain:payroll:pause':
+          await setPayrollPaused(!!d.paused);
+          reply({ type: 'chain:payroll:pause:response', paused: !!d.paused });
+          break;
+        case 'chain:payroll:payouts':
+          reply({ type: 'chain:payroll:payouts:response', payouts: await listPayouts() });
+          break;
+        case 'chain:payroll:run':
+          reply({ type: 'chain:payroll:run:response', agentId: d.agentId, result: await runPayrollNow(d.agentId) });
+          break;
+        case 'chain:payroll:allowance':
+          reply({
+            type: 'chain:payroll:allowance:response', token: d.token || 'ICP',
+            allowance: await payrollAllowance({ tokenKey: d.token || 'ICP', ownerPrincipalText: p })
+          });
+          break;
+        case 'chain:payroll:approve': {
+          // REAL signature — never auto-signed off an iframe request. Note the
+          // allowance OVERWRITES the previous one; it is the payroll hard budget.
+          const days = Number(d.expiresDays) || 0;
+          const ok = typeof window !== 'undefined' && window.confirm(
+            `Approve the HQ payroll canister to move up to ${d.amount} ${d.token || 'ICP'} ` +
+            `from your main account${days ? ` for ${days} days` : ' (no expiry)'}?\n\n` +
+            `This REPLACES any previous payroll allowance and is the hard budget — ` +
+            `the canister can never move more than this.`
+          );
+          if (!ok) { reply({ type: 'chain:payroll:approve:response', status: 'declined' }); break; }
+          const res = await approvePayroll({
+            tokenKey: d.token || 'ICP', amount: d.amount,
+            expiresAtMs: days ? Date.now() + days * 86_400_000 : null, noExpiry: !days
+          });
+          reply({ type: 'chain:payroll:approve:response', ...(res.err ? { status: 'error', error: res.err } : { status: 'ok', block: res.ok }) });
+          break;
+        }
+        case 'chain:wallet:totals':
+          reply({ type: 'chain:wallet:totals:response', totals: await getSpendTotals() });
+          break;
 
         // ── BYOK keychain: ciphertext lives on-chain, crypto happens HERE ───
         // (plaintext keys cross postMessage shell→iframe only — same exposure

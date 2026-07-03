@@ -2967,8 +2967,8 @@ ${d.text}` : d.text,
      unexplained credits: activity-ticker line + cafresohq:moneyEvent (the
      office turns that into Tip Rain). Windows where WE moved funds
      (WALLET_SEND, self-funding) only re-baseline — naive deltas can't be
-     trusted there; exact sender attribution via the ICP index canister
-     arrives with Sprint-2 payroll. */
+     trusted there. Sprint 2: payroll payouts are checked FIRST — a payday
+     credit celebrates as kind:'payday' and never misclassifies as a tip. */
   const TIP_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
   const fmtTokenAmount = (raw, token) => {
     const dec = TIP_DECIMALS[token] ?? 8;
@@ -2980,6 +2980,9 @@ ${d.text}` : d.text,
   const [walletBaseline, setWalletBaseline] = useStored(k('walletBaseline'), {});
   const walletBaselineRef = useRefA(walletBaseline); walletBaselineRef.current = walletBaseline;
   const walletDirtyRef = useRefA({});
+  // Payout keys we've already celebrated (persisted so reloads don't replay paydays).
+  const [payoutSeen, setPayoutSeen] = useStored(k('payoutSeen'), {});
+  const payoutSeenRef = useRefA(payoutSeen); payoutSeenRef.current = payoutSeen;
   useEffectA(() => {
     const markToolMove = (e) => {
       const d = e.detail || {};
@@ -3003,6 +3006,37 @@ ${d.text}` : d.text,
       if (dead || polling || document.hidden) return;
       polling = true;
       try {
+        // Paydays first: any newly-PAID payroll payout celebrates as 'payday'
+        // and marks its agent dirty so the balance jump only re-baselines
+        // below (never double-counted as a tip).
+        if (chain.payroll) {
+          const payouts = await chain.payroll.payouts().catch(() => []);
+          const seenUpd = {};
+          for (const po of payouts || []) {
+            const prevStatus = payoutSeenRef.current[po.key];
+            if (prevStatus === po.status) continue;
+            seenUpd[po.key] = po.status;
+            if (po.status === 'paid' && prevStatus !== 'paid') {
+              walletDirtyRef.current[po.agentId] = true;
+              if (prevStatus !== undefined || Object.keys(payoutSeenRef.current).length > 0) {
+                // (first-ever sync just records history without a replay parade)
+                const who = agentsRef.current.find((a) => a.id === po.agentId);
+                const amount = fmtTokenAmount(BigInt(po.amount), po.token);
+                logActivity({
+                  agentId: po.agentId, agentName: who ? who.name : po.agentId,
+                  action: 'payday', text: `payday! +${amount} ${po.token} salary landed`, priority: 'attention',
+                });
+                window.dispatchEvent(new CustomEvent('cafresohq:moneyEvent', {
+                  detail: {
+                    kind: 'payday', agentId: po.agentId, agentName: who && who.name,
+                    agentColor: who && who.color, token: po.token, amount, amountRaw: po.amount,
+                  },
+                }));
+              }
+            }
+          }
+          if (Object.keys(seenUpd).length) setPayoutSeen((s) => ({ ...s, ...seenUpd }));
+        }
         const wallets = await chain.wallet.list();
         for (const w of wallets || []) {
           if (dead) break;

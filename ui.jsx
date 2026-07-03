@@ -1779,13 +1779,13 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   /* ── Tip Rain — money events land as coins on the earning agent's desk.
      Fed by the app-level tip watcher via cafresohq:moneyEvent. Reduced-motion
      users get a static "+X TOKEN" chip instead (CSS side). */
-  const [tipRain, setTipRain] = React.useState({});   // agentId -> {amount, token}
+  const [tipRain, setTipRain] = React.useState({});   // agentId -> {amount, token, kind}
   React.useEffect(() => {
     const timers = new Map();
     const onMoney = (e) => {
       const d = e.detail || {};
-      if (!d.agentId || d.kind !== 'tip') return;
-      setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token } }));
+      if (!d.agentId || (d.kind !== 'tip' && d.kind !== 'payday')) return;
+      setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token, kind: d.kind } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
       timers.set(d.agentId, setTimeout(() => {
         setTipRain(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
@@ -1806,13 +1806,47 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     } catch (_e) { return false; }
   })();
   const [plWallets, setPlWallets] = React.useState(null);
+  // Sprint 2: EARNED (paid payouts, + tips/paydays seen live) vs SPENT
+  // (lifetime on-chain spendTotals) → NET per agent. Advisory display only —
+  // the caps + allowance remain the enforcement.
+  const [plTotals, setPlTotals] = React.useState(null); // agentId -> {token, earnedRaw, spentRaw} (BigInt)
   React.useEffect(() => {
     if (!walletServiceOn || isMobileOffice) return;
     let dead = false;
-    window.CafresoHQChain.wallet.list()
-      .then(ws => { if (!dead) setPlWallets(ws || []); })
-      .catch(() => { if (!dead) setPlWallets([]); });
-    return () => { dead = true; };
+    (async () => {
+      try {
+        const chain = window.CafresoHQChain;
+        const [ws, totals, payouts] = await Promise.all([
+          chain.wallet.list(),
+          chain.wallet.totals ? chain.wallet.totals().catch(() => ({})) : {},
+          chain.payroll ? chain.payroll.payouts().catch(() => []) : [],
+        ]);
+        if (dead) return;
+        setPlWallets(ws || []);
+        const t = {};
+        for (const w of ws || []) {
+          const tok = w.token || 'ICP';
+          let earned = BigInt(0);
+          for (const po of payouts || []) {
+            if (po.agentId === w.agentId && po.token === tok && po.status === 'paid') earned += BigInt(po.amount);
+          }
+          t[w.agentId] = { token: tok, earnedRaw: earned, spentRaw: BigInt((totals[w.agentId] && totals[w.agentId][tok]) || 0) };
+        }
+        setPlTotals(t);
+      } catch (_e) { if (!dead) setPlWallets([]); }
+    })();
+    const onMoney = (e) => {
+      const d = e.detail || {};
+      if (!d.agentId || !d.amountRaw) return;
+      setPlTotals(prev => {
+        if (!prev || !prev[d.agentId]) return prev;
+        const cur = prev[d.agentId];
+        if (d.token !== cur.token) return prev;
+        return { ...prev, [d.agentId]: { ...cur, earnedRaw: cur.earnedRaw + BigInt(d.amountRaw) } };
+      });
+    };
+    window.addEventListener('cafresohq:moneyEvent', onMoney);
+    return () => { dead = true; window.removeEventListener('cafresohq:moneyEvent', onMoney); };
   }, [walletServiceOn]);
   const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
   const plFmt = (raw, token) => {
@@ -1972,13 +2006,23 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             <span className="wall-zone" style={{ left: '42%' }} aria-hidden="true">TEAM FLOOR</span>
             {anyLive && <span className="wall-live" title="An agent is working right now">● {vocab.live}</span>}
             {walletServiceOn && plWallets && plWallets.length > 0 && (
-              <div className="pl-frame" title="Agent wallets — spent this window / cap (on-chain)">
+              <div className="pl-frame" title="Agent P&L — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
                 <div className="pl-title">◈ AGENT P&L</div>
                 {plWallets.slice(0, 3).map(w => {
                   const who = agents.find(x => x.id === w.agentId);
+                  const name = (who ? who.name : w.agentId).slice(0, 8);
+                  const t = plTotals && plTotals[w.agentId];
+                  if (!t) {
+                    return (
+                      <div key={w.agentId} className="pl-row">
+                        {name} {plFmt(w.windowSpent, w.token)}/{plFmt(w.spendCap, w.token)} {w.token}
+                      </div>
+                    );
+                  }
+                  const net = t.earnedRaw - t.spentRaw;
                   return (
                     <div key={w.agentId} className="pl-row">
-                      {(who ? who.name : w.agentId).slice(0, 8)} {plFmt(w.windowSpent, w.token)}/{plFmt(w.spendCap, w.token)} {w.token}
+                      {name} ▲{plFmt(t.earnedRaw, t.token)} ▼{plFmt(t.spentRaw, t.token)} ={net < BigInt(0) ? '-' : ''}{plFmt(net < BigInt(0) ? -net : net, t.token)} {t.token}
                     </div>
                   );
                 })}
@@ -2150,7 +2194,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   {Array.from({ length: 7 }, (_, ci) => (
                     <span key={ci} className="tip-coin" style={{ left: `${8 + ci * 13}%`, animationDelay: `${ci * 0.18}s` }}>◉</span>
                   ))}
-                  <div className="tip-amount">+{tipRain[a.id].amount} {tipRain[a.id].token}</div>
+                  <div className="tip-amount">
+                    {tipRain[a.id].kind === 'payday' ? '💰 PAYDAY ' : ''}+{tipRain[a.id].amount} {tipRain[a.id].token}
+                  </div>
                 </div>
               )}
               <div className="sprite-slot">
