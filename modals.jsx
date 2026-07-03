@@ -617,6 +617,9 @@ function AgentWalletCard({ agent }) {
   const fund = async () => {
     setBusy('fund'); setMsg('');
     try {
+      // Tell the tip watcher this credit is OURS before it can land on-chain —
+      // a self-funded top-up must not rain coins as a "tip".
+      try { window.dispatchEvent(new CustomEvent('cafresohq:walletLocalMove', { detail: { agentId } })); } catch (_e) {}
       const r = await chain().wallet.fund(agentId, fundTok, fundAmt);
       setMsg(r && r.ok != null ? `Funded (block ${r.ok}).` : (r && r.err ? `Fund failed: ${r.err}` : 'Fund sent.'));
       await refreshBalances();

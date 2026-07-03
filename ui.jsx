@@ -1776,6 +1776,25 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   }, []);
   const anyLive = Object.keys(liveTools).length > 0;
 
+  /* ── Tip Rain — money events land as coins on the earning agent's desk.
+     Fed by the app-level tip watcher via cafresohq:moneyEvent. Reduced-motion
+     users get a static "+X TOKEN" chip instead (CSS side). */
+  const [tipRain, setTipRain] = React.useState({});   // agentId -> {amount, token}
+  React.useEffect(() => {
+    const timers = new Map();
+    const onMoney = (e) => {
+      const d = e.detail || {};
+      if (!d.agentId || d.kind !== 'tip') return;
+      setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token } }));
+      const t = timers.get(d.agentId); if (t) clearTimeout(t);
+      timers.set(d.agentId, setTimeout(() => {
+        setTipRain(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
+      }, 4200));
+    };
+    window.addEventListener('cafresohq:moneyEvent', onMoney);
+    return () => { window.removeEventListener('cafresohq:moneyEvent', onMoney); timers.forEach(clearTimeout); };
+  }, []);
+
   /* ── Wall P&L board — agent wallet spend/cap (on-chain policy, one bridge
      call). Only when the Wallet ICP-Service is installed AND we're inside
      the shell that can reach the chain. */
@@ -2124,6 +2143,14 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               {liveTool && !awayMeeting && !awayCooler && (
                 <div className="tool-chip" aria-hidden="true">
                   ⚙ {String(liveTool.name || '').replace(/_/g, ' ').toLowerCase()}
+                </div>
+              )}
+              {tipRain[a.id] && (
+                <div className="tip-rain" aria-hidden="true">
+                  {Array.from({ length: 7 }, (_, ci) => (
+                    <span key={ci} className="tip-coin" style={{ left: `${8 + ci * 13}%`, animationDelay: `${ci * 0.18}s` }}>◉</span>
+                  ))}
+                  <div className="tip-amount">+{tipRain[a.id].amount} {tipRain[a.id].token}</div>
                 </div>
               )}
               <div className="sprite-slot">

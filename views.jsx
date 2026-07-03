@@ -6045,6 +6045,201 @@ const _uuid = () =>
         const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> (c === 'x' ? 0 : 2);
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
+/* ── hqsh — the HQ canister shell ────────────────────────────────────────────
+   A REPL session type inside the Terminal (NOT a PTY): canister reads/writes
+   need the Internet Identity, which lives browser-side behind the
+   CafresoHQChain bridge — so `hq` commands resolve here, never in the
+   container shell. Commands live in an extensible registry so later sprints
+   (payroll, receipts, night shift) just append entries. */
+const HQSH_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+function _hqshFmt(raw, token) {
+  try {
+    const dec = HQSH_DECIMALS[token] ?? 8;
+    const s = BigInt(raw).toString().padStart(dec + 1, '0');
+    const whole = s.slice(0, -dec) || '0';
+    const frac = s.slice(-dec).replace(/0+$/, '');
+    return (frac ? `${whole}.${frac}` : whole) + ` ${token}`;
+  } catch (_e) { return `${raw} ${token} (raw)`; }
+}
+const HQSH_COMMANDS = {
+  help: {
+    help: 'help — list commands',
+    run: async () => Object.values(HQSH_COMMANDS).map(c => '  hq ' + c.help).join('\n'),
+  },
+  whoami: {
+    help: 'whoami — your Internet Identity principal',
+    run: async (chain) => await chain.whoami(),
+  },
+  wallets: {
+    help: 'wallets — agent wallet policies (cap / spent / paused)',
+    run: async (chain) => {
+      const ws = await chain.wallet.list();
+      if (!ws.length) return '(no agent wallets — Settings → ICP Services → Agent Wallet)';
+      return ws.map(w =>
+        `  ${w.agentId}  ${_hqshFmt(w.windowSpent, w.token)} spent / ${_hqshFmt(w.spendCap, w.token)} cap` +
+        `  window ${w.windowSecs}s${w.paused ? '  [PAUSED]' : ''}`).join('\n');
+    },
+  },
+  balance: {
+    help: 'balance <agentId> — all token balances for an agent wallet',
+    run: async (chain, args) => {
+      if (!args[0]) return 'usage: hq balance <agentId>   (ids: hq wallets)';
+      const bals = await chain.wallet.balances(args[0]);
+      const lines = Object.entries(bals).map(([t, v]) => `  ${t}: ${v == null ? '—' : _hqshFmt(v, t)}`);
+      return lines.join('\n') || '(no balances)';
+    },
+  },
+  address: {
+    help: 'address <agentId> — every shareable address for an agent wallet',
+    run: async (chain, args) => {
+      if (!args[0]) return 'usage: hq address <agentId>';
+      const a = await chain.wallet.address(args[0]);
+      return [
+        `  ICRC-1 account : ${a.accountText || '—'}`,
+        `  legacy acct id : ${a.legacyAccountId || '—'}  (exchanges — ICP only)`,
+        `  principal      : ${a.owner}`,
+        `  subaccount     : ${a.subaccountHex}`,
+      ].join('\n');
+    },
+  },
+  fund: {
+    help: 'fund <agentId> <token> <amount> — top up from your main account',
+    run: async (chain, args) => {
+      const [id, token, amt] = args;
+      if (!amt) return 'usage: hq fund <agentId> <token> <amount>';
+      try { window.dispatchEvent(new CustomEvent('cafresohq:walletLocalMove', { detail: { agentId: id } })); } catch (_e) {}
+      const r = await chain.wallet.fund(id, token, amt);
+      return r && r.ok != null ? `funded (block ${r.ok})` : `fund failed: ${(r && r.err) || 'unknown'}`;
+    },
+  },
+  send: {
+    help: 'send <agentId> <token> <amount> <to> [memo] — spend from an agent wallet (cap-gated)',
+    run: async (chain, args) => {
+      const [id, token, amt, to, ...memo] = args;
+      if (!to) return 'usage: hq send <agentId> <token> <amount> <to-principal> [memo]';
+      const r = await chain.wallet.send(id, token, amt, to, memo.join(' '));
+      return r.status === 'ok' ? `sent (block ${r.block})` : `send: ${r.status}${r.reason ? ' — ' + r.reason : ''}`;
+    },
+  },
+  'pause-all': {
+    help: 'pause-all on|off — freeze/unfreeze all agent spending',
+    run: async (chain, args) => {
+      if (args[0] !== 'on' && args[0] !== 'off') return 'usage: hq pause-all on|off';
+      await chain.wallet.pauseAll(args[0] === 'on');
+      return `spending ${args[0] === 'on' ? 'PAUSED' : 'resumed'} for all agents`;
+    },
+  },
+  sites: {
+    help: 'sites — your published sites on the state canister',
+    run: async (chain) => {
+      const sites = await chain.sites.list();
+      if (!sites.length) return '(no published sites yet — agents publish with [PUBLISH_SITE: dir])';
+      return sites.map(s => `  ${s.project}  ${s.files} file(s), ${s.bytes} bytes`).join('\n');
+    },
+  },
+  docs: {
+    help: 'docs — your HQ docs stored on-chain',
+    run: async (chain) => {
+      const docs = await chain.docs.list();
+      if (!docs.length) return '(no on-chain docs yet)';
+      return docs.map(d => `  ${d.name}  v${d.version}`).join('\n');
+    },
+  },
+  status: {
+    help: 'status — canister id, cycles, signed-in principal',
+    run: async (chain) => {
+      const s = await chain.status();
+      return [
+        `  principal : ${s.principal}`,
+        `  canister  : ${s.stateCanister || '—'} (${s.configured ? 'configured' : 'NOT configured'})`,
+        `  cycles    : ${s.cycles == null ? '—' : s.cycles}`,
+      ].join('\n');
+    },
+  },
+};
+
+function HqShell({ sessionId, visible }) {
+  const histKey = `cafresohq_hqsh:history:${sessionId}`;
+  const [lines, setLines] = React.useState(() => ([
+    { kind: 'out', text: 'hqsh — CafresoHQ canister shell. Type "hq help".' },
+  ]));
+  const [input, setInput] = React.useState('');
+  const [hist, setHist] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem(histKey) || '[]'); } catch (_e) { return []; }
+  });
+  const [histIx, setHistIx] = React.useState(-1);
+  const [busy, setBusy] = React.useState(false);
+  const scrollRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines]);
+  React.useEffect(() => { if (visible && inputRef.current) inputRef.current.focus(); }, [visible]);
+
+  const print = (kind, text) => setLines(prev => [...prev.slice(-400), ...String(text).split('\n').map(t => ({ kind, text: t }))]);
+
+  const runLine = async (raw) => {
+    const cmdline = raw.trim();
+    if (!cmdline) return;
+    print('in', 'hq> ' + cmdline);
+    const nextHist = [cmdline, ...hist.filter(h => h !== cmdline)].slice(0, 50);
+    setHist(nextHist); setHistIx(-1);
+    try { localStorage.setItem(histKey, JSON.stringify(nextHist)); } catch (_e) {}
+
+    const words = cmdline.replace(/^hq\s+/i, '').split(/\s+/).filter(Boolean);
+    const name = (words[0] || '').toLowerCase();
+    if (name === 'clear') { setLines([]); return; }
+    const cmd = HQSH_COMMANDS[name];
+    if (!cmd) { print('err', `unknown command: ${name || '(empty)'} — try "hq help"`); return; }
+    const chain = window.CafresoHQChain;
+    if (name !== 'help' && !(chain && chain.isAvailable && chain.isAvailable())) {
+      print('err', 'Not inside the shell — open the HQ at ai.cafreso.com and sign in with Internet Identity to reach the chain.');
+      return;
+    }
+    setBusy(true);
+    try { print('out', await cmd.run(chain, words.slice(1))); }
+    catch (e) { print('err', String((e && e.message) || e)); }
+    setBusy(false);
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' && !busy) { const v = input; setInput(''); runLine(v); }
+    else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const ix = Math.min(histIx + 1, hist.length - 1);
+      if (ix >= 0 && hist[ix] != null) { setHistIx(ix); setInput(hist[ix]); }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const ix = histIx - 1;
+      setHistIx(ix);
+      setInput(ix >= 0 ? hist[ix] : '');
+    }
+  };
+
+  const C = { in: '#8ee6a1', out: '#d4d8e8', err: '#ff8a8a' };
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0d0d16', minHeight: 0 }}
+         onClick={() => inputRef.current && inputRef.current.focus()}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '10px 12px',
+        fontFamily: "'JetBrains Mono', 'VT323', monospace", fontSize: 12, lineHeight: 1.55 }}>
+        {lines.map((l, i) => (
+          <div key={i} style={{ color: C[l.kind] || C.out, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{l.text}</div>
+        ))}
+        {busy && <div style={{ color: '#7c6bff' }}>…</div>}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+        borderTop: '1px solid rgba(124,107,255,0.25)', flexShrink: 0 }}>
+        <span style={{ color: '#7c6bff', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>hq&gt;</span>
+        <input ref={inputRef} value={input} disabled={busy}
+          onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
+          placeholder='wallets · balance <agent> · sites · status · help'
+          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none',
+            color: '#d4d8e8', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }} />
+      </div>
+    </div>
+  );
+}
+
 function ProjectTerminal({ project, visible }) {
   /* Sessions persist per-project so closing the project (or reloading) doesn't
      wipe the user's terminal tabs. Keyed on project.id; if the project has no
@@ -6139,8 +6334,8 @@ function ProjectTerminal({ project, visible }) {
     }
   };
 
-  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : 'Codex';
-  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : '◈';
+  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : cli === 'hqsh' ? 'hqsh' : 'Codex';
+  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : cli === 'hqsh' ? '⛓' : '◈';
 
   const getLabel = (session) => {
     const name = cliName(session.cli);
@@ -6235,7 +6430,7 @@ function ProjectTerminal({ project, visible }) {
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
             }}>
-              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false], ['gemini', '✧', 'Gemini CLI', false]].map(([c, ico, label, isDefault]) => (
+              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false], ['gemini', '✧', 'Gemini CLI', false], ['hqsh', '⛓', 'hqsh — HQ chain shell', false]].map(([c, ico, label, isDefault]) => (
                 <div key={c}
                   onClick={() => addSession(c)}
                   style={{
@@ -6271,14 +6466,19 @@ function ProjectTerminal({ project, visible }) {
           display: s.id === activeId ? 'flex' : 'none',
           flexDirection: 'column',
         }}>
-          <TerminalSession
-            project={project}
-            cli={s.cli}
-            sessionId={s.sessionId}
-            visible={visible && s.id === activeId}
-            ptySupported={ptySupported}
-            spawnSupported={spawnSupported}
-          />
+          {s.cli === 'hqsh' ? (
+            /* hqsh is a browser-side canister REPL — no PTY spawn. */
+            <HqShell sessionId={s.sessionId} visible={visible && s.id === activeId} />
+          ) : (
+            <TerminalSession
+              project={project}
+              cli={s.cli}
+              sessionId={s.sessionId}
+              visible={visible && s.id === activeId}
+              ptySupported={ptySupported}
+              spawnSupported={spawnSupported}
+            />
+          )}
         </div>
       ))}
     </div>

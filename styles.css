@@ -9097,3 +9097,57 @@ body.night .hq-window.focused { border-color: var(--accent-teal); }
   .hq-dock-item, .hq-window { transition: none; }
   .hq-dock-item:hover { transform: none; background: var(--paper-2); }
 }
+
+/* ==========================================================================
+   Tip Rain — coins fall onto an agent's desk when its wallet receives a tip
+   (cafresohq:moneyEvent from the app-level tip watcher). Pure CSS animation;
+   reduced-motion users get only the static "+X TOKEN" chip.
+   ========================================================================== */
+.tip-rain {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+.tip-coin {
+  position: absolute; top: -14px;
+  font-size: 11px; line-height: 1;
+  color: var(--accent-sun, #f5d25d);
+  text-shadow: 0 1px 0 var(--ink, #241a0e);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tip-coin {
+    animation: tip-coin-fall 1.6s cubic-bezier(0.45, 0.05, 0.6, 1) forwards;
+  }
+  @keyframes tip-coin-fall {
+    0%   { transform: translateY(0) rotate(0deg);      opacity: 0; }
+    12%  { opacity: 1; }
+    78%  { transform: translateY(88px) rotate(200deg); opacity: 1; }
+    100% { transform: translateY(96px) rotate(230deg); opacity: 0; }
+  }
+}
+.tip-amount {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  font-family: 'VT323', monospace; font-size: 13px; letter-spacing: 1px;
+  color: var(--ink, #241a0e);
+  background: var(--accent-sun, #f5d25d);
+  border: 2px solid var(--ink, #241a0e); border-radius: 4px;
+  padding: 1px 7px;
+  animation: tip-amount-pop 4s ease forwards;
+}
+@keyframes tip-amount-pop {
+  0%   { transform: translateX(-50%) scale(0.6); opacity: 0; }
+  8%   { transform: translateX(-50%) scale(1.08); opacity: 1; }
+  14%  { transform: translateX(-50%) scale(1); }
+  82%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tip-amount { animation: none; }
+}
+body.night .tip-coin { color: #ffd97a; text-shadow: 0 1px 0 #000; }
+body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd97a; }
+@media (max-width: 768px) {
+  .tip-rain .tip-coin:nth-child(n+4) { display: none; }  /* fewer coins on phones */
+}
