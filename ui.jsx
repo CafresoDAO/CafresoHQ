@@ -1740,6 +1740,64 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     if (a && (a.status !== 'idle' || a.task)) setCoolerVisitor(null);
   }, [agents, coolerVisitor]);
   const coolerVisitorAgent = coolerVisitor ? agents.find(a => a.id === coolerVisitor) : null;
+
+  /* ── Live-work layer ──────────────────────────────────────────────────
+     Desk monitors light up while their agent is REALLY running a tool
+     (cafresohq:agentTool events carry agentId since the Open Floor pass).
+     'done' lingers ~1.6s so the glow reads; a 45s safety clear covers
+     error paths where 'done' never fires. */
+  const [liveTools, setLiveTools] = React.useState({});   // agentId -> {name}
+  React.useEffect(() => {
+    const timers = new Map();
+    const clearLater = (id, ms) => {
+      const t = timers.get(id); if (t) clearTimeout(t);
+      timers.set(id, setTimeout(() => {
+        setLiveTools(prev => { if (!(id in prev)) return prev; const n = { ...prev }; delete n[id]; return n; });
+      }, ms));
+    };
+    const onTool = (e) => {
+      const d = e.detail || {};
+      if (!d.agentId) return;
+      if (d.phase === 'start') {
+        setLiveTools(prev => ({ ...prev, [d.agentId]: { name: d.name } }));
+        clearLater(d.agentId, 45000);
+      } else if (d.phase === 'done') {
+        clearLater(d.agentId, 1600);
+      }
+    };
+    window.addEventListener('cafresohq:agentTool', onTool);
+    return () => { window.removeEventListener('cafresohq:agentTool', onTool); timers.forEach(clearTimeout); };
+  }, []);
+  const anyLive = Object.keys(liveTools).length > 0;
+
+  /* ── Wall P&L board — agent wallet spend/cap (on-chain policy, one bridge
+     call). Only when the Wallet ICP-Service is installed AND we're inside
+     the shell that can reach the chain. */
+  const walletServiceOn = (() => {
+    try {
+      const s = window.CafresoHQClient.getSettings();
+      return !!(s.icpServices && s.icpServices.wallet) &&
+             !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());
+    } catch (_e) { return false; }
+  })();
+  const [plWallets, setPlWallets] = React.useState(null);
+  React.useEffect(() => {
+    if (!walletServiceOn || isMobileOffice) return;
+    let dead = false;
+    window.CafresoHQChain.wallet.list()
+      .then(ws => { if (!dead) setPlWallets(ws || []); })
+      .catch(() => { if (!dead) setPlWallets([]); });
+    return () => { dead = true; };
+  }, [walletServiceOn]);
+  const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+  const plFmt = (raw, token) => {
+    try {
+      const dec = PL_DECIMALS[token] != null ? PL_DECIMALS[token] : 8;
+      const n = Number(BigInt(raw)) / Math.pow(10, dec);
+      return n >= 100 ? n.toFixed(0) : n >= 1 ? n.toFixed(2) : n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    } catch (_e) { return '0'; }
+  };
+
   return (
     <div className="office">
       {/* Task rail — slim strip of draggable cards above the rooms.
@@ -1848,9 +1906,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           announces the HQ. Decorative only (pointer-events:none), desktop-only. */}
       {!isMobileOffice && (
         <div className="floor-decor" aria-hidden="true">
-          <div className="lounge-couch" />
+          <div className="meeting-table" />
+          <div className="floor-zone fz-meeting">MEETING</div>
           <div className="floor-mat">CAFRESO HQ</div>
+          <div className="lounge-couch" />
           <div className="water-cooler"><span className="wc-bubble" /></div>
+          <div className="floor-zone fz-kitchen">KITCHEN</div>
         </div>
       )}
       <div className="pet" aria-label="Maximus"><Sprite data="maximus" scale={2}/></div>
@@ -1880,6 +1941,26 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       )}
 
       <div className="rooms">
+        {/* Wall fixtures — zone chip, LIVE pip, wallet P&L board */}
+        {!isMobileOffice && (
+          <>
+            <span className="wall-zone" style={{ left: '42%' }} aria-hidden="true">TEAM FLOOR</span>
+            {anyLive && <span className="wall-live" title="An agent is working right now">● {vocab.live}</span>}
+            {walletServiceOn && plWallets && plWallets.length > 0 && (
+              <div className="pl-frame" title="Agent wallets — spent this window / cap (on-chain)">
+                <div className="pl-title">◈ AGENT P&L</div>
+                {plWallets.slice(0, 3).map(w => {
+                  const who = agents.find(x => x.id === w.agentId);
+                  return (
+                    <div key={w.agentId} className="pl-row">
+                      {(who ? who.name : w.agentId).slice(0, 8)} {plFmt(w.windowSpent, w.token)}/{plFmt(w.spendCap, w.token)} {w.token}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
         {/* CEO office */}
         <div className="room ceo">
           <div className="nameplate">
@@ -1999,11 +2080,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const subs = subordinatesOf(a.id);
           const awayMeeting = ambientOk && meetingIdSet.has(a.id);
           const awayCooler = ambientOk && coolerVisitor === a.id;
+          const liveTool = liveTools[a.id];
           return (
           <div key={a.id}
-               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}`}
+               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${liveTool ? ' tool-live' : ''}`}
                onClick={() => onInspect(a)}
-               style={{cursor:'pointer'}}
+               style={{cursor:'pointer', zIndex: 2 + i}}
                onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
                onDragLeave={()=>setDropTarget(null)}
                onDrop={e=>{
@@ -2033,6 +2115,11 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <div className="desk" />
               <div className="mini-keys" aria-hidden="true"/>
               <div className="desk-lamp" aria-hidden="true"/>
+              {liveTool && !awayMeeting && !awayCooler && (
+                <div className="tool-chip" aria-hidden="true">
+                  ⚙ {String(liveTool.name || '').replace(/_/g, ' ').toLowerCase()}
+                </div>
+              )}
               <div className="sprite-slot">
                 {(awayMeeting || awayCooler)
                   ? <div className="away-placard">{awayMeeting ? 'in the meeting room' : 'stretching legs'}</div>
@@ -2069,7 +2156,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
 
         {/* Empty hireable desks */}
         {Array.from({length: emptySlots}).map((_, i) => (
-          <div key={'e'+i} className="room empty" onClick={onHire} title={vocab.hireTitle}>
+          <div key={'e'+i} className="room empty" onClick={onHire} title={vocab.hireTitle}
+               style={{ zIndex: 2 + seniorAgents.length + i }}>
             <div className="nameplate">
               <span style={{color:'#9a8a80'}}>{vocab.vacant}</span>
               <span className="pip idle" />

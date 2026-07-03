@@ -1394,13 +1394,13 @@ function App() {
   const [meetings, setMeetings] = useFileStored(k('meetings'), 'state', 'meetings', []);
   const [chatMeetingModalOpen, setChatMeetingModalOpen] = useStateA(false);
   const [workflowOpen, setWorkflowOpen] = useStateA(false);
-  const onPin = (pin) => {
+  const onPin = (pin, { quiet = false } = {}) => {
     if (pin.sourceId && pins.some(p => p.sourceId === pin.sourceId && p.kind === pin.kind)) {
-      say('Already pinned', 'PIN');
+      if (!quiet) say('Already pinned', 'PIN');
       return;
     }
     setPins(prev => [{ id: HQ.uid('pin'), addedAt: Date.now(), ...pin }, ...prev].slice(0, 18));
-    say('Pinned to corkboard', 'PIN');
+    if (!quiet) say('Pinned to corkboard', 'PIN');
   };
   const onUnpin = (id) => setPins(prev => prev.filter(p => p.id !== id));
 
@@ -1754,12 +1754,27 @@ ${d.text}` : d.text,
   const recordToolReceipt = (agent, ev) => {
     if (!agent) return;
     if (ev.phase !== 'done') return;
-    const isDeliverable = ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND';
-    /* Elevated agents get a full tool audit log. EVERY agent's vault deliverables
+    /* Deliverables = tools that produce a real artifact the boss can open —
+       vault notes, exported decks/docs/PDFs, generated media, published sites,
+       workspace files. These also auto-pin to the office corkboard (quiet, no
+       toast) so finished work is visible ON the wall of the HQ. */
+    const DELIVERABLE_TOOLS = ['VAULT_NEW', 'VAULT_APPEND', 'EXPORT_PPTX', 'EXPORT_DOCX',
+      'EXPORT_PDF', 'GENERATE_IMAGE', 'GENERATE_VIDEO', 'PUBLISH_SITE', 'FILE_WRITE'];
+    const isDeliverable = DELIVERABLE_TOOLS.indexOf(ev.name) >= 0;
+    /* Elevated agents get a full tool audit log. EVERY agent's deliverables
        (e.g. a researcher's "wrote Research/x.md") are recorded too — otherwise the
        real work non-elevated agents do is invisible in the receipts tray. */
     if (!agent.elevated && !isDeliverable) return;
     const arg = String(ev.arg || '').trim();
+    if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
+      // Pin the headline deliverables (skip the high-volume append/file-write churn).
+      const verb = ev.name === 'VAULT_NEW' ? 'Wrote'
+        : ev.name === 'PUBLISH_SITE' ? 'Published'
+        : ev.name.indexOf('EXPORT_') === 0 ? 'Exported'
+        : 'Generated';
+      onPin({ kind: 'receipt', text: `${agent.name}: ${verb} ${arg.slice(0, 60)}`,
+              sourceId: `tool-${ev.name}-${arg.slice(0, 60)}` }, { quiet: true });
+    }
     setReceipts(prev => {
       const next = [{
         id: HQ.uid('rc'),
@@ -2138,9 +2153,9 @@ ${d.text}` : d.text,
             }
           } else if (ev.phase === 'start') {
             onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            pulseGraph(ev);
+            pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
-            pulseGraph(ev);
+            pulseGraph(ev, agent);
             recordToolReceipt(agent, ev);
             // Tools that wrote/touched a vault note: attach as message
             // artifact so the inbox can show "Selvin: completed → wrote
@@ -2708,13 +2723,18 @@ ${d.text}` : d.text,
   /* Map a vault tool event to a graph pulse so the user can SEE the agent
      touching the knowledge web in real time. Search hits pulse all returned
      paths; reads/writes pulse the single targeted note. */
-  const pulseGraph = (ev) => {
+  const pulseGraph = (ev, agent) => {
     // Broadcast every agent tool event to the Workspace (tree refresh, preview
-    // chase, activity ledger, presence pulse, status pip). Fired before the
-    // graph early-return so it works even when the graph engine isn't loaded.
+    // chase, activity ledger, presence pulse, status pip) and the Office (desk
+    // monitor glow + ticker — needs to know WHO is working, hence the agent
+    // fields). Fired before the graph early-return so it works even when the
+    // graph engine isn't loaded. Extra fields are ignored by older listeners.
     try {
       window.dispatchEvent(new CustomEvent('cafresohq:agentTool', {
-        detail: { phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result },
+        detail: {
+          phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result,
+          agentId: agent && agent.id, agentName: agent && agent.name, agentColor: agent && agent.color,
+        },
       }));
     } catch (_e) {}
     const g = window.CafresoHQGraph;
@@ -2768,10 +2788,10 @@ ${d.text}` : d.text,
           if (ev.phase === 'start') {
             onUpdateAgent(a.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
             logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
-            pulseGraph(ev);
+            pulseGraph(ev, a);
           } else if (ev.phase === 'done') {
             onUpdateAgent(a.id, { task: 'reading results…' });
-            pulseGraph(ev);
+            pulseGraph(ev, a);
             recordToolReceipt(a, ev);
           }
         },
@@ -2969,10 +2989,10 @@ ${d.text}` : d.text,
           if (ev.phase === 'start') {
             onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
             logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
-            pulseGraph(ev);
+            pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
             onUpdateAgent(agent.id, { task: 'reading results…' });
-            pulseGraph(ev);
+            pulseGraph(ev, agent);
             recordToolReceipt(agent, ev);
           }
         },
