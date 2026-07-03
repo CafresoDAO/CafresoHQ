@@ -844,7 +844,7 @@ function AppGlobalCommands({
     /* Open a specific app as a window (desktop mode). */
     ...(onOpenWindow ? [
       ['tasks','Tasks'],['memory','Memory'],['team','Team'],['calendar','Calendar'],
-      ['vault','Vault'],['projects','Projects'],['terminal','Terminal'],
+      ['vault','Vault'],['projects','Workspace'],['terminal','Terminal'],
     ].map(([v, lbl]) => ({
       id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
       run: () => onOpenWindow(v),
@@ -1346,7 +1346,7 @@ function App() {
      session: which apps are open, their geometry, and z-order. Each entry:
      { view, geometry:{x,y,w,h}, z, minimized }. Keyed by view → at most one
      window per app. */
-  const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), false);
+  const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), true);
   const [openWindows, setOpenWindows] = useFileStored(k('openWindows'), 'state', 'windows', []);
   const winZRef = useRefA(1);
   React.useEffect(() => {
@@ -3735,6 +3735,13 @@ ${d.text}` : d.text,
   };
   const openOrRaise = useCallbackA((view) => {
     if (!view || view === 'chat') return;
+    /* The office IS the desktop wallpaper — "opening" it means showing the
+       floor, i.e. minimizing every window, not nesting an office window
+       over the office. */
+    if (view === 'visual') {
+      setOpenWindows(prev => (prev || []).map(w => ({ ...w, minimized: true })));
+      return;
+    }
     setWindowsEnabled(true);
     setOpenWindows(prev => {
       const list = prev || [];
@@ -4160,7 +4167,7 @@ ${d.text}` : d.text,
             apps show a dot; click opens-or-raises (and un-minimizes). ── */}
         {desktopMode && (
           <div className="hq-dock" role="toolbar" aria-label="Dock">
-            {NAV_ITEMS.map(([k, label]) => {
+            {NAV_ITEMS.filter(([k]) => k !== 'visual').map(([k, label]) => {
               const win = (openWindows || []).find(w => w.view === k);
               const cls = 'hq-dock-item' + (win ? (win.minimized ? ' minimized' : ' running') : '');
               return (

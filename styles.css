@@ -1794,6 +1794,10 @@ body.night .rail-toggle { background: var(--paper); color: var(--ink); }
 .main {
   display: grid;
   grid-template-rows: 52px minmax(0,1fr) auto;
+  /* One explicit column: without this the implicit `auto` track sizes to the
+     topbar's max-content (every status chip on one line) and pushes the whole
+     page into horizontal scroll on ≤1500px screens. */
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -1970,7 +1974,14 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--ink-2);
+  /* When chips outgrow the bar, scroll inside the strip (scrollbar hidden)
+     instead of contributing to the page's minimum width. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.topbar .status::-webkit-scrollbar { display: none; }
+.topbar .status > * { flex-shrink: 0; }
 .topbar .status .chip {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 10px;
