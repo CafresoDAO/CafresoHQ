@@ -17,7 +17,8 @@
     listPayouts, runPayrollNow, approvePayroll, payrollAllowance, getSpendTotals
   } from '$lib/api/walletServices.js';
   import { sitesConfigured, publishSiteToCanister, listMySites } from '$lib/api/sitesActor.js';
-  import { listHqDocs } from '$lib/api/stateSync.js';
+  import { listHqDocs, pushHqDoc } from '$lib/api/stateSync.js';
+  import { putWorkReceipt, listWorkReceipts } from '$lib/api/receipts.js';
   import { getKeychain, putKeychain } from '$lib/api/keychain.js';
   import { getStateActor, stateCanisterConfigured, stateCanisterId } from '$lib/api/stateActor.js';
   import {
@@ -299,6 +300,29 @@
           break;
         case 'chain:docs:list':
           reply({ type: 'chain:docs:list:response', docs: await listHqDocs() });
+          break;
+        case 'chain:docs:put': {
+          // Generic HQ-doc anchor (journal digests etc.). Namespaced to
+          // journal/… so the iframe can't overwrite tasks/settings/keychain.
+          const name = String(d.name || '');
+          if (!/^journal\//.test(name)) { fail('chain:docs:put only accepts journal/* docs'); break; }
+          const ok = await pushHqDoc(name, String(d.body || ''));
+          reply({ type: 'chain:docs:put:response', name, ok: !!ok });
+          break;
+        }
+
+        // ── Work receipts (Sprint 3) — anchor + list; verify page is public ──
+        case 'chain:receipt:put': {
+          const res = await putWorkReceipt({
+            agentId: d.agentId, agentName: d.agentName, tool: d.tool,
+            title: d.title, argHash: d.argHash, contentSha256: d.contentSha256,
+            ownerPrincipalText: p
+          });
+          reply({ type: 'chain:receipt:put:response', ...res });
+          break;
+        }
+        case 'chain:receipt:list':
+          reply({ type: 'chain:receipt:list:response', receipts: await listWorkReceipts(p) });
           break;
         case 'chain:status': {
           let cycles = null;
