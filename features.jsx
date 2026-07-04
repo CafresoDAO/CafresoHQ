@@ -694,6 +694,22 @@ function MorningReportModal({ report, onClose }) {
           <button className="px-btn primary" onClick={onClose}>TO WORK</button>
         </>
       }>
+      {(report.nightRuns || []).length > 0 && (
+        <div className="cb-panel" style={{ marginBottom: 'var(--sp-4)' }}>
+          <div className="lbl">🌙 NIGHT SHIFT — THE LEAD STORY</div>
+          <div className="tiny" style={{ marginTop: 2 }}>
+            Your agents worked while you were gone: {report.nightRuns.length} run{report.nightRuns.length === 1 ? '' : 's'},
+            {' '}{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0)} note{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0) === 1 ? '' : 's'} written to the vault.
+          </div>
+          {report.nightRuns.slice(0, 5).map(r => (
+            <div key={r.id} className="tiny" style={{ marginTop: 3 }}>
+              {r.lastError ? '⚠' : '✓'} <b>{r.agentName || r.agentId}</b> · {String(r.topic || '').slice(0, 50)} ·
+              {' '}{r.iterations} iter · {(r.writes || []).length} notes
+              {r.summary ? ` — ${String(r.summary).slice(0, 80)}` : r.lastError ? ` — ${String(r.lastError).slice(0, 60)}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="row" style={{ gap: 'var(--sp-4)', flexWrap: 'wrap', marginBottom: 'var(--sp-4)' }}>
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
           <div className="lbl">ACTIONS</div>

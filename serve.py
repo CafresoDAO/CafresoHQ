@@ -199,6 +199,7 @@ CAFRESOHQ_API_KEY = os.environ.get('CAFRESOHQ_API_KEY', '').strip()
 _KEY_PROTECTED_PREFIXES = (
     '/vault', '/hermes', '/terminal', '/cafresohq', '/codex', '/claudecode',
     '/agents', '/hq/', '/spawn', '/graph/publish', '/approvals', '/browser',
+    '/missions',
 )
 
 # Background CLI-install jobs (POST /agents/install returns 202 immediately;
@@ -244,6 +245,151 @@ _hq_state_dir   = pathlib.Path(os.environ.get('CAFRESOHQ_HQ_STATE_DIR',
                     os.path.join(os.path.dirname(__file__), 'hq-state')))
 _hq_memory_dir  = pathlib.Path(os.environ.get('CAFRESOHQ_MEMORY_DIR',
                     os.path.join(os.path.dirname(__file__), 'hq-state', 'memory')))
+
+
+# ---- Night Shift (Sprint 4 MVP-1) ------------------------------------------
+# "Close the laptop, work continues": a 30s scheduler daemon runs missions
+# SERVER-side via night_runner.py — a restricted read/search/fetch + vault-write
+# tool subset (no WALLET/PUBLISH/BASH/FILE_WRITE; the money/publish seam stays
+# in the authenticated browser shell by construction). Files:
+#   hq-state/scheduled-missions.json  — the schedules (UI + hqsh manage these)
+#   hq-state/mission-runs.json        — ring-capped run log (Gazette lead story)
+# One mission runs at a time; shared-activity writes are deferred while a real
+# browser session is live (last-writer-wins clobber guard).
+_night_lock = threading.Lock()
+_night_running = {}          # scheduleId -> True while a run is in flight
+_night_base_url = ['']       # set in __main__ once scheme + port are known
+_LAST_UI_ACTIVITY = [0.0]    # last request that came from a real browser
+MAX_NIGHT_RUNS_KEPT = 100
+MAX_NIGHT_SCHEDULES = 20
+
+
+def _night_path(name):
+    return _hq_state_dir / name
+
+
+def _night_load(name, default):
+    try:
+        with open(_night_path(name), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, type(default)) else default
+    except Exception:
+        return default
+
+
+def _night_save(name, data):
+    _hq_state_dir.mkdir(parents=True, exist_ok=True)
+    tmp = _night_path(name + '.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f)
+    os.replace(tmp, _night_path(name))
+
+
+def _night_log_run(run):
+    """Upsert a run record (called progressively so a crash keeps partial log)."""
+    with _night_lock:
+        runs = [r for r in _night_load('mission-runs.json', [])
+                if r.get('id') != run.get('id')]
+        runs.append(run)
+        _night_save('mission-runs.json', runs[-MAX_NIGHT_RUNS_KEPT:])
+
+
+def _night_browser_active():
+    return (time.time() - _LAST_UI_ACTIVITY[0]) < 180
+
+
+def _night_ctx():
+    import night_runner as _nr
+    return _nr.NightContext(
+        _night_base_url[0] or ('http://127.0.0.1:%d' % PORT),
+        api_key=CAFRESOHQ_API_KEY)
+
+
+def _night_post_activity(run):
+    """Surface a finished run on the shared activity ticker. Deferred while a
+    browser is live — the app's merge-by-id load makes concurrent writes mostly
+    safe, but last-writer-wins can still clobber, so we only write when nobody
+    is watching. The Gazette ingests mission-runs.json regardless."""
+    if _night_browser_active():
+        return
+    try:
+        import night_runner as _nr
+        ctx = _night_ctx()
+        s, raw = _nr._self_call(ctx, 'GET', '/hq/state/activity')
+        cur = json.loads(raw.decode('utf-8', 'replace')) if s == 200 else []
+        if not isinstance(cur, list):
+            cur = []
+        entry = {
+            'id': 'act_night_%s' % run.get('id', ''),
+            'ts': int(time.time() * 1000),
+            'agentId': run.get('agentId', ''), 'agentName': run.get('agentName', ''),
+            'action': 'night', 'priority': 'attention', 'unread': True,
+            'text': 'night shift: %d note(s) on %s' % (
+                len(run.get('writes', [])), (run.get('topic') or '')[:60]),
+        }
+        _nr._self_call(ctx, 'PUT', '/hq/state/activity',
+                       body=json.dumps([entry] + cur[:199]))
+    except Exception:
+        pass
+
+
+def _night_run_one(sched):
+    try:
+        import night_runner as _nr
+        run = _nr.run_mission(_night_ctx(), sched, on_progress=_night_log_run)
+        _night_log_run(run)
+        _night_post_activity(run)
+    except Exception as e:
+        now_ms = int(time.time() * 1000)
+        _night_log_run({
+            'id': 'run_%d' % now_ms, 'scheduleId': sched.get('id', ''),
+            'agentId': sched.get('agentId', ''), 'agentName': sched.get('agentName', ''),
+            'topic': sched.get('topic', ''), 'vaultFolder': sched.get('vaultFolder', ''),
+            'startedAt': now_ms, 'finishedAt': now_ms, 'iterations': 0, 'writes': [],
+            'tokensUsed': 0, 'errors': 1, 'lastError': str(e)[:300], 'summary': ''})
+    finally:
+        _night_running.pop(sched.get('id', ''), None)
+
+
+def _night_scan():
+    now_ms = int(time.time() * 1000)
+    with _night_lock:
+        scheds = _night_load('scheduled-missions.json', [])
+        changed = False
+        for s in scheds:
+            if not s.get('enabled'):
+                continue
+            if int(s.get('nextRunAt', 0) or 0) > now_ms:
+                continue
+            if _night_running:
+                break   # one mission at a time — keeps provider usage sane
+            sid = str(s.get('id', ''))
+            _night_running[sid] = True
+            s['lastRunAt'] = now_ms
+            if s.get('recurrence') == 'daily':
+                nxt = int(s.get('nextRunAt', now_ms) or now_ms)
+                while nxt <= now_ms:
+                    nxt += 86_400_000
+                s['nextRunAt'] = nxt
+            else:
+                s['enabled'] = False
+            changed = True
+            threading.Thread(target=_night_run_one, args=(dict(s),),
+                             daemon=True, name='night-%s' % sid).start()
+        if changed:
+            _night_save('scheduled-missions.json', scheds)
+
+
+def _night_loop():
+    while True:
+        time.sleep(30)
+        try:
+            _night_scan()
+        except Exception as e:
+            print('[night] scan error:', e)
+
+
+threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 
 
 # ---- External approvals (Claude Code PreToolUse hook bridge) ---------------
@@ -1895,10 +2041,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             import time as _t
             return self._send_json(200, {'idle_seconds': int(_t.time() - _LAST_ACTIVITY[0])})
         _touch_activity(self.path)
+        # Track REAL browser traffic separately (the night runner self-calls
+        # tag themselves) — _night_post_activity defers shared-file writes
+        # while a session is live.
+        if 'X-Night-Runner' not in self.headers and (
+                self.path == '/health' or self.path.startswith(('/hq/', '/vault/'))):
+            _LAST_UI_ACTIVITY[0] = time.time()
         if self.path == '/health':
             return self._health()
         if self.path.startswith('/hq/'):
             return self._hq_handler('GET')
+        if self.path == '/missions/scheduled':
+            return self._missions_scheduled_get()
+        if self.path == '/missions/runs':
+            return self._missions_runs()
         if self.path.startswith('/brave/'):
             return self._brave_search()
         if self.path == '/hermes/capability':
@@ -2137,6 +2293,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_stream()
         if self.path == '/projects/clone':
             return self._projects_clone()
+        if self.path == '/missions/schedule':
+            return self._missions_schedule()
         if self.path == '/tools/exec':
             return self._tool_exec()
         if self.path.startswith('/fs/upload'):
@@ -2180,6 +2338,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(401, {'error': 'API key required'})
         if self.path.startswith('/vault/'):
             return self._vault('DELETE')
+        if self.path.startswith('/missions/scheduled/'):
+            return self._missions_delete()
         self.send_error(405)
 
     def do_OPTIONS(self):
@@ -2541,6 +2701,75 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'name': repo_name,
             'url': raw_url,
         })
+
+    # ---- Night Shift endpoints (Sprint 4 MVP-1) -----------------------------
+    def _missions_scheduled_get(self):
+        return self._send_json(200, {
+            'schedules': _night_load('scheduled-missions.json', []),
+            'running': list(_night_running.keys()),
+            'browserActive': _night_browser_active(),
+        })
+
+    def _missions_runs(self):
+        return self._send_json(200, {'runs': _night_load('mission-runs.json', [])})
+
+    def _missions_schedule(self):
+        """POST /missions/schedule — create/update one night-shift schedule.
+        Bounds: duration ≤ 4h, interval ≥ 60s, ≤ 20 schedules. The runner's
+        tool subset (no wallet/publish/shell) is enforced in night_runner.py."""
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            req = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+        except Exception:
+            return self._send_json(400, {'error': 'bad json'})
+        topic = str(req.get('topic', '')).strip()
+        agent_id = str(req.get('agentId', '')).strip()
+        if not topic or not agent_id:
+            return self._send_json(400, {'error': 'topic and agentId are required'})
+        try:
+            start_at = int(req.get('startAt') or 0)
+            duration = int(req.get('durationMs') or 3_600_000)
+            interval = int(req.get('intervalMs') or 300_000)
+        except Exception:
+            return self._send_json(400, {'error': 'bad startAt/durationMs/intervalMs'})
+        now_ms = int(time.time() * 1000)
+        duration = max(60_000, min(duration, 4 * 3_600_000))
+        interval = max(60_000, min(interval, duration))
+        sched = {
+            'id': str(req.get('id') or '').strip() or ('nsh_%d' % now_ms),
+            'type': 'project-study' if req.get('type') == 'project-study' else 'research',
+            'topic': topic[:200],
+            'agentId': agent_id[:80],
+            'agentName': str(req.get('agentName') or '').strip()[:60],
+            'vaultFolder': (str(req.get('vaultFolder') or '').strip().strip('/')
+                            or 'Research/night')[:120],
+            'projectName': str(req.get('projectName') or '')[:80],
+            'projectPath': str(req.get('projectPath') or '')[:300],
+            'startAt': start_at,
+            'recurrence': 'daily' if req.get('recurrence') == 'daily' else 'once',
+            'durationMs': duration, 'intervalMs': interval,
+            'enabled': req.get('enabled') is not False,
+            'lastRunAt': 0,
+            'nextRunAt': start_at if start_at > now_ms else now_ms,
+            'createdAt': now_ms,
+        }
+        with _night_lock:
+            scheds = [s for s in _night_load('scheduled-missions.json', [])
+                      if s.get('id') != sched['id']]
+            if len(scheds) >= MAX_NIGHT_SCHEDULES:
+                return self._send_json(400, {'error': 'too many schedules (max %d)' % MAX_NIGHT_SCHEDULES})
+            scheds.append(sched)
+            _night_save('scheduled-missions.json', scheds)
+        return self._send_json(200, {'ok': True, 'schedule': sched})
+
+    def _missions_delete(self):
+        sid = self.path.rstrip('/').rsplit('/', 1)[-1]
+        with _night_lock:
+            scheds = _night_load('scheduled-missions.json', [])
+            kept = [s for s in scheds if s.get('id') != sid]
+            _night_save('scheduled-missions.json', kept)
+        return self._send_json(200, {'ok': True, 'removed': sid,
+                                     'existed': len(kept) != len(scheds)})
 
     def _tool_exec(self):
         """Execute a bracket-format tool call dispatched by the frontend.
@@ -7321,6 +7550,8 @@ if __name__ == '__main__':
                      pathlib.Path(_tls_cert).is_file() and
                      pathlib.Path(_tls_key).is_file())
     _scheme   = 'https' if _tls_on else 'http'
+    # Night-shift runner self-calls loop back over the live scheme/port.
+    _night_base_url[0] = '%s://127.0.0.1:%d' % (_scheme, PORT)
 
     # Bind host: containers/fleet listen on all interfaces (the gateway reaches
     # them by private IP); genuine LOCAL runs default to loopback so an accidental
