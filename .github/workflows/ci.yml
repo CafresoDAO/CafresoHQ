@@ -1,0 +1,24 @@
+name: tests
+
+# Day/night tool-grammar drift guard: night_runner.py re-implements the
+# bracket-marker grammar from hq-runtime.jsx TOOL_REGISTRY in Python, and the
+# two MUST stay byte-identical (see scripts/test_night_grammar.py). This runs
+# on every PR so a grammar edit on either side fails fast instead of letting
+# day and night agents silently diverge.
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - merge/pages-cafresoai
+      - master
+
+jobs:
+  night-grammar-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Grammar parity + fixtures
+        run: python3 scripts/test_night_grammar.py
