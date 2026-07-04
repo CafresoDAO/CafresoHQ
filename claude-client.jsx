@@ -2056,6 +2056,15 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       put(r) { return _req('chain:receipt:put', r).then(x => ({ id: x.id, verifyUrl: x.verifyUrl })); },
       list() { return _req('chain:receipt:list', {}).then(r => r.receipts || []); },
     },
+    /* Night Shift wake mirror (Sprint 4 MVP-2, dark) — serve.py owns the real
+       schedules; these rows only let the canister wake a stopped container.
+       Mirror writes are best-effort: never let them block scheduling. */
+    missions: {
+      put(s) { return _req('chain:missions:put', s); },
+      list() { return _req('chain:missions:list', {}).then(r => r.schedules || []); },
+      remove(id) { return _req('chain:missions:delete', { id }); },
+      wakeStatus() { return _req('chain:missions:wake-status', {}); },
+    },
     status() { return _req('chain:status', {}); },
     /* BYOK keychain — ciphertext on-chain, crypto in the shell. */
     keychain: {

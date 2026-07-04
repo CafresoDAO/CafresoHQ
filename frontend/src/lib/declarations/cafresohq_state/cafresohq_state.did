@@ -98,6 +98,36 @@ type Payout =
    token: text;
    ts: int;
  };
+type OutcallTransformArgs = 
+ record {
+   context: blob;
+   response: OutcallResponse;
+ };
+type OutcallResponse = 
+ record {
+   body: blob;
+   headers: vec OutcallHeader;
+   status: nat;
+ };
+type OutcallHeader = 
+ record {
+   name: text;
+   value: text;
+ };
+type MissionSchedule = 
+ record {
+   agentId: text;
+   durationSecs: nat;
+   enabled: bool;
+   id: text;
+   intervalSecs: nat;
+   lastWakeAt: int;
+   lastWakeResult: text;
+   nextRunAt: int;
+   recurrence: text;
+   topic: text;
+   updatedAt: int;
+ };
 type HttpResponse = 
  record {
    body: blob;
@@ -148,6 +178,7 @@ service : {
   cycle_balance: () -> (nat) query;
   deleteAgentWallet: (text) -> (bool);
   deleteHqDoc: (text) -> (bool);
+  deleteMissionSchedule: (text) -> (bool);
   deleteSalary: (text) -> (bool);
   /// Remove all files under a project (call before re-publishing to drop stale files).
   deleteSite: (text) -> (nat);
@@ -172,6 +203,7 @@ service : {
   http_request_update: (HttpRequest) -> (HttpResponse);
   listAgentWallets: () -> (vec AgentWallet) query;
   listHqDocs: () -> (vec DocSummary) query;
+  listMissionSchedules: () -> (vec MissionSchedule) query;
   listMySites: () -> (vec SiteSummary) query;
   listPayouts: () -> (vec Payout) query;
   listSalaries: () -> (vec Salary) query;
@@ -187,6 +219,7 @@ service : {
   /// Create/update one HQ doc (e.g. "tasks","projects","messages","memory/x").
   /// expectVersion = 0 for first write; otherwise must match current or you get #conflict.
   putHqDoc: (text, blob, blob, nat) -> (PutResult);
+  putMissionSchedule: (text, text, text, text, nat, nat, bool, int) -> ();
   putSalary: (text, principal, text, nat, nat, nat, nat, SalaryMode, 
    bool) -> ();
   putServiceFlag: (text, bool, text) -> ();
@@ -214,5 +247,16 @@ service : {
   /// (v1plan.<principal>.<plan>.<exp>.<hmacHex>). Sets quota; never touches data.
   setPlan: (text) -> (bool);
   setPlanSecret: (text) -> ();
+  /// Admin-only wake switch (claim-or-match on the same planAdmin identity).
+  /// secretHex = "" keeps the existing secret. URL must be https to enable.
+  setWakeConfig: (bool, text, text) -> ();
   spendPausedAll: () -> (bool) query;
+  /// Public visibility for `hq night chain` — config presence only, no secrets.
+  wakeStatus: () ->
+   (record {
+      enabled: bool;
+      secretSet: bool;
+      urlSet: bool;
+    }) query;
+  wakeTransform: (OutcallTransformArgs) -> (OutcallResponse) query;
 }

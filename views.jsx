@@ -6186,11 +6186,23 @@ const HQSH_COMMANDS = {
     },
   },
   night: {
-    help: 'night [list | schedule <agentId> <topic…> | cancel <id> | runs] — container night shift',
+    help: 'night [list | schedule <agentId> <topic…> | cancel <id> | runs | chain] — container night shift',
     run: async (_chain, args) => {
       const base = (window.CafresoHQClient && window.CafresoHQClient.backendBase()) || '';
       const j = (p, o) => fetch(base + p, { credentials: 'include', ...(o || {}) }).then(r => r.json());
       const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+      if (args[0] === 'chain') {
+        // MVP-2 wake mirror — the state canister's copy, used only to wake
+        // STOPPED containers (dark until the admin sets wake config on-chain).
+        const chain = window.CafresoHQChain;
+        if (!chain || !chain.isAvailable()) return 'chain bridge unavailable (open HQ through the shell)';
+        const [st, rows] = await Promise.all([chain.missions.wakeStatus(), chain.missions.list()]);
+        const head = `wake: ${st.enabled ? 'ENABLED' : 'dark (disabled)'} · gateway ${st.urlSet ? 'set' : '—'} · secret ${st.secretSet ? 'set' : '—'}`;
+        if (!rows.length) return head + '\n  (no mirrored schedules)';
+        return head + '\n' + rows.map(m =>
+          `  ${m.enabled ? '🌙' : '·'} ${m.id}  ${m.agentId} · ${String(m.topic).slice(0, 40)}` +
+          `  ${m.recurrence} · next ${fmtT(m.nextRunAtMs)}${m.lastWakeResult ? ' · wake ' + m.lastWakeResult : ''}`).join('\n');
+      }
       if (args[0] === 'runs') {
         const { runs } = await j('/missions/runs');
         if (!runs || !runs.length) return '(no night runs yet)';
@@ -6201,6 +6213,10 @@ const HQSH_COMMANDS = {
       if (args[0] === 'cancel') {
         if (!args[1]) return 'usage: hq night cancel <scheduleId>';
         const res = await j(`/missions/scheduled/${args[1]}`, { method: 'DELETE' });
+        if (res.existed) {
+          const c = window.CafresoHQChain;
+          if (c && c.isAvailable()) c.missions.remove(args[1]).catch(() => {});
+        }
         return res.existed ? `cancelled ${args[1]}` : `no schedule ${args[1]}`;
       }
       if (args[0] === 'schedule') {
