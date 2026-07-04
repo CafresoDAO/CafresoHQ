@@ -258,10 +258,39 @@ actor CafresoHQState {
   public shared (msg) func putVaultMeta(objId : Text, totalSize : Nat, chunkCount : Nat, sha256 : Blob, expectVersion : Nat) : async PutResult {
     let caller = msg.caller;
     if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    // objId is embedded raw in chunkKey (objId # "#" # ix); a '#' inside it
+    // would collide two objects' chunk namespaces.
+    if (Text.contains(objId, #char '#')) { return #quota("objId may not contain '#'") };
     let metas = metasOf(caller);
     let prev = tOps.get(metas, objId);
     let curVer = switch (prev) { case (?m) m.version; case null 0 };
     if (expectVersion != curVer) { return #conflict({ current = curVer }) };
+    // Cap chunkCount so a bogus meta can't (a) make deleteVault's loop exceed
+    // the instruction limit and trap the object into un-deletability, or (b)
+    // claim more chunks than the quota could ever hold. Keep totalSize
+    // consistent with the chunk count.
+    let u0 = usageOf(caller);
+    if (chunkCount > u0.quotaBytes / MAX_CHUNK_BYTES + 1) { return #quota("chunkCount too large") };
+    if (totalSize > chunkCount * MAX_CHUNK_BYTES) { return #quota("totalSize exceeds chunk capacity") };
+    // Shrinking an existing object (new chunkCount < old) orphans the tail
+    // chunks — purge them here so their bytes don't leak from quota forever.
+    switch (prev) {
+      case (?old) {
+        if (old.chunkCount > chunkCount) {
+          var chunks = chunksOf(caller);
+          var freed : Nat = 0;
+          var i : Nat = chunkCount;
+          while (i < old.chunkCount) {
+            let key = chunkKey(objId, i);
+            switch (tOps.get(chunks, key)) { case (?b) { freed += b.size(); chunks := tOps.delete(chunks, key) }; case null {} };
+            i += 1;
+          };
+          vaultChunks := pOps.put(vaultChunks, caller, chunks);
+          setUsage(caller, { u0 with vaultBytes = subSat(u0.vaultBytes, freed) });
+        };
+      };
+      case null {};
+    };
     let ver = curVer + 1;
     let meta : VaultMeta = {
       totalSize = totalSize; chunkCount = chunkCount; sha256 = sha256;
@@ -275,10 +304,15 @@ actor CafresoHQState {
     let caller = msg.caller;
     if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
     if (data.size() > MAX_CHUNK_BYTES) { return #quota("chunk exceeds 1.9 MiB limit") };
-    // Must reference the in-progress meta version (defends against stale writers).
+    // Must reference the in-progress meta version (defends against stale
+    // writers) AND stay within the declared chunk count — a chunk written at
+    // ix >= chunkCount would be orphaned (deleteVault only reclaims [0,count)).
     switch (tOps.get(metasOf(caller), objId)) {
       case null { return #conflict({ current = 0 }) };
-      case (?m) { if (m.version != version) { return #conflict({ current = m.version }) } };
+      case (?m) {
+        if (m.version != version) { return #conflict({ current = m.version }) };
+        if (ix >= m.chunkCount) { return #quota("chunk index out of range") };
+      };
     };
     let chunks = chunksOf(caller);
     let key = chunkKey(objId, ix);
@@ -419,7 +453,10 @@ actor CafresoHQState {
   public shared (msg) func setPlanSecret(secretHex : Text) : async () {
     let caller = msg.caller;
     switch (planAdmin) {
-      case null { planAdmin := ?caller };   // first caller (deployer) claims admin
+      // Only a canister CONTROLLER may claim admin — otherwise any principal
+      // could front-run the deployer's first call between install and setup and
+      // permanently seize admin (then mint plan tokens / redirect the wake outcall).
+      case null { if (not Principal.isController(caller)) { throw Error.reject("only a controller may claim plan admin") }; planAdmin := ?caller };
       case (?a) { if (caller != a) { throw Error.reject("only the plan admin may set the secret") } };
     };
     switch (hexToBytes(secretHex)) {
@@ -502,10 +539,14 @@ actor CafresoHQState {
       case null { #noWallet };
       case (?w) {
         if (w.paused) { return #paused };
-        // Roll the window if it has fully elapsed.
+        // Roll the window if it has fully elapsed. windowSecs == 0 is the
+        // documented "per-transaction cap only" mode: it must roll EVERY call
+        // (spent0 resets to 0), gating on `amount > spendCap` alone. Previously
+        // the `> 0` guard made windowSpent accumulate forever, silently turning
+        // a per-tx cap into a lifetime cap that permanently blocked the agent.
         let nowSecs = now() / 1_000_000_000;
         let startSecs = w.windowResetAt / 1_000_000_000;
-        let rolled = w.windowSecs > 0 and nowSecs >= startSecs + w.windowSecs;
+        let rolled = w.windowSecs == 0 or nowSecs >= startSecs + w.windowSecs;
         let spent0 = if (rolled) { 0 } else { w.windowSpent };
         let reset0 = if (rolled) { now() } else { w.windowResetAt };
         let projected = spent0 + amount;
@@ -613,6 +654,22 @@ actor CafresoHQState {
   stable var salaries : OrderedMap.Map<Principal, SalaryMap> = pOps.empty<SalaryMap>();
   stable var payoutLog : OrderedMap.Map<Principal, [Payout]> = pOps.empty<[Payout]>();
   stable var payrollPausedMap : OrderedMap.Map<Principal, Bool> = pOps.empty<Bool>();
+
+  // Allowlist of the app's supported ICRC ledgers (ICP, ckUNI, sGLDT, $nanas,
+  // ckUSDT) — mirrors frontend/src/lib/api/icrc1.js TOKENS. putSalary rejects
+  // any other ledger so the payroll timer never awaits an unknown canister.
+  let KNOWN_LEDGERS : [Text] = [
+    "ryjl3-tyaaa-aaaaa-aaaba-cai",
+    "ilzky-ayaaa-aaaar-qahha-cai",
+    "i2s4q-syaaa-aaaan-qz4sq-cai",
+    "mwen2-oqaaa-aaaam-adaca-cai",
+    "cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae",
+  ];
+  func isKnownLedger(p : Principal) : Bool {
+    let t = Principal.toText(p);
+    for (k in KNOWN_LEDGERS.vals()) { if (k == t) { return true } };
+    false;
+  };
 
   let PAYROLL_SCAN_SECS : Nat = 300;
   let MAX_PAYOUTS_KEPT : Nat = 200;
@@ -807,12 +864,17 @@ actor CafresoHQState {
     };
   };
 
-  // Idempotent arming: cancel-then-set, TimerId held in a FLEXIBLE var (dies with
-  // its timer on upgrade — a stale stable flag could otherwise read armed-true
-  // while the timer is dead). postupgrade is the mandatory re-arm point.
+  // Idempotent arming: a NO-OP when already armed. The TimerId is held in a
+  // FLEXIBLE var (dies with its timer on upgrade — a stale stable flag could
+  // otherwise read armed-true while the timer is dead), so it is non-null iff a
+  // live timer exists for this actor instance. postupgrade is the mandatory
+  // re-arm point. It must NOT cancel-then-recreate: a recurringTimer first fires
+  // a full period AFTER creation, so re-arming from the user-facing putSalary
+  // path (called per save) would reset the countdown and, if hit every <period,
+  // starve scanPayroll for ALL users (cross-tenant DoS).
   var payrollTimerId : ?Timer.TimerId = null;
   func armPayrollTimer<system>() {
-    switch (payrollTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    switch (payrollTimerId) { case (?_) { return }; case null {} };
     payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, scanPayroll);
   };
   // Fresh install: arm at init. Upgrades: postupgrade (init does not re-run).
@@ -830,6 +892,11 @@ actor CafresoHQState {
     if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
     if (amount == 0) { throw Error.reject("amount must be positive") };
     if (periodSecs < 60) { throw Error.reject("period too short (min 60s)") };
+    // Only the app's known ICRC ledgers may be scheduled. Without this, the
+    // shared scanPayroll timer would await an arbitrary user-supplied canister;
+    // a malicious never-responding ledger stalls other tenants' payouts in the
+    // sequential loop and holds call contexts open across upgrades.
+    if (not isKnownLedger(ledgerId)) { throw Error.reject("unsupported ledger") };
     let prev = tOps.get(salariesOf(caller), agentId);
     // Keep the schedule phase across edits unless the period changed.
     let nextRunAt = switch (prev) {
@@ -1053,6 +1120,64 @@ actor CafresoHQState {
   };
 
   /// GET /<principal>/receipt/<id> — MUST run before siteLookup (see validProject).
+  // Non-trapping principal-text parser. Principal.fromText TRAPS on malformed
+  // input (bad base32 / CRC-32), and http_request_update upgrades EVERY GET, so
+  // a bot hitting /wp-admin/... would trap the update call (gateway 5xx + cycle
+  // burn) instead of getting a clean 404. We validate first: strip dashes,
+  // base32-decode (RFC-4648, lowercase a-z/2-7), then verify the leading 4-byte
+  // big-endian CRC-32 over the body before handing safe bytes to fromBlob.
+  func b32Val(c : Char) : ?Nat8 {
+    let n = Char.toNat32(c);
+    if (n >= 97 and n <= 122) { ?Nat8.fromNat(Nat32.toNat(n - 97)) }          // a-z → 0..25
+    else if (n >= 50 and n <= 55) { ?Nat8.fromNat(Nat32.toNat(n - 50 + 26)) } // 2-7 → 26..31
+    else { null };
+  };
+  func crc32(bytes : [Nat8]) : Nat32 {
+    var crc : Nat32 = 0xFFFFFFFF;
+    for (b in bytes.vals()) {
+      crc := crc ^ Nat32.fromNat(Nat8.toNat(b));
+      var k : Nat = 0;
+      while (k < 8) {
+        if (crc & 1 == 1) { crc := (crc >> 1) ^ 0xEDB88320 } else { crc := crc >> 1 };
+        k += 1;
+      };
+    };
+    crc ^ 0xFFFFFFFF;
+  };
+  func parsePrincipal(t : Text) : ?Principal {
+    // Every real principal text carries a dash; bare no-dash junk is rejected
+    // cheaply before the full decode.
+    if (not Text.contains(t, #char '-')) { return null };
+    var acc : Nat32 = 0;
+    var bits : Nat32 = 0;
+    let out = Buffer.Buffer<Nat8>(33);
+    for (c in t.chars()) {
+      if (c != '-') {
+        switch (b32Val(c)) {
+          case null { return null };
+          case (?v) {
+            acc := (acc << 5) | Nat32.fromNat(Nat8.toNat(v));
+            bits += 5;
+            if (bits >= 8) {
+              bits -= 8;
+              out.add(Nat8.fromNat(Nat32.toNat((acc >> bits) & 0xFF)));
+            };
+          };
+        };
+      };
+    };
+    let decoded = Buffer.toArray(out);
+    if (decoded.size() < 4 or decoded.size() > 33) { return null };  // 4-byte CRC + ≤29-byte body
+    let body = Array.tabulate<Nat8>(decoded.size() - 4 : Nat, func(i) { decoded[i + 4] });
+    let got : Nat32 =
+      (Nat32.fromNat(Nat8.toNat(decoded[0])) << 24) |
+      (Nat32.fromNat(Nat8.toNat(decoded[1])) << 16) |
+      (Nat32.fromNat(Nat8.toNat(decoded[2])) << 8) |
+       Nat32.fromNat(Nat8.toNat(decoded[3]));
+    if (crc32(body) != got) { return null };
+    ?Principal.fromBlob(Blob.fromArray(body));
+  };
+
   func receiptLookup(url : Text) : ?HttpResponse {
     var path = url;
     switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
@@ -1063,7 +1188,7 @@ actor CafresoHQState {
       status_code = 404; headers = [("Content-Type", "text/plain")];
       body = Text.encodeUtf8("Receipt not found"); streaming_strategy = null; upgrade = null;
     };
-    let owner = Principal.fromText(parts[0]);
+    let owner = switch (parsePrincipal(parts[0])) { case (?p) p; case null { return ?notFound } };
     let id = switch (textToInt(parts[2])) { case (?n) Int.abs(n); case null { return ?notFound } };
     switch (Array.find<WorkReceipt>(receiptsOf(owner), func(r) { r.id == id })) {
       case null { ?notFound };
@@ -1086,7 +1211,7 @@ actor CafresoHQState {
     path := Text.trimStart(path, #char '/');
     let parts = Iter.toArray(Text.split(path, #char '/'));
     if (parts.size() < 2) { return null };
-    let owner = Principal.fromText(parts[0]);
+    let owner = switch (parsePrincipal(parts[0])) { case (?p) p; case null { return null } };
     let buf = Buffer.Buffer<Text>(parts.size());
     var i = 1;
     while (i < parts.size()) { if (parts[i].size() > 0) { buf.add(parts[i]) }; i += 1 };
@@ -1262,10 +1387,13 @@ actor CafresoHQState {
     };
   };
 
-  // Idempotent arming, same shape as the payroll timer; re-armed in postupgrade.
+  // Idempotent arming (no-op when already armed), same shape as the payroll
+  // timer; re-armed in postupgrade. Must NOT cancel-then-recreate — the
+  // user-facing putMissionSchedule path would otherwise let any caller reset
+  // the 120s countdown and starve scanWake for all users.
   var wakeTimerId : ?Timer.TimerId = null;
   func armWakeTimer<system>() {
-    switch (wakeTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    switch (wakeTimerId) { case (?_) { return }; case null {} };
     wakeTimerId := ?Timer.recurringTimer<system>(#seconds WAKE_SCAN_SECS, scanWake);
   };
   armWakeTimer<system>();
@@ -1330,7 +1458,9 @@ actor CafresoHQState {
   public shared (msg) func setWakeConfig(enabled : Bool, gatewayUrl : Text, secretHex : Text) : async () {
     let caller = msg.caller;
     switch (planAdmin) {
-      case null { planAdmin := ?caller };   // first caller (deployer) claims admin
+      // Controller-only claim (see setPlanSecret) — this is the other path that
+      // could otherwise seize admin and point the wake outcall at an attacker.
+      case null { if (not Principal.isController(caller)) { throw Error.reject("only a controller may claim plan admin") }; planAdmin := ?caller };
       case (?a) { if (caller != a) { throw Error.reject("only the plan admin may set wake config") } };
     };
     if (secretHex != "") {

@@ -89,6 +89,7 @@ WORKDIR /app
 COPY serve.py                 ./serve.py
 COPY night_runner.py          ./night_runner.py
 COPY hq.html ./hq.html
+COPY graph-viewer.html        ./graph-viewer.html
 COPY styles.css               ./styles.css
 COPY app.jsx                  ./app.jsx
 COPY ui.jsx                   ./ui.jsx

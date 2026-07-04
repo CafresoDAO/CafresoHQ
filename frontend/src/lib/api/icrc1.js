@@ -225,12 +225,13 @@ export function toRawAmount(tokenKey, wholeUnits) {
   if (!token) return 0n;
   const n = Number(wholeUnits);
   if (!Number.isFinite(n) || n < 0) return 0n;
-  // Use BigInt arithmetic to avoid float precision loss at 18 decimals.
-  const scale = 10n ** BigInt(token.decimals);
-  const whole = BigInt(Math.floor(n));
-  const fracStr = (n - Math.floor(n)).toFixed(token.decimals).slice(2);
-  const frac = BigInt(fracStr || '0');
-  return whole * scale + frac;
+  // toFixed the FULL value so a fractional carry lands in the integer part.
+  // Computing `whole` separately as Math.floor(n) then slicing "0." off the
+  // fraction dropped the carry when the fraction rounded up to 1.0 (e.g.
+  // 1.999999999 → whole=1, frac="00000000" → 1.0 instead of ~2.0), silently
+  // under-paying by a whole token. Splitting the rounded string is carry-safe.
+  const [whole, frac = ''] = n.toFixed(token.decimals).split('.');
+  return BigInt(whole) * 10n ** BigInt(token.decimals) + BigInt(frac || '0');
 }
 
 // Execute an ICRC-1 transfer from the signed-in user to `toPrincipalText`.

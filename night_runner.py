@@ -26,6 +26,7 @@ import os
 import re
 import ssl
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -77,8 +78,15 @@ def _self_call(ctx, method, path, body=None, headers=None, timeout=90):
     kw = {'timeout': timeout}
     if ctx.ssl_ctx is not None:
         kw['context'] = ctx.ssl_ctx
-    with urllib.request.urlopen(req, **kw) as resp:
-        return resp.status, resp.read()
+    try:
+        with urllib.request.urlopen(req, **kw) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        # urlopen RAISES on status >= 400 and never returns it. Return the
+        # (status, body) tuple instead so callers' status checks (vault-write
+        # s != 200, VAULT_READ s == 404) actually run — otherwise a failed
+        # vault PUT is miscounted as a successful note in the run log/Gazette.
+        return e.code, e.read()
 
 
 # ── LLM call via the container-side provider key store ──────────────────────
