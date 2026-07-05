@@ -567,6 +567,21 @@ function NightShiftSection({ agents }) {
   };
 
   const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  /* Live countdown to the next run — "next: Jul 6, 2:00 AM" alone forces the
+     reader to do date math at midnight. 30s tick keeps it honest without
+     re-rendering every second. */
+  const [nowTick, setNowTick] = useSM(() => Date.now());
+  useEMission(() => { const iv = setInterval(() => setNowTick(Date.now()), 30000); return () => clearInterval(iv); }, []);
+  const fmtEta = (ms) => {
+    if (!ms) return '';
+    const d = ms - nowTick;
+    if (d <= 0) return ' · any moment now';
+    const mins = Math.round(d / MIN);
+    if (mins < 60) return ` · in ${mins}m`;
+    const h = Math.floor(mins / 60);
+    if (h < 48) return ` · in ${h}h ${mins % 60}m`;
+    return ` · in ${Math.round(h / 24)}d`;
+  };
   if (!reachable) {
     return (
       <div style={{ marginTop: 14 }}>
@@ -591,7 +606,7 @@ function NightShiftSection({ agents }) {
               <div className="mc-meta">
                 <span><b>{s.agentName || s.agentId}</b> · {s.vaultFolder}/</span>
                 <span>{s.recurrence === 'daily' ? 'daily' : 'once'} · {Math.round(s.durationMs / MIN)}m @ {Math.round(s.intervalMs / MIN)}m</span>
-                <span>{s.enabled ? `next: ${fmtT(s.nextRunAt)}` : `last: ${fmtT(s.lastRunAt)}`}</span>
+                <span>{s.enabled ? `next: ${fmtT(s.nextRunAt)}${running.includes(s.id) ? '' : fmtEta(s.nextRunAt)}` : `last: ${fmtT(s.lastRunAt)}`}</span>
               </div>
               <div className="mc-actions">
                 <button className="px-btn danger" style={{ fontSize: 9 }} onClick={() => cancel(s.id)}>✕ CANCEL</button>
@@ -644,7 +659,15 @@ function NightShiftSection({ agents }) {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
         <button className="px-btn primary" style={{ fontSize: 9 }}
-          onClick={() => schedule(new Date(startStr).getTime() || 0)}>🌙 SCHEDULE</button>
+          onClick={() => {
+            /* An unparseable/blank time must NOT silently become startAt=0
+               (= run immediately). Kicking off an agent run is a real action;
+               reject and tell the user instead. */
+            const t = new Date(startStr).getTime();
+            if (!Number.isFinite(t)) { setMsg('Pick a valid start time first (or use RUN NOW).'); return; }
+            if (t <= Date.now()) { setMsg('That start time is in the past — pick a future time or use RUN NOW.'); return; }
+            schedule(t);
+          }}>🌙 SCHEDULE</button>
         <button className="px-btn secondary" style={{ fontSize: 9 }}
           onClick={() => schedule(0)} title="starts within ~30s on the next scheduler scan">▶ RUN NOW</button>
         {msg && <span className="hint">{msg}</span>}

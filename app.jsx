@@ -201,17 +201,22 @@ function WindowFrame({
     return { x: SIDE, y: TOP, w: W - SIDE * 2, h: H - TOP - BOTTOM };
   };
 
-  /* Esc closes (unless an input/textarea is focused — don't lose typing). */
+  /* Esc closes (unless an input/textarea is focused — don't lose typing).
+     Only the TOPMOST window responds — every mounted WindowFrame hears the
+     same keydown, so without the `focused` gate one Esc would close them all. */
   React.useEffect(() => {
+    if (!focused) return;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      if (e.__hqEscClaimed) return;
       const t = e.target, tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+      e.__hqEscClaimed = true;
       onClose && onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, focused]);
 
   const _CURSORS = {
     move: 'grabbing',
@@ -368,13 +373,17 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
   // floating window so it doesn't cover the rail/topbar ("chat takes over").
   const fullScreen = isTouch && typeof window !== 'undefined' && window.innerWidth <= 768;
 
-  /* Esc closes the window (unless an input is focused — don't lose typing). */
+  /* Esc closes the window (unless an input is focused — don't lose typing).
+     __hqEscClaimed: the focused WindowFrame listens on the same keydown; the
+     claim flag ensures one Esc press closes exactly one window, not both. */
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      if (e.__hqEscClaimed) return;
       const t = e.target, tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+      e.__hqEscClaimed = true;
       setOpen(false);
     };
     window.addEventListener('keydown', onKey);
@@ -4027,16 +4036,31 @@ ${d.text}` : d.text,
   const minimizeAllWindows = useCallbackA(() => {
     setOpenWindows(prev => (prev || []).map(w => ({ ...w, minimized: true })));
   }, [setOpenWindows]);
+  /* Reactive breakpoint. matchMedia was previously read once per render with
+     no listener, so resizing a desktop window across 768px (or rotating a
+     tablet) stranded the UI in the wrong layout until something else
+     re-rendered. Subscribe to the media query so the crossing re-renders. */
+  const [isNarrowViewport, setIsNarrowViewport] = useStateA(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
+  useEffectA(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = (e) => setIsNarrowViewport(e.matches);
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange); // older Safari
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
   /* Desktop mode is active only when enabled AND on a desktop viewport.
      On phones the window manager is suppressed (mobile keeps its tab bar);
      the mobile app-switcher is a separate, card-stack presentation. */
-  const desktopMode = windowsEnabled && typeof window !== 'undefined'
-    && !window.matchMedia('(max-width: 768px)').matches;
+  const desktopMode = windowsEnabled && !isNarrowViewport;
   /* Mobile presents the same openWindows model as an iOS-style app switcher:
      one app fullscreen at a time, a card stack to switch/close, a launcher
      grid to open more. mobileApp = the view shown fullscreen (or null). */
-  const mobileMode = windowsEnabled && typeof window !== 'undefined'
-    && window.matchMedia('(max-width: 768px)').matches;
+  const mobileMode = windowsEnabled && isNarrowViewport;
   const [mobileApp, setMobileApp] = useStateA(null);
   const [switcherOpen, setSwitcherOpen] = useStateA(false);
   const openMobileApp = useCallbackA((view) => {
@@ -4244,7 +4268,7 @@ ${d.text}` : d.text,
         />
       ) : null}
       {/* Mobile floating approvals badge — always visible when pending */}
-      {approvals.length > 0 && typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches && (
+      {approvals.length > 0 && isNarrowViewport && (
         <button className="mobile-approvals-fab" onClick={() => {
           // Scroll to top of view-area where the ApprovalTray lives
           const va = document.querySelector('.view-area');
@@ -4364,7 +4388,7 @@ ${d.text}` : d.text,
         {/* Floating chat window — desktop only. On mobile the 'chat' view
             renders the panel inline so the floating window is suppressed.
             Also hide on all mobile views so it doesn't overlay Projects/Vault etc. */}
-        {activeView !== 'chat' && !window.matchMedia('(max-width: 768px)').matches && (
+        {activeView !== 'chat' && !isNarrowViewport && (
           <ChatWindow
             open={chatWinOpen}
             setOpen={setChatWinOpen}
@@ -4381,17 +4405,21 @@ ${d.text}` : d.text,
         )}
 
         {/* ── Window manager: open apps as draggable windows over the office
-            floor. Minimized windows stay MOUNTED (display:none) so their
-            internal state survives. z-order maps to a small capped band
-            under dropdowns/modals (--z-window = 300). ── */}
+            floor. Minimized windows stay MOUNTED and hidden via visibility
+            (NOT display:none) so internal state AND scroll positions survive
+            restore. z-order maps to a small capped band under dropdowns/
+            modals (--z-window = 300). ── */}
         {desktopMode && (() => {
           const sorted = [...(openWindows || [])].sort((a, b) => (a.z || 0) - (b.z || 0));
-          const topView = sorted.length ? sorted[sorted.length - 1].view : null;
+          // Topmost VISIBLE window — a minimized window must not claim focus
+          // (it would swallow Esc and close itself invisibly).
+          const topVisible = sorted.filter(w => !w.minimized);
+          const topView = topVisible.length ? topVisible[topVisible.length - 1].view : null;
           return sorted.map((win, i) => {
             const label = (VIEW_LABELS && VIEW_LABELS[win.view])
               || ((NAV_ITEMS.find(n => n[0] === win.view) || [])[1]) || win.view;
             return (
-              <div key={win.view} style={{ display: win.minimized ? 'none' : 'contents' }}>
+              <div key={win.view} style={{ display: 'contents', visibility: win.minimized ? 'hidden' : 'visible' }}>
                 <WindowFrame
                   title={String(label).toUpperCase()}
                   icon={<Ico kind={win.view} size={14} />}
@@ -4819,12 +4847,74 @@ function GraphPopout() {
   );
 }
 
+/* Last-resort error boundary around the whole tree. Without one, a single
+   uncaught render/effect error unmounts the entire office. Shows a pixel-style
+   crash card with the error message and a reload button instead of a blank page. */
+class RootErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    try { console.error('[CafresoHQ] uncaught render error:', error, info && info.componentStack); } catch (_) {}
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const msg = (this.state.error && (this.state.error.message || String(this.state.error))) || 'Unknown error';
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--paper, #f5f0e6)', color: 'var(--ink, #1a1a1a)',
+        padding: 'var(--sp-5, 20px)', zIndex: 2147483647,
+      }}>
+        <div style={{
+          maxWidth: 520, width: '100%',
+          border: '2px solid var(--ink, #1a1a1a)', borderRadius: 'var(--radius-2, 6px)',
+          background: 'var(--paper-2, #fff)', padding: 'var(--sp-5, 20px)',
+          boxShadow: '6px 6px 0 rgba(0,0,0,0.25)',
+        }}>
+          <div style={{fontSize: 'var(--text-13, 13px)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 8}}>
+            💥 THE OFFICE HIT A SNAG
+          </div>
+          <div style={{fontSize: 'var(--text-11, 11px)', lineHeight: 1.5, marginBottom: 8}}>
+            Something crashed while drawing the screen. Your projects, agents, and
+            wallets are safe — this is only a display error.
+          </div>
+          <pre style={{
+            fontSize: 'var(--text-10, 10px)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            background: 'var(--paper, #f5f0e6)', border: '1.5px solid var(--ink-3, #999)',
+            borderRadius: 'var(--radius-2, 6px)', padding: 8, margin: '0 0 12px',
+            maxHeight: 120, overflow: 'auto',
+          }}>{msg}</pre>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: 'var(--ink, #1a1a1a)', color: 'var(--paper, #f5f0e6)',
+              border: '1.5px solid var(--ink, #1a1a1a)', borderRadius: 'var(--radius-2, 6px)',
+              padding: '8px 14px', cursor: 'pointer',
+              fontSize: 'var(--text-11, 11px)', fontWeight: 700, letterSpacing: '0.04em',
+            }}
+          >RELOAD THE OFFICE</button>
+        </div>
+      </div>
+    );
+  }
+}
+
 /* Detect popout mode and mount the right tree. */
 const _ocSearch = new URLSearchParams(window.location.search);
 if (_ocSearch.get('popout') === 'graph') {
-  ReactDOM.createRoot(document.getElementById('root')).render(<GraphPopout />);
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <RootErrorBoundary><GraphPopout /></RootErrorBoundary>
+  );
 } else {
-  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <RootErrorBoundary><App /></RootErrorBoundary>
+  );
 }
 
 /* Signal the boot overlay (hq.html) that the React app has mounted so it can

@@ -5479,7 +5479,15 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
 
   React.useEffect(() => {
     if (visible && fitRef.current) {
-      requestAnimationFrame(() => { try { fitRef.current.fit(); } catch (_) {} });
+      // Double rAF: the first frame after un-hiding can still have the pane at
+      // its collapsed size (mobile toggles height 0 → flex), so a single-frame
+      // fit() measures a 0-height box and renders a 1-row terminal.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try { fitRef.current && fitRef.current.fit(); } catch (_) {}
+        // Land the keyboard in the terminal the moment it's shown — a terminal
+        // you have to click into first isn't ready for typing.
+        try { termRef.current && termRef.current.focus(); } catch (_) {}
+      }));
     }
   }, [visible]);
 
@@ -6418,13 +6426,20 @@ function ProjectTerminal({ project, visible }) {
 
   const addSession = (cli) => {
     const id = `s${++_sessionCounter}`;
-    setSessions(prev => [...prev, { id, cli, sessionId: _uuid() }]);
+    setSessions(prev => {
+      // Stable per-CLI ordinal, assigned once at creation. Deriving the label
+      // from the array index made "Claude #3" silently become "Claude #2" when
+      // a middle tab closed — labels must never renumber under the user.
+      const n = prev.filter(s => s.cli === cli).reduce((m, s) => Math.max(m, s.n || 0), 0) + 1;
+      return [...prev, { id, cli, sessionId: _uuid(), n }];
+    });
     setActiveId(id);
     setAddMenuOpen(false);
   };
 
   const closeSession = (id) => {
-    if (sessions.length <= 1) return;
+    // Closing the LAST tab is allowed — the sessions.length===0 effect above
+    // respawns a fresh default session, which is what "close" means there.
     const closing = sessions.find(s => s.id === id);
     const next = sessions.filter(s => s.id !== id);
     // Side effects MUST stay OUTSIDE the setState updater — calling setActiveId()
@@ -6450,7 +6465,9 @@ function ProjectTerminal({ project, visible }) {
     const name = cliName(session.cli);
     const same = sessions.filter(s => s.cli === session.cli);
     if (same.length <= 1) return name;
-    return `${name} #${same.indexOf(session) + 1}`;
+    // Prefer the stable creation ordinal; sessions persisted before `n`
+    // existed fall back to array position.
+    return `${name} #${session.n || same.indexOf(session) + 1}`;
   };
 
   return (
@@ -6469,6 +6486,7 @@ function ProjectTerminal({ project, visible }) {
           return (
             <div key={s.id}
               onClick={() => setActiveId(s.id)}
+              onAuxClick={e => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '0 4px 0 12px', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -6484,10 +6502,10 @@ function ProjectTerminal({ project, visible }) {
             >
               <span style={{ fontSize: 13 }}>{icon}</span>
               <span>{getLabel(s)}</span>
-              {sessions.length > 1 && (
+              {(
                 <button
                   onClick={e => { e.stopPropagation(); closeSession(s.id); }}
-                  title="End session"
+                  title={sessions.length > 1 ? 'End session' : 'End session (a fresh one opens)'}
                   style={{
                     background: 'none', border: 'none', cursor: 'pointer',
                     color: 'inherit', opacity: active ? 0.7 : 0.35,
@@ -6534,7 +6552,7 @@ function ProjectTerminal({ project, visible }) {
           >+</button>
           {addMenuOpen && ReactDOM.createPortal(
             <div ref={addMenuRef} style={{
-              position: 'fixed', top: addMenuPos.top, left: addMenuPos.left, zIndex: 99999,
+              position: 'fixed', top: addMenuPos.top, left: addMenuPos.left, zIndex: 'var(--z-dropdown)',
               background: '#12121e', border: '1px solid rgba(124,107,255,0.25)',
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
@@ -6721,7 +6739,14 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const C = window.CafresoHQClient;
 
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
-  const flipMode = (m) => { setMode(m); LSset('mode', m); };
+  /* Same never-silently-drop-edits contract as openPath: flipping to Classic
+     unmounts the editor, so confirm first if the open file has unsaved changes. */
+  const flipMode = async (m) => {
+    if (m === mode) return;
+    const cur = openFileRef.current;
+    if (cur && cur.dirty && !(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
+    setMode(m); LSset('mode', m);
+  };
   const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [mobilePane, setMobilePane] = useSV('files');   // mobile pane-switcher: files | editor | terminal | agents
   const [selectedId, setSelectedId] = useSV(() => LS('selid', (projects[0] && projects[0].id) || null));
@@ -6739,7 +6764,13 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const [agentStatus, setAgentStatus] = useSV('idle');   // idle | working
   const [ledger, setLedger] = useSV([]);
   const [pulse, setPulse] = useSV(() => new Set());      // paths the agent just touched
-  const [termOpen, setTermOpen] = useSV(() => LS('term', true));
+  /* termOpen now means "Terminal tab active" (was: drawer expanded).
+     Default false — land on the editor, hop to the terminal deliberately.
+     termMounted latches true on first activation: the terminal stays mounted
+     after that (PTY survives tab hops) but is never spun up for users who
+     don't open it. */
+  const [termOpen, setTermOpen] = useSV(() => LS('term', false));
+  const [termMounted, setTermMounted] = useSV(() => LS('term', false));
   const [fileDrag, setFileDrag] = useSV(false);
   const uploadRef = React.useRef(null);
   const uploadDirRef = React.useRef(null);
@@ -6756,7 +6787,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     // (Follow agent) skip; user-initiated opens confirm first.
     if (cur && cur.dirty && cur.path !== path) {
       if (opts && opts.auto) return;
-      if (!window.confirm('Discard unsaved changes to ' + baseName(cur.path) + '?')) return;
+      if (!(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
     }
     setErr(null); setConflict(false);
     const kind = previewKind(path);
@@ -6841,18 +6872,18 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const fsOK = () => (C && C.fsMkdir) ? C : null;
   const newFolder = async () => {
     if (!project || !fsOK()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
-    const name = (window.prompt('New folder name:') || '').trim(); if (!name || /[\/\\]/.test(name)) return;
+    const name = ((await window.hqPrompt('New folder name:')) || '').trim(); if (!name || /[\/\\]/.test(name)) return;
     try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { toast('error', e.message || String(e)); }
   };
   const renameEntry = async (entry) => {
     if (!fsOK()) return;
-    const next = (window.prompt('Rename to:', entry.name) || '').trim(); if (!next || next === entry.name || /[\/\\]/.test(next)) return;
+    const next = ((await window.hqPrompt('Rename to:', { value: entry.name, okLabel: 'Rename' })) || '').trim(); if (!next || next === entry.name || /[\/\\]/.test(next)) return;
     const to = entry.path.slice(0, Math.max(0, entry.path.length - entry.name.length)) + next;
     try { await C.fsRename(entry.path, to); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(o => ({ ...o, path: to + o.path.slice(entry.path.length) })); toast('success', `Renamed to "${next}"`); } catch (e) { toast('error', e.message || String(e)); }
   };
   const deleteEntry = async (entry) => {
     if (!fsOK()) return;
-    if (!window.confirm(`Delete ${entry.isDir ? 'folder' : 'file'} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.')) return;
+    if (!(await window.hqConfirm(`Delete ${entry.isDir ? 'folder' : 'file'} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.', { danger: true }))) return;
     try { await C.fsDelete(entry.path); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(null); toast('success', `Deleted "${entry.name}"`); } catch (e) { toast('error', e.message || String(e)); }
   };
   const doUpload = async (fileList, dir) => {
@@ -6864,7 +6895,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
   const triggerUpload = () => { uploadDirRef.current = null; if (uploadRef.current) uploadRef.current.click(); };
   const openChat = () => { if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id })); };
-  const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
+  const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); setTermMounted(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
 
   const statusLabel = agentStatus === 'working' ? 'agent working…' : 'agent idle';
 
@@ -6992,11 +7023,24 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       ) : (
         <div className="ws-body">
           {filesPane()}
+          {/* Center deck: Editor and Terminal are PEER TABS you hop between,
+              not a stacked bottom drawer — opening the terminal no longer
+              shrinks the editor, and both stay mounted (display toggle) so
+              the PTY and editor state survive the hop. */}
           <div className="ws-center">
-            {editorPane()}
-            <div className={'ws-term' + (termOpen ? '' : ' min')}>
-              <div className="ws-term-hd" onClick={() => { const v = !termOpen; setTermOpen(v); LSset('term', v); }}><span className="tl">⌁ Terminal · shared shell</span><span className="ch">{termOpen ? '▾' : '▸'}</span></div>
-              {termOpen && <div className="ws-term-body"><ProjectTerminal project={project} visible={termOpen} /></div>}
+            <div className="ws-ctabs" role="tablist">
+              <button className={'ws-ctab' + (!termOpen ? ' on' : '')} role="tab" aria-selected={!termOpen}
+                onClick={() => { setTermOpen(false); LSset('term', false); }}>
+                📄 Editor{openFile && openFile.dirty ? <span className="dirty">•</span> : null}
+              </button>
+              <button className={'ws-ctab' + (termOpen ? ' on' : '')} role="tab" aria-selected={!!termOpen}
+                onClick={() => { setTermOpen(true); setTermMounted(true); LSset('term', true); }}>
+                ⌁ Terminal
+              </button>
+            </div>
+            <div className="ws-cstage" style={{ display: termOpen ? 'none' : 'flex' }}>{editorPane()}</div>
+            <div className="ws-cstage" style={{ display: termOpen ? 'flex' : 'none' }}>
+              {(termOpen || termMounted) && <ProjectTerminal project={project} visible={!!termOpen} />}
             </div>
           </div>
           {agentPane()}
@@ -7080,14 +7124,17 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
      chat thread (those messages are scoped via thread:'project:<id>')
      and orphans any tasks that referenced it. We don't cascade-delete
      tasks — those stay in the boss's task list and can be reassigned. */
-  const deleteProject = (p) => {
+  const deleteProject = async (p) => {
     if (!p) return;
     const assignees = (p.agentIds || []).length;
     const msg = `Delete project "${p.name}"?` +
       (assignees > 0 ? `\n\n${assignees} agent${assignees === 1 ? '' : 's'} ${assignees === 1 ? 'is' : 'are'} currently assigned. Their assignments will be cleared.` : '') +
       `\n\nThis cannot be undone.`;
-    if (!window.confirm(msg)) return;
+    if (!(await window.hqConfirm(msg, { danger: true }))) return;
     setProjects(prev => (prev || []).filter(x => x.id !== p.id));
+    // Drop its keep-alive terminal mount too, or the PTY stays connected to a
+    // project that no longer exists (and the list grows forever).
+    setOpenedTerminals(prev => prev.filter(id => id !== p.id));
     if (selected === p.id) { setSelected(null); setOpenFile(null); }
     if (window.cafresohqToast) window.cafresohqToast.info(`Deleted project "${p.name}"`);
   };
@@ -7211,7 +7258,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   const newFolder = async () => {
     if (!project || !project.path) return;
     if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
-    const name = (window.prompt('New folder name:') || '').trim();
+    const name = ((await window.hqPrompt('New folder name:')) || '').trim();
     if (!name) return;
     if (/[\/\\]/.test(name)) { toast('error', 'Folder name can\'t contain slashes.'); return; }
     setBusy(true); setErr(null);
@@ -7226,7 +7273,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   const renameEntry = async (entry) => {
     if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
     const cur = entry.name;
-    const next = (window.prompt('Rename to:', cur) || '').trim();
+    const next = ((await window.hqPrompt('Rename to:', { value: cur, okLabel: 'Rename' })) || '').trim();
     if (!next || next === cur) return;
     if (/[\/\\]/.test(next)) { toast('error', 'Name can\'t contain slashes.'); return; }
     const parent = entry.path.slice(0, Math.max(0, entry.path.length - cur.length));
@@ -7250,7 +7297,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
     const what = entry.isDir ? 'folder' : 'file';
     const msg = `Delete ${what} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.';
-    if (!window.confirm(msg)) return;
+    if (!(await window.hqConfirm(msg, { danger: true }))) return;
     setBusy(true); setErr(null);
     try {
       await fsClient().fsDelete(entry.path);

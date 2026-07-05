@@ -3174,6 +3174,12 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   max-height: 90vh; overflow: hidden;
   display: grid; grid-template-rows: auto 1fr auto;
 }
+/* DialogHost — in-app confirm/prompt (replaces window.confirm/prompt). */
+.oc-dialog { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.oc-dialog-msg { font-size: 12px; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
+.oc-dialog-in { font: inherit; font-size: 12px; padding: 8px 10px; border: 2px solid var(--ink); background: var(--paper-2, #f0e9d8); color: var(--ink); }
+.oc-dialog-in:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: 1px; }
+.oc-dialog-acts { display: flex; gap: 8px; justify-content: flex-end; }
 .modal-head {
   background: var(--ceo);
   color: #fff8ee;
@@ -5970,6 +5976,14 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 .ws-stage > * { flex: 1; min-height: 0; }
 .ws-stage-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--ink-3); font-size: 13px; gap: 6px; padding: 16px; }
 .ws-stage-empty .dim { font-size: 11px; opacity: 0.6; }
+/* Center deck: Editor and Terminal are peer tabs — hop, don't stack. */
+.ws-ctabs { display: flex; align-items: stretch; gap: 2px; padding: 0 6px; background: var(--paper-2, #f0e9d8); border-bottom: 1px solid var(--rule); flex-shrink: 0; min-height: 32px; }
+.ws-ctab { display: flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; font: inherit; font-size: 11px; font-weight: 600; padding: 0 12px; color: var(--ink-3); cursor: pointer; }
+.ws-ctab.on { color: var(--ink); border-bottom-color: var(--accent-sun); background: rgba(240, 198, 116, 0.10); }
+.ws-ctab .dirty { color: var(--accent-sun); font-size: 17px; line-height: 0; }
+.ws-ctab:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: -2px; }
+.ws-cstage { flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+.ws-cstage > * { flex: 1; min-height: 0; }
 .ws-term { border-top: 1px solid var(--rule); display: flex; flex-direction: column; height: 200px; flex-shrink: 0; background: var(--paper); }
 .ws-term.min { height: 26px; }
 .ws-term-hd { display: flex; align-items: center; height: 26px; padding: 0 10px; font-size: 10px; color: var(--ink-3); cursor: pointer; flex-shrink: 0; }
@@ -9150,4 +9164,19 @@ body.night .tip-coin { color: #ffd97a; text-shadow: 0 1px 0 #000; }
 body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd97a; }
 @media (max-width: 768px) {
   .tip-rain .tip-coin:nth-child(n+4) { display: none; }  /* fewer coins on phones */
+}
+
+/* ==========================================================================
+   Reduced motion — global catch-all. Individual opt-outs above handle the
+   fancy cases (tip rain, dock); this backstop covers everything that slipped
+   through (idle pulse pips, wandering pets, cash ticker, walk cycles) so a
+   reduced-motion user never sees an infinite decorative animation.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

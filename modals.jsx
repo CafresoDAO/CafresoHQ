@@ -114,6 +114,11 @@ const MODAL_SIZE_MAX_WIDTH = { sm: 420, md: 560, lg: 760, xl: 980, fullscreen: '
 function Modal({ open, onClose, title, subtitle, headerActions, footer, size = 'md', dismissable = true, children }) {
   const dialogRef = useRefM(null);
   const triggerRef = useRefM(null);
+  /* True only while a mouse press that STARTED on the backdrop is in flight.
+     Guards against drag-select closes: selecting text in the modal and
+     releasing over the backdrop fires a click on the backdrop, which used to
+     dismiss the modal and eat the draft. */
+  const backdropPressRef = useRefM(false);
   const [entered, setEntered] = useStateM(false);
 
   /* Capture the focused element when opening so we can restore on close. */
@@ -191,7 +196,12 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
     <div
       className="backdrop"
       data-modal-shell
-      onClick={() => dismissable && onClose && onClose()}
+      onMouseDown={(e) => { backdropPressRef.current = e.target === e.currentTarget; }}
+      onMouseUp={(e) => {
+        const started = backdropPressRef.current;
+        backdropPressRef.current = false;
+        if (started && e.target === e.currentTarget && dismissable && onClose) onClose();
+      }}
       style={{
         zIndex: 'var(--z-modal)',
         opacity: entered ? 1 : 0,
@@ -274,7 +284,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
      into a fresh hire. Mirrors MeetingRoomModal's [open]-effect. */
   useEffectM(() => {
     if (!open) return;
-    setName(''); setRole(MOCK.ROLES[0]);
+    setName(''); setRole(HQ.ROLES[0]);
     setPrompt('You are a helpful sub-agent. Be concise and warm.');
     setTools(['web','files']); setAvatar('rose');
     setModel('anthropic:claude-haiku-4-5-20251001'); setTemp(0.4);
@@ -636,7 +646,8 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const fund = async () => {
-    setBusy('fund'); setMsg('');
+    // Ledger transfers take a few seconds — say so, or the click feels dead.
+    setBusy('fund'); setMsg('Funding — waiting for the ledger…');
     try {
       // Tell the tip watcher this credit is OURS before it can land on-chain —
       // a self-funded top-up must not rain coins as a "tip".
@@ -677,7 +688,7 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const payNow = async () => {
-    setBusy('paynow'); setMsg('');
+    setBusy('paynow'); setMsg('Running payroll — waiting for the chain…');
     try {
       const r = await chain().payroll.run(agentId);
       setMsg(`Payroll run: ${r}`);
