@@ -450,7 +450,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             <div className="form-row full">
               <label>ALLOWED TOOLS</label>
               <div className="tool-grid">
-                {HQ.TOOLS_CATALOG.map(t => (
+                {visibleToolsCatalog().map(t => (
                   <div key={t.id} className={`tool-chk ${tools.includes(t.id)?'on':''}`} onClick={()=>toggleTool(t.id)}>
                     <div className="box" />
                     <span>{t.label}</span>
@@ -493,13 +493,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
 const SETTINGS_TABS = [
   { id: 'keys',        ico: '🔌', label: 'CONNECTIONS', desc: 'brain · keys · search' },
   { id: 'agentcli',    ico: '🤖', label: 'CODE AGENTS', desc: 'CLIs in your container' },
-  { id: 'icp-services',ico: '⛓', label: 'ICP SERVICES',desc: 'wallets · publish · on-chain' },
+  { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
   { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
   { id: 'media',       ico: '🎨', label: 'MEDIA',       desc: 'image & video gen' },
-  { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme & ambience' },
+  { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
   { id: 'system',      ico: '🛰', label: 'SYSTEM',      desc: 'health & runtime' },
 ];
-const SETTINGS_TAB_ALIAS = { global: 'appearance' }; // old id → new id
+const SETTINGS_TAB_ALIAS = { global: 'appearance', modules: 'icp-services' }; // old/new id → canonical id
 
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
@@ -519,7 +519,8 @@ const SETTINGS_INDEX = [
   { tab:'keys', label:'Brave web search', hint:'web search tool + API key', kw:'brave search web key' },
   { tab:'keys', label:'Vault backend', hint:'markdown vault storage + browser', kw:'vault notes markdown obsidian rest' },
   { tab:'agentcli', label:'Install code agents', hint:'add Claude Code / Codex / Gemini CLI on demand', kw:'install npm cli agents claude codex gemini version' },
-  { tab:'icp-services', label:'ICP Services catalog', hint:'install on-chain services like adding an MCP', kw:'icp internet computer dfinity service catalog install marketplace on-chain blockchain wallet publish canister' },
+  { tab:'icp-services', label:'Modules', hint:'optional add-ons — the OS works the same with all of them off', kw:'modules add-ons addons optional capabilities icp internet computer dfinity service catalog install marketplace on-chain blockchain' },
+  { tab:'icp-services', label:'Money & payments (optional)', hint:'master switch for wallets, payroll, tips — off by default', kw:'money payments wallet payroll tips icrc icp ckusdt ckuni token balance fund send cap spend agent crypto enable disable optional' },
   { tab:'icp-services', label:'Agent wallet', hint:'per-agent on-chain wallet + spend cap', kw:'wallet icp ckusdt ckuni token balance fund send cap spend agent money crypto' },
   { tab:'icp-services', label:'Publish to canister', hint:'ship a site to a *.icp0.io URL', kw:'publish canister deploy site url icp0 web hosting' },
   { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
@@ -529,6 +530,8 @@ const SETTINGS_INDEX = [
   { tab:'agents', label:'Dismiss an agent', hint:'remove a hire from the roster', kw:'dismiss fire let go remove' },
   { tab:'media', label:'Image generation', hint:'provider + model for Pixel', kw:'image generation openai fal a1111 comfyui pixel' },
   { tab:'media', label:'Video generation', hint:'provider + model for Reel', kw:'video generation fal reel' },
+  { tab:'appearance', label:'Theme & vocabulary', hint:'reskin the whole OS — office, coffee shop, trading floor…', kw:'theme skin vocabulary preset sepia solarized dracula high contrast coffeeshop wallstreet barista broker customize personalize' },
+  { tab:'appearance', label:'Density', hint:'compact · comfortable · spacious', kw:'density compact comfortable spacious spacing size' },
   { tab:'appearance', label:'Scanline overlay', hint:'soft CRT shimmer', kw:'scanlines crt overlay' },
   { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
   { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
@@ -540,24 +543,37 @@ const SETTINGS_INDEX = [
   { tab:'system', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
 ];
 
-/* ── ICP Services catalog ──────────────────────────────────────────────────
-   One-click install of on-chain capabilities — like adding an MCP server, but
-   for ICP. Installing flips a flag in cafresohq_state (via the shell bridge)
-   and mirrors it to settings.icpServices so agent-tool gating is synchronous.
-   Everything here needs the ai.cafreso.com shell (which holds Internet Identity);
-   standalone (no bridge) shows a hint. */
+/* ── Modules catalog ───────────────────────────────────────────────────────
+   Optional capabilities, like enabling an MCP server. CafresoHQ is a
+   deploy-agnostic agent OS: every module here is OPT-IN and the OS works
+   identically with all of them off. Money is deliberately just one module —
+   nobody should have to think about tokens to use their agents.
+
+   Money master switch = settings.moneyEnabled (window.hqMoneyOn(), gates every
+   money surface: wallet cards, payroll, P&L board, tip watcher, WALLET_* agent
+   tools). When the shell bridge is present, enabling also flips the on-chain
+   service flag in cafresohq_state; the flag mirrors to settings.icpServices so
+   agent-tool gating stays synchronous. Turning money OFF never touches funds:
+   balances live on-chain under the user's Internet Identity — the module hides
+   them and pauses agent spending, nothing more. */
 const ICP_SERVICES = [
   {
-    id: 'wallet', ico: '👛', name: 'Agent Wallet',
-    blurb: "Give each agent its own on-chain HQ wallet (ICP, ckUSDT, ckUNI, sGLDT, $nanas) with a spend cap you set. Agents spend within the cap automatically; anything over asks you first.",
+    id: 'wallet', ico: '💰', name: 'Money & Payments',
+    blurb: 'Agents can hold tokens (ICP, ckUSDT, ckUNI, sGLDT, $nanas), earn tips and payroll, and spend within caps you set. Entirely optional — HQ works the same without it.',
     tools: ['WALLET_BALANCE', 'WALLET_SEND'],
   },
   {
-    id: 'publish', ico: '🚀', name: 'Publish to Canister',
-    blurb: 'Publish an agent-built site to the Internet Computer and get back a verifiable *.icp0.io link your users can click.',
+    id: 'publish', ico: '🚀', name: 'Publish to Web',
+    blurb: 'Agents publish sites they build and hand back a verifiable *.icp0.io link your users can click.',
     tools: ['PUBLISH_SITE'],
   },
 ];
+
+/* Tool chips shown in Hire + Roster. The wallet tool only appears when the
+   Money module is on — with money off, agents shouldn't even be offerable a
+   wallet (the runtime gate in hq-runtime.jsx enforces the same rule). */
+const visibleToolsCatalog = () =>
+  HQ.TOOLS_CATALOG.filter(t => t.id !== 'wallet' || (window.hqMoneyOn && window.hqMoneyOn()));
 
 const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
 function toBaseUnits(whole, decimals) {
@@ -646,6 +662,13 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const fund = async () => {
+    // Real money leaves the user's main account here — restate the exact
+    // amount and destination and make them say yes.
+    const amt = String(fundAmt || '').trim();
+    if (!amt || isNaN(Number(amt)) || Number(amt) <= 0) { setMsg('Enter a valid amount first.'); return; }
+    if (!(await window.hqConfirm(
+      `Send ${amt} ${fundTok} from YOUR main account to ${agent.name}'s agent wallet?\n\nThis is a real on-chain transfer.`,
+      { okLabel: `Send ${amt} ${fundTok}` }))) return;
     // Ledger transfers take a few seconds — say so, or the click feels dead.
     setBusy('fund'); setMsg('Funding — waiting for the ledger…');
     try {
@@ -688,6 +711,9 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const payNow = async () => {
+    if (!(await window.hqConfirm(
+      `Run payroll for ${agent.name} right now?\n\nPays ${payAmt} ${payTok} from your signed payroll budget (the budget cap still applies).`,
+      { okLabel: 'Pay now' }))) return;
     setBusy('paynow'); setMsg('Running payroll — waiting for the chain…');
     try {
       const r = await chain().payroll.run(agentId);
@@ -697,6 +723,9 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const stopPay = async () => {
+    if (!(await window.hqConfirm(
+      `Stop payroll for ${agent.name}?\n\nNo further automatic payments will run. The agent's balance is untouched.`,
+      { okLabel: 'Stop payroll', danger: true }))) return;
     setBusy('paystop'); setMsg('');
     try { await chain().payroll.remove(agentId); setSal(null); setMsg('Payroll stopped.'); }
     catch (e) { setMsg(String(e.message || e)); }
@@ -862,8 +891,11 @@ function PayrollBudgetPanel() {
 }
 
 function IcpServicesPanel({ agents }) {
-  const [installed, setInstalled] = useStateM({});
-  const [available, setAvailable] = useStateM(true);
+  const [installed, setInstalled] = useStateM(() => {
+    try { return window.CafresoHQClient.getSettings().icpServices || {}; } catch (_e) { return {}; }
+  });
+  const [moneyOn, setMoneyOn] = useStateM(() => !!(window.hqMoneyOn && window.hqMoneyOn()));
+  const [available, setAvailable] = useStateM(false);
   const [pausedAll, setPausedAll] = useStateM(false);
   const [loading, setLoading] = useStateM(true);
   const [err, setErr] = useStateM('');
@@ -876,7 +908,7 @@ function IcpServicesPanel({ agents }) {
     if (!avail) { setLoading(false); return; }
     try {
       const flags = await chain().services.list();
-      const map = {}; (flags || []).forEach(f => { map[f.serviceId] = !!f.enabled; });
+      const map = { ...installed }; (flags || []).forEach(f => { map[f.serviceId] = !!f.enabled; });
       setInstalled(map);
       window.CafresoHQClient.setSettings({ icpServices: map });
       setPausedAll(await chain().wallet.pausedAll());
@@ -885,65 +917,126 @@ function IcpServicesPanel({ agents }) {
   };
   useEffectM(() => { load(); }, []);
 
-  const toggleInstall = async (svc) => {
-    const next = !installed[svc.id];
-    try {
-      await chain().services.set(svc.id, next, '');
-      const map = { ...installed, [svc.id]: next };
-      setInstalled(map);
-      window.CafresoHQClient.setSettings({ icpServices: map });
-    } catch (e) { setErr(String(e.message || e)); }
+  /* Money master switch. Both directions confirm in plain language; disabling
+     ALSO best-effort-pauses all agent spending so nothing moves while the UI
+     is hidden. Funds are never touched — the on-chain install flag stays set
+     so re-enabling restores everything exactly as it was. */
+  const toggleMoney = async () => {
+    if (!moneyOn) {
+      const ok = await window.hqConfirm(
+        'Turn on Money & Payments?\n\n'
+        + 'How it stays safe:\n'
+        + '• Agents can NEVER take your funds — every allowance is signed by you, in your wallet.\n'
+        + '• Each agent spends only within a cap you set; anything over asks you first.\n'
+        + '• One global pause switch stops all agent spending instantly.\n'
+        + '• Turning this off later hides money features and pauses spending — balances stay yours, on-chain.\n\n'
+        + 'Tip: start tiny (0.05 ICP) until you trust the flow.',
+        { okLabel: 'Turn on', cancelLabel: 'Not now' });
+      if (!ok) return;
+      window.CafresoHQClient.setSettings({ moneyEnabled: true });
+      setMoneyOn(true);
+      if (available) {
+        try {
+          await chain().services.set('wallet', true, '');
+          const map = { ...installed, wallet: true };
+          setInstalled(map);
+          window.CafresoHQClient.setSettings({ icpServices: map });
+        } catch (e) { setErr(String(e.message || e)); }
+      }
+      return;
+    }
+    const ok = await window.hqConfirm(
+      'Turn off Money & Payments?\n\n'
+      + '• All agent spending is paused immediately.\n'
+      + '• Balances are NOT deleted — they stay on-chain under your Internet Identity and reappear when you turn this back on.\n'
+      + '• Scheduled payroll stops running.',
+      { okLabel: 'Turn off', cancelLabel: 'Keep on' });
+    if (!ok) return;
+    if (available) {
+      try { await chain().wallet.pauseAll(true); setPausedAll(true); } catch (_e) { /* best-effort */ }
+    }
+    window.CafresoHQClient.setSettings({ moneyEnabled: false });
+    setMoneyOn(false);
   };
+
+  const togglePublish = async () => {
+    const next = !installed.publish;
+    const map = { ...installed, publish: next };
+    // Publish works without the bridge (container /fs path) — always store
+    // locally; flip the on-chain flag too when the shell is reachable.
+    setInstalled(map);
+    window.CafresoHQClient.setSettings({ icpServices: map });
+    if (available) {
+      try { await chain().services.set('publish', next, ''); }
+      catch (e) { setErr(String(e.message || e)); }
+    }
+  };
+
   const togglePauseAll = async () => {
     try { const n = !pausedAll; await chain().wallet.pauseAll(n); setPausedAll(n); }
     catch (e) { setErr(String(e.message || e)); }
   };
 
-  if (!available) {
-    return (
-      <div className="control-board"><div className="cb-panel">
-        <h4>ICP SERVICES</h4>
-        <div className="muted" style={{ lineHeight: 1.6 }}>
-          ICP Services need your Internet Identity, which lives in the CafresoHQ shell.
-          Open your HQ at <b>ai.cafreso.com</b> (not the standalone container) to install
-          wallets, publish sites, and manage on-chain features.
-        </div>
-      </div></div>
-    );
-  }
-
-  const walletOn = !!installed.wallet;
   const walletAgents = (agents || []).filter(a => (a.tools || []).includes('wallet'));
 
   return (
     <div className="control-board">
       <div className="cb-panel">
-        <h4>ICP SERVICES · CATALOG</h4>
+        <h4>MODULES · OPTIONAL ADD-ONS</h4>
+        <div className="sub" style={{ lineHeight: 1.6, marginBottom: 6 }}>
+          Your HQ runs the same everywhere — laptop, container, or on-chain. Modules
+          add capabilities on top; everything below is opt-in and off by default.
+        </div>
         {err && <div className="tiny" style={{ color: '#c44' }}>{err}</div>}
-        {loading && <div className="muted">Loading…</div>}
+        {loading && available && <div className="muted">Loading…</div>}
         <div className="stack">
-          {ICP_SERVICES.map(svc => (
-            <div key={svc.id} className="row-knob" style={{ alignItems: 'flex-start' }}>
-              <div style={{ maxWidth: 300 }}>
-                <div className="lbl">{svc.ico} {svc.name}</div>
-                <div className="sub" style={{ marginTop: 2 }}>{svc.blurb}</div>
-                <div className="tiny" style={{ marginTop: 2, opacity: .7 }}>Agent tools: {svc.tools.join(', ')}</div>
+          {/* Money — the master switch, styled as a first-class module card */}
+          <div className="row-knob" style={{ alignItems: 'flex-start' }}>
+            <div style={{ maxWidth: 300 }}>
+              <div className="lbl">💰 Money &amp; Payments <span className="tiny" style={{ opacity: .7 }}>{moneyOn ? '· ON' : '· OFF'}</span></div>
+              <div className="sub" style={{ marginTop: 2 }}>
+                Agents can hold tokens (ICP, ckUSDT, …), earn tips and payroll, and spend
+                within caps you set. Entirely optional — HQ works the same without it.
               </div>
-              <button className={`px-btn ${installed[svc.id] ? 'danger' : 'primary'}`} style={{ fontSize: 8, whiteSpace: 'nowrap' }} onClick={() => toggleInstall(svc)}>
-                {installed[svc.id] ? '✓ REMOVE' : '＋ INSTALL'}
-              </button>
+              <div className="tiny" style={{ marginTop: 3, opacity: .75 }}>
+                🔒 Non-custodial: you sign every allowance; agents can only request.
+                Turning off pauses spending and hides money UI — funds are never touched.
+              </div>
             </div>
-          ))}
+            <div className={`pxswitch ${moneyOn ? 'on' : ''}`} role="switch" aria-checked={moneyOn} onClick={toggleMoney}><div className="nub" /></div>
+          </div>
+
+          <div className="row-knob" style={{ alignItems: 'flex-start' }}>
+            <div style={{ maxWidth: 300 }}>
+              <div className="lbl">🚀 Publish to Web <span className="tiny" style={{ opacity: .7 }}>{installed.publish ? '· ON' : '· OFF'}</span></div>
+              <div className="sub" style={{ marginTop: 2 }}>
+                Agents publish sites they build and hand back a verifiable link your users can click.
+              </div>
+            </div>
+            <div className={`pxswitch ${installed.publish ? 'on' : ''}`} role="switch" aria-checked={!!installed.publish} onClick={togglePublish}><div className="nub" /></div>
+          </div>
         </div>
       </div>
 
-      {walletOn && (
+      {moneyOn && !available && (
         <div className="cb-panel">
-          <h4>AGENT WALLETS</h4>
+          <h4>💰 MONEY &amp; PAYMENTS</h4>
+          <div className="muted" style={{ lineHeight: 1.6 }}>
+            The module is on, but balances and sends need your Internet Identity, which
+            lives in the CafresoHQ shell. Open your HQ at <b>ai.cafreso.com</b> to manage
+            wallets, caps, and payroll. Until then agents cannot move any funds.
+          </div>
+        </div>
+      )}
+
+      {moneyOn && available && (
+        <div className="cb-panel">
+          <h4>💰 AGENT WALLETS</h4>
           <div className="row-knob">
             <div><div className="lbl">Pause all agent spending</div><div className="sub">Global kill switch — blocks every agent send</div></div>
-            <div className={`pxswitch ${pausedAll ? 'on' : ''}`} onClick={togglePauseAll}><div className="nub" /></div>
+            <div className={`pxswitch ${pausedAll ? 'on' : ''}`} role="switch" aria-checked={pausedAll} onClick={togglePauseAll}><div className="nub" /></div>
           </div>
+          {pausedAll && <div className="tiny" style={{ color: '#a9710f' }}>⏸ Everything is paused — no agent can spend until you resume.</div>}
           <PayrollBudgetPanel />
           {walletAgents.length === 0
             ? <div className="muted" style={{ marginTop: 6 }}>Grant an agent the <b>ICP Wallet</b> tool in <b>Roster</b> to give it a wallet.</div>
@@ -954,7 +1047,25 @@ function IcpServicesPanel({ agents }) {
   );
 }
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, initialTab }) {
+/* Theme presets — color skins + "vocabulary" reskins that rename the whole
+   OS metaphor (agents→baristas/brokers). Kept in sync with the command
+   palette entries in app.jsx and THEME_VOCAB in ui.jsx. */
+const THEME_PRESETS = [
+  { id: 'default',      name: '🏢 Pixel Office',   sub: 'the classic HQ' },
+  { id: 'sepia',        name: '📜 Sepia',          sub: 'warm parchment tones' },
+  { id: 'solarized',    name: '🌊 Solarized',      sub: 'cool teal & amber' },
+  { id: 'dracula',      name: '🦇 Dracula',        sub: 'dark purple neon' },
+  { id: 'highcontrast', name: '◐ High Contrast',   sub: 'maximum legibility' },
+  { id: 'coffeeshop',   name: '☕ Coffee Shop',     sub: 'agents become baristas' },
+  { id: 'wallstreet',   name: '📈 Trading Floor',  sub: 'agents become brokers' },
+];
+const DENSITY_PRESETS = [
+  { id: 'compact',     name: 'Compact' },
+  { id: 'comfortable', name: 'Comfortable' },
+  { id: 'spacious',    name: 'Spacious' },
+];
+
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
   const [tab, _setTab] = useStateM(() => {
     try {
@@ -1127,7 +1238,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                     <div style={{marginTop:6}}>
                       <div className="sub" style={{marginBottom:6}}>TOOLS</div>
                       <div className="tool-grid">
-                        {HQ.TOOLS_CATALOG.map(t => (
+                        {visibleToolsCatalog().map(t => (
                           <div key={t.id} className={`tool-chk ${sel.tools.includes(t.id)?'on':''}`}
                                onClick={()=>update({tools: sel.tools.includes(t.id)?sel.tools.filter(x=>x!==t.id):[...sel.tools,t.id]})}>
                             <div className="box"/><span>{t.label}</span>
@@ -1173,6 +1284,37 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
 
           {!terms.length && tab === 'appearance' && (
             <div className="control-board">
+              {setTheme && (
+                <div className="cb-panel">
+                  <h4>MAKE IT YOURS</h4>
+                  <div className="sub" style={{ lineHeight: 1.6, marginBottom: 6 }}>
+                    Reskin the whole OS — some presets change the vocabulary too
+                    (your agents become baristas or brokers, the office becomes their floor).
+                  </div>
+                  <div className="tool-grid">
+                    {THEME_PRESETS.map(t => (
+                      <div key={t.id} className={`tool-chk ${theme === t.id ? 'on' : ''}`}
+                           role="radio" aria-checked={theme === t.id}
+                           onClick={() => setTheme(t.id)} title={t.sub}>
+                        <div className="box" /><span>{t.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="tiny" style={{ marginTop: 4, opacity: .7 }}>
+                    {(THEME_PRESETS.find(t => t.id === theme) || THEME_PRESETS[0]).sub}
+                  </div>
+                  {setDensity && (
+                    <div className="row-knob" style={{ marginTop: 8 }}>
+                      <div><div className="lbl">Density</div><div className="sub">how much breathing room the UI gets</div></div>
+                      <div className="ws-seg">
+                        {DENSITY_PRESETS.map(d => (
+                          <button key={d.id} className={density === d.id ? 'on' : ''} onClick={() => setDensity(d.id)}>{d.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="cb-panel">
                 <h4>AMBIENCE</h4>
                 <div className="row-knob">

@@ -1879,6 +1879,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
      the shell that can reach the chain. */
   const walletServiceOn = (() => {
     try {
+      if (!(window.hqMoneyOn && window.hqMoneyOn())) return false; // money module off → no P&L board
       const s = window.CafresoHQClient.getSettings();
       return !!(s.icpServices && s.icpServices.wallet) &&
              !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());

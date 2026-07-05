@@ -239,6 +239,28 @@ function setSettings(patch) {
 }
 function onSettingsChange(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
+/* ── Money module master gate ─────────────────────────────────────────────
+   ONE question, answered in ONE place: "has the user opted into money?"
+   Every money surface (wallet cards, payroll, P&L board, tip watcher, agent
+   WALLET_* tools) checks this. CafresoHQ is money-OPTIONAL by design — the
+   OS works identically with the module off; nothing on-chain is deleted by
+   turning it off, the UI just stops surfacing (and agents stop touching) it.
+
+   moneyEnabled: true  → on
+                 false → off
+                 unset → migration: follow the old icpServices.wallet install
+                         flag so pre-module users keep their wallets visible;
+                         brand-new users default OFF. */
+function moneyEnabled() {
+  try {
+    const s = _settings;
+    if (s.moneyEnabled === true) return true;
+    if (s.moneyEnabled === false) return false;
+    return !!(s.icpServices && s.icpServices.wallet);
+  } catch (_e) { return false; }
+}
+if (typeof window !== 'undefined') window.hqMoneyOn = moneyEnabled;
+
 /* Is the active provider actually usable (does the user have what it needs)?
    Drives the onboarding "no API key" nudge. Provider-aware so local/CLI backends
    (which need no browser key) don't trigger a false warning. */
