@@ -2338,16 +2338,11 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
 
 /* ------------ Live ticker ------------ */
 
-/* Market quotes for the Trading Floor theme. Coinbase Exchange public stats
-   endpoint — CORS-open, no key, one GET per pair gives `open` + `last` so
-   price AND 24h change come from a single request. Gold rides as PAXG
-   (Coinbase's tokenized gold; they list no stock indices). */
-const MARKET_PAIRS = [
-  { sym: 'BTC',  pair: 'BTC-USD' },
-  { sym: 'ETH',  pair: 'ETH-USD' },
-  { sym: 'ICP',  pair: 'ICP-USD' },
-  { sym: 'GOLD', pair: 'PAXG-USD' },
-];
+/* Market quotes for the Trading Floor theme — NAS100 / US30 / SPX / GOLD from
+   the companion backend's cached /market/quotes proxy (Yahoo Finance upstream;
+   stock indices have no CORS-open free API the browser could hit directly).
+   Hosts without the backend just never populate — the ticker degrades to
+   activity-only, same as every other companion-backed feature. */
 const MARKET_CACHE_KEY = 'cafresohq_hq_v1:marketQuotes';
 
 function useMarketQuotes(enabled) {
@@ -2359,19 +2354,14 @@ function useMarketQuotes(enabled) {
     if (!enabled) return;
     let dead = false;
     const pull = async () => {
-      const settled = await Promise.allSettled(MARKET_PAIRS.map(async (p) => {
-        const r = await fetch(`https://api.exchange.coinbase.com/products/${p.pair}/stats`);
-        if (!r.ok) throw new Error(String(r.status));
+      try {
+        const r = await fetch(`${window._API_BASE || ''}/market/quotes`);
+        if (!r.ok) return;                 // no backend / upstream down → keep last-good quotes
         const d = await r.json();
-        const last = parseFloat(d.last), open = parseFloat(d.open);
-        if (!Number.isFinite(last)) throw new Error('bad payload');
-        return { sym: p.sym, last, pct: Number.isFinite(open) && open > 0 ? ((last - open) / open) * 100 : null };
-      }));
-      const fresh = settled.filter(s => s.status === 'fulfilled').map(s => s.value);
-      if (dead || !fresh.length) return;   // total failure → keep last-good quotes
-      setQuotes(prev => MARKET_PAIRS
-        .map(p => fresh.find(q => q.sym === p.sym) || prev.find(q => q.sym === p.sym))
-        .filter(Boolean));
+        const fresh = (d.quotes || []).filter(q => q && Number.isFinite(q.last));
+        if (dead || !fresh.length) return;
+        setQuotes(fresh);
+      } catch (_e) { /* offline → keep last-good quotes */ }
     };
     pull();
     /* Interval skips while the tab is hidden; a visibilitychange pull
