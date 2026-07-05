@@ -12,7 +12,7 @@ const THEME_VOCAB = {
   dracula:      null,
   highcontrast: null,
   coffeeshop:   { agent: 'Barista', agents: 'Baristas', office: 'Coffee Shop',   corner: 'ESPRESSO BAR',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'ORDERS',  hireTitle: 'Recruit a barista' },
-  wallstreet:   { agent: 'Broker',  agents: 'Brokers',  office: 'Trading Floor', corner: 'CORNER SUITE',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'MARKET',  hireTitle: 'Recruit a broker' },
+  wallstreet:   { agent: 'Broker',  agents: 'Brokers',  office: 'Trading Floor', corner: 'CORNER SUITE',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'MARKET',  hireTitle: 'Recruit a broker', marketTicker: true },
 };
 const VocabCtx = createContext(THEME_VOCAB.default);
 function useVocab() { return useContext(VocabCtx); }
@@ -2337,21 +2337,97 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
 }
 
 /* ------------ Live ticker ------------ */
+
+/* Market quotes for the Trading Floor theme. Coinbase Exchange public stats
+   endpoint — CORS-open, no key, one GET per pair gives `open` + `last` so
+   price AND 24h change come from a single request. Gold rides as PAXG
+   (Coinbase's tokenized gold; they list no stock indices). */
+const MARKET_PAIRS = [
+  { sym: 'BTC',  pair: 'BTC-USD' },
+  { sym: 'ETH',  pair: 'ETH-USD' },
+  { sym: 'ICP',  pair: 'ICP-USD' },
+  { sym: 'GOLD', pair: 'PAXG-USD' },
+];
+const MARKET_CACHE_KEY = 'cafresohq_hq_v1:marketQuotes';
+
+function useMarketQuotes(enabled) {
+  const [quotes, setQuotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(MARKET_CACHE_KEY) || '[]'); }
+    catch (_e) { return []; }
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    let dead = false;
+    const pull = async () => {
+      const settled = await Promise.allSettled(MARKET_PAIRS.map(async (p) => {
+        const r = await fetch(`https://api.exchange.coinbase.com/products/${p.pair}/stats`);
+        if (!r.ok) throw new Error(String(r.status));
+        const d = await r.json();
+        const last = parseFloat(d.last), open = parseFloat(d.open);
+        if (!Number.isFinite(last)) throw new Error('bad payload');
+        return { sym: p.sym, last, pct: Number.isFinite(open) && open > 0 ? ((last - open) / open) * 100 : null };
+      }));
+      const fresh = settled.filter(s => s.status === 'fulfilled').map(s => s.value);
+      if (dead || !fresh.length) return;   // total failure → keep last-good quotes
+      setQuotes(prev => MARKET_PAIRS
+        .map(p => fresh.find(q => q.sym === p.sym) || prev.find(q => q.sym === p.sym))
+        .filter(Boolean));
+    };
+    pull();
+    /* Interval skips while the tab is hidden; a visibilitychange pull
+       refreshes immediately when the user comes back. */
+    const t = setInterval(() => { if (!document.hidden) pull(); }, 60000);
+    const onVis = () => { if (!document.hidden) pull(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { dead = true; clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+  }, [enabled]);
+  useEffect(() => {
+    try { localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(quotes)); } catch (_e) {}
+  }, [quotes]);
+  return enabled ? quotes : [];
+}
+
+function fmtQuote(q) {
+  const price = q.last >= 1000
+    ? Math.round(q.last).toLocaleString('en-US')
+    : q.last.toLocaleString('en-US', { maximumFractionDigits: q.last >= 10 ? 2 : 3 });
+  const pct = q.pct == null ? '' : ` ${q.pct >= 0 ? '▲' : '▼'}${Math.abs(q.pct).toFixed(1)}%`;
+  return { price, pct, up: (q.pct || 0) >= 0 };
+}
+
 function Ticker({ items }) {
   const vocab = useVocab();
-  const line = items.concat(items);
+  const quotes = useMarketQuotes(!!vocab.marketTicker);
+  /* The scroll keyframes translate -50%, so the line must be two identical
+     halves: segment = quotes + activity, rendered twice. */
+  const segment = (half) => (
+    <React.Fragment key={half}>
+      {quotes.map((q) => {
+        const f = fmtQuote(q);
+        return (
+          <span key={half + q.sym}>
+            <span className="kw">{q.sym}</span>
+            <span className={f.up ? 'mkt-up' : 'mkt-down'}>{f.price}{f.pct}</span>
+            <span className="sep">•</span>
+          </span>
+        );
+      })}
+      {items.map((it, i) => (
+        <span key={half + '_' + i}>
+          <span className="kw">{it.agent}</span>
+          <span>· {it.msg}</span>
+          <span className="sep">•</span>
+        </span>
+      ))}
+    </React.Fragment>
+  );
   return (
     <div className="ticker">
       <span className="badge">{vocab.live}</span>
       <div className="ticker-track">
         <div className="line">
-          {line.map((it, i) => (
-            <span key={i}>
-              <span className="kw">{it.agent}</span>
-              <span>· {it.msg}</span>
-              <span className="sep">•</span>
-            </span>
-          ))}
+          {segment('a')}
+          {segment('b')}
         </div>
       </div>
     </div>

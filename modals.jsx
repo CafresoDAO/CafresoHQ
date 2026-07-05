@@ -303,6 +303,16 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     setName('');
     setShowBoard(false);
   };
+  /* Candidate = an OPENSWARM_ROSTER template surfaced as an individual card.
+     Prefills the whole form (name included) so hiring is review-then-confirm,
+     never a blind one-click spawn. */
+  const loadCandidate = (tpl) => {
+    setName(tpl.name); setRole(tpl.role); setPrompt(tpl.systemPrompt);
+    setTools(tpl.tools); setAvatar(tpl.color); setModel(tpl.model);
+    setTemp(tpl.temperature != null ? tpl.temperature : 0.4);
+    setElevated(false);
+    setShowBoard(false);
+  };
   const saveAsTemplate = () => {
     const tplName = (window.prompt('Save this configuration as a template — name it (e.g., "Researcher", "Inbox triage"):') || '').trim();
     if (!tplName) return;
@@ -318,6 +328,11 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const toggleTool = (id) => {
     setTools(t => t.includes(id) ? t.filter(x=>x!==id) : [...t, id]);
   };
+
+  /* Roster specialists not yet on the team — shown as CANDIDATE cards and
+     counted by the SEED SWARM tile. */
+  const hiredNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
+  const candidates = (HQ.OPENSWARM_ROSTER || []).filter(t => !hiredNames.has(t.name.toLowerCase()));
 
   const submit = () => {
     if (!name.trim()) return;
@@ -372,12 +387,27 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     >
           {showBoard ? (
             <div className="hire-board">
-              {templates.length === 0 && (
+              {templates.length === 0 && candidates.length === 0 && (
                 <div className="empty-state" style={{gridColumn:'1 / -1'}}>
                   <div className="empty-title">No saved roles yet.</div>
                   <div className="empty-sub">Build one with "NEW HIRE →" then click "SAVE AS TEMPLATE" to pin it here for next time.</div>
                 </div>
               )}
+              {candidates.map(t => (
+                <div key={'cand_' + t.name} className="post-card" onClick={() => loadCandidate(t)}>
+                  <div className="post-head">
+                    <Sprite data={t.color} scale={2}/>
+                    <div className="post-name">{t.name}</div>
+                    <span className="post-tag">CANDIDATE</span>
+                  </div>
+                  <div className="post-role">{t.role}</div>
+                  <div className="post-meta">
+                    <span>{(t.model||'').replace(/^[a-z]+:/,'') || '—'}</span>
+                    <span>·</span>
+                    <span>{(t.tools||[]).length} tool{(t.tools||[]).length===1?'':'s'}</span>
+                  </div>
+                </div>
+              ))}
               {templates.map(t => (
                 <div key={t.id} className="post-card" onClick={()=>loadTpl(t)}>
                   <div className="post-head">
@@ -396,28 +426,26 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               <div className="post-card hire-tile" onClick={()=>setShowBoard(false)}>
                 <div className="plus">+<br/>NEW</div>
               </div>
-              {(() => {
-                const haveNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
-                const missing = (HQ.OPENSWARM_ROSTER || []).filter(t => !haveNames.has(t.name.toLowerCase()));
-                if (!missing.length) return null;
-                return (
-                  <div
-                    className="post-card hire-tile"
-                    onClick={() => {
-                      if (!window.confirm(`Hire ${missing.length} openswarm-style specialist${missing.length === 1 ? '' : 's'}: ${missing.map(t => t.name).join(', ')}?`)) return;
-                      HQ.spawnOpenswarmRoster(currentAgents, onHire);
-                      onClose();
-                    }}
-                    style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
-                    title="Seed openswarm-style roster: Vera, Kip, Dax, Sloan, Quill, Pixel, Reel"
-                  >
-                    <div className="plus" style={{ fontSize: 18, lineHeight: 1.2, padding: 8 }}>
-                      ⚡<br/>SEED<br/>SWARM<br/>
-                      <span style={{ fontSize: 8, opacity: 0.7 }}>+{missing.length}</span>
-                    </div>
+              {candidates.length > 0 && (
+                <div
+                  className="post-card hire-tile"
+                  onClick={async () => {
+                    const ok = await window.hqConfirm(
+                      `Hire ${candidates.length} openswarm-style specialist${candidates.length === 1 ? '' : 's'}: ${candidates.map(t => t.name).join(', ')}?`,
+                      { okLabel: `Hire ${candidates.length}` });
+                    if (!ok) return;
+                    HQ.spawnOpenswarmRoster(currentAgents, onHire);
+                    onClose();
+                  }}
+                  style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
+                  title="Seed openswarm-style roster: Vera, Kip, Dax, Sloan, Quill, Pixel, Reel"
+                >
+                  <div className="plus" style={{ fontSize: 18, lineHeight: 1.2, padding: 8 }}>
+                    ⚡<br/>SEED<br/>SWARM<br/>
+                    <span style={{ fontSize: 8, opacity: 0.7 }}>+{candidates.length}</span>
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
           ) : (
           <div className="form-grid">
@@ -429,6 +457,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             <div className="form-row">
               <label>ROLE / TITLE</label>
               <select value={role} onChange={e=>setRole(e.target.value)}>
+                {/* Candidate/template roles aren't always in ROLES — keep the
+                    current value selectable so the select never renders blank. */}
+                {!HQ.ROLES.includes(role) && <option key={role}>{role}</option>}
                 {HQ.ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
               <span className="hint">make it playful</span>

@@ -1433,6 +1433,11 @@ body.theme-wallstreet .ticker-track .line .kw {
 body.theme-wallstreet .ticker-track .line .sep {
   color: #00e0a060;
 }
+/* Market quotes (Trading Floor theme feeds live Coinbase prices into the ticker) */
+.ticker-track .line .mkt-up   { color: var(--ok, #1f8a4c); }
+.ticker-track .line .mkt-down { color: var(--danger, #c0392b); }
+body.theme-wallstreet .ticker-track .line .mkt-up   { color: #00ff88; text-shadow: 0 0 6px rgba(0,255,136,0.35); }
+body.theme-wallstreet .ticker-track .line .mkt-down { color: #ff4d4d; text-shadow: 0 0 6px rgba(255,77,77,0.35); }
 
 /* Wall Street monitor screens get Bloomberg green */
 body.theme-wallstreet .desk::after {
@@ -5609,6 +5614,13 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 }
 .post-remove {
   position: absolute; top: 4px; right: 4px;
+}
+/* Roster specialists offered on the hire board (not yet on the team) */
+.post-tag {
+  margin-left: auto;
+  font-family: 'Press Start 2P'; font-size: 7px;
+  padding: 3px 5px; letter-spacing: 0.08em;
+  background: var(--accent-teal, #2a9d8f); color: var(--paper, #fffdf5);
 }
 .post-card.hire-tile {
   border-style: dashed;
