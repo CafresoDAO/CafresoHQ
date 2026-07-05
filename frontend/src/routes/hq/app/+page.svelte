@@ -32,6 +32,9 @@
     deleteFile
   } from '$lib/stores/vault.js';
   import ProvisionPanel from '$lib/components/ProvisionPanel.svelte';
+  import ApprovalSheet from '$lib/components/ApprovalSheet.svelte';
+  import { requestApproval } from '$lib/stores/approvalSheet.js';
+  import { login } from '$lib/stores/auth.js';
   import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
 
   $: if ($endpointUrl && $endpointHealth.state === 'idle') {
@@ -261,10 +264,18 @@
           // Over-cap / off-token → the shell asks the user to authorize the send
           // (the one place a real signature is gated). Pause/noWallet are hard stops.
           if (res.status === 'needsApproval') {
-            const ok = typeof window !== 'undefined' && window.confirm(
-              `Agent "${d.agentId}" wants to send ${d.amount} ${d.token} to:\n${d.to}\n\n` +
-              `This ${res.reason || 'needs your approval'}. Sign this transfer?`
-            );
+            const ok = await requestApproval({
+              title: 'Sign an agent transfer',
+              rows: [
+                { label: 'Agent', value: d.agentId },
+                { label: 'Amount', value: `${d.amount} ${d.token}` },
+                { label: 'Destination', value: d.to, mono: true }
+              ],
+              warning: `This transfer ${res.reason || 'needs your approval'} — it falls outside the spending policy you set, so nothing moves without this signature.`,
+              note: 'Declining costs nothing; the agent is simply told no.',
+              confirmLabel: `Sign · send ${d.amount} ${d.token}`,
+              danger: true
+            });
             if (ok) {
               res = await agentSend({
                 principalText: p, agentId: d.agentId, tokenKey: d.token,
@@ -398,12 +409,18 @@
           // REAL signature — never auto-signed off an iframe request. Note the
           // allowance OVERWRITES the previous one; it is the payroll hard budget.
           const days = Number(d.expiresDays) || 0;
-          const ok = typeof window !== 'undefined' && window.confirm(
-            `Approve the HQ payroll canister to move up to ${d.amount} ${d.token || 'ICP'} ` +
-            `from your main account${days ? ` for ${days} days` : ' (no expiry)'}?\n\n` +
-            `This REPLACES any previous payroll allowance and is the hard budget — ` +
-            `the canister can never move more than this.`
-          );
+          const ok = await requestApproval({
+            title: 'Approve the payroll budget',
+            rows: [
+              { label: 'Token', value: d.token || 'ICP' },
+              { label: 'Hard budget', value: `${d.amount} ${d.token || 'ICP'}` },
+              { label: 'Expires', value: days ? `in ${days} days` : 'No expiry' },
+              { label: 'Spender', value: get(stateCanisterId) || 'HQ payroll canister', mono: true }
+            ],
+            warning: 'This REPLACES any previous payroll allowance. It is the absolute ceiling — the payroll canister can never move more than this from your main account, no matter what any agent does.',
+            note: 'You can pause payroll or set a new (including zero) budget at any time.',
+            confirmLabel: `Approve ${d.amount} ${d.token || 'ICP'}`
+          });
           if (!ok) { reply({ type: 'chain:payroll:approve:response', status: 'declined' }); break; }
           const res = await approvePayroll({
             tokenKey: d.token || 'ICP', amount: d.amount,
@@ -480,15 +497,49 @@
     loaded = true;
     setTimeout(() => pushFiles(get(vaultFiles)), 600);
   }
+
+  // ── Staged launch progress ──────────────────────────────────────────────
+  // One stepper derived from the same reactives that gate the iframe, so the
+  // cold-start wait reads as an intentional sequence instead of a stack of
+  // disconnected status cards. mixedContent surfaces as an error on the
+  // container step (the container may be healthy, but it can't be embedded).
+  $: launchSteps = [
+    {
+      id: 'signin', label: 'Sign in with Internet Identity',
+      state: $isAuthenticated ? 'done' : 'active'
+    },
+    {
+      id: 'container', label: 'Wake your container',
+      state: !$isAuthenticated ? 'pending'
+        : mixedContent || !$endpointUrl || $endpointHealth.state === 'error' ? 'error'
+        : $endpointReady ? 'done'
+        : 'active'
+    },
+    {
+      id: 'session', label: 'Secure your private session',
+      state: !$isAuthenticated || mixedContent || !$endpointReady ? 'pending'
+        : sessionOk ? 'done'
+        : $hqSessionError ? 'error'
+        : 'active'
+    },
+    {
+      id: 'open', label: 'Open the office',
+      state: fullscreenIframe ? 'done' : 'pending'
+    }
+  ];
 </script>
 
 {#if fullscreenIframe}
   <div class="fixed inset-0 z-40 bg-ink-900">
     {#if !loaded}
-      <div class="absolute inset-0 z-10 grid place-items-center bg-ink-900/70 text-sm text-ink-300 backdrop-blur-sm pointer-events-none">
-        <div class="flex items-center gap-2 rounded-full border border-ink-600/60 bg-ink-800/80 px-4 py-2">
-          <span class="glow-dot text-brand-400 animate-pulse"></span>
-          Loading HQ from your container...
+      <!-- Pixel-styled handoff: the last thing the shell shows before the
+           pixel-art office paints, so the transition reads as entering the
+           building rather than switching products. Solid (not translucent)
+           so the iframe's first-paint flash never shows through. -->
+      <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-ink-900">
+        <div class="pixel-load-card">
+          <div class="pixel-load-office" aria-hidden="true">🏢</div>
+          <div class="pixel-load-text">OPENING YOUR OFFICE<span class="pixel-caret">▮</span></div>
         </div>
       </div>
     {/if}
@@ -536,20 +587,44 @@
   <section class="space-y-5">
     <header class="card p-6 sm:p-8">
       <div class="page-kicker">CafresoHQ / HQ</div>
-      <h1 class="page-title mt-4">CafresoHQ HQ<span class="text-brand-500">.</span></h1>
+      <h1 class="page-title mt-4">Opening your office<span class="text-brand-500">.</span></h1>
       <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
-        The full agent command center, running in your private OCI container.
+        Your agent command center runs in your own private container — here's where it's at:
       </p>
+      <ol class="mt-6 space-y-3">
+        {#each launchSteps as s, i}
+          <li class="flex items-center gap-3 text-sm">
+            {#if s.state === 'done'}
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-500/15 text-xs font-bold text-brand-600 dark:text-brand-300">✓</span>
+            {:else if s.state === 'active'}
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-brand-400/70">
+                <span class="glow-dot text-brand-400 animate-pulse"></span>
+              </span>
+            {:else if s.state === 'error'}
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-500/15 text-xs font-bold text-red-500">!</span>
+            {:else}
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-ink-600/50 text-xs text-ink-400">{i + 1}</span>
+            {/if}
+            <span class={s.state === 'pending' ? 'text-ink-400' : s.state === 'error' ? 'font-medium text-red-500' : 'text-ink-200'}>
+              {s.label}
+            </span>
+            {#if s.state === 'active'}
+              <span class="text-xs text-ink-400">— in progress…</span>
+            {/if}
+          </li>
+        {/each}
+      </ol>
     </header>
 
     {#if !$isAuthenticated}
-      <div class="card p-5 text-sm leading-6 text-ink-300">
-        Sign in to launch HQ. Your principal scopes vault and agent state.
+      <div class="card space-y-3 p-5 text-sm leading-6 text-ink-300">
+        <p>Sign in to open your office. Your Internet Identity scopes your vault, agents, and funds — nothing here is shared.</p>
+        <button class="btn-primary" on:click={login}>Sign in with Internet Identity</button>
       </div>
     {:else if $endpointHealth.state === 'idle' || $endpointHealth.state === 'probing'}
       <div class="card flex items-center gap-3 p-5 text-sm text-ink-300">
         <span class="glow-dot text-brand-400 animate-pulse"></span>
-        Connecting to your container...
+        Waking your container — a cold start can take up to half a minute. Your office opens automatically the moment it answers.
       </div>
     {:else if !$endpointUrl || $endpointHealth.state === 'error'}
       <ProvisionPanel />
@@ -560,14 +635,15 @@
           <h2 class="mt-2 text-xl font-semibold">Mixed content</h2>
         </div>
         <p class="text-sm leading-6 text-ink-300">
-          This shell is served over <code class="font-mono text-brand-600 dark:text-brand-300">https://</code>,
-          but your container endpoint is plain <code class="font-mono text-brand-600 dark:text-brand-300">http://</code>.
-          Browsers block iframing an HTTP page from an HTTPS origin.
+          Your container is answering, but its address starts with plain
+          <code class="font-mono text-brand-600 dark:text-brand-300">http://</code> and this page is secure
+          (<code class="font-mono text-brand-600 dark:text-brand-300">https://</code>) — browsers refuse to embed
+          one inside the other. Nothing is broken on your end.
         </p>
         <p class="text-sm leading-6 text-ink-300">
-          Production fix is the OCI Caddy gateway at
-          <code class="font-mono text-brand-600 dark:text-brand-300">hq.cafreso.com/u/&lt;principal-slug&gt;/*</code>
-          with managed TLS. Re-point your endpoint there.
+          <strong>Two ways forward:</strong> open HQ in its own tab (works right now), or point your endpoint at the
+          secure gateway (<code class="font-mono text-brand-600 dark:text-brand-300">hq.cafreso.com/u/&lt;your-slug&gt;/</code>)
+          in Settings so it can live here permanently.
         </p>
         <div class="flex flex-wrap gap-2 pt-1">
           <button class="btn-primary" on:click={popout}>Open HQ in new tab</button>
@@ -600,3 +676,41 @@
     {/if}
   </section>
 {/if}
+
+<ApprovalSheet />
+
+<style>
+  /* Pixel-styled handoff card — hard edges, offset shadow, stepped motion:
+     a deliberate visual bridge into the pixel-art app the iframe paints. */
+  .pixel-load-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 28px 36px;
+    border: 2px solid hsl(var(--foreground) / 0.3);
+    background: hsl(var(--background));
+    box-shadow: 6px 6px 0 hsl(var(--foreground) / 0.18);
+  }
+  .pixel-load-office {
+    font-size: 44px;
+    line-height: 1;
+    animation: pixel-bob 1.1s steps(2, end) infinite;
+  }
+  .pixel-load-text {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: hsl(var(--foreground) / 0.85);
+  }
+  .pixel-caret {
+    margin-left: 2px;
+    animation: pixel-blink 1s steps(1, end) infinite;
+  }
+  @keyframes pixel-blink { 50% { opacity: 0; } }
+  @keyframes pixel-bob { 50% { transform: translateY(-4px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .pixel-load-office, .pixel-caret { animation: none; }
+  }
+</style>
