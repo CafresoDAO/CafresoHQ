@@ -41,7 +41,7 @@ export function trapFocus(node) {
   return {
     destroy() {
       node.removeEventListener('keydown', onKeydown);
-      if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     }
   };
 }

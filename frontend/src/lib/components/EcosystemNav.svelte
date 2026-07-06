@@ -23,12 +23,18 @@
     if (wrap && !wrap.contains(e.target)) open = false;
   }
 
+  function onKeydown(e) {
+    if (e.key === 'Escape' && open) open = false;
+  }
+
   onMount(() => {
     document.addEventListener('mousedown', onClickOutside);
     document.addEventListener('touchstart', onClickOutside);
+    document.addEventListener('keydown', onKeydown);
     return () => {
       document.removeEventListener('mousedown', onClickOutside);
       document.removeEventListener('touchstart', onClickOutside);
+      document.removeEventListener('keydown', onKeydown);
     };
   });
 </script>

@@ -64,7 +64,9 @@
 <nav
   class="mobile-only fixed z-20 flex justify-around"
   style="
-    left: 10px; right: 10px; bottom: 10px;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     background: hsl(26 45% 98% / 0.92);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);

@@ -3,6 +3,7 @@
   import { aiCafresoOrigin, bankingBraveOrigin } from '$lib/links.js';
   import { goto } from '$app/navigation';
   import Icon from './Icon.svelte';
+  import { trapFocus } from '$lib/actions/trapFocus.js';
 
   const CACHE_TTL = 5 * 60 * 1000; // 5 min
 
@@ -108,11 +109,13 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     role="dialog"
+    aria-modal="true"
     aria-label="AI Search"
+    use:trapFocus
     on:click|stopPropagation
     style="
       position: fixed; left: 12px; right: 12px;
-      bottom: 82px;
+      bottom: calc(82px + env(safe-area-inset-bottom, 0px));
       z-index: 56;
       background: hsl(26 45% 98% / 0.97);
       backdrop-filter: blur(24px) saturate(160%);
@@ -161,6 +164,7 @@
         " />
         <input
           bind:this={inputEl}
+          data-autofocus
           bind:value={query}
           type="search"
           placeholder="Ask anything about CafresoDAO…"

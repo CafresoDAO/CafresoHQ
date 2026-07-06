@@ -4,6 +4,7 @@
   import Icon from './Icon.svelte';
   import NanasCoin from './NanasCoin.svelte';
   import Button from './Button.svelte';
+  import { trapFocus } from '$lib/actions/trapFocus.js';
 
   let amount = 500;
   let phase = 'choose'; // 'choose' | 'burning' | 'done'
@@ -68,13 +69,17 @@
 {#if $burnTarget}
   <div
     on:click={close}
+    on:keydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
     class="fade-up fixed inset-0 z-[50] flex items-center justify-center"
     style="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); padding: 16px;"
   >
     <div
       on:click|stopPropagation
+      use:trapFocus
       role="dialog"
+      aria-modal="true"
+      aria-label="Burn $nanas to tip"
       class="relative overflow-hidden bg-white rounded-2xl"
       style="
         max-width: 440px; width: 100%; padding: 28px;
@@ -144,6 +149,8 @@
               max={Math.min(10000, $nanasBalance)}
               step={50}
               bind:value={amount}
+              aria-label="Amount of $nanas to burn"
+              aria-valuetext="{amount.toLocaleString()} $nanas"
               style="width: 100%; accent-color: hsl(32 72% 50%);"
             />
             <div class="flex justify-between text-[11px] mt-1" style="color: hsl(215 16% 47%);">
