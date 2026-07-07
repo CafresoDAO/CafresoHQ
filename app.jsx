@@ -3050,6 +3050,14 @@ ${d.text}` : d.text,
   // Payout keys we've already celebrated (persisted so reloads don't replay paydays).
   const [payoutSeen, setPayoutSeen] = useStored(k('payoutSeen'), {});
   const payoutSeenRef = useRefA(payoutSeen); payoutSeenRef.current = payoutSeen;
+  // Money-module gate as STATE so flipping it in Settings starts/stops the
+  // watcher live (no reload needed).
+  const [moneyModuleOn, setMoneyModuleOn] = useStateA(() => !!(window.hqMoneyOn && window.hqMoneyOn()));
+  useEffectA(() => {
+    const C = window.CafresoHQClient;
+    if (!C || !C.onSettingsChange) return;
+    return C.onSettingsChange(() => setMoneyModuleOn(!!(window.hqMoneyOn && window.hqMoneyOn())));
+  }, []);
   useEffectA(() => {
     const markToolMove = (e) => {
       const d = e.detail || {};
@@ -3062,7 +3070,8 @@ ${d.text}` : d.text,
     window.addEventListener('cafresohq:agentTool', markToolMove);
     window.addEventListener('cafresohq:walletLocalMove', markLocalMove);
     const chain = window.CafresoHQChain;
-    if (!(chain && chain.isAvailable && chain.isAvailable())) {
+    // Money module off → no balance polling, no tip/payday celebrations.
+    if (!moneyModuleOn || !(chain && chain.isAvailable && chain.isAvailable())) {
       return () => {
         window.removeEventListener('cafresohq:agentTool', markToolMove);
         window.removeEventListener('cafresohq:walletLocalMove', markLocalMove);
@@ -3156,7 +3165,7 @@ ${d.text}` : d.text,
       window.removeEventListener('cafresohq:agentTool', markToolMove);
       window.removeEventListener('cafresohq:walletLocalMove', markLocalMove);
     };
-  }, []);
+  }, [moneyModuleOn]);
 
   /* ── Morning Report ("HQ GAZETTE") ──────────────────────────────────
      A 60s last-seen heartbeat persists across sessions; come back after
@@ -4543,7 +4552,8 @@ ${d.text}` : d.text,
 
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
-        scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}/>
+        scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
+        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity}/>
       <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
       <CEOPanel

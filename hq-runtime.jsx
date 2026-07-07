@@ -395,6 +395,9 @@ function clearVaultReadyCache() { _vaultConfiguredCache = { at: 0, ok: false }; 
    gating stays synchronous. */
 function icpWalletEnabled() {
   try {
+    // Master money-module gate first — when the user has money OFF, agents
+    // must not even see the WALLET_* tools, regardless of install state.
+    if (!(window.hqMoneyOn && window.hqMoneyOn())) return false;
     const s = window.CafresoHQClient.getSettings();
     const installed = !!(s && s.icpServices && s.icpServices.wallet);
     const bridge = !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());
