@@ -63,7 +63,9 @@ HERMES_PORT = int(os.environ.get('HERMES_API_PORT', '8642') or '8642')
 # Single-slot list so the request handler can mutate it without `global`.
 # /idle, /health, and /idle's own polls do NOT count as activity.
 _LAST_ACTIVITY = [time.time()]
-_IDLE_EXEMPT_PREFIXES = ('/idle', '/health')
+# /market is exempt too: the ambient ticker polls every 60s and must never be
+# what keeps an idle fleet container awake/billed.
+_IDLE_EXEMPT_PREFIXES = ('/idle', '/health', '/market')
 
 def _touch_activity(path):
     if not any(path == p or path.startswith(p) for p in _IDLE_EXEMPT_PREFIXES):
@@ -237,6 +239,21 @@ _KEY_PROTECTED_PREFIXES = (
 # the UI polls GET /agents/install/status?agent=…). One job per agent id.
 _INSTALL_JOBS = {}
 _INSTALL_JOBS_LOCK = threading.Lock()
+
+# ── Market quotes (Trading Floor theme ticker) ──────────────────────────────
+# GET /market/quotes proxies Yahoo Finance's public chart endpoint: stock
+# indices have no CORS-open free API the browser could hit directly, and
+# stooq's CSV endpoints now sit behind a JS anti-bot wall. Cached 60s so a
+# whole floor of open tabs costs one upstream sweep per minute; on total
+# upstream failure the last good payload is served stale instead of erroring.
+_MARKET_SYMBOLS = (
+    ('NAS100', '^NDX'),
+    ('US30',   '^DJI'),
+    ('SPX',    '^GSPC'),
+    ('GOLD',   'GC=F'),
+)
+_market_cache = {'ts': 0.0, 'quotes': []}
+_market_lock = threading.Lock()
 
 # Per-process nonce for /terminal/pty WebSocket auth.
 # Generated once at startup; never logged.  Frontend fetches it from
@@ -2083,6 +2100,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _LAST_UI_ACTIVITY[0] = time.time()
         if self.path == '/health':
             return self._health()
+        if self.path == '/market/quotes':
+            return self._market_quotes()
         if self.path.startswith('/hq/'):
             return self._hq_handler('GET')
         if self.path == '/missions/scheduled':
@@ -2427,6 +2446,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return _claudecode_bin
         # shutil.which respects PATH and Windows .cmd/.exe extensions.
         return shutil.which(_claudecode_bin or 'claude')
+
+    def _market_quotes(self):
+        """GET /market/quotes — cached index/gold quotes for the office ticker."""
+        global _market_cache
+        with _market_lock:
+            if time.time() - _market_cache['ts'] < 60 and _market_cache['quotes']:
+                return self._send_json(200, {'quotes': _market_cache['quotes'], 'ts': _market_cache['ts']})
+        quotes = []
+        for sym, yq in _MARKET_SYMBOLS:
+            try:
+                url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
+                       + urllib.parse.quote(yq) + '?range=1d&interval=1d')
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    meta = json.load(r)['chart']['result'][0]['meta']
+                last = float(meta['regularMarketPrice'])
+                prev = float(meta.get('chartPreviousClose') or 0)
+                quotes.append({'sym': sym, 'last': last,
+                               'pct': ((last - prev) / prev * 100.0) if prev > 0 else None})
+            except Exception:
+                continue   # partial results are fine; total failure serves stale below
+        with _market_lock:
+            if quotes:
+                _market_cache = {'ts': time.time(), 'quotes': quotes}
+            return self._send_json(200, {'quotes': _market_cache['quotes'], 'ts': _market_cache['ts']})
 
     def _health(self):
         """GET /health — lightweight liveness probe for load balancers and companion detection."""

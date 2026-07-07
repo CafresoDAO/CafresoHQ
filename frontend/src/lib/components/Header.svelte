@@ -35,6 +35,7 @@
       {#each navLinks as l}
         <a
           href={l.href}
+          aria-current={$page.url.pathname === l.href ? 'page' : undefined}
           class="rounded-full px-3 py-2 text-sm font-semibold transition-colors
                  {$page.url.pathname === l.href
                    ? 'bg-ink-50 text-ink-900 shadow-sm'

@@ -1012,13 +1012,10 @@ function AppGlobalCommands({
 }
 
 function App() {
-  const seedAgents = HQ.INITIAL_AGENTS.map((a, i) => ({
-    ...a,
-    mood: ['thinking','done','idle'][i] || 'idle',
-    tokens: [12400, 28100, 2200][i] || 0,
-    tasksDone: [14, 32, 6][i] || 0,
-    recent: i===0 ? 'triaged 8 emails · drafted 2 replies' : i===1 ? 'summarized Q3 competitor moves' : 'standing by',
-  }));
+  /* Empty by design — HQ.INITIAL_AGENTS is []. Fresh offices start with the
+     CEO alone; the fake-stats mapping that used to live here (invented tokens
+     spent / tasks done) is gone with the seed. */
+  const seedAgents = HQ.INITIAL_AGENTS;
 
   const [agents, setAgents] = useFileStored(k('agents'), 'memory', 'agents', seedAgents, persistableAgents);
 
@@ -1401,11 +1398,26 @@ function App() {
   // Onboarding tour — show once on first launch unless user dismissed it.
   const [tourSeen, setTourSeen] = useStored(ks('tourSeen'), false);
   const [tourOpen, setTourOpen] = useStateA(false);
+  /* First-launch check runs INSIDE the 800ms timeout via refs: useFileStored
+     hydrates the roster from the file backend asynchronously, so a returning
+     user on a fresh browser can look like agents.length === 0 at mount. */
+  const firstRunAgentsRef = useRefA(agents); firstRunAgentsRef.current = agents;
+  const firstRunChatRef = useRefA(chat); firstRunChatRef.current = chat;
   useEffectA(() => {
-    if (!tourSeen && agents.length === 0) {
-      const t = setTimeout(() => setTourOpen(true), 800);
-      return () => clearTimeout(t);
-    }
+    if (tourSeen) return;
+    const t = setTimeout(() => {
+      if (firstRunAgentsRef.current.length > 0) return; // hydrated roster → returning user
+      setTourOpen(true);
+      /* Genuinely new office: the CEO opens the DIRECT thread with a real
+         welcome message (a normal chat entry, not fabricated history). */
+      if ((firstRunChatRef.current || []).length === 0) {
+        setChat([{
+          id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
+          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Press H (or click a vacant desk) and I'll introduce you to a few candidates — or just tell me what you need done and we'll work out who to hire.",
+        }]);
+      }
+    }, 800);
+    return () => clearTimeout(t);
   }, []);
   /* Allow palette command + future button to replay the tour. */
   useEffectA(() => {
@@ -4718,7 +4730,7 @@ ${d.text}` : d.text,
             {
               id: 'hire',
               title: 'Ready to hire your team?',
-              body: 'Click an empty desk (or press H, or ⌘K → "Hire") to bring on your first specialist — or seed a whole crew at once. Each hire gets a desk, a role, and their own model. Then drop a task on their desk and watch the office come alive.',
+              body: 'Click an empty desk (or press H, or ⌘K → "Hire") to meet the candidates — ready-made specialists like Vera (assistant), Kip (research), and Dax (data) — or build a role from scratch, or seed the whole crew at once. Then drop a task on their desk and watch the office come alive.',
               target: () => document.querySelector('.room.empty') || document.querySelector('.topbar .px-btn.primary'),
               action: () => setActiveView('visual'),
             },

@@ -40,53 +40,14 @@ const MODELS = [
   'anthropic:claude-haiku-4-5-20251001',
 ];
 
-const INITIAL_AGENTS = [
-  {
-    id: 'a_mira',
-    name: 'Mira',
-    role: 'Head of Inbox Wrangling',
-    color: 'rose',
-    status: 'busy',
-    task: 'triaging 23 emails',
-    tools: ['web','email','cal'],
-    model: 'cafresohq:sonnet',
-    elevated: true,
-    temperature: 0.4,
-    hiredAt: Date.now() - 1000 * 60 * 60 * 18,
-    lastRun: '2m ago',
-    nextRun: 'continuous',
-  },
-  {
-    id: 'a_kip',
-    name: 'Kip',
-    role: 'Chief Research Goblin',
-    color: 'teal',
-    status: 'active',
-    task: 'scanning Q3 reports',
-    tools: ['web','files','db'],
-    model: 'cafresohq:sonnet',
-    elevated: true,
-    temperature: 0.6,
-    hiredAt: Date.now() - 1000 * 60 * 60 * 56,
-    lastRun: '14m ago',
-    nextRun: 'in 4h',
-  },
-  {
-    id: 'a_bop',
-    name: 'Bop',
-    role: 'Calendar Sommelier',
-    color: 'sun',
-    status: 'idle',
-    task: 'standing by',
-    tools: ['cal','email'],
-    model: 'cafresohq:sonnet',
-    elevated: true,
-    temperature: 0.2,
-    hiredAt: Date.now() - 1000 * 60 * 60 * 120,
-    lastRun: '1h ago',
-    nextRun: 'on demand',
-  },
-];
+/* No pre-seeded agents. New offices open with the CEO alone and a floor of
+   VACANT desks — same never-fabricate-state rule as INITIAL_CHAT below: the
+   old Mira/Kip/Bop seed shipped invented histories ("triaging 23 emails",
+   28k tokens spent) that users couldn't tell from real work, and it kept the
+   first-launch onboarding tour (gated on an empty roster) from ever firing.
+   The CEO's scripted welcome + the HireModal candidates deck do the
+   introduction instead. */
+const INITIAL_AGENTS = [];
 
 /* OpenSwarm-style specialist roster.
    Seven specialists modeled on github.com/VRSEN/openswarm. CafresoHQ (CEO) is

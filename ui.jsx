@@ -12,7 +12,7 @@ const THEME_VOCAB = {
   dracula:      null,
   highcontrast: null,
   coffeeshop:   { agent: 'Barista', agents: 'Baristas', office: 'Coffee Shop',   corner: 'ESPRESSO BAR',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'ORDERS',  hireTitle: 'Recruit a barista' },
-  wallstreet:   { agent: 'Broker',  agents: 'Brokers',  office: 'Trading Floor', corner: 'CORNER SUITE',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'MARKET',  hireTitle: 'Recruit a broker' },
+  wallstreet:   { agent: 'Broker',  agents: 'Brokers',  office: 'Trading Floor', corner: 'CORNER SUITE',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'MARKET',  hireTitle: 'Recruit a broker', marketTicker: true },
 };
 const VocabCtx = createContext(THEME_VOCAB.default);
 function useVocab() { return useContext(VocabCtx); }
@@ -2337,21 +2337,87 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
 }
 
 /* ------------ Live ticker ------------ */
+
+/* Market quotes for the Trading Floor theme — NAS100 / US30 / SPX / GOLD from
+   the companion backend's cached /market/quotes proxy (Yahoo Finance upstream;
+   stock indices have no CORS-open free API the browser could hit directly).
+   Hosts without the backend just never populate — the ticker degrades to
+   activity-only, same as every other companion-backed feature. */
+const MARKET_CACHE_KEY = 'cafresohq_hq_v1:marketQuotes';
+
+function useMarketQuotes(enabled) {
+  const [quotes, setQuotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(MARKET_CACHE_KEY) || '[]'); }
+    catch (_e) { return []; }
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    let dead = false;
+    const pull = async () => {
+      try {
+        const r = await fetch(`${window._API_BASE || ''}/market/quotes`);
+        if (!r.ok) return;                 // no backend / upstream down → keep last-good quotes
+        const d = await r.json();
+        const fresh = (d.quotes || []).filter(q => q && Number.isFinite(q.last));
+        if (dead || !fresh.length) return;
+        setQuotes(fresh);
+      } catch (_e) { /* offline → keep last-good quotes */ }
+    };
+    pull();
+    /* Interval skips while the tab is hidden; a visibilitychange pull
+       refreshes immediately when the user comes back. */
+    const t = setInterval(() => { if (!document.hidden) pull(); }, 60000);
+    const onVis = () => { if (!document.hidden) pull(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { dead = true; clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+  }, [enabled]);
+  useEffect(() => {
+    try { localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(quotes)); } catch (_e) {}
+  }, [quotes]);
+  return enabled ? quotes : [];
+}
+
+function fmtQuote(q) {
+  const price = q.last >= 1000
+    ? Math.round(q.last).toLocaleString('en-US')
+    : q.last.toLocaleString('en-US', { maximumFractionDigits: q.last >= 10 ? 2 : 3 });
+  const pct = q.pct == null ? '' : ` ${q.pct >= 0 ? '▲' : '▼'}${Math.abs(q.pct).toFixed(1)}%`;
+  return { price, pct, up: (q.pct || 0) >= 0 };
+}
+
 function Ticker({ items }) {
   const vocab = useVocab();
-  const line = items.concat(items);
+  const quotes = useMarketQuotes(!!vocab.marketTicker);
+  /* The scroll keyframes translate -50%, so the line must be two identical
+     halves: segment = quotes + activity, rendered twice. */
+  const segment = (half) => (
+    <React.Fragment key={half}>
+      {quotes.map((q) => {
+        const f = fmtQuote(q);
+        return (
+          <span key={half + q.sym}>
+            <span className="kw">{q.sym}</span>
+            <span className={f.up ? 'mkt-up' : 'mkt-down'}>{f.price}{f.pct}</span>
+            <span className="sep">•</span>
+          </span>
+        );
+      })}
+      {items.map((it, i) => (
+        <span key={half + '_' + i}>
+          <span className="kw">{it.agent}</span>
+          <span>· {it.msg}</span>
+          <span className="sep">•</span>
+        </span>
+      ))}
+    </React.Fragment>
+  );
   return (
     <div className="ticker">
       <span className="badge">{vocab.live}</span>
       <div className="ticker-track">
         <div className="line">
-          {line.map((it, i) => (
-            <span key={i}>
-              <span className="kw">{it.agent}</span>
-              <span>· {it.msg}</span>
-              <span className="sep">•</span>
-            </span>
-          ))}
+          {segment('a')}
+          {segment('b')}
         </div>
       </div>
     </div>
