@@ -13,6 +13,7 @@
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
+  import SearchNetworkCard from '$lib/components/SearchNetworkCard.svelte';
 
   let fleetApiInput = $fleetApiUrl;
   let fleetTokenInput = $fleetApiAuthToken;
@@ -293,6 +294,8 @@
       </div>
     {/if}
   </div>
+
+  <SearchNetworkCard />
 
   <div class="card p-6">
     <div class="page-kicker">Need a container?</div>

@@ -39,6 +39,7 @@ import Time "mo:base/Time";
 import Error "mo:base/Error";
 import Cycles "mo:base/ExperimentalCycles";
 import OrderedMap "mo:base/OrderedMap";
+import Float "mo:base/Float";
 import Nat64 "mo:base/Nat64";
 import Array "mo:base/Array";
 import Timer "mo:base/Timer";
@@ -873,14 +874,22 @@ actor CafresoHQState {
   // path (called per save) would reset the countdown and, if hit every <period,
   // starve scanPayroll for ALL users (cross-tenant DoS).
   var payrollTimerId : ?Timer.TimerId = null;
+  // One tick drives BOTH money loops: user payroll and search-worker payout
+  // sweeps (defined in the search-network section below). A second recurring
+  // timer would double the idle cycle burn for no scheduling benefit.
+  func payrollTick() : async () {
+    await scanPayroll();
+    await scanWorkerPayouts();
+  };
   func armPayrollTimer<system>() {
     switch (payrollTimerId) { case (?_) { return }; case null {} };
-    payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, scanPayroll);
+    payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, payrollTick);
   };
-  // Fresh install: arm at init. Upgrades: postupgrade (init does not re-run).
-  // Re-arms BOTH recurring timers (payroll + night-shift wake, defined below);
-  // timers never survive an upgrade and Motoko allows one postupgrade per actor.
-  armPayrollTimer<system>();
+  // Fresh install: armed at init by the call at the BOTTOM of this actor —
+  // payrollTick reaches into the search-network payout section defined below,
+  // so an eager call here would hit M0016 (use before definition). Upgrades:
+  // postupgrade (runs after all definitions; init does not re-run). Re-arms
+  // BOTH recurring timers; timers never survive an upgrade.
   system func postupgrade() { armPayrollTimer<system>(); armWakeTimer<system>() };
 
   // ── Payroll public API (caller-keyed, like everything else here) ───────────
@@ -1249,6 +1258,18 @@ actor CafresoHQState {
   // and library_find lets the search UI answer repeat queries without ever
   // hitting the web. Public JSON never includes the owner principal.
   public type LibrarySource = { title : Text; url : Text };
+  // Provenance travels with every entry: when the question was first asked,
+  // when it was answered, which model wrote the answer, which search engine
+  // found the sources, and (for network-fulfilled entries) which worker.
+  // The worker principal IS public — it's the attribution that payouts and
+  // reputation hang off — unlike the owner principal, which never is.
+  public type LibraryProvenance = {
+    model : Text;               // "" when no model wrote an answer
+    searchEngine : Text;        // "brave" | "" …
+    worker : ?Principal;        // set ONLY by the network fulfill path
+    firstSearchedAt : Int;      // job submit time for network entries; = answeredAt otherwise
+    answeredAt : Int;
+  };
   public type LibraryEntry = {
     id : Text;
     owner : Principal;
@@ -1257,6 +1278,7 @@ actor CafresoHQState {
     sources : [LibrarySource];
     graphJson : Text;           // graph-viewer snapshot, served raw at /library/<id>/graph.json
     ts : Int;
+    prov : LibraryProvenance;
   };
   public type LibrarySummary = { id : Text; q : Text; ts : Int; sourceCount : Nat };
   public type LibraryPutResult = { #ok : { id : Text; existing : Bool }; #err : Text };
@@ -1271,6 +1293,7 @@ actor CafresoHQState {
   let LIB_MAX_SOURCES : Nat = 10;
   let LIB_MAX_SOURCE_TEXT : Nat = 600;
   let LIB_MAX_GRAPH : Nat = 200_000;
+  let LIB_MAX_PROV_TEXT : Nat = 80;
   let LIB_MAX_PER_OWNER : Nat = 200;
   let LIB_INDEX_LIMIT : Nat = 500;
 
@@ -1292,32 +1315,47 @@ actor CafresoHQState {
     "q" # s;
   };
 
-  public shared (msg) func library_put(
-    q : Text, answer : Text, sources : [LibrarySource], graphJson : Text
-  ) : async LibraryPutResult {
-    if (Principal.isAnonymous(msg.caller)) { return #err("sign in to publish to the library") };
-    let norm = libNorm(q);
-    if (norm.size() == 0 or q.size() > LIB_MAX_QUERY) { return #err("bad query") };
-    if (answer.size() > LIB_MAX_ANSWER) { return #err("answer too long") };
-    if (sources.size() > LIB_MAX_SOURCES) { return #err("too many sources") };
+  // Shared validation for both publish paths (user opt-in + network fulfill).
+  func libValidate(q : Text, answer : Text, sources : [LibrarySource], graphJson : Text) : ?Text {
+    if (libNorm(q).size() == 0 or q.size() > LIB_MAX_QUERY) { return ?"bad query" };
+    if (answer.size() > LIB_MAX_ANSWER) { return ?"answer too long" };
+    if (sources.size() > LIB_MAX_SOURCES) { return ?"too many sources" };
     for (s in sources.vals()) {
       if (s.title.size() > LIB_MAX_SOURCE_TEXT or s.url.size() > LIB_MAX_SOURCE_TEXT) {
-        return #err("source too long");
+        return ?"source too long";
       };
     };
-    if (graphJson.size() > LIB_MAX_GRAPH) { return #err("graph too large") };
-    switch (tOps.get(libraryByQuery, norm)) {
+    if (graphJson.size() > LIB_MAX_GRAPH) { return ?"graph too large" };
+    null;
+  };
+
+  func libInsert(owner : Principal, q : Text, answer : Text, sources : [LibrarySource],
+                 graphJson : Text, prov : LibraryProvenance) : Text {
+    librarySeq += 1;
+    let id = libId(librarySeq);
+    libraryEntries := tOps.put(libraryEntries, id, {
+      id; owner; q; answer; sources; graphJson; ts = now(); prov;
+    });
+    libraryByQuery := tOps.put(libraryByQuery, libNorm(q), id);
+    id;
+  };
+
+  public shared (msg) func library_put(
+    q : Text, answer : Text, sources : [LibrarySource], graphJson : Text,
+    model : Text, searchEngine : Text
+  ) : async LibraryPutResult {
+    if (Principal.isAnonymous(msg.caller)) { return #err("sign in to publish to the library") };
+    if (model.size() > LIB_MAX_PROV_TEXT or searchEngine.size() > LIB_MAX_PROV_TEXT) { return #err("bad provenance") };
+    switch (libValidate(q, answer, sources, graphJson)) { case (?e) { return #err(e) }; case null {} };
+    switch (tOps.get(libraryByQuery, libNorm(q))) {
       case (?id) { return #ok({ id; existing = true }) };  // cache semantics: first answer wins
       case null {};
     };
     let count = switch (pOps.get(libraryCounts, msg.caller)) { case (?n) n; case null 0 };
     if (count >= LIB_MAX_PER_OWNER) { return #err("per-account library limit reached") };
-    librarySeq += 1;
-    let id = libId(librarySeq);
-    libraryEntries := tOps.put(libraryEntries, id, {
-      id; owner = msg.caller; q; answer; sources; graphJson; ts = now();
+    let id = libInsert(msg.caller, q, answer, sources, graphJson, {
+      model; searchEngine; worker = null; firstSearchedAt = now(); answeredAt = now();
     });
-    libraryByQuery := tOps.put(libraryByQuery, norm, id);
     libraryCounts := pOps.put(libraryCounts, msg.caller, count + 1);
     #ok({ id; existing = false });
   };
@@ -1411,9 +1449,18 @@ actor CafresoHQState {
       first := false;
       src #= "{\"title\":\"" # jsonEsc(s.title) # "\",\"url\":\"" # jsonEsc(s.url) # "\"}";
     };
+    let workerJson = switch (e.prov.worker) {
+      case (?w) "\"" # Principal.toText(w) # "\"";
+      case null "null";
+    };
     "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
     "\",\"answer\":\"" # jsonEsc(e.answer) # "\",\"sources\":[" # src #
-    "],\"ts\":" # Int.toText(e.ts) # ",\"graphUrl\":\"/library/" # jsonEsc(e.id) # "/graph.json\"}";
+    "],\"ts\":" # Int.toText(e.ts) #
+    ",\"model\":\"" # jsonEsc(e.prov.model) # "\",\"engine\":\"" # jsonEsc(e.prov.searchEngine) #
+    "\",\"worker\":" # workerJson #
+    ",\"firstSearchedAt\":" # Int.toText(e.prov.firstSearchedAt) #
+    ",\"answeredAt\":" # Int.toText(e.prov.answeredAt) #
+    ",\"graphUrl\":\"/library/" # jsonEsc(e.id) # "/graph.json\"}";
   };
 
   // /library/index.json               → newest-first summaries (≤ LIB_INDEX_LIMIT)
@@ -1447,6 +1494,9 @@ actor CafresoHQState {
       };
       return ?libJsonResponse("{\"count\":" # Nat.toText(tOps.size(libraryEntries)) # ",\"entries\":[" # body # "]}");
     };
+    if (parts.size() == 2 and parts[1] == "graph.json") {
+      return ?libJsonResponse(mergedLibraryGraph());
+    };
     if (parts.size() == 3 and parts[2] == "graph.json") {
       return switch (tOps.get(libraryEntries, parts[1])) {
         case (?e) { if (e.graphJson.size() == 0) { ?libNotFound() } else { ?libJsonResponse(e.graphJson) } };
@@ -1467,6 +1517,774 @@ actor CafresoHQState {
     ?libNotFound();  // reserve the whole /library/* namespace
   };
 
+  // ── Merged "neural web" graph — GET /library/graph.json ────────────────────
+  // ONE snapshot merging the newest ≤300 entries: a gold node per question, a
+  // community-colored node per source DOMAIN deduped ACROSS entries — shared
+  // domains cross-link questions, so the web literally densifies as the
+  // library grows. Positions are baked (the public viewer ships without the
+  // FA2 layout): questions sit on a golden-angle spiral; each domain sits at
+  // the centroid of its linked questions, pushed outward — organic clustering
+  // without a physics engine. Entry node keys are the entry ids so the
+  // explore page can deep-link node → drawer.
+  let LIB_MERGED_MAX : Nat = 300;
+  let GRAPH_PALETTE : [Text] = ["#7DC9B0", "#C9B8E0", "#E8A9A9", "#F0C987",
+                                "#9BC0E8", "#B8E09A", "#E0A47C", "#D89BE0"];
+  func textHash(t : Text) : Nat {
+    var h : Nat32 = 0;
+    for (c in t.chars()) { h := h *% 31 +% Char.toNat32(c) };
+    Nat32.toNat(h);
+  };
+  func urlDomain(url : Text) : Text {
+    var rest = url;
+    let ix = Text.split(url, #text "://");
+    switch (ix.next()) { case (?_) {}; case null {} };
+    switch (ix.next()) { case (?r) rest := r; case null {} };
+    var host = switch (Text.split(rest, #char '/').next()) { case (?h) h; case null rest };
+    host := switch (Text.split(host, #char '?').next()) { case (?h) h; case null host };
+    switch (Text.stripStart(host, #text "www.")) { case (?h) h; case null host };
+  };
+  func f2(x : Float) : Text { Float.format(#fix 2, x) };
+
+  func mergedLibraryGraph() : Text {
+    // Newest LIB_MERGED_MAX entries (map iterates oldest-first).
+    let allE = Buffer.Buffer<LibraryEntry>(tOps.size(libraryEntries));
+    for ((_, e) in tOps.entries(libraryEntries)) { allE.add(e) };
+    let total = allE.size();
+    let takeN = if (total > LIB_MERGED_MAX) { LIB_MERGED_MAX } else { total };
+    var nodes = "";
+    var edges = "";
+    var firstN = true;
+    var firstE = true;
+    // domain → (sumX, sumY, degree)
+    var domAgg : OrderedMap.Map<Text, (Float, Float, Nat)> = tOps.empty<(Float, Float, Nat)>();
+    var i = 0;
+    while (i < takeN) {
+      let e = allE.get(total - 1 - i : Nat);          // newest first ⇒ center of the spiral
+      let fi = Float.fromInt(i);
+      let ang = fi * 2.399963;                         // golden angle
+      let r = 4.0 * Float.sqrt(fi + 1.0);
+      let x = Float.cos(ang) * r;
+      let y = Float.sin(ang) * r;
+      let size = 6 + (if (e.sources.size() > 8) { 8 } else { e.sources.size() });
+      if (not firstN) { nodes #= "," };
+      firstN := false;
+      nodes #= "{\"key\":\"" # jsonEsc(e.id) # "\",\"attributes\":{\"label\":\"" # jsonEsc(textTake(e.q, 70)) #
+               "\",\"size\":" # Nat.toText(size) # ",\"x\":" # f2(x) # ",\"y\":" # f2(y) #
+               ",\"color\":\"#F5D25D\",\"entryId\":\"" # jsonEsc(e.id) # "\"}}";
+      // One edge per UNIQUE domain per entry — two sources on the same host
+      // would otherwise emit duplicate edge keys, which graphology rejects.
+      var entryDoms : OrderedMap.Map<Text, Bool> = tOps.empty<Bool>();
+      for (s in e.sources.vals()) {
+        let d = urlDomain(s.url);
+        if (d.size() > 0 and tOps.get(entryDoms, d) == null) {
+          entryDoms := tOps.put(entryDoms, d, true);
+          let (sx, sy, n) = switch (tOps.get(domAgg, d)) { case (?a) a; case null (0.0, 0.0, 0) };
+          domAgg := tOps.put(domAgg, d, (sx + x, sy + y, n + 1));
+          if (not firstE) { edges #= "," };
+          firstE := false;
+          edges #= "{\"key\":\"e" # jsonEsc(e.id) # "_" # jsonEsc(d) #
+                   "\",\"source\":\"" # jsonEsc(e.id) # "\",\"target\":\"d:" # jsonEsc(d) # "\",\"attributes\":{}}";
+        };
+      };
+      i += 1;
+    };
+    for ((d, (sx, sy, n)) in tOps.entries(domAgg)) {
+      let fn = Float.fromInt(n);
+      // Centroid of linked questions, pushed 45% outward (+tiny hash jitter so
+      // single-link domains around the same question don't stack).
+      let jit = Float.fromInt(textHash(d) % 100) / 100.0 - 0.5;
+      let x = (sx / fn) * 1.45 + jit;
+      let y = (sy / fn) * 1.45 - jit;
+      let size = 4 + (if (n > 12) { 12 } else { n });
+      let color = GRAPH_PALETTE[textHash(d) % GRAPH_PALETTE.size()];
+      if (not firstN) { nodes #= "," };
+      firstN := false;
+      nodes #= "{\"key\":\"d:" # jsonEsc(d) # "\",\"attributes\":{\"label\":\"" # jsonEsc(d) #
+               "\",\"size\":" # Nat.toText(size) # ",\"x\":" # f2(x) # ",\"y\":" # f2(y) #
+               ",\"color\":\"" # color # "\"}}";
+    };
+    "{\"graph\":{\"options\":{\"type\":\"mixed\",\"multi\":false,\"allowSelfLoops\":true}," #
+    "\"attributes\":{},\"nodes\":[" # nodes # "],\"edges\":[" # edges # "]}," #
+    "\"title\":\"The Cafreso Library\",\"ts\":" # Int.toText(now() / 1_000_000) # "}";
+  };
+
+  // ── Search network — job queue + worker registry + HMAC HTTP protocol ──────
+  // The decentralized half of Ai Cafreso Search: anonymous visitors queue
+  // queries over plain HTTP; community-run containers (admin-approved, each
+  // bringing its own Brave key + local model) claim and fulfill them, earning
+  // per-job payouts swept by the payroll timer under a planAdmin-signed
+  // allowance. Python workers can't sign candid calls, so the worker protocol
+  // is HMAC-SHA256 over plain HTTPS POSTs — the wake-outcall trust model in
+  // reverse. Worker REQUEST bodies are line-oriented and percent-encoded
+  // (Motoko has no JSON parser); responses are JSON like everything else.
+
+  func pctDecode(t : Text) : ?Text {
+    let bytes = Buffer.Buffer<Nat8>(t.size());
+    let chars = Iter.toArray(t.chars());
+    var i = 0;
+    func hexVal(c : Char) : ?Nat32 {
+      if (c >= '0' and c <= '9') { ?(Char.toNat32(c) - 48) }
+      else if (c >= 'a' and c <= 'f') { ?(Char.toNat32(c) - 87) }
+      else if (c >= 'A' and c <= 'F') { ?(Char.toNat32(c) - 55) }
+      else { null };
+    };
+    while (i < chars.size()) {
+      let c = chars[i];
+      if (c == '%') {
+        if (i + 2 >= chars.size()) { return null };
+        switch (hexVal(chars[i + 1]), hexVal(chars[i + 2])) {
+          case (?h, ?l) { bytes.add(Nat8.fromNat(Nat32.toNat(h * 16 + l))); i += 3 };
+          case _ { return null };
+        };
+      } else if (c == '+') { bytes.add(32); i += 1 }              // query-string space
+      else if (Char.toNat32(c) < 128) { bytes.add(Nat8.fromNat(Nat32.toNat(Char.toNat32(c)))); i += 1 }
+      else {
+        // Non-ASCII literal chars: encode back to UTF-8 bytes.
+        for (b in Text.encodeUtf8(Text.fromChar(c)).vals()) { bytes.add(b) };
+        i += 1;
+      };
+    };
+    Text.decodeUtf8(Blob.fromArray(Buffer.toArray(bytes)));
+  };
+
+  func natFromText(t : Text) : ?Nat {
+    var n : Nat = 0;
+    var seen = false;
+    for (c in t.chars()) {
+      if (c < '0' or c > '9') { return null };
+      n := n * 10 + (Nat32.toNat(Char.toNat32(c)) - 48);
+      seen := true;
+    };
+    if (seen) { ?n } else { null };
+  };
+
+  // ── Worker registry ─────────────────────────────────────────────────────
+  public type Worker = {
+    principal : Principal;
+    name : Text;
+    status : Text;              // "pending" | "approved" | "suspended"
+    payoutOwner : Principal;
+    payoutSubHex : Text;        // "" = default subaccount
+    registeredAt : Int;
+    approvedAt : Int;
+    lastSeen : Int;
+    lastAuthMs : Int;           // replay guard: signed ts must strictly increase
+    jobsDone : Nat;
+    jobsFailed : Nat;
+    accruedE8s : Nat;           // earned but not yet swept
+    earnedE8s : Nat;            // lifetime paid out
+    updatedAt : Int;
+  };
+  stable var workers : OrderedMap.Map<Principal, Worker> = pOps.empty<Worker>();
+  // Secrets live in a separate map with NO query/getter — the only reads are
+  // HMAC verification below. The browser generates the secret (the canister
+  // must hold plaintext to verify HMACs, and this avoids a raw_rand round trip).
+  stable var workerSecrets : OrderedMap.Map<Principal, Blob> = pOps.empty<Blob>();
+  let MAX_WORKERS : Nat = 500;
+  let WORKER_ACTIVE_WINDOW_NS : Int = 600_000_000_000;   // heartbeat within 10 min = active
+
+  public shared (msg) func worker_register(name : Text, secretHex : Text, payoutSubHex : Text) : async Text {
+    if (Principal.isAnonymous(msg.caller)) { throw Error.reject("sign in to register a worker") };
+    if (name.size() == 0 or name.size() > 64) { throw Error.reject("name must be 1-64 chars") };
+    let secret = switch (hexToBytes(secretHex)) {
+      case (?b) { if (b.size() != 32) { throw Error.reject("secret must be 32 bytes hex") }; Blob.fromArray(b) };
+      case null { throw Error.reject("secret must be hex") };
+    };
+    if (payoutSubHex != "") {
+      switch (hexToBytes(payoutSubHex)) {
+        case (?b) { if (b.size() != 32) { throw Error.reject("payout subaccount must be 32 bytes hex") } };
+        case null { throw Error.reject("payout subaccount must be hex") };
+      };
+    };
+    let existing = pOps.get(workers, msg.caller);
+    if (existing == null and pOps.size(workers) >= MAX_WORKERS) { throw Error.reject("worker registry full") };
+    // Re-register rotates the secret WITHOUT resetting an approved status —
+    // rotating a credential must not cost a re-approval round.
+    let w : Worker = switch (existing) {
+      case (?prev) { { prev with name; payoutSubHex; updatedAt = now() } };
+      case null {
+        { principal = msg.caller; name; status = "pending"; payoutOwner = msg.caller;
+          payoutSubHex; registeredAt = now(); approvedAt = 0; lastSeen = 0; lastAuthMs = 0;
+          jobsDone = 0; jobsFailed = 0; accruedE8s = 0; earnedE8s = 0; updatedAt = now() };
+      };
+    };
+    workers := pOps.put(workers, msg.caller, w);
+    workerSecrets := pOps.put(workerSecrets, msg.caller, secret);
+    w.status;
+  };
+
+  public shared query (msg) func worker_my_status() : async ?Worker {
+    pOps.get(workers, msg.caller);
+  };
+
+  func isPlanAdminP(c : Principal) : Bool {
+    switch (planAdmin) { case (?a) a == c; case null false };
+  };
+
+  public shared query (msg) func amPlanAdmin() : async Bool { isPlanAdminP(msg.caller) };
+
+  public shared (msg) func worker_admin_set_status(p : Principal, status : Text) : async () {
+    if (not isPlanAdminP(msg.caller)) { throw Error.reject("plan admin only") };
+    if (status != "approved" and status != "suspended" and status != "pending") {
+      throw Error.reject("bad status");
+    };
+    switch (pOps.get(workers, p)) {
+      case null { throw Error.reject("no such worker") };
+      case (?w) {
+        let approvedAt = if (status == "approved" and w.approvedAt == 0) { now() } else { w.approvedAt };
+        workers := pOps.put(workers, p, { w with status; approvedAt; updatedAt = now() });
+      };
+    };
+  };
+
+  public shared query (msg) func worker_admin_list() : async [Worker] {
+    if (not isPlanAdminP(msg.caller)) { return [] };
+    Iter.toArray(pOps.vals(workers));
+  };
+
+  func patchWorker(p : Principal, f : Worker -> Worker) {
+    switch (pOps.get(workers, p)) {
+      case (?w) { workers := pOps.put(workers, p, f(w)) };
+      case null {};
+    };
+  };
+
+  func activeWorkerCount() : Nat {
+    var n = 0;
+    for ((_, w) in pOps.entries(workers)) {
+      if (w.status == "approved" and now() - w.lastSeen <= WORKER_ACTIVE_WINDOW_NS) { n += 1 };
+    };
+    n;
+  };
+
+  // ── Job queue ───────────────────────────────────────────────────────────
+  public type SearchJob = {
+    id : Text;                  // "j" + zero-padded seq (map order == age)
+    q : Text;
+    norm : Text;
+    status : Text;              // "pending" | "claimed" | "done" | "failed" | "expired"
+    submittedAt : Int;
+    claimedBy : ?Principal;
+    claimedAt : Int;
+    attempts : Nat;
+    libraryId : ?Text;
+    error : Text;
+  };
+  stable var searchJobs : OrderedMap.Map<Text, SearchJob> = tOps.empty<SearchJob>();
+  stable var jobsByNorm : OrderedMap.Map<Text, Text> = tOps.empty<Text>();   // LIVE jobs only
+  stable var jobSeq : Nat = 0;
+  stable var jobsAnsweredToday : Nat = 0;
+  stable var jobDayStamp : Int = 0;
+  stable var searchDailyBudget : Nat = 500;
+
+  let MAX_PENDING_JOBS : Nat = 25;
+  let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
+  let CLAIM_LEASE_NS : Int = 240_000_000_000;         // 4 min claimed → back to pending
+  let MAX_JOB_ATTEMPTS : Nat = 3;
+  let MAX_JOBS_KEPT : Nat = 500;
+  // DAY_NS reused from the Night Shift wake section below (same 24h constant).
+
+  func jobId(n : Nat) : Text {
+    var s = Nat.toText(n);
+    while (s.size() < 10) { s := "0" # s };
+    "j" # s;
+  };
+
+  func bumpJobDay() {
+    let day = now() / DAY_NS;
+    if (day != jobDayStamp) { jobDayStamp := day; jobsAnsweredToday := 0 };
+  };
+
+  func putJob(j : SearchJob) { searchJobs := tOps.put(searchJobs, j.id, j) };
+
+  // Lazy queue maintenance — no extra timer. Expire stale pendings, reclaim
+  // broken leases, prune terminal history past the cap.
+  func tendJobs() {
+    bumpJobDay();
+    let expired = Buffer.Buffer<SearchJob>(4);
+    for ((_, j) in tOps.entries(searchJobs)) {
+      if (j.status == "pending" and now() - j.submittedAt > JOB_PENDING_TTL_NS) { expired.add(j) }
+      else if (j.status == "claimed" and now() - j.claimedAt > CLAIM_LEASE_NS) { expired.add(j) };
+    };
+    for (j in expired.vals()) {
+      if (j.status == "pending") {
+        putJob({ j with status = "expired" });
+        jobsByNorm := tOps.delete(jobsByNorm, j.norm);
+      } else {
+        // Broken lease: give it back (or fail out at max attempts).
+        if (j.attempts + 1 >= MAX_JOB_ATTEMPTS) {
+          putJob({ j with status = "failed"; error = "workers timed out"; attempts = j.attempts + 1 });
+          jobsByNorm := tOps.delete(jobsByNorm, j.norm);
+        } else {
+          putJob({ j with status = "pending"; claimedBy = null; attempts = j.attempts + 1 });
+        };
+      };
+    };
+    // Prune oldest TERMINAL jobs beyond the history cap (map iterates oldest-first).
+    if (tOps.size(searchJobs) > MAX_JOBS_KEPT) {
+      var excess : Nat = tOps.size(searchJobs) - MAX_JOBS_KEPT;
+      let victims = Buffer.Buffer<Text>(excess);
+      label prune for ((id, j) in tOps.entries(searchJobs)) {
+        if (excess == 0) { break prune };
+        if (j.status != "pending" and j.status != "claimed") { victims.add(id); excess -= 1 };
+      };
+      for (id in victims.vals()) { searchJobs := tOps.delete(searchJobs, id) };
+    };
+  };
+
+  func livePendingCount() : Nat {
+    var n = 0;
+    for ((_, j) in tOps.entries(searchJobs)) { if (j.status == "pending") { n += 1 } };
+    n;
+  };
+
+  public type SubmitOutcome = { #hit : Text; #queued : Text; #rejected : Text };
+  func submitSearch(qRaw : Text) : SubmitOutcome {
+    tendJobs();
+    let q = qRaw;
+    let norm = libNorm(q);
+    if (norm.size() == 0 or q.size() > LIB_MAX_QUERY) { return #rejected("bad-query") };
+    switch (tOps.get(libraryByQuery, norm)) { case (?id) { return #hit(id) }; case null {} };
+    switch (tOps.get(jobsByNorm, norm)) { case (?jid) { return #queued(jid) }; case null {} };
+    if (jobsAnsweredToday >= searchDailyBudget) { return #rejected("budget") };
+    if (livePendingCount() >= MAX_PENDING_JOBS) { return #rejected("busy") };
+    if (activeWorkerCount() == 0) { return #rejected("dark") };
+    jobSeq += 1;
+    let id = jobId(jobSeq);
+    putJob({ id; q; norm; status = "pending"; submittedAt = now(); claimedBy = null;
+             claimedAt = 0; attempts = 0; libraryId = null; error = "" });
+    jobsByNorm := tOps.put(jobsByNorm, norm, id);
+    #queued(id);
+  };
+
+  // ── Worker HMAC verification ────────────────────────────────────────────
+  // Envelope (UTF-8 body, \n-separated): v1 / principal / ts-ms / nonce / op / …
+  // Signature: hex(HMAC-SHA256(secret, raw body bytes)) in x-worker-signature.
+  // Replay: the signed ts must STRICTLY exceed the worker's last accepted ts —
+  // O(1) and airtight because a worker's loop serializes its calls.
+  let WORKER_MAX_BODY : Nat = 262_144;
+  let WORKER_MAX_SKEW_MS : Int = 300_000;
+
+  func headerValue(req : HttpRequest, name : Text) : ?Text {
+    for ((k, v) in req.headers.vals()) {
+      if (libNorm(k) == name) { return ?v };
+    };
+    null;
+  };
+
+  func verifyWorker(req : HttpRequest) : ?(Principal, [Text]) {
+    if (req.body.size() > WORKER_MAX_BODY) { return null };
+    let bodyText = switch (Text.decodeUtf8(req.body)) { case (?t) t; case null { return null } };
+    let lines = Iter.toArray(Text.split(bodyText, #char '\n'));
+    if (lines.size() < 5 or lines[0] != "v1") { return null };
+    let p = switch (parsePrincipal(lines[1])) { case (?x) x; case null { return null } };
+    let w = switch (pOps.get(workers, p)) { case (?x) x; case null { return null } };
+    let secret = switch (pOps.get(workerSecrets, p)) { case (?s) s; case null { return null } };
+    let tsMs = switch (natFromText(lines[2])) { case (?n) n; case null { return null } };
+    let nowMs = now() / 1_000_000;
+    let tsInt : Int = tsMs;
+    if (tsInt > nowMs + WORKER_MAX_SKEW_MS or tsInt < nowMs - WORKER_MAX_SKEW_MS) { return null };
+    if (tsInt <= w.lastAuthMs) { return null };                    // replay
+    let sig = switch (headerValue(req, "x-worker-signature")) { case (?s) libNorm(s); case null { return null } };
+    let want = Sha256.toHex(Sha256.hmac(Blob.toArray(secret), Blob.toArray(req.body)));
+    if (sig != want) { return null };
+    // Op gate: heartbeat allowed while pending (lets operators see "connected"
+    // before approval); everything else needs approved.
+    if (lines[4] != "heartbeat" and w.status != "approved") { return null };
+    if (w.status == "suspended") { return null };
+    patchWorker(p, func(x) { { x with lastAuthMs = tsInt; lastSeen = now(); updatedAt = now() } });
+    ?(p, lines);
+  };
+
+  func libJsonNoStore(body : Text) : HttpResponse {
+    { status_code = 200;
+      headers = [("Content-Type", "application/json; charset=utf-8"),
+                 ("Access-Control-Allow-Origin", "*"),
+                 ("Cache-Control", "no-store"),
+                 ("X-Content-Type-Options", "nosniff")];
+      body = Text.encodeUtf8(body); streaming_strategy = null; upgrade = null };
+  };
+
+  func workerDeny() : HttpResponse {
+    { status_code = 403; headers = [("Content-Type", "application/json")];
+      body = Text.encodeUtf8("{\"error\":\"unauthorized\"}"); streaming_strategy = null; upgrade = null };
+  };
+
+  // POST /worker/heartbeat | claim | fulfill | fail
+  func workerRoute(req : HttpRequest) : ?HttpResponse {
+    var path = req.url;
+    switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
+    path := Text.trimStart(path, #char '/');
+    let parts = Iter.toArray(Text.split(path, #char '/'));
+    if (parts.size() == 0 or parts[0] != "worker") { return null };
+    if (req.method != "POST") { return ?workerDeny() };
+    let (p, lines) = switch (verifyWorker(req)) { case (?x) x; case null { return ?workerDeny() } };
+    let op = lines[4];
+    if (parts.size() != 2 or parts[1] != op) { return ?workerDeny() };  // path and envelope must agree
+    tendJobs();
+
+    if (op == "heartbeat") {
+      let st = switch (pOps.get(workers, p)) { case (?w) w.status; case null "unknown" };
+      return ?libJsonNoStore("{\"ok\":true,\"status\":\"" # st # "\"}");
+    };
+
+    if (op == "claim") {
+      // Oldest pending job wins.
+      label find for ((_, j) in tOps.entries(searchJobs)) {
+        if (j.status == "pending") {
+          putJob({ j with status = "claimed"; claimedBy = ?p; claimedAt = now() });
+          return ?libJsonNoStore("{\"job\":{\"id\":\"" # jsonEsc(j.id) # "\",\"q\":\"" # jsonEsc(j.q) # "\"}}");
+        };
+      };
+      return ?libJsonNoStore("{\"job\":null}");
+    };
+
+    if (op == "fail") {
+      if (lines.size() < 7) { return ?workerDeny() };
+      let jid = lines[5];
+      let reason = switch (pctDecode(lines[6])) { case (?t) t; case null "" };
+      switch (tOps.get(searchJobs, jid)) {
+        case (?j) {
+          if (j.status == "claimed" and j.claimedBy == ?p) {
+            if (j.attempts + 1 >= MAX_JOB_ATTEMPTS) {
+              putJob({ j with status = "failed"; claimedBy = null;
+                       error = textTake(reason, 200); attempts = j.attempts + 1 });
+              jobsByNorm := tOps.delete(jobsByNorm, j.norm);
+            } else {
+              putJob({ j with status = "pending"; claimedBy = null;
+                       error = textTake(reason, 200); attempts = j.attempts + 1 });
+            };
+            patchWorker(p, func(x) { { x with jobsFailed = x.jobsFailed + 1 } });
+          };
+        };
+        case null {};
+      };
+      return ?libJsonNoStore("{\"ok\":true}");
+    };
+
+    if (op == "fulfill") {
+      // Lines: 5 jobId · 6 model · 7 engine · 8 answer · 9 N · 10..10+N-1 "title url" · last graphJson
+      if (lines.size() < 11) { return ?workerDeny() };
+      let jid = lines[5];
+      let j = switch (tOps.get(searchJobs, jid)) { case (?x) x; case null { return ?workerDeny() } };
+      if (j.status != "claimed" or j.claimedBy != ?p) {
+        return ?libJsonNoStore("{\"ok\":false,\"error\":\"not-your-claim\"}");
+      };
+      let model = switch (pctDecode(lines[6])) { case (?t) textTake(t, LIB_MAX_PROV_TEXT); case null "" };
+      let engine = switch (pctDecode(lines[7])) { case (?t) textTake(t, LIB_MAX_PROV_TEXT); case null "" };
+      let answer = switch (pctDecode(lines[8])) { case (?t) t; case null { return ?workerDeny() } };
+      let nSrc = switch (natFromText(lines[9])) { case (?n) n; case null { return ?workerDeny() } };
+      if (nSrc > LIB_MAX_SOURCES or lines.size() < 11 + nSrc) { return ?workerDeny() };
+      let srcs = Buffer.Buffer<LibrarySource>(nSrc);
+      var i = 0;
+      while (i < nSrc) {
+        let sl = Iter.toArray(Text.split(lines[10 + i], #char ' '));
+        if (sl.size() != 2) { return ?workerDeny() };
+        switch (pctDecode(sl[0]), pctDecode(sl[1])) {
+          case (?title, ?url) { srcs.add({ title; url }) };
+          case _ { return ?workerDeny() };
+        };
+        i += 1;
+      };
+      let graphJson = switch (pctDecode(lines[10 + nSrc])) { case (?t) t; case null { return ?workerDeny() } };
+      let sources = Buffer.toArray(srcs);
+      switch (libValidate(j.q, answer, sources, graphJson)) {
+        case (?e) { return ?libJsonNoStore("{\"ok\":false,\"error\":\"" # jsonEsc(e) # "\"}") };
+        case null {};
+      };
+      // Race with a user publish: mark done pointing at the existing entry, no payout.
+      switch (tOps.get(libraryByQuery, j.norm)) {
+        case (?existingId) {
+          putJob({ j with status = "done"; libraryId = ?existingId });
+          jobsByNorm := tOps.delete(jobsByNorm, j.norm);
+          return ?libJsonNoStore("{\"ok\":true,\"libraryId\":\"" # jsonEsc(existingId) # "\",\"existing\":true}");
+        };
+        case null {};
+      };
+      // Network entries bypass LIB_MAX_PER_OWNER (a 200-lifetime-job cap would
+      // brick every productive worker); the daily budget + approval gate flood.
+      let libId2 = libInsert(p, j.q, answer, sources, graphJson, {
+        model; searchEngine = engine; worker = ?p;
+        firstSearchedAt = j.submittedAt; answeredAt = now();
+      });
+      putJob({ j with status = "done"; libraryId = ?libId2 });
+      jobsByNorm := tOps.delete(jobsByNorm, j.norm);
+      bumpJobDay();
+      jobsAnsweredToday += 1;
+      patchWorker(p, func(x) { { x with jobsDone = x.jobsDone + 1;
+                                 accruedE8s = x.accruedE8s + searchPayRateE8s } });
+      return ?libJsonNoStore("{\"ok\":true,\"libraryId\":\"" # jsonEsc(libId2) # "\",\"existing\":false}");
+    };
+
+    ?workerDeny();
+  };
+
+  func textTake(t : Text, n : Nat) : Text {
+    if (t.size() <= n) { return t };
+    var out = "";
+    var i = 0;
+    label take for (c in t.chars()) {
+      if (i >= n) { break take };
+      out #= Text.fromChar(c);
+      i += 1;
+    };
+    out;
+  };
+
+  // ── Public search routes (anonymous, plain fetch) ───────────────────────
+  // GET  /library/find.json?q=…    exact normalized-query lookup
+  // POST /search/submit            body = pct-encoded query (text/plain)
+  // GET  /search/job/<id>.json     poll a queued job
+  // GET  /search/health.json       network liveness for honest UI states
+  func searchLookup(req : HttpRequest) : ?HttpResponse {
+    var path = req.url;
+    var queryStr = "";
+    let qIx = Text.split(req.url, #char '?');
+    switch (qIx.next()) { case (?pth) path := pth; case null {} };
+    switch (qIx.next()) { case (?qs) queryStr := qs; case null {} };
+    path := Text.trimStart(path, #char '/');
+    let parts = Iter.toArray(Text.split(path, #char '/'));
+    if (parts.size() == 0) { return null };
+
+    if (parts[0] == "library" and parts.size() == 2 and parts[1] == "find.json") {
+      // find ?q=<pct>
+      for (kv in Text.split(queryStr, #char '&')) {
+        let pair = Iter.toArray(Text.split(kv, #char '='));
+        if (pair.size() == 2 and pair[0] == "q") {
+          switch (pctDecode(pair[1])) {
+            case (?q) {
+              switch (tOps.get(libraryByQuery, libNorm(q))) {
+                case (?id) {
+                  switch (tOps.get(libraryEntries, id)) {
+                    case (?e) { return ?libJsonResponse(entryJson(e)) };
+                    case null {};
+                  };
+                };
+                case null {};
+              };
+            };
+            case null {};
+          };
+        };
+      };
+      return ?libNotFound();
+    };
+
+    if (parts[0] != "search") { return null };
+    tendJobs();
+
+    if (parts.size() == 2 and parts[1] == "submit" and req.method == "POST") {
+      if (req.body.size() > 2_048) { return ?libNotFound() };
+      let raw = switch (Text.decodeUtf8(req.body)) { case (?t) t; case null { return ?libNotFound() } };
+      let q = switch (pctDecode(raw)) { case (?t) t; case null raw };
+      switch (submitSearch(q)) {
+        case (#hit(id)) {
+          let e = switch (tOps.get(libraryEntries, id)) { case (?x) ?entryJson(x); case null null };
+          return ?libJsonNoStore("{\"status\":\"hit\",\"entry\":" #
+            (switch (e) { case (?j) j; case null "null" }) # "}");
+        };
+        case (#queued(jid)) { return ?libJsonNoStore("{\"status\":\"queued\",\"jobId\":\"" # jsonEsc(jid) # "\"}") };
+        case (#rejected(r)) { return ?libJsonNoStore("{\"status\":\"rejected\",\"reason\":\"" # jsonEsc(r) # "\"}") };
+      };
+    };
+
+    if (parts.size() == 3 and parts[1] == "job") {
+      switch (Text.stripEnd(parts[2], #text ".json")) {
+        case (?jid) {
+          switch (tOps.get(searchJobs, jid)) {
+            case (?j) {
+              let entry = switch (j.libraryId) {
+                case (?lid) {
+                  switch (tOps.get(libraryEntries, lid)) { case (?e) entryJson(e); case null "null" };
+                };
+                case null "null";
+              };
+              return ?libJsonNoStore("{\"status\":\"" # jsonEsc(j.status) #
+                "\",\"libraryId\":" # (switch (j.libraryId) { case (?l) "\"" # jsonEsc(l) # "\""; case null "null" }) #
+                ",\"entry\":" # entry # "}");
+            };
+            case null { return ?libNotFound() };
+          };
+        };
+        case null {};
+      };
+      return ?libNotFound();
+    };
+
+    if (parts.size() == 2 and parts[1] == "health.json") {
+      return ?libJsonNoStore("{\"workers\":" # Nat.toText(pOps.size(workers)) #
+        ",\"activeWorkers\":" # Nat.toText(activeWorkerCount()) #
+        ",\"pending\":" # Nat.toText(livePendingCount()) #
+        ",\"answeredToday\":" # Nat.toText(jobsAnsweredToday) #
+        ",\"budget\":" # Nat.toText(searchDailyBudget) #
+        ",\"entries\":" # Nat.toText(tOps.size(libraryEntries)) #
+        ",\"payoutsEnabled\":" # (if (searchPayRateE8s > 0) "true" else "false") # "}");
+    };
+
+    ?libNotFound();  // reserve /search/*
+  };
+
+  // ── Worker auto-pay — accrue per job, sweep on the payroll timer ───────────
+  // "Auto-pay per job" with honest economics: a literal transfer per job pays
+  // the ledger fee (10_000 e8s on ICP) per job, which can exceed a micro-rate.
+  // So fulfill ACCRUES the per-job rate and the sweep pays each worker once
+  // their accrual crosses max(minPayout, 2×fee). Funds come from the plan
+  // admin's account under a SEPARATE icrc2_approve (spender = this canister) —
+  // the allowance is the hard budget, exactly like user payroll, and fully
+  // independent of it. Exactly-once discipline copied from executeTransfer:
+  // zero the accrual + log a pending payout BEFORE the ledger await; memo +
+  // created_at_time make ledger-side dedup kill replays.
+  stable var searchPayLedger : ?Principal = null;
+  stable var searchPayRateE8s : Nat = 0;              // 0 = accrual off
+  stable var searchPayMinE8s : Nat = 100_000;
+  stable var searchPayFee : Nat = 10_000;             // auto-corrected on #BadFee
+  stable var searchTreasury : ?Principal = null;      // the admin who configured pay
+  public type WorkerPayout = {
+    key : Text; worker : Principal; amount : Nat;
+    scheduledAt : Int; status : Text; blockIndex : ?Nat; ts : Int;
+  };
+  stable var workerPayouts : [WorkerPayout] = [];
+  let MAX_WORKER_PAYOUTS_KEPT : Nat = 500;
+
+  func appendWorkerPayout(po : WorkerPayout) {
+    let buf = Buffer.fromArray<WorkerPayout>(workerPayouts);
+    buf.add(po);
+    while (buf.size() > MAX_WORKER_PAYOUTS_KEPT) { ignore buf.remove(0) };
+    workerPayouts := Buffer.toArray(buf);
+  };
+  func setWorkerPayoutStatus(key : Text, status : Text, blockIndex : ?Nat) {
+    workerPayouts := Array.map<WorkerPayout, WorkerPayout>(workerPayouts, func(po) {
+      if (po.key == key) { { po with status; blockIndex; ts = now() } } else { po };
+    });
+  };
+  func restoreAccrual(p : Principal, amount : Nat) {
+    patchWorker(p, func(x) { { x with accruedE8s = x.accruedE8s + amount } });
+  };
+  func workerPayoutSub(w : Worker) : ?Blob {
+    if (w.payoutSubHex == "") { return null };
+    switch (hexToBytes(w.payoutSubHex)) {
+      case (?b) { if (b.size() == 32) { ?Blob.fromArray(b) } else { null } };
+      case null null;
+    };
+  };
+
+  func executeWorkerPayout(po : WorkerPayout) : async () {
+    let ledgerP = switch (searchPayLedger) { case (?l) l; case null { return } };
+    let treasury = switch (searchTreasury) { case (?t) t; case null { return } };
+    let w = switch (pOps.get(workers, po.worker)) { case (?x) x; case null {
+      setWorkerPayoutStatus(po.key, "failed:orphaned", null); return } };
+    let ledger : LedgerActor = actor (Principal.toText(ledgerP));
+    let args : TransferFromArgs = {
+      spender_subaccount = null;
+      from = { owner = treasury; subaccount = null };
+      to = { owner = w.payoutOwner; subaccount = workerPayoutSub(w) };
+      amount = po.amount;
+      fee = ?searchPayFee;
+      memo = ?Text.encodeUtf8(po.key);
+      created_at_time = ?Nat64.fromIntWrap(po.scheduledAt);
+    };
+    try {
+      switch (await ledger.icrc2_transfer_from(args)) {
+        case (#Ok(block)) {
+          setWorkerPayoutStatus(po.key, "paid", ?block);
+          patchWorker(po.worker, func(x) { { x with earnedE8s = x.earnedE8s + po.amount; updatedAt = now() } });
+        };
+        case (#Err(#Duplicate(d))) {
+          setWorkerPayoutStatus(po.key, "paid", ?d.duplicate_of);
+          patchWorker(po.worker, func(x) { { x with earnedE8s = x.earnedE8s + po.amount; updatedAt = now() } });
+        };
+        case (#Err(#BadFee(e))) {
+          searchPayFee := e.expected_fee;   // retry same key next sweep with the right fee
+        };
+        case (#Err(#InsufficientAllowance(_))) {
+          setWorkerPayoutStatus(po.key, "failed:allowance", null);
+          restoreAccrual(po.worker, po.amount);   // definitive reject → funds never moved
+        };
+        case (#Err(#InsufficientFunds(_))) {
+          setWorkerPayoutStatus(po.key, "failed:funds", null);
+          restoreAccrual(po.worker, po.amount);
+        };
+        case (#Err(#TooOld)) {
+          setWorkerPayoutStatus(po.key, "failed:expired", null);
+          restoreAccrual(po.worker, po.amount);
+        };
+        case (#Err(_)) {
+          setWorkerPayoutStatus(po.key, "failed:ledger", null);
+          restoreAccrual(po.worker, po.amount);
+        };
+      };
+    } catch (_e) {
+      // Trapped — outcome UNKNOWN. Leave pending; next sweep retries the same
+      // memo/created_at_time (ledger dedup = exactly-once). Never restore here.
+    };
+  };
+
+  func scanWorkerPayouts() : async () {
+    if (searchPayLedger == null or searchTreasury == null or searchPayRateE8s == 0) { return };
+    let threshold = if (searchPayMinE8s > searchPayFee * 2) { searchPayMinE8s } else { searchPayFee * 2 };
+    // New sweeps: accrual crossed the threshold.
+    let due = Buffer.Buffer<(Principal, Nat)>(4);
+    for ((p, w) in pOps.entries(workers)) {
+      if (w.status == "approved" and w.accruedE8s >= threshold) { due.add((p, w.accruedE8s)) };
+    };
+    for ((p, amount) in due.vals()) {
+      let scheduledAt = now();
+      let key = "wp#" # Principal.toText(p) # "#" # Int.toText(scheduledAt);
+      // Crash-safe intent BEFORE the await: zero the accrual, log pending.
+      patchWorker(p, func(x) { { x with accruedE8s = 0; updatedAt = now() } });
+      appendWorkerPayout({ key; worker = p; amount; scheduledAt; status = "pending"; blockIndex = null; ts = now() });
+      await executeWorkerPayout({ key; worker = p; amount; scheduledAt; status = "pending"; blockIndex = null; ts = now() });
+    };
+    // Retry or expire stale pendings left by trapped ledger calls.
+    for (po in workerPayouts.vals()) {
+      if (po.status == "pending" and now() - po.ts > PENDING_RETRY_MIN_AGE_NS) {
+        if (now() - po.scheduledAt > PENDING_RETRY_MAX_NS) {
+          setWorkerPayoutStatus(po.key, "failed:expired", null);
+        } else {
+          await executeWorkerPayout(po);
+        };
+      };
+    };
+  };
+
+  // ── Search-network admin ───────────────────────────────────────────────────
+  public shared (msg) func search_admin_set_pay(
+    ledgerId : Principal, ratePerJobE8s : Nat, minPayoutE8s : Nat
+  ) : async () {
+    // planAdmin claim-or-match — same gate as setWakeConfig: first caller must
+    // be a controller; afterwards only the established admin.
+    switch (planAdmin) {
+      case (?a) { if (a != msg.caller) { throw Error.reject("plan admin only") } };
+      case null {
+        if (not Principal.isController(msg.caller)) { throw Error.reject("only a controller may claim plan admin") };
+        planAdmin := ?msg.caller;
+      };
+    };
+    if (not isKnownLedger(ledgerId)) { throw Error.reject("unsupported ledger") };
+    searchPayLedger := ?ledgerId;
+    searchPayRateE8s := ratePerJobE8s;
+    searchPayMinE8s := minPayoutE8s;
+    searchTreasury := ?msg.caller;
+  };
+
+  public shared (msg) func search_admin_set_budget(perDay : Nat) : async () {
+    if (not isPlanAdminP(msg.caller)) { throw Error.reject("plan admin only") };
+    searchDailyBudget := perDay;
+  };
+
+  public query func search_pay_status() : async {
+    rateE8s : Nat; minE8s : Nat; ledgerSet : Bool; treasurySet : Bool; budgetPerDay : Nat;
+  } {
+    { rateE8s = searchPayRateE8s; minE8s = searchPayMinE8s;
+      ledgerSet = searchPayLedger != null; treasurySet = searchTreasury != null;
+      budgetPerDay = searchDailyBudget };
+  };
+
+  public shared query (msg) func worker_payout_log() : async [WorkerPayout] {
+    if (isPlanAdminP(msg.caller)) { return workerPayouts };
+    Array.filter<WorkerPayout>(workerPayouts, func(po) { po.worker == msg.caller });
+  };
+
   // Upgrade GETs to an update call so we don't need asset certification (MVP).
   public query func http_request(_req : HttpRequest) : async HttpResponse {
     { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
@@ -1474,12 +2292,24 @@ actor CafresoHQState {
   public func http_request_update(req : HttpRequest) : async HttpResponse {
     // Receipt verify pages take precedence over sites — SECURITY: a site
     // project can never shadow the /receipt/ URL shape (name reserved too).
+    // Then search (find/submit/job/health) → library → worker (HMAC POSTs) →
+    // sites. All reserved prefixes fail parsePrincipal, so no site collision.
     switch (receiptLookup(req.url)) {
       case (?res) res;
       case null {
-        switch (libraryLookup(req.url)) {
+        switch (searchLookup(req)) {
           case (?res) res;
-          case null serveSite(req.url);
+          case null {
+            switch (libraryLookup(req.url)) {
+              case (?res) res;
+              case null {
+                switch (workerRoute(req)) {
+                  case (?res) res;
+                  case null serveSite(req.url);
+                };
+              };
+            };
+          };
         };
       };
     };
@@ -1721,4 +2551,8 @@ actor CafresoHQState {
 
   // ── Diagnostics ────────────────────────────────────────────────────────────
   public query func cycle_balance() : async Nat { Cycles.balance() };
+
+  // Fresh-install timer arm — MUST be the last declaration: payrollTick
+  // transitively references the search-network payout section above.
+  armPayrollTimer<system>();
 }

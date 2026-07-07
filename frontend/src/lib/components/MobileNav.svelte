@@ -35,7 +35,8 @@
                 ? 'profile'
                 : '';
 
-  $: exploreSub = path.startsWith('/forums') ? 'forums' : path.startsWith('/blog') ? 'devlog' : null;
+  $: exploreSub = path.startsWith('/forums') ? 'forums' : path.startsWith('/blog') ? 'devlog'
+    : path.startsWith('/library') ? 'library' : null;
 
   function toggleExplorePopover() {
     explorePopoverOpen = !explorePopoverOpen;
@@ -157,6 +158,35 @@
               border-right: 1px solid hsl(26 30% 82%);
               border-bottom: 1px solid hsl(26 30% 82%);
             "></div>
+
+            <!-- Library -->
+            <a
+              href="/library"
+              on:click={closeExplorePopover}
+              class="popover-item"
+              style="
+                display: flex; align-items: center; gap: 10px;
+                padding: 10px 12px; border-radius: 10px;
+                text-decoration: none;
+                background: {exploreSub === 'library' ? 'hsl(222 47% 11%)' : 'transparent'};
+                color: {exploreSub === 'library' ? 'white' : 'hsl(222 47% 11%)'};
+                font-size: 13px; font-weight: 600;
+                transition: background .12s;
+              "
+            >
+              <span style="
+                width: 30px; height: 30px; border-radius: 8px;
+                display: flex; align-items: center; justify-content: center;
+                background: {exploreSub === 'library' ? 'hsl(222 30% 22%)' : 'hsl(45 70% 90%)'};
+                flex-shrink: 0;
+              ">
+                <Icon name="books" size={15} />
+              </span>
+              <div>
+                <div>Library</div>
+                <div style="font-size: 10px; font-weight: 400; opacity: 0.6; margin-top: 1px;">The on-chain research web</div>
+              </div>
+            </a>
 
             <!-- Dev Log -->
             <a

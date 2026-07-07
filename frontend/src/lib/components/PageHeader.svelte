@@ -47,6 +47,8 @@
   // browser does a full navigation into the other canister's origin.
   const items = [
     { href: '/', key: 'home', icon: 'house', label: 'Home' },
+    { href: '/how-it-works', key: 'how', icon: 'compass', label: 'How it Works' },
+    { href: '/library', key: 'library', icon: 'books', label: 'Library' },
     { href: '/shop', key: 'shop', icon: 'coffee-bean', label: 'Shop' },
     { href: bbLinks.mine, key: 'mine', icon: 'coin', label: 'Mine', external: true },
     { href: aiCafresoOrigin, key: 'ai', icon: 'brain', label: 'AI', external: true },

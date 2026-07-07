@@ -17,10 +17,26 @@ import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
 
 const PENDING_KEY = 'cafreso:library:pending';
 
-/** Public (no-session) base URL for library reads served by the canister. */
+/** Public (no-session) base URL for library reads served by the canister.
+    localStorage 'cafreso:library-base' overrides for local-replica dev. */
 export function libraryPublicBase() {
+  try {
+    const o = localStorage.getItem('cafreso:library-base');
+    if (o) return o.replace(/\/$/, '');
+  } catch (_e) {}
   const id = get(stateCanisterId);
   return id ? `https://${id}.icp0.io` : '';
+}
+
+/** Where graph-viewer.html is served from. The hq-ui canister in production;
+    a localStorage override ('cafreso:graphviewer-origin') for local dev, where
+    the https canister page can't fetch a http://localhost graph (mixed content). */
+export function graphViewerOrigin() {
+  try {
+    const o = localStorage.getItem('cafreso:graphviewer-origin');
+    if (o) return o.replace(/\/$/, '');
+  } catch (_e) {}
+  return HQ_UI_CANISTER_ORIGIN;
 }
 
 /** Fully public graph-viewer link for a library entry — canister-hosted end to end. */
@@ -28,7 +44,15 @@ export function libraryGraphViewerUrl(id) {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/${id}/graph.json`);
-  return `${HQ_UI_CANISTER_ORIGIN}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+}
+
+/** The whole library as one neural web — the /library page hero. */
+export function libraryMergedGraphViewerUrl() {
+  const base = libraryPublicBase();
+  if (!base) return '';
+  const g = encodeURIComponent(`${base}/library/graph.json`);
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight`;
 }
 
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */
@@ -49,7 +73,7 @@ export async function findInLibrary(q) {
  *   { status: 'queued' }  — canister method not live yet; saved locally
  *   { status: 'error', error }
  */
-export async function publishToLibrary({ q, answer, sources, graphJson }) {
+export async function publishToLibrary({ q, answer, sources, graphJson, model, searchEngine }) {
   const entry = {
     q: String(q).slice(0, 400),
     answer: String(answer || '').slice(0, 4000),
@@ -57,11 +81,14 @@ export async function publishToLibrary({ q, answer, sources, graphJson }) {
       title: String(s.title || '').slice(0, 600),
       url: String(s.url || '').slice(0, 600)
     })),
-    graphJson: String(graphJson || '')
+    graphJson: String(graphJson || ''),
+    model: String(model || '').slice(0, 80),
+    searchEngine: String(searchEngine || '').slice(0, 80)
   };
   try {
     const actor = await getStateActor();
-    const res = await actor.library_put(entry.q, entry.answer, entry.sources, entry.graphJson);
+    const res = await actor.library_put(entry.q, entry.answer, entry.sources, entry.graphJson,
+                                        entry.model, entry.searchEngine);
     if ('err' in res) return { status: 'error', error: res.err };
     const { id, existing } = res.ok;
     return {
