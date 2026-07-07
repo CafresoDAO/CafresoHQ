@@ -1,38 +1,47 @@
 <script>
   import { aiCafresoOrigin } from '$lib/links.js';
 
+  // Shared tier palette — the SAME four hues carry through the step icons,
+  // the pillar icons, AND the architecture diagram below, so the overview
+  // and the engineer diagram visibly tell one continuous story. Defined as
+  // page-scoped CSS vars in the stylesheet below, rather than the shared
+  // --eco-* tokens: --eco-pages is too pale (86% lightness) to hold up as
+  // an icon/border accent on a dark card, and none of the --eco-* tokens
+  // vary by theme.
+  const TIER = { identity: 'var(--tier-1)', compute: 'var(--tier-2)', chain: 'var(--tier-3)', money: 'var(--tier-4)' };
+
   // The three-tier flow, told as a story a newcomer can follow in a minute.
   const steps = [
     {
-      n: '01', emoji: '🔑', color: 'var(--eco-pages)',
+      n: '01', emoji: '🔑', color: TIER.identity,
       title: 'You sign in once, with your keys',
       body: 'One Internet Identity signs you into every Cafreso app. No password, no account — a passkey on your device. The same identity owns your library, your agents, and your wallet across the whole ecosystem.'
     },
     {
-      n: '02', emoji: '🏢', color: 'var(--eco-hq)',
+      n: '02', emoji: '🏢', color: TIER.compute,
       title: 'You get a pixel office of AI agents',
       body: 'CafresoHQ is a little on-chain office. You meet the CEO agent, hire specialists to empty desks, and delegate real work — research, writing, code, whole websites. Agents run on your own container and model.'
     },
     {
-      n: '03', emoji: '🧠', color: 'var(--eco-ai)',
+      n: '03', emoji: '🧠', color: TIER.chain,
       title: 'They do real work — and it lives on-chain',
       body: 'Ask a question and the answer is researched, cited, and saved forever to a public library anyone can explore. Build a site and it publishes to a canister URL. Nothing is faked; every artifact is real and permanent.'
     },
     {
-      n: '04', emoji: '🪙', color: 'var(--eco-banking)',
+      n: '04', emoji: '🪙', color: TIER.money,
       title: 'Money is optional, and you always sign',
       body: 'Turn on the money module and agents can hold tokens under spending caps you set — but every transfer is signed by you, in the app that holds your identity. Agents can request; they can never move funds on their own.'
     }
   ];
 
   const pillars = [
-    { emoji: '🪪', title: 'Your identity', tag: 'client',
+    { emoji: '🪪', title: 'Your identity', tag: 'client', color: TIER.identity,
       body: 'The SvelteKit shell holds your Internet Identity delegation and the @dfinity actors. It is the only thing that ever signs a transaction.' },
-    { emoji: '🧠', title: 'Inference', tag: 'your container',
+    { emoji: '🧠', title: 'Inference', tag: 'your container', color: TIER.compute,
       body: 'A private container runs the agent runtime, your local LLM (Gemma, hermes, or a hosted model), and web search. This is where thinking happens — off-chain, fast, yours.' },
-    { emoji: '⛓️', title: 'The chain', tag: 'internet computer',
+    { emoji: '⛓️', title: 'The chain', tag: 'internet computer', color: TIER.chain,
       body: 'One canister is the durable source of truth: encrypted vault, agent wallets, payroll, the public research library, and published sites — keyed to your principal.' },
-    { emoji: '🕸️', title: 'The network', tag: 'community',
+    { emoji: '🕸️', title: 'The network', tag: 'community', color: TIER.money,
       body: 'Anyone can run a worker that answers public search queries with its own model and earns ICP. The library grows into a shared, on-chain web of knowledge.' }
   ];
 </script>
@@ -96,7 +105,7 @@
     <div class="hiw-pillars">
       {#each pillars as p}
         <div class="hiw-pillar">
-          <span class="hiw-pillar-icon">{p.emoji}</span>
+          <span class="hiw-pillar-icon" style="--c: {p.color}">{p.emoji}</span>
           <div class="hiw-pillar-tag">{p.tag}</div>
           <h3>{p.title}</h3>
           <p>{p.body}</p>
@@ -276,7 +285,19 @@
 </div>
 
 <style>
-  .hiw { max-width: 1080px; margin: 0 auto; padding: 0 4px 40px; }
+  .hiw {
+    max-width: 1080px; margin: 0 auto; padding: 0 4px 40px;
+    --tier-1: hsl(32 72% 50%);
+    --tier-2: hsl(280 42% 58%);
+    --tier-3: hsl(155 45% 42%);
+    --tier-4: hsl(43 74% 48%);
+  }
+  :global(.dark) .hiw {
+    --tier-1: hsl(45 90% 62%);
+    --tier-2: hsl(280 50% 70%);
+    --tier-3: hsl(155 55% 58%);
+    --tier-4: hsl(43 85% 62%);
+  }
 
   /* ── Hero ── */
   .hiw-hero {
@@ -286,8 +307,12 @@
   .hiw-badge {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
-    color: hsl(var(--ink-200)); background: hsl(var(--brand-100));
-    border: 1px solid hsl(var(--brand-300)); border-radius: 999px;
+    /* brand-800 stays a dark, warm tone in both themes (36% / 32% lightness) —
+       unlike ink-200, which flips to a light tone in dark mode and would sit
+       as pale text on this same pale-gold chip, wrecking contrast. */
+    color: hsl(var(--brand-800));
+    background: color-mix(in srgb, hsl(var(--brand-500)) 16%, var(--surface-card));
+    border: 1px solid hsl(var(--brand-300) / 0.7); border-radius: 999px;
     padding: 6px 13px; margin-bottom: 20px;
   }
   .hiw-title {
@@ -310,7 +335,7 @@
   .hiw-btn:hover { transform: translateY(-1px); }
   .hiw-btn--primary { background: hsl(var(--brand-500)); color: hsl(var(--ink-50)); box-shadow: 0 8px 20px -8px hsl(var(--brand-700) / .6); }
   .hiw-btn--primary:hover { filter: brightness(1.05); }
-  .hiw-btn--ghost { background: hsl(var(--ink-900)); color: hsl(var(--ink-100)); border: 1px solid hsl(var(--ink-600)); }
+  .hiw-btn--ghost { background: var(--surface-card); color: hsl(var(--ink-100)); border: 1px solid hsl(var(--surface-border)); }
   .hiw-arw { font-size: 1.05em; line-height: 1; }
 
   /* ── Sections ── */
@@ -331,7 +356,11 @@
   .hiw-steps { display: grid; gap: 14px; }
   .hiw-step {
     display: flex; gap: 18px; align-items: stretch;
-    background: hsl(var(--ink-900)); border: 1px solid hsl(var(--ink-700));
+    /* Reuses the site's real card treatment (see .card in app.css) instead of
+       a flat ink-900 fill — in dark mode ink-900 IS the page background, so
+       a flat fill made every card disappear into the page behind it. */
+    background: linear-gradient(180deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border)); box-shadow: var(--card-shadow);
     border-radius: 16px; padding: 20px 22px;
   }
   .hiw-step-rail { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-shrink: 0; width: 46px; }
@@ -348,12 +377,18 @@
   /* ── Pillars ── */
   .hiw-pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
   .hiw-pillar {
-    background: hsl(var(--ink-900)); border: 1px solid hsl(var(--ink-700));
+    background: linear-gradient(180deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border)); box-shadow: var(--card-shadow);
     border-radius: 16px; padding: 22px;
   }
   .hiw-pillar-icon {
     display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px;
-    background: hsl(var(--brand-100)); font-size: 23px; line-height: 1; margin-bottom: 14px;
+    font-size: 23px; line-height: 1; margin-bottom: 14px;
+    /* Tinted against --c (the tier color) rather than a solid brand-100 fill —
+       a solid pale-yellow square turns into a glowing block on a dark card;
+       a tint stays proportionate to the card underneath in both themes. */
+    background: color-mix(in srgb, var(--c) 22%, transparent);
+    border: 1.5px solid var(--c);
   }
   .hiw-pillar-tag {
     font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
@@ -370,39 +405,64 @@
   .hiw-fw-arw { align-self: center; font-size: 18px; color: hsl(var(--ink-400)); }
   .hiw-fw-step {
     flex: 1 1 190px;
-    background: hsl(var(--ink-900)); border: 1px solid hsl(var(--ink-700));
+    background: linear-gradient(180deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border)); box-shadow: var(--card-shadow);
     border-radius: 14px; padding: 16px 16px 18px;
     display: flex; flex-direction: column; gap: 8px;
   }
   .hiw-fw-step span {
     display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
-    background: hsl(var(--brand-100)); color: hsl(var(--brand-800));
+    background: color-mix(in srgb, hsl(var(--brand-500)) 22%, var(--surface-card-strong));
+    color: hsl(var(--brand-800));
     font-weight: 800; font-size: 14px;
   }
   .hiw-fw-step p { font-size: 13px; line-height: 1.5; color: hsl(var(--ink-200)); margin: 0; }
-  .hiw-fw-step--gold { border-color: hsl(var(--brand-400)); background: hsl(var(--brand-50)); }
-  .hiw-fw-step--gold span { background: hsl(var(--brand-500)); color: hsl(var(--ink-50)); }
+  .hiw-fw-step--gold {
+    border-color: hsl(var(--brand-400));
+    background: color-mix(in srgb, hsl(var(--brand-500)) 16%, var(--surface-card-strong));
+  }
+  /* brand-900 (not ink-50): a fixed dark tone that keeps the number readable
+     on the bright brand-500 badge in both themes. ink-50 flips to near-white
+     in dark mode, which is near-invisible on this same bright gold badge. */
+  .hiw-fw-step--gold span { background: hsl(var(--brand-500)); color: hsl(var(--brand-900)); }
 
-  /* ── Architecture diagram ── */
-  .hiw-arch-scroll { overflow-x: auto; border-radius: 18px; }
+  /* ── Architecture diagram ──
+     Three nested depths (page → band → box/sub) need to visibly separate.
+     In light mode ink-800/ink-900 read fine even close together (near-white
+     tones separate via shadow alone), but in dark mode ink-800/ink-900 are
+     BOTH near-black and ink-900 equals the page body — so band, box, and the
+     page itself collapsed into one flat black. Fixed with a dedicated
+     dark-only depth ramp (--band-fill/--box-fill/--sub-fill) plus a real
+     panel around the whole diagram so it reads as a distinct "console". */
+  .hiw-arch-scroll {
+    overflow-x: auto; border-radius: 18px; padding: 14px;
+    background: var(--surface-muted); border: 1px solid hsl(var(--surface-border));
+  }
   .hiw-arch-svg {
     width: 100%; min-width: 720px; height: auto; display: block;
-    /* layer identity colors — same hues as the ecosystem accents */
     --c-client: hsl(32 72% 50%);
     --c-compute: hsl(280 42% 58%);
     --c-chain: hsl(155 45% 42%);
     --c-money: hsl(43 74% 48%);
     --arw: hsl(var(--ink-400));
+    --band-fill: hsl(var(--ink-800));
+    --box-fill: hsl(var(--ink-900));
+    --sub-fill: hsl(var(--ink-800));
+    --chip-req-fill: hsl(var(--ink-800));
   }
   :global(.dark) .hiw-arch-svg {
     --c-client: hsl(45 90% 62%);
     --c-compute: hsl(280 50% 70%);
     --c-chain: hsl(155 55% 58%);
     --c-money: hsl(43 85% 62%);
+    --band-fill: hsl(24 34% 14%);
+    --box-fill: hsl(24 30% 18%);
+    --sub-fill: hsl(24 27% 22%);
+    --chip-req-fill: hsl(24 27% 22%);
   }
-  .band { fill: hsl(var(--ink-800)); stroke: hsl(var(--ink-700)); stroke-width: 1; }
+  .band { fill: var(--band-fill); stroke: hsl(var(--surface-border)); stroke-width: 1; }
   .tier-label { font: 700 13px 'JetBrains Mono', monospace; letter-spacing: 0.02em; }
-  .box { fill: hsl(var(--ink-900)); stroke-width: 1.6; }
+  .box { fill: var(--box-fill); stroke-width: 1.6; }
   .box--client, .box--client-alt { stroke: var(--c-client); }
   .box--client-alt { stroke-dasharray: 5 3; }
   .box--compute { stroke: var(--c-compute); }
@@ -413,9 +473,9 @@
   .node-d { font: 400 12.5px Inter, system-ui, sans-serif; fill: hsl(var(--ink-300)); }
   .node-n { font: 400 11.5px Inter, system-ui, sans-serif; fill: hsl(var(--ink-400)); }
   .chip--sign rect { fill: color-mix(in srgb, var(--c-client) 22%, transparent); stroke: var(--c-client); stroke-width: 1; }
-  .chip--req rect { fill: hsl(var(--ink-800)); stroke: hsl(var(--ink-500)); stroke-width: 1; stroke-dasharray: 4 2; }
+  .chip--req rect { fill: var(--chip-req-fill); stroke: hsl(var(--ink-500)); stroke-width: 1; stroke-dasharray: 4 2; }
   .chip-t { font: 700 11px Inter, system-ui, sans-serif; fill: hsl(var(--ink-100)); text-anchor: middle; }
-  .sub { fill: hsl(var(--ink-800)); stroke: hsl(var(--ink-700)); stroke-width: 1; }
+  .sub { fill: var(--sub-fill); stroke: hsl(var(--surface-border)); stroke-width: 1; }
   .sub--lib { stroke: var(--c-chain); }
   .sub-t { font: 700 12px Inter, system-ui, sans-serif; fill: hsl(var(--ink-100)); }
   .sub-d { font: 400 10.5px Inter, system-ui, sans-serif; fill: hsl(var(--ink-400)); }
@@ -435,10 +495,10 @@
   }
   .hiw-arch-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .lg { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
-  .lg--client { background: hsl(32 72% 50%); }
-  .lg--compute { background: hsl(280 42% 58%); }
-  .lg--chain { background: hsl(155 45% 42%); }
-  .lg--money { background: hsl(43 74% 48%); }
+  .lg--client { background: var(--tier-1); }
+  .lg--compute { background: var(--tier-2); }
+  .lg--chain { background: var(--tier-3); }
+  .lg--money { background: var(--tier-4); }
   .hiw-legend-note { color: hsl(var(--ink-400)); font-size: 11.5px; }
 
   /* ── Close ── */
