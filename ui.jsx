@@ -690,8 +690,87 @@ function ToastProvider({ children }) {
     <ToastCtx.Provider value={api}>
       {children}
       <ToastStack toasts={stack} onDismiss={dismiss} onPause={pauseToast} onResume={resumeToast} />
+      <DialogHost />
     </ToastCtx.Provider>
   );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   DialogHost — in-app replacement for window.confirm / window.prompt.
+   Native dialogs break the pixel aesthetic, block the JS thread, and on
+   some hosts (iframe sandboxes) are silently disabled. Promise-based:
+
+     const ok   = await window.hqConfirm('Delete "x"?', { danger: true });
+     const name = await window.hqPrompt('New folder name:', { value: '' });
+
+   hqConfirm resolves true/false; hqPrompt resolves string | null — the
+   same contract as the natives, so call sites only add `await`. Both
+   fall back to the native dialog if the host isn't mounted (popouts,
+   early boot). Piggybacks ToastProvider's "last provider wins" pattern.
+   ───────────────────────────────────────────────────────────────────── */
+function DialogHost() {
+  const [req, setReq] = useState(null); // {kind, message, opts, resolve}
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef(null);
+  const okRef = useRef(null);
+
+  useEffect(() => {
+    const ask = (kind, message, opts) => new Promise(resolve => {
+      setDraft(kind === 'prompt' ? String((opts && opts.value) ?? '') : '');
+      setReq({ kind, message: String(message ?? ''), opts: opts || {}, resolve });
+    });
+    const prevConfirm = window.hqConfirm, prevPrompt = window.hqPrompt;
+    window.hqConfirm = (m, o) => ask('confirm', m, o);
+    window.hqPrompt  = (m, o) => ask('prompt', m, o);
+    return () => { window.hqConfirm = prevConfirm; window.hqPrompt = prevPrompt; };
+  }, []);
+
+  useEffect(() => {
+    if (!req) return;
+    const t = setTimeout(() => {
+      if (req.kind === 'prompt' && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+      else if (okRef.current) okRef.current.focus();
+    }, 30);
+    return () => clearTimeout(t);
+  }, [req]);
+
+  if (!req) return null;
+  const done = (result) => { const r = req.resolve; setReq(null); r(result); };
+  const cancelValue = req.kind === 'prompt' ? null : false;
+  const okValue = () => req.kind === 'prompt' ? draft : true;
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); done(cancelValue); }
+    if (e.key === 'Enter' && (req.kind === 'prompt' || e.target === okRef.current || req.kind === 'confirm')) {
+      e.stopPropagation(); done(okValue());
+    }
+  };
+  const danger = !!req.opts.danger;
+  return (
+    <div className="backdrop" style={{ zIndex: 'var(--z-modal, 1000)' }} onMouseDown={e => { if (e.target === e.currentTarget) done(cancelValue); }}>
+      <div className="modal oc-dialog" role={req.kind === 'confirm' ? 'alertdialog' : 'dialog'} aria-modal="true"
+        onKeyDown={onKey} style={{ maxWidth: 420, width: 'min(94vw, 420px)' }}>
+        <div className="oc-dialog-msg">{req.message}</div>
+        {req.kind === 'prompt' && (
+          <input ref={inputRef} className="oc-dialog-in" value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder={req.opts.placeholder || ''} />
+        )}
+        <div className="oc-dialog-acts">
+          <button className="px-btn secondary" onClick={() => done(cancelValue)}>{req.opts.cancelLabel || 'Cancel'}</button>
+          <button ref={okRef} className={'px-btn ' + (danger ? 'danger' : 'primary')} onClick={() => done(okValue())}>
+            {req.opts.okLabel || (danger ? 'Delete' : 'OK')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Fallbacks so `await window.hqConfirm(...)` is always safe to call, even
+   before/without a mounted DialogHost (graph popout, boot races). */
+if (typeof window !== 'undefined') {
+  if (!window.hqConfirm) window.hqConfirm = (m) => Promise.resolve(window.confirm(m));
+  if (!window.hqPrompt)  window.hqPrompt  = (m, o) => Promise.resolve(window.prompt(m, (o && o.value) || ''));
 }
 
 function ToastStack({ toasts, onDismiss, onPause, onResume }) {
