@@ -206,6 +206,17 @@ export async function agentSend({ principalText, agentId, tokenKey, amount, to, 
   const sub = await deriveAgentSubaccount(principalText, agentId);
   const rawAmount = toRawAmount(tokenKey, amount);
 
+  // Pre-validate BEFORE recordSpend. recordSpend bumps the cap window + lifetime
+  // totals with no rollback path, so a transfer that fails afterward would
+  // permanently consume budget for money that never moved. Catch the reachable
+  // failure modes (bad recipient from the sandboxed iframe, underfunded agent)
+  // up front so they never reach the gate. (A canister-side reverseSpend for the
+  // rarer post-gate ledger errors — BadFee/TemporarilyUnavailable — is a
+  // documented follow-up.)
+  if (rawAmount <= 0n) return { status: 'error', error: 'amount must be positive' };
+  try { Principal.fromText(String(to)); }
+  catch { return { status: 'error', error: 'bad recipient principal' }; }
+
   if (!force) {
     const policy = await getAgentWalletPolicy(agentId);
     if (!policy) return { status: 'noWallet' };
@@ -214,6 +225,13 @@ export async function agentSend({ principalText, agentId, tokenKey, amount, to, 
     // can't be auto-authorized → route to user approval.
     if (tokenKey !== policy.token) {
       return { status: 'needsApproval', reason: 'token differs from the wallet cap' };
+    }
+    // Balance pre-check: an underfunded agent must fail here, not after the gate
+    // has already consumed its budget.
+    const bal = await getBalance(tokenKey, principalText, sub);
+    if (bal != null) {
+      const fee = (await getFee(tokenKey)) ?? 10_000n;
+      if (BigInt(bal) < rawAmount + BigInt(fee)) return { status: 'error', error: 'insufficient funds' };
     }
     if (stateCanisterConfigured()) {
       const gate = await recordSpend(agentId, rawAmount);
@@ -241,11 +259,16 @@ export async function agentSend({ principalText, agentId, tokenKey, amount, to, 
 // pulls user main account → agent subaccount. The allowance is the hard budget.
 
 const variantKey = (v) => (v && typeof v === 'object' ? Object.keys(v)[0] : String(v ?? ''));
+// Salaries/payouts were historically written with the ledger SYMBOL ('$nanas'),
+// but wallet policies + spendTotals key by the registry KEY ('nanas'). Normalize
+// symbol→key on read so P&L 'earned' matches 'spent', the payday moneyEvent
+// matches the wallet token, and the payroll edit form's <select> resolves.
+const tokenKeyOf = (t) => (TOKENS[t] ? t : Object.keys(TOKENS).find((k) => TOKENS[k].symbol === t) || t);
 const salaryOut = (s) =>
   s && {
     agentId: s.agentId,
     ledger: s.ledger?.toText ? s.ledger.toText() : String(s.ledger),
-    token: s.token,
+    token: tokenKeyOf(s.token),
     amount: s.amount.toString(),
     fee: s.fee.toString(),
     lowWatermark: s.lowWatermark.toString(),
@@ -261,7 +284,7 @@ const payoutOut = (p) =>
   p && {
     key: p.key,
     agentId: p.agentId,
-    token: p.token,
+    token: tokenKeyOf(p.token),
     amount: p.amount.toString(),
     scheduledAt: p.scheduledAt.toString(),
     status: p.status,
@@ -278,7 +301,8 @@ export async function putSalary({ agentId, tokenKey, amount, lowWatermark = 0, p
   await a.putSalary(
     agentId,
     Principal.fromText(token.canister),
-    token.symbol,
+    tokenKey,   // store the registry KEY, not token.symbol — keeps payouts,
+                // wallet policies and spendTotals all keyed consistently.
     toRawAmount(tokenKey, amount),
     BigInt(fee),
     toRawAmount(tokenKey, lowWatermark),

@@ -19,8 +19,16 @@ set -e
 # so detect the bare run and fall back to local-friendly defaults — otherwise
 # the vault points at Object Storage it can't reach (writes hang) and the
 # Hermes gateway never starts (no API key).
-if [ "${CAFRESOHQ_VAULT_BACKEND}" = "oci" ] && [ -z "${OCI_TENANCY_OCID}" ]; then
-  echo "[entrypoint] No OCI credentials — self-host run: vault backend → fs, mode → local"
+# Discriminate on OCI_VAULT_NAMESPACE, NOT OCI_TENANCY_OCID: fleet-manager
+# always sets the namespace from its own env config, whereas it derives the
+# tenancy OCID from a ~/.oci/config read that can FAIL (leaving it empty while
+# still provisioning a real fleet container). Keying on tenancy would flip such
+# a fleet container to ephemeral fs storage → silent vault DATA LOSS on the next
+# container replacement, and would defeat serve.py's instance-principal auth
+# fallback. Do NOT key on CAFRESOHQ_FLEET_MODE — the image bakes it to
+# 'oci-fleet' for everyone, self-host included.
+if [ "${CAFRESOHQ_VAULT_BACKEND}" = "oci" ] && [ -z "${OCI_VAULT_NAMESPACE}" ]; then
+  echo "[entrypoint] No OCI vault namespace — self-host run: vault backend → fs, mode → local"
   export CAFRESOHQ_VAULT_BACKEND=fs
   export CAFRESOHQ_FLEET_MODE=local
 fi

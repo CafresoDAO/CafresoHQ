@@ -150,6 +150,27 @@ _cafresohq_allowed_dirs = [d.strip() for d in
                               os.path.join(os.path.expanduser('~'), 'Documents')
                           ).split(os.pathsep)
                           if d.strip()]
+
+def _within_allowed_dirs(p):
+    """True iff resolved path `p` is inside one of _cafresohq_allowed_dirs.
+    Uses Path.relative_to (NOT str.startswith, which lets '/data/proj' authorize
+    the sibling '/data/proj-secret'). Enforced in EVERY runtime mode — the fs
+    read/browse routes are otherwise an unauthenticated arbitrary-read hole in
+    local/BYO deployments. If the allow-list is explicitly emptied, allow (the
+    documented opt-out)."""
+    if not _cafresohq_allowed_dirs:
+        return True
+    try:
+        rp = pathlib.Path(p).resolve()
+    except Exception:
+        return False
+    for d in _cafresohq_allowed_dirs:
+        try:
+            rp.relative_to(pathlib.Path(d).resolve())
+            return True
+        except (ValueError, Exception):
+            continue
+    return False
 _cafresohq_allowed_tools = [t.strip() for t in
                            os.environ.get('CAFRESOHQ_ALLOWED_TOOLS',
                                # Default expanded set — gives elevated agents
@@ -198,8 +219,18 @@ _RUNTIME_ENV = _detect_runtime()
 CAFRESOHQ_API_KEY = os.environ.get('CAFRESOHQ_API_KEY', '').strip()
 _KEY_PROTECTED_PREFIXES = (
     '/vault', '/hermes', '/terminal', '/cafresohq', '/codex', '/claudecode',
-    '/agents', '/hq/', '/spawn', '/graph/publish', '/approvals', '/browser',
-    '/missions',
+    '/agents', '/hq/', '/hq-state', '/spawn', '/graph/publish', '/approvals',
+    '/browser', '/missions',
+    # Code-execution + filesystem routes: RCE-/write-equivalent to the routes
+    # above and MUST sit behind the same key. /tools/exec runs a shell;
+    # /projects,/export,/generate touch the host; the /fs mutation routes
+    # write/delete. NOTE: only the /fs *mutation* prefixes are protected — the
+    # preview iframe fetches /fs/site/<root>/<asset> read-only via the browser
+    # with no key, so blanket-protecting bare '/fs' would break multi-file
+    # previews. The allowed-dirs boundary (enforced in every mode below) caps
+    # the read routes instead.
+    '/tools', '/projects', '/export', '/generate',
+    '/fs/upload', '/fs/mkdir', '/fs/rename', '/fs/delete',
 )
 
 # Background CLI-install jobs (POST /agents/install returns 202 immediately;
@@ -2044,8 +2075,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Track REAL browser traffic separately (the night runner self-calls
         # tag themselves) — _night_post_activity defers shared-file writes
         # while a session is live.
-        if 'X-Night-Runner' not in self.headers and (
-                self.path == '/health' or self.path.startswith(('/hq/', '/vault/'))):
+        # Only genuine browser traffic marks a live UI session. /health is
+        # excluded: load-balancer probes (docker-compose curls it every 30s)
+        # would otherwise keep _night_browser_active() true forever and
+        # permanently suppress the night-shift ticker entry.
+        if 'X-Night-Runner' not in self.headers and self.path.startswith(('/hq/', '/vault/')):
             _LAST_UI_ACTIVITY[0] = time.time()
         if self.path == '/health':
             return self._health()
@@ -2121,7 +2155,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         prefix, target = self._route()
         if target:
             return self._proxy('GET', prefix, target)
+        # Static fallthrough serves legit UI assets (styles.css, sw.js,
+        # manifest, assets/*, dist-ui) from cwd — but SimpleHTTPRequestHandler
+        # would otherwise hand out ANYTHING under the repo root, incl. the TLS
+        # private key + vault under hq-state/ and the .py source. Gate it.
+        if not self._static_path_allowed(_p0):
+            return self.send_error(404, 'Not found')
         return super().do_GET()
+
+    # Static assets that legitimately live at the web root; everything else
+    # under cwd (state dir, TLS key, vault, source) is off-limits to the
+    # SimpleHTTPRequestHandler fallthrough regardless of the API key.
+    def _static_path_allowed(self, url_path):
+        try:
+            rel = urllib.parse.unquote(url_path.split('?', 1)[0]).lstrip('/')
+            root = os.path.realpath(os.getcwd())
+            resolved = os.path.realpath(os.path.join(root, rel))
+            # (a) must stay inside the web root
+            if resolved != root and not resolved.startswith(root + os.sep):
+                return False
+            # (b) never serve Python source
+            if resolved.endswith('.py'):
+                return False
+            # (c) never serve the state dir (tls/, vault/, memory/, *.json)
+            state_root = os.path.realpath(str(_hq_state_dir))
+            if resolved == state_root or resolved.startswith(state_root + os.sep):
+                return False
+            return True
+        except Exception:
+            return False
+
+    # No directory listings — hq-state/ etc. must not be enumerable.
+    def list_directory(self, path):
+        self.send_error(404, 'Not found')
+        return None
 
     # --- HQ UI build (no in-browser Babel) ------------------------------------
     # The HQ app is built into dist-ui/ by scripts/build_ui_bundle.mjs: vendor
@@ -4021,20 +4088,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not p.is_dir():
             return self._send_json(400, {'error': 'not a directory'})
 
-        # Container: only browse within allowed dirs
-        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
-            try:
-                allowed = any(
-                    str(p).startswith(str(pathlib.Path(d).resolve()))
-                    for d in _cafresohq_allowed_dirs
-                )
-            except Exception:
-                allowed = False
-            if not allowed:
-                return self._send_json(403, {
-                    'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
-                    'allowed': _cafresohq_allowed_dirs,
-                })
+        # Only browse within allowed dirs — enforced in EVERY mode (was
+        # container-only, which left local/BYO reads unbounded).
+        if not _within_allowed_dirs(p):
+            return self._send_json(403, {
+                'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
+                'allowed': _cafresohq_allowed_dirs,
+            })
 
         try:
             raw = list(p.iterdir())
@@ -4148,16 +4208,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': f'invalid path: {e}'})
         if not p.is_file():
             return self._send_json(404, {'error': 'not a file'})
-        # Container: only serve files within CAFRESOHQ_ALLOWED_DIRS (path-traversal guard).
-        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
-            try:
-                allowed = any(str(p).startswith(str(pathlib.Path(d).resolve()))
-                              for d in _cafresohq_allowed_dirs)
-            except Exception:
-                allowed = False
-            if not allowed:
-                return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
-                                             'allowed': _cafresohq_allowed_dirs})
+        # Serve only within CAFRESOHQ_ALLOWED_DIRS — every mode (was container-
+        # only, which exposed unauthenticated arbitrary file read in local/BYO).
+        if not _within_allowed_dirs(p):
+            return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
+                                         'allowed': _cafresohq_allowed_dirs})
         try:
             if p.stat().st_size > 50 * 1024 * 1024:
                 return self._send_json(413, {'error': 'file too large to preview (>50 MiB)'})
@@ -4205,14 +4260,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             p = pathlib.Path(_client_path(req_path)).resolve()
         except Exception as e:
             return self._send_json(400, {'error': f'invalid path: {e}'})
-        if _RUNTIME_ENV == 'container' and _cafresohq_allowed_dirs:
-            try:
-                allowed = any(str(p).startswith(str(pathlib.Path(d).resolve()))
-                              for d in _cafresohq_allowed_dirs)
-            except Exception:
-                allowed = False
-            if not allowed:
-                return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
+        if not _within_allowed_dirs(p):
+            return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
         if not p.is_file():
             return self._send_json(404, {'ok': False, 'error': 'not a file'})
         try:

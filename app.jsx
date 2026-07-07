@@ -1564,7 +1564,21 @@ function App() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [receipts, setReceipts] = useFileStored(k('receipts'), 'state', 'receipts', []);
+  /* Same live-ref + merge-on-fetch discipline as activity above: the async
+     file read REPLACES receipts after mount, so the Gazette effect (which reads
+     receipts inside a once-created closure) would otherwise see the stale
+     pre-fetch snapshot in the >4h-away catch-up scenario. Union fetched with
+     anything recorded in the first ~1.5s, newest-first by decidedAt. (Receipts
+     have no ts/unread fields, so mergeByIdCap is unsuitable here.) */
+  const receiptsRef = useRefA([]);
+  const [receipts, setReceipts] = useFileStored(k('receipts'), 'state', 'receipts', [],
+    (fetched) => {
+      const byId = new Map();
+      for (const r of (Array.isArray(fetched) ? fetched : [])) byId.set(r.id, r);
+      for (const r of (Array.isArray(receiptsRef.current) ? receiptsRef.current : [])) byId.set(r.id, r);
+      return [...byId.values()].sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0));
+    });
+  useEffectA(() => { receiptsRef.current = receipts; }, [receipts]);
   const [receiptsOpen, setReceiptsOpen] = useStateA(false);
   // Inbox modal — durable agent-comms message registry (Phase 1 of refactor)
   const [inboxOpen, setInboxOpen] = useStateA(false);
@@ -3092,7 +3106,12 @@ ${d.text}` : d.text,
           const key = `${w.agentId}:${token}`;
           const prevRaw = walletBaselineRef.current[key];
           const dirty = walletDirtyRef.current[w.agentId];
-          walletDirtyRef.current[w.agentId] = false;
+          // Only consume the one-shot dirty flag when the balance ACTUALLY
+          // moved. A self-fund dispatches the flag before its transfer settles;
+          // a poll firing mid-flight (unchanged balance) used to clear it, so
+          // the later credit was misread as a tip (false Tip Rain + P&L
+          // inflation). Keep it armed until a re-baseline really happens.
+          if (prevRaw == null || bal !== BigInt(prevRaw)) walletDirtyRef.current[w.agentId] = false;
           if (prevRaw == null || dirty || bal < BigInt(prevRaw)) {
             // first sight / our own movement / a spend → re-baseline silently
             setWalletBaseline((b) => ({ ...b, [key]: bal.toString() }));
@@ -3145,7 +3164,9 @@ ${d.text}` : d.text,
       // Delay aggregation so the file-stored activity/receipts finish loading.
       reportTimer = setTimeout(async () => {
         const acts = (activityRef.current || []).filter(a => (a.ts || 0) > prevSeen);
-        const recs = (receipts || []).filter(r => (r.decidedAt || 0) > prevSeen);
+        // Read through the live ref, not the mount-render closure — the file
+        // fetch that hydrates receipts lands after this effect is created.
+        const recs = (receiptsRef.current || []).filter(r => (r.decidedAt || 0) > prevSeen);
         // Night-shift runs are the Gazette's lead story — they alone justify
         // the paper even when nothing else happened while away.
         let nightRuns = [];
