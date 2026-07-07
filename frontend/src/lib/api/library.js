@@ -1,0 +1,115 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Ai Cafreso Search — public library client (cafresohq_state.library_*)
+//
+// The library is the search flywheel: every EXPLICITLY published query becomes
+// a public, on-chain {query, answer, sources, graph} entry that (a) answers
+// repeat searches instantly without hitting Brave, and (b) merges into the
+// public graph view. Publishing is always a deliberate user action — searching
+// alone never writes anything here.
+//
+// Until the ONE cafresohq_state upgrade lands, the library_* methods don't
+// exist on mainnet yet: every call throws, and publishToLibrary() queues the
+// entry in localStorage so it can be retried after the upgrade.
+// ─────────────────────────────────────────────────────────────────────────────
+import { get } from 'svelte/store';
+import { getStateActor, stateCanisterId, stateCanisterConfigured } from './stateActor.js';
+import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
+
+const PENDING_KEY = 'cafreso:library:pending';
+
+/** Public (no-session) base URL for library reads served by the canister. */
+export function libraryPublicBase() {
+  const id = get(stateCanisterId);
+  return id ? `https://${id}.icp0.io` : '';
+}
+
+/** Fully public graph-viewer link for a library entry — canister-hosted end to end. */
+export function libraryGraphViewerUrl(id) {
+  const base = libraryPublicBase();
+  if (!base) return '';
+  const g = encodeURIComponent(`${base}/library/${id}/graph.json`);
+  return `${HQ_UI_CANISTER_ORIGIN}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+}
+
+/** Library-first lookup: exact normalized-query hit or null. Never throws. */
+export async function findInLibrary(q) {
+  if (!stateCanisterConfigured()) return null;
+  try {
+    const actor = await getStateActor();
+    const res = await actor.library_find(q);
+    return res && res.length ? res[0] : null;   // Candid ?T → [] | [T]
+  } catch (_e) {
+    return null;   // canister not upgraded yet / offline → just search the web
+  }
+}
+
+/**
+ * Publish an entry (explicit opt-in). Returns:
+ *   { status: 'ok', id, existing, publicUrl, viewerUrl }
+ *   { status: 'queued' }  — canister method not live yet; saved locally
+ *   { status: 'error', error }
+ */
+export async function publishToLibrary({ q, answer, sources, graphJson }) {
+  const entry = {
+    q: String(q).slice(0, 400),
+    answer: String(answer || '').slice(0, 4000),
+    sources: (sources || []).slice(0, 10).map((s) => ({
+      title: String(s.title || '').slice(0, 600),
+      url: String(s.url || '').slice(0, 600)
+    })),
+    graphJson: String(graphJson || '')
+  };
+  try {
+    const actor = await getStateActor();
+    const res = await actor.library_put(entry.q, entry.answer, entry.sources, entry.graphJson);
+    if ('err' in res) return { status: 'error', error: res.err };
+    const { id, existing } = res.ok;
+    return {
+      status: 'ok', id, existing,
+      publicUrl: `${libraryPublicBase()}/library/${id}.json`,
+      viewerUrl: libraryGraphViewerUrl(id)
+    };
+  } catch (e) {
+    const msg = e?.message || String(e);
+    // Method missing = the state canister predates the library (upgrade pending).
+    if (/has no (update|query) method|method not found|Canister trapped/i.test(msg)) {
+      queuePending(entry);
+      return { status: 'queued' };
+    }
+    return { status: 'error', error: msg };
+  }
+}
+
+/** Latest library summaries (for a future public browse page). */
+export async function listLibrary(offset = 0, limit = 50) {
+  const actor = await getStateActor();
+  return actor.library_list(BigInt(offset), BigInt(limit));
+}
+
+// ── Pending queue (pre-upgrade) ─────────────────────────────────────────────
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }
+  catch (_e) { return []; }
+}
+function queuePending(entry) {
+  const all = readPending().filter((p) => p.q !== entry.q);
+  all.push({ ...entry, queuedAt: Date.now() });
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(all.slice(-50))); } catch (_e) {}
+}
+export function pendingCount() { return readPending().length; }
+
+/** Retry every queued publish; returns how many landed. Call after the upgrade. */
+export async function flushPending() {
+  const all = readPending();
+  if (!all.length) return 0;
+  let ok = 0;
+  const remaining = [];
+  for (const p of all) {
+    const res = await publishToLibrary(p);
+    if (res.status === 'ok') ok += 1;
+    else if (res.status === 'queued') return ok;   // still not upgraded; stop
+    else remaining.push(p);
+  }
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(remaining)); } catch (_e) {}
+  return ok;
+}

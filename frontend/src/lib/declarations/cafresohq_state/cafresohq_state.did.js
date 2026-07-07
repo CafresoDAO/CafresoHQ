@@ -129,6 +129,26 @@ export const idlFactory = ({ IDL }) => {
     'noWallet' : IDL.Null,
     'paused' : IDL.Null,
   });
+  const LibrarySource = IDL.Record({ 'title' : IDL.Text, 'url' : IDL.Text });
+  const LibraryEntry = IDL.Record({
+    'id' : IDL.Text,
+    'owner' : IDL.Principal,
+    'q' : IDL.Text,
+    'answer' : IDL.Text,
+    'sources' : IDL.Vec(LibrarySource),
+    'graphJson' : IDL.Text,
+    'ts' : IDL.Int,
+  });
+  const LibrarySummary = IDL.Record({
+    'id' : IDL.Text,
+    'q' : IDL.Text,
+    'ts' : IDL.Int,
+    'sourceCount' : IDL.Nat,
+  });
+  const LibraryPutResult = IDL.Variant({
+    'ok' : IDL.Record({ 'id' : IDL.Text, 'existing' : IDL.Bool }),
+    'err' : IDL.Text,
+  });
   const OutcallHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const OutcallResponse = IDL.Record({
     'status' : IDL.Nat,
@@ -164,6 +184,20 @@ export const idlFactory = ({ IDL }) => {
     'hqVersion' : IDL.Func([], [IDL.Nat], ['query']),
     'http_request' : IDL.Func([HttpRequest], [HttpResponse], ['query']),
     'http_request_update' : IDL.Func([HttpRequest], [HttpResponse], []),
+    'library_count' : IDL.Func([], [IDL.Nat], ['query']),
+    'library_find' : IDL.Func([IDL.Text], [IDL.Opt(LibraryEntry)], ['query']),
+    'library_get' : IDL.Func([IDL.Text], [IDL.Opt(LibraryEntry)], ['query']),
+    'library_list' : IDL.Func(
+        [IDL.Nat, IDL.Nat],
+        [IDL.Vec(LibrarySummary)],
+        ['query'],
+      ),
+    'library_put' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Vec(LibrarySource), IDL.Text],
+        [LibraryPutResult],
+        [],
+      ),
+    'library_remove' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'listAgentWallets' : IDL.Func([], [IDL.Vec(AgentWallet)], ['query']),
     'listHqDocs' : IDL.Func([], [IDL.Vec(DocSummary)], ['query']),
     'listMissionSchedules' : IDL.Func(

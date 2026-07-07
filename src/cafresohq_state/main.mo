@@ -1239,6 +1239,234 @@ actor CafresoHQState {
     };
   };
 
+  // ── Ai Cafreso Search — public library ─────────────────────────────────────
+  // Opt-in, append-only public library of answered search queries. Each entry
+  // is published EXPLICITLY by its signed-in owner from the search UI — a
+  // query is NEVER stored here as a side effect of searching. Reads are public
+  // via http_request (/library/*); writes are caller-gated with hard size and
+  // per-owner count caps so no principal can flood the heap. The library is a
+  // cache by design: the first published answer for a normalized query wins,
+  // and library_find lets the search UI answer repeat queries without ever
+  // hitting the web. Public JSON never includes the owner principal.
+  public type LibrarySource = { title : Text; url : Text };
+  public type LibraryEntry = {
+    id : Text;
+    owner : Principal;
+    q : Text;
+    answer : Text;              // quick-answer summary; may be empty
+    sources : [LibrarySource];
+    graphJson : Text;           // graph-viewer snapshot, served raw at /library/<id>/graph.json
+    ts : Int;
+  };
+  public type LibrarySummary = { id : Text; q : Text; ts : Int; sourceCount : Nat };
+  public type LibraryPutResult = { #ok : { id : Text; existing : Bool }; #err : Text };
+
+  stable var libraryEntries : OrderedMap.Map<Text, LibraryEntry> = tOps.empty<LibraryEntry>();
+  stable var libraryByQuery : OrderedMap.Map<Text, Text> = tOps.empty<Text>(); // normalized query → id
+  stable var libraryCounts : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
+  stable var librarySeq : Nat = 0;
+
+  let LIB_MAX_QUERY : Nat = 400;
+  let LIB_MAX_ANSWER : Nat = 4_000;
+  let LIB_MAX_SOURCES : Nat = 10;
+  let LIB_MAX_SOURCE_TEXT : Nat = 600;
+  let LIB_MAX_GRAPH : Nat = 200_000;
+  let LIB_MAX_PER_OWNER : Nat = 200;
+  let LIB_INDEX_LIMIT : Nat = 500;
+
+  // ASCII-lowercase + collapse whitespace: the dedup key. Unicode case folding
+  // is deliberately out of scope — a miss just means one extra library entry.
+  func libNorm(q : Text) : Text {
+    let lowered = Text.map(q, func(c : Char) : Char {
+      if (c >= 'A' and c <= 'Z') { Char.fromNat32(Char.toNat32(c) + 32) } else { c };
+    });
+    Text.join(" ", Iter.filter<Text>(
+      Text.split(lowered, #char ' '), func(w : Text) : Bool { w.size() > 0 }));
+  };
+
+  // Zero-padded ids keep Text.compare order == insertion order, so the newest
+  // entries are always at the end of the ordered map.
+  func libId(n : Nat) : Text {
+    var s = Nat.toText(n);
+    while (s.size() < 10) { s := "0" # s };
+    "q" # s;
+  };
+
+  public shared (msg) func library_put(
+    q : Text, answer : Text, sources : [LibrarySource], graphJson : Text
+  ) : async LibraryPutResult {
+    if (Principal.isAnonymous(msg.caller)) { return #err("sign in to publish to the library") };
+    let norm = libNorm(q);
+    if (norm.size() == 0 or q.size() > LIB_MAX_QUERY) { return #err("bad query") };
+    if (answer.size() > LIB_MAX_ANSWER) { return #err("answer too long") };
+    if (sources.size() > LIB_MAX_SOURCES) { return #err("too many sources") };
+    for (s in sources.vals()) {
+      if (s.title.size() > LIB_MAX_SOURCE_TEXT or s.url.size() > LIB_MAX_SOURCE_TEXT) {
+        return #err("source too long");
+      };
+    };
+    if (graphJson.size() > LIB_MAX_GRAPH) { return #err("graph too large") };
+    switch (tOps.get(libraryByQuery, norm)) {
+      case (?id) { return #ok({ id; existing = true }) };  // cache semantics: first answer wins
+      case null {};
+    };
+    let count = switch (pOps.get(libraryCounts, msg.caller)) { case (?n) n; case null 0 };
+    if (count >= LIB_MAX_PER_OWNER) { return #err("per-account library limit reached") };
+    librarySeq += 1;
+    let id = libId(librarySeq);
+    libraryEntries := tOps.put(libraryEntries, id, {
+      id; owner = msg.caller; q; answer; sources; graphJson; ts = now();
+    });
+    libraryByQuery := tOps.put(libraryByQuery, norm, id);
+    libraryCounts := pOps.put(libraryCounts, msg.caller, count + 1);
+    #ok({ id; existing = false });
+  };
+
+  public query func library_find(q : Text) : async ?LibraryEntry {
+    switch (tOps.get(libraryByQuery, libNorm(q))) {
+      case (?id) tOps.get(libraryEntries, id);
+      case null null;
+    };
+  };
+
+  public query func library_get(id : Text) : async ?LibraryEntry {
+    tOps.get(libraryEntries, id);
+  };
+
+  public query func library_count() : async Nat { tOps.size(libraryEntries) };
+
+  // Newest-first summaries. offset/limit page through from the newest end.
+  public query func library_list(offset : Nat, limit : Nat) : async [LibrarySummary] {
+    let all = Buffer.Buffer<LibrarySummary>(tOps.size(libraryEntries));
+    for ((_, e) in tOps.entries(libraryEntries)) {
+      all.add({ id = e.id; q = e.q; ts = e.ts; sourceCount = e.sources.size() });
+    };
+    let n = all.size();
+    let out = Buffer.Buffer<LibrarySummary>(limit);
+    var i = 0;
+    while (i < limit and offset + i < n) {
+      out.add(all.get(n - 1 - (offset + i) : Nat));
+      i += 1;
+    };
+    Buffer.toArray(out);
+  };
+
+  // Owner (or plan admin) can withdraw an entry — the abuse/report path.
+  public shared (msg) func library_remove(id : Text) : async Bool {
+    switch (tOps.get(libraryEntries, id)) {
+      case null false;
+      case (?e) {
+        let isAdmin = switch (planAdmin) { case (?a) a == msg.caller; case null false };
+        if (e.owner != msg.caller and not isAdmin) { return false };
+        libraryEntries := tOps.delete(libraryEntries, id);
+        libraryByQuery := tOps.delete(libraryByQuery, libNorm(e.q));
+        switch (pOps.get(libraryCounts, e.owner)) {
+          case (?n) { if (n > 0) { libraryCounts := pOps.put(libraryCounts, e.owner, n - 1 : Nat) } };
+          case null {};
+        };
+        true;
+      };
+    };
+  };
+
+  // ── Library public JSON (http_request) ──────────────────────────────────
+  func jsonEsc(t : Text) : Text {
+    var out = "";
+    for (c in t.chars()) {
+      if (c == '\"') { out #= "\\\"" }
+      else if (c == '\\') { out #= "\\\\" }
+      else if (c == '\n') { out #= "\\n" }
+      else if (c == '\r') { out #= "\\r" }
+      else if (c == '\t') { out #= "\\t" }
+      else if (Char.toNat32(c) < 32) { out #= " " }
+      else { out #= Text.fromChar(c) };
+    };
+    out;
+  };
+
+  func libJsonHeaders() : [(Text, Text)] {
+    [("Content-Type", "application/json; charset=utf-8"),
+     ("Access-Control-Allow-Origin", "*"),
+     ("Cache-Control", "public, max-age=60"),
+     ("X-Content-Type-Options", "nosniff")];
+  };
+
+  func libJsonResponse(body : Text) : HttpResponse {
+    { status_code = 200; headers = libJsonHeaders();
+      body = Text.encodeUtf8(body); streaming_strategy = null; upgrade = null };
+  };
+
+  func libNotFound() : HttpResponse {
+    { status_code = 404; headers = [("Content-Type", "text/plain")];
+      body = Text.encodeUtf8("Not found"); streaming_strategy = null; upgrade = null };
+  };
+
+  func entryJson(e : LibraryEntry) : Text {
+    // Owner principal intentionally omitted: publishing is opt-in, but the
+    // public surface must not link queries to identities.
+    var src = "";
+    var first = true;
+    for (s in e.sources.vals()) {
+      if (not first) { src #= "," };
+      first := false;
+      src #= "{\"title\":\"" # jsonEsc(s.title) # "\",\"url\":\"" # jsonEsc(s.url) # "\"}";
+    };
+    "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
+    "\",\"answer\":\"" # jsonEsc(e.answer) # "\",\"sources\":[" # src #
+    "],\"ts\":" # Int.toText(e.ts) # ",\"graphUrl\":\"/library/" # jsonEsc(e.id) # "/graph.json\"}";
+  };
+
+  // /library/index.json               → newest-first summaries (≤ LIB_INDEX_LIMIT)
+  // /library/<id>.json                → full entry (answer + sources + graph URL)
+  // /library/<id>/graph.json          → raw graph snapshot for graph-viewer.html?g=…
+  // The "library" prefix can never collide with published sites: siteLookup
+  // requires parts[0] to parse as a principal, which "library" cannot.
+  func libraryLookup(url : Text) : ?HttpResponse {
+    var path = url;
+    switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
+    path := Text.trimStart(path, #char '/');
+    let parts = Iter.toArray(Text.split(path, #char '/'));
+    if (parts.size() == 0 or parts[0] != "library") { return null };
+    if (parts.size() == 2 and parts[1] == "index.json") {
+      var body = "";
+      var first = true;
+      var emitted = 0;
+      // Ordered map iterates oldest→newest (zero-padded ids); collect then
+      // emit from the tail for newest-first.
+      let all = Buffer.Buffer<LibraryEntry>(tOps.size(libraryEntries));
+      for ((_, e) in tOps.entries(libraryEntries)) { all.add(e) };
+      var i = all.size();
+      while (i > 0 and emitted < LIB_INDEX_LIMIT) {
+        i -= 1;
+        let e = all.get(i);
+        if (not first) { body #= "," };
+        first := false;
+        body #= "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
+                "\",\"ts\":" # Int.toText(e.ts) # ",\"sources\":" # Nat.toText(e.sources.size()) # "}";
+        emitted += 1;
+      };
+      return ?libJsonResponse("{\"count\":" # Nat.toText(tOps.size(libraryEntries)) # ",\"entries\":[" # body # "]}");
+    };
+    if (parts.size() == 3 and parts[2] == "graph.json") {
+      return switch (tOps.get(libraryEntries, parts[1])) {
+        case (?e) { if (e.graphJson.size() == 0) { ?libNotFound() } else { ?libJsonResponse(e.graphJson) } };
+        case null ?libNotFound();
+      };
+    };
+    if (parts.size() == 2) {
+      switch (Text.stripEnd(parts[1], #text ".json")) {
+        case (?id) {
+          return switch (tOps.get(libraryEntries, id)) {
+            case (?e) ?libJsonResponse(entryJson(e));
+            case null ?libNotFound();
+          };
+        };
+        case null {};
+      };
+    };
+    ?libNotFound();  // reserve the whole /library/* namespace
+  };
+
   // Upgrade GETs to an update call so we don't need asset certification (MVP).
   public query func http_request(_req : HttpRequest) : async HttpResponse {
     { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
@@ -1248,7 +1476,12 @@ actor CafresoHQState {
     // project can never shadow the /receipt/ URL shape (name reserved too).
     switch (receiptLookup(req.url)) {
       case (?res) res;
-      case null serveSite(req.url);
+      case null {
+        switch (libraryLookup(req.url)) {
+          case (?res) res;
+          case null serveSite(req.url);
+        };
+      };
     };
   };
 
