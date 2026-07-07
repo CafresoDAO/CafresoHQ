@@ -6156,6 +6156,54 @@ const HQSH_COMMANDS = {
       ].join('\n');
     },
   },
+  payroll: {
+    help: 'payroll [run <agentId> | pause on|off | payouts] — canister-timer salaries',
+    run: async (chain, args) => {
+      if (args[0] === 'run') {
+        if (!args[1]) return 'usage: hq payroll run <agentId>';
+        return `payroll run → ${await chain.payroll.run(args[1])}`;
+      }
+      if (args[0] === 'pause') {
+        if (args[1] !== 'on' && args[1] !== 'off') return 'usage: hq payroll pause on|off';
+        await chain.payroll.pause(args[1] === 'on');
+        return `payroll ${args[1] === 'on' ? 'PAUSED' : 'resumed'}`;
+      }
+      if (args[0] === 'payouts') {
+        const po = await chain.payroll.payouts();
+        if (!po.length) return '(no payouts yet)';
+        return po.slice(-12).reverse().map(p =>
+          `  ${p.status === 'paid' ? '✓' : p.status === 'pending' ? '…' : '✗'} ${p.agentId}  ${_hqshFmt(p.amount, p.token)}  ${p.status}` +
+          (p.blockIndex != null ? `  block ${p.blockIndex}` : '')).join('\n');
+      }
+      const pr = await chain.payroll.list();
+      const allow = await chain.payroll.allowance('ICP').catch(() => null);
+      const head = `  budget    : ${allow ? _hqshFmt(allow.allowance, 'ICP') + ' allowance left' : '— none signed (Settings → ICP Services → Payroll Budget)'}` +
+        `\n  paused    : ${pr.paused ? 'YES' : 'no'}`;
+      if (!pr.salaries || !pr.salaries.length) return head + '\n  (no salaries — set one on an agent wallet card)';
+      return head + '\n' + pr.salaries.map(s =>
+        `  ${s.agentId}  ${_hqshFmt(s.amount, s.token)} / ${Math.round(s.periodSecs / 3600)}h  ${s.mode}` +
+        `${s.active ? '' : '  [inactive]'}${s.stalledSince ? '  [STALLED: ' + s.lastResult + ']' : s.lastResult ? '  (' + s.lastResult + ')' : ''}`).join('\n');
+    },
+  },
+  pnl: {
+    help: 'pnl — earned vs spent per agent (payroll + on-chain metering)',
+    run: async (chain) => {
+      const [ws, totals, payouts] = await Promise.all([
+        chain.wallet.list(),
+        chain.wallet.totals().catch(() => ({})),
+        chain.payroll.payouts().catch(() => []),
+      ]);
+      if (!ws.length) return '(no agent wallets)';
+      return ws.map(w => {
+        const tok = w.token || 'ICP';
+        let earned = BigInt(0);
+        for (const p of payouts) if (p.agentId === w.agentId && p.token === tok && p.status === 'paid') earned += BigInt(p.amount);
+        const spent = BigInt((totals[w.agentId] && totals[w.agentId][tok]) || 0);
+        const net = earned - spent;
+        return `  ${w.agentId}  earned ${_hqshFmt(earned, tok)}  spent ${_hqshFmt(spent, tok)}  net ${net < BigInt(0) ? '-' : ''}${_hqshFmt(net < BigInt(0) ? -net : net, tok)}`;
+      }).join('\n') + '\n  (earned counts payroll payouts; live tips add in the office P&L frame)';
+    },
+  },
 };
 
 function HqShell({ sessionId, visible }) {

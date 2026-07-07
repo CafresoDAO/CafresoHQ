@@ -2022,6 +2022,20 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       send(agentId, token, amount, to, memo) { return _req('chain:wallet:send', { agentId, token, amount, to, memo }, 180000); },
       pauseAll(paused) { return _req('chain:wallet:pause-all', { paused }); },
       pausedAll() { return _req('chain:wallet:paused-all', {}).then(r => !!r.paused); },
+      /* Lifetime recorded spend per agent → { [agentId]: { [token]: rawString } }. */
+      totals() { return _req('chain:wallet:totals', {}).then(r => r.totals || {}); },
+    },
+    /* Payroll — the state canister's timer pays salaries under a user-signed
+       ICRC-2 allowance. approve() is the ONE real signature (shell-confirmed). */
+    payroll: {
+      list() { return _req('chain:payroll:list', {}); },
+      put(s) { return _req('chain:payroll:put', s); },
+      remove(agentId) { return _req('chain:payroll:delete', { agentId }); },
+      pause(paused) { return _req('chain:payroll:pause', { paused }); },
+      payouts() { return _req('chain:payroll:payouts', {}).then(r => r.payouts || []); },
+      run(agentId) { return _req('chain:payroll:run', { agentId }, 120000).then(r => r.result); },
+      allowance(token) { return _req('chain:payroll:allowance', { token }).then(r => r.allowance); },
+      approve(token, amount, expiresDays) { return _req('chain:payroll:approve', { token, amount, expiresDays }, 180000); },
     },
     /* Publish a collected site to the HQ public sites canister. Returns
        { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */

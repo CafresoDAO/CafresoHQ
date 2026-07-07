@@ -118,13 +118,16 @@ function idlFactory({ IDL: _IDL }) {
     InsufficientFunds: _IDL.Record({ balance: _IDL.Nat })
   });
   const ApproveResult = _IDL.Variant({ Ok: _IDL.Nat, Err: ApproveError });
+  const AllowanceArgs = _IDL.Record({ account: Account_, spender: Account_ });
+  const Allowance = _IDL.Record({ allowance: _IDL.Nat, expires_at: _IDL.Opt(_IDL.Nat64) });
   return _IDL.Service({
     icrc1_balance_of: _IDL.Func([Account_], [_IDL.Nat], ['query']),
     icrc1_decimals: _IDL.Func([], [_IDL.Nat8], ['query']),
     icrc1_symbol: _IDL.Func([], [_IDL.Text], ['query']),
     icrc1_fee: _IDL.Func([], [_IDL.Nat], ['query']),
     icrc1_transfer: _IDL.Func([TransferArg], [TransferResult], []),
-    icrc2_approve: _IDL.Func([ApproveArgs], [ApproveResult], [])
+    icrc2_approve: _IDL.Func([ApproveArgs], [ApproveResult], []),
+    icrc2_allowance: _IDL.Func([AllowanceArgs], [Allowance], ['query'])
   });
 }
 
@@ -293,11 +296,17 @@ export async function transfer({ tokenKey, toPrincipalText, amount, memoText, fr
   }
 }
 
-// ICRC-2 approve: authorise `spenderPrincipalText` (the index canister) to pull
-// up to `amount` (raw e8s) from the signed-in user. The spender then calls
-// icrc2_transfer_from to collect the exact plan price. Returns { ok: blockIndex }
-// or { err }. The user must be II-authenticated.
-export async function approve({ tokenKey, spenderPrincipalText, amount }) {
+// ICRC-2 approve: authorise `spenderPrincipalText` (a canister) to pull up to
+// `amount` (raw base units) from the signed-in user via icrc2_transfer_from.
+// Returns { ok: blockIndex } or { err }. The user must be II-authenticated.
+//
+// Expiry: by default the allowance expires in 10 minutes (one-shot purchases —
+// no standing pull authorization left dangling). For STANDING budgets (payroll)
+// pass `expiresAtMs` (an absolute epoch-ms deadline) or `noExpiry: true`.
+// NOTE: icrc2_approve OVERWRITES the allowance — it does not add to it. Each
+// transfer_from decrements the allowance by amount + fee, so size standing
+// budgets as intended_spend + expected_pulls × fee.
+export async function approve({ tokenKey, spenderPrincipalText, amount, expiresAtMs = null, noExpiry = false }) {
   if (!browser) return { err: 'Not available server-side.' };
   const token = TOKENS[tokenKey];
   if (!token) return { err: `Unknown token: ${tokenKey}` };
@@ -316,15 +325,17 @@ export async function approve({ tokenKey, spenderPrincipalText, amount }) {
   const rawAmount = typeof amount === 'bigint' ? amount : toRawAmount(tokenKey, amount);
   if (rawAmount < 0n) return { err: 'Amount must be ≥ 0.' };   // 0 = revoke the allowance
 
-  // Expire the allowance in 10 minutes — if the purchase doesn't complete, no
-  // standing pull authorization is left dangling for the spender canister.
-  const expiresAtNs = BigInt(Date.now()) * 1_000_000n + 600_000_000_000n;
+  const expiresAtNs = noExpiry
+    ? null
+    : expiresAtMs
+      ? BigInt(Math.floor(expiresAtMs)) * 1_000_000n
+      : BigInt(Date.now()) * 1_000_000n + 600_000_000_000n; // default: 10 min
   const arg = {
     from_subaccount: [],
     spender,
     amount: rawAmount,
     expected_allowance: [],
-    expires_at: rawAmount === 0n ? [] : [expiresAtNs],
+    expires_at: rawAmount === 0n || expiresAtNs === null ? [] : [expiresAtNs],
     fee: [],
     memo: [],
     created_at_time: []
@@ -335,12 +346,35 @@ export async function approve({ tokenKey, spenderPrincipalText, amount }) {
     if ('Ok' in res) return { ok: Number(res.Ok) };
     const key = Object.keys(res.Err)[0];
     const detail = res.Err[key];
-    if (key === 'InsufficientFunds') return { err: `Insufficient ICP (balance: ${detail.balance}).` };
+    if (key === 'InsufficientFunds') return { err: `Insufficient ${token.symbol} (balance: ${detail.balance}).` };
     if (key === 'GenericError') return { err: detail.message || 'Ledger error.' };
     return { err: `Approve failed: ${key}` };
   } catch (e) {
     console.warn('[icrc1] approve failed', e);
     return { err: String(e?.message || e) };
+  }
+}
+
+// Read the current allowance the signed-in user has granted `spenderPrincipalText`.
+// Anonymous query is fine (allowances are public data), but we need the OWNER's
+// principal, so require sign-in. → { allowance: BigInt, expiresAtNs: BigInt|null } or null.
+export async function getAllowance({ tokenKey, ownerPrincipalText, spenderPrincipalText }) {
+  const token = TOKENS[tokenKey];
+  if (!token || !ownerPrincipalText || !spenderPrincipalText) return null;
+  const actor = ledgerActor(token.canister);
+  if (!actor) return null;
+  try {
+    const res = await actor.icrc2_allowance({
+      account: { owner: Principal.fromText(ownerPrincipalText), subaccount: [] },
+      spender: { owner: Principal.fromText(spenderPrincipalText), subaccount: [] }
+    });
+    return {
+      allowance: res.allowance,
+      expiresAtNs: Array.isArray(res.expires_at) ? (res.expires_at[0] ?? null) : (res.expires_at ?? null)
+    };
+  } catch (e) {
+    console.warn(`[icrc1] ${tokenKey} allowance lookup failed`, e);
+    return null;
   }
 }
 
