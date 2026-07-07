@@ -176,7 +176,9 @@
       q: query.trim(),
       answer: answerState === 'done' ? answer : '',
       sources: results.map((r) => ({ title: r.title, url: r.url })),
-      graphJson: JSON.stringify(snapshot)
+      graphJson: JSON.stringify(snapshot),
+      model: answerState === 'done' ? 'claude-haiku-4-5' : '',
+      searchEngine: 'brave'
     });
     if (res.status === 'ok') {
       publishState = res.existing ? 'existing' : 'ok';

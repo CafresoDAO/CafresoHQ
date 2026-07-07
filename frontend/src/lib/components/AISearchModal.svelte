@@ -1,91 +1,124 @@
 <script>
+  /* Ai Cafreso Search — the anonymous quick-search sheet. Pipeline:
+       1. on-chain library (instant, free)  →  2. the research network queue
+       (community workers answer in ~10-30s) →  3. honest fallbacks.
+     Every answer shown here is a public, permanent library entry with
+     provenance. Nothing a visitor types is stored unless the network answers
+     it — and then it's the ANSWER that's public, never the visitor. */
   import { aiSearchOpen } from '$lib/stores/blog.js';
-  import { aiCafresoOrigin, bankingBraveOrigin } from '$lib/links.js';
+  import { bankingBraveOrigin } from '$lib/links.js';
   import { goto } from '$app/navigation';
   import Icon from './Icon.svelte';
   import { trapFocus } from '$lib/actions/trapFocus.js';
+  import { findPublic, networkHealth, submitJob, awaitJob } from '$lib/api/searchNetwork.js';
+  import { libraryGraphViewerUrl } from '$lib/api/library.js';
 
-  const CACHE_TTL = 5 * 60 * 1000; // 5 min
+  const CACHE_TTL = 5 * 60 * 1000; // 5 min — library hits only (queue results change state)
 
   let inputEl;
   let query = '';
-  let phase = 'idle'; // 'idle' | 'loading' | 'result' | 'error'
-  let result = null;  // { summary: string, source: 'vault' | 'web' }
-  let errorMsg = '';
+  let phase = 'idle'; // idle | checking | queued | result | rejected | dark
+  let entry = null;   // library entry JSON {id, query, answer, sources, model, engine, answeredAt}
+  let fromLibrary = false;
+  let queueNote = '';
+  let rejectReason = '';
   let recentSearches = [];
+  let searchSeq = 0;  // stale-response guard
 
   $: if ($aiSearchOpen) {
     phase = 'idle';
     query = '';
-    result = null;
-    errorMsg = '';
+    entry = null;
     try { recentSearches = JSON.parse(localStorage.getItem('cafreso:ai-recent') || '[]'); } catch { recentSearches = []; }
     setTimeout(() => inputEl?.focus(), 60);
   }
 
   function close() { aiSearchOpen.set(false); }
+  function onKeydown(e) { if (e.key === 'Escape') close(); }
 
-  function onKeydown(e) {
-    if (e.key === 'Escape') close();
+  function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
+  function domain(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+  }
+  function provLine(e) {
+    const bits = [];
+    if (e.model) bits.push('answered by ' + e.model);
+    if (e.engine) bits.push('via ' + e.engine);
+    if (e.answeredAt) {
+      try { bits.push(new Date(Number(e.answeredAt) / 1e6).toLocaleDateString()); } catch {}
+    }
+    return bits.join(' · ');
   }
 
   async function runSearch(q) {
     q = q.trim();
     if (!q) return;
     query = q;
+    const seq = ++searchSeq;
 
-    // Check session cache
     const cacheKey = 'cafreso:ai-cache:' + q;
     try {
       const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
       if (cached && Date.now() - cached.ts < CACHE_TTL) {
-        result = cached.data;
-        phase = 'result';
+        entry = cached.entry; fromLibrary = true; phase = 'result';
         return;
       }
     } catch {}
-
-    // Persist to recent searches
     try {
-      const updated = [q, ...recentSearches.filter(r => r !== q)].slice(0, 6);
+      const updated = [q, ...recentSearches.filter((r) => r !== q)].slice(0, 6);
       recentSearches = updated;
       localStorage.setItem('cafreso:ai-recent', JSON.stringify(updated));
     } catch {}
 
-    phase = 'loading';
-    result = null;
-    errorMsg = '';
+    phase = 'checking';
+    entry = null;
 
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const resp = await fetch(
-        `${aiCafresoOrigin}/api/search?q=${encodeURIComponent(q)}`,
-        { signal: ctrl.signal }
-      );
-      clearTimeout(t);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json(); // expects { summary: string, source: 'vault'|'web' }
-      result = data;
-      try { sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
-      phase = 'result';
-    } catch (err) {
-      errorMsg = err.name === 'AbortError'
-        ? 'Request timed out after 15 seconds.'
-        : 'ai.cafreso.com is unreachable right now.';
-      phase = 'error';
+    // 1. Library first — instant and free.
+    const hit = await findPublic(q);
+    if (seq !== searchSeq) return;
+    if (hit && hit.id) {
+      entry = hit; fromLibrary = true; phase = 'result';
+      try { sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), entry: hit })); } catch {}
+      return;
+    }
+
+    // 2. Miss → is the research network awake?
+    const health = await networkHealth();
+    if (seq !== searchSeq) return;
+    if (!health || !health.activeWorkers) { phase = 'dark'; return; }
+
+    const sub = await submitJob(q);
+    if (seq !== searchSeq) return;
+    if (!sub) { phase = 'dark'; return; }
+    if (sub.status === 'hit' && sub.entry) {
+      entry = sub.entry; fromLibrary = true; phase = 'result';
+      return;
+    }
+    if (sub.status === 'rejected') {
+      rejectReason = sub.reason || 'busy';
+      phase = 'rejected';
+      return;
+    }
+
+    // 3. Queued — a worker is on it.
+    phase = 'queued';
+    queueNote = health.activeWorkers === 1
+      ? '1 worker online' : `${health.activeWorkers} workers online`;
+    const done = await awaitJob(sub.jobId, {
+      onTick: (st) => { if (seq === searchSeq && st === 'claimed') queueNote = 'a worker picked it up…'; }
+    });
+    if (seq !== searchSeq) return;
+    if (done.status === 'done' && done.entry) {
+      entry = done.entry; fromLibrary = false; phase = 'result';
+    } else {
+      rejectReason = done.status;   // failed | expired | timeout
+      phase = 'rejected';
     }
   }
 
-  function onSubmit(e) {
-    e.preventDefault();
-    runSearch(query);
-  }
-
-  function fallbackToLocal() {
-    close();
-    goto(`/search?q=${encodeURIComponent(query.trim())}`);
-  }
+  function onSubmit(e) { e.preventDefault(); runSearch(query); }
+  function fallbackToLocal() { close(); goto(`/search?q=${encodeURIComponent(query.trim())}`); }
+  function openLibrary() { close(); goto('/library' + (entry ? `?e=${entry.id}` : '')); }
 </script>
 
 <svelte:window on:keydown={onKeydown} />
@@ -110,7 +143,7 @@
   <div
     role="dialog"
     aria-modal="true"
-    aria-label="AI Search"
+    aria-label="Ai Cafreso Search"
     use:trapFocus
     on:click|stopPropagation
     style="
@@ -134,10 +167,10 @@
       <div>
         <div style="font-size: 15px; font-weight: 700; color: hsl(222 47% 11%); display: flex; align-items: center; gap: 6px;">
           <Icon name="brain" size={16} style="color: hsl(260 70% 50%);" />
-          AI Search
+          Ai Cafreso Search
         </div>
         <div style="font-size: 10.5px; color: hsl(215 16% 47%); margin-top: 2px;">
-          Powered by CafresoDAO Library · ai.cafreso.com
+          Answered on-chain · every answer joins the public library
         </div>
       </div>
       <button
@@ -167,7 +200,7 @@
           data-autofocus
           bind:value={query}
           type="search"
-          placeholder="Ask anything about CafresoDAO…"
+          placeholder="Ask anything…"
           style="
             width: 100%; padding: 12px 14px 12px 38px; border-radius: 12px;
             border: 1.5px solid hsl(26 30% 82%); font-size: 15px; font-family: inherit;
@@ -222,9 +255,7 @@
         ">Quick access</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
           <a
-            href={bankingBraveOrigin}
-            data-sveltekit-reload="on"
-            rel="noopener"
+            href="/library"
             on:click={close}
             style="
               display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -233,8 +264,8 @@
               transition: border-color .12s;
             "
           >
-            <Icon name="bank" size={20} style="color: hsl(220 78% 44%);" />
-            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Banking</span>
+            <Icon name="books" size={20} style="color: hsl(45 85% 45%);" />
+            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Library</span>
           </a>
           <a
             href="/governance"
@@ -250,7 +281,9 @@
             <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">DAO</span>
           </a>
           <a
-            href="/blog"
+            href={bankingBraveOrigin}
+            data-sveltekit-reload="on"
+            rel="noopener"
             on:click={close}
             style="
               display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -259,15 +292,15 @@
               transition: border-color .12s;
             "
           >
-            <Icon name="article" size={20} style="color: hsl(32 72% 50%);" />
-            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Dev Log</span>
+            <Icon name="bank" size={20} style="color: hsl(220 78% 44%);" />
+            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Banking</span>
           </a>
         </div>
       </div>
     {/if}
 
-    <!-- Phase: loading -->
-    {#if phase === 'loading'}
+    <!-- Phase: checking / queued -->
+    {#if phase === 'checking' || phase === 'queued'}
       <div style="text-align: center; padding: 28px 0 24px;">
         <div
           class="spin"
@@ -280,68 +313,135 @@
             margin-bottom: 14px;
           "
         ></div>
-        <div style="font-size: 13px; color: hsl(215 16% 47%);">Querying vault…</div>
-        <div style="font-size: 11px; color: hsl(215 16% 60%); margin-top: 4px;">ai.cafreso.com</div>
+        {#if phase === 'checking'}
+          <div style="font-size: 13px; color: hsl(215 16% 47%);">Checking the on-chain library…</div>
+        {:else}
+          <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">The research network is on it</div>
+          <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
+            {queueNote} · fresh answers take ~10–30s and join the library forever
+          </div>
+        {/if}
       </div>
     {/if}
 
     <!-- Phase: result -->
-    {#if phase === 'result' && result}
+    {#if phase === 'result' && entry}
       <div>
-        <div style="margin-bottom: 10px;">
+        <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span style="
             font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
             padding: 2px 7px; border-radius: 5px;
-            background: {result.source === 'vault' ? 'hsl(112 43% 90%)' : 'hsl(26 50% 90%)'};
-            color: {result.source === 'vault' ? 'hsl(112 43% 28%)' : 'hsl(24 48% 30%)'};
+            background: {fromLibrary ? 'hsl(112 43% 90%)' : 'hsl(260 60% 92%)'};
+            color: {fromLibrary ? 'hsl(112 43% 28%)' : 'hsl(260 60% 35%)'};
           ">
-            {result.source === 'vault' ? 'Vault hit' : 'Web search'}
+            {fromLibrary ? 'On-chain library' : 'Fresh from the network'}
           </span>
+          {#if provLine(entry)}
+            <span style="font-size: 10.5px; color: hsl(215 16% 55%);">{provLine(entry)}</span>
+          {/if}
         </div>
-        <p style="
-          font-size: 14px; line-height: 1.65; color: hsl(222 47% 11%);
-          margin: 0 0 14px;
-        ">{result.summary}</p>
-        <a
-          href="{aiCafresoOrigin}?q={encodeURIComponent(query)}"
-          data-sveltekit-reload="on"
-          rel="noopener"
-          on:click={close}
-          style="
-            display: inline-flex; align-items: center; gap: 5px;
-            font-size: 12.5px; font-weight: 600; color: hsl(260 70% 50%);
-            text-decoration: none;
-          "
-        >
-          Open full answer in ai.cafreso.com
-          <Icon name="arrow-up-right" size={12} />
-        </a>
+        {#if entry.answer}
+          <p style="font-size: 14px; line-height: 1.65; color: hsl(222 47% 11%); margin: 0 0 12px;">{plain(entry.answer)}</p>
+        {:else}
+          <p style="font-size: 13px; line-height: 1.6; color: hsl(215 16% 40%); margin: 0 0 12px;">
+            Sources collected — no summary was generated for this one yet.
+          </p>
+        {/if}
+        {#if entry.sources && entry.sources.length}
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;">
+            {#each entry.sources.slice(0, 3) as s, i}
+              <a href={s.url} target="_blank" rel="noopener noreferrer" style="
+                display: flex; align-items: baseline; gap: 7px; text-decoration: none;
+                font-size: 12.5px; color: hsl(222 47% 11%);
+              ">
+                <span style="color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0;">[{i + 1}]</span>
+                <span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{plain(s.title)}</span>
+                <span style="color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0;">{domain(s.url)}</span>
+              </a>
+            {/each}
+          </div>
+        {/if}
+        <div style="display: flex; gap: 14px; flex-wrap: wrap;">
+          <button type="button" on:click={openLibrary} style="
+            display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent;
+            padding: 0; font-family: inherit; font-size: 12.5px; font-weight: 600; color: hsl(260 70% 50%);
+            cursor: pointer;
+          ">
+            Explore in the library
+            <Icon name="arrow-up-right" size={12} />
+          </button>
+          {#if entry.id && libraryGraphViewerUrl(entry.id)}
+            <a href={libraryGraphViewerUrl(entry.id)} target="_blank" rel="noopener noreferrer" style="
+              display: inline-flex; align-items: center; gap: 5px;
+              font-size: 12.5px; font-weight: 600; color: hsl(215 16% 40%); text-decoration: none;
+            ">
+              Graph view
+              <Icon name="arrow-up-right" size={12} />
+            </a>
+          {/if}
+        </div>
       </div>
     {/if}
 
-    <!-- Phase: error -->
-    {#if phase === 'error'}
+    <!-- Phase: rejected (busy / budget / failed / timeout) -->
+    {#if phase === 'rejected'}
       <div style="text-align: center; padding: 20px 0 16px;">
         <Icon name="warning-circle" size={28} style="color: hsl(32 72% 50%); display: block; margin: 0 auto 10px;" />
         <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 4px;">
-          Couldn't reach ai.cafreso.com
+          {rejectReason === 'busy' ? 'The network is at capacity'
+            : rejectReason === 'budget' ? "Today's research budget is spent"
+            : rejectReason === 'timeout' ? 'Still researching — check the library shortly'
+            : "The network couldn't answer this one"}
         </div>
-        <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">{errorMsg}</div>
-        <button
-          type="button"
-          on:click={fallbackToLocal}
-          style="
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 9px 16px; border-radius: 10px;
+        <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">
+          {rejectReason === 'timeout'
+            ? 'Your question stays queued; the answer lands in the public library when a worker finishes.'
+            : 'You can search with your own container instead — or try again in a bit.'}
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          <a href="/hq/search?q={encodeURIComponent(query)}" on:click={close} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
+            background: hsl(24 48% 12%); color: white; font-size: 13px; font-weight: 600; text-decoration: none;
+          ">Sign in &amp; search</a>
+          <button type="button" on:click={fallbackToLocal} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
+            border: 1px solid hsl(26 30% 82%); background: white; font-family: inherit;
+            font-size: 13px; font-weight: 600; color: hsl(222 47% 11%); cursor: pointer;
+          ">Search this site</button>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Phase: network dark -->
+    {#if phase === 'dark'}
+      <div style="text-align: center; padding: 20px 0 16px;">
+        <Icon name="moon" size={28} style="color: hsl(260 40% 55%); display: block; margin: 0 auto 10px;" />
+        <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 4px;">
+          The research network is asleep
+        </div>
+        <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">
+          No workers are online right now. Sign in to search with your own container — or browse everything already answered.
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          <a href="/hq/search?q={encodeURIComponent(query)}" on:click={close} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
+            background: hsl(24 48% 12%); color: white; font-size: 13px; font-weight: 600; text-decoration: none;
+          ">Sign in &amp; search</a>
+          <a href="/library" on:click={close} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
             border: 1px solid hsl(26 30% 82%); background: white;
-            font-family: inherit; font-size: 13px; font-weight: 600;
-            color: hsl(222 47% 11%); cursor: pointer;
-            transition: background .15s;
-          "
-        >
-          <Icon name="magnifying-glass" size={14} />
-          Search locally instead
-        </button>
+            font-size: 13px; font-weight: 600; color: hsl(222 47% 11%); text-decoration: none;
+          ">Explore the library</a>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Persistent library link -->
+    {#if phase === 'idle' || phase === 'result'}
+      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed hsl(26 25% 82%); text-align: center;">
+        <a href="/library" on:click={close} style="
+          font-size: 12px; font-weight: 600; color: hsl(215 16% 47%); text-decoration: none;
+        ">Explore the library — every answer, one growing web →</a>
       </div>
     {/if}
   </div>

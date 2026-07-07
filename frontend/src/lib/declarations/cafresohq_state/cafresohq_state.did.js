@@ -130,6 +130,13 @@ export const idlFactory = ({ IDL }) => {
     'paused' : IDL.Null,
   });
   const LibrarySource = IDL.Record({ 'title' : IDL.Text, 'url' : IDL.Text });
+  const LibraryProvenance = IDL.Record({
+    'model' : IDL.Text,
+    'searchEngine' : IDL.Text,
+    'worker' : IDL.Opt(IDL.Principal),
+    'firstSearchedAt' : IDL.Int,
+    'answeredAt' : IDL.Int,
+  });
   const LibraryEntry = IDL.Record({
     'id' : IDL.Text,
     'owner' : IDL.Principal,
@@ -137,6 +144,32 @@ export const idlFactory = ({ IDL }) => {
     'answer' : IDL.Text,
     'sources' : IDL.Vec(LibrarySource),
     'graphJson' : IDL.Text,
+    'ts' : IDL.Int,
+    'prov' : LibraryProvenance,
+  });
+  const Worker = IDL.Record({
+    'principal' : IDL.Principal,
+    'name' : IDL.Text,
+    'status' : IDL.Text,
+    'payoutOwner' : IDL.Principal,
+    'payoutSubHex' : IDL.Text,
+    'registeredAt' : IDL.Int,
+    'approvedAt' : IDL.Int,
+    'lastSeen' : IDL.Int,
+    'lastAuthMs' : IDL.Int,
+    'jobsDone' : IDL.Nat,
+    'jobsFailed' : IDL.Nat,
+    'accruedE8s' : IDL.Nat,
+    'earnedE8s' : IDL.Nat,
+    'updatedAt' : IDL.Int,
+  });
+  const WorkerPayout = IDL.Record({
+    'key' : IDL.Text,
+    'worker' : IDL.Principal,
+    'amount' : IDL.Nat,
+    'scheduledAt' : IDL.Int,
+    'status' : IDL.Text,
+    'blockIndex' : IDL.Opt(IDL.Nat),
     'ts' : IDL.Int,
   });
   const LibrarySummary = IDL.Record({
@@ -193,11 +226,27 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'library_put' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Vec(LibrarySource), IDL.Text],
+        [IDL.Text, IDL.Text, IDL.Vec(LibrarySource), IDL.Text, IDL.Text, IDL.Text],
         [LibraryPutResult],
         [],
       ),
     'library_remove' : IDL.Func([IDL.Text], [IDL.Bool], []),
+    'amPlanAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'worker_register' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Text], []),
+    'worker_my_status' : IDL.Func([], [IDL.Opt(Worker)], ['query']),
+    'worker_admin_list' : IDL.Func([], [IDL.Vec(Worker)], ['query']),
+    'worker_admin_set_status' : IDL.Func([IDL.Principal, IDL.Text], [], []),
+    'worker_payout_log' : IDL.Func([], [IDL.Vec(WorkerPayout)], ['query']),
+    'search_admin_set_pay' : IDL.Func([IDL.Principal, IDL.Nat, IDL.Nat], [], []),
+    'search_admin_set_budget' : IDL.Func([IDL.Nat], [], []),
+    'search_pay_status' : IDL.Func(
+        [],
+        [IDL.Record({
+          'rateE8s' : IDL.Nat, 'minE8s' : IDL.Nat,
+          'ledgerSet' : IDL.Bool, 'treasurySet' : IDL.Bool, 'budgetPerDay' : IDL.Nat,
+        })],
+        ['query'],
+      ),
     'listAgentWallets' : IDL.Func([], [IDL.Vec(AgentWallet)], ['query']),
     'listHqDocs' : IDL.Func([], [IDL.Vec(DocSummary)], ['query']),
     'listMissionSchedules' : IDL.Func(

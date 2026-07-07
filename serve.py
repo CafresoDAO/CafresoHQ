@@ -440,6 +440,232 @@ def _night_loop():
 threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 
 
+# ---- Ai Cafreso Search — network worker ------------------------------------
+# Opt-in: this container joins the on-chain search network, claiming queued
+# queries from cafresohq_state over HMAC-signed plain HTTPS (Python has no IC
+# agent — the canister verifies HMAC-SHA256 over the raw body against the
+# secret registered from the browser). Pipeline per job: Brave (this
+# container's own key) → local LLM (hermes gateway first, night-runner
+# provider fallback) → graph snapshot → fulfill. Fulfilled answers become
+# public on-chain library entries attributed (and paid) to WORKER_PRINCIPAL.
+#
+#   SEARCH_WORKER=1
+#   WORKER_PRINCIPAL=<principal registered via ai.cafreso.com settings>
+#   WORKER_SECRET=<64-hex secret shown once at registration>
+#   BRAVE_API_KEY=<your free Brave key>
+#   SEARCH_STATE_URL=<override for local-replica testing; defaults to mainnet>
+#
+# The loop is SINGLE-THREADED by design: the canister's replay guard requires
+# each worker's signed timestamps to strictly increase, which serialized calls
+# guarantee for free. Workers run standalone — this loop makes only outbound
+# calls and never touches the idle tracker, so it will not keep a fleet
+# container awake by itself; a worker box must have idle-stop disabled.
+_SW_ENABLED = os.environ.get('SEARCH_WORKER', '').strip() == '1'
+_SW_PRINCIPAL = os.environ.get('WORKER_PRINCIPAL', '').strip()
+_SW_SECRET_HEX = os.environ.get('WORKER_SECRET', '').strip()
+_SW_BASE = os.environ.get(
+    'SEARCH_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
+_SW_MODEL_HINT = os.environ.get('WORKER_MODEL', '').strip()
+_sw_last_ts = 0
+
+
+def _sw_call(op, extra_lines):
+    """Signed worker call. Returns (status, dict). Envelope + HMAC per docs/SEARCH_NETWORK.md."""
+    global _sw_last_ts
+    import hmac as _hmac
+    ts = max(int(time.time() * 1000), _sw_last_ts + 1)
+    _sw_last_ts = ts
+    body = '\n'.join(['v1', _SW_PRINCIPAL, str(ts), secrets.token_hex(8), op]
+                     + list(extra_lines)).encode('utf-8')
+    sig = _hmac.new(bytes.fromhex(_SW_SECRET_HEX), body, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(_SW_BASE + '/worker/' + op, data=body, headers={
+        'x-worker-signature': sig, 'Content-Type': 'text/plain'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode('utf-8'))
+        except Exception:
+            return e.code, {}
+    except Exception as e:
+        return 0, {'error': str(e)[:200]}
+
+
+def _sw_brave(q):
+    """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
+    stored sources are title+url (deliberate Brave-ToS posture)."""
+    key = os.environ.get('BRAVE_API_KEY', '').strip()
+    if not key:
+        return None
+    url = ('https://api.search.brave.com/res/v1/web/search?q='
+           + urllib.parse.quote(q) + '&count=8')
+    req = urllib.request.Request(url, headers={
+        'Accept': 'application/json', 'Accept-Encoding': 'identity',
+        'X-Subscription-Token': key, 'User-Agent': 'CafresoHQ/1.0'})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode('utf-8'))
+    out = []
+    for x in (data.get('web') or {}).get('results', [])[:8]:
+        if x.get('url'):
+            out.append({'title': (x.get('title') or x['url'])[:600],
+                        'url': x['url'][:600],
+                        'description': re.sub(r'<[^>]+>', '', x.get('description') or '')})
+    return out
+
+
+def _sw_hermes_key():
+    key = os.environ.get('API_SERVER_KEY', '').strip()
+    if key:
+        return key
+    try:
+        with open(os.path.expanduser('~/.hermes/.env'), 'r', encoding='utf-8') as f:
+            m = re.search(r'(?m)^API_SERVER_KEY\s*=\s*(\S+)', f.read())
+        if m:
+            return m.group(1).strip().strip('"\'')
+    except Exception:
+        pass
+    return ''
+
+
+def _sw_llm(q, results):
+    """(answer, model) via the local hermes gateway, falling back to the
+    night-runner provider config. ('', '') when no model is reachable —
+    sources + graph are still worth fulfilling."""
+    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'], r['description'])
+                      for i, r in enumerate(results))
+    prompt = ('Answer this search query in 2-4 sentences using ONLY the sources below. '
+              "Cite with [n]. If the sources don't answer it, say what they do cover.\n\n"
+              'Query: %s\n\nSources:\n%s' % (q, src))
+    payload = {'model': _SW_MODEL_HINT or 'default',
+               'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 400}
+    import night_runner as _nr
+    key = _sw_hermes_key()
+    if key:
+        try:
+            req = urllib.request.Request(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                data = json.loads(r.read().decode('utf-8'))
+            text = data['choices'][0]['message']['content'].strip()
+            return text, (data.get('model') or _SW_MODEL_HINT or 'hermes-local')[:80]
+        except Exception as e:
+            print('[search-worker] hermes llm failed:', str(e)[:120])
+    try:
+        provider, model, pkey = _nr.read_provider_config(os.path.expanduser('~/.hermes'))
+        if pkey:
+            spec = _nr._PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
+            payload['model'] = model or payload['model']
+            req = urllib.request.Request(spec[1], data=json.dumps(payload).encode('utf-8'),
+                                         headers={'Content-Type': 'application/json',
+                                                  'Authorization': 'Bearer ' + pkey})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                data = json.loads(r.read().decode('utf-8'))
+            return (data['choices'][0]['message']['content'].strip(),
+                    (data.get('model') or model or provider)[:80])
+    except Exception as e:
+        print('[search-worker] provider llm failed:', str(e)[:120])
+    return '', ''
+
+
+_SW_PALETTE = ['#7DC9B0', '#C9B8E0', '#E8A9A9', '#F0C987',
+               '#9BC0E8', '#B8E09A', '#E0A47C', '#D89BE0']
+
+
+def _sw_domain(u):
+    try:
+        return (urllib.parse.urlparse(u).hostname or u).replace('www.', '', 1)
+    except Exception:
+        return u
+
+
+def _sw_color(name):
+    h = 0
+    for ch in name:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    return _SW_PALETTE[h % len(_SW_PALETTE)]
+
+
+def _sw_graph(q, results):
+    """Python port of the /hq/search page's buildGraphSnapshot — query hub →
+    result ring → domain ring, wrapped exactly as graph-viewer.html expects."""
+    import math
+    nodes = [{'key': 'q', 'attributes': {'label': q, 'size': 18, 'x': 0, 'y': 0,
+                                         'color': '#F5D25D'}}]
+    edges = []
+    domains = {}
+    for i, r in enumerate(results):
+        a = (i / max(1, len(results))) * math.pi * 2
+        nodes.append({'key': 'r%d' % i, 'attributes': {
+            'label': r['title'][:60], 'size': 8,
+            'x': math.cos(a) * 10, 'y': math.sin(a) * 10,
+            'color': _sw_color(_sw_domain(r['url']))}})
+        edges.append({'key': 'eq%d' % i, 'source': 'q', 'target': 'r%d' % i, 'attributes': {}})
+        domains.setdefault(_sw_domain(r['url']), []).append(i)
+    for di, (d, ixs) in enumerate(domains.items()):
+        a = (di / max(1, len(domains))) * math.pi * 2 + 0.35
+        nodes.append({'key': 'd:' + d, 'attributes': {
+            'label': d, 'size': 5 + len(ixs),
+            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d)}})
+        for i in ixs:
+            edges.append({'key': 'ed%d_%d' % (di, i), 'source': 'r%d' % i,
+                          'target': 'd:' + d, 'attributes': {}})
+    return json.dumps({'graph': {'options': {'type': 'mixed', 'multi': False,
+                                             'allowSelfLoops': True},
+                                 'attributes': {}, 'nodes': nodes, 'edges': edges},
+                       'title': 'Search: ' + q, 'ts': int(time.time() * 1000)})
+
+
+def _sw_process(job):
+    jid, q = job['id'], job['q']
+    P = lambda s: urllib.parse.quote(s, safe='')
+    try:
+        results = _sw_brave(q)
+        if not results:
+            _sw_call('fail', [jid, P('no brave key or no results')])
+            return
+        answer, model = _sw_llm(q, results)
+        graph = _sw_graph(q, results)
+        lines = [jid, P(model), P('brave'), P(answer), str(len(results))]
+        for r in results:
+            lines.append('%s %s' % (P(r['title']), P(r['url'])))
+        lines.append(P(graph))
+        status, resp = _sw_call('fulfill', lines)
+        if status == 200 and resp.get('ok'):
+            print('[search-worker] fulfilled %s -> %s' % (jid, resp.get('libraryId')))
+        else:
+            print('[search-worker] fulfill rejected %s: %s %s' % (jid, status, resp))
+    except Exception as e:
+        print('[search-worker] job %s error: %s' % (jid, str(e)[:200]))
+        _sw_call('fail', [jid, P(str(e)[:180])])
+
+
+def _sw_loop():
+    print('[search-worker] joining the search network as %s -> %s'
+          % (_SW_PRINCIPAL[:12] + '…', _SW_BASE))
+    while True:
+        try:
+            status, resp = _sw_call('claim', [])
+            if status == 403:
+                # Not approved yet (or suspended): heartbeat keeps the
+                # registration's lastSeen fresh so the operator sees "connected".
+                _sw_call('heartbeat', [])
+            elif status == 200 and resp.get('job'):
+                _sw_process(resp['job'])
+                continue          # drain the queue without sleeping between jobs
+        except Exception as e:
+            print('[search-worker] loop error:', str(e)[:200])
+        time.sleep(20)
+
+
+if _SW_ENABLED and _SW_PRINCIPAL and re.fullmatch(r'[0-9a-fA-F]{64}', _SW_SECRET_HEX or ''):
+    threading.Thread(target=_sw_loop, daemon=True, name='search-worker').start()
+elif _SW_ENABLED:
+    print('[search-worker] SEARCH_WORKER=1 but WORKER_PRINCIPAL/WORKER_SECRET missing — not starting')
+
+
 # ---- External approvals (Claude Code PreToolUse hook bridge) ---------------
 # When the local `claude` CLI is wired to call our approval hook, each tool
 # invocation it wants to make blocks on a long-poll against this server. We
