@@ -177,6 +177,176 @@ const MSG_STATES = {
 };
 
 /* ─────────────────────────────────────────────────────────────────────
+   WindowFrame — generic draggable + resizable window (the desktop "app
+   window"). Same drag/resize engine as ChatWindow, generalized so any HQ
+   view can mount in one. Drag the title bar to move; drag any edge/corner
+   to resize. Geometry (x,y,w,h) commits to the caller's setGeometry once
+   on mouseup. Move/up listeners attach only WHILE a gesture is active, so
+   N mounted windows add ZERO idle listeners (preserves the perf contract).
+   zIndex is injected by the window manager so clicking raises the window.
+   ───────────────────────────────────────────────────────────────────── */
+function WindowFrame({
+  title, icon, geometry, setGeometry, zIndex, focused,
+  onClose, onMinimize, onFocus, onToggleMax, maximized, headerExtra, children,
+  minW = 320, minH = 240, hint,
+}) {
+  const winRef  = useRefA(null);
+  const dragRef = useRefA(null);
+  /* Work area = viewport minus topbar + dock strip. Drives maximize and
+     left/right edge-snap (drag a window to a screen edge to tile it). */
+  const _workArea = () => {
+    const W = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+    const H = typeof window !== 'undefined' ? window.innerHeight : 720;
+    const TOP = 54, BOTTOM = 86, SIDE = 8;
+    return { x: SIDE, y: TOP, w: W - SIDE * 2, h: H - TOP - BOTTOM };
+  };
+
+  /* Esc closes (unless an input/textarea is focused — don't lose typing). */
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target, tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+      onClose && onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const _CURSORS = {
+    move: 'grabbing',
+    'resize-n': 'ns-resize',  'resize-s': 'ns-resize',
+    'resize-e': 'ew-resize',  'resize-w': 'ew-resize',
+    'resize-nw': 'nwse-resize', 'resize-se': 'nwse-resize',
+    'resize-ne': 'nesw-resize', 'resize-sw': 'nesw-resize',
+  };
+  const startGesture = (e, mode) => {
+    if (e.button !== 0) return;
+    if (maximized) return; // no drag/resize while maximized — use restore first
+    e.preventDefault();
+    const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+    const g = geometry || { x: 80, y: 80, w: 480, h: 420 };
+    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, origX: g.x, origY: g.y, origW: g.w, origH: g.h, lastX: e.clientX, lastY: e.clientY };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor     = _CURSORS[mode] || 'default';
+    const onMove = (ev) => {
+      const ds = dragRef.current, el = winRef.current;
+      if (!ds || !el) return;
+      ds.lastX = ev.clientX; ds.lastY = ev.clientY;
+      const dx = ev.clientX - ds.startX, dy = ev.clientY - ds.startY;
+      const W = window.innerWidth, H = window.innerHeight;
+      if (ds.mode === 'move') {
+        el.style.left = clamp(ds.origX + dx, -ds.origW + 80, W - 80) + 'px';
+        el.style.top  = clamp(ds.origY + dy, 0, H - 40) + 'px';
+        return;
+      }
+      const edges = ds.mode.slice('resize-'.length);
+      let x = ds.origX, y = ds.origY, w = ds.origW, h = ds.origH;
+      if (edges.includes('e')) w = clamp(ds.origW + dx, minW, W - ds.origX - 4);
+      if (edges.includes('w')) { const shift = clamp(dx, -ds.origX, ds.origW - minW); x = ds.origX + shift; w = ds.origW - shift; }
+      if (edges.includes('s')) h = clamp(ds.origH + dy, minH, H - ds.origY - 4);
+      if (edges.includes('n')) { const shift = clamp(dy, -ds.origY, ds.origH - minH); y = ds.origY + shift; h = ds.origH - shift; }
+      el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px'; el.style.height = h + 'px';
+    };
+    const onUp = () => {
+      const ds = dragRef.current, el = winRef.current;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = ''; document.body.style.cursor = '';
+      if (!ds || !el) { dragRef.current = null; return; }
+      const next = {
+        x: parseFloat(el.style.left)   || ds.origX,
+        y: parseFloat(el.style.top)    || ds.origY,
+        w: parseFloat(el.style.width)  || ds.origW,
+        h: parseFloat(el.style.height) || ds.origH,
+      };
+      // Edge-snap on drop (move gestures only): top → maximize,
+      // left/right → tile to that half of the work area.
+      if (ds.mode === 'move' && ds.lastX != null) {
+        const W = window.innerWidth;
+        const wa = _workArea();
+        if (ds.lastY <= 4 && onToggleMax) { dragRef.current = null; onToggleMax(); return; }
+        if (ds.lastX <= 4) { dragRef.current = null; setGeometry && setGeometry({ x: wa.x, y: wa.y, w: Math.floor((wa.w - 6) / 2), h: wa.h }); return; }
+        if (ds.lastX >= W - 4) { dragRef.current = null; setGeometry && setGeometry({ x: wa.x + Math.ceil((wa.w + 6) / 2), y: wa.y, w: Math.floor((wa.w - 6) / 2), h: wa.h }); return; }
+      }
+      dragRef.current = null;
+      setGeometry && setGeometry(next);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  /* Clamp the (possibly stale/oversized) saved geometry to the viewport so
+     a window can never exceed the screen or get lost off-screen. */
+  const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+  const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+  const g = geometry || { x: 80, y: 80, w: 480, h: 420 };
+  let w = Math.max(280, Math.min(g.w, VW - 16));
+  let h = Math.max(200, Math.min(g.h, VH - 16));
+  let x = Math.max(8, Math.min(g.x, VW - w - 8));
+  let y = Math.max(8, Math.min(g.y, VH - h - 8));
+  if (maximized) { const wa = _workArea(); x = wa.x; y = wa.y; w = wa.w; h = wa.h; }
+
+  return (
+    <div
+      ref={winRef}
+      onMouseDownCapture={() => onFocus && onFocus()}
+      className={'hq-window' + (focused ? ' focused' : '')}
+      style={{
+        position: 'fixed', left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px',
+        zIndex: zIndex || 'var(--z-window)',
+        background: 'var(--paper)', border: '2px solid var(--ink)', borderRadius: 6,
+        boxShadow: focused ? '0 18px 48px rgba(0,0,0,0.34)' : '0 8px 24px rgba(0,0,0,0.20)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}
+    >
+      <div
+        onMouseDown={(e) => startGesture(e, 'move')}
+        onDoubleClick={onToggleMax ? () => onToggleMax() : undefined}
+        className="hq-window-titlebar"
+        style={{
+          cursor: maximized ? 'default' : 'grab', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 10px', borderBottom: '2px solid var(--ink)',
+          background: 'var(--paper-2)', flexShrink: 0, userSelect: 'none',
+        }}
+      >
+        {icon && <span style={{ display: 'inline-flex', pointerEvents: 'none' }}>{icon}</span>}
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--ink)', pointerEvents: 'none' }}>{title}</span>
+        {headerExtra}
+        <span style={{ flex: 1, alignSelf: 'stretch' }} />
+        {hint && !maximized && <span style={{ fontSize: 9, opacity: 0.5, letterSpacing: 1, pointerEvents: 'none' }}>{hint}</span>}
+        {onMinimize && (
+          <button onMouseDown={(e) => e.stopPropagation()} onClick={onMinimize} title="Minimize to dock"
+            style={{ background: 'transparent', border: '1px solid var(--rule)', borderRadius: 4, color: 'var(--ink)', cursor: 'pointer', fontSize: 13, lineHeight: '14px', padding: '2px 8px', position: 'relative', zIndex: 4 }}>–</button>
+        )}
+        {onToggleMax && (
+          <button onMouseDown={(e) => e.stopPropagation()} onClick={() => onToggleMax()} title={maximized ? 'Restore' : 'Maximize (or drag to top / double-click)'}
+            style={{ background: 'transparent', border: '1px solid var(--rule)', borderRadius: 4, color: 'var(--ink)', cursor: 'pointer', fontSize: 11, lineHeight: '14px', padding: '2px 8px', position: 'relative', zIndex: 4 }}>{maximized ? '❐' : '▢'}</button>
+        )}
+        {onClose && (
+          <button onMouseDown={(e) => e.stopPropagation()} onClick={onClose} title="Close (Esc)"
+            style={{ background: 'transparent', border: '1px solid var(--rule)', borderRadius: 4, color: 'var(--ink)', cursor: 'pointer', fontSize: 12, padding: '2px 8px', position: 'relative', zIndex: 4 }}>✕</button>
+        )}
+      </div>
+      <div className="hq-window-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {children}
+      </div>
+      {!maximized && <>
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-n'); }} style={{ position: 'absolute', left: 14, right: 14, top: 0, height: 6, cursor: 'ns-resize', zIndex: 2 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-s'); }} style={{ position: 'absolute', left: 14, right: 14, bottom: 0, height: 6, cursor: 'ns-resize', zIndex: 2 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-w'); }} style={{ position: 'absolute', top: 14, bottom: 14, left: 0, width: 6, cursor: 'ew-resize', zIndex: 2 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-e'); }} style={{ position: 'absolute', top: 14, bottom: 14, right: 0, width: 6, cursor: 'ew-resize', zIndex: 2 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-nw'); }} style={{ position: 'absolute', top: 0, left: 0, width: 14, height: 14, cursor: 'nwse-resize', zIndex: 3 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-ne'); }} style={{ position: 'absolute', top: 0, right: 0, width: 14, height: 14, cursor: 'nesw-resize', zIndex: 3 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-sw'); }} style={{ position: 'absolute', bottom: 0, left: 0, width: 14, height: 14, cursor: 'nesw-resize', zIndex: 3 }} />
+      <div onMouseDown={(e) => { e.stopPropagation(); startGesture(e, 'resize-se'); }} title="Drag to resize"
+        style={{ position: 'absolute', right: 0, bottom: 0, width: 18, height: 18, cursor: 'nwse-resize', display: 'grid', placeItems: 'center', color: 'var(--ink-3)', userSelect: 'none', fontSize: 12, lineHeight: 1, zIndex: 3 }}>⋰</div>
+      </>}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    ChatWindow
    Floating draggable + resizable popover used by Projects and Vault.
    Drag the title bar to move; drag the bottom-right corner to resize.
@@ -625,6 +795,7 @@ function AppGlobalCommands({
   chatWinOpen, setChatWinOpen,
   density, setDensity,
   theme, setTheme,
+  windowsEnabled, setWindowsEnabled, onOpenWindow,
   workspaces = [], activeWorkspace, onApplyWorkspace, onSaveWorkspace, onDeleteWorkspace,
   onHire, onSettings, onMissions, onWorkflow, onStandup, onMemory, onStopAll,
   anyBusy,
@@ -665,6 +836,19 @@ function AppGlobalCommands({
       section: 'Toggles', icon: railCollapsed ? '»' : '«',
       run: () => setRailCollapsed(v => !v),
     },
+    { id: 'tog.desktop',
+      label: windowsEnabled ? 'Exit desktop (window) mode' : 'Enable desktop (window) mode',
+      section: 'Toggles', icon: '🪟',
+      run: () => setWindowsEnabled && setWindowsEnabled(v => !v),
+    },
+    /* Open a specific app as a window (desktop mode). */
+    ...(onOpenWindow ? [
+      ['tasks','Tasks'],['memory','Memory'],['team','Team'],['calendar','Calendar'],
+      ['vault','Vault'],['projects','Workspace'],['terminal','Terminal'],
+    ].map(([v, lbl]) => ({
+      id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
+      run: () => onOpenWindow(v),
+    })) : []),
     { id: 'tog.chat',
       label: chatWinOpen ? 'Close chat window' : 'Open chat window',
       section: 'Toggles', icon: '💬',
@@ -1155,6 +1339,20 @@ function App() {
       w, h,
     };
   });
+  /* ─── Desktop (window) mode ───────────────────────────────────────
+     When enabled, app views open as draggable/resizable windows over the
+     office floor (the "desktop") instead of the single full-screen
+     activeView. openWindows is file-backed so a reload restores the
+     session: which apps are open, their geometry, and z-order. Each entry:
+     { view, geometry:{x,y,w,h}, z, minimized }. Keyed by view → at most one
+     window per app. */
+  const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), true);
+  const [openWindows, setOpenWindows] = useFileStored(k('openWindows'), 'state', 'windows', []);
+  const winZRef = useRefA(1);
+  React.useEffect(() => {
+    const maxZ = (openWindows || []).reduce((m, w) => Math.max(m, w.z || 0), 0);
+    if (maxZ > winZRef.current) winZRef.current = maxZ;
+  }, []);
   // Rail (left sidebar) collapse — narrow icons-only mode.
   const [railCollapsed, setRailCollapsed] = useStored(k('railCollapsed'), false);
   // Density: 'comfortable' (default), 'compact', 'spacious'. Applied as a
@@ -3438,8 +3636,8 @@ ${d.text}` : d.text,
       }} />
   );
 
-  const renderView = () => {
-    switch (activeView) {
+  const renderViewBody = (view) => {
+    switch (view) {
       case 'chat':
         // Mobile primary view — chat panel fills the whole view area.
         return (
@@ -3526,6 +3724,79 @@ ${d.text}` : d.text,
     }
   };
 
+  /* ─── Window-manager helpers (desktop mode) ───────────────────────
+     Views are keyed by their nav id, so each app has at most one window.
+     Raising bumps a monotonic z counter; render maps z → a small capped
+     z-index inside the reserved window band (under dropdowns/modals). */
+  const WIN_DEFAULT_DIMS = {
+    tasks: { w: 600, h: 500 }, memory: { w: 560, h: 540 }, team: { w: 640, h: 520 },
+    calendar: { w: 660, h: 540 }, vault: { w: 720, h: 560 }, projects: { w: 760, h: 580 },
+    terminal: { w: 680, h: 440 }, visual: { w: 680, h: 500 },
+  };
+  const openOrRaise = useCallbackA((view) => {
+    if (!view || view === 'chat') return;
+    /* The office IS the desktop wallpaper — "opening" it means showing the
+       floor, i.e. minimizing every window, not nesting an office window
+       over the office. */
+    if (view === 'visual') {
+      setOpenWindows(prev => (prev || []).map(w => ({ ...w, minimized: true })));
+      return;
+    }
+    setWindowsEnabled(true);
+    setOpenWindows(prev => {
+      const list = prev || [];
+      const ztop = (winZRef.current = winZRef.current + 1);
+      if (list.some(w => w.view === view)) {
+        return list.map(w => w.view === view ? { ...w, minimized: false, z: ztop } : w);
+      }
+      const n = list.length;
+      const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+      const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+      const dim = WIN_DEFAULT_DIMS[view] || { w: 600, h: 500 };
+      const w = Math.min(dim.w, VW - 40), h = Math.min(dim.h, VH - 130);
+      const x = Math.max(16, Math.min(96 + n * 28, VW - w - 16));
+      const y = Math.max(16, Math.min(72 + n * 28, VH - h - 96));
+      return [...list, { view, geometry: { x, y, w, h }, z: ztop, minimized: false }];
+    });
+  }, [setOpenWindows, setWindowsEnabled]);
+  const focusWindow = useCallbackA((view) => {
+    const ztop = (winZRef.current = winZRef.current + 1);
+    setOpenWindows(prev => (prev || []).map(w => w.view === view ? { ...w, z: ztop } : w));
+  }, [setOpenWindows]);
+  const closeWindow = useCallbackA((view) => {
+    setOpenWindows(prev => (prev || []).filter(w => w.view !== view));
+  }, [setOpenWindows]);
+  const minimizeWindow = useCallbackA((view) => {
+    setOpenWindows(prev => (prev || []).map(w => w.view === view ? { ...w, minimized: true } : w));
+  }, [setOpenWindows]);
+  const setWindowGeometry = useCallbackA((view, geo) => {
+    setOpenWindows(prev => (prev || []).map(w => w.view === view ? { ...w, geometry: geo } : w));
+  }, [setOpenWindows]);
+  const toggleMaximize = useCallbackA((view) => {
+    setOpenWindows(prev => (prev || []).map(w => w.view === view ? { ...w, maximized: !w.maximized } : w));
+  }, [setOpenWindows]);
+  const minimizeAllWindows = useCallbackA(() => {
+    setOpenWindows(prev => (prev || []).map(w => ({ ...w, minimized: true })));
+  }, [setOpenWindows]);
+  /* Desktop mode is active only when enabled AND on a desktop viewport.
+     On phones the window manager is suppressed (mobile keeps its tab bar);
+     the mobile app-switcher is a separate, card-stack presentation. */
+  const desktopMode = windowsEnabled && typeof window !== 'undefined'
+    && !window.matchMedia('(max-width: 768px)').matches;
+  /* Mobile presents the same openWindows model as an iOS-style app switcher:
+     one app fullscreen at a time, a card stack to switch/close, a launcher
+     grid to open more. mobileApp = the view shown fullscreen (or null). */
+  const mobileMode = windowsEnabled && typeof window !== 'undefined'
+    && window.matchMedia('(max-width: 768px)').matches;
+  const [mobileApp, setMobileApp] = useStateA(null);
+  const [switcherOpen, setSwitcherOpen] = useStateA(false);
+  const openMobileApp = useCallbackA((view) => {
+    if (!view || view === 'chat') return;
+    openOrRaise(view);
+    setMobileApp(view);
+    setSwitcherOpen(false);
+  }, [openOrRaise]);
+
   /* Apply a workspace state object — only set fields that exist. */
   const applyWorkspace = useCallbackA((ws) => {
     if (!ws || !ws.state) return;
@@ -3536,9 +3807,11 @@ ${d.text}` : d.text,
     if (s.density != null)        setDensity(s.density);
     if (s.theme != null)          setTheme(s.theme);
     if (s.night != null)          setNight(s.night);
+    if (s.windowsEnabled != null)   setWindowsEnabled(s.windowsEnabled);
+    if (Array.isArray(s.openWindows)) setOpenWindows(s.openWindows);
     setActiveWorkspace(ws.id);
     if (window.cafresohqToast) window.cafresohqToast.success(`Workspace: ${ws.name}`);
-  }, [setActiveView, setRailCollapsed, setChatWinOpen, setDensity, setTheme, setNight, setActiveWorkspace]);
+  }, [setActiveView, setRailCollapsed, setChatWinOpen, setDensity, setTheme, setNight, setActiveWorkspace, setWindowsEnabled, setOpenWindows]);
 
   /* Capture current state into a new user workspace. */
   const saveCurrentWorkspace = useCallbackA(() => {
@@ -3547,12 +3820,12 @@ ${d.text}` : d.text,
     const id = 'ws.user.' + Date.now().toString(36);
     const ws = {
       id, name, builtin: false,
-      state: { activeView, railCollapsed, chatWinOpen, density, theme, night },
+      state: { activeView, railCollapsed, chatWinOpen, density, theme, night, windowsEnabled, openWindows },
     };
     setSavedWorkspaces(list => [...list, ws]);
     setActiveWorkspace(id);
     if (window.cafresohqToast) window.cafresohqToast.success(`Saved workspace "${name}"`);
-  }, [activeView, railCollapsed, chatWinOpen, density, theme, night, setSavedWorkspaces, setActiveWorkspace]);
+  }, [activeView, railCollapsed, chatWinOpen, density, theme, night, windowsEnabled, openWindows, setSavedWorkspaces, setActiveWorkspace]);
 
   const deleteWorkspace = useCallbackA((id) => {
     setSavedWorkspaces(list => list.filter(w => w.id !== id));
@@ -3630,6 +3903,7 @@ ${d.text}` : d.text,
       chatWinOpen={chatWinOpen} setChatWinOpen={setChatWinOpen}
       density={density} setDensity={setDensity}
       theme={theme} setTheme={setTheme}
+      windowsEnabled={windowsEnabled} setWindowsEnabled={setWindowsEnabled} onOpenWindow={openOrRaise}
       workspaces={[...BUILTIN_WORKSPACES, ...savedWorkspaces]}
       activeWorkspace={activeWorkspace}
       onApplyWorkspace={applyWorkspace}
@@ -3699,6 +3973,8 @@ ${d.text}` : d.text,
         setActive={setActiveView}
         collapsed={railCollapsed}
         onToggle={() => setRailCollapsed(v => !v)}
+        onLaunch={desktopMode ? openOrRaise : undefined}
+        runningViews={desktopMode ? (openWindows || []).filter(w => !w.minimized).map(w => w.view) : undefined}
       />
       {window.CafresoHQUI && window.CafresoHQUI.MobileTabBar ? (
         <window.CafresoHQUI.MobileTabBar
@@ -3826,7 +4102,12 @@ ${d.text}` : d.text,
               </div>
             )}
             {approvals.length > 0 && <ApprovalTray pending={approvals} onApprove={onApprove} onReject={onReject}/>}
-            {renderView()}
+            {/* In desktop mode the office floor is the wallpaper; apps open
+                as windows over it. A full-bleed .hq-desktop backdrop fills the
+                viewport so a wide screen reads as a desktop, not a panel. */}
+            {desktopMode
+              ? <div className="hq-desktop">{renderViewBody('visual')}</div>
+              : renderViewBody(activeView)}
           </div>
 
         </div>
@@ -3848,6 +4129,120 @@ ${d.text}` : d.text,
             }
             agents={agents}
           />
+        )}
+
+        {/* ── Window manager: open apps as draggable windows over the office
+            floor. Minimized windows stay MOUNTED (display:none) so their
+            internal state survives. z-order maps to a small capped band
+            under dropdowns/modals (--z-window = 300). ── */}
+        {desktopMode && (() => {
+          const sorted = [...(openWindows || [])].sort((a, b) => (a.z || 0) - (b.z || 0));
+          const topView = sorted.length ? sorted[sorted.length - 1].view : null;
+          return sorted.map((win, i) => {
+            const label = (VIEW_LABELS && VIEW_LABELS[win.view])
+              || ((NAV_ITEMS.find(n => n[0] === win.view) || [])[1]) || win.view;
+            return (
+              <div key={win.view} style={{ display: win.minimized ? 'none' : 'contents' }}>
+                <WindowFrame
+                  title={String(label).toUpperCase()}
+                  icon={<Ico kind={win.view} size={14} />}
+                  geometry={win.geometry}
+                  setGeometry={(g) => setWindowGeometry(win.view, g)}
+                  zIndex={'calc(var(--z-window) + ' + Math.min(i, 40) + ')'}
+                  focused={win.view === topView}
+                  maximized={!!win.maximized}
+                  onFocus={() => focusWindow(win.view)}
+                  onClose={() => closeWindow(win.view)}
+                  onMinimize={() => minimizeWindow(win.view)}
+                  onToggleMax={() => toggleMaximize(win.view)}
+                >
+                  {renderViewBody(win.view)}
+                </WindowFrame>
+              </div>
+            );
+          });
+        })()}
+
+        {/* ── Dock: centered macOS-style strip of pixel app icons. Running
+            apps show a dot; click opens-or-raises (and un-minimizes). ── */}
+        {desktopMode && (
+          <div className="hq-dock" role="toolbar" aria-label="Dock">
+            {NAV_ITEMS.filter(([k]) => k !== 'visual').map(([k, label]) => {
+              const win = (openWindows || []).find(w => w.view === k);
+              const cls = 'hq-dock-item' + (win ? (win.minimized ? ' minimized' : ' running') : '');
+              return (
+                <button key={k} className={cls} title={label} onClick={() => openOrRaise(k)}>
+                  <Ico kind={k} size={24} />
+                  <span className="hq-dock-dot" aria-hidden="true" />
+                </button>
+              );
+            })}
+            <span className="hq-dock-sep" aria-hidden="true" />
+            <button className="hq-dock-item" title="Show the office floor (minimize all)" onClick={minimizeAllWindows}>
+              <Ico kind="visual" size={24} />
+            </button>
+            <button className="hq-dock-item hq-dock-power" title="Exit desktop mode" onClick={() => setWindowsEnabled(false)}>
+              <span style={{ fontSize: 17, lineHeight: 1 }}>⏻</span>
+            </button>
+          </div>
+        )}
+
+        {/* ── Mobile app switcher (iOS-style): same openWindows model, one app
+            fullscreen + a card stack to switch/close + a launcher grid. ── */}
+        {mobileMode && (
+          <>
+            {mobileApp && (() => {
+              const label = (VIEW_LABELS && VIEW_LABELS[mobileApp])
+                || ((NAV_ITEMS.find(n => n[0] === mobileApp) || [])[1]) || mobileApp;
+              return (
+                <div className="hq-mobile-app">
+                  <div className="hq-mobile-bar">
+                    <Ico kind={mobileApp} size={16} />
+                    <span className="t">{String(label).toUpperCase()}</span>
+                    <span style={{ flex: 1 }} />
+                    <button title="App switcher" onClick={() => setSwitcherOpen(true)}>▦</button>
+                    <button title="Close app" onClick={() => { closeWindow(mobileApp); setMobileApp(null); }}>✕</button>
+                  </div>
+                  <div className="hq-mobile-body">{renderViewBody(mobileApp)}</div>
+                </div>
+              );
+            })()}
+            <button className="hq-mobile-fab" title="Apps" onClick={() => setSwitcherOpen(true)}>▦</button>
+            {switcherOpen && (
+              <div className="hq-switcher" onClick={() => setSwitcherOpen(false)}>
+                <div className="hq-switcher-inner" onClick={(e) => e.stopPropagation()}>
+                  <div className="hq-switcher-head">
+                    <span>Open apps</span>
+                    <button className="hq-switcher-x" onClick={() => setSwitcherOpen(false)}>✕</button>
+                  </div>
+                  <div className="hq-switcher-cards">
+                    {(openWindows || []).length === 0 && <div className="hq-switcher-empty">No open apps — launch one below.</div>}
+                    {(openWindows || []).map((w) => {
+                      const lbl = (VIEW_LABELS && VIEW_LABELS[w.view]) || ((NAV_ITEMS.find(n => n[0] === w.view) || [])[1]) || w.view;
+                      return (
+                        <div key={w.view} className="hq-switcher-card" onClick={() => openMobileApp(w.view)}>
+                          <button className="hq-switcher-card-x" title="Close"
+                            onClick={(e) => { e.stopPropagation(); closeWindow(w.view); if (mobileApp === w.view) setMobileApp(null); }}>✕</button>
+                          <Ico kind={w.view} size={26} />
+                          <span className="hq-switcher-card-t">{String(lbl).toUpperCase()}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hq-switcher-head"><span>Launch</span></div>
+                  <div className="hq-switcher-grid">
+                    {NAV_ITEMS.filter(([k]) => k !== 'visual').map(([k, label]) => (
+                      <button key={k} className="hq-switcher-launch" onClick={() => openMobileApp(k)}>
+                        <Ico kind={k} size={22} />
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button className="hq-switcher-exit" onClick={() => { setSwitcherOpen(false); setMobileApp(null); setWindowsEnabled(false); }}>Exit desktop mode</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

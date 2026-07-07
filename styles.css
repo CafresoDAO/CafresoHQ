@@ -1794,6 +1794,10 @@ body.night .rail-toggle { background: var(--paper); color: var(--ink); }
 .main {
   display: grid;
   grid-template-rows: 52px minmax(0,1fr) auto;
+  /* One explicit column: without this the implicit `auto` track sizes to the
+     topbar's max-content (every status chip on one line) and pushes the whole
+     page into horizontal scroll on ≤1500px screens. */
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -1970,7 +1974,14 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--ink-2);
+  /* When chips outgrow the bar, scroll inside the strip (scrollbar hidden)
+     instead of contributing to the page's minimum width. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.topbar .status::-webkit-scrollbar { display: none; }
+.topbar .status > * { flex-shrink: 0; }
 .topbar .status .chip {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 10px;
@@ -8881,3 +8892,208 @@ body.night .meeting-table { filter: brightness(0.75); }
 .icp-in { width: 66px; padding: 3px 6px; font: inherit; font-size: 11px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper, #fff); color: var(--ink, #241a0e); }
 .icp-in:focus-visible { outline: 2px solid var(--accent-sun); outline-offset: 1px; }
 .icp-bal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; line-height: 1.6; }
+
+/* ==========================================================================
+   Desktop window manager — "Living Floor" OS mode
+   Generic app windows (WindowFrame), a centered macOS-style dock, and the
+   office floor acting as the desktop wallpaper. Most window geometry is set
+   inline by WindowFrame; these rules add focus affordance, dock chrome, and
+   in-window sizing fixes for views that otherwise pin to the viewport.
+   ========================================================================== */
+/* Full-bleed desktop backdrop: themed wallpaper that fills the viewport so
+   the office floor reads as a desktop on wide screens (not a top-left panel).
+   The office scene sits on top, centered, as the "rug". */
+.hq-desktop {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  overflow: auto;
+  background:
+    radial-gradient(1200px 620px at 72% -12%, color-mix(in srgb, var(--accent-teal, #2bb3a3) 12%, transparent), transparent 60%),
+    radial-gradient(940px 520px at 8% 112%, color-mix(in srgb, var(--accent-rose, #e89b9b) 10%, transparent), transparent 60%),
+    var(--bg, var(--paper));
+}
+.hq-desktop::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.45;
+}
+.hq-desktop > .office-wrap { position: relative; z-index: 1; }
+
+.hq-window {
+  transition: box-shadow 140ms ease, border-color 140ms ease;
+}
+.hq-window.focused { border-color: var(--accent-teal, var(--ink)); }
+.hq-window:not(.focused) { filter: saturate(0.97); }
+.hq-window-titlebar:active { cursor: grabbing; }
+
+/* Views that hard-pin height to the viewport overflow inside a window.
+   Inside a window body, let them fill the window instead of the screen. */
+.hq-window-body { background: var(--paper); }
+.hq-window-body > .view-area,
+.hq-window-body > .office-wrap,
+.hq-window-body > .view-projects,
+.hq-window-body > .view-vault,
+.hq-window-body .view-projects,
+.hq-window-body .view-vault.unified {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto;
+}
+
+/* ---- Dock ---- */
+.hq-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 345; /* above the window band (300–340) so the dock stays clickable,
+                   below --z-dropdown (350) / --z-modal (400) */
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.26);
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+}
+.hq-dock-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px; height: 42px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 130ms cubic-bezier(.2,.8,.2,1), background 130ms ease, border-color 130ms ease;
+}
+.hq-dock-item:hover {
+  background: var(--paper-2);
+  border-color: var(--rule);
+  transform: translateY(-6px) scale(1.14);
+}
+.hq-dock-item:active { transform: translateY(-2px) scale(1.04); }
+.hq-dock-power { color: var(--accent-rose, var(--ink)); }
+.hq-dock-sep {
+  width: 2px; height: 30px;
+  align-self: center;
+  margin: 0 2px;
+  background: var(--rule);
+  border-radius: 2px;
+}
+/* Running / minimized indicator dot under the icon. */
+.hq-dock-dot {
+  position: absolute;
+  bottom: 2px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 130ms ease;
+}
+.hq-dock-item.running .hq-dock-dot { background: var(--accent-teal, var(--ink)); }
+.hq-dock-item.minimized .hq-dock-dot { background: var(--ink-3, var(--rule)); }
+
+/* Rail running-app marker in desktop mode (rail acts as a launcher). */
+.rail nav a.running {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-teal, var(--ink)) 16%, transparent);
+}
+
+body.night .hq-dock { background: color-mix(in srgb, var(--paper) 70%, transparent); }
+body.night .hq-window.focused { border-color: var(--accent-teal); }
+
+/* ---- Mobile app switcher (iOS-style) ---- */
+.hq-mobile-app {
+  position: fixed; inset: 0;
+  z-index: 320; /* over the mobile shell, under dropdowns (350) */
+  background: var(--paper);
+  display: flex; flex-direction: column;
+}
+.hq-mobile-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; min-height: 48px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper-2); flex-shrink: 0;
+}
+.hq-mobile-bar .t { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--ink); }
+.hq-mobile-bar button {
+  background: transparent; border: 1px solid var(--rule); border-radius: 6px;
+  color: var(--ink); cursor: pointer; font-size: 14px; padding: 4px 10px;
+}
+.hq-mobile-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+
+.hq-mobile-fab {
+  position: fixed; right: 14px; bottom: 76px; /* above MobileTabBar */
+  z-index: 321;
+  width: 50px; height: 50px; border-radius: 50%;
+  background: var(--accent-sun, var(--paper)); color: var(--ink);
+  border: 2px solid var(--ink); cursor: pointer;
+  font-size: 20px; box-shadow: 0 8px 22px rgba(0,0,0,0.3);
+}
+
+.hq-switcher {
+  position: fixed; inset: 0; z-index: 360; /* above everything mobile */
+  background: rgba(0,0,0,0.55);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end;
+}
+.hq-switcher-inner {
+  width: 100%; max-height: 86vh; overflow: auto;
+  background: var(--paper); border-top: 2px solid var(--ink);
+  border-radius: 16px 16px 0 0; padding: 14px 14px 20px;
+  box-shadow: 0 -12px 36px rgba(0,0,0,0.4);
+}
+.hq-switcher-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  color: var(--ink-2); text-transform: uppercase; margin: 6px 2px 10px;
+}
+.hq-switcher-x, .hq-switcher-card-x {
+  background: transparent; border: 1px solid var(--rule); border-radius: 6px;
+  color: var(--ink); cursor: pointer; font-size: 12px; padding: 2px 8px;
+}
+.hq-switcher-empty { color: var(--ink-3); font-size: 13px; padding: 8px 2px 14px; }
+.hq-switcher-cards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.hq-switcher-card {
+  position: relative; flex: 0 0 auto;
+  width: 132px; height: 96px;
+  border: 2px solid var(--ink); border-radius: 12px;
+  background: var(--paper-2); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.hq-switcher-card-t { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: var(--ink); }
+.hq-switcher-card-x { position: absolute; top: 4px; right: 4px; padding: 0 6px; line-height: 18px; }
+.hq-switcher-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 4px;
+}
+.hq-switcher-launch {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 4px; border: 1px solid var(--rule); border-radius: 12px;
+  background: var(--paper-2); color: var(--ink); cursor: pointer;
+  font-size: 10px; font-weight: 600;
+}
+.hq-switcher-exit {
+  width: 100%; margin-top: 16px; padding: 10px;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: transparent; color: var(--accent-rose, var(--ink)); cursor: pointer;
+  font-size: 12px; font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-dock-item, .hq-window { transition: none; }
+  .hq-dock-item:hover { transform: none; background: var(--paper-2); }
+}
