@@ -39,6 +39,29 @@ export interface HttpResponse {
   'streaming_strategy' : [] | [null],
   'status_code' : number,
 }
+export interface MissionSchedule {
+  'id' : string,
+  'durationSecs' : bigint,
+  'topic' : string,
+  'lastWakeResult' : string,
+  'agentId' : string,
+  'recurrence' : string,
+  'enabled' : boolean,
+  'lastWakeAt' : bigint,
+  'updatedAt' : bigint,
+  'intervalSecs' : bigint,
+  'nextRunAt' : bigint,
+}
+export interface OutcallHeader { 'value' : string, 'name' : string }
+export interface OutcallResponse {
+  'status' : bigint,
+  'body' : Uint8Array | number[],
+  'headers' : Array<OutcallHeader>,
+}
+export interface OutcallTransformArgs {
+  'context' : Uint8Array | number[],
+  'response' : OutcallResponse,
+}
 export interface Payout {
   'ts' : bigint,
   'key' : string,
@@ -120,6 +143,7 @@ export interface _SERVICE {
   'cycle_balance' : ActorMethod<[], bigint>,
   'deleteAgentWallet' : ActorMethod<[string], boolean>,
   'deleteHqDoc' : ActorMethod<[string], boolean>,
+  'deleteMissionSchedule' : ActorMethod<[string], boolean>,
   'deleteSalary' : ActorMethod<[string], boolean>,
   'deleteSite' : ActorMethod<[string], bigint>,
   'deleteVault' : ActorMethod<[string], boolean>,
@@ -134,6 +158,7 @@ export interface _SERVICE {
   'http_request_update' : ActorMethod<[HttpRequest], HttpResponse>,
   'listAgentWallets' : ActorMethod<[], Array<AgentWallet>>,
   'listHqDocs' : ActorMethod<[], Array<DocSummary>>,
+  'listMissionSchedules' : ActorMethod<[], Array<MissionSchedule>>,
   'listMySites' : ActorMethod<[], Array<SiteSummary>>,
   'listPayouts' : ActorMethod<[], Array<Payout>>,
   'listSalaries' : ActorMethod<[], Array<Salary>>,
@@ -150,6 +175,10 @@ export interface _SERVICE {
   'putHqDoc' : ActorMethod<
     [string, Uint8Array | number[], Uint8Array | number[], bigint],
     PutResult
+  >,
+  'putMissionSchedule' : ActorMethod<
+    [string, string, string, string, bigint, bigint, boolean, bigint],
+    undefined
   >,
   'putSalary' : ActorMethod<
     [
@@ -189,7 +218,13 @@ export interface _SERVICE {
   'setPayrollPaused' : ActorMethod<[boolean], undefined>,
   'setPlan' : ActorMethod<[string], boolean>,
   'setPlanSecret' : ActorMethod<[string], undefined>,
+  'setWakeConfig' : ActorMethod<[boolean, string, string], undefined>,
   'spendPausedAll' : ActorMethod<[], boolean>,
+  'wakeStatus' : ActorMethod<
+    [],
+    { 'secretSet' : boolean, 'enabled' : boolean, 'urlSet' : boolean }
+  >,
+  'wakeTransform' : ActorMethod<[OutcallTransformArgs], OutcallResponse>,
 }
 export declare const idlFactory: IDL.InterfaceFactory;
 export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

@@ -13,12 +13,15 @@
 //   Sprint-2 exception: the PAYROLL timer below makes OUTBOUND calls to ICRC-2
 //   ledgers (icrc2_transfer_from) — but only under an allowance the user signed
 //   (icrc2_approve, spender = this canister), which is the hard spending ceiling.
+//   Sprint-4 exception: the WAKE timer makes an HMAC-signed HTTPS outcall to the
+//   fleet gateway carrying only {principal, schedule ids} — and only when the
+//   plan admin has enabled wake config (ships dark: off by default).
 //
 // Storage uses mo:base/OrderedMap held in `stable` vars. NOTE: this scaffold
 // keeps data on the heap; before scaling past a few GB of aggregate vault,
 // migrate the vault chunk store to mo:stable-structures (stable memory) per the
 // design doc §5. `system func postupgrade` exists ONLY to re-arm the payroll
-// timer — timers never survive an upgrade.
+// and wake timers — timers never survive an upgrade.
 // ──────────────────────────────────────────────────────────────────────────
 
 import Principal "mo:base/Principal";
@@ -813,8 +816,10 @@ actor CafresoHQState {
     payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, scanPayroll);
   };
   // Fresh install: arm at init. Upgrades: postupgrade (init does not re-run).
+  // Re-arms BOTH recurring timers (payroll + night-shift wake, defined below);
+  // timers never survive an upgrade and Motoko allows one postupgrade per actor.
   armPayrollTimer<system>();
-  system func postupgrade() { armPayrollTimer<system>() };
+  system func postupgrade() { armPayrollTimer<system>(); armWakeTimer<system>() };
 
   // ── Payroll public API (caller-keyed, like everything else here) ───────────
   public shared (msg) func putSalary(
@@ -1120,6 +1125,235 @@ actor CafresoHQState {
       case (?res) res;
       case null serveSite(req.url);
     };
+  };
+
+  // ── Night Shift chain wake (Sprint 4 MVP-2 — ships DARK, flag off) ─────────
+  // The browser MIRRORS its serve.py night-shift schedules here so a canister
+  // timer can wake a STOPPED fleet container in time for its mission: scan due
+  // mirrors → one HTTPS outcall POST <wakeGatewayUrl> per user with body
+  // {"user","ids","ts"} and X-Wake-Signature = hex(hmac-sha256(secret, body)).
+  // The container's serve.py stays the source of truth for WHAT runs — a wake
+  // only means "boot the container" (fleet-api verifies the HMAC and dedups).
+  // The outcall carries nothing but the caller's principal + schedule ids.
+  // Entirely inert until the plan admin sets a gateway URL + secret AND flips
+  // enabled — the fleet-api half is blocked on gateway access, so this ships
+  // dark by design.
+
+  public type MissionSchedule = {
+    id : Text;              // serve.py schedule id (nsh_*)
+    agentId : Text;
+    topic : Text;
+    recurrence : Text;      // "once" | "daily"
+    durationSecs : Nat;
+    intervalSecs : Nat;
+    enabled : Bool;
+    nextRunAt : Int;        // ns epoch — the shell converts serve.py ms
+    lastWakeAt : Int;       // ns; 0 = never woken
+    lastWakeResult : Text;  // "" | "sent" | "skipped:stale" | "error:…"
+    updatedAt : Int;
+  };
+
+  type MissionMap = OrderedMap.Map<Text, MissionSchedule>;
+  stable var missionSchedules : OrderedMap.Map<Principal, MissionMap> = pOps.empty<MissionMap>();
+  // Wake config — planAdmin-gated; all-empty defaults = feature disabled.
+  stable var wakeEnabled : Bool = false;
+  stable var wakeGatewayUrl : Text = "";
+  stable var wakeSecret : Blob = "";
+
+  let WAKE_SCAN_SECS : Nat = 120;
+  let MAX_MISSION_SCHEDULES : Nat = 20;                // mirrors serve.py cap
+  let WAKE_STALE_NS : Int = 6 * 3600 * 1_000_000_000;  // roll, don't wake, past this
+  let DAY_NS : Int = 24 * 3600 * 1_000_000_000;
+  let WAKE_OUTCALL_CYCLES : Nat = 300_000_000;         // unspent cycles refund
+
+  func missionsOf(p : Principal) : MissionMap {
+    switch (pOps.get(missionSchedules, p)) { case (?m) m; case null tOps.empty<MissionSchedule>() };
+  };
+  // Same re-read discipline as patchSalary — scanWake spans awaits.
+  func patchMission(user : Principal, id : Text, f : MissionSchedule -> MissionSchedule) {
+    let m = missionsOf(user);
+    switch (tOps.get(m, id)) {
+      case (?s) { missionSchedules := pOps.put(missionSchedules, user, tOps.put(m, id, f(s))) };
+      case null {};
+    };
+  };
+  // Roll a fired/stale mirror forward so it can't re-trigger every scan:
+  // once → disabled (serve.py does the same); daily → +24h steps past now.
+  func rollMission(s : MissionSchedule) : MissionSchedule {
+    if (s.recurrence == "daily") {
+      var t = s.nextRunAt;
+      while (t <= now()) { t += DAY_NS };
+      { s with nextRunAt = t; updatedAt = now() };
+    } else {
+      { s with enabled = false; updatedAt = now() };
+    };
+  };
+
+  // HTTPS outcall plumbing (IC management canister).
+  type OutcallHeader = { name : Text; value : Text };
+  type OutcallResponse = { status : Nat; headers : [OutcallHeader]; body : Blob };
+  type OutcallTransformArgs = { response : OutcallResponse; context : Blob };
+  type OutcallArgs = {
+    url : Text;
+    max_response_bytes : ?Nat64;
+    headers : [OutcallHeader];
+    body : ?Blob;
+    method : { #get; #post; #head };
+    transform : ?{ function : shared query OutcallTransformArgs -> async OutcallResponse; context : Blob };
+  };
+  let mgmt : actor { http_request : OutcallArgs -> async OutcallResponse } = actor ("aaaaa-aa");
+
+  // Strip headers/body so replicas reach consensus on the status code alone.
+  public query func wakeTransform(args : OutcallTransformArgs) : async OutcallResponse {
+    { status = args.response.status; headers = []; body = Blob.fromArray([]) };
+  };
+
+  func sendWake(user : Principal, ids : [Text]) : async Nat {
+    // ids are validated [A-Za-z0-9_-] at put time, so raw embedding is JSON-safe.
+    var idsJson = "";
+    for (id in ids.vals()) { idsJson := idsJson # (if (idsJson == "") "" else ",") # "\"" # id # "\"" };
+    let body = "{\"user\":\"" # Principal.toText(user) # "\",\"ids\":[" # idsJson # "],\"ts\":" # Int.toText(now()) # "}";
+    let bodyBlob = Text.encodeUtf8(body);
+    let sig = Sha256.toHex(Sha256.hmac(Blob.toArray(wakeSecret), Blob.toArray(bodyBlob)));
+    Cycles.add<system>(WAKE_OUTCALL_CYCLES);
+    let res = await mgmt.http_request({
+      url = wakeGatewayUrl;
+      max_response_bytes = ?1024;
+      headers = [
+        { name = "Content-Type"; value = "application/json" },
+        { name = "X-Wake-Signature"; value = sig },
+      ];
+      body = ?bodyBlob;
+      method = #post;
+      transform = ?{ function = wakeTransform; context = Blob.fromArray([]) };
+    });
+    res.status;
+  };
+
+  func scanWake() : async () {
+    if (not wakeEnabled or wakeGatewayUrl == "" or wakeSecret.size() == 0) { return };
+    // Snapshot due ids per user; every write below re-reads live state.
+    let due = Buffer.Buffer<(Principal, [Text])>(4);
+    for ((user, m) in pOps.entries(missionSchedules)) {
+      let fresh = Buffer.Buffer<Text>(2);
+      for ((id, s) in tOps.entries(m)) {
+        if (s.enabled and s.nextRunAt <= now()) {
+          if (now() - s.nextRunAt > WAKE_STALE_NS) {
+            // Ancient mirror (wake was off, or the user gone for days): roll silently.
+            patchMission(user, id, func(x) { { rollMission(x) with lastWakeResult = "skipped:stale" } });
+          } else { fresh.add(id) };
+        };
+      };
+      if (fresh.size() > 0) { due.add((user, Buffer.toArray(fresh))) };
+    };
+    for ((user, ids) in due.vals()) {
+      // Advance mirrors BEFORE the outcall (payroll's reentrancy discipline):
+      // worst case on failure is a MISSED wake, never a wake storm.
+      for (id in ids.vals()) {
+        patchMission(user, id, func(x) { { rollMission(x) with lastWakeAt = now() } });
+      };
+      try {
+        let status = await sendWake(user, ids);
+        let tag = if (status >= 200 and status < 300) { "sent" } else { "error:http" # Nat.toText(status) };
+        for (id in ids.vals()) { patchMission(user, id, func(x) { { x with lastWakeResult = tag } }) };
+      } catch (_e) {
+        for (id in ids.vals()) { patchMission(user, id, func(x) { { x with lastWakeResult = "error:outcall" } }) };
+      };
+    };
+  };
+
+  // Idempotent arming, same shape as the payroll timer; re-armed in postupgrade.
+  var wakeTimerId : ?Timer.TimerId = null;
+  func armWakeTimer<system>() {
+    switch (wakeTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    wakeTimerId := ?Timer.recurringTimer<system>(#seconds WAKE_SCAN_SECS, scanWake);
+  };
+  armWakeTimer<system>();
+
+  func validMissionId(id : Text) : Bool {
+    if (id.size() == 0 or id.size() > 64) { return false };
+    for (c in id.chars()) {
+      let ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+        or (c >= '0' and c <= '9') or c == '_' or c == '-';
+      if (not ok) { return false };
+    };
+    true;
+  };
+
+  // ── Night Shift mirror public API (caller-keyed) ────────────────────────────
+  public shared (msg) func putMissionSchedule(
+    id : Text, agentId : Text, topic : Text, recurrence : Text,
+    durationSecs : Nat, intervalSecs : Nat, enabled : Bool, nextRunAt : Int,
+  ) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    if (not validMissionId(id)) { throw Error.reject("bad schedule id") };
+    if (agentId.size() == 0 or agentId.size() > 64) { throw Error.reject("bad agentId") };
+    if (topic.size() == 0 or topic.size() > 500) { throw Error.reject("bad topic") };
+    if (recurrence != "once" and recurrence != "daily") { throw Error.reject("recurrence must be once|daily") };
+    if (durationSecs < 60 or durationSecs > 4 * 3600) { throw Error.reject("bad duration") };
+    if (intervalSecs < 60 or intervalSecs > durationSecs) { throw Error.reject("bad interval") };
+    if (nextRunAt < 0) { throw Error.reject("bad nextRunAt") };
+    let m = missionsOf(caller);
+    let prev = tOps.get(m, id);
+    switch (prev) {
+      case null { if (tOps.size(m) >= MAX_MISSION_SCHEDULES) { throw Error.reject("too many schedules (max 20)") } };
+      case (?_) {};
+    };
+    let s : MissionSchedule = {
+      id; agentId; topic; recurrence; durationSecs; intervalSecs; enabled; nextRunAt;
+      lastWakeAt = switch (prev) { case (?p) p.lastWakeAt; case null 0 };
+      lastWakeResult = switch (prev) { case (?p) p.lastWakeResult; case null "" };
+      updatedAt = now();
+    };
+    missionSchedules := pOps.put(missionSchedules, caller, tOps.put(m, id, s));
+    armWakeTimer<system>();
+  };
+
+  public shared query (msg) func listMissionSchedules() : async [MissionSchedule] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    Iter.toArray(tOps.vals(missionsOf(msg.caller)));
+  };
+
+  public shared (msg) func deleteMissionSchedule(id : Text) : async Bool {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let m = missionsOf(caller);
+    switch (tOps.get(m, id)) {
+      case null { false };
+      case (?_) { missionSchedules := pOps.put(missionSchedules, caller, tOps.delete(m, id)); true };
+    };
+  };
+
+  /// Admin-only wake switch (claim-or-match on the same planAdmin identity).
+  /// secretHex = "" keeps the existing secret. URL must be https to enable.
+  public shared (msg) func setWakeConfig(enabled : Bool, gatewayUrl : Text, secretHex : Text) : async () {
+    let caller = msg.caller;
+    switch (planAdmin) {
+      case null { planAdmin := ?caller };   // first caller (deployer) claims admin
+      case (?a) { if (caller != a) { throw Error.reject("only the plan admin may set wake config") } };
+    };
+    if (secretHex != "") {
+      switch (hexToBytes(secretHex)) {
+        case null { throw Error.reject("secret must be valid hex") };
+        case (?bytes) {
+          if (bytes.size() < 16) { throw Error.reject("secret too short (>= 16 bytes)") };
+          wakeSecret := Blob.fromArray(bytes);
+        };
+      };
+    };
+    if (enabled) {
+      if (not Text.startsWith(gatewayUrl, #text "https://")) { throw Error.reject("gateway url must be https") };
+      if (wakeSecret.size() == 0) { throw Error.reject("set a secret before enabling") };
+    };
+    wakeGatewayUrl := gatewayUrl;
+    wakeEnabled := enabled;
+    if (enabled) { armWakeTimer<system>() };
+  };
+
+  /// Public visibility for `hq night chain` — config presence only, no secrets.
+  public query func wakeStatus() : async { enabled : Bool; urlSet : Bool; secretSet : Bool } {
+    { enabled = wakeEnabled; urlSet = wakeGatewayUrl != ""; secretSet = wakeSecret.size() > 0 };
   };
 
   // ── Diagnostics ────────────────────────────────────────────────────────────

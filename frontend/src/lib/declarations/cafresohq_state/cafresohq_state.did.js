@@ -51,6 +51,19 @@ export const idlFactory = ({ IDL }) => {
     'version' : IDL.Nat,
     'updatedAt' : IDL.Int,
   });
+  const MissionSchedule = IDL.Record({
+    'id' : IDL.Text,
+    'durationSecs' : IDL.Nat,
+    'topic' : IDL.Text,
+    'lastWakeResult' : IDL.Text,
+    'agentId' : IDL.Text,
+    'recurrence' : IDL.Text,
+    'enabled' : IDL.Bool,
+    'lastWakeAt' : IDL.Int,
+    'updatedAt' : IDL.Int,
+    'intervalSecs' : IDL.Nat,
+    'nextRunAt' : IDL.Int,
+  });
   const SiteSummary = IDL.Record({
     'fileCount' : IDL.Nat,
     'updatedAt' : IDL.Int,
@@ -116,10 +129,21 @@ export const idlFactory = ({ IDL }) => {
     'noWallet' : IDL.Null,
     'paused' : IDL.Null,
   });
+  const OutcallHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
+  const OutcallResponse = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(OutcallHeader),
+  });
+  const OutcallTransformArgs = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'response' : OutcallResponse,
+  });
   return IDL.Service({
     'cycle_balance' : IDL.Func([], [IDL.Nat], ['query']),
     'deleteAgentWallet' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteHqDoc' : IDL.Func([IDL.Text], [IDL.Bool], []),
+    'deleteMissionSchedule' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteSalary' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'deleteSite' : IDL.Func([IDL.Text], [IDL.Nat], []),
     'deleteVault' : IDL.Func([IDL.Text], [IDL.Bool], []),
@@ -142,6 +166,11 @@ export const idlFactory = ({ IDL }) => {
     'http_request_update' : IDL.Func([HttpRequest], [HttpResponse], []),
     'listAgentWallets' : IDL.Func([], [IDL.Vec(AgentWallet)], ['query']),
     'listHqDocs' : IDL.Func([], [IDL.Vec(DocSummary)], ['query']),
+    'listMissionSchedules' : IDL.Func(
+        [],
+        [IDL.Vec(MissionSchedule)],
+        ['query'],
+      ),
     'listMySites' : IDL.Func([], [IDL.Vec(SiteSummary)], ['query']),
     'listPayouts' : IDL.Func([], [IDL.Vec(Payout)], ['query']),
     'listSalaries' : IDL.Func([], [IDL.Vec(Salary)], ['query']),
@@ -159,6 +188,20 @@ export const idlFactory = ({ IDL }) => {
     'putHqDoc' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8), IDL.Vec(IDL.Nat8), IDL.Nat],
         [PutResult],
+        [],
+      ),
+    'putMissionSchedule' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Bool,
+          IDL.Int,
+        ],
+        [],
         [],
       ),
     'putSalary' : IDL.Func(
@@ -204,7 +247,24 @@ export const idlFactory = ({ IDL }) => {
     'setPayrollPaused' : IDL.Func([IDL.Bool], [], []),
     'setPlan' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'setPlanSecret' : IDL.Func([IDL.Text], [], []),
+    'setWakeConfig' : IDL.Func([IDL.Bool, IDL.Text, IDL.Text], [], []),
     'spendPausedAll' : IDL.Func([], [IDL.Bool], ['query']),
+    'wakeStatus' : IDL.Func(
+        [],
+        [
+          IDL.Record({
+            'secretSet' : IDL.Bool,
+            'enabled' : IDL.Bool,
+            'urlSet' : IDL.Bool,
+          }),
+        ],
+        ['query'],
+      ),
+    'wakeTransform' : IDL.Func(
+        [OutcallTransformArgs],
+        [OutcallResponse],
+        ['query'],
+      ),
   });
 };
 export const init = ({ IDL }) => { return []; };

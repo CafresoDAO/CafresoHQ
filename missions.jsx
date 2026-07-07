@@ -498,6 +498,45 @@ function NightShiftSection({ agents }) {
   };
   useEMission(() => { load(); const iv = setInterval(load, 15000); return () => clearInterval(iv); }, []);
 
+  /* Best-effort on-chain wake mirror (Sprint 4 MVP-2, ships dark): a row in
+     cafresohq_state lets its timer WAKE a stopped fleet container in time for
+     this schedule. serve.py stays the source of truth for what actually runs;
+     mirror failures must never block or fail scheduling. */
+  const chainMissions = () => {
+    try {
+      const c = window.CafresoHQChain;
+      return c && c.isAvailable() ? c.missions : null;
+    } catch (_e) { return null; }
+  };
+  const mirrorPut = (s) => {
+    const cm = chainMissions();
+    if (!cm || !s) return;
+    cm.put({
+      id: s.id, agentId: s.agentId, topic: s.topic, recurrence: s.recurrence,
+      durationSecs: Math.round((s.durationMs || 0) / 1000),
+      intervalSecs: Math.round((s.intervalMs || 0) / 1000),
+      enabled: s.enabled !== false, nextRunAtMs: s.nextRunAt,
+    }).catch(() => {});
+  };
+  const mirrorRemove = (id) => {
+    const cm = chainMissions();
+    if (cm) cm.remove(id).catch(() => {});
+  };
+  /* One-shot mirror hygiene per mount: drop chain rows whose schedule no
+     longer exists locally (canceled elsewhere / completed once-runs). */
+  useEMission(() => {
+    const t = setTimeout(async () => {
+      const cm = chainMissions();
+      if (!cm) return;
+      try {
+        const [local, mirrored] = await Promise.all([nsFetch('/missions/scheduled'), cm.list()]);
+        const ids = new Set((local.schedules || []).map(s => s.id));
+        for (const m of mirrored) { if (!ids.has(m.id)) cm.remove(m.id).catch(() => {}); }
+      } catch (_e) {}
+    }, 3000);
+    return () => clearTimeout(t);
+  }, []);
+
   const schedule = async (startAtMs) => {
     const ag = agents.find(a => a.id === agentId);
     if (!topic.trim() || !ag) { setMsg('topic + agent required'); return; }
@@ -512,13 +551,19 @@ function NightShiftSection({ agents }) {
         }),
       });
       if (res.error) { setMsg(res.error); return; }
+      // Mirror future/recurring schedules only — a RUN NOW (startAt 0) proves
+      // the container is already awake, so a chain wake would be wasted.
+      if (recurrence === 'daily' || startAtMs > Date.now() + 60000) mirrorPut(res.schedule);
       setTopic(''); setMsg('Scheduled 🌙 — runs even with this tab closed.');
       load();
     } catch (e) { setMsg(String(e.message || e)); }
   };
   const cancel = async (id) => {
-    try { await fetch(nsBase() + `/missions/scheduled/${id}`, { method: 'DELETE', credentials: 'include' }); load(); }
-    catch (_e) {}
+    try {
+      await fetch(nsBase() + `/missions/scheduled/${id}`, { method: 'DELETE', credentials: 'include' });
+      mirrorRemove(id);
+      load();
+    } catch (_e) {}
   };
 
   const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';

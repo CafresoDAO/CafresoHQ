@@ -19,6 +19,7 @@
   import { sitesConfigured, publishSiteToCanister, listMySites } from '$lib/api/sitesActor.js';
   import { listHqDocs, pushHqDoc } from '$lib/api/stateSync.js';
   import { putWorkReceipt, listWorkReceipts } from '$lib/api/receipts.js';
+  import { putMissionSchedule, listMissionSchedules, deleteMissionSchedule, wakeStatus } from '$lib/api/nightMissions.js';
   import { getKeychain, putKeychain } from '$lib/api/keychain.js';
   import { getStateActor, stateCanisterConfigured, stateCanisterId } from '$lib/api/stateActor.js';
   import {
@@ -323,6 +324,27 @@
         }
         case 'chain:receipt:list':
           reply({ type: 'chain:receipt:list:response', receipts: await listWorkReceipts(p) });
+          break;
+
+        // ── Night Shift wake mirror (Sprint 4 MVP-2) — unsigned config rows;
+        // the canister-side outcall is planAdmin-gated and ships dark.
+        case 'chain:missions:put': {
+          const ok = await putMissionSchedule({
+            id: d.id, agentId: d.agentId, topic: d.topic, recurrence: d.recurrence,
+            durationSecs: d.durationSecs, intervalSecs: d.intervalSecs,
+            enabled: d.enabled !== false, nextRunAtMs: d.nextRunAtMs
+          });
+          reply({ type: 'chain:missions:put:response', id: d.id, ok: !!ok });
+          break;
+        }
+        case 'chain:missions:list':
+          reply({ type: 'chain:missions:list:response', schedules: await listMissionSchedules() });
+          break;
+        case 'chain:missions:delete':
+          reply({ type: 'chain:missions:delete:response', id: d.id, ok: await deleteMissionSchedule(d.id) });
+          break;
+        case 'chain:missions:wake-status':
+          reply({ type: 'chain:missions:wake-status:response', ...(await wakeStatus()) });
           break;
         case 'chain:status': {
           let cycles = null;
