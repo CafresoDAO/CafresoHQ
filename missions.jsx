@@ -448,6 +448,180 @@ function useMissionRunner(missions, setMissions, ctx) {
 }
 
 /* ==========================================================================
+   Night Shift (Sprint 4 MVP-1) — server-side scheduled missions.
+
+   Unlike the browser loop above, these run inside serve.py (night_runner.py)
+   on a restricted tool subset (vault/read/search/fetch — no wallet, publish,
+   or shell), so they keep working after the tab closes. This section is the
+   scheduling UI: create schedules, list them, show the run history the
+   Gazette also ingests.
+   ========================================================================== */
+const nsBase = () => {
+  try { return window.CafresoHQClient.backendBase() || ''; } catch (_e) { return ''; }
+};
+const nsFetch = (path, opts) =>
+  fetch(nsBase() + path, { credentials: 'include', ...(opts || {}) }).then(r => r.json());
+
+/* Next occurrence of 2:00 AM local — the canonical "tonight". */
+function nextTwoAm() {
+  const d = new Date();
+  d.setHours(2, 0, 0, 0);
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+  return d;
+}
+const toLocalInput = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function NightShiftSection({ agents }) {
+  const [schedules, setSchedules] = useSM([]);
+  const [running, setRunning] = useSM([]);
+  const [runs, setRuns] = useSM([]);
+  const [reachable, setReachable] = useSM(true);
+  const [topic, setTopic] = useSM('');
+  const [agentId, setAgentId] = useSM(() => (agents.find(a => (a.tools || []).includes('vault')) || agents[0] || {}).id || '');
+  const [folder, setFolder] = useSM('');
+  const [startStr, setStartStr] = useSM(() => toLocalInput(nextTwoAm()));
+  const [recurrence, setRecurrence] = useSM('once');
+  const [duration, setDuration] = useSM(1 * HOUR);
+  const [interval, setNsInterval] = useSM(10 * MIN);
+  const [msg, setMsg] = useSM('');
+
+  const load = async () => {
+    try {
+      const [s, r] = await Promise.all([nsFetch('/missions/scheduled'), nsFetch('/missions/runs')]);
+      setSchedules(s.schedules || []); setRunning(s.running || []);
+      setRuns((r.runs || []).slice(-5).reverse());
+      setReachable(true);
+    } catch (_e) { setReachable(false); }
+  };
+  useEMission(() => { load(); const iv = setInterval(load, 15000); return () => clearInterval(iv); }, []);
+
+  const schedule = async (startAtMs) => {
+    const ag = agents.find(a => a.id === agentId);
+    if (!topic.trim() || !ag) { setMsg('topic + agent required'); return; }
+    setMsg('');
+    try {
+      const res = await nsFetch('/missions/schedule', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          topic: topic.trim(), agentId: ag.id, agentName: ag.name,
+          vaultFolder: folder.trim() || `Research/${topicSlug(topic)}`,
+          startAt: startAtMs, recurrence, durationMs: duration, intervalMs: interval,
+        }),
+      });
+      if (res.error) { setMsg(res.error); return; }
+      setTopic(''); setMsg('Scheduled 🌙 — runs even with this tab closed.');
+      load();
+    } catch (e) { setMsg(String(e.message || e)); }
+  };
+  const cancel = async (id) => {
+    try { await fetch(nsBase() + `/missions/scheduled/${id}`, { method: 'DELETE', credentials: 'include' }); load(); }
+    catch (_e) {}
+  };
+
+  const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  if (!reachable) {
+    return (
+      <div style={{ marginTop: 14 }}>
+        <div className="missions-section-title">🌙 NIGHT SHIFT</div>
+        <div className="hint">Container backend unreachable — night shift needs a running HQ container.</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ borderTop: '1px dashed var(--ink-3)', margin: '14px 0' }} />
+      <div className="missions-section-title">🌙 NIGHT SHIFT · runs in the container — close the laptop, work continues</div>
+
+      {schedules.length > 0 && (
+        <div className="missions-list" style={{ marginTop: 8 }}>
+          {schedules.map(s => (
+            <div key={s.id} className="mission-card status-running">
+              <div className="mc-head">
+                <div className="mc-title">🌙 {s.topic}</div>
+                <span className="mc-status">{running.includes(s.id) ? 'RUNNING NOW' : s.enabled ? 'SCHEDULED' : 'DONE'}</span>
+              </div>
+              <div className="mc-meta">
+                <span><b>{s.agentName || s.agentId}</b> · {s.vaultFolder}/</span>
+                <span>{s.recurrence === 'daily' ? 'daily' : 'once'} · {Math.round(s.durationMs / MIN)}m @ {Math.round(s.intervalMs / MIN)}m</span>
+                <span>{s.enabled ? `next: ${fmtT(s.nextRunAt)}` : `last: ${fmtT(s.lastRunAt)}`}</span>
+              </div>
+              <div className="mc-actions">
+                <button className="px-btn danger" style={{ fontSize: 9 }} onClick={() => cancel(s.id)}>✕ CANCEL</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="form-grid" style={{ marginTop: 8 }}>
+        <div className="form-row full">
+          <label>TOPIC</label>
+          <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="what should get researched overnight?" />
+        </div>
+        <div className="form-row">
+          <label>AGENT</label>
+          <select value={agentId} onChange={e => setAgentId(e.target.value)}>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}
+          </select>
+        </div>
+        <div className="form-row">
+          <label>VAULT FOLDER</label>
+          <input value={folder} onChange={e => setFolder(e.target.value)} placeholder={`Research/${topicSlug(topic) || '<topic>'}`} />
+        </div>
+        <div className="form-row">
+          <label>STARTS</label>
+          <input type="datetime-local" value={startStr} onChange={e => setStartStr(e.target.value)} />
+          <span className="hint">defaults to tonight 2:00 AM</span>
+        </div>
+        <div className="form-row">
+          <label>REPEAT</label>
+          <select value={recurrence} onChange={e => setRecurrence(e.target.value)}>
+            <option value="once">once</option>
+            <option value="daily">every night</option>
+          </select>
+        </div>
+        <div className="form-row">
+          <label>DURATION</label>
+          <select value={duration} onChange={e => setDuration(parseInt(e.target.value))}>
+            {DURATION_PRESETS.filter(p => p.ms >= 30 * MIN).map(p => <option key={p.label} value={p.ms}>{p.label}</option>)}
+          </select>
+        </div>
+        <div className="form-row">
+          <label>INTERVAL</label>
+          <select value={interval} onChange={e => setNsInterval(parseInt(e.target.value))}>
+            {[5, 10, 20].map(m => <option key={m} value={m * MIN}>every {m} min</option>)}
+          </select>
+          <span className="hint">{Math.round(duration / interval)} iterations · night tools only (no wallet/publish/shell)</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+        <button className="px-btn primary" style={{ fontSize: 9 }}
+          onClick={() => schedule(new Date(startStr).getTime() || 0)}>🌙 SCHEDULE</button>
+        <button className="px-btn secondary" style={{ fontSize: 9 }}
+          onClick={() => schedule(0)} title="starts within ~30s on the next scheduler scan">▶ RUN NOW</button>
+        {msg && <span className="hint">{msg}</span>}
+      </div>
+
+      {runs.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="missions-section-title">RECENT NIGHT RUNS</div>
+          {runs.map(r => (
+            <div key={r.id} className="hint" style={{ marginTop: 3 }}>
+              {r.lastError ? '⚠' : '✓'} {fmtT(r.startedAt)} · <b>{r.agentName || r.agentId}</b> · {r.topic.slice(0, 40)} ·
+              {' '}{r.iterations} iter · {(r.writes || []).length} note{(r.writes || []).length === 1 ? '' : 's'}
+              {r.lastError ? ` · ${String(r.lastError).slice(0, 60)}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ==========================================================================
    UI: MissionsModal — start a mission + show live progress on active ones
    ========================================================================== */
 function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onResume, onClear, projects }) {
@@ -725,10 +899,13 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             )}
           </div>
           <div className="hint" style={{marginTop: 'var(--sp-5)'}}>
-            ⚠ <strong>Keep this tab open</strong> — the loop runs in the browser. Closing the tab stops the mission.
+            ⚠ <strong>Keep this tab open</strong> — this loop runs in the browser. Closing the tab stops the mission.
             Prevent your laptop from sleeping for the duration. Each iteration uses real LLM tokens — pin a strong model
             (claudecode:sonnet / claude-haiku / llama-3.3-70b) on the agent for best results.
+            For work that should continue with the tab CLOSED, schedule a 🌙 Night Shift below instead.
           </div>
+
+          <NightShiftSection agents={agents} />
           {/* Footer is now rendered by the Modal shell — but in this design the
               start button + summary live near the form, so we keep them inline. */}
           <div style={{

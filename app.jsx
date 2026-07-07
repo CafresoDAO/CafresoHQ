@@ -3143,16 +3143,26 @@ ${d.text}` : d.text,
     let reportTimer = null;
     if (prevSeen && Date.now() - prevSeen > AWAY_MS) {
       // Delay aggregation so the file-stored activity/receipts finish loading.
-      reportTimer = setTimeout(() => {
+      reportTimer = setTimeout(async () => {
         const acts = (activityRef.current || []).filter(a => (a.ts || 0) > prevSeen);
         const recs = (receipts || []).filter(r => (r.decidedAt || 0) > prevSeen);
-        if (!acts.length && !recs.length) return;
+        // Night-shift runs are the Gazette's lead story — they alone justify
+        // the paper even when nothing else happened while away.
+        let nightRuns = [];
+        try {
+          const base = (window.CafresoHQClient && window.CafresoHQClient.backendBase()) || '';
+          const r = await fetch(base + '/missions/runs', { credentials: 'include' });
+          const j = await r.json();
+          nightRuns = (j.runs || []).filter(x => (x.finishedAt || 0) > prevSeen);
+        } catch (_e) {}
+        if (!acts.length && !recs.length && !nightRuns.length) return;
         setGazette({
           since: prevSeen, generatedAt: Date.now(),
           activity: acts.slice(0, 80),
           receipts: recs.slice(0, 30),
           tips: acts.filter(a => a.action === 'tip'),
           paydays: acts.filter(a => a.action === 'payday'),
+          nightRuns: nightRuns.slice(-10),
         });
         try {
           const chain = window.CafresoHQChain;

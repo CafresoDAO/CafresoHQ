@@ -6185,6 +6185,41 @@ const HQSH_COMMANDS = {
         `${s.active ? '' : '  [inactive]'}${s.stalledSince ? '  [STALLED: ' + s.lastResult + ']' : s.lastResult ? '  (' + s.lastResult + ')' : ''}`).join('\n');
     },
   },
+  night: {
+    help: 'night [list | schedule <agentId> <topic…> | cancel <id> | runs] — container night shift',
+    run: async (_chain, args) => {
+      const base = (window.CafresoHQClient && window.CafresoHQClient.backendBase()) || '';
+      const j = (p, o) => fetch(base + p, { credentials: 'include', ...(o || {}) }).then(r => r.json());
+      const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+      if (args[0] === 'runs') {
+        const { runs } = await j('/missions/runs');
+        if (!runs || !runs.length) return '(no night runs yet)';
+        return runs.slice(-10).reverse().map(r =>
+          `  ${r.lastError ? '⚠' : '✓'} ${fmtT(r.startedAt)}  ${r.agentName || r.agentId} · ${String(r.topic).slice(0, 40)}` +
+          `  ${r.iterations} iter · ${(r.writes || []).length} notes${r.lastError ? ' · ' + String(r.lastError).slice(0, 50) : ''}`).join('\n');
+      }
+      if (args[0] === 'cancel') {
+        if (!args[1]) return 'usage: hq night cancel <scheduleId>';
+        const res = await j(`/missions/scheduled/${args[1]}`, { method: 'DELETE' });
+        return res.existed ? `cancelled ${args[1]}` : `no schedule ${args[1]}`;
+      }
+      if (args[0] === 'schedule') {
+        const [, agentId, ...rest] = args;
+        const topic = rest.join(' ').trim();
+        if (!agentId || !topic) return 'usage: hq night schedule <agentId> <topic…>   (starts within ~30s)';
+        const res = await j('/missions/schedule', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agentId, agentName: agentId, topic, startAt: 0, recurrence: 'once', durationMs: 3600000, intervalMs: 600000 }),
+        });
+        return res.error ? `error: ${res.error}` : `scheduled ${res.schedule.id} — first run within ~30s, 1h @ 10m. Cancel: hq night cancel ${res.schedule.id}`;
+      }
+      const { schedules, running } = await j('/missions/scheduled');
+      if (!schedules || !schedules.length) return '(no night schedules — hq night schedule <agentId> <topic>)';
+      return schedules.map(s =>
+        `  ${running.includes(s.id) ? '● RUNNING' : s.enabled ? '🌙' : '·'} ${s.id}  ${s.agentName || s.agentId} · ${String(s.topic).slice(0, 40)}` +
+        `  ${s.recurrence} · ${s.enabled ? 'next ' + fmtT(s.nextRunAt) : 'done'}`).join('\n');
+    },
+  },
   receipts: {
     help: 'receipts — on-chain work receipts with public verify URLs',
     run: async (chain) => {
@@ -6249,7 +6284,8 @@ function HqShell({ sessionId, visible }) {
     const cmd = HQSH_COMMANDS[name];
     if (!cmd) { print('err', `unknown command: ${name || '(empty)'} — try "hq help"`); return; }
     const chain = window.CafresoHQChain;
-    if (name !== 'help' && !(chain && chain.isAvailable && chain.isAvailable())) {
+    // 'night' talks to the container backend, not the chain — allow it standalone.
+    if (name !== 'help' && name !== 'night' && !(chain && chain.isAvailable && chain.isAvailable())) {
       print('err', 'Not inside the shell — open the HQ at ai.cafreso.com and sign in with Internet Identity to reach the chain.');
       return;
     }
