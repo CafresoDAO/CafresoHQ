@@ -1303,28 +1303,26 @@ async function vaultProbe() {
   } catch (e) { return { ok: false, detail: e.message }; }
 }
 
-// ── CryptoVault: AES-256-GCM encrypted at-rest storage for agent API keys ────
+// ── CryptoVault: BYOK keys — on-chain keychain + device-local fallback ───────
 //
-// Keys are encrypted with a random device key (AES-256-GCM) stored separately
-// in localStorage. Each stored key is prefixed with a 12-byte random IV so
-// every write produces a distinct ciphertext.
+// Two layers, best available wins:
+//  1. ON-CHAIN KEYCHAIN (inside the ai.cafreso.com shell): the shell encrypts
+//     the provider→key map with the user's vetKeys-derived master key and
+//     stores it as an HqDoc in cafresohq_state — sign in with the same
+//     Internet Identity on ANY device and the keys follow. All crypto happens
+//     in the shell; this app only sees plaintext over the same origin-pinned
+//     postMessage bridge that vault:read already uses.
+//  2. DEVICE-LOCAL (always, and alone when standalone): AES-256-GCM with a
+//     random device key in localStorage — exactly the pre-keychain behavior,
+//     kept as the offline cache and the no-shell fallback.
 //
-// vetKeys upgrade path (ICP):
-//   Replace _vaultDeviceKey() with a call to vetkd_encrypted_key from the IC
-//   management canister, using the authenticated II principal as the identity.
-//   The derivation produces transport key material that the client decrypts
-//   into a raw AES-256 key — the rest of this vault (encrypt/decrypt) stays
-//   identical. Upgrading means decryption requires an IC round-trip tied to
-//   the user's hardware-backed II credential, so reading localStorage alone
-//   can no longer expose the plaintext key.
-//
-//   Rough upgrade shape (using @dfinity/vetkeys):
-//     import { VetAesGcmKey } from '@dfinity/vetkeys';
-//     const vetKey = await VetAesGcmKey.fromCanister(agent, canisterId, derivationPath);
-//     // then replace crypto.subtle.generateKey / importKey with vetKey.asCryptoKey()
+// getAgentKey is async (all call sites await) and waits for chain hydration,
+// so there is no boot race. hasAgentKey stays synchronous against a presence
+// set seeded from localStorage key NAMES at module load.
 
 const _VAULT_DEVICE_KEY  = 'cafresohq_device_key_v1';   // raw AES key, base64
 const _VAULT_AGENT_STORE = 'cafresohq_agent_keys_v1';   // encrypted key blob map
+const _KEYCHAIN_MIGRATED = 'cafresohq_keychain_migrated_v1';
 
 let _vaultCryptoKey = null; // CryptoKey — cached in memory for the session
 
@@ -1375,24 +1373,90 @@ function _vaultLoad() {
   catch (_) { return {}; }
 }
 
-/** Encrypt and persist an agent API key. provider: 'anthropic' | 'openai' */
+// Presence is knowable synchronously (key NAMES need no decryption); plaintext
+// arrives async from the chain keychain and/or local decrypt.
+const _keychainPresence = new Set(Object.keys(_vaultLoad()));
+let _keychainKeys = null;       // {provider: plaintext} from the chain, once hydrated
+let _keychainHydration = null;  // settles exactly once; failures fall back local
+
+function _chainKeychain() {
+  const c = window.CafresoHQChain;
+  return (c && c.isAvailable && c.isAvailable() && c.keychain) ? c.keychain : null;
+}
+
+function _hydrateKeychain() {
+  if (_keychainHydration) return _keychainHydration;
+  _keychainHydration = (async () => {
+    const kc = _chainKeychain();
+    if (!kc) return; // standalone: device-local only, exactly the old behavior
+    try {
+      const res = await kc.get();
+      const keys = (res && res.keys) || {};
+      if (Object.keys(keys).length) {
+        _keychainKeys = keys;
+        for (const p of Object.keys(keys)) _keychainPresence.add(p);
+        return;
+      }
+      // Chain keychain empty → one-time migration of this device's local keys.
+      // Local copies are NEVER deleted; the migrated flag only stops re-pushes,
+      // and only after a successful read-back confirms the write.
+      if (localStorage.getItem(_KEYCHAIN_MIGRATED)) return;
+      const store = _vaultLoad();
+      const plain = {};
+      for (const name of Object.keys(store)) {
+        const v = await _vaultDecrypt(store[name]);
+        if (v) plain[name] = v;
+      }
+      if (!Object.keys(plain).length) return;
+      const put = await kc.put(plain);
+      if (put && put.ok) {
+        const back = await kc.get();
+        if (back && back.keys && Object.keys(back.keys).length) {
+          _keychainKeys = back.keys;
+          try { localStorage.setItem(_KEYCHAIN_MIGRATED, '1'); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.warn('[keychain] chain hydration failed — using device-local keys', e);
+    }
+  })();
+  return _keychainHydration;
+}
+// Kick off hydration right after module evaluation (the CafresoHQChain bridge
+// is defined later in this file; a macrotask sees the finished module).
+if (typeof window !== 'undefined') setTimeout(() => { _hydrateKeychain(); }, 0);
+
+/** Encrypt and persist an agent API key. provider: 'anthropic' | 'openai' | … */
 async function setAgentKey(provider, plaintext) {
   const store = _vaultLoad();
   if (!plaintext) { delete store[provider]; }
   else            { store[provider] = await _vaultEncrypt(plaintext); }
   try { localStorage.setItem(_VAULT_AGENT_STORE, JSON.stringify(store)); }
   catch (_) {}
+  // Mirror + presence stay coherent for this session…
+  if (plaintext) _keychainPresence.add(provider); else _keychainPresence.delete(provider);
+  if (_keychainKeys) {
+    if (plaintext) _keychainKeys[provider] = plaintext; else delete _keychainKeys[provider];
+  }
+  // …and the chain keychain follows so every other device picks it up.
+  const kc = _chainKeychain();
+  if (kc) kc.put({ [provider]: plaintext || '' }).catch((e) =>
+    console.warn('[keychain] chain sync failed (local copy kept)', e));
 }
 
-/** Decrypt and return a stored agent API key, or '' if not set. */
+/** Return a stored agent API key, or '' if not set. Chain keychain wins. */
 async function getAgentKey(provider) {
+  await _hydrateKeychain();
+  if (_keychainKeys && Object.prototype.hasOwnProperty.call(_keychainKeys, provider)) {
+    return _keychainKeys[provider] || '';
+  }
   const store = _vaultLoad();
   return store[provider] ? _vaultDecrypt(store[provider]) : '';
 }
 
 /** True if a key for this provider is stored (without decrypting). */
 function hasAgentKey(provider) {
-  return !!_vaultLoad()[provider];
+  return _keychainPresence.has(provider);
 }
 
 async function terminalStatus() {
@@ -1595,24 +1659,176 @@ function _splitOsPath(p) {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i >= 0 ? { dir: p.slice(0, i), base: p.slice(i + 1) } : { dir: '', base: p };
 }
+/* ── Tip jar: inject a self-contained tip widget into a site at publish time ──
+   Receiving needs no signature — the publishing agent's wallet is a plain
+   ICRC-1 account — so the widget is pure display: a floating button that opens
+   a panel with every address representation a tipper's wallet might want. */
+
+// STANDARD padded base64 both ways (the shell decodes with atob — the url-safe
+// unpadded _b64urlUtf8 above would corrupt the round-trip).
+function _stdB64ToBytes(b64) {
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+function _bytesToStdB64(u8) {
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
+
+/* The widget file: generic, reads its config off its own <script> tag. */
+function _tipjarSource() {
+  return `(function () {
+  var s = document.currentScript; if (!s) return;
+  var agent  = s.getAttribute('data-agent') || 'this agent';
+  var acct   = s.getAttribute('data-account') || '';
+  var legacy = s.getAttribute('data-legacy') || '';
+  var owner  = s.getAttribute('data-owner') || '';
+  var sub    = s.getAttribute('data-sub') || '';
+  if (!acct && !owner) return;
+  var Z = 2147483000;
+  function el(tag, css, text) {
+    var e = document.createElement(tag);
+    if (css) e.style.cssText = css;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function row(label, value) {
+    var wrap = el('div', 'margin:8px 0;');
+    wrap.appendChild(el('div', 'font-size:10px;letter-spacing:1px;opacity:.65;text-transform:uppercase;margin-bottom:3px;', label));
+    var line = el('div', 'display:flex;gap:6px;align-items:center;');
+    var code = el('code', 'flex:1;font-size:11px;word-break:break-all;background:rgba(255,255,255,.07);padding:6px 8px;border-radius:4px;');
+    code.textContent = value;
+    var btn = el('button', 'cursor:pointer;font:inherit;font-size:10px;padding:6px 9px;border:1px solid #6b5c44;background:#2a2419;color:#f2e4c9;border-radius:4px;', 'COPY');
+    btn.onclick = function () {
+      (navigator.clipboard ? navigator.clipboard.writeText(value) : Promise.reject()).then(
+        function () { btn.textContent = 'COPIED'; setTimeout(function () { btn.textContent = 'COPY'; }, 1200); },
+        function () { window.prompt('Copy address:', value); }
+      );
+    };
+    line.appendChild(code); line.appendChild(btn); wrap.appendChild(line);
+    return wrap;
+  }
+  var btn = el('button',
+    'position:fixed;right:16px;bottom:16px;z-index:' + Z + ';cursor:pointer;' +
+    'font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:1px;' +
+    'padding:10px 14px;border:2px solid #14100a;border-radius:8px;background:#f5d25d;color:#241a0e;' +
+    'box-shadow:0 4px 14px rgba(0,0,0,.35);',
+    '\\u2615 TIP ' + agent.toUpperCase());
+  var panel = null;
+  btn.onclick = function () {
+    if (panel) { panel.remove(); panel = null; return; }
+    panel = el('div',
+      'position:fixed;right:16px;bottom:64px;z-index:' + Z + ';width:min(360px,calc(100vw - 32px));' +
+      'font-family:ui-monospace,Menlo,monospace;background:#181410;color:#f2e4c9;' +
+      'border:2px solid #14100a;border-radius:10px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.5);');
+    var head = el('div', 'display:flex;align-items:center;margin-bottom:4px;');
+    head.appendChild(el('strong', 'font-size:13px;letter-spacing:1px;flex:1;', 'TIP ' + agent.toUpperCase()));
+    var x = el('button', 'cursor:pointer;font:inherit;background:none;border:none;color:#f2e4c9;font-size:14px;', '\\u2715');
+    x.onclick = function () { panel.remove(); panel = null; };
+    head.appendChild(x);
+    panel.appendChild(head);
+    panel.appendChild(el('div', 'font-size:11px;opacity:.7;margin-bottom:6px;',
+      'Built by an AI agent on CafresoHQ. Tips go straight to its on-chain wallet (ICP / ICRC tokens).'));
+    if (acct)   panel.appendChild(row('ICRC-1 account (modern wallets)', acct));
+    if (legacy) panel.appendChild(row('Account ID (exchanges / legacy \\u2014 ICP only)', legacy));
+    if (owner && sub) {
+      panel.appendChild(row('Principal (wallets with split fields)', owner));
+      panel.appendChild(row('Subaccount (hex)', sub));
+    }
+    document.body.appendChild(panel);
+  };
+  document.body.appendChild(btn);
+})();
+`;
+}
+
+const _TIPJAR_FILE = 'cafreso-tipjar.js';
+
+// A CSP that pins scripts to nonces/hashes (or blocks them) would break or be
+// broken by injection — detect and skip, recording why.
+function _cspBlocksInjection(html) {
+  const m = html.match(/<meta[^>]+http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>/i);
+  if (!m) return false;
+  const tag = m[0];
+  // Capture up to the directive terminator (';') or tag end — CSP keyword
+  // values are single-quoted ('nonce-…'), so quotes must stay IN the capture.
+  const src = /script-src([^;>]*)/i.exec(tag);
+  const directives = (src ? src[1] : tag) || '';
+  return /'nonce-|'sha(256|384|512)-|'none'/i.test(directives);
+}
+
+/* Inject the tip-jar <script> into eligible HTML files of a collected file
+   list (root index.html + the explicit entry file). Mutates nothing on
+   failure; returns { files, notes } with per-file outcomes. */
+function _injectTipJar(files, entryBase, tip) {
+  const notes = [];
+  const targets = new Set(['index.html']);
+  if (entryBase && /\.html?$/i.test(entryBase)) targets.add(entryBase);
+  const scriptTag =
+    `<script src="./${_TIPJAR_FILE}" data-agent="${(tip.agentName || 'agent').replace(/"/g, '')}"` +
+    ` data-account="${tip.accountText || ''}" data-legacy="${tip.legacyAccountId || ''}"` +
+    ` data-owner="${tip.owner || ''}" data-sub="${tip.subaccountHex || ''}"></scr` + `ipt>`;
+
+  const out = files.map((f) => {
+    if (!targets.has(f.path)) return f;    // root-level only — nested pages 404 a relative src
+    try {
+      const html = new TextDecoder().decode(_stdB64ToBytes(f.b64 || ''));
+      if (_cspBlocksInjection(html)) { notes.push(`${f.path}: skipped (restrictive CSP)`); return f; }
+      const lower = html.toLowerCase();
+      const at = lower.lastIndexOf('</body>');
+      if (at < 0) { notes.push(`${f.path}: skipped (no </body>)`); return f; }
+      const injected = html.slice(0, at) + scriptTag + '\n' + html.slice(at);
+      const bytes = new TextEncoder().encode(injected);
+      if (bytes.length > 2_000_000) { notes.push(`${f.path}: skipped (would exceed 2MB)`); return f; }
+      notes.push(`${f.path}: tip jar injected`);
+      return { ...f, b64: _bytesToStdB64(bytes), size: bytes.length };
+    } catch (_e) {
+      notes.push(`${f.path}: skipped (injection error)`);
+      return f;
+    }
+  });
+  out.push({
+    path: _TIPJAR_FILE, contentType: 'text/javascript',
+    b64: _bytesToStdB64(new TextEncoder().encode(_tipjarSource())),
+  });
+  return { files: out, notes };
+}
+
 /* Publish a built site. Prefers the public HQ host (sites live in the
    cafresohq_state canister) — served at https://<state>.icp0.io/<principal>/
    <project>/, genuinely public — by collecting the files and asking the shell
    (which holds II) to upload them. Falls back to the owner-scoped /fs/site
    preview link when the shell/canister isn't available. Drops a clickable
-   `<name>.url` deliverable into the project either way. Returns { url, file, dir, mode }. */
+   `<name>.url` deliverable into the project either way. Returns { url, file, dir, mode }.
+   opts.tipJar = { agentId, agentName } embeds a tip widget for that agent's
+   on-chain wallet (root index.html + entry file; opt out per publish). */
 async function publishSite(path, opts = {}) {
   const isHtml = /\.html?$/i.test(path || '');
   const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };
   const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
   const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
 
-  let url = null, mode = 'preview', skipped = [];
+  let url = null, mode = 'preview', skipped = [], tipNotes = [];
   const chain = window.CafresoHQChain;
   if (chain && chain.isAvailable && chain.isAvailable()) {
     try {
       const collected = await fsCollect(dir);
-      const res = await chain.publish(slug, collected.files || []);
+      let files = collected.files || [];
+      // Tip jar: fetch the publishing agent's wallet addresses from the shell
+      // and inject the widget. Any failure here degrades to publishing as-is.
+      if (opts.tipJar && opts.tipJar.agentId) {
+        try {
+          const addr = await chain.wallet.address(opts.tipJar.agentId);
+          const inj = _injectTipJar(files, base, { ...addr, agentName: opts.tipJar.agentName });
+          files = inj.files; tipNotes = inj.notes;
+        } catch (e) { tipNotes = ['tip jar skipped: ' + (e && e.message || 'wallet address unavailable')]; }
+      }
+      const res = await chain.publish(slug, files);
       if (res && res.mode === 'canister' && res.url) {
         url = res.url; mode = 'canister';
         skipped = (collected.skipped || []).concat(res.skipped || []);
@@ -1628,7 +1844,7 @@ async function publishSite(path, opts = {}) {
   const body = `[InternetShortcut]\r\nURL=${url}\r\n`;   // clickable on Windows; plain link elsewhere
   const file = new File([body], fname, { type: 'application/x-mswinurl' });
   await fsUpload(dir, [file]);
-  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped };
+  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped, tipNotes };
 }
 
 /* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
@@ -1810,6 +2026,25 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     /* Publish a collected site to the HQ public sites canister. Returns
        { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */
     publish(project, files) { return _req('chain:publish', { project, files }, 180000); },
+    /* Read-only canister surface (hqsh + status chrome). */
+    whoami() { return _req('chain:whoami', {}).then(r => r.principal); },
+    sites: {
+      list() { return _req('chain:sites:list', {}).then(r => r.sites || []); },
+    },
+    docs: {
+      list() { return _req('chain:docs:list', {}).then(r => r.docs || []); },
+    },
+    status() { return _req('chain:status', {}); },
+    /* BYOK keychain — ciphertext on-chain, crypto in the shell. */
+    keychain: {
+      get() { return _req('chain:keychain:get', {}); },
+      put(providerOrMap, key) {
+        const data = typeof providerOrMap === 'string'
+          ? { provider: providerOrMap, key: key || '' }
+          : { keys: providerOrMap || {} };
+        return _req('chain:keychain:put', data);
+      },
+    },
   };
 })();
 

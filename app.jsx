@@ -2959,6 +2959,99 @@ ${d.text}` : d.text,
     agentsRef, missionsRef,
   });
 
+  /* ── Tip watcher ─────────────────────────────────────────────────────
+     Published sites carry a tip jar paying into the publishing agent's
+     on-chain wallet; receiving needs no signature, so tips just appear as
+     balance. This hook polls each walleted agent's configured token (~90s,
+     tab-visible only) against a persisted baseline and celebrates
+     unexplained credits: activity-ticker line + cafresohq:moneyEvent (the
+     office turns that into Tip Rain). Windows where WE moved funds
+     (WALLET_SEND, self-funding) only re-baseline — naive deltas can't be
+     trusted there; exact sender attribution via the ICP index canister
+     arrives with Sprint-2 payroll. */
+  const TIP_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+  const fmtTokenAmount = (raw, token) => {
+    const dec = TIP_DECIMALS[token] ?? 8;
+    const s = raw.toString().padStart(dec + 1, '0');
+    const whole = s.slice(0, -dec) || '0';
+    const frac = s.slice(-dec).replace(/0+$/, '');
+    return frac ? `${whole}.${frac.slice(0, 4)}` : whole;
+  };
+  const [walletBaseline, setWalletBaseline] = useStored(k('walletBaseline'), {});
+  const walletBaselineRef = useRefA(walletBaseline); walletBaselineRef.current = walletBaseline;
+  const walletDirtyRef = useRefA({});
+  useEffectA(() => {
+    const markToolMove = (e) => {
+      const d = e.detail || {};
+      if (d.phase === 'done' && d.name === 'WALLET_SEND' && d.agentId) walletDirtyRef.current[d.agentId] = true;
+    };
+    const markLocalMove = (e) => {
+      const id = e.detail && e.detail.agentId;
+      if (id) walletDirtyRef.current[id] = true;
+    };
+    window.addEventListener('cafresohq:agentTool', markToolMove);
+    window.addEventListener('cafresohq:walletLocalMove', markLocalMove);
+    const chain = window.CafresoHQChain;
+    if (!(chain && chain.isAvailable && chain.isAvailable())) {
+      return () => {
+        window.removeEventListener('cafresohq:agentTool', markToolMove);
+        window.removeEventListener('cafresohq:walletLocalMove', markLocalMove);
+      };
+    }
+    let dead = false, polling = false;
+    const poll = async () => {
+      if (dead || polling || document.hidden) return;
+      polling = true;
+      try {
+        const wallets = await chain.wallet.list();
+        for (const w of wallets || []) {
+          if (dead) break;
+          const token = w.token || 'ICP';
+          const bals = await chain.wallet.balances(w.agentId, [token]).catch(() => null);
+          const raw = bals && bals[token];
+          if (raw == null) continue;
+          const bal = BigInt(raw);
+          const key = `${w.agentId}:${token}`;
+          const prevRaw = walletBaselineRef.current[key];
+          const dirty = walletDirtyRef.current[w.agentId];
+          walletDirtyRef.current[w.agentId] = false;
+          if (prevRaw == null || dirty || bal < BigInt(prevRaw)) {
+            // first sight / our own movement / a spend → re-baseline silently
+            setWalletBaseline((b) => ({ ...b, [key]: bal.toString() }));
+            continue;
+          }
+          if (bal > BigInt(prevRaw)) {
+            const delta = bal - BigInt(prevRaw);
+            setWalletBaseline((b) => ({ ...b, [key]: bal.toString() }));
+            const who = agentsRef.current.find((a) => a.id === w.agentId);
+            const amount = fmtTokenAmount(delta, token);
+            logActivity({
+              agentId: w.agentId, agentName: who ? who.name : w.agentId,
+              action: 'tip', text: `received a tip — +${amount} ${token}`, priority: 'attention',
+            });
+            window.dispatchEvent(new CustomEvent('cafresohq:moneyEvent', {
+              detail: {
+                kind: 'tip', agentId: w.agentId, agentName: who && who.name,
+                agentColor: who && who.color, token, amount, amountRaw: delta.toString(),
+              },
+            }));
+          }
+        }
+      } catch (_e) { /* bridge hiccup — next round */ }
+      polling = false;
+    };
+    const iv = setInterval(poll, 90_000);
+    const t0 = setTimeout(poll, 4_000);
+    const onVis = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      dead = true; clearInterval(iv); clearTimeout(t0);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('cafresohq:agentTool', markToolMove);
+      window.removeEventListener('cafresohq:walletLocalMove', markLocalMove);
+    };
+  }, []);
+
   const onDelegate = async (a) => {
     // Use the CEO's last ask (or most recent user message) as the brief.
     const lastUser = [...chat].reverse().find(m => m.from === 'user');

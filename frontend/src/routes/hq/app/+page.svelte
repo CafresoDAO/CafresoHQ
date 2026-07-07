@@ -11,9 +11,13 @@
     listAgentWallets, getAgentWalletPolicy, putAgentWalletPolicy, deleteAgentWallet,
     setAllSpendPaused, spendPausedAll,
     agentBalances, fundAgent, agentSend,
-    deriveAgentSubaccount, subaccountToHex
+    deriveAgentSubaccount, subaccountToHex,
+    encodeIcrcAccountText, legacyAccountIdText
   } from '$lib/api/walletServices.js';
-  import { sitesConfigured, publishSiteToCanister } from '$lib/api/sitesActor.js';
+  import { sitesConfigured, publishSiteToCanister, listMySites } from '$lib/api/sitesActor.js';
+  import { listHqDocs } from '$lib/api/stateSync.js';
+  import { getKeychain, putKeychain } from '$lib/api/keychain.js';
+  import { getStateActor, stateCanisterConfigured, stateCanisterId } from '$lib/api/stateActor.js';
   import {
     vaultFiles,
     vaultUnlocked,
@@ -96,21 +100,22 @@
 
   function pushFiles(files) {
     if (!iframe?.contentWindow || !loaded) return;
-    iframe.contentWindow.postMessage(
-      { type: 'vault:files:update', files },
-      iframeOrigin() || '*'
-    );
+    const origin = iframeOrigin();
+    if (!origin) return; // never broadcast vault contents with a wildcard target
+    iframe.contentWindow.postMessage({ type: 'vault:files:update', files }, origin);
   }
 
   async function onVaultMessage(e) {
     if (!iframe?.contentWindow || e.source !== iframe.contentWindow) return;
     const origin = iframeOrigin();
-    if (origin && e.origin !== origin) return;
+    if (!origin || e.origin !== origin) return;
+
     const { type, reqId, id, name, content } = e.data || {};
     if (!type?.startsWith('vault:')) return;
 
+    // origin is verified non-null above — replies are never posted to '*'.
     const reply = (payload) =>
-      iframe.contentWindow?.postMessage({ ...payload, reqId }, origin || '*');
+      iframe.contentWindow?.postMessage({ ...payload, reqId }, origin);
 
     if (!get(vaultUnlocked)) {
       if (get(isAuthenticated)) await unlockVault();
@@ -176,12 +181,15 @@
   async function onChainMessage(e) {
     if (!iframe?.contentWindow || e.source !== iframe.contentWindow) return;
     const origin = iframeOrigin();
-    if (origin && e.origin !== origin) return;
+    // A null origin means we can't name the iframe's document origin — refuse to
+    // handle rather than ever posting balances or keys to '*'.
+    if (!origin || e.origin !== origin) return;
+
     const { type, reqId } = e.data || {};
     if (!type?.startsWith('chain:')) return;
 
     const reply = (payload) =>
-      iframe.contentWindow?.postMessage({ ...clean(payload), reqId }, origin || '*');
+      iframe.contentWindow?.postMessage({ ...clean(payload), reqId }, origin);
     const fail = (message) => reply({ type: 'chain:error', message });
 
     if (!get(isAuthenticated)) return fail('Sign in at ai.cafreso.com to use ICP Services.');
@@ -221,7 +229,13 @@
           break;
         case 'chain:wallet:address': {
           const sub = await deriveAgentSubaccount(p, d.agentId);
-          reply({ type: 'chain:wallet:address:response', agentId: d.agentId, owner: p, subaccountHex: subaccountToHex(sub) });
+          const subaccountHex = subaccountToHex(sub);
+          reply({
+            type: 'chain:wallet:address:response', agentId: d.agentId, owner: p, subaccountHex,
+            // Every shareable representation — wallet support is fragmented:
+            accountText: encodeIcrcAccountText(p, subaccountHex),      // modern ICRC-1 wallets
+            legacyAccountId: legacyAccountIdText(p, subaccountHex)      // exchanges / ICP-ledger-only
+          });
           break;
         }
         case 'chain:wallet:balances':
@@ -271,6 +285,43 @@
           if (!sitesConfigured()) { reply({ type: 'chain:publish:response', mode: 'unconfigured' }); break; }
           const res = await publishSiteToCanister({ project: d.project, files: d.files || [] });
           reply({ type: 'chain:publish:response', mode: 'canister', ...res });
+          break;
+        }
+
+        // ── read-only surface for hqsh + status chrome ──────────────────────
+        case 'chain:whoami':
+          reply({ type: 'chain:whoami:response', principal: p });
+          break;
+        case 'chain:sites:list':
+          reply({ type: 'chain:sites:list:response', sites: await listMySites() });
+          break;
+        case 'chain:docs:list':
+          reply({ type: 'chain:docs:list:response', docs: await listHqDocs() });
+          break;
+        case 'chain:status': {
+          let cycles = null;
+          if (stateCanisterConfigured()) {
+            try { cycles = await (await getStateActor()).cycle_balance(); } catch {}
+          }
+          reply({
+            type: 'chain:status:response', principal: p,
+            stateCanister: get(stateCanisterId), configured: stateCanisterConfigured(), cycles
+          });
+          break;
+        }
+
+        // ── BYOK keychain: ciphertext lives on-chain, crypto happens HERE ───
+        // (plaintext keys cross postMessage shell→iframe only — same exposure
+        // class as vault:read; the reply targetOrigin is always pinned above.)
+        case 'chain:keychain:get': {
+          const kc = await getKeychain();
+          reply({ type: 'chain:keychain:get:response', keys: kc.keys, version: kc.version });
+          break;
+        }
+        case 'chain:keychain:put': {
+          const updates = d.keys || (d.provider ? { [d.provider]: d.key || '' } : {});
+          const res = await putKeychain(updates);
+          reply({ type: 'chain:keychain:put:response', ...res });
           break;
         }
 

@@ -13,6 +13,8 @@
 // transfer (user default → agent subaccount); spending moves out of it, gated.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { Principal } from '@dfinity/principal';
+import { sha224 } from '@noble/hashes/sha256';
 import { getBalance, transfer, toRawAmount, TOKENS } from '$lib/api/icrc1.js';
 import { getStateActor, stateCanisterConfigured } from '$lib/api/stateActor.js';
 
@@ -31,6 +33,70 @@ export function hexToSubaccount(hex) {
   const u = new Uint8Array(32);
   for (let i = 0; i < 32 && i * 2 < hex.length; i++) u[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return u;
+}
+
+// ── Shareable address formats for an agent wallet ────────────────────────────
+// Tips arrive by plain ICRC-1 transfer to (owner=user, subaccount=agent), so an
+// address just needs DISPLAYING — but wallet compatibility is fragmented:
+//  · ICRC-1 textual encoding (owner-CHECKSUM.subhex) — modern ICRC wallets
+//  · legacy AccountIdentifier (hex) — exchanges + older ICP-ledger-only wallets
+//  · raw principal + subaccount hex — wallets with split input fields
+// We surface all three.
+
+// CRC-32 (zlib/ISO-3309 polynomial), big-endian byte output.
+function crc32be(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  crc = (crc ^ 0xffffffff) >>> 0;
+  return new Uint8Array([crc >>> 24, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff]);
+}
+// RFC 4648 Base32, no padding, lowercase (the ICRC-1 textual-encoding alphabet).
+function base32lower(bytes) {
+  const A = 'abcdefghijklmnopqrstuvwxyz234567';
+  let bits = 0, value = 0, out = '';
+  for (const b of bytes) {
+    value = (value << 8) | b; bits += 8;
+    while (bits >= 5) { out += A[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) out += A[(value << (5 - bits)) & 31];
+  return out;
+}
+const _isZeroSub = (u8) => !u8 || Array.from(u8).every((b) => b === 0);
+
+/**
+ * ICRC-1 textual account encoding. Default (absent/all-zero) subaccount MUST
+ * encode as the bare principal text; otherwise:
+ *   <owner>-<base32(crc32(ownerBytes ‖ 32-byte sub))>.<subHex, leading zero
+ *   CHARACTERS trimmed, lowercase>
+ */
+export function encodeIcrcAccountText(ownerPrincipalText, subaccountHex) {
+  const sub = subaccountHex ? hexToSubaccount(subaccountHex) : null;
+  if (_isZeroSub(sub)) return ownerPrincipalText;
+  const ownerBytes = Principal.fromText(ownerPrincipalText).toUint8Array();
+  const joined = new Uint8Array(ownerBytes.length + 32);
+  joined.set(ownerBytes); joined.set(sub, ownerBytes.length);
+  const checksum = base32lower(crc32be(joined));
+  const trimmed = subaccountToHex(sub).toLowerCase().replace(/^0+/, '') || '0';
+  return `${ownerPrincipalText}-${checksum}.${trimmed}`;
+}
+
+/**
+ * Legacy ICP AccountIdentifier (what exchanges/older wallets send to):
+ * hex( crc32(h) ‖ h ) where h = sha224( "\x0Aaccount-id" ‖ owner ‖ sub ).
+ */
+export function legacyAccountIdText(ownerPrincipalText, subaccountHex) {
+  const ownerBytes = Principal.fromText(ownerPrincipalText).toUint8Array();
+  const sub = subaccountHex ? hexToSubaccount(subaccountHex) : new Uint8Array(32);
+  const domain = new TextEncoder().encode('\x0Aaccount-id');
+  const data = new Uint8Array(domain.length + ownerBytes.length + 32);
+  data.set(domain); data.set(ownerBytes, domain.length); data.set(sub, domain.length + ownerBytes.length);
+  const h = sha224(data);
+  const out = new Uint8Array(4 + h.length);
+  out.set(crc32be(h)); out.set(h, 4);
+  return subaccountToHex(out);
 }
 
 // ── Installed-service flags (on-chain source of truth) ───────────────────────

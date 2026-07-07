@@ -43,5 +43,17 @@ export async function publishSiteToCanister({ project, files }) {
     const res = await actor.putSiteFile(project, f.path, f.contentType || 'application/octet-stream', bytes);
     if ('ok' in res) ok += 1; else skipped.push(`${f.path} (${res.err})`);
   }
+  // Zero accepted files = nothing is being served — surface the failure instead
+  // of handing back a URL that 404s (e.g. reserved project name, quota hit).
+  if ((files || []).length > 0 && ok === 0) {
+    throw new Error(`publish rejected every file: ${skipped.slice(0, 3).join('; ') || 'unknown error'}`);
+  }
   return { url: sitesPublicUrl(principalText, project), files: ok, skipped };
+}
+
+/** The caller's published projects: [{ project, files, bytes, updatedAt }]. */
+export async function listMySites() {
+  if (!stateCanisterConfigured()) return [];
+  try { return await (await getStateActor()).listMySites(); }
+  catch (e) { console.warn('[sitesActor] listMySites failed', e); return []; }
 }

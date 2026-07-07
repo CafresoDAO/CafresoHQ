@@ -704,8 +704,10 @@ const TOOL_REGISTRY = {
     requires: () => icpPublishEnabled(),
     doc:
       '- [PUBLISH_SITE: <dir or index.html path>] — publish a built site and write a clickable <name>.url link into the project for the boss.\n' +
-      '  Point it at the site\'s folder (or its index.html). Returns the shareable URL + the .url file path.',
-    docShort: 'Publish a built site and write a clickable .url deliverable into the project.',
+      '  Point it at the site\'s folder (or its index.html). Returns the shareable URL + the .url file path.\n' +
+      '  When you have an HQ wallet, published pages automatically include a tip jar paying into it —\n' +
+      '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
+    docShort: 'Publish a built site (with your wallet\'s tip jar) and write a clickable .url deliverable.',
     run: async (arg) => {
       const r = await window.CafresoHQClient.publishSite(String(arg || '').trim());
       const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
@@ -976,8 +978,28 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   }
   // PUBLISH_SITE — when the Publish ICP-Service is installed. Any agent that
   // can build a site can ship it; the server enforces the allowed-dirs guard.
+  // Bound per-agent so the tip jar credits the PUBLISHING agent's wallet.
+  // Tip default: on whenever the Wallet service is installed; opt out per
+  // publish with a trailing " : tip=off". The flag is stripped with a
+  // tail-anchored regex — never split the arg on ':' (C:\... paths survive).
   if (icpPublishEnabled()) {
-    out.push(TOOL_REGISTRY.publish_site);
+    const pubAgentId = agent.id || String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
+    const pubAgentName = String(agent.name || 'Agent');
+    out.push({
+      ...TOOL_REGISTRY.publish_site,
+      run: async (arg) => {
+        let raw = String(arg || '').trim();
+        let tip = icpWalletEnabled();
+        const flag = /\s*:\s*tip\s*=\s*(on|off)\s*$/i.exec(raw);
+        if (flag) { tip = flag[1].toLowerCase() === 'on' && icpWalletEnabled(); raw = raw.slice(0, flag.index).trim(); }
+        const r = await window.CafresoHQClient.publishSite(raw,
+          tip ? { tipJar: { agentId: pubAgentId, agentName: pubAgentName } } : {});
+        const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
+        const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
+        const tips = (r.tipNotes && r.tipNotes.length) ? `\nTip jar: ${r.tipNotes.join('; ')}` : '';
+        return `Published — ${where}:\n${r.url}\nWrote clickable link: ${r.file}${skips}${tips}`;
+      },
+    });
   }
   // ACK is always available — every agent should be able to status-update
   // the message they're currently handling. No peer roster needed; this is
