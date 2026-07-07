@@ -83,6 +83,16 @@ export const idlFactory = ({ IDL }) => {
     'lastResult' : IDL.Text,
     'amount' : IDL.Nat,
   });
+  const WorkReceipt = IDL.Record({
+    'id' : IDL.Nat,
+    'ts' : IDL.Int,
+    'title' : IDL.Text,
+    'tool' : IDL.Text,
+    'agentName' : IDL.Text,
+    'agentId' : IDL.Text,
+    'argHash' : IDL.Text,
+    'contentSha256' : IDL.Text,
+  });
   const Usage = IDL.Record({
     'quotaBytes' : IDL.Nat,
     'docBytes' : IDL.Nat,
@@ -136,6 +146,7 @@ export const idlFactory = ({ IDL }) => {
     'listPayouts' : IDL.Func([], [IDL.Vec(Payout)], ['query']),
     'listSalaries' : IDL.Func([], [IDL.Vec(Salary)], ['query']),
     'listServiceFlags' : IDL.Func([], [IDL.Vec(ServiceFlag)], ['query']),
+    'listWorkReceipts' : IDL.Func([], [IDL.Vec(WorkReceipt)], ['query']),
     'mySiteBytes' : IDL.Func([], [IDL.Nat], ['query']),
     'myUsage' : IDL.Func([], [Usage], ['query']),
     'payrollPaused' : IDL.Func([], [IDL.Bool], ['query']),
@@ -179,6 +190,11 @@ export const idlFactory = ({ IDL }) => {
     'putVaultMeta' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat, IDL.Vec(IDL.Nat8), IDL.Nat],
         [PutResult],
+        [],
+      ),
+    'putWorkReceipt' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [IDL.Nat],
         [],
       ),
     'recordSpend' : IDL.Func([IDL.Text, IDL.Nat], [SpendResult], []),

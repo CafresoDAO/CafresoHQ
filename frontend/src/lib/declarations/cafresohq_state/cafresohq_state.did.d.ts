@@ -106,6 +106,16 @@ export interface VaultMeta {
   'updatedAt' : bigint,
   'chunkCount' : bigint,
 }
+export interface WorkReceipt {
+  'id' : bigint,
+  'ts' : bigint,
+  'title' : string,
+  'tool' : string,
+  'agentName' : string,
+  'agentId' : string,
+  'argHash' : string,
+  'contentSha256' : string,
+}
 export interface _SERVICE {
   'cycle_balance' : ActorMethod<[], bigint>,
   'deleteAgentWallet' : ActorMethod<[string], boolean>,
@@ -128,6 +138,7 @@ export interface _SERVICE {
   'listPayouts' : ActorMethod<[], Array<Payout>>,
   'listSalaries' : ActorMethod<[], Array<Salary>>,
   'listServiceFlags' : ActorMethod<[], Array<ServiceFlag>>,
+  'listWorkReceipts' : ActorMethod<[], Array<WorkReceipt>>,
   'mySiteBytes' : ActorMethod<[], bigint>,
   'myUsage' : ActorMethod<[], Usage>,
   'payrollPaused' : ActorMethod<[], boolean>,
@@ -166,6 +177,10 @@ export interface _SERVICE {
   'putVaultMeta' : ActorMethod<
     [string, bigint, bigint, Uint8Array | number[], bigint],
     PutResult
+  >,
+  'putWorkReceipt' : ActorMethod<
+    [string, string, string, string, string, string],
+    bigint
   >,
   'recordSpend' : ActorMethod<[string, bigint], SpendResult>,
   'runPayrollNow' : ActorMethod<[string], string>,

@@ -1,3 +1,14 @@
+type WorkReceipt = 
+ record {
+   agentId: text;
+   agentName: text;
+   argHash: text;
+   contentSha256: text;
+   id: nat;
+   title: text;
+   tool: text;
+   ts: int;
+ };
 type VaultMeta = 
  record {
    chunkCount: nat;
@@ -165,6 +176,7 @@ service : {
   listPayouts: () -> (vec Payout) query;
   listSalaries: () -> (vec Salary) query;
   listServiceFlags: () -> (vec ServiceFlag) query;
+  listWorkReceipts: () -> (vec WorkReceipt) query;
   mySiteBytes: () -> (nat) query;
   myUsage: () -> (Usage) query;
   payrollPaused: () -> (bool) query;
@@ -181,6 +193,8 @@ service : {
   putSiteFile: (text, text, text, blob) -> (PutFileResult);
   putVaultChunk: (text, nat, nat, blob) -> (PutResult);
   putVaultMeta: (text, nat, nat, blob, nat) -> (PutResult);
+  /// Anchor one receipt; returns its per-user monotonic id (the verify URL path).
+  putWorkReceipt: (text, text, text, text, text, text) -> (nat);
   /// Atomic cap gate. The browser calls this BEFORE signing an autonomous
   /// agent-initiated transfer:
   ///   #ok       → within the rolling cap and recorded; go ahead and sign.

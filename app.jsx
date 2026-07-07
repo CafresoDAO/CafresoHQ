@@ -5,7 +5,7 @@
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.CafresoHQModals;
-const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
+const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
 const { MissionsModal, useMissionRunner } = window.CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
 
@@ -1949,6 +1949,44 @@ ${d.text}` : d.text,
      gets recorded as a 'tool-execution' receipt. Cheap, append-only, and
      shows up in the same Receipts modal the boss already trusts. Skipped
      for non-elevated agents (would just be noise). */
+  /* Sprint 3: anchor headline deliverables on-chain (best-effort, NEVER blocks
+     a tool). Hashes the closest artifact bytes reachable (real file bytes off
+     /fs/file for exports/media, the result/arg text otherwise) and patches the
+     local receipt with {chainId, verifyUrl} once the anchor lands. */
+  const sha256Hex = async (data) => {
+    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+    const d = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
+  };
+  const anchorWorkReceipt = async (agent, ev, rcId, title) => {
+    try {
+      const chain = window.CafresoHQChain;
+      if (!(chain && chain.isAvailable && chain.isAvailable() && chain.receipt)) return;
+      const arg = String(ev.arg || '');
+      let content = String(ev.result || '') || arg;
+      if (/^(EXPORT_|GENERATE_)/.test(ev.name)) {
+        try {
+          const m = String(ev.result || '').match(/[\w\-./ ]+\.(pptx|docx|pdf|png|jpg|jpeg|gif|mp4|webm)\b/i);
+          if (m) {
+            const r = await fetch((window.CafresoHQClient.backendBase() || '') + '/fs/file?path=' +
+              encodeURIComponent(m[0].trim()), { credentials: 'include' });
+            if (r.ok) content = new Uint8Array(await r.arrayBuffer());
+          }
+        } catch (_e) { /* fall back to the text hash */ }
+      }
+      const argHash = await sha256Hex(arg);
+      const contentSha256 = await sha256Hex(content);
+      const res = await chain.receipt.put({
+        agentId: agent.id, agentName: agent.name, tool: ev.name, title, argHash, contentSha256,
+      });
+      if (res && res.id) {
+        setReceipts(prev => prev.map(r => r.id === rcId ? { ...r, chainId: res.id, verifyUrl: res.verifyUrl } : r));
+        logActivity({ agentId: agent.id, agentName: agent.name, action: 'receipt',
+          text: `anchored work receipt #${res.id} on-chain` });
+      }
+    } catch (_e) { /* anchoring is advisory — swallow everything */ }
+  };
+
   const recordToolReceipt = (agent, ev) => {
     if (!agent) return;
     if (ev.phase !== 'done') return;
@@ -1973,12 +2011,18 @@ ${d.text}` : d.text,
       onPin({ kind: 'receipt', text: `${agent.name}: ${verb} ${arg.slice(0, 60)}`,
               sourceId: `tool-${ev.name}-${arg.slice(0, 60)}` }, { quiet: true });
     }
+    const rcId = HQ.uid('rc');
+    const rcTitle = isDeliverable
+      ? `${ev.name === 'VAULT_NEW' ? 'Wrote' : 'Appended'} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
+      : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`;
+    // Headline deliverables (the corkboard set) also anchor on-chain.
+    if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
+      anchorWorkReceipt(agent, ev, rcId, rcTitle);
+    }
     setReceipts(prev => {
       const next = [{
-        id: HQ.uid('rc'),
-        title: isDeliverable
-          ? `${ev.name === 'VAULT_NEW' ? 'Wrote' : 'Appended'} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
-          : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`,
+        id: rcId,
+        title: rcTitle,
         by: agent.name,
         kind: isDeliverable ? 'deliverable' : 'tool-execution',
         decision: 'executed',
@@ -3083,6 +3127,53 @@ ${d.text}` : d.text,
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('cafresohq:agentTool', markToolMove);
       window.removeEventListener('cafresohq:walletLocalMove', markLocalMove);
+    };
+  }, []);
+
+  /* ── Morning Report ("HQ GAZETTE") ──────────────────────────────────
+     A 60s last-seen heartbeat persists across sessions; come back after
+     >4h away and the boot aggregates everything since — activity, anchored
+     deliverables, tips, paydays — into a front-page report the office can
+     also REPLAY. Also drops a journal/<date> digest on-chain (best-effort). */
+  const [lastSeenAt, setLastSeenAt] = useStored(k('lastSeen'), 0);
+  const [gazette, setGazette] = useStateA(null);
+  useEffectA(() => {
+    const prevSeen = lastSeenAt;
+    const AWAY_MS = 4 * 3600 * 1000;
+    let reportTimer = null;
+    if (prevSeen && Date.now() - prevSeen > AWAY_MS) {
+      // Delay aggregation so the file-stored activity/receipts finish loading.
+      reportTimer = setTimeout(() => {
+        const acts = (activityRef.current || []).filter(a => (a.ts || 0) > prevSeen);
+        const recs = (receipts || []).filter(r => (r.decidedAt || 0) > prevSeen);
+        if (!acts.length && !recs.length) return;
+        setGazette({
+          since: prevSeen, generatedAt: Date.now(),
+          activity: acts.slice(0, 80),
+          receipts: recs.slice(0, 30),
+          tips: acts.filter(a => a.action === 'tip'),
+          paydays: acts.filter(a => a.action === 'payday'),
+        });
+        try {
+          const chain = window.CafresoHQChain;
+          if (chain && chain.isAvailable() && chain.docs && chain.docs.put) {
+            const day = new Date().toISOString().slice(0, 10);
+            chain.docs.put(`journal/${day}`, JSON.stringify({
+              since: prevSeen,
+              entries: acts.slice(0, 80).map(a => ({ ts: a.ts, agent: a.agentName, action: a.action, text: a.text })),
+            })).catch(() => {});
+          }
+        } catch (_e) {}
+      }, 2000);
+    }
+    const beat = () => setLastSeenAt(Date.now());
+    beat();
+    const iv = setInterval(beat, 60_000);
+    const onVis = () => { if (!document.hidden) beat(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(iv); if (reportTimer) clearTimeout(reportTimer);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, []);
 
@@ -4409,6 +4500,7 @@ ${d.text}` : d.text,
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
       {/* ApprovalTray moved inline into view-area */}
       <ReceiptTray receipts={receipts} onOpen={()=>setReceiptsOpen(true)}/>
+      <MorningReportModal report={gazette} onClose={()=>setGazette(null)} />
       <ReceiptsModal open={receiptsOpen} onClose={()=>setReceiptsOpen(false)} receipts={receipts} onClear={onClearReceipts}
         onPin={(r) => onPin({ kind:'receipt', text:`${r.decision === 'approved' ? '✓' : '✕'} ${r.title}`, sourceId: r.id })}/>
       <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)}/>

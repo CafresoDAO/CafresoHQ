@@ -6185,6 +6185,15 @@ const HQSH_COMMANDS = {
         `${s.active ? '' : '  [inactive]'}${s.stalledSince ? '  [STALLED: ' + s.lastResult + ']' : s.lastResult ? '  (' + s.lastResult + ')' : ''}`).join('\n');
     },
   },
+  receipts: {
+    help: 'receipts — on-chain work receipts with public verify URLs',
+    run: async (chain) => {
+      const rs = await chain.receipt.list();
+      if (!rs.length) return '(no on-chain receipts yet — headline deliverables anchor automatically)';
+      return rs.slice(-10).reverse().map(r =>
+        `  #${r.id} ${r.agentName} · ${r.tool} — ${r.title.slice(0, 48)}\n      ${r.verifyUrl || '(verify url unavailable)'}`).join('\n');
+    },
+  },
   pnl: {
     help: 'pnl — earned vs spent per agent (payroll + on-chain metering)',
     run: async (chain) => {

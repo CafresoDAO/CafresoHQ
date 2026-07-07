@@ -32,6 +32,11 @@ function b64ToBytes(b64) {
  * each file, returns { url, files: n, skipped: [...] }. Files > ~2 MiB skipped.
  */
 export async function publishSiteToCanister({ project, files }) {
+  if (String(project).toLowerCase() === 'receipt') {
+    // Reserved: /<principal>/receipt/<id> is the work-receipt verify URL
+    // (also rejected on-chain in validProject).
+    throw new Error('"receipt" is a reserved project name');
+  }
   const actor = await getStateActor();
   const principalText = get(authIdentity).getPrincipal().toText();
   await actor.deleteSite(project); // clear stale files so removed ones don't linger

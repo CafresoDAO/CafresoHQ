@@ -176,6 +176,11 @@ actor CafresoHQState {
   };
   func validProject(p : Text) : Bool {
     if (p.size() == 0 or p.size() > 64) { return false };
+    // SECURITY: "receipt" is reserved — /<principal>/receipt/<id> is the work-
+    // receipt verify URL, intercepted before siteLookup. A user project with
+    // that name could otherwise serve attacker HTML at the verify-URL shape.
+    // (deleteSite still accepts it, so any legacy project can be cleaned up.)
+    if (p == "receipt") { return false };
     for (c in p.chars()) { if (not siteSafe(c)) { return false } };
     not Text.contains(p, #text "..");
   };
@@ -960,6 +965,114 @@ actor CafresoHQState {
     siteUsageOf(msg.caller);
   };
 
+  // ── Work receipts (Sprint 3: hash-anchored proof of agent work) ────────────
+  // The browser hashes a deliverable (crypto.subtle) and anchors {tool, title,
+  // argHash, contentSha256} here. Anyone with the verify URL can confirm the
+  // hash + timestamp from an incognito window — no login, no JS. Best-effort:
+  // anchoring never blocks a tool.
+  public type WorkReceipt = {
+    id : Nat;
+    agentId : Text;
+    agentName : Text;
+    tool : Text;             // e.g. VAULT_NEW / EXPORT_PDF / PUBLISH_SITE
+    title : Text;
+    argHash : Text;          // sha256 hex of the tool arg (provenance)
+    contentSha256 : Text;    // sha256 hex of the artifact bytes
+    ts : Int;
+  };
+  stable var workReceipts : OrderedMap.Map<Principal, [WorkReceipt]> = pOps.empty<[WorkReceipt]>();
+  stable var receiptSeq : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
+  let MAX_RECEIPTS_KEPT : Nat = 1000;
+
+  func receiptsOf(p : Principal) : [WorkReceipt] {
+    switch (pOps.get(workReceipts, p)) { case (?a) a; case null [] };
+  };
+
+  /// Anchor one receipt; returns its per-user monotonic id (the verify URL path).
+  public shared (msg) func putWorkReceipt(
+    agentId : Text, agentName : Text, tool : Text, title : Text, argHash : Text, contentSha256 : Text,
+  ) : async Nat {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    if (title.size() > 300 or agentName.size() > 100 or tool.size() > 40
+        or argHash.size() > 80 or contentSha256.size() > 80 or agentId.size() > 100) {
+      throw Error.reject("receipt field too long");
+    };
+    let id = switch (pOps.get(receiptSeq, caller)) { case (?n) n + 1; case null 1 };
+    receiptSeq := pOps.put(receiptSeq, caller, id);
+    let r : WorkReceipt = { id; agentId; agentName; tool; title; argHash; contentSha256; ts = now() };
+    let buf = Buffer.fromArray<WorkReceipt>(receiptsOf(caller));
+    buf.add(r);
+    while (buf.size() > MAX_RECEIPTS_KEPT) { ignore buf.remove(0) };
+    workReceipts := pOps.put(workReceipts, caller, Buffer.toArray(buf));
+    id;
+  };
+
+  public shared query (msg) func listWorkReceipts() : async [WorkReceipt] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    receiptsOf(msg.caller);
+  };
+
+  // Receipt fields are user text going into HTML — escape or the verify page is an XSS.
+  func escapeHtml(t : Text) : Text {
+    var out = "";
+    for (c in t.chars()) {
+      out #= switch (c) {
+        case ('<') "&lt;"; case ('>') "&gt;"; case ('&') "&amp;";
+        case ('\"') "&quot;"; case ('\'') "&#39;";
+        case (_) Text.fromChar(c);
+      };
+    };
+    out;
+  };
+
+  func receiptPage(ownerText : Text, r : WorkReceipt) : Text {
+    let tsSecs = r.ts / 1_000_000_000;
+    "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    # "<title>CafresoHQ work receipt #" # Nat.toText(r.id) # "</title>"
+    # "<style>body{background:#14121f;color:#e8e4d8;font-family:monospace;max-width:640px;margin:40px auto;padding:0 16px;line-height:1.7}"
+    # "h1{font-size:16px;color:#7ee787;border-bottom:2px solid #3a3652;padding-bottom:8px}"
+    # ".f{margin:6px 0}.k{color:#8b86a3;display:inline-block;min-width:130px}.v{word-break:break-all}"
+    # "footer{margin-top:24px;color:#8b86a3;font-size:11px;border-top:1px dashed #3a3652;padding-top:8px}</style></head><body>"
+    # "<h1>⛓ CAFRESOHQ WORK RECEIPT #" # Nat.toText(r.id) # "</h1>"
+    # "<div class=\"f\"><span class=\"k\">agent</span><span class=\"v\">" # escapeHtml(r.agentName) # " (" # escapeHtml(r.agentId) # ")</span></div>"
+    # "<div class=\"f\"><span class=\"k\">tool</span><span class=\"v\">" # escapeHtml(r.tool) # "</span></div>"
+    # "<div class=\"f\"><span class=\"k\">work</span><span class=\"v\">" # escapeHtml(r.title) # "</span></div>"
+    # "<div class=\"f\"><span class=\"k\">artifact sha256</span><span class=\"v\">" # escapeHtml(r.contentSha256) # "</span></div>"
+    # "<div class=\"f\"><span class=\"k\">arg sha256</span><span class=\"v\">" # escapeHtml(r.argHash) # "</span></div>"
+    # "<div class=\"f\"><span class=\"k\">anchored (unix)</span><span class=\"v\">" # Int.toText(tsSecs) # "</span></div>"
+    # "<div class=\"f\"><span class=\"k\">owner principal</span><span class=\"v\">" # escapeHtml(ownerText) # "</span></div>"
+    # "<footer>Anchored on the Internet Computer in the CafresoHQ state canister at the moment the work finished. "
+    # "To verify: sha256 the artifact you were given and compare it to the hash above.</footer>"
+    # "</body></html>";
+  };
+
+  /// GET /<principal>/receipt/<id> — MUST run before siteLookup (see validProject).
+  func receiptLookup(url : Text) : ?HttpResponse {
+    var path = url;
+    switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
+    path := Text.trimStart(path, #char '/');
+    let parts = Iter.toArray(Text.split(path, #char '/'));
+    if (parts.size() < 3 or parts[1] != "receipt") { return null };
+    let notFound : HttpResponse = {
+      status_code = 404; headers = [("Content-Type", "text/plain")];
+      body = Text.encodeUtf8("Receipt not found"); streaming_strategy = null; upgrade = null;
+    };
+    let owner = Principal.fromText(parts[0]);
+    let id = switch (textToInt(parts[2])) { case (?n) Int.abs(n); case null { return ?notFound } };
+    switch (Array.find<WorkReceipt>(receiptsOf(owner), func(r) { r.id == id })) {
+      case null { ?notFound };
+      case (?r) {
+        ?{
+          status_code = 200;
+          headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "public, max-age=300"),
+                     ("X-Content-Type-Options", "nosniff")];
+          body = Text.encodeUtf8(receiptPage(parts[0], r)); streaming_strategy = null; upgrade = null;
+        };
+      };
+    };
+  };
+
   // ── Public serving — GET /<principalText>/<project>/<path...> ───────────────
   // Reads ONLY siteFiles. Everything else in this canister is unreachable here.
   func siteLookup(url : Text) : ?SiteFile {
@@ -1001,7 +1114,12 @@ actor CafresoHQState {
     { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
   };
   public func http_request_update(req : HttpRequest) : async HttpResponse {
-    serveSite(req.url);
+    // Receipt verify pages take precedence over sites — SECURITY: a site
+    // project can never shadow the /receipt/ URL shape (name reserved too).
+    switch (receiptLookup(req.url)) {
+      case (?res) res;
+      case null serveSite(req.url);
+    };
   };
 
   // ── Diagnostics ────────────────────────────────────────────────────────────

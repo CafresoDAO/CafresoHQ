@@ -2047,6 +2047,14 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     },
     docs: {
       list() { return _req('chain:docs:list', {}).then(r => r.docs || []); },
+      /* journal/* docs only (shell-enforced) — used for Gazette digests. */
+      put(name, body) { return _req('chain:docs:put', { name, body }); },
+    },
+    /* Work receipts — hash-anchored proof of agent work with a public verify
+       URL. put() is best-effort from callers: never let it block a tool. */
+    receipt: {
+      put(r) { return _req('chain:receipt:put', r).then(x => ({ id: x.id, verifyUrl: x.verifyUrl })); },
+      list() { return _req('chain:receipt:list', {}).then(r => r.receipts || []); },
     },
     status() { return _req('chain:status', {}); },
     /* BYOK keychain — ciphertext on-chain, crypto in the shell. */

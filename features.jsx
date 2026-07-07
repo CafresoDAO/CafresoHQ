@@ -649,6 +649,95 @@ function ReceiptTray({ receipts, onOpen }) {
   );
 }
 
+/* ── HQ GAZETTE — the Morning Report (Sprint 3) ─────────────────────────────
+   Shown once on boot after >4h away: front-page stats, per-agent columns, a
+   money box, and REPLAY — which closes the paper and re-enacts the night on
+   the office floor by re-dispatching condensed cafresohq:agentTool events.
+   Reduced-motion users just read the list. */
+function MorningReportModal({ report, onClose }) {
+  if (!report) return null;
+  const fmtT = (ts) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const byAgent = {};
+  report.activity.forEach(a => {
+    const nm = a.agentName || 'HQ';
+    (byAgent[nm] = byAgent[nm] || []).push(a);
+  });
+  const cols = Object.entries(byAgent).slice(0, 4);
+  const anchored = report.receipts.filter(r => r.verifyUrl);
+  const reduced = typeof window !== 'undefined' && window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const replay = () => {
+    onClose(); // the office needs to be visible for the re-enactment
+    const evs = report.activity.slice(0, 24).reverse();
+    evs.forEach((a, i) => {
+      setTimeout(() => {
+        try {
+          window.dispatchEvent(new CustomEvent('cafresohq:agentTool', {
+            detail: { phase: 'start', name: (a.action || 'WORK').toUpperCase(), arg: a.text || '', agentId: a.agentId, agentName: a.agentName },
+          }));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('cafresohq:agentTool', {
+              detail: { phase: 'done', name: (a.action || 'WORK').toUpperCase(), arg: a.text || '', agentId: a.agentId, agentName: a.agentName },
+            }));
+          }, 450);
+        } catch (_e) {}
+      }, i * 600);
+    });
+  };
+  return (
+    <OcModal open onClose={onClose} title="🗞 HQ GAZETTE" subtitle={`morning report · while you were away since ${fmtT(report.since)}`} size="lg"
+      footer={
+        <>
+          {!reduced && report.activity.length > 0 && (
+            <button className="px-btn secondary" style={{ marginRight: 'auto' }} onClick={replay}>▶ REPLAY THE NIGHT</button>
+          )}
+          <button className="px-btn primary" onClick={onClose}>TO WORK</button>
+        </>
+      }>
+      <div className="row" style={{ gap: 'var(--sp-4)', flexWrap: 'wrap', marginBottom: 'var(--sp-4)' }}>
+        <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
+          <div className="lbl">ACTIONS</div>
+          <div style={{ fontSize: 22 }}>{report.activity.length}</div>
+        </div>
+        <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
+          <div className="lbl">DELIVERABLES</div>
+          <div style={{ fontSize: 22 }}>{report.receipts.length}</div>
+          {anchored.length > 0 && <div className="tiny">⛓ {anchored.length} anchored on-chain</div>}
+        </div>
+        <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
+          <div className="lbl">MONEY</div>
+          <div style={{ fontSize: 22 }}>☕{report.tips.length} 💰{report.paydays.length}</div>
+          <div className="tiny">tips · paydays</div>
+        </div>
+      </div>
+      {cols.length > 0 && (
+        <div className="row" style={{ gap: 'var(--sp-4)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          {cols.map(([nm, acts]) => (
+            <div key={nm} className="cb-panel" style={{ flex: 1, minWidth: 180 }}>
+              <div className="lbl">{nm.toUpperCase()} · {acts.length}</div>
+              {acts.slice(0, 5).map(a => (
+                <div key={a.id} className="tiny" style={{ marginTop: 3 }}>
+                  {a.action === 'tip' ? '☕' : a.action === 'payday' ? '💰' : '·'} {String(a.text || a.action || '').slice(0, 70)}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {anchored.length > 0 && (
+        <div className="cb-panel" style={{ marginTop: 'var(--sp-4)' }}>
+          <div className="lbl">⛓ VERIFIABLE WORK</div>
+          {anchored.slice(0, 6).map(r => (
+            <div key={r.id} className="tiny" style={{ marginTop: 3 }}>
+              {r.title.slice(0, 60)} — <a href={r.verifyUrl} target="_blank" rel="noopener noreferrer">verify #{r.chainId}</a>
+            </div>
+          ))}
+        </div>
+      )}
+    </OcModal>
+  );
+}
+
 function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
   const [filter, setFilter] = useSF('all');
   if (!open) return null;
@@ -693,6 +782,14 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
                 <span>{r.kind || (r.amount ? '$'+r.amount : 'action')}</span>
                 <span>·</span>
                 <span>{fmt(r.decidedAt)}</span>
+                {r.verifyUrl && (
+                  <>
+                    <span>·</span>
+                    <a href={r.verifyUrl} target="_blank" rel="noopener noreferrer"
+                       title="Publicly verifiable — anchored on the Internet Computer"
+                       onClick={(e) => e.stopPropagation()}>⛓ on-chain #{r.chainId}</a>
+                  </>
+                )}
               </div>
             </div>
             {onPin && r.kind !== 'tool-execution' && <button className="px-btn secondary" style={{fontSize: 'var(--text-9)'}} onClick={()=>onPin(r)}>📌 PIN</button>}
@@ -728,4 +825,4 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-window.CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+window.CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
