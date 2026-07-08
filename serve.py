@@ -333,6 +333,66 @@ def _night_save(name, data):
     os.replace(tmp, _night_path(name))
 
 
+# ── Shared "trial brain" metering ──────────────────────────────────────────
+# hermes-bootstrap.py writes HERMES_HOME/trial.json when a fresh HQ falls back to
+# the operator's shared trial key (so a new user's agents work with no signup).
+# That key draws on ONE shared upstream account, so serve.py caps each principal
+# to a small number of trial completions/day and clears the trial the moment the
+# user brings their own key. A user's OWN key is never metered here.
+_TRIAL_DAILY_CAP = max(1, int(os.environ.get('CAFRESOHQ_TRIAL_DAILY_CAP', '25') or '25'))
+_trial_usage_lock = threading.Lock()
+
+
+def _hermes_home():
+    return os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
+
+
+def _trial_state():
+    """{'active': bool, 'provider': str} — read fresh so a BYOK clear takes effect
+    without a restart."""
+    try:
+        with open(os.path.join(_hermes_home(), 'trial.json'), 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        return {'active': bool(d.get('active')), 'provider': str(d.get('provider') or '')}
+    except Exception:
+        return {'active': False, 'provider': ''}
+
+
+def _trial_deactivate():
+    """Called when the user brings their own key — the trial (and its cap) end."""
+    try:
+        with open(os.path.join(_hermes_home(), 'trial.json'), 'w', encoding='utf-8') as f:
+            json.dump({'active': False, 'provider': ''}, f)
+    except Exception:
+        pass
+
+
+def _trial_usage(principal):
+    """Return (used_today, cap) for a principal without mutating."""
+    today = time.strftime('%Y-%m-%d')
+    u = _night_load('trial-usage.json', {})
+    if u.get('date') != today:
+        return 0, _TRIAL_DAILY_CAP
+    return int((u.get('counts') or {}).get(principal, 0)), _TRIAL_DAILY_CAP
+
+
+def _trial_check_and_bump(principal):
+    """Atomically count one trial completion. Returns (allowed, used, cap):
+    allowed False (over cap) means DON'T forward — surface the upsell."""
+    today = time.strftime('%Y-%m-%d')
+    with _trial_usage_lock:
+        u = _night_load('trial-usage.json', {})
+        if u.get('date') != today:
+            u = {'date': today, 'counts': {}}
+        counts = u.setdefault('counts', {})
+        used = int(counts.get(principal, 0))
+        if used >= _TRIAL_DAILY_CAP:
+            return False, used, _TRIAL_DAILY_CAP
+        counts[principal] = used + 1
+        _night_save('trial-usage.json', u)
+        return True, used + 1, _TRIAL_DAILY_CAP
+
+
 def _night_log_run(run):
     """Upsert a run record (called progressively so a crash keeps partial log)."""
     with _night_lock:
@@ -2344,6 +2404,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_get_provider()
         if self.path == '/hermes/config/export':
             return self._hermes_export_config()
+        if self.path == '/hermes/trial-status':
+            return self._hermes_trial_status()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
@@ -7369,6 +7431,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'error': f'write config: {e}'})
 
+        # The user just brought their OWN key — end the shared-trial cap. Their
+        # key draws on their own account, so it's never metered here.
+        _trial_deactivate()
+
         # 3. export into THIS process env so the restarted gateway (which inherits
         #    serve.py's env via the bootstrap) sees the key immediately.
         _os.environ[spec['env']] = key
@@ -7382,6 +7448,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'ok': True, 'provider': provider, 'model': model,
                                      'restarted': restarted,
                                      'note': 'gateway reloading; allow ~10s'})
+
+    def _hermes_trial_status(self):
+        """GET /hermes/trial-status → whether this HQ is on the shared trial
+        brain and how much of today's per-principal allowance is left. Drives the
+        onboarding upsell ('you're on the free shared brain — add your own key
+        for unlimited'). Returns active:false once the user brings their own key."""
+        st = _trial_state()
+        principal = (self.headers.get('X-User-Principal') or '').strip() or 'local'
+        used, cap = _trial_usage(principal)
+        return self._send_json(200, {
+            'active': st.get('active', False),
+            'provider': st.get('provider', ''),
+            'used': used,
+            'cap': cap,
+            'remaining': max(0, cap - used),
+        })
 
     # ── Hermes config import/export ──────────────────────────────────────────
     # Lets users carry a Hermes agent setup between HQs (or in from a local
@@ -7487,6 +7569,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         length = int(self.headers.get('content-length', 0) or 0)
         body = self.rfile.read(length) if length else None
+
+        # Trial-brain cap: when this HQ is running on the shared trial key, meter
+        # chat completions per-principal per-day so one user can't drain the
+        # shared pool. A user's OWN key clears the trial (below) and is never
+        # metered. Body is already consumed, so a 429 here is a clean response.
+        if method == 'POST' and upstream_path.startswith('/v1/chat/completions') \
+                and _trial_state().get('active'):
+            _principal = (self.headers.get('X-User-Principal') or '').strip() or 'local'
+            _ok, _used, _cap = _trial_check_and_bump(_principal)
+            if not _ok:
+                return self._send_json(429, {
+                    'error': 'trial_limit', 'used': _used, 'cap': _cap,
+                    'message': (f"You've used your {_cap} free messages for today. "
+                                "Add your own free key in Settings — it's quick and "
+                                "gives you unlimited use."),
+                })
 
         # Also strip browser-context headers. The in-container Hermes gateway's
         # aiohttp server REJECTS any request carrying an Origin it doesn't know

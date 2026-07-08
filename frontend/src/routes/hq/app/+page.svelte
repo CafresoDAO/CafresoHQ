@@ -130,7 +130,7 @@
         reply({
           type: 'vault:error',
           code: 'locked',
-          message: 'Vault locked. Visit ai.cafreso.com/vault to unlock.'
+          message: 'Vault locked. Visit ai.cafreso.com/hq/vault to unlock.'
         });
         return;
       }

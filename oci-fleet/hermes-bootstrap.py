@@ -13,16 +13,74 @@ Backend precedence (first available wins):
   2. LMSTUDIO_BASE_URL  -> provider=lmstudio (explicit OpenAI-compatible endpoint)
   3. ANTHROPIC_API_KEY  -> provider=anthropic (BYOK)
   4. GOOGLE_API_KEY     -> provider=gemini (BYOK)
+  4b CAFRESOHQ_TRIAL_KEY -> the SHARED free-trial brain (lowest precedence). When
+                           the user has set NO key of their own, a fresh HQ falls
+                           back to this operator-provided shared key so agents
+                           WORK on first launch — no third-party signup required.
+                           It writes HERMES_HOME/trial.json so serve.py can meter
+                           it (per-principal daily cap) and clear it the moment
+                           the user brings their own key. Keep the trial key in
+                           its OWN var (never a standard provider var) so a real
+                           user key is always distinguishable from the trial.
+                           CAFRESOHQ_TRIAL_PROVIDER (default openrouter) picks the
+                           backend; put ~$10 credit on the shared OpenRouter
+                           account to lift :free from 50 to 1000 req/day, or use
+                           gemini (1500/day).
   5. none               -> OpenRouter stub written; API server starts but calls
-                           error until OPENROUTER_API_KEY is supplied. Non-fatal.
+                           error until a key is supplied. Non-fatal.
 
 Never raises fatally — a bad bootstrap must not stop serve.py from serving the
 app shell. All writes are skip-if-exists so user edits survive restarts.
 """
+import json
 import os
 import sys
 
 HERMES_HOME = os.environ.get('HERMES_HOME') or os.path.expanduser('~/.hermes')
+
+# Trial provider -> the Hermes env var its key lives under. The trial reuses the
+# same proven per-provider config blocks as BYOK; only the *source* differs.
+_TRIAL_PROVIDER_ENV = {
+    'openrouter': 'OPENROUTER_API_KEY',
+    'gemini': 'GOOGLE_API_KEY',
+    'groq': 'GROQ_API_KEY',
+}
+# Any of these already set = the user/operator supplied their own key -> no trial.
+_USER_KEY_VARS = ('OPENROUTER_API_KEY', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY',
+                  'GOOGLE_API_KEY', 'LMSTUDIO_BASE_URL')
+
+
+def _apply_trial_if_unkeyed():
+    """Inject the shared trial key ONLY on a first boot with no user key.
+
+    Runs before _write_env/_write_config so the injected provider var flows into
+    both .env and the model block via the normal precedence path. Gated on
+    config.yaml NOT existing (first boot) so a later BYOK — which rewrites the
+    config and clears the marker — is never re-overridden on restart."""
+    cfg_path = os.path.join(HERMES_HOME, 'config.yaml')
+    if os.path.exists(cfg_path):
+        return  # already configured (first boot done, or user brought a key)
+    if any(os.environ.get(v, '').strip() for v in _USER_KEY_VARS):
+        return  # a real user/operator key wins — never trial over it
+    trial_key = os.environ.get('CAFRESOHQ_TRIAL_KEY', '').strip()
+    if not trial_key:
+        return  # no trial configured on this image — legacy "needs a key" behavior
+    provider = (os.environ.get('CAFRESOHQ_TRIAL_PROVIDER', '').strip().lower()
+                or 'openrouter')
+    env_var = _TRIAL_PROVIDER_ENV.get(provider)
+    if not env_var:
+        _log(f'WARN unknown CAFRESOHQ_TRIAL_PROVIDER={provider!r} — trial skipped')
+        return
+    os.environ[env_var] = trial_key            # so _write_env + _model_block see it
+    model = os.environ.get('CAFRESOHQ_TRIAL_MODEL', '').strip()
+    if model and provider == 'openrouter':
+        os.environ.setdefault('OPENROUTER_MODEL', model)
+    try:
+        with open(os.path.join(HERMES_HOME, 'trial.json'), 'w', encoding='utf-8') as f:
+            json.dump({'active': True, 'provider': provider}, f)
+    except Exception as e:
+        _log(f'WARN could not write trial.json: {e}')
+    _log(f'trial brain active (provider={provider}) — new user works with no signup')
 
 
 def _log(msg):
@@ -244,6 +302,7 @@ def main():
         if not os.environ.get('API_SERVER_KEY', '').strip():
             _log('WARN API_SERVER_KEY is empty — the API server requires it; '
                  'set it per-principal via fleet-manager.py')
+        _apply_trial_if_unkeyed()   # shared trial brain (before env/config writes)
         _write_env()
         _write_config()
         _log(f'done (HERMES_HOME={HERMES_HOME})')

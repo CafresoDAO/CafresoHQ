@@ -1291,6 +1291,19 @@ function OnboardingKeyStep() {
   const [key, setKey] = useState(existing);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(existing ? 'have' : null); // 'have' | 'ok' | 'local' | 'err'
+  // Trial brain: when this deployment ships a shared free key, a brand-new HQ
+  // ALREADY works with no signup — so this step is an optional upgrade, not a
+  // gate. Fetch the live status so the copy tells the truth for THIS container.
+  const [trial, setTrial] = useState(null); // null=unknown, {active, remaining, cap}
+  useEffect(() => {
+    let dead = false;
+    fetch((window._API_BASE || '') + '/hermes/trial-status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!dead && d) setTrial(d); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, []);
+  const onTrial = !!(trial && trial.active) && !existing;
 
   const save = async () => {
     const trimmed = (key || '').trim();
@@ -1311,19 +1324,33 @@ function OnboardingKeyStep() {
 
   return (
     <div>
-      <p style={{ margin: '0 0 var(--sp-3)' }}>
-        Your HQ runs on a free, open-weights AI brain — but it needs <strong>your own
-        free key</strong> from OpenRouter. It takes about a minute and stays unique to you.
-      </p>
-      <ol style={{ margin: '0 0 var(--sp-3)', paddingLeft: '1.2em', lineHeight: 'var(--lh-normal)' }}>
-        <li>Open{' '}
-          <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={linkStyle}>
-            openrouter.ai/keys
-          </a>{' '}and sign up (it's free).</li>
-        <li>Click <strong>Create Key</strong>, give it any name.</li>
-        <li>Copy the key (starts with <code>sk-or-…</code>).</li>
-        <li>Paste it below and hit <strong>Save</strong>.</li>
-      </ol>
+      {onTrial ? (
+        <p style={{ margin: '0 0 var(--sp-3)' }}>
+          <strong>You're already set.</strong> Your HQ runs on Cafreso's free shared
+          brain out of the box — hire an agent and it works right now, no signup.
+          {typeof trial.remaining === 'number' && (
+            <span style={{ color: 'var(--ink-3)' }}>{' '}({trial.remaining} of {trial.cap} free
+            messages left today.)</span>
+          )}{' '}Want your own model, faster replies, or higher limits? Add a free key
+          below — totally optional.
+        </p>
+      ) : (
+        <>
+          <p style={{ margin: '0 0 var(--sp-3)' }}>
+            Your HQ runs on a free, open-weights AI brain — but it needs <strong>your own
+            free key</strong> from OpenRouter. It takes about a minute and stays unique to you.
+          </p>
+          <ol style={{ margin: '0 0 var(--sp-3)', paddingLeft: '1.2em', lineHeight: 'var(--lh-normal)' }}>
+            <li>Open{' '}
+              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={linkStyle}>
+                openrouter.ai/keys
+              </a>{' '}and sign up (it's free).</li>
+            <li>Click <strong>Create Key</strong>, give it any name.</li>
+            <li>Copy the key (starts with <code>sk-or-…</code>).</li>
+            <li>Paste it below and hit <strong>Save</strong>.</li>
+          </ol>
+        </>
+      )}
       <div style={rowStyle}>
         <input
           type="password"
@@ -1348,7 +1375,9 @@ function OnboardingKeyStep() {
         {saved === 'local' && '✓ Key saved. (Stored in this browser — your container will pick it up.)'}
         {saved === 'have'  && '✓ A key is already set. Paste a new one to replace it.'}
         {saved === 'err'   && '✕ Couldn\'t save — check the key and try again.'}
-        {!saved            && 'Free · unique to you · you can change it anytime in Settings → API.'}
+        {!saved && (onTrial
+          ? 'Optional — your own key gives unlimited use and lets you pick the model.'
+          : 'Free · unique to you · you can change it anytime in Settings → API.')}
       </div>
       <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', color: 'var(--ink-3)' }}>
         Want stronger output? Plug in your own Claude, GPT or paid key —{' '}
