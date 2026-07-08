@@ -9,6 +9,23 @@
 #   2. Per-request BYOK keys — user supplies their own key via HQ Settings.
 #      serve.py injects them into the subprocess env only for that request.
 #      Server env always wins over BYOK keys (admin can lock the backend).
+#
+# Shared FREE-TRIAL brain (optional, operator-set on the image/fleet):
+#   CAFRESOHQ_TRIAL_KEY       a shared free-tier LLM key. When a fresh HQ has NO
+#                             user key, hermes-bootstrap.py falls back to this so
+#                             a brand-new user's agents WORK on first launch with
+#                             zero third-party signup. It writes a trial marker;
+#                             serve.py meters it (per-principal daily cap) and
+#                             clears it the instant the user brings their own key.
+#   CAFRESOHQ_TRIAL_PROVIDER  openrouter (default) | gemini | groq. Put ~$10 on the
+#                             shared OpenRouter account to lift :free 50→1000 req/day,
+#                             or use gemini (1500/day). MUST be its own var — never
+#                             reuse a standard provider var, or the trial can't be
+#                             told apart from a real user key.
+#   CAFRESOHQ_TRIAL_MODEL     optional model override for the trial provider.
+#   CAFRESOHQ_TRIAL_DAILY_CAP per-principal free messages/day before the upsell
+#                             (default 25). Also live-settable from the operator
+#                             admin panel once that ships.
 
 set -e
 
