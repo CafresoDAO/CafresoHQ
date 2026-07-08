@@ -2285,6 +2285,32 @@ actor CafresoHQState {
     Array.filter<WorkerPayout>(workerPayouts, func(po) { po.worker == msg.caller });
   };
 
+  // ── Operator control plane ─────────────────────────────────────────────────
+  // ONE planAdmin-set JSON blob of network-wide switches that every client
+  // reads (public /operator/config.json, below) to gate features and surface
+  // operator messages — e.g. taking the GPU node down flips one flag and all
+  // clients show "currently down". The schema is operator-defined and client-
+  // interpreted; the canister only stores + serves the string (the admin UI
+  // always writes valid JSON.stringify output). Empty → clients see "{}".
+  stable var operatorConfig : Text = "";
+  let OPERATOR_CONFIG_MAX : Nat = 8_192;
+
+  public shared (msg) func operator_set_config(json : Text) : async () {
+    if (not isPlanAdminP(msg.caller)) { throw Error.reject("plan admin only") };
+    if (json.size() > OPERATOR_CONFIG_MAX) { throw Error.reject("config too large") };
+    operatorConfig := json;
+  };
+
+  public query func operator_config() : async Text { operatorConfig };
+
+  func operatorLookup(url : Text) : ?HttpResponse {
+    var path = url;
+    switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
+    path := Text.trimStart(path, #char '/');
+    if (path != "operator/config.json") { return null };
+    ?libJsonResponse(if (operatorConfig.size() > 0) { operatorConfig } else { "{}" });
+  };
+
   // Upgrade GETs to an update call so we don't need asset certification (MVP).
   public query func http_request(_req : HttpRequest) : async HttpResponse {
     { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
@@ -2297,15 +2323,20 @@ actor CafresoHQState {
     switch (receiptLookup(req.url)) {
       case (?res) res;
       case null {
-        switch (searchLookup(req)) {
+        switch (operatorLookup(req.url)) {
           case (?res) res;
           case null {
-            switch (libraryLookup(req.url)) {
+            switch (searchLookup(req)) {
               case (?res) res;
               case null {
-                switch (workerRoute(req)) {
+                switch (libraryLookup(req.url)) {
                   case (?res) res;
-                  case null serveSite(req.url);
+                  case null {
+                    switch (workerRoute(req)) {
+                      case (?res) res;
+                      case null serveSite(req.url);
+                    };
+                  };
                 };
               };
             };

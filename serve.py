@@ -342,6 +342,46 @@ def _night_save(name, data):
 _TRIAL_DAILY_CAP = max(1, int(os.environ.get('CAFRESOHQ_TRIAL_DAILY_CAP', '25') or '25'))
 _trial_usage_lock = threading.Lock()
 
+# ── Operator control plane (network-wide switches, read from the canister) ──
+# The planAdmin sets ONE JSON blob on cafresohq_state; every client + container
+# reads it from the public /operator/config.json route. serve.py caches it and
+# honors: trialBrain.enabled (kill the shared trial network-wide),
+# trialBrain.dailyCap (live cap override), gpuNode.enabled (a worker self-pauses
+# when the operator takes the node down). Never blocks on the network — a failed
+# fetch keeps the last good config (or {}), so a canister blip can't break chat.
+_OPERATOR_BASE = os.environ.get(
+    'SEARCH_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
+_operator_cfg = {'ts': 0.0, 'data': {}}
+_operator_cfg_lock = threading.Lock()
+
+
+def _operator_config():
+    with _operator_cfg_lock:
+        if time.time() - _operator_cfg['ts'] < 60:
+            return _operator_cfg['data']
+    data = None
+    try:
+        with urllib.request.urlopen(_OPERATOR_BASE + '/operator/config.json', timeout=6) as r:
+            parsed = json.loads(r.read().decode('utf-8'))
+        if isinstance(parsed, dict):
+            data = parsed
+    except Exception:
+        pass
+    with _operator_cfg_lock:
+        if data is not None:
+            _operator_cfg['data'] = data
+        _operator_cfg['ts'] = time.time()
+        return _operator_cfg['data']
+
+
+def _trial_cap():
+    """Operator override (trialBrain.dailyCap) wins over the env default."""
+    op = _operator_config().get('trialBrain') or {}
+    c = op.get('dailyCap')
+    if isinstance(c, (int, float)) and c >= 1:
+        return int(c)
+    return _TRIAL_DAILY_CAP
+
 
 def _hermes_home():
     return os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
@@ -349,13 +389,20 @@ def _hermes_home():
 
 def _trial_state():
     """{'active': bool, 'provider': str} — read fresh so a BYOK clear takes effect
-    without a restart."""
+    without a restart. The operator can also kill the shared trial network-wide
+    (trialBrain.enabled=false) — that override wins over the local marker."""
     try:
         with open(os.path.join(_hermes_home(), 'trial.json'), 'r', encoding='utf-8') as f:
             d = json.load(f)
-        return {'active': bool(d.get('active')), 'provider': str(d.get('provider') or '')}
+        active = bool(d.get('active'))
+        provider = str(d.get('provider') or '')
     except Exception:
-        return {'active': False, 'provider': ''}
+        active, provider = False, ''
+    if active:
+        op = _operator_config().get('trialBrain') or {}
+        if op.get('enabled') is False:
+            active = False   # operator kill switch
+    return {'active': active, 'provider': provider}
 
 
 def _trial_deactivate():
@@ -369,16 +416,18 @@ def _trial_deactivate():
 
 def _trial_usage(principal):
     """Return (used_today, cap) for a principal without mutating."""
+    cap = _trial_cap()
     today = time.strftime('%Y-%m-%d')
     u = _night_load('trial-usage.json', {})
     if u.get('date') != today:
-        return 0, _TRIAL_DAILY_CAP
-    return int((u.get('counts') or {}).get(principal, 0)), _TRIAL_DAILY_CAP
+        return 0, cap
+    return int((u.get('counts') or {}).get(principal, 0)), cap
 
 
 def _trial_check_and_bump(principal):
     """Atomically count one trial completion. Returns (allowed, used, cap):
     allowed False (over cap) means DON'T forward — surface the upsell."""
+    cap = _trial_cap()
     today = time.strftime('%Y-%m-%d')
     with _trial_usage_lock:
         u = _night_load('trial-usage.json', {})
@@ -386,11 +435,11 @@ def _trial_check_and_bump(principal):
             u = {'date': today, 'counts': {}}
         counts = u.setdefault('counts', {})
         used = int(counts.get(principal, 0))
-        if used >= _TRIAL_DAILY_CAP:
-            return False, used, _TRIAL_DAILY_CAP
+        if used >= cap:
+            return False, used, cap
         counts[principal] = used + 1
         _night_save('trial-usage.json', u)
-        return True, used + 1, _TRIAL_DAILY_CAP
+        return True, used + 1, cap
 
 
 def _night_log_run(run):
@@ -705,8 +754,22 @@ def _sw_process(job):
 def _sw_loop():
     print('[search-worker] joining the search network as %s -> %s'
           % (_SW_PRINCIPAL[:12] + '…', _SW_BASE))
+    paused = False
     while True:
         try:
+            # Operator can take this node down from the admin panel
+            # (gpuNode.enabled=false): stop claiming AND stop heartbeating so it
+            # ages out of the network and clients see it offline — no SSH needed.
+            gpu = _operator_config().get('gpuNode') or {}
+            if gpu.get('enabled') is False:
+                if not paused:
+                    print('[search-worker] paused by operator (gpuNode.enabled=false)')
+                    paused = True
+                time.sleep(20)
+                continue
+            if paused:
+                print('[search-worker] resumed by operator')
+                paused = False
             status, resp = _sw_call('claim', [])
             if status == 403:
                 # Not approved yet (or suspended): heartbeat keeps the

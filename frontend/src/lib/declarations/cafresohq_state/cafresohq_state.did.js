@@ -232,6 +232,8 @@ export const idlFactory = ({ IDL }) => {
       ),
     'library_remove' : IDL.Func([IDL.Text], [IDL.Bool], []),
     'amPlanAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'operator_config' : IDL.Func([], [IDL.Text], ['query']),
+    'operator_set_config' : IDL.Func([IDL.Text], [], []),
     'worker_register' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Text], []),
     'worker_my_status' : IDL.Func([], [IDL.Opt(Worker)], ['query']),
     'worker_admin_list' : IDL.Func([], [IDL.Vec(Worker)], ['query']),
