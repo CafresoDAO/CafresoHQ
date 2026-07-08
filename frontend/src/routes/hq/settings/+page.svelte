@@ -14,6 +14,7 @@
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
   import SearchNetworkCard from '$lib/components/SearchNetworkCard.svelte';
+  import OperatorPanel from '$lib/components/OperatorPanel.svelte';
 
   let fleetApiInput = $fleetApiUrl;
   let fleetTokenInput = $fleetApiAuthToken;
@@ -294,6 +295,8 @@
       </div>
     {/if}
   </div>
+
+  <OperatorPanel />
 
   <SearchNetworkCard />
 

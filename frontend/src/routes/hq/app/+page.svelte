@@ -35,7 +35,12 @@
   import ApprovalSheet from '$lib/components/ApprovalSheet.svelte';
   import { requestApproval } from '$lib/stores/approvalSheet.js';
   import { login } from '$lib/stores/auth.js';
+  import { operatorConfig, refreshOperatorConfig, moneyDisabled, publishDisabled } from '$lib/stores/operator.js';
   import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
+
+  // Money-moving chain ops the operator can kill network-wide (money module off).
+  const MONEY_OPS = new Set(['chain:wallet:fund', 'chain:wallet:send',
+                             'chain:payroll:approve', 'chain:payroll:run']);
 
   $: if ($endpointUrl && $endpointHealth.state === 'idle') {
     probeHealth().catch(() => {});
@@ -202,6 +207,16 @@
     if (!get(isAuthenticated)) return fail('Sign in at ai.cafreso.com to use ICP Services.');
     const p = principalText();
     if (!p) return fail('No Internet Identity principal available.');
+
+    // Operator network kill switches — refuse the op (with a clear message) when
+    // the module is turned off network-wide, overriding per-user settings.
+    const opCfg = get(operatorConfig);
+    if (MONEY_OPS.has(type) && moneyDisabled(opCfg)) {
+      return fail('The money module is turned off by the operator right now.');
+    }
+    if (type === 'chain:publish' && publishDisabled(opCfg)) {
+      return fail('Publishing is turned off by the operator right now.');
+    }
 
     try {
       const d = e.data;
@@ -481,6 +496,7 @@
       window.addEventListener('message', onSessionExpired);
     }
     vaultUnsub = vaultFiles.subscribe((files) => pushFiles(files));
+    refreshOperatorConfig();   // network kill switches for the money/publish bridge
   });
 
   onDestroy(() => {

@@ -12,6 +12,8 @@
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { findPublic, networkHealth, submitJob, awaitJob } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl } from '$lib/api/library.js';
+  import { get } from 'svelte/store';
+  import { operatorConfig, refreshOperatorConfig, searchPaused, gpuNodeDown, gpuDownMessage } from '$lib/stores/operator.js';
 
   const CACHE_TTL = 5 * 60 * 1000; // 5 min — library hits only (queue results change state)
 
@@ -24,12 +26,14 @@
   let rejectReason = '';
   let recentSearches = [];
   let searchSeq = 0;  // stale-response guard
+  let darkMessage = '';  // operator-set pause / GPU-down message for the dark state
 
   $: if ($aiSearchOpen) {
     phase = 'idle';
     query = '';
     entry = null;
     try { recentSearches = JSON.parse(localStorage.getItem('cafreso:ai-recent') || '[]'); } catch { recentSearches = []; }
+    refreshOperatorConfig();
     setTimeout(() => inputEl?.focus(), 60);
   }
 
@@ -72,8 +76,10 @@
 
     phase = 'checking';
     entry = null;
+    darkMessage = '';
 
-    // 1. Library first — instant and free.
+    // 1. Library first — instant and free. Still works even when the operator
+    //    has paused the network (reads aren't gated — only NEW queries are).
     const hit = await findPublic(q);
     if (seq !== searchSeq) return;
     if (hit && hit.id) {
@@ -82,10 +88,18 @@
       return;
     }
 
-    // 2. Miss → is the research network awake?
+    // 2. Miss → operator pause / node-down beats everything.
+    const opc = get(operatorConfig);
+    if (searchPaused(opc)) {
+      darkMessage = 'Search is paused by the operator right now — browse everything already answered below.';
+      phase = 'dark'; return;
+    }
     const health = await networkHealth();
     if (seq !== searchSeq) return;
-    if (!health || !health.activeWorkers) { phase = 'dark'; return; }
+    if (!health || !health.activeWorkers) {
+      if (gpuNodeDown(opc)) darkMessage = gpuDownMessage(opc);
+      phase = 'dark'; return;
+    }
 
     const sub = await submitJob(q);
     if (seq !== searchSeq) return;
@@ -417,10 +431,10 @@
       <div style="text-align: center; padding: 20px 0 16px;">
         <Icon name="moon" size={28} style="color: hsl(260 40% 55%); display: block; margin: 0 auto 10px;" />
         <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 4px;">
-          The research network is asleep
+          {darkMessage ? 'Heads up' : 'The research network is asleep'}
         </div>
         <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">
-          No workers are online right now. Sign in to search with your own container — or browse everything already answered.
+          {darkMessage || 'No workers are online right now. Sign in to search with your own container — or browse everything already answered.'}
         </div>
         <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
           <a href="/hq/search?q={encodeURIComponent(query)}" on:click={close} style="
