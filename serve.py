@@ -46,8 +46,10 @@ import uuid
 # self-hoster can avoid a clash with another local service; defaults to 8787.
 PORT = int(os.environ.get('PORT', '8787') or '8787')
 ROUTES = {
-    '/lmstudio/': ('10.0.0.100', 1234),
-    '/ollama/':   ('localhost', 11434),
+    '/lmstudio/': (os.environ.get('LMSTUDIO_HOST', 'localhost'),
+                   int(os.environ.get('LMSTUDIO_PORT', '1234') or '1234')),
+    '/ollama/':   (os.environ.get('OLLAMA_HOST', 'localhost'),
+                   int(os.environ.get('OLLAMA_PORT', '11434') or '11434')),
 }
 
 # Hermes Agent (Nous Research) — the per-container `hermes gateway` exposes an
@@ -7362,11 +7364,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                        're': r'^AIza[A-Za-z0-9_\-]{30,}$', 'label': 'Google Gemini'},
         'groq':       {'env': 'GROQ_API_KEY',       'model': 'llama-3.3-70b-versatile',
                        're': r'^gsk_[A-Za-z0-9]{20,}$', 'label': 'Groq'},
+        # Local providers carry no API key — the "credential" is a base_url the
+        # user points at their own OpenAI-compatible engine (LM Studio, Ollama,
+        # vLLM). Hermes' generic local adapter is `provider: lmstudio` for ALL
+        # of these (see oci-fleet/hermes-bootstrap.py's LMSTUDIO_BASE_URL branch)
+        # — the two UI entries just prefill a sensible default URL/model.
+        'lmstudio':   {'local': True, 'model': 'local-model',
+                       'default_url': 'http://localhost:1234/v1', 'label': 'LM Studio'},
+        'ollama':     {'local': True, 'model': 'local-model',
+                       'default_url': 'http://localhost:11434/v1', 'label': 'Ollama'},
     }
 
     @staticmethod
-    def _hermes_model_block(provider, model):
+    def _hermes_model_block(provider, model, base_url=None):
         """Return the config.yaml model block (+ custom_providers) for a provider."""
+        if provider in ('lmstudio', 'ollama'):
+            # Hermes' generic OpenAI-compatible adapter is always `provider:
+            # lmstudio` regardless of which local engine is actually behind it.
+            return (f'model:\n  default: {model}\n  provider: lmstudio\n'
+                    f'  base_url: {base_url}\n')
         if provider == 'gemini':
             return (f'model:\n  default: {model}\n  provider: google-openai\n'
                     '  base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
@@ -7400,17 +7416,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 cfg = f.read()
             pm = _re.search(r'^\s*provider:\s*(\S+)', cfg, _re.MULTILINE)
             mm = _re.search(r'^\s*default:\s*(\S+)', cfg, _re.MULTILINE)
+            um = _re.search(r'^\s*base_url:\s*(\S+)', cfg, _re.MULTILINE)
             if pm:
                 provider = pm.group(1).strip()
             if mm:
                 model = mm.group(1).strip()
+            base_url = um.group(1).strip() if um else ''
         except Exception:
-            pass
+            base_url = ''
         logical = {'google-openai': 'gemini'}.get(provider, provider)
         spec = self._HERMES_PROVIDERS.get(logical)
         configured = False
         if spec:
-            if _os.environ.get(spec['env'], '').strip():
+            if spec.get('local'):
+                # No key to check — "configured" just means a base_url is wired.
+                configured = bool(base_url)
+            elif _os.environ.get(spec['env'], '').strip():
                 configured = True
             else:
                 try:
@@ -7420,7 +7441,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
         return self._send_json(200, {'provider': logical, 'model': model,
-                                     'configured': configured})
+                                     'baseUrl': base_url, 'configured': configured})
 
     def _hermes_set_provider(self, force_provider=None):
         """POST /hermes/provider {provider, key, model?} → write the provider's key
@@ -7442,32 +7463,47 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         spec = self._HERMES_PROVIDERS.get(provider)
         if not spec:
             return self._send_json(400, {'error': f'unknown provider: {provider}'})
-        key = str(req.get('key', '')).strip()
         import os as _os, re as _re
-        if not _re.match(spec['re'], key):
-            return self._send_json(400, {'error': f"invalid {spec['label']} key"})
+        key = ''
+        base_url = ''
+        if spec.get('local'):
+            # No API key — the credential is a base_url pointing at the user's
+            # own OpenAI-compatible engine (LM Studio, Ollama, vLLM).
+            base_url = str(req.get('baseUrl', '')).strip() or spec['default_url']
+            if not _re.match(r'^https?://[^\s]+$', base_url):
+                return self._send_json(400, {'error': f"invalid {spec['label']} URL"})
+        else:
+            key = str(req.get('key', '')).strip()
+            if not _re.match(spec['re'], key):
+                return self._send_json(400, {'error': f"invalid {spec['label']} key"})
         model = str(req.get('model', '')).strip() or spec['model']
 
         home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
         env_path = _os.path.join(home, '.env')
         cfg_path = _os.path.join(home, 'config.yaml')
-        try:
-            _os.makedirs(home, exist_ok=True)
-            # 1. write the key into .env (replace any prior line for THIS env var)
-            lines = []
-            if _os.path.exists(env_path):
-                with open(env_path, 'r', encoding='utf-8') as f:
-                    lines = [l for l in f.read().splitlines()
-                             if not l.startswith(spec['env'] + '=')]
-            lines.append(f"{spec['env']}={key}")
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
+        if not spec.get('local'):
             try:
-                _os.chmod(env_path, 0o600)
-            except Exception:
-                pass
-        except Exception as e:
-            return self._send_json(500, {'error': f'write .env: {e}'})
+                _os.makedirs(home, exist_ok=True)
+                # 1. write the key into .env (replace any prior line for THIS env var)
+                lines = []
+                if _os.path.exists(env_path):
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        lines = [l for l in f.read().splitlines()
+                                 if not l.startswith(spec['env'] + '=')]
+                lines.append(f"{spec['env']}={key}")
+                with open(env_path, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines) + '\n')
+                try:
+                    _os.chmod(env_path, 0o600)
+                except Exception:
+                    pass
+            except Exception as e:
+                return self._send_json(500, {'error': f'write .env: {e}'})
+        else:
+            try:
+                _os.makedirs(home, exist_ok=True)
+            except Exception as e:
+                return self._send_json(500, {'error': f'mkdir: {e}'})
 
         # 2. rewrite config.yaml's model block (everything before `approvals:`),
         #    preserving the capability tail so the lite/full toggle survives.
@@ -7478,7 +7514,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     cfg = f.read()
             header = ('# CafresoHQ — Hermes config (provider set via HQ Settings).\n'
                       '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
-            block = self._hermes_model_block(provider, model)
+            block = self._hermes_model_block(provider, model, base_url)
             m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
             if m:
                 new_cfg = header + block + cfg[m.start():]
@@ -7499,8 +7535,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         _trial_deactivate()
 
         # 3. export into THIS process env so the restarted gateway (which inherits
-        #    serve.py's env via the bootstrap) sees the key immediately.
-        _os.environ[spec['env']] = key
+        #    serve.py's env via the bootstrap) sees the key immediately. Local
+        #    providers have no key — base_url already lives in config.yaml.
+        if not spec.get('local'):
+            _os.environ[spec['env']] = key
         restarted = False
         try:
             subprocess.Popen(['hermes', 'gateway', 'restart'],
@@ -7509,7 +7547,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             sys.stderr.write(f'[hermes] provider restart failed: {e}\n')
         return self._send_json(200, {'ok': True, 'provider': provider, 'model': model,
-                                     'restarted': restarted,
+                                     'baseUrl': base_url, 'restarted': restarted,
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_trial_status(self):

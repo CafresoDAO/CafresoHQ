@@ -47,6 +47,25 @@
   }
 
   const APP_PATH = '/hq.html';
+
+  // Appends query params to a URL that may or may not already have some —
+  // shared by appUrl below and reload() so the ?/& join logic lives in one place.
+  function withQuery(url, params) {
+    let out = url;
+    for (const [k, v] of Object.entries(params)) {
+      if (v == null) continue;
+      out += (out.includes('?') ? '&' : '?') + k + '=' + encodeURIComponent(v);
+    }
+    return out;
+  }
+
+  // The sandboxed app has no way to know its own parent's origin (it's served
+  // from many different hosts — a user's own container, the canister UI, or
+  // localhost dev) so the shell tells it via ?parentOrigin=. The app validates
+  // this against its own allowlist before trusting it (see claude-client.jsx) —
+  // this is just how it learns the value, not the security boundary itself.
+  $: shellOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
   // Frontend/backend split (Phase 3): when the container is reached through the
   // public gateway, serve the UI from the cafresohq_ui canister and point it back
   // at the container API via ?api= — so UI updates ship via `dfx deploy`, not a
@@ -55,8 +74,8 @@
   $: useCanisterUi = !!HQ_UI_CANISTER_ORIGIN && needsSession;
   $: appUrl = $endpointUrl
     ? (useCanisterUi
-        ? `${HQ_UI_CANISTER_ORIGIN}${APP_PATH}?api=${encodeURIComponent($endpointUrl)}`
-        : $endpointUrl + APP_PATH)
+        ? withQuery(`${HQ_UI_CANISTER_ORIGIN}${APP_PATH}`, { api: $endpointUrl, parentOrigin: shellOrigin })
+        : withQuery($endpointUrl + APP_PATH, { parentOrigin: shellOrigin }))
     : '';
 
   $: shellIsHttps = typeof window !== 'undefined' && window.location?.protocol === 'https:';
@@ -84,9 +103,7 @@
 
   function reload() {
     loaded = false;
-    // appUrl may already carry a query (?api=…) when serving the canister UI —
-    // use the right separator so we don't produce a malformed double-?.
-    if (iframe) iframe.src = appUrl + (appUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    if (iframe) iframe.src = withQuery(appUrl, { _t: Date.now() });
   }
 
   function popout() {

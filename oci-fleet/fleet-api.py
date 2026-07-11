@@ -31,6 +31,15 @@ Run
 
 For production, run behind a TLS terminator (OCI Load Balancer, Caddy, etc.)
 and pass the secret to the SvelteKit shell via environment.
+
+Idle reaping
+────────────
+This process runs a background daemon (see _reap_loop) that periodically calls
+`fleet-manager.py reap-idle` (pause billing on idle containers) and
+`reap-expired` (downgrade lapsed paid plans) — no separate cron/timer needed.
+  FLEET_REAP_DISABLED=1        disable the daemon (e.g. local dev)
+  FLEET_REAP_INTERVAL_MIN=5    minutes between reap-idle ticks
+  FLEET_REAP_EXPIRED_EVERY_N=288   ticks between reap-expired runs (~24h @5m)
 """
 import http.server
 import json
@@ -64,6 +73,14 @@ ALLOWED_ORIGINS  = os.environ.get(
     'https://6cajv-qqaaa-aaaab-qactq-cai.icp0.io,'      # earlier playground
     'https://ai.cafreso.com,https://cafreso.com'
 ).split(',')
+
+# Background reaper: fleet-manager.py's `reap-idle`/`reap-expired` commands are
+# fully built (pause billing on idle containers, downgrade lapsed paid plans)
+# but were never scheduled anywhere — this process is already colocated with
+# OCI credentials (see _reap_loop below), so it's the natural place to run them.
+REAP_DISABLED        = os.environ.get('FLEET_REAP_DISABLED', '').strip().lower() in ('1', 'true', 'yes')
+REAP_INTERVAL_MIN    = int(os.environ.get('FLEET_REAP_INTERVAL_MIN', '5'))
+REAP_EXPIRED_EVERY_N = int(os.environ.get('FLEET_REAP_EXPIRED_EVERY_N', '288'))  # ~24h at 5-min ticks
 
 # Reasonable principal regex — base32 chunks separated by hyphens, length ≤ 100
 _PRINCIPAL_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$', re.IGNORECASE)
@@ -999,6 +1016,47 @@ def _provision_worker(job_id: str, principal: str):
         _set_job(job_id, status='error', phase='exception', error=str(e))
 
 
+def _run_fleet_manager(*args) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env.setdefault('PYTHONUTF8', '1')
+    env.setdefault('PYTHONWARNINGS', 'ignore::FutureWarning')
+    return subprocess.run(
+        [sys.executable, str(FLEET_MANAGER), *args],
+        capture_output=True, text=True, encoding='utf-8',
+        timeout=120, env=env, cwd=str(FLEET_DIR.parent),
+    )
+
+
+def _reap_loop():
+    """Background daemon: periodically stops idle containers (pausing billing)
+    and downgrades lapsed paid plans. Runs `fleet-manager.py` as a subprocess —
+    exactly like _provision_worker/_run_set_plan — so a missing/broken OCI
+    config (fleet-manager's require_oci() calls sys.exit(1)) only fails that
+    one subprocess call and never this thread or the HTTP server."""
+    tick = 0
+    while True:
+        time.sleep(max(1, REAP_INTERVAL_MIN) * 60)
+        tick += 1
+        try:
+            proc = _run_fleet_manager('reap-idle')
+            if proc.returncode == 0:
+                log.info(f'reap-idle: {proc.stdout.strip() or "ok"}')
+            else:
+                log.warning(f'reap-idle failed (rc={proc.returncode}): {_subproc_error(proc)}')
+        except Exception as e:
+            log.warning(f'reap-idle exception: {e}')
+
+        if tick % max(1, REAP_EXPIRED_EVERY_N) == 0:
+            try:
+                proc = _run_fleet_manager('reap-expired')
+                if proc.returncode == 0:
+                    log.info(f'reap-expired: {proc.stdout.strip() or "ok"}')
+                else:
+                    log.warning(f'reap-expired failed (rc={proc.returncode}): {_subproc_error(proc)}')
+            except Exception as e:
+                log.warning(f'reap-expired exception: {e}')
+
+
 # ── main ────────────────────────────────────────────────────────────────────
 def main():
     addr = ('0.0.0.0', PORT)
@@ -1022,6 +1080,12 @@ def main():
         print('  ⚠  No FLEET_API_SECRET set: admin (X-Fleet-Auth) routes will be '
               'refused. Token-protected routes still work. Set FLEET_API_SECRET '
               'for ops access, or FLEET_DEV_MODE=1 to allow local dev.', flush=True)
+    if REAP_DISABLED:
+        print('  Reaper:  DISABLED (FLEET_REAP_DISABLED=1)', flush=True)
+    else:
+        print(f'  Reaper:  reap-idle every {REAP_INTERVAL_MIN}m, '
+              f'reap-expired every {REAP_EXPIRED_EVERY_N} ticks', flush=True)
+        threading.Thread(target=_reap_loop, daemon=True).start()
 
     srv = http.server.ThreadingHTTPServer(addr, Handler)
     try:

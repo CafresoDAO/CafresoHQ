@@ -18,6 +18,20 @@
 //      · https://hq.cafreso.com/u/<slug>/hq.html → '/u/<slug>' (Caddy strips it)
 //      · http://localhost:8787/hq.html           → '' (direct, same-origin)
 // When no override is present, behavior is identical to before (zero regression).
+// Shared allowlist: is `origin` a trusted cafreso.com / loopback / same-origin
+// host? Used both for the ?api= base above and for the postMessage bridges
+// below (VaultBridge / CafresoHQChain) — one allowlist, not two.
+function _isTrustedShellOrigin(origin) {
+  try {
+    var u = new URL(String(origin));
+    var host = u.hostname.toLowerCase();
+    return (u.protocol === 'https:' &&
+        (host === 'cafreso.com' || host.endsWith('.cafreso.com'))) ||
+      host === 'localhost' || host === '127.0.0.1' ||
+      u.origin === window.location.origin;
+  } catch (_e) { return false; }
+}
+
 (function () {
   var injected = null;
   try {
@@ -31,27 +45,28 @@
   // fetch wrapper sends the hq_session cookie to this origin, so a crafted
   // ?api=https://evil.example link must NOT be able to redirect API traffic.
   // Allowed: our gateway, *.cafreso.com over https, and loopback for dev.
-  if (injected != null && /^https?:\/\//i.test(String(injected))) {
-    var okOrigin = false;
-    try {
-      var u = new URL(String(injected));
-      var host = u.hostname.toLowerCase();
-      okOrigin =
-        (u.protocol === 'https:' &&
-          (host === 'cafreso.com' || host.endsWith('.cafreso.com'))) ||
-        host === 'localhost' || host === '127.0.0.1' ||
-        u.origin === window.location.origin;
-    } catch (_e) { okOrigin = false; }
-    if (!okOrigin) {
-      try { console.warn('[hq] ignoring untrusted ?api= origin:', injected); } catch (_e) {}
-      injected = null;
-    }
+  if (injected != null && /^https?:\/\//i.test(String(injected)) && !_isTrustedShellOrigin(injected)) {
+    try { console.warn('[hq] ignoring untrusted ?api= origin:', injected); } catch (_e) {}
+    injected = null;
   }
   window._API_BASE = (injected != null)
     ? String(injected).replace(/\/$/, '')
     : window.location.pathname.replace(/\/[^/]*$/, '');
 })();
 const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
+
+// ── Parent shell origin (for postMessage bridges) ───────────────────────────
+// The shell (frontend/src/routes/hq/app/+page.svelte) appends ?parentOrigin=
+// when it constructs the iframe src. We can't trust that value blindly (an
+// attacker embedding hq.html directly controls their own query string) — it
+// must pass the same allowlist as ?api= above. If absent/untrusted,
+// window._PARENT_ORIGIN stays null and the bridges below fail closed instead
+// of ever falling back to postMessage(..., '*').
+(function () {
+  var qp = null;
+  try { qp = new URLSearchParams(window.location.search).get('parentOrigin'); } catch (_e) {}
+  window._PARENT_ORIGIN = (qp && _isTrustedShellOrigin(qp)) ? qp : null;
+})();
 
 // ── Credentialed fetch for cross-origin (canister UI → container API) ─────────
 // When the UI is on a different origin than the API, the browser won't send the
@@ -105,8 +120,8 @@ const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
     _expiredFired = true;
     try { window.dispatchEvent(new CustomEvent('hq:session-expired')); } catch (_e) {}
     try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'hq:session-expired' }, '*');
+      if (window.parent && window.parent !== window && window._PARENT_ORIGIN) {
+        window.parent.postMessage({ type: 'hq:session-expired' }, window._PARENT_ORIGIN);
       }
     } catch (_e) {}
     return resp;
@@ -198,6 +213,11 @@ const DEFAULTS = {
   lmstudioModel: '',
   ollamaUrl: '/ollama/v1',
   ollamaModel: '',
+  /* Hermes-routed local backends (agent framework + tools, driven by your own
+     GPU) — a base_url the CONTAINER reaches directly, not the same-origin
+     browser proxy above. See hermesSetProvider(). */
+  hermesLmstudioUrl: 'http://localhost:1234/v1',
+  hermesOllamaUrl: 'http://localhost:11434/v1',
   claudecodeModel: 'sonnet',
   codexModel: 'gpt-4.1',
   googleModel: 'gemini-3.1-pro-preview',
@@ -539,14 +559,44 @@ const HERMES_PROVIDER_KEY_FIELD = {
   gemini: 'geminiKey',
   groq: 'groqKey',
 };
+/* Local (no-key) Hermes backends — the "credential" is a base_url pointing at
+   the user's own OpenAI-compatible engine (LM Studio, Ollama, vLLM). */
+const HERMES_LOCAL_PROVIDERS = new Set(['lmstudio', 'ollama']);
+const HERMES_PROVIDER_URL_FIELD = {
+  lmstudio: 'hermesLmstudioUrl',
+  ollama: 'hermesOllamaUrl',
+};
 
 /* Set the Hermes backend provider + its free key. Persists locally (per-provider
    field + active backend) AND pushes to the container, which rewrites config.yaml
    to that provider and restarts the gateway. Reliability path from the research:
    the user can move off OpenRouter :free (20 RPM / 50 RPD) to Gemini direct
    (≈15 RPM / 1500 RPD) or Groq with their own free key. */
-async function hermesSetProvider(provider, key, model) {
+async function hermesSetProvider(provider, key, model, baseUrl) {
   const prov = (provider || 'openrouter').toLowerCase();
+  const isLocal = HERMES_LOCAL_PROVIDERS.has(prov);
+  if (isLocal) {
+    const urlField = HERMES_PROVIDER_URL_FIELD[prov];
+    const trimmedUrl = String(baseUrl || '').trim();
+    // persist locally so it survives reload AND container recreate (re-push)
+    setSettings({ hermesBackend: prov, [urlField]: trimmedUrl });
+    if (!trimmedUrl) return { ok: true, serverStored: false, detail: 'cleared' };
+    try {
+      const r = await fetch(_API_BASE + '/hermes/provider', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: prov, baseUrl: trimmedUrl, model: model || '' }),
+      });
+      if (r.ok) {
+        const d = await r.json().catch(() => ({}));
+        return { ok: true, serverStored: true, ...d };
+      }
+      const t = await r.text().catch(() => '');
+      return { ok: true, serverStored: false, detail: `server ${r.status}: ${t.slice(0, 120)}` };
+    } catch (e) {
+      return { ok: true, serverStored: false, detail: 'offline — saved locally' };
+    }
+  }
   const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
   const trimmed = String(key || '').trim();
   // persist locally so it survives reload AND container recreate (re-push)
@@ -600,6 +650,12 @@ async function hermesEnsureProvider() {
     if (cur && cur.configured) return { restored: false, configured: true };
     const s = getSettings();
     const prov = (s.hermesBackend || 'openrouter').toLowerCase();
+    if (HERMES_LOCAL_PROVIDERS.has(prov)) {
+      const url = (s[HERMES_PROVIDER_URL_FIELD[prov]] || '').trim();
+      if (!url) return { restored: false, configured: false };
+      await hermesSetProvider(prov, '', '', url);
+      return { restored: true, provider: prov };
+    }
     const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
     const key = (s[field] || '').trim();
     if (!key) return { restored: false, configured: false };
@@ -1954,18 +2010,19 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
 
   function _req(type, data) {
     return new Promise((resolve, reject) => {
+      if (!window._PARENT_ORIGIN) { reject(new Error('VaultBridge: no trusted parent origin')); return; }
       const reqId = Math.random().toString(36).slice(2, 10);
       const timer = setTimeout(() => {
         _pending.delete(reqId);
         reject(new Error('VaultBridge timeout: ' + type));
       }, 20000);
       _pending.set(reqId, { resolve, reject, timer });
-      window.parent.postMessage({ type, reqId, ...data }, '*');
+      window.parent.postMessage({ type, reqId, ...data }, window._PARENT_ORIGIN);
     });
   }
 
   window.addEventListener('message', function (e) {
-    if (e.source !== window.parent) return;
+    if (e.source !== window.parent || e.origin !== window._PARENT_ORIGIN) return;
     const { type, reqId } = e.data || {};
     if (!reqId || !_pending.has(reqId)) return;
     const { resolve, reject, timer } = _pending.get(reqId);
@@ -1981,9 +2038,9 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   });
 
   window.VaultBridge = {
-    /** True when running inside the SvelteKit shell iframe. */
+    /** True when running inside the SvelteKit shell iframe with a trusted parent origin. */
     isAvailable() {
-      try { return window.parent !== window; } catch { return false; }
+      try { return window.parent !== window && !!window._PARENT_ORIGIN; } catch { return false; }
     },
     /** Returns the decrypted file index: [{id, name, size, mimeType, isBinary, updatedAt}] */
     list() { return _req('vault:list', {}).then(r => r.files || []); },
@@ -2008,15 +2065,15 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   const _pending = new Map();
   function _req(type, data, timeoutMs) {
     return new Promise((resolve, reject) => {
-      if (window.parent === window) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
+      if (window.parent === window || !window._PARENT_ORIGIN) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
       const reqId = 'c_' + Math.random().toString(36).slice(2, 10);
       const timer = setTimeout(() => { _pending.delete(reqId); reject(new Error('CafresoHQChain timeout: ' + type)); }, timeoutMs || 30000);
       _pending.set(reqId, { resolve, reject, timer });
-      window.parent.postMessage({ type, reqId, ...data }, '*');
+      window.parent.postMessage({ type, reqId, ...data }, window._PARENT_ORIGIN);
     });
   }
   window.addEventListener('message', function (e) {
-    if (e.source !== window.parent) return;
+    if (e.source !== window.parent || e.origin !== window._PARENT_ORIGIN) return;
     const { type, reqId } = e.data || {};
     if (!reqId || !_pending.has(reqId)) return;
     const { resolve, reject, timer } = _pending.get(reqId);
@@ -2027,8 +2084,8 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   });
 
   window.CafresoHQChain = {
-    /** True when running inside the SvelteKit shell (on-chain ops available). */
-    isAvailable() { try { return window.parent !== window; } catch { return false; } },
+    /** True when running inside the SvelteKit shell with a trusted parent origin. */
+    isAvailable() { try { return window.parent !== window && !!window._PARENT_ORIGIN; } catch { return false; } },
     services: {
       list() { return _req('chain:services:list', {}).then(r => r.services || []); },
       set(serviceId, enabled, configJson) { return _req('chain:services:set', { serviceId, enabled, configJson }); },
