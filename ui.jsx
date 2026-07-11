@@ -1597,7 +1597,7 @@ function Tab({
   );
 }
 
-function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle, onLaunch, runningViews }) {
+function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle, onLaunch, runningViews, onEnterWindows }) {
   // Brand card doubles as the CEO entry-point — clicking it opens the
   // CEOPanel modal (mini office + arcade + quick actions). Keyboard users
   // get the same behavior via Enter / Space.
@@ -1646,6 +1646,16 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
           );
         })}
       </nav>
+      {onEnterWindows && (
+        <a
+          onClick={onEnterWindows}
+          className="door-btn"
+          style={{marginTop:8, justifyContent:'center'}}
+          title={collapsed ? 'Switch to desktop (window) mode' : undefined}
+        >
+          <Ico kind="visual"/> {!collapsed && 'WINDOWS'}
+        </a>
+      )}
       <a
         onClick={onOpenSettings}
         className="door-btn"

@@ -1096,7 +1096,7 @@ const DENSITY_PRESETS = [
   { id: 'spacious',    name: 'Spacious' },
 ];
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab }) {
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, windowsEnabled, setWindowsEnabled, initialTab }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
   const [tab, _setTab] = useStateM(() => {
     try {
@@ -1341,6 +1341,15 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                         {DENSITY_PRESETS.map(d => (
                           <button key={d.id} className={density === d.id ? 'on' : ''} onClick={() => setDensity(d.id)}>{d.name}</button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+                  {setWindowsEnabled && (
+                    <div className="row-knob" style={{ marginTop: 8 }}>
+                      <div><div className="lbl">Layout</div><div className="sub">floating desktop windows, or the classic single-panel tabs</div></div>
+                      <div className="ws-seg">
+                        <button className={!windowsEnabled ? 'on' : ''} onClick={() => setWindowsEnabled(false)}>Tabs</button>
+                        <button className={windowsEnabled ? 'on' : ''} onClick={() => setWindowsEnabled(true)}>Windows</button>
                       </div>
                     </div>
                   )}
