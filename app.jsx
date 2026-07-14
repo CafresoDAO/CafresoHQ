@@ -1475,6 +1475,42 @@ function App() {
     return () => window.removeEventListener('cafresohq:openSettings', onOpen);
   }, [openSettings]);
 
+  /* Neural-web graph nodes come in two flavors: real notes (open in the vault)
+     and HQ-state "entity" nodes — missions, agents, threads, tasks, receipts.
+     The vault dispatches cafresohq:openEntity for the latter (see views.jsx
+     openByPath) so a click routes to that entity's home view instead of trying
+     to load a non-existent `.md`. */
+  React.useEffect(() => {
+    const onEntity = (e) => {
+      const kind = e && e.detail && e.detail.kind;
+      switch (kind) {
+        case 'thread':
+          if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
+          break;
+        case 'agent':
+          setActiveView('team');
+          break;
+        case 'mission':
+          setMissionsOpen(true);
+          break;
+        case 'task':
+          setActiveView('tasks');
+          break;
+        case 'project':
+          setActiveView('projects');
+          break;
+        case 'receipt':
+          setActiveView('memory');
+          break;
+        default:
+          if (window.cafresohqToast)
+            window.cafresohqToast.info('That node is a ' + (kind || 'graph') + ' item — no page to open.');
+      }
+    };
+    window.addEventListener('cafresohq:openEntity', onEntity);
+    return () => window.removeEventListener('cafresohq:openEntity', onEntity);
+  }, []);
+
   // Backend reachability — surfaces a clear banner instead of silently failing
   // (empty graph/vault, dead chat/terminal) when the canister UI was opened
   // without a live ?api gateway. Probes /health with a short retry.
