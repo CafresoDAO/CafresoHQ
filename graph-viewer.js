@@ -13,6 +13,7 @@
  */
 import Graph from 'graphology';
 import Sigma from 'sigma';
+import forceAtlas2 from 'graphology-layout-forceatlas2';
 
 const COMMUNITY_COLORS = [
   '#E8A9A9', '#7DB5B5', '#C9B8E0', '#F0C674', '#A5C4A1', '#E0A47C',
@@ -52,6 +53,19 @@ async function main() {
     g.forEachNode((n) => { if (!keep.has(n)) g.dropNode(n); });
   }
 
+  // Obsidian-style organic layout: settle the snapshot's seed positions with
+  // a synchronous ForceAtlas2 pass (cheap at library scale; ?layout=none to
+  // keep the raw snapshot geometry).
+  if (P('layout', 'fa2') !== 'none' && g.order > 2 && g.order <= 600) {
+    try {
+      const settings = forceAtlas2.inferSettings(g);
+      forceAtlas2.assign(g, {
+        iterations: 220,
+        settings: { ...settings, gravity: 0.06, scalingRatio: 24, slowDown: 4, adjustSizes: true },
+      });
+    } catch (_) { /* seed positions still render fine */ }
+  }
+
   const drawEdges = P('drawedges', 'true') !== 'false';
   const highlight = P('selected', 'highlight') === 'highlight' || P('dynamic', '') === 'highlight';
   let hovered = null;
@@ -86,10 +100,44 @@ async function main() {
     },
   });
 
-  if (highlight) {
-    renderer.on('enterNode', ({ node }) => { hovered = node; renderer.refresh({ skipIndexation: true }); });
-    renderer.on('leaveNode', () => { hovered = null; renderer.refresh({ skipIndexation: true }); });
+  // Hover card — title, domain, and the worker LLM's one-line note for the
+  // source under the cursor (Obsidian-style). Data comes from node attributes
+  // written by the search worker's graph snapshot; nodes without extras just
+  // highlight their neighborhood.
+  const tip = document.getElementById('tip');
+  const esc = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function showTip(node) {
+    if (!tip) return;
+    const a = g.getNodeAttributes(node);
+    if (!a.note && !a.url && !a.domain) { tip.style.display = 'none'; return; }
+    tip.innerHTML =
+      '<div class="tip-title">' + esc(a.label) + '</div>' +
+      (a.domain ? '<div class="tip-domain">' + esc(a.domain) + '</div>' : '') +
+      (a.note ? '<div class="tip-note">' + esc(a.note) + '</div>' : '') +
+      (a.url ? '<div class="tip-hint">click to open ↗</div>' : '');
+    const p = renderer.graphToViewport({ x: a.x, y: a.y });
+    tip.style.display = 'block';
+    const r = tip.getBoundingClientRect();
+    tip.style.left = Math.min(Math.max(8, p.x + 14), innerWidth - r.width - 8) + 'px';
+    tip.style.top = Math.min(Math.max(8, p.y - r.height / 2), innerHeight - r.height - 8) + 'px';
   }
+  function hideTip() { if (tip) tip.style.display = 'none'; }
+
+  renderer.on('enterNode', ({ node }) => {
+    if (highlight) { hovered = node; renderer.refresh({ skipIndexation: true }); }
+    container.style.cursor = g.getNodeAttribute(node, 'url') ? 'pointer' : 'default';
+    showTip(node);
+  });
+  renderer.on('leaveNode', () => {
+    if (highlight) { hovered = null; renderer.refresh({ skipIndexation: true }); }
+    container.style.cursor = 'default';
+    hideTip();
+  });
+  renderer.on('clickNode', ({ node }) => {
+    const url = g.getNodeAttribute(node, 'url');
+    if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+  });
+  renderer.getCamera().on('updated', hideTip);
   // Repaint once the container is definitely laid out (handles 0-height-at-mount).
   requestAnimationFrame(() => { try { renderer.refresh(); } catch (_) {} });
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { try { renderer.refresh(); } catch (_) {} }).observe(container);

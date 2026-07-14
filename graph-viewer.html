@@ -22,10 +22,22 @@
     padding: 12px 13px; color: #e9e2d4; font-size: 12px; line-height: 1.5;
   }
   #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tip {
+    display: none; position: fixed; z-index: 6; max-width: 280px; pointer-events: none;
+    background: rgba(24,21,16,.94); backdrop-filter: blur(8px);
+    border: 1px solid rgba(245,210,93,.28); border-radius: 12px;
+    padding: 11px 13px; color: #e9e2d4; font-size: 12.5px; line-height: 1.5;
+    box-shadow: 0 12px 32px -8px rgba(0,0,0,.6);
+  }
+  #tip .tip-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  #tip .tip-domain { color: #F5D25D; font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
+  #tip .tip-note { color: #cabfa9; }
+  #tip .tip-hint { color: #8f8574; font-size: 10.5px; margin-top: 7px; }
 </style>
 </head>
 <body>
 <div id="graph"></div>
+<div id="tip"></div>
 <div id="analytics"></div>
 <div id="brand">CafresoHQ</div>
 <script src="graph-viewer.js"></script>

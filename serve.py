@@ -637,17 +637,50 @@ def _sw_hermes_key():
     return ''
 
 
+def _sw_parse_analysis(text):
+    """Parse the model's {"summary", "notes"} JSON; degrade to plain text.
+    Returns (summary, notes) where notes maps 0-based source index → blurb."""
+    t = (text or '').strip()
+    t = re.sub(r'^```(?:json)?\s*|\s*```$', '', t)
+    m = re.search(r'\{.*\}', t, re.S)
+    if m:
+        try:
+            d = json.loads(m.group(0))
+            summary = str(d.get('summary') or '').strip()
+            notes = {}
+            for k, v in (d.get('notes') or {}).items():
+                try:
+                    notes[int(k) - 1] = str(v).strip()[:200]
+                except (ValueError, TypeError):
+                    pass
+            if summary:
+                return summary, notes
+        except Exception:
+            pass
+    return t, {}
+
+
+def _sw_fmt_tokens(n):
+    return '%.1fk' % (n / 1000.0) if n >= 1000 else str(n)
+
+
 def _sw_llm(q, results):
-    """(answer, model) via the local hermes gateway, falling back to the
-    night-runner provider config. ('', '') when no model is reachable —
-    sources + graph are still worth fulfilling."""
+    """(answer, model, notes, tokens) via the local hermes gateway, falling
+    back to the night-runner provider config. Empty values when no model is
+    reachable — sources + graph are still worth fulfilling."""
     src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'], r['description'])
                       for i, r in enumerate(results))
-    prompt = ('Answer this search query in 2-4 sentences using ONLY the sources below. '
-              "Cite with [n]. If the sources don't answer it, say what they do cover.\n\n"
-              'Query: %s\n\nSources:\n%s' % (q, src))
+    prompt = (
+        'You are a research summarizer. Using ONLY the numbered sources below:\n'
+        '1. Write "summary": 3-6 sentences synthesizing what the sources '
+        'collectively say about the query, citing like [1][3]. If they don\'t '
+        'answer it, summarize what they DO cover.\n'
+        '2. Write "notes": for each source number, ONE short sentence in your '
+        'own words on what that page contributes.\n'
+        'Return STRICT JSON only: {"summary": "...", "notes": {"1": "...", "2": "..."}}\n\n'
+        'Query: %s\n\nSources:\n%s' % (q, src))
     payload = {'model': _SW_MODEL_HINT or 'default',
-               'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 400}
+               'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 900}
     import night_runner as _nr
     key = _sw_hermes_key()
     if key:
@@ -658,8 +691,9 @@ def _sw_llm(q, results):
                 headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
             with urllib.request.urlopen(req, timeout=180) as r:
                 data = json.loads(r.read().decode('utf-8'))
-            text = data['choices'][0]['message']['content'].strip()
-            return text, (data.get('model') or _SW_MODEL_HINT or 'hermes-local')[:80]
+            summary, notes = _sw_parse_analysis(data['choices'][0]['message']['content'])
+            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
+            return summary, (_SW_MODEL_HINT or data.get('model') or 'hermes-local')[:80], notes, tokens
         except Exception as e:
             print('[search-worker] hermes llm failed:', str(e)[:120])
     try:
@@ -672,11 +706,12 @@ def _sw_llm(q, results):
                                                   'Authorization': 'Bearer ' + pkey})
             with urllib.request.urlopen(req, timeout=180) as r:
                 data = json.loads(r.read().decode('utf-8'))
-            return (data['choices'][0]['message']['content'].strip(),
-                    (data.get('model') or model or provider)[:80])
+            summary, notes = _sw_parse_analysis(data['choices'][0]['message']['content'])
+            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
+            return summary, (data.get('model') or model or provider)[:80], notes, tokens
     except Exception as e:
         print('[search-worker] provider llm failed:', str(e)[:120])
-    return '', ''
+    return '', '', {}, 0
 
 
 _SW_PALETTE = ['#7DC9B0', '#C9B8E0', '#E8A9A9', '#F0C987',
@@ -697,27 +732,34 @@ def _sw_color(name):
     return _SW_PALETTE[h % len(_SW_PALETTE)]
 
 
-def _sw_graph(q, results):
-    """Python port of the /hq/search page's buildGraphSnapshot — query hub →
-    result ring → domain ring, wrapped exactly as graph-viewer.html expects."""
+def _sw_graph(q, results, notes=None):
+    """Query hub → result ring → domain ring, wrapped exactly as
+    graph-viewer.html expects. Result nodes carry url/domain/note attributes
+    so the viewer can render hover cards and click-through — the note is the
+    worker LLM's own one-liner (never Brave's description text)."""
     import math
+    notes = notes or {}
     nodes = [{'key': 'q', 'attributes': {'label': q, 'size': 18, 'x': 0, 'y': 0,
-                                         'color': '#F5D25D'}}]
+                                         'color': '#F5D25D', 'kind': 'query'}}]
     edges = []
     domains = {}
     for i, r in enumerate(results):
         a = (i / max(1, len(results))) * math.pi * 2
+        d = _sw_domain(r['url'])
         nodes.append({'key': 'r%d' % i, 'attributes': {
             'label': r['title'][:60], 'size': 8,
             'x': math.cos(a) * 10, 'y': math.sin(a) * 10,
-            'color': _sw_color(_sw_domain(r['url']))}})
+            'color': _sw_color(d), 'kind': 'source',
+            'url': r['url'][:600], 'domain': d,
+            'note': (notes.get(i) or '')[:200]}})
         edges.append({'key': 'eq%d' % i, 'source': 'q', 'target': 'r%d' % i, 'attributes': {}})
-        domains.setdefault(_sw_domain(r['url']), []).append(i)
+        domains.setdefault(d, []).append(i)
     for di, (d, ixs) in enumerate(domains.items()):
         a = (di / max(1, len(domains))) * math.pi * 2 + 0.35
         nodes.append({'key': 'd:' + d, 'attributes': {
             'label': d, 'size': 5 + len(ixs),
-            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d)}})
+            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d),
+            'kind': 'domain', 'domain': d}})
         for i in ixs:
             edges.append({'key': 'ed%d_%d' % (di, i), 'source': 'r%d' % i,
                           'target': 'd:' + d, 'attributes': {}})
@@ -731,12 +773,20 @@ def _sw_process(job):
     jid, q = job['id'], job['q']
     P = lambda s: urllib.parse.quote(s, safe='')
     try:
+        print('[search-worker] claimed %s: %s' % (jid, q[:80]))
         results = _sw_brave(q)
         if not results:
+            print('[search-worker] %s: no results (key set: %s)'
+                  % (jid, bool(os.environ.get('BRAVE_API_KEY', '').strip())))
             _sw_call('fail', [jid, P('no brave key or no results')])
             return
-        answer, model = _sw_llm(q, results)
-        graph = _sw_graph(q, results)
+        answer, model, notes, tokens = _sw_llm(q, results)
+        if tokens:
+            # Token burn rides in the model field ("llama-3.1-8b · ~1.2k tok")
+            # — the canister entry has no dedicated field and this shows
+            # everywhere the model chip renders, with zero schema changes.
+            model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
+        graph = _sw_graph(q, results, notes)
         lines = [jid, P(model), P('brave'), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
