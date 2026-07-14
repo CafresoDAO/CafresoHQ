@@ -1,5 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
+  import { page } from '$app/stores';
   import { POSTS as SEED_POSTS, CATEGORIES, fmtDate } from '$lib/data/blog.js';
   import { listPosts } from '$lib/api/devlog.js';
   import Icon from '$lib/components/Icon.svelte';
@@ -18,8 +19,17 @@
   // body content, it wins — but we never surface stray test posts the
   // canister may still have from earlier deploys.
   const SEED_SLUGS = new Set(SEED_POSTS.map((p) => p.slug));
+  // Deep-link support: /blog?cat=<category> preselects a filter (project pages
+  // link here). Read once at init so the user can still clear it afterward.
+  const _initialCat = (() => {
+    try {
+      const c = $page.url.searchParams.get('cat');
+      return c && CATEGORIES[c] ? c : 'all';
+    } catch { return 'all'; }
+  })();
+
   let posts = SEED_POSTS;
-  let filter = 'all';
+  let filter = _initialCat;
   let query = '';
 
   onMount(async () => {

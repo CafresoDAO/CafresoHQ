@@ -17,6 +17,7 @@
     { i: 'brain',         t: 'AI Library',  href: aiCafresoOrigin,     label: 'ai.cafreso.com' },
   ];
   const about = [
+    { i: 'stack', t: 'Projects', href: '/projects' },
     { i: 'article', t: 'Dev Log', href: '/blog' },
     { i: 'trophy', t: 'Leaderboard', href: '/leaderboard' },
     { i: 'info', t: 'About', href: '/about' }

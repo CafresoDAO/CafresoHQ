@@ -26,6 +26,9 @@ export const tweaksOpen = writable(false);
 export const burnTarget = writable(null); // slug or null
 export const bbModalOpen = writable(false);
 export const aiSearchOpen = writable(false);
+// Optional query handed to AISearchModal when it opens (e.g. from the homepage
+// search box). Consumed + cleared by the modal on open; empty = normal idle.
+export const aiSearchPrefill = writable('');
 
 // Burn state derived from current target
 export const userBurnedOn = (slug) => derived(userBurns, ($b) => $b[slug] || 0);

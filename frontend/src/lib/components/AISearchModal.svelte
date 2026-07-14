@@ -5,7 +5,7 @@
      Every answer shown here is a public, permanent library entry with
      provenance. Nothing a visitor types is stored unless the network answers
      it — and then it's the ANSWER that's public, never the visitor. */
-  import { aiSearchOpen } from '$lib/stores/blog.js';
+  import { aiSearchOpen, aiSearchPrefill } from '$lib/stores/blog.js';
   import { bankingBraveOrigin } from '$lib/links.js';
   import { goto } from '$app/navigation';
   import Icon from './Icon.svelte';
@@ -34,7 +34,14 @@
     entry = null;
     try { recentSearches = JSON.parse(localStorage.getItem('cafreso:ai-recent') || '[]'); } catch { recentSearches = []; }
     refreshOperatorConfig();
-    setTimeout(() => inputEl?.focus(), 60);
+    // A query handed in from elsewhere (e.g. the homepage box) — run it, then clear.
+    const seed = get(aiSearchPrefill);
+    if (seed) {
+      aiSearchPrefill.set('');
+      setTimeout(() => runSearch(seed), 40);
+    } else {
+      setTimeout(() => inputEl?.focus(), 60);
+    }
   }
 
   function close() { aiSearchOpen.set(false); }

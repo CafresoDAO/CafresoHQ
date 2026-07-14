@@ -48,6 +48,7 @@
   const items = [
     { href: '/', key: 'home', icon: 'house', label: 'Home' },
     { href: '/how-it-works', key: 'how', icon: 'compass', label: 'How it Works' },
+    { href: '/projects', key: 'projects', icon: 'stack', label: 'Projects' },
     { href: '/library', key: 'library', icon: 'books', label: 'Library' },
     { href: '/shop', key: 'shop', icon: 'coffee-bean', label: 'Shop' },
     { href: bbLinks.mine, key: 'mine', icon: 'coin', label: 'Mine', external: true },
@@ -67,7 +68,9 @@
     ? 'home'
     : path.startsWith('/shop') || path.startsWith('/product') || path.startsWith('/checkout') || path.startsWith('/success')
       ? 'shop'
-      : path.startsWith('/leaderboard')
+      : path.startsWith('/projects')
+        ? 'projects'
+        : path.startsWith('/leaderboard')
         ? 'leaderboard'
         : path.startsWith('/blog')
           ? 'blog'
