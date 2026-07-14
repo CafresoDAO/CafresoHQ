@@ -16,7 +16,13 @@
 
   onMount(async () => {
     try {
-      posts = await listForumPosts();
+      const raw = await listForumPosts();
+      // Newest threads first — the canister returns insertion order.
+      posts = raw.sort(
+        (a, b) =>
+          String(b.date).localeCompare(String(a.date)) ||
+          (b.timestampCreated || 0) - (a.timestampCreated || 0)
+      );
     } catch (e) {
       err = String(e?.message || e);
     } finally {

@@ -217,10 +217,18 @@ export const THEMES = {
 
 export const THEME_LIST = Object.values(THEMES);
 
-// Derive layout from theme key — banking-brave gets its own page layout,
-// everything else routes through PostRenderer with the theme's CSS vars.
+// The canister Post type has no `theme` field, so the theme key is persisted
+// in `layout` (free-form text on the canister). banking-brave keeps its
+// dedicated full-page layout; every other theme key round-trips as-is so a
+// post published with "Farm" still renders Farm after reload.
 export function layoutFromTheme(themeKey) {
-  return themeKey === 'banking-brave' ? 'banking-brave' : 'standard';
+  return THEMES[themeKey] ? themeKey : 'standard';
+}
+
+// Inverse mapping when reading a post back from the canister: old posts have
+// layout 'standard'/'banking-brave'; new ones may carry any theme key.
+export function themeFromLayout(layout) {
+  return THEMES[layout] ? layout : 'standard';
 }
 
 // Resolve a theme config, falling back to standard if not found.

@@ -25,7 +25,8 @@
   let title = $state('');
   let slug = $state('');
   let slugTouched = $state(false);
-  let theme = $state('standard');
+  // Default matches what the thread page renders for themeless posts.
+  let theme = $state('community');
   let excerpt = $state('');
   let bodySrc = $state('');
   let previewing = $state(false);
@@ -33,6 +34,9 @@
   let err = $state(null);
   let savedSlug = $state(null);
   let loadingEdit = $state(false);
+  // Preserved from the loaded thread in edit mode so saving doesn't silently
+  // rewrite the original post date.
+  let originalDate = $state(null);
 
   // Draft autosave
   let bodyTextarea;
@@ -76,7 +80,7 @@
     title = d.title ?? '';
     slug = d.slug ?? '';
     slugTouched = !!d.slugTouched;
-    theme = d.theme ?? 'standard';
+    theme = d.theme ?? 'community';
     excerpt = d.excerpt ?? '';
     bodySrc = d.bodySrc ?? '';
     draftSavedAt = d.savedAt ?? null;
@@ -148,8 +152,9 @@
       title = p.title || '';
       slug = stripForumPrefix(p.slug) || s;
       slugTouched = true;
-      theme = p.theme || 'standard';
+      theme = p.theme && p.theme !== 'standard' ? p.theme : 'community';
       excerpt = p.excerpt || '';
+      originalDate = p.date || null;
       bodySrc = blocksToMarkdown(p.body || []);
     } finally {
       loadingEdit = false;
@@ -194,7 +199,7 @@
       slug: slugPreview,
       title: title.trim(),
       author: { name: authorName, hue: authorHue, role: 'Community' },
-      date: new Date().toISOString().slice(0, 10),
+      date: (isEditing && originalDate) || new Date().toISOString().slice(0, 10),
       readMin,
       excerpt: excerpt.trim(),
       theme,

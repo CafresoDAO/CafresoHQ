@@ -9,7 +9,7 @@
   import Button from '$lib/components/Button.svelte';
   import CategoryTag from '$lib/components/CategoryTag.svelte';
   import PostRenderer from '$lib/components/PostRenderer.svelte';
-  import { CATEGORIES, POSTS as SEED_POSTS } from '$lib/data/blog.js';
+  import { CATEGORIES, POSTS as SEED_POSTS, postHeroImg } from '$lib/data/blog.js';
   import { upsertPost, getPost } from '$lib/api/devlog.js';
   import { isAuthenticated, principalText, authStatus, login } from '$lib/stores/auth.js';
   import { profile } from '$lib/stores/profile.js';
@@ -26,7 +26,17 @@
   let excerpt = $state('');
   let pinned = $state(false);
   let authorRole = $state('Core team');
+  let hero = $state('roaster');
+  // Preserved from the loaded post in edit mode so saving doesn't silently
+  // rewrite the original publish date.
+  let originalDate = $state(null);
   let bodySrc = $state('');
+
+  const HEROES = [
+    { key: 'roaster', label: 'Roaster', desc: 'Warm beige, coffee gear' },
+    { key: 'farm', label: 'Farm', desc: 'Pixel-art finca greens' },
+    { key: 'banking-brave', label: 'Banking.Brave', desc: 'Navy + gold crest' },
+  ];
   let previewing = $state(false);
   let submitting = $state(false);
   let err = $state(null);
@@ -56,7 +66,7 @@
         key,
         JSON.stringify({
           title, slug, slugTouched, category, theme, excerpt,
-          pinned, authorRole, bodySrc, savedAt: Date.now()
+          pinned, authorRole, hero, bodySrc, savedAt: Date.now()
         })
       );
       draftSavedAt = Date.now();
@@ -81,6 +91,7 @@
     excerpt = d.excerpt ?? '';
     pinned = !!d.pinned;
     authorRole = d.authorRole ?? 'Core team';
+    hero = d.hero ?? 'roaster';
     bodySrc = d.bodySrc ?? '';
     draftSavedAt = d.savedAt ?? null;
   }
@@ -95,7 +106,7 @@
 
   let saveTimer;
   $effect(() => {
-    const _ = [title, slug, slugTouched, category, theme, excerpt, pinned, authorRole, bodySrc];
+    const _ = [title, slug, slugTouched, category, theme, excerpt, pinned, authorRole, hero, bodySrc];
     if (!browser || !draftLoaded || loadingEdit) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => writeDraft(draftKey), 600);
@@ -142,6 +153,7 @@
     excerpt = '';
     pinned = false;
     authorRole = 'Core team';
+    hero = 'roaster';
     bodySrc = '';
     err = null;
     clearDraft(draftKey);
@@ -177,6 +189,8 @@
       excerpt = src.excerpt || '';
       pinned = !!src.pinned;
       authorRole = src.author?.role || 'Core team';
+      hero = src.hero || 'roaster';
+      originalDate = src.date || null;
       bodySrc = blocksToMarkdown(src.body || []);
     } finally {
       loadingEdit = false;
@@ -236,9 +250,10 @@
       layout: layoutFromTheme(theme),
       theme,
       author: { name: authorName, hue: authorHue, role: authorRole.trim() || 'Core team' },
-      date: new Date().toISOString().slice(0, 10),
+      date: (isEditing && originalDate) || new Date().toISOString().slice(0, 10),
       readMin,
       excerpt: finalExcerpt,
+      hero,
       pinned,
       body: blocks,
       canister: 'bek5d-2…rq-cai',
@@ -410,6 +425,58 @@
             Banking.Brave uses a full-page layout with a built-in yield calculator and roadmap — body widgets are rendered inside that layout.
           </p>
         {/if}
+      </div>
+
+      <!-- Hero image picker -->
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
+        <div class="text-[11.5px] font-semibold uppercase tracking-wide mb-3" style="color: hsl(215 16% 47%);">
+          Hero image <span class="font-normal normal-case" style="color: hsl(215 16% 62%);">(shown on the card and post header)</span>
+        </div>
+        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));">
+          {#each HEROES as h}
+            <button
+              type="button"
+              on:click={() => (hero = h.key)}
+              aria-label={`Use the ${h.label} hero image`}
+              class="rounded-[12px] overflow-hidden text-left cursor-pointer border-2 transition-all"
+              style="
+                border-color: {hero === h.key ? 'hsl(32 72% 50%)' : 'transparent'};
+                box-shadow: {hero === h.key ? '0 0 0 3px hsl(32 72% 50% / 0.18)' : 'none'};
+                outline: none;
+              "
+            >
+              <div
+                class="flex items-center justify-center"
+                style="
+                  height: 64px;
+                  background: {h.key === 'farm'
+                    ? 'radial-gradient(ellipse at 50% 70%, hsl(112 40% 82%), hsl(26 30% 74%))'
+                    : 'linear-gradient(180deg, hsl(26 45% 96%), hsl(26 40% 88%))'};
+                "
+              >
+                <img
+                  src={postHeroImg(h.key)}
+                  alt=""
+                  style="height: 80%; object-fit: contain; image-rendering: {h.key === 'farm' ? 'pixelated' : 'auto'};"
+                />
+              </div>
+              <div
+                style="
+                  padding: 6px 10px 7px;
+                  background: {hero === h.key ? 'hsl(32 72% 50%)' : 'white'};
+                  border-top: 1px solid hsl(26 30% 88%);
+                "
+              >
+                <div class="text-[12px] font-semibold leading-tight"
+                  style="color: {hero === h.key ? 'white' : 'hsl(222 47% 11%)'};"
+                >{h.label}</div>
+                <div class="text-[10px] leading-tight mt-0.5"
+                  style="color: {hero === h.key ? 'hsl(0 0% 100% / 0.8)' : 'hsl(215 16% 50%)'};"
+                >{h.desc}</div>
+              </div>
+            </button>
+          {/each}
+        </div>
       </div>
 
       <!-- Category + author role -->

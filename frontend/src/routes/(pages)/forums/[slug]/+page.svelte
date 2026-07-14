@@ -30,17 +30,21 @@
 
   const viewSlug = $derived($page.params.slug);
   const userBurned = $derived($userBurns[forumSlug(viewSlug)] || 0);
-  // Forum posts use the 'community' theme — warm peach, welcoming feel.
-  const forumTheme = $derived(getTheme('community'));
+  // Threads render with the theme the author picked in the composer;
+  // legacy threads (no stored theme) get 'community' — warm peach.
+  const forumTheme = $derived(
+    getTheme(post?.theme && post.theme !== 'standard' ? post.theme : 'community')
+  );
   const body = $derived(
     post?.body && post.body.length > 0
       ? post.body
       : [{ kind: 'p', text: post?.excerpt || '' }]
   );
+  // The thread author (matched by principal) or a devlog admin can edit.
   const canEdit = $derived(
     !!post &&
       !!$principalText &&
-      (post.canister === $principalText || isDevlogAdmin($principalText))
+      (post.authorPrincipal === $principalText || isDevlogAdmin($principalText))
   );
   const authorHandle = $derived(post?.author?.name || 'Guest');
 

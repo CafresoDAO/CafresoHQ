@@ -49,22 +49,18 @@
     post = null;
     (async () => {
       try {
-        // Seed posts are authoritative (only 2: cafreso + banking.brave
-        // intros). Unknown slugs resolve to "not found" even if the canister
-        // happens to have the post under that slug.
+        // The canister is authoritative — any published post resolves here.
+        // For the two launch seeds, seed identity (author/layout) wins over
+        // the canister copy; canister-side counters and body enrich them.
         const seed = POSTS.find((p) => p.slug === nextSlug);
-        if (!seed) {
-          if (loadedSlug === nextSlug) post = null;
-          return;
-        }
         const fromCanister = await getPost(nextSlug);
         if (loadedSlug !== nextSlug) return;
-        // Merge canister-side enhancements (burned/tips/comments counts,
-        // richer body) over the seed. Seed always wins on author/canister-
-        // ID identity so fake test authors don't leak into the UI.
-        post = fromCanister
-          ? { ...seed, ...fromCanister, author: seed.author, layout: seed.layout }
-          : seed;
+        if (seed && fromCanister) {
+          post = { ...seed, ...fromCanister, author: seed.author, layout: seed.layout };
+        } else {
+          post = fromCanister || seed || null;
+        }
+        if (!post) return;
 
         // Detect @mentions in blog comments.
         const allComments = COMMENTS.filter((c) => c.slug === nextSlug || !c.slug);
