@@ -1,5 +1,7 @@
 export const CATEGORIES = {
   'build-log':     { label: 'Build Log',     icon: 'wrench',      hue: 24  },
+  'cafresohq':     { label: 'CafresoHQ',     icon: 'brain',       hue: 262 },
+  'search-net':    { label: 'Search Network', icon: 'magnifying-glass', hue: 200 },
   'dao':           { label: 'DAO',           icon: 'infinity',    hue: 262 },
   'farm':          { label: 'Farm',          icon: 'plant',       hue: 130 },
   'product':       { label: 'Product',       icon: 'storefront',  hue: 200 },
