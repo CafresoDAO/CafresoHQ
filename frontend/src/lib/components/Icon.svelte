@@ -8,7 +8,7 @@
   let className = '';
   export { className as class };
   export let style = '';
-  $: cls = weight === 'fill' ? `ph-fill ph-fill-${name}` : `ph ph-${name}`;
+  $: cls = weight === 'fill' ? `ph-fill ph-${name}` : `ph ph-${name}`;
 </script>
 
 <i

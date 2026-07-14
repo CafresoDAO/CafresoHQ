@@ -1,5 +1,11 @@
 <script>
   import '../app.css';
+  // Phosphor icon font — the whole app renders icons via <Icon> which emits
+  // `ph`/`ph-fill` classes; without these stylesheets every icon is blank.
+  // Imported here (not from a CDN) so the woff2 is bundled + served from the
+  // canister — self-contained, offline-safe, no external dependency.
+  import '@phosphor-icons/web/regular';
+  import '@phosphor-icons/web/fill';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { initAuth } from '$lib/stores/auth.js';
