@@ -11,6 +11,7 @@ import { browser } from '$app/environment';
 import { createActor } from '$lib/declarations/index';
 import { currentIdentity } from '$lib/stores/auth.js';
 import { POSTS as SEED_POSTS, COMMENTS as SEED_COMMENTS } from '$lib/data/blog.js';
+import { layoutFromTheme, themeFromLayout } from '$lib/themes.js';
 
 const MAINNET_INDEX = 'bek5d-2qaaa-aaaab-agqrq-cai';
 const canisterId =
@@ -57,12 +58,16 @@ function actor({ authed = false } = {}) {
 // type — we re-nest them into `author: {…}` for UI convenience.
 function canisterToPost(p) {
   let body = [];
-  try { body = p.body && p.body !== '' ? JSON.parse(p.body) : []; } catch { body = []; }
+  // Early posts (pre-blocks format) stored the body as a plain string —
+  // surface it as a single paragraph rather than dropping the content.
+  try { body = p.body && p.body !== '' ? JSON.parse(p.body) : []; } catch { body = [{ kind: 'p', text: p.body }]; }
+  if (!Array.isArray(body)) body = [{ kind: 'p', text: String(p.body) }];
   return {
     slug: p.slug,
     title: p.title,
     cat: p.category,
-    layout: p.layout,
+    layout: p.layout === 'banking-brave' ? 'banking-brave' : 'standard',
+    theme: themeFromLayout(p.layout),
     author: {
       name: p.authorName,
       role: p.authorRole,
@@ -90,7 +95,8 @@ function frontendToCanisterPost(post) {
     slug: post.slug,
     title: post.title,
     category: post.cat || post.category || 'build-log',
-    layout: post.layout || 'standard',
+    // Theme key persists in `layout` (the canister has no theme field).
+    layout: post.theme ? layoutFromTheme(post.theme) : (post.layout || 'standard'),
     authorName: post.author?.name || '',
     authorHue: BigInt(post.author?.hue ?? 24),
     authorRole: post.author?.role || '',

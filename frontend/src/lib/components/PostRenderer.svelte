@@ -7,12 +7,17 @@
   import RoadmapBlock from '$lib/components/widgets/RoadmapBlock.svelte';
   import ProgressMeter from '$lib/components/widgets/ProgressMeter.svelte';
   import YieldCalc from '$lib/components/widgets/YieldCalc.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { THEMES } from '$lib/themes.js';
 
   export let blocks = [];
   export let theme = null;
 
   $: t = theme ?? THEMES.standard;
+
+  // Callout icons accept either an emoji ("⚡") or a Phosphor icon name
+  // ("coffee-bean") — names would otherwise render as literal words.
+  const isIconName = (s) => /^[a-z0-9-]+$/.test(s || '');
 
   // Progress meter always appears on a light card — use slight tint for white body bg.
   $: progressBg = t.body.bg === 'white' ? 'hsl(26 40% 96%)' : t.body.bg;
@@ -68,8 +73,9 @@
             background: {t.accent}22;
             border: 1px solid {t.accent}44;
             font-size: 19px; line-height: 1;
+            color: {t.accent};
           "
-        >{b.icon}</span>
+        >{#if isIconName(b.icon)}<Icon name={b.icon} size={20} />{:else}{b.icon}{/if}</span>
         <div>
           {#if b.title}
             <div style="font-size: 15.5px; font-weight: 700; margin-bottom: 4px; color: {t.body.heading};">{b.title}</div>

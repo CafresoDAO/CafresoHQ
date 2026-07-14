@@ -13,12 +13,10 @@
 
   $: canAuthor = isDevlogAdmin($principalText);
 
-  // The seed posts (Cafreso intro + Banking.Brave intro) are authoritative
-  // for the public launch. We merge with canister-side posts by slug so if
-  // the devlog backend ever adds a post under the same slug with richer
-  // body content, it wins — but we never surface stray test posts the
-  // canister may still have from earlier deploys.
-  const SEED_SLUGS = new Set(SEED_POSTS.map((p) => p.slug));
+  // The canister is authoritative: every published post shows here. Seeds
+  // (Cafreso intro + Banking.Brave intro) enrich their matching canister
+  // posts with the richer local author/layout identity, and fill in only
+  // when the canister doesn't have them yet (fresh deploys, local replica).
   // Deep-link support: /blog?cat=<category> preselects a filter (project pages
   // link here). Read once at init so the user can still clear it afterward.
   const _initialCat = (() => {
@@ -35,10 +33,22 @@
   onMount(async () => {
     const fresh = await listPosts();
     if (!fresh || fresh.length === 0) return;
-    const merged = SEED_POSTS.map((seed) => {
-      const live = fresh.find((p) => p.slug === seed.slug);
-      return live ? { ...seed, ...live } : seed;
-    });
+    const liveSlugs = new Set(fresh.map((p) => p.slug));
+    const merged = [
+      ...fresh.map((live) => {
+        const seed = SEED_POSTS.find((s) => s.slug === live.slug);
+        return seed ? { ...seed, ...live, author: seed.author } : live;
+      }),
+      ...SEED_POSTS.filter((s) => !liveSlugs.has(s.slug)),
+    ];
+    // Pinned posts first (that's what the composer's "pin" checkbox means),
+    // then newest by date; ties broken by canister write time.
+    merged.sort(
+      (a, b) =>
+        Number(b.pinned === true) - Number(a.pinned === true) ||
+        String(b.date).localeCompare(String(a.date)) ||
+        (b.timestampCreated || 0) - (a.timestampCreated || 0)
+    );
     // Force a reactive flush so dependent derivations (featured, filtered)
     // pick up the merged list instead of the initial seed reference.
     posts = [];
@@ -224,7 +234,7 @@
               style="
                 position: absolute; left: 0; top: 11px;
                 width: 16px; height: 12px; border-radius: 50%;
-                background: linear-gradient(135deg, hsl({CATEGORIES[p.cat].hue} 55% 55%), hsl({CATEGORIES[p.cat].hue} 55% 35%));
+                background: linear-gradient(135deg, hsl({CATEGORIES[p.cat]?.hue ?? 24} 55% 55%), hsl({CATEGORIES[p.cat]?.hue ?? 24} 55% 35%));
                 box-shadow: 0 0 0 3px hsl(26 45% 98% / 0.55), 0 1px 2px hsl(24 30% 20% / 0.3);
                 transform: rotate(-20deg);
               "
