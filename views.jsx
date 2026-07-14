@@ -652,7 +652,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   React.useEffect(() => {
     if (!_bridge) return;
     const handler = (e) => {
-      if (e.source !== window.parent) return;
+      if (e.source !== window.parent || e.origin !== window._PARENT_ORIGIN) return;
       if (e.data?.type === 'vault:files:update') {
         setFiles(_adaptBridgeFiles(e.data.files || []));
         if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });

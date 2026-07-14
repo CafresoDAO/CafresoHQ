@@ -124,6 +124,8 @@ RestartSec=5
 Environment=FLEET_API_PORT=8080
 Environment=FLEET_API_SECRET=
 Environment=FLEET_API_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,https://v4tdv-riaaa-aaaab-agtfa-cai.icp0.io,https://ai.cafreso.com,https://cafreso.com
+Environment=FLEET_REAP_INTERVAL_MIN=5
+Environment=FLEET_REAP_DISABLED=
 Environment=PYTHONUTF8=1
 StandardOutput=journal
 StandardError=journal

@@ -1096,7 +1096,7 @@ const DENSITY_PRESETS = [
   { id: 'spacious',    name: 'Spacious' },
 ];
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab }) {
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, windowsEnabled, setWindowsEnabled, initialTab }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
   const [tab, _setTab] = useStateM(() => {
     try {
@@ -1341,6 +1341,15 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                         {DENSITY_PRESETS.map(d => (
                           <button key={d.id} className={density === d.id ? 'on' : ''} onClick={() => setDensity(d.id)}>{d.name}</button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+                  {setWindowsEnabled && (
+                    <div className="row-knob" style={{ marginTop: 8 }}>
+                      <div><div className="lbl">Layout</div><div className="sub">floating desktop windows, or the classic single-panel tabs</div></div>
+                      <div className="ws-seg">
+                        <button className={!windowsEnabled ? 'on' : ''} onClick={() => setWindowsEnabled(false)}>Tabs</button>
+                        <button className={windowsEnabled ? 'on' : ''} onClick={() => setWindowsEnabled(true)}>Windows</button>
                       </div>
                     </div>
                   )}
@@ -1915,8 +1924,14 @@ const HBACKENDS = {
                 link: 'https://aistudio.google.com/apikey', linkText: 'aistudio.google.com/apikey',
                 note: 'most reliable free tier · ~15/min · 1500/day (Flash)' },
   groq:       { label: 'Groq', field: 'groqKey', ph: 'gsk_…',
-                link: 'https://console.groq.com/keys', linkText: 'console.groq.com/keys',
-                note: 'fastest free tier · use Lite capability (free size limits)' },
+                note: 'fastest free tier · use Lite capability (free size limits)',
+                link: 'https://console.groq.com/keys', linkText: 'console.groq.com/keys' },
+  lmstudio:   { label: 'LM Studio (local)', local: true, field: 'hermesLmstudioUrl',
+                ph: 'http://localhost:1234/v1',
+                note: 'your own GPU · full agent toolset · no key needed' },
+  ollama:     { label: 'Ollama (local)', local: true, field: 'hermesOllamaUrl',
+                ph: 'http://localhost:11434/v1',
+                note: 'your own GPU · full agent toolset · no key needed' },
 };
 
 function ApiTab() {
@@ -1972,9 +1987,11 @@ function ApiTab() {
     setKeyBusy(true); setProbeResult(null);
     try {
       let r = { serverStored: false };
-      if (C && C.hermesSetProvider) r = await C.hermesSetProvider(prov, val, '');
-      else update({ [meta.field]: val, hermesBackend: prov });
-      if (!val) setProbeResult({ ok: true, detail: `${meta.label} key cleared` });
+      if (C && C.hermesSetProvider) {
+        r = meta.local ? await C.hermesSetProvider(prov, '', '', val)
+                        : await C.hermesSetProvider(prov, val, '');
+      } else update({ [meta.field]: val, hermesBackend: prov });
+      if (!val) setProbeResult({ ok: true, detail: `${meta.label} ${meta.local ? 'URL' : 'key'} cleared` });
       else if (r && r.serverStored) setProbeResult({ ok: true, detail: `${meta.label} applied · gateway reloading (~15s)` });
       else setProbeResult({ ok: false, detail: (r && r.detail) || 'saved locally only' });
     } catch (e) { setProbeResult({ ok: false, detail: e.message }); }
@@ -2050,24 +2067,28 @@ function ApiTab() {
               <option value="openrouter">OpenRouter (default)</option>
               <option value="gemini">Google Gemini (most reliable free)</option>
               <option value="groq">Groq (fastest free)</option>
+              <option value="lmstudio">LM Studio (your GPU, local)</option>
+              <option value="ollama">Ollama (your GPU, local)</option>
             </select>
           </div>
         )}
         {s.provider === 'hermes' && HBACKENDS[hBackend] && (
           <div className="row-knob">
             <div>
-              <div className="lbl">{HBACKENDS[hBackend].label} key</div>
+              <div className="lbl">{HBACKENDS[hBackend].label} {HBACKENDS[hBackend].local ? 'URL' : 'key'}</div>
               <div className="sub">
-                {keyBusy ? 'applying key · gateway reloading (~15s)…' : (
-                  <>your free personal key · get one at{' '}
-                  <a href={HBACKENDS[hBackend].link} target="_blank" rel="noopener noreferrer"
-                     style={{color:'var(--accent-rose, #c45)', textDecoration:'underline'}}>
-                    {HBACKENDS[hBackend].linkText}
-                  </a></>
+                {keyBusy ? `applying ${HBACKENDS[hBackend].local ? 'URL' : 'key'} · gateway reloading (~15s)…` : (
+                  HBACKENDS[hBackend].local
+                    ? <>{HBACKENDS[hBackend].note} · run the engine, then paste its base URL</>
+                    : <>your free personal key · get one at{' '}
+                      <a href={HBACKENDS[hBackend].link} target="_blank" rel="noopener noreferrer"
+                         style={{color:'var(--accent-rose, #c45)', textDecoration:'underline'}}>
+                        {HBACKENDS[hBackend].linkText}
+                      </a></>
                 )}
               </div>
             </div>
-            <input type="password" key={hBackend} placeholder={HBACKENDS[hBackend].ph}
+            <input type={HBACKENDS[hBackend].local ? 'url' : 'password'} key={hBackend} placeholder={HBACKENDS[hBackend].ph}
               autoComplete="off" spellCheck={false} style={{width:200}} disabled={keyBusy}
               defaultValue={s[HBACKENDS[hBackend].field] || ''}
               onBlur={e => saveKey(hBackend, e.target.value.trim())}/>

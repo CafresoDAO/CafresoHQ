@@ -4269,6 +4269,7 @@ ${d.text}` : d.text,
         onToggle={() => setRailCollapsed(v => !v)}
         onLaunch={desktopMode ? openOrRaise : undefined}
         runningViews={desktopMode ? (openWindows || []).filter(w => !w.minimized).map(w => w.view) : undefined}
+        onEnterWindows={!desktopMode && !isNarrowViewport ? () => setWindowsEnabled(true) : undefined}
       />
       {window.CafresoHQUI && window.CafresoHQUI.MobileTabBar ? (
         <window.CafresoHQUI.MobileTabBar
@@ -4565,7 +4566,8 @@ ${d.text}` : d.text,
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
-        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity}/>
+        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity}
+        windowsEnabled={windowsEnabled} setWindowsEnabled={setWindowsEnabled}/>
       <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
       <CEOPanel
