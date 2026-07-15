@@ -149,6 +149,27 @@ The gateway remains the **fallback** for operators we can't resolve directly —
 `anthropic` has no `_PROVIDER_ENDPOINTS` entry, so the gateway is its only path.
 Don't delete that branch.
 
+### Picking a search model: watch the tail, not the median
+
+Search has a hard 240s lease and pays per token, so a model's **worst** run
+matters more than its typical one. **Reasoning models are a poor fit**: their
+reasoning channel occasionally runs away, and `max_tokens` may not bound it
+(LM Studio does not count gpt-oss-20b's reasoning against the cap, so a 700 cap
+cannot stop a 14k-token think).
+
+Measured on one operator's box, 6 back-to-back runs of the same 5-source job:
+
+| model | median | max | tokens |
+|---|---|---|---|
+| gemma-4-e4b (non-reasoning) | 1.2s | 8.5s | ~520 every run |
+| gpt-oss-20b (reasoning) | 2.9s | **78.3s** | ~500 ×5, then **14,210** |
+
+Both produced 5/5 notes and correct citations, so the reasoning bought nothing
+here — a search answer is a short structured extraction, not a chain of thought.
+Reasoning still earns its keep for *agents*, which is exactly what
+`WORKER_MODEL` is for: point search at a fast non-reasoning model and leave the
+brain picker on whatever your agents want.
+
 ## Answer quality on a slow box
 
 The worker streams the model's reply and asks for `{"summary", "notes"}` with
