@@ -805,14 +805,20 @@ def _sw_fmt_tokens(n):
     return '%.1fk' % (n / 1000.0) if n >= 1000 else str(n)
 
 
-def _sw_sock(resp):
-    """The raw socket under an http.client response, or None. Private API
-    (fp.raw._sock) — every caller must tolerate None rather than depend on it."""
+def _sw_settimeout(resp, secs):
+    """Re-bound an open response's socket. Reaches through private API
+    (fp.raw._sock), so it's best-effort by design: on failure the socket keeps
+    the coarser timeout from urlopen, which still bounds us — just less tightly.
+    Never raises."""
     try:
         fp = getattr(resp, 'fp', None)
-        return getattr(getattr(fp, 'raw', None), '_sock', None) or getattr(fp, '_sock', None)
+        s = getattr(getattr(fp, 'raw', None), '_sock', None) or getattr(fp, '_sock', None)
+        if s is not None:
+            s.settimeout(secs)
+            return True
     except Exception:
-        return None
+        pass
+    return False
 
 
 def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
@@ -829,7 +835,14 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
             # usage is omitted from streamed responses unless asked for explicitly.
             body['stream_options'] = {'include_usage': True}
     req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers)
-    r = urllib.request.urlopen(req, timeout=min(_SW_TTFT_TIMEOUT, _sw_left(deadline) or _SW_TTFT_TIMEOUT))
+    # Open with the WHOLE remaining budget, not the TTFT bound. A blocking
+    # gateway withholds headers until generation finishes, so a TTFT-bounded open
+    # would kill a healthy 100s blocking generation with 140s still on the clock.
+    # Streaming costs nothing here — SSE headers land immediately — and its
+    # tighter TTFT/idle bounds go on the socket below, where they belong. If the
+    # socket isn't reachable those bounds degrade to this one: coarser, but the
+    # deadline still holds and we still salvage.
+    r = urllib.request.urlopen(req, timeout=_sw_left(deadline) or (_SW_TTFT_TIMEOUT * 3))
     try:
         # Backward-compat gate: a gateway that ignored `stream` just sends JSON.
         # Read it as a blocking response — no exception, no retry, no wasted decode.
@@ -839,6 +852,10 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
             tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
             return text, data.get('model') or '', tokens, False
 
+        # Streaming: bound the FIRST token by TTFT (prefill on a saturated box is
+        # slow but not unbounded), then tighten to the idle timeout once tokens
+        # are flowing. Best-effort — see _sw_sock.
+        _sw_settimeout(r, _SW_TTFT_TIMEOUT)
         chunks, model, tokens, deltas, truncated = [], '', 0, 0, False
         while True:
             if deadline is not None and time.monotonic() > deadline:
@@ -871,15 +888,9 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
                     chunks.append(piece)
                     deltas += 1
                     if deltas == 1:
-                        # First token is in: tighten from the generous prefill
-                        # timeout to the idle timeout. Best-effort — if the
-                        # socket isn't reachable we just keep the coarser bound.
-                        s = _sw_sock(r)
-                        if s is not None:
-                            try:
-                                s.settimeout(_SW_IDLE_TIMEOUT)
-                            except Exception:
-                                pass
+                        # First token is in: tighten from the prefill bound to
+                        # the idle bound so a mid-stream stall aborts fast.
+                        _sw_settimeout(r, _SW_IDLE_TIMEOUT)
         text = ''.join(chunks)
         if not text:
             raise RuntimeError('empty stream')
