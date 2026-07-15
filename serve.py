@@ -563,19 +563,50 @@ threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 #   WORKER_SECRET=<64-hex secret shown once at registration>
 #   BRAVE_API_KEY=<your free Brave key>
 #   SEARCH_STATE_URL=<override for local-replica testing; defaults to mainnet>
+#   WORKER_JOB_BUDGET=<seconds for the whole claim→fulfill window; default 200>
+#   WORKER_IDLE_TIMEOUT=<seconds of LLM silence before giving up; default 25>
 #
 # The loop is SINGLE-THREADED by design: the canister's replay guard requires
 # each worker's signed timestamps to strictly increase, which serialized calls
 # guarantee for free. Workers run standalone — this loop makes only outbound
 # calls and never touches the idle tracker, so it will not keep a fleet
 # container awake by itself; a worker box must have idle-stop disabled.
+#
+# EVERY job runs against one wall-clock deadline. The canister's claim lease is
+# 240s (CLAIM_LEASE_NS) and is NOT renewable — heartbeat does not touch
+# claimedAt and there is no renew op. Overrunning it is silent and lossy: the
+# fulfill comes back not-your-claim, the work is discarded, attempts increments,
+# and three strikes fail the job for good. So Brave + LLM + graph + upload all
+# have to fit inside _SW_JOB_BUDGET, which sits 40s inside the lease.
 _SW_ENABLED = os.environ.get('SEARCH_WORKER', '').strip() == '1'
 _SW_PRINCIPAL = os.environ.get('WORKER_PRINCIPAL', '').strip()
 _SW_SECRET_HEX = os.environ.get('WORKER_SECRET', '').strip()
 _SW_BASE = os.environ.get(
     'SEARCH_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
 _SW_MODEL_HINT = os.environ.get('WORKER_MODEL', '').strip()
+_SW_JOB_BUDGET = float(os.environ.get('WORKER_JOB_BUDGET', '') or 200)
+_SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
+_SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
+_SW_MAX_TOKENS = 360
+_SW_ANSWER_CAP = 4000      # LIB_MAX_ANSWER — the canister rejects anything longer
 _sw_last_ts = 0
+
+
+def _sw_left(deadline, floor=1.0):
+    """Seconds until `deadline`, floored. The floor is load-bearing: urlopen
+    reads timeout=0 as 'block forever', so passing a non-positive remaining
+    straight through would turn a blown deadline into a hang."""
+    if deadline is None:
+        return None
+    return max(floor, deadline - time.monotonic())
+
+
+def _sw_elapsed(deadline):
+    """Seconds spent on this job so far (deadline == claim + _SW_JOB_BUDGET).
+    0 when unbounded — the _sw_* functions stay callable with deadline=None."""
+    if deadline is None:
+        return 0.0
+    return _SW_JOB_BUDGET - (deadline - time.monotonic())
 
 
 def _sw_call(op, extra_lines):
@@ -601,7 +632,7 @@ def _sw_call(op, extra_lines):
         return 0, {'error': str(e)[:200]}
 
 
-def _sw_brave(q):
+def _sw_brave(q, deadline=None):
     """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
     stored sources are title+url (deliberate Brave-ToS posture)."""
     key = os.environ.get('BRAVE_API_KEY', '').strip()
@@ -612,7 +643,8 @@ def _sw_brave(q):
     req = urllib.request.Request(url, headers={
         'Accept': 'application/json', 'Accept-Encoding': 'identity',
         'X-Subscription-Token': key, 'User-Agent': 'CafresoHQ/1.0'})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    timeout = 30 if deadline is None else min(30, _sw_left(deadline))
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read().decode('utf-8'))
     out = []
     for x in (data.get('web') or {}).get('results', [])[:8]:
@@ -637,9 +669,115 @@ def _sw_hermes_key():
     return ''
 
 
+_SW_ESCAPES = {'"': '"', '\\': '\\', '/': '/', 'b': '\b',
+               'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+_SW_MIN_SALVAGE_WORDS = 3  # a salvaged sentence shorter than this isn't worth publishing
+
+
+def _sw_json_str_at(t, i):
+    """Scan the JSON string literal starting at t[i] == '"'.
+    Returns (value, end_index, complete). complete=False means the text ran out
+    mid-literal (a truncated stream) — value is then everything decoded so far,
+    which is exactly what we want to keep."""
+    if i >= len(t) or t[i] != '"':
+        return '', i, False
+    out = []
+    i += 1
+    while i < len(t):
+        c = t[i]
+        if c == '"':
+            return ''.join(out), i + 1, True
+        if c != '\\':
+            out.append(c)
+            i += 1
+            continue
+        # Escape: needs at least one more char, \u needs four more.
+        if i + 1 >= len(t):
+            break
+        e = t[i + 1]
+        if e == 'u':
+            if i + 5 >= len(t):
+                break                       # cut inside \uXXXX — keep what we have
+            try:
+                out.append(chr(int(t[i + 2:i + 6], 16)))
+            except ValueError:
+                out.append(t[i + 2:i + 6])  # malformed \u — pass through, never raise
+            i += 6
+        else:
+            out.append(_SW_ESCAPES.get(e, e))
+            i += 2
+    return ''.join(out), len(t), False
+
+
+def _sw_salvage_json(t):
+    """Best-effort (summary, notes) from possibly-truncated JSON.
+
+    Targeted scanning, NOT general repair — brace-balancing mis-repairs
+    silently. This works because the prompt pins "summary" FIRST: a stream cut
+    anywhere inside "notes" still yields a complete summary, which is the
+    artifact that actually matters. Returns (None, None) when there's no
+    "summary" key at all, so the caller can fall through to plain text."""
+    ks = t.find('"summary"')
+    if ks < 0:
+        return None, None
+    vs = t.find('"', ks + len('"summary"'))
+    if vs < 0:
+        return None, None
+    summary, end, complete = _sw_json_str_at(t, vs)
+    summary = summary.strip()
+    if not complete:
+        # Library entries are permanent and public, so only publish a truncated
+        # summary if a WHOLE sentence survived: trim back to the last boundary,
+        # and if there wasn't one, a half-thought like "ICP i" is worse than no
+        # answer — degrade to source-only and let the entry be honestly
+        # summary-less. Applies to truncated text ONLY; a model that
+        # deliberately returns one terse complete sentence keeps it.
+        cut = max(summary.rfind('.'), summary.rfind('!'), summary.rfind('?'))
+        if cut <= 0:
+            return None, None
+        summary = summary[:cut + 1]
+        if len(summary.split()) < _SW_MIN_SALVAGE_WORDS:
+            return None, None
+        return summary, {}
+    notes = {}
+    kn = t.find('"notes"', end)
+    if kn < 0:
+        return (summary or None), notes
+    i = t.find('{', kn)
+    if i < 0:
+        return (summary or None), notes
+    i += 1
+    while i < len(t):
+        ks = t.find('"', i)
+        if ks < 0:
+            break
+        # A '}' before the next key means the notes object closed — stop here
+        # rather than reading keys from whatever follows it.
+        close = t.find('}', i)
+        if close >= 0 and close < ks:
+            break
+        key, i, ok = _sw_json_str_at(t, ks)
+        if not ok:
+            break                            # truncated key — nothing usable past here
+        vs = t.find('"', i)
+        if vs < 0:
+            break
+        val, i, ok = _sw_json_str_at(t, vs)
+        if not ok:
+            break                            # truncated value — drop this partial note
+        try:
+            notes[int(key) - 1] = val.strip()[:200]
+        except (ValueError, TypeError):
+            pass
+    return (summary or None), notes
+
+
 def _sw_parse_analysis(text):
     """Parse the model's {"summary", "notes"} JSON; degrade to plain text.
-    Returns (summary, notes) where notes maps 0-based source index → blurb."""
+    Returns (summary, notes) where notes maps 0-based source index → blurb.
+
+    Three tiers: strict parse (well-formed output) → salvage (stream truncated
+    by the deadline) → raw text."""
     t = (text or '').strip()
     t = re.sub(r'^```(?:json)?\s*|\s*```$', '', t)
     m = re.search(r'\{.*\}', t, re.S)
@@ -657,6 +795,15 @@ def _sw_parse_analysis(text):
                 return summary, notes
         except Exception:
             pass
+    summary, notes = _sw_salvage_json(t)
+    if summary:
+        return summary, notes or {}
+    if t.startswith('{') or '"summary"' in t:
+        # It was trying to be our JSON and nothing usable survived. Returning the
+        # raw text here would publish a broken `{"summary": "ICP i` fragment as
+        # the permanent public answer — an empty answer degrades to source-only,
+        # which is honest.
+        return '', {}
     return t, {}
 
 
@@ -664,51 +811,204 @@ def _sw_fmt_tokens(n):
     return '%.1fk' % (n / 1000.0) if n >= 1000 else str(n)
 
 
-def _sw_llm(q, results):
+def _sw_sock(resp):
+    """The raw socket under an http.client response, or None. Private API
+    (fp.raw._sock) — every caller must tolerate None rather than depend on it."""
+    try:
+        fp = getattr(resp, 'fp', None)
+        return getattr(getattr(fp, 'raw', None), '_sock', None) or getattr(fp, '_sock', None)
+    except Exception:
+        return None
+
+
+def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
+    """One OpenAI-compatible chat call → (text, model, tokens, truncated).
+
+    Streams by default so a slow backend yields a PARTIAL answer at the deadline
+    instead of nothing. Raises on hard failure (connection refused, HTTP error,
+    zero content) so the caller can try the next backend; returns whatever
+    arrived when the wall clock or the idle timer fires."""
+    body = dict(payload)
+    if stream:
+        body['stream'] = True
+        if usage_opt:
+            # usage is omitted from streamed responses unless asked for explicitly.
+            body['stream_options'] = {'include_usage': True}
+    req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers)
+    r = urllib.request.urlopen(req, timeout=min(_SW_TTFT_TIMEOUT, _sw_left(deadline) or _SW_TTFT_TIMEOUT))
+    try:
+        # Backward-compat gate: a gateway that ignored `stream` just sends JSON.
+        # Read it as a blocking response — no exception, no retry, no wasted decode.
+        if 'text/event-stream' not in (r.headers.get('Content-Type') or ''):
+            data = json.loads(r.read().decode('utf-8'))
+            text = data['choices'][0]['message']['content']
+            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
+            return text, data.get('model') or '', tokens, False
+
+        chunks, model, tokens, deltas, truncated = [], '', 0, 0, False
+        while True:
+            if deadline is not None and time.monotonic() > deadline:
+                truncated = True
+                break
+            try:
+                line = r.readline()
+            except (socket.timeout, TimeoutError):
+                truncated = True          # backend went quiet — keep what we have
+                break
+            if not line:
+                break
+            line = line.decode('utf-8', 'replace').strip()
+            if not line.startswith('data:'):
+                continue
+            data = line[5:].strip()
+            if data == '[DONE]':
+                break
+            try:
+                obj = json.loads(data)
+            except ValueError:
+                continue
+            model = obj.get('model') or model
+            usage = obj.get('usage')
+            if usage:
+                tokens = int(usage.get('total_tokens') or 0)
+            for ch in (obj.get('choices') or []):
+                piece = (ch.get('delta') or {}).get('content')
+                if piece:
+                    chunks.append(piece)
+                    deltas += 1
+                    if deltas == 1:
+                        # First token is in: tighten from the generous prefill
+                        # timeout to the idle timeout. Best-effort — if the
+                        # socket isn't reachable we just keep the coarser bound.
+                        s = _sw_sock(r)
+                        if s is not None:
+                            try:
+                                s.settimeout(_SW_IDLE_TIMEOUT)
+                            except Exception:
+                                pass
+        text = ''.join(chunks)
+        if not text:
+            raise RuntimeError('empty stream')
+        # A truncated stream never carries the final usage chunk, so fall back to
+        # the delta count. That's completion-only (excludes prefill) and so
+        # UNDER-reports — deliberate: the chip says "~", and guessing a prompt
+        # estimate to close the gap would be inventing numbers.
+        return text, model, (tokens or deltas), truncated
+    finally:
+        try:
+            r.close()          # drop a slow socket rather than leak it into the next job
+        except Exception:
+            pass
+
+
+def _sw_stream_or_block(url, headers, payload, deadline):
+    """_sw_chat with a graceful climb-down for gateways that reject `stream`.
+
+    A 4xx means the gateway dislikes a parameter, so retry smaller: first drop
+    stream_options (the newer of the two, and the one an older gateway is
+    likeliest to choke on), then streaming entirely. A 5xx means the backend
+    itself is unhappy and re-sending the same work won't help — raise so the
+    caller moves on to the next backend."""
+    attempts = ((True, True), (True, False), (False, False))
+    for stream, usage_opt in attempts:
+        try:
+            return _sw_chat(url, headers, payload, deadline, stream=stream, usage_opt=usage_opt)
+        except urllib.error.HTTPError as e:
+            if not (400 <= e.code < 500) or not stream:
+                raise          # 5xx, or blocking itself 4xx'd — genuinely broken
+            print('[search-worker] gateway rejected %s (%s) — climbing down'
+                  % ('stream_options' if usage_opt else 'stream', e.code))
+    raise RuntimeError('unreachable')
+
+
+_SW_STOP = frozenset(('the', 'and', 'for', 'are', 'was', 'were', 'what', 'which',
+                      'who', 'how', 'why', 'when', 'where', 'this', 'that', 'with',
+                      'from', 'into', 'does', 'did', 'has', 'have', 'can', 'you'))
+
+
+def _sw_focus(desc, q, max_chars=220):
+    """Keep only the query-relevant sentence(s) of a Brave description.
+
+    Decode dominates the job budget, but prefill isn't free either, and a
+    saturated box feels every token. This only ever NARROWS text that was
+    already prompt-only, so the Brave-ToS posture is unchanged: descriptions
+    still never leave this function's caller, and graph notes stay the LLM's
+    own words."""
+    d = (desc or '').strip()
+    if len(d) <= max_chars:
+        return d
+    terms = set(w for w in re.findall(r'[a-z0-9]+', q.lower())
+                if len(w) > 2 and w not in _SW_STOP)
+    sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', d) if s.strip()]
+    if not terms or not sents:
+        return d[:max_chars]
+    scored = sorted(((sum(1 for w in terms if w in s.lower()), -i, s)
+                     for i, s in enumerate(sents)), reverse=True)
+    if scored[0][0] == 0:
+        return d[:max_chars]          # nothing matched (synonyms only) — take the head
+    keep, out = [], 0
+    for score, negi, s in scored[:2]:  # 2 not 1: cheap hedge against a mis-scored pick
+        if score == 0 or out + len(s) > max_chars:
+            break
+        keep.append((-negi, s))
+        out += len(s)
+    if not keep:
+        return d[:max_chars]
+    return ' '.join(s for _, s in sorted(keep))
+
+
+def _sw_llm(q, results, deadline=None):
     """(answer, model, notes, tokens) via the local hermes gateway, falling
     back to the night-runner provider config. Empty values when no model is
     reachable — sources + graph are still worth fulfilling."""
-    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'], r['description'])
+    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'],
+                                           _sw_focus(r['description'], q))
                       for i, r in enumerate(results))
+    # "summary" MUST come first and the prompt must say so: the salvage parser
+    # in _sw_parse_analysis relies on it, so a stream the deadline cuts short
+    # still yields a complete summary and merely loses some notes. Field order
+    # here is load-bearing, not cosmetic.
     prompt = (
-        'You are a research summarizer. Using ONLY the numbered sources below:\n'
-        '1. Write "summary": 3-6 sentences synthesizing what the sources '
-        'collectively say about the query, citing like [1][3]. If they don\'t '
-        'answer it, summarize what they DO cover.\n'
-        '2. Write "notes": for each source number, ONE short sentence in your '
-        'own words on what that page contributes.\n'
-        'Return STRICT JSON only: {"summary": "...", "notes": {"1": "...", "2": "..."}}\n\n'
+        'You are a research summarizer. Use ONLY the numbered sources below.\n'
+        '"summary": 2-3 sentences, 60 words MAX total, on what the sources '
+        'collectively say about the query, citing like [1][3]. If they do not '
+        'answer it, say what they DO cover.\n'
+        '"notes": for each source number, at most 12 words in your own words on '
+        'what that page contributes. Do not copy phrases from the source text.\n'
+        'Output STRICT JSON only — no prose, no code fence, "summary" first:\n'
+        '{"summary": "...", "notes": {"1": "...", "2": "..."}}\n\n'
         'Query: %s\n\nSources:\n%s' % (q, src))
     payload = {'model': _SW_MODEL_HINT or 'default',
-               'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 900}
+               'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': _SW_MAX_TOKENS}
     import night_runner as _nr
     key = _sw_hermes_key()
     if key:
         try:
-            req = urllib.request.Request(
+            text, model, tokens, truncated = _sw_stream_or_block(
                 'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                data = json.loads(r.read().decode('utf-8'))
-            summary, notes = _sw_parse_analysis(data['choices'][0]['message']['content'])
-            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
-            return summary, (_SW_MODEL_HINT or data.get('model') or 'hermes-local')[:80], notes, tokens
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+            summary, notes = _sw_parse_analysis(text)
+            if truncated:
+                print('[search-worker] hermes truncated at deadline — salvaged %d chars, %d notes'
+                      % (len(summary or ''), len(notes)))
+            # A salvaged partial IS success: falling through to the provider
+            # would trade a usable summary for a second full decode we can't
+            # afford inside the lease.
+            return summary, (_SW_MODEL_HINT or model or 'hermes-local')[:80], notes, tokens
         except Exception as e:
             print('[search-worker] hermes llm failed:', str(e)[:120])
     try:
         provider, model, pkey = _nr.read_provider_config(os.path.expanduser('~/.hermes'))
         if pkey:
             spec = _nr._PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
-            payload['model'] = model or payload['model']
-            req = urllib.request.Request(spec[1], data=json.dumps(payload).encode('utf-8'),
-                                         headers={'Content-Type': 'application/json',
-                                                  'Authorization': 'Bearer ' + pkey})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                data = json.loads(r.read().decode('utf-8'))
-            summary, notes = _sw_parse_analysis(data['choices'][0]['message']['content'])
-            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
-            return summary, (data.get('model') or model or provider)[:80], notes, tokens
+            payload = dict(payload, model=model or payload['model'])
+            text, rmodel, tokens, truncated = _sw_stream_or_block(
+                spec[1], {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + pkey},
+                payload, deadline)
+            summary, notes = _sw_parse_analysis(text)
+            return summary, (rmodel or model or provider)[:80], notes, tokens
     except Exception as e:
         print('[search-worker] provider llm failed:', str(e)[:120])
     return '', '', {}, 0
@@ -769,31 +1069,43 @@ def _sw_graph(q, results, notes=None):
                        'title': 'Search: ' + q, 'ts': int(time.time() * 1000)})
 
 
-def _sw_process(job):
+def _sw_process(job, deadline=None):
     jid, q = job['id'], job['q']
     P = lambda s: urllib.parse.quote(s, safe='')
     try:
         print('[search-worker] claimed %s: %s' % (jid, q[:80]))
-        results = _sw_brave(q)
+        results = _sw_brave(q, deadline)
         if not results:
             print('[search-worker] %s: no results (key set: %s)'
                   % (jid, bool(os.environ.get('BRAVE_API_KEY', '').strip())))
             _sw_call('fail', [jid, P('no brave key or no results')])
             return
-        answer, model, notes, tokens = _sw_llm(q, results)
+        answer, model, notes, tokens = _sw_llm(q, results, deadline)
         if tokens:
             # Token burn rides in the model field ("llama-3.1-8b · ~1.2k tok")
             # — the canister entry has no dedicated field and this shows
             # everywhere the model chip renders, with zero schema changes.
             model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
+        # libValidate hard-rejects an over-cap answer, and a rejected fulfill
+        # leaves the job claimed until the lease expires — burning an attempt
+        # each time. The degrade path can hand us raw model prose, so clamp.
+        if len(answer) > _SW_ANSWER_CAP:
+            print('[search-worker] answer %d chars — clamping to %d' % (len(answer), _SW_ANSWER_CAP))
+            answer = answer[:_SW_ANSWER_CAP]
         graph = _sw_graph(q, results, notes)
         lines = [jid, P(model), P('brave'), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
         lines.append(P(graph))
+        # Always attempt fulfill, even past our budget: the budget is soft and
+        # sits 40s inside the lease, so the common case still lands. When we're
+        # genuinely late the reap fires on the next worker's claim regardless,
+        # so `attempts` increments whether we call or stay quiet — bailing would
+        # save nothing and guarantee the loss.
         status, resp = _sw_call('fulfill', lines)
         if status == 200 and resp.get('ok'):
-            print('[search-worker] fulfilled %s -> %s' % (jid, resp.get('libraryId')))
+            print('[search-worker] fulfilled %s -> %s (%.0fs)'
+                  % (jid, resp.get('libraryId'), _sw_elapsed(deadline)))
         else:
             print('[search-worker] fulfill rejected %s: %s %s' % (jid, status, resp))
     except Exception as e:
@@ -820,13 +1132,18 @@ def _sw_loop():
             if paused:
                 print('[search-worker] resumed by operator')
                 paused = False
+            # Clock starts BEFORE the claim: the canister stamps claimedAt during
+            # that request, so a pre-call reading is guaranteed conservative.
+            # monotonic, never time.time() — an NTP step mid-job would silently
+            # blow (or extend) the budget.
+            t0 = time.monotonic()
             status, resp = _sw_call('claim', [])
             if status == 403:
                 # Not approved yet (or suspended): heartbeat keeps the
                 # registration's lastSeen fresh so the operator sees "connected".
                 _sw_call('heartbeat', [])
             elif status == 200 and resp.get('job'):
-                _sw_process(resp['job'])
+                _sw_process(resp['job'], t0 + _SW_JOB_BUDGET)
                 continue          # drain the queue without sleeping between jobs
         except Exception as e:
             print('[search-worker] loop error:', str(e)[:200])
