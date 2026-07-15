@@ -175,7 +175,10 @@ def test_base_url_allowlist():
         ok, err = v(u)
         check('accept %s' % u, ok, err)
     for u, why in (
-        ('https://evil.example.com/v1', 'public host'),
+        # example.com RESOLVES, so this exercises the public-address check
+        # rather than passing by DNS failure — the reject must be for the right
+        # reason or the guard is theatre.
+        ('https://example.com/v1', 'resolvable public host'),
         ('http://169.254.169.254/latest/meta-data/', 'cloud metadata'),
         ('file:///etc/passwd', 'scheme'),
         ('http://u:p@10.0.0.1/v1', 'userinfo'),
@@ -185,8 +188,11 @@ def test_base_url_allowlist():
         ('', 'empty'),
         ('http://', 'no host'),
     ):
-        ok, _err = v(u)
+        ok, err = v(u)
         check('reject %s (%s)' % (u or '<empty>', why), not ok)
+        if why == 'resolvable public host':
+            check('  ...and rejects it for being PUBLIC, not for failing DNS',
+                  'public address' in err, err)
 
 
 def main():

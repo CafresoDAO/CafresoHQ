@@ -3013,6 +3013,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_get_model()
         if self.path == '/hermes/provider':
             return self._hermes_get_provider()
+        if self.path.split('?')[0] == '/hermes/local-models':
+            return self._hermes_local_models(
+                self.path.split('?', 1)[1] if '?' in self.path else '')
         if self.path == '/hermes/config/export':
             return self._hermes_export_config()
         if self.path == '/hermes/trial-status':
@@ -7796,10 +7799,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
         model = str(req.get('model', '')).strip()
-        # allow presets OR any plausible "vendor/model[:tag]" id
+        # Allow presets OR any plausible model id. The vendor slash is OPTIONAL:
+        # cloud ids look like "vendor/model[:tag]" but local ones often don't —
+        # Ollama's are bare ("llama3.3:70b"), and requiring the slash 400'd every
+        # local backend.
         import re as _re
         valid = any(p['id'] == model for p in self._HERMES_MODEL_PRESETS) or \
-            bool(_re.match(r'^[\w.\-]+/[\w.\-:]+$', model))
+            bool(_re.match(r'^[\w.\-]+(/[\w.\-]+)*(:[\w.\-]+)?$', model))
         if not model or not valid:
             return self._send_json(400, {'error': 'invalid model id'})
 
@@ -7903,6 +7909,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # Groq is fast + free. Gemini + Groq ride their OpenAI-compatible endpoints
     # (custom_providers) so they use the exact chat_completions path OpenRouter
     # uses — no unverified native adapter, no silent config keys.
+    # 'local' backends are the operator's own hardware: no key, reached at a
+    # base_url they supply. They write `provider: lmstudio` either way — there is
+    # no `ollama` provider in hermes-agent (bootstrap's model block is explicit
+    # that Ollama rides the lmstudio block as a generic OpenAI-compatible
+    # endpoint), and since hermes is a pinned third-party package we can't add
+    # one. 'ollama' is a UI label, not a config value.
     _HERMES_PROVIDERS = {
         'openrouter': {'env': 'OPENROUTER_API_KEY', 'model': 'openai/gpt-oss-120b:free',
                        're': r'^sk-or-[A-Za-z0-9_\-]{8,}$', 'label': 'OpenRouter'},
@@ -7910,11 +7922,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                        're': r'^AIza[A-Za-z0-9_\-]{30,}$', 'label': 'Google Gemini'},
         'groq':       {'env': 'GROQ_API_KEY',       'model': 'llama-3.3-70b-versatile',
                        're': r'^gsk_[A-Za-z0-9]{20,}$', 'label': 'Groq'},
+        'lmstudio':   {'env': '', 'model': 'local-model', 're': None, 'local': True,
+                       'label': 'LM Studio (local)', 'default_url': 'http://localhost:1234/v1'},
+        'ollama':     {'env': '', 'model': 'llama3.1', 're': None, 'local': True,
+                       'label': 'Ollama (local)', 'default_url': 'http://localhost:11434/v1'},
     }
 
     @staticmethod
-    def _hermes_model_block(provider, model):
+    def _hermes_model_block(provider, model, base_url=None):
         """Return the config.yaml model block (+ custom_providers) for a provider."""
+        if provider in ('lmstudio', 'ollama'):
+            # Mirrors oci-fleet/hermes-bootstrap.py's lmstudio block exactly:
+            # no key_env, no custom_providers. Both UI labels write `lmstudio`.
+            return (f'model:\n  default: {model}\n  provider: lmstudio\n'
+                    f'  base_url: {base_url}\n')
         if provider == 'gemini':
             return (f'model:\n  default: {model}\n  provider: google-openai\n'
                     '  base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
@@ -7935,29 +7956,70 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return (f'model:\n  default: {model}\n  provider: openrouter\n'
                 '  base_url: https://openrouter.ai/api/v1\n')
 
+    def _hermes_local_models(self, query):
+        """GET /hermes/local-models?base_url=… → {models:[{id, state, loaded}], detail}
+
+        Which models the operator's local backend actually has, and crucially
+        WHICH ARE LOADED. Asking a local backend for an unloaded model fails
+        every call; showing loaded state in the picker makes that unpickable
+        instead of a mystery.
+
+        The browser can't fetch this itself: the /lmstudio/ proxy is hardcoded to
+        one host, so it can't serve a URL the operator just typed. Runs the same
+        allowlist as the write path — discovery must not become the SSRF hole the
+        writer isn't. Always 200: a backend that's merely offline must not block
+        the operator from saving a config for it.
+        """
+        base_url = urllib.parse.parse_qs(query or '').get('base_url', [''])[0].strip()
+        ok, err = _validate_local_base_url(base_url)
+        if not ok:
+            return self._send_json(400, {'error': err})
+        root = base_url.rstrip('/')
+        # LM Studio's native REST API carries load state; the OpenAI-compatible
+        # /models (which Ollama also answers) does not.
+        native = re.sub(r'/v\d+$', '', root) + '/api/v0/models'
+        for url, has_state in ((native, True), (root + '/models', False)):
+            try:
+                with urllib.request.urlopen(url, timeout=3) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+            except Exception:
+                continue
+            out = []
+            for m in (data.get('data') or []):
+                mid = m.get('id')
+                if not mid:
+                    continue
+                if has_state:
+                    out.append({'id': mid, 'state': m.get('state'),
+                                'loaded': m.get('state') == 'loaded',
+                                'type': m.get('type')})
+                else:
+                    out.append({'id': mid, 'state': None, 'loaded': None,
+                                'type': m.get('type')})
+            if out:
+                # Loaded first — those are the ones that answer immediately.
+                out.sort(key=lambda x: (x['loaded'] is not True, x['id']))
+                return self._send_json(200, {'models': out, 'source': url})
+        return self._send_json(200, {'models': [], 'detail': 'no model list at %s' % root})
+
     def _hermes_get_provider(self):
         """GET /hermes/provider → {provider, model, configured}. The UI reads this
         on load to decide whether to re-push the user's saved key: a container
         recreate wipes the ephemeral ~/.hermes, so the key must be re-applied from
         the browser-side settings copy (that's the 'keys vanish on recreate' fix)."""
         import os as _os, re as _re
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        provider, model = 'openrouter', ''
-        try:
-            with open(_os.path.join(home, 'config.yaml'), 'r', encoding='utf-8') as f:
-                cfg = f.read()
-            pm = _re.search(r'^\s*provider:\s*(\S+)', cfg, _re.MULTILINE)
-            mm = _re.search(r'^\s*default:\s*(\S+)', cfg, _re.MULTILINE)
-            if pm:
-                provider = pm.group(1).strip()
-            if mm:
-                model = mm.group(1).strip()
-        except Exception:
-            pass
+        import night_runner as _nr
+        home = _hermes_home()
+        cfg = _nr.read_model_config(home)          # scoped to the model: block
+        provider = cfg['raw_provider'] or 'openrouter'
+        model, base_url = cfg['model'], cfg['base_url']
         logical = {'google-openai': 'gemini'}.get(provider, provider)
         spec = self._HERMES_PROVIDERS.get(logical)
         configured = False
-        if spec:
+        if spec and spec.get('local'):
+            # A local backend has no key — having a base_url IS being configured.
+            configured = bool(base_url)
+        elif spec:
             if _os.environ.get(spec['env'], '').strip():
                 configured = True
             else:
@@ -7968,7 +8030,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
         return self._send_json(200, {'provider': logical, 'model': model,
-                                     'configured': configured})
+                                     'base_url': base_url, 'configured': configured})
 
     def _hermes_set_provider(self, force_provider=None):
         """POST /hermes/provider {provider, key, model?} → write the provider's key
@@ -7992,7 +8054,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': f'unknown provider: {provider}'})
         key = str(req.get('key', '')).strip()
         import os as _os, re as _re
-        if not _re.match(spec['re'], key):
+        local = bool(spec.get('local'))
+        base_url = str(req.get('base_url', '')).strip() or spec.get('default_url')
+        if local:
+            # No key to validate — the gate here is the URL, which the container
+            # will go on to POST to. See _validate_local_base_url: allowlist.
+            ok, err = _validate_local_base_url(base_url)
+            if not ok:
+                return self._send_json(400, {'error': err})
+        elif not _re.match(spec['re'], key):
             return self._send_json(400, {'error': f"invalid {spec['label']} key"})
         model = str(req.get('model', '')).strip() or spec['model']
 
@@ -8001,19 +8071,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cfg_path = _os.path.join(home, 'config.yaml')
         try:
             _os.makedirs(home, exist_ok=True)
-            # 1. write the key into .env (replace any prior line for THIS env var)
-            lines = []
-            if _os.path.exists(env_path):
-                with open(env_path, 'r', encoding='utf-8') as f:
-                    lines = [l for l in f.read().splitlines()
-                             if not l.startswith(spec['env'] + '=')]
-            lines.append(f"{spec['env']}={key}")
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-            try:
-                _os.chmod(env_path, 0o600)
-            except Exception:
-                pass
+            # 1. write the key into .env (replace any prior line for THIS env var).
+            #    A local backend has no key and no env var — skip entirely.
+            if not local:
+                lines = []
+                if _os.path.exists(env_path):
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        lines = [l for l in f.read().splitlines()
+                                 if not l.startswith(spec['env'] + '=')]
+                lines.append(f"{spec['env']}={key}")
+                with open(env_path, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines) + '\n')
+                try:
+                    _os.chmod(env_path, 0o600)
+                except Exception:
+                    pass
         except Exception as e:
             return self._send_json(500, {'error': f'write .env: {e}'})
 
@@ -8026,7 +8098,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     cfg = f.read()
             header = ('# CafresoHQ — Hermes config (provider set via HQ Settings).\n'
                       '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
-            block = self._hermes_model_block(provider, model)
+            block = self._hermes_model_block(provider, model, base_url)
             m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
             if m:
                 new_cfg = header + block + cfg[m.start():]
@@ -8042,13 +8114,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'error': f'write config: {e}'})
 
-        # The user just brought their OWN key — end the shared-trial cap. Their
-        # key draws on their own account, so it's never metered here.
+        # The user just brought their OWN key (or their own hardware) — end the
+        # shared-trial cap. Their key draws on their own account, so it's never
+        # metered here.
         _trial_deactivate()
 
         # 3. export into THIS process env so the restarted gateway (which inherits
         #    serve.py's env via the bootstrap) sees the key immediately.
-        _os.environ[spec['env']] = key
+        if not local:
+            _os.environ[spec['env']] = key
         restarted = False
         try:
             subprocess.Popen(['hermes', 'gateway', 'restart'],
