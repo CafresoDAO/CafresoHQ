@@ -29,6 +29,10 @@
   let posts = SEED_POSTS;
   let filter = _initialCat;
   let query = '';
+  // The posts=[] -> tick() -> posts=merged swap below (load-bearing — see its
+  // own comment) briefly makes `filtered` empty, which without this flag
+  // flashed the real "no posts match" empty state on every single page load.
+  let isSwapping = false;
 
   onMount(async () => {
     const fresh = await listPosts();
@@ -51,9 +55,11 @@
     );
     // Force a reactive flush so dependent derivations (featured, filtered)
     // pick up the merged list instead of the initial seed reference.
+    isSwapping = true;
     posts = [];
     await tick();
     posts = merged;
+    isSwapping = false;
   });
 
   $: filtered = posts.filter((p) => {
@@ -164,7 +170,13 @@
           {/each}
         </div>
       {/if}
-      {#if filtered.length === 0}
+      {#if isSwapping}
+        <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px]"
+          style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(215 16% 47%);"
+        >
+          <Icon name="spinner-gap" size={16} class="spin" /> Loading posts…
+        </div>
+      {:else if filtered.length === 0}
         <div class="text-center" style="padding: 64px 24px; color: hsl(215 16% 47%);">
           <Icon name="coffee" size={36} style="opacity: 0.4;" />
           <p style="margin-top: 12px;">No posts match that filter yet.</p>
