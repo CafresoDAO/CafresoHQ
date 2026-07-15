@@ -161,14 +161,23 @@ Measured on one operator's box, 6 back-to-back runs of the same 5-source job:
 
 | model | median | max | tokens |
 |---|---|---|---|
-| gemma-4-e4b (non-reasoning) | 1.2s | 8.5s | ~520 every run |
-| gpt-oss-20b (reasoning) | 2.9s | **78.3s** | ~500 ×5, then **14,210** |
+| gemma-4-e4b, sole model (non-reasoning) | 1.32s | **1.58s** | ~530 every run |
+| gemma-4-e4b, sharing VRAM | 1.20s | 8.50s | ~520 every run |
+| gpt-oss-20b (reasoning) | 2.90s | **78.3s** | ~500 ×5, then **14,210** |
 
-Both produced 5/5 notes and correct citations, so the reasoning bought nothing
+All produced 5/5 notes and correct citations, so the reasoning bought nothing
 here — a search answer is a short structured extraction, not a chain of thought.
 Reasoning still earns its keep for *agents*, which is exactly what
 `WORKER_MODEL` is for: point search at a fast non-reasoning model and leave the
 brain picker on whatever your agents want.
+
+Two second-order notes from those runs. **Sharing the GPU costs you the tail,
+not the median** (1.2s median either way, but the worst run went 1.58s → 8.5s) —
+and even the shared-VRAM tail is ~28x inside the lease, so co-loading an agent
+model is fine. And **LM Studio JIT-loads a model on first request**, so an
+unloaded agent model self-heals at the cost of one slow call; a model that fails
+to JIT (we saw `nvidia/nemotron-3-nano` do this) is broken rather than merely
+cold, and `/hermes/local-models` will show it as `not-loaded`.
 
 ## Answer quality on a slow box
 
