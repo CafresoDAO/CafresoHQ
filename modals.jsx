@@ -1917,6 +1917,14 @@ const HBACKENDS = {
   groq:       { label: 'Groq', field: 'groqKey', ph: 'gsk_…',
                 link: 'https://console.groq.com/keys', linkText: 'console.groq.com/keys',
                 note: 'fastest free tier · use Lite capability (free size limits)' },
+  // Local backends: your own hardware, so no key — configured by a URL instead.
+  // Both write `provider: lmstudio` server-side (hermes has no ollama provider).
+  lmstudio:   { label: 'LM Studio', local: true, urlField: 'hermesLmUrl',
+                ph: 'http://localhost:1234/v1',
+                note: 'your own GPU · no key, no quota, no per-token cost' },
+  ollama:     { label: 'Ollama', local: true, urlField: 'hermesOlUrl',
+                ph: 'http://localhost:11434/v1',
+                note: 'your own GPU · OpenAI-compatible endpoint' },
 };
 
 function ApiTab() {
@@ -1981,6 +1989,33 @@ function ApiTab() {
     finally { setKeyBusy(false); }
   };
 
+  // ── local Hermes backend (LM Studio / Ollama in the CONTAINER) ─────────────
+  // Separate from the browser-side lmstudio/ollama settings below: this one is
+  // what the agents, night shifts and the search worker actually run on.
+  const [hbModels, setHbModels] = useStateM(null);   // null = not probed yet
+  const hbMeta = HBACKENDS[hBackend] || {};
+  const hbUrl = (hbMeta.local && (s[hbMeta.urlField] || hbMeta.ph)) || '';
+  useEffectM(() => {
+    if (!hbMeta.local || !C || !C.hermesLocalModels) { setHbModels(null); return; }
+    C.hermesLocalModels(hbUrl).then(r => setHbModels(r.models || []))
+      .catch(() => setHbModels([]));
+  }, [hBackend, hbUrl]);
+  const saveLocalBackend = async (prov, url, model) => {
+    const meta = HBACKENDS[prov]; if (!meta) return;
+    setKeyBusy(true); setProbeResult(null);
+    try {
+      update({ [meta.urlField]: url, hermesBackend: prov });
+      const r = await C.hermesSetProvider(prov, '', model || '', url);
+      if (r && r.serverStored) {
+        setProbeResult({ ok: true, detail: `${meta.label} applied · gateway reloading (~15s)` });
+        if (r.model) setHModel(r.model);
+      } else {
+        setProbeResult({ ok: false, detail: (r && r.detail) || 'could not apply' });
+      }
+    } catch (e) { setProbeResult({ ok: false, detail: e.message }); }
+    finally { setKeyBusy(false); }
+  };
+
   useEffectM(() => {
     if (s.provider === 'lmstudio') {
       window.CafresoHQClient.listLMStudioModels().then(setLmModels).catch(() => setLmModels([]));
@@ -2011,7 +2046,10 @@ function ApiTab() {
       <div className="cb-panel">
         <h4>PROVIDER</h4>
         <div className="row-knob">
-          <div><div className="lbl">Backend</div><div className="sub">which brain powers CafresoHQ & crew</div></div>
+          {/* THIS browser's brain. Distinct from the Hermes brain below, which
+              is what the container runs — wanting LM Studio here and OpenRouter
+              in the container (or vice versa) is legitimate, so they don't merge. */}
+          <div><div className="lbl">Backend (this browser)</div><div className="sub">what the UI on this machine talks to directly</div></div>
           <select value={s.provider} onChange={e=>update({provider:e.target.value})}>
             <option value="lmstudio">LM Studio (local)</option>
             <option value="ollama">Ollama (local)</option>
@@ -2023,7 +2061,9 @@ function ApiTab() {
           </select>
           <span className="hint" style={{maxWidth:240}}>fallback for agents whose model isn't pinned</span>
         </div>
-        {s.provider === 'hermes' && (
+        {/* Cloud presets only — a local backend gets its own model row below,
+            driven by what that box actually has LOADED. */}
+        {s.provider === 'hermes' && !hbMeta.local && (
           <div className="row-knob">
             <div>
               <div className="lbl">Model</div>
@@ -2043,17 +2083,68 @@ function ApiTab() {
         {s.provider === 'hermes' && (
           <div className="row-knob">
             <div>
-              <div className="lbl">Backend service</div>
-              <div className="sub">{HBACKENDS[hBackend] ? HBACKENDS[hBackend].note : 'free LLM behind Hermes'}</div>
+              <div className="lbl">Hermes brain (in your container)</div>
+              <div className="sub">{HBACKENDS[hBackend]
+                ? HBACKENDS[hBackend].note + ' · runs your agents, night shifts and search worker'
+                : 'free LLM behind Hermes'}</div>
             </div>
             <select value={hBackend} disabled={keyBusy} onChange={e=>changeBackend(e.target.value)}>
               <option value="openrouter">OpenRouter (default)</option>
               <option value="gemini">Google Gemini (most reliable free)</option>
               <option value="groq">Groq (fastest free)</option>
+              <option value="lmstudio">LM Studio (your own GPU)</option>
+              <option value="ollama">Ollama (your own GPU)</option>
             </select>
           </div>
         )}
-        {s.provider === 'hermes' && HBACKENDS[hBackend] && (
+        {s.provider === 'hermes' && hbMeta.local && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">{hbMeta.label} endpoint</div>
+              <div className="sub">
+                {keyBusy ? 'applying · gateway reloading (~15s)…'
+                  : 'where your container reaches it — must be a private or localhost address'}
+              </div>
+            </div>
+            <input type="text" key={'u' + hBackend} placeholder={hbMeta.ph}
+              autoComplete="off" spellCheck={false} style={{width:200}} disabled={keyBusy}
+              defaultValue={s[hbMeta.urlField] || hbMeta.ph}
+              onBlur={e => saveLocalBackend(hBackend, e.target.value.trim(), hModel)}/>
+          </div>
+        )}
+        {s.provider === 'hermes' && hbMeta.local && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Model</div>
+              <div className="sub">
+                {hbModels === null ? 'checking what your backend has…'
+                  : hbModels.length === 0
+                    ? "couldn't reach that endpoint — you can still type a model id"
+                    : 'a model must be LOADED to answer; unloaded ones fail or stall on first use'}
+              </div>
+            </div>
+            {hbModels && hbModels.length ? (
+              <select value={hModel} disabled={keyBusy || hBusy}
+                      onChange={e => saveLocalBackend(hBackend, hbUrl, e.target.value)}>
+                {!hbModels.some(m => m.id === hModel) && hModel && (
+                  <option value={hModel}>{hModel} (not on this backend)</option>
+                )}
+                {hbModels.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {(m.loaded === true ? '● ' : m.loaded === false ? '○ ' : '') + m.id}
+                    {m.loaded === false ? ' — not loaded' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input type="text" key={'m' + hBackend} placeholder="model id"
+                autoComplete="off" spellCheck={false} style={{width:200}} disabled={keyBusy}
+                defaultValue={hModel}
+                onBlur={e => saveLocalBackend(hBackend, hbUrl, e.target.value.trim())}/>
+            )}
+          </div>
+        )}
+        {s.provider === 'hermes' && HBACKENDS[hBackend] && !hbMeta.local && (
           <div className="row-knob">
             <div>
               <div className="lbl">{HBACKENDS[hBackend].label} key</div>
