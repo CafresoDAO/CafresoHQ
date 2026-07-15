@@ -565,6 +565,13 @@ threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 #   SEARCH_STATE_URL=<override for local-replica testing; defaults to mainnet>
 #   WORKER_JOB_BUDGET=<seconds for the whole claim→fulfill window; default 200>
 #   WORKER_IDLE_TIMEOUT=<seconds of LLM silence before giving up; default 25>
+#   WORKER_MODEL=<OPTIONAL override; by default search follows the operator's
+#                 HQ brain picker — see _sw_model()>
+#
+# The model comes from the brain picker by default, deliberately: an operator
+# who switches their brain in HQ expects search to follow, and a stale
+# WORKER_MODEL pin pointing at a model the backend no longer has loaded fails
+# EVERY job (silently, sources-only) with no hint as to why.
 #
 # The loop is SINGLE-THREADED by design: the canister's replay guard requires
 # each worker's signed timestamps to strictly increase, which serialized calls
@@ -583,7 +590,6 @@ _SW_PRINCIPAL = os.environ.get('WORKER_PRINCIPAL', '').strip()
 _SW_SECRET_HEX = os.environ.get('WORKER_SECRET', '').strip()
 _SW_BASE = os.environ.get(
     'SEARCH_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
-_SW_MODEL_HINT = os.environ.get('WORKER_MODEL', '').strip()
 _SW_JOB_BUDGET = float(os.environ.get('WORKER_JOB_BUDGET', '') or 200)
 _SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
 _SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
@@ -650,17 +656,43 @@ def _sw_brave(q, deadline=None):
 
 
 def _sw_hermes_key():
+    """The gateway key. MUST resolve via _hermes_home(): containers set
+    HERMES_HOME=/data/hermes and have no ~/.hermes at all, so hardcoding the
+    home here silently returned '' — which made _sw_llm skip the gateway
+    entirely and fulfill every job sources-only, with any model."""
     key = os.environ.get('API_SERVER_KEY', '').strip()
     if key:
         return key
     try:
-        with open(os.path.expanduser('~/.hermes/.env'), 'r', encoding='utf-8') as f:
+        with open(os.path.join(_hermes_home(), '.env'), 'r', encoding='utf-8') as f:
             m = re.search(r'(?m)^API_SERVER_KEY\s*=\s*(\S+)', f.read())
         if m:
             return m.group(1).strip().strip('"\'')
     except Exception:
         pass
     return ''
+
+
+def _sw_model():
+    """Which model answers searches.
+
+    Follows the operator's HQ brain picker by default: the picker writes
+    `model.default` into the hermes config, and reading it here means flipping
+    the picker moves the search worker too — resolved per job, so no restart.
+    WORKER_MODEL stays as an explicit override for operators who deliberately
+    want search on a different (e.g. cheaper/faster) model than their agents.
+    """
+    hint = os.environ.get('WORKER_MODEL', '').strip()
+    if hint:
+        return hint
+    try:
+        with open(os.path.join(_hermes_home(), 'config.yaml'), 'r', encoding='utf-8') as f:
+            m = re.search(r'(?m)^\s*default:\s*(\S+)', f.read())
+        if m:
+            return m.group(1).strip()
+    except Exception:
+        pass
+    return 'default'
 
 
 _SW_ESCAPES = {'"': '"', '\\': '\\', '/': '/', 'b': '\b',
@@ -983,7 +1015,8 @@ def _sw_llm(q, results, deadline=None):
         'Output STRICT JSON only — no prose, no code fence, "summary" first:\n'
         '{"summary": "...", "notes": {"1": "...", "2": "..."}}\n\n'
         'Query: %s\n\nSources:\n%s' % (q, src))
-    payload = {'model': _SW_MODEL_HINT or 'default',
+    want = _sw_model()
+    payload = {'model': want,
                'messages': [{'role': 'user', 'content': prompt}],
                'max_tokens': _SW_MAX_TOKENS}
     import night_runner as _nr
@@ -1001,11 +1034,16 @@ def _sw_llm(q, results, deadline=None):
             # A salvaged partial IS success: falling through to the provider
             # would trade a usable summary for a second full decode we can't
             # afford inside the lease.
-            return summary, (_SW_MODEL_HINT or model or 'hermes-local')[:80], notes, tokens
+            return summary, (model or want or 'hermes-local')[:80], notes, tokens
         except Exception as e:
-            print('[search-worker] hermes llm failed:', str(e)[:120])
+            # Name the model: the overwhelmingly likely cause is that it isn't
+            # loaded on the backend, and a bare error hid that for weeks.
+            print('[search-worker] hermes llm failed (model=%s): %s' % (want, str(e)[:120]))
+    else:
+        print('[search-worker] no gateway key (%s/.env, API_SERVER_KEY) — '
+              'answers will be sources-only' % _hermes_home())
     try:
-        provider, model, pkey = _nr.read_provider_config(os.path.expanduser('~/.hermes'))
+        provider, model, pkey = _nr.read_provider_config(_hermes_home())
         if pkey:
             spec = _nr._PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
             payload = dict(payload, model=model or payload['model'])
