@@ -387,6 +387,68 @@ def _hermes_home():
     return os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
 
 
+def _validate_local_base_url(u):
+    """(ok, error) for a LOCAL model backend URL the operator typed.
+
+    ALLOWLIST, not blocklist — whatever this accepts, the container will later
+    POST to, and /hermes is only key-protected when CAFRESOHQ_API_KEY is set. So
+    this is the whole defence, not a layer of it.
+
+    IP-literal/localhost only is deliberate and is what closes DNS rebinding: we
+    validate at write time but hermes resolves at call time, so a hostname that
+    passes here can point anywhere seconds later. An IP literal has no such gap.
+    Operators with a real internal DNS name can set HQ_ALLOW_REMOTE_BACKEND=1
+    and accept that risk knowingly.
+    """
+    import ipaddress
+    u = (u or '').strip()
+    if not u:
+        return False, 'base_url is required'
+    if len(u) > 300:
+        return False, 'base_url too long'
+    try:
+        p = urllib.parse.urlsplit(u)
+    except Exception:
+        return False, 'unparseable base_url'
+    if p.scheme not in ('http', 'https'):
+        return False, 'base_url must be http or https'
+    if p.username or p.password:
+        return False, 'base_url must not contain credentials'
+    if p.query or p.fragment:
+        return False, 'base_url must not contain a query or fragment'
+    if '..' in p.path:
+        return False, 'base_url path must not contain ".."'
+    if not re.fullmatch(r'(/[\w\-.]+)*/?', p.path or ''):
+        return False, 'base_url has an unexpected path'
+    host = p.hostname
+    if not host:
+        return False, 'base_url has no host'
+    if os.environ.get('HQ_ALLOW_REMOTE_BACKEND', '').strip() == '1':
+        return True, ''
+    try:
+        infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == 'https' else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except Exception:
+        return False, 'could not resolve %s' % host
+    addrs = {i[4][0] for i in infos}
+    if not addrs:
+        return False, 'could not resolve %s' % host
+    for a in addrs:
+        try:
+            ip = ipaddress.ip_address(a)
+        except ValueError:
+            return False, 'unexpected address for %s' % host
+        # link-local (169.254/16, fe80::/10) covers the cloud metadata endpoint,
+        # which some definitions call "private" — it must never be reachable.
+        if ip.is_link_local:
+            return False, 'link-local addresses are not allowed'
+        if not (ip.is_private or ip.is_loopback):
+            return False, ('%s resolves to the public address %s — a local backend must be '
+                           'on private or loopback space (set HQ_ALLOW_REMOTE_BACKEND=1 to '
+                           'override)' % (host, a))
+    return True, ''
+
+
 def _trial_state():
     """{'active': bool, 'provider': str} — read fresh so a BYOK clear takes effect
     without a restart. The operator can also kill the shared trial network-wide

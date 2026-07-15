@@ -21,6 +21,7 @@ server-side validation (vault path rules, CAFRESOHQ_ALLOWED_DIRS, API key)
 applies unchanged.
 """
 
+import collections
 import json
 import os
 import re
@@ -98,37 +99,126 @@ _PROVIDER_ENDPOINTS = {
 }
 
 
-def read_provider_config(hermes_home):
-    """Read (provider, model, key) from ~/.hermes/{config.yaml,.env} — the same
-    store /hermes/provider writes. Returns (None, None, None) if unconfigured."""
-    provider, model = 'openrouter', ''
+_PROVIDER_ALIASES = {'google-openai': 'gemini'}
+
+# Local OpenAI-compatible servers: reached via the config's own base_url and
+# usually keyless. hermes-bootstrap's model block calls all of these 'lmstudio'
+# (see its comment "LM Studio / Ollama / vLLM") — there is no 'ollama' provider
+# in hermes-agent, so 'ollama' is a UI label that writes provider: lmstudio.
+_LOCAL_PROVIDERS = frozenset(('lmstudio', 'ollama', 'vllm', 'llamacpp', 'openai-compatible'))
+
+# Everything needed to call a model backend directly, without the agent gateway.
+Backend = collections.namedtuple('Backend', 'provider raw_provider model url headers key local')
+
+
+def read_model_config(hermes_home):
+    """Parse ONLY the `model:` block of hermes config.yaml.
+
+    Returns {'raw_provider', 'model', 'base_url', 'ok'}; never raises — it runs
+    per search job, and an unreadable config must degrade, not crash.
+
+    Scoping to the block matters: a bare `^\\s*default:` search (what the old
+    readers did) also matches `default:` under `approvals:`/`tools:`, so an
+    unrelated key could silently become the model.
+    """
+    out = {'raw_provider': '', 'model': '', 'base_url': '', 'ok': False}
     try:
         with open(os.path.join(hermes_home, 'config.yaml'), 'r', encoding='utf-8') as f:
             cfg = f.read()
-        pm = re.search(r'^\s*provider:\s*(\S+)', cfg, re.MULTILINE)
-        mm = re.search(r'^\s*default:\s*(\S+)', cfg, re.MULTILINE)
-        if pm:
-            provider = pm.group(1).strip()
-        if mm:
-            model = mm.group(1).strip()
+    except Exception:
+        return out
+    m = re.search(r'(?m)^model:[ \t]*$', cfg)
+    if not m:
+        return out
+    # The block is the indented run after `model:` — stop at the next line that
+    # starts in column 0 (the next top-level key).
+    rest = cfg[m.end():]
+    end = re.search(r'(?m)^(?=\S)', rest)
+    block = rest[:end.start()] if end else rest
+    for field, key in (('default', 'model'), ('provider', 'raw_provider'), ('base_url', 'base_url')):
+        f_m = re.search(r'(?m)^[ \t]+%s:[ \t]*(\S+)[ \t]*$' % field, block)
+        if f_m:
+            out[key] = f_m.group(1).strip().strip('"\'')
+    out['ok'] = bool(out['raw_provider'] or out['model'])
+    return out
+
+
+def _read_env_key(hermes_home, env_var, env=None):
+    env = os.environ if env is None else env
+    key = (env.get(env_var) or '').strip()
+    if key:
+        return key
+    try:
+        with open(os.path.join(hermes_home, '.env'), 'r', encoding='utf-8') as f:
+            m = re.search(r'(?m)^%s\s*=\s*(\S+)' % re.escape(env_var), f.read())
+        if m:
+            return m.group(1).strip().strip('"\'')
     except Exception:
         pass
-    spec = _PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
-    if not spec:
+    return ''
+
+
+def resolve_backend(hermes_home, model_override='', env=None):
+    """The one place that answers "how do I call the operator's chosen brain
+    DIRECTLY?" — i.e. without the hermes agent gateway.
+
+    Returns a Backend, or None when no direct path exists and the caller must
+    fall back to the gateway. Never raises.
+
+    Why direct at all: the gateway is an AGENT runtime. It layers a ~13k-token
+    system prompt onto every call and — verified against hermes-agent 0.15.1 —
+    silently DROPS max_tokens/response_format and IGNORES `model` (it echoes the
+    requested name back while running whatever config.yaml says). For a plain
+    summarisation call that is pure cost, and the echo makes provenance lie.
+    Agent work still belongs on the gateway; this is for everything that isn't.
+    """
+    cfg = read_model_config(hermes_home)
+    raw = cfg['raw_provider'] or 'openrouter'
+    provider = _PROVIDER_ALIASES.get(raw, raw)
+    model = (model_override or '').strip() or cfg['model']
+    base_url = cfg['base_url']
+
+    spec = _PROVIDER_ENDPOINTS.get(provider)
+    if spec:
+        # Known cloud provider: the URL comes from _PROVIDER_ENDPOINTS, NEVER
+        # from base_url. The two writers disagree — hermes-bootstrap writes
+        # gemini's base_url as .../v1beta while serve.py writes
+        # .../v1beta/openai — so trusting base_url here would POST to
+        # /v1beta/chat/completions and 404 on half the fleet.
+        env_var, url = spec
+        key = _read_env_key(hermes_home, env_var, env)
+        if not key:
+            return None                       # unconfigured cloud → gateway
+        return Backend(provider, raw, model, url,
+                       {'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + key}, key, False)
+
+    if provider in _LOCAL_PROVIDERS or base_url:
+        # Local (or any unknown provider that told us where it lives). Keyless
+        # is a legitimate config here — the old reader treated "no key" as
+        # "unconfigured" and threw local backends away entirely.
+        if not base_url:
+            return None
+        headers = {'Content-Type': 'application/json'}
+        key = _read_env_key(hermes_home, 'LMSTUDIO_API_KEY', env)
+        if key:
+            headers['Authorization'] = 'Bearer ' + key
+        return Backend(provider, raw, model,
+                       base_url.rstrip('/') + '/chat/completions', headers, key, True)
+
+    return None                               # e.g. anthropic → gateway only
+
+
+def read_provider_config(hermes_home):
+    """DEPRECATED — use resolve_backend(). Kept verbatim in contract for
+    llm_call and any caller written against (provider, model, key), where the
+    (None, None, None) return is load-bearing (llm_call raises on a missing
+    key). Returns raw_provider so callers' own _PROVIDER_ENDPOINTS alias lookup
+    still works."""
+    b = resolve_backend(hermes_home)
+    if b is None or not b.key or b.local:
         return None, None, None
-    env_var, _url = spec
-    key = os.environ.get(env_var, '').strip()
-    if not key:
-        try:
-            with open(os.path.join(hermes_home, '.env'), 'r', encoding='utf-8') as f:
-                m = re.search(r'(?m)^%s\s*=\s*(\S+)' % re.escape(env_var), f.read())
-            if m:
-                key = m.group(1).strip().strip('"\'')
-        except Exception:
-            pass
-    if not key:
-        return None, None, None
-    return provider, model, key
+    return b.raw_provider, b.model, b.key
 
 
 def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
