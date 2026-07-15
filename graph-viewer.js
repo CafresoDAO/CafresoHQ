@@ -142,6 +142,57 @@ async function main() {
   requestAnimationFrame(() => { try { renderer.refresh(); } catch (_) {} });
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { try { renderer.refresh(); } catch (_) {} }).observe(container);
 
+  // Zoom / pan / reset — the graph was otherwise only discoverable via
+  // sigma's default mouse-wheel zoom, with no on-screen affordance at all.
+  const camera = renderer.getCamera();
+  const zoomIn = document.getElementById('gv-zoom-in');
+  const zoomOut = document.getElementById('gv-zoom-out');
+  const resetBtn = document.getElementById('gv-reset');
+  if (zoomIn) zoomIn.addEventListener('click', () => camera.animatedZoom({ duration: 200 }));
+  if (zoomOut) zoomOut.addEventListener('click', () => camera.animatedUnzoom({ duration: 200 }));
+  if (resetBtn) resetBtn.addEventListener('click', () => camera.animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration: 250 }));
+
+  // First-visit hint fades on the first real interaction, not on a timer —
+  // someone still reading it shouldn't have it vanish underneath them.
+  const hint = document.getElementById('hint');
+  if (hint) {
+    const dismissHint = () => { hint.classList.add('gv-hidden'); };
+    container.addEventListener('wheel', dismissHint, { once: true, passive: true });
+    container.addEventListener('mousedown', dismissHint, { once: true });
+    container.addEventListener('touchstart', dismissHint, { once: true, passive: true });
+  }
+
+  // Domain-color legend — data-driven from what's actually rendered (the
+  // search worker colors source nodes by domain hash; a generic knowledge
+  // graph may have no 'domain' attribute at all, in which case there's
+  // nothing meaningful to show and the toggle stays hidden).
+  const legendToggle = document.getElementById('legend-toggle');
+  const legend = document.getElementById('legend');
+  if (legendToggle && legend) {
+    const byDomain = new Map();   // domain -> {color, count}
+    g.forEachNode((id, attrs) => {
+      if (!attrs.domain) return;
+      const cur = byDomain.get(attrs.domain);
+      if (cur) cur.count++;
+      else byDomain.set(attrs.domain, { color: attrs.color || '#cabfa9', count: 1 });
+    });
+    if (byDomain.size > 0) {
+      const top = [...byDomain.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8);
+      const rest = byDomain.size - top.length;
+      legend.innerHTML =
+        '<div class="legend-title">Sources by domain</div>' +
+        top.map(([d, v]) => (
+          '<div class="legend-row"><span class="legend-swatch" style="background:' + v.color + '"></span>' + esc(d) + '</div>'
+        )).join('') +
+        (rest > 0 ? '<div class="legend-row" style="color:#8f8574">+' + rest + ' more</div>' : '');
+      legendToggle.addEventListener('click', () => {
+        legend.style.display = legend.style.display === 'block' ? 'none' : 'block';
+      });
+    } else {
+      legendToggle.style.display = 'none';
+    }
+  }
+
   // Watermark + optional analytics panel.
   const brand = document.getElementById('brand');
   if (brand) brand.textContent = (snap.title || 'Knowledge graph') + ' · CafresoHQ';

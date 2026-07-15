@@ -33,12 +33,64 @@
   #tip .tip-domain { color: #F5D25D; font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
   #tip .tip-note { color: #cabfa9; }
   #tip .tip-hint { color: #8f8574; font-size: 10.5px; margin-top: 7px; }
+
+  /* Zoom / pan / reset — the graph is otherwise only discoverable via mouse-wheel. */
+  #controls {
+    position: fixed; right: 14px; bottom: 14px; z-index: 5;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .gv-btn {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    background: rgba(24,21,16,.82); backdrop-filter: blur(6px);
+    border: 1px solid rgba(245,210,93,.22); border-radius: 8px;
+    color: #cabfa9; font-size: 16px; line-height: 1; cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif; padding: 0; user-select: none;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .gv-btn:hover { background: rgba(245,210,93,.14); color: #F5D25D; border-color: rgba(245,210,93,.4); }
+  .gv-btn:active { background: rgba(245,210,93,.22); }
+  #gv-reset { font-size: 14px; }
+
+  /* Legend — collapsed by default (a small toggle), so it doesn't compete with
+     the graph on first paint; only offered when the graph actually has domain
+     data to explain (search-network graphs), since a generic knowledge graph
+     has no fixed legend to show. */
+  #legend-toggle { position: fixed; left: 14px; bottom: 44px; z-index: 5; }
+  #legend {
+    display: none; position: fixed; left: 14px; bottom: 84px; z-index: 5; max-width: 220px;
+    background: rgba(20,18,12,.88); backdrop-filter: blur(6px);
+    border: 1px solid rgba(245,210,93,.22); border-radius: 10px;
+    padding: 10px 12px; color: #e9e2d4; font-size: 11.5px; line-height: 1.7;
+  }
+  #legend .legend-title { font-weight: 600; color: #F5D25D; margin-bottom: 4px; font-size: 11px; letter-spacing: .02em; }
+  #legend .legend-row { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #legend .legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+  /* First-visit hint — the interaction model (scroll to zoom, drag to pan,
+     hover for detail) isn't otherwise discoverable. Fades once the camera
+     actually moves. */
+  #hint {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: rgba(20,18,12,.72); backdrop-filter: blur(6px);
+    border: 1px solid rgba(245,210,93,.18); border-radius: 999px;
+    padding: 6px 14px; color: #cabfa9; font-size: 11px; letter-spacing: .01em;
+    opacity: 1; transition: opacity .5s ease; pointer-events: none; white-space: nowrap;
+  }
+  #hint.gv-hidden { opacity: 0; }
 </style>
 </head>
 <body>
 <div id="graph"></div>
 <div id="tip"></div>
 <div id="analytics"></div>
+<div id="hint">scroll to zoom · drag to pan · hover a node for details</div>
+<div id="controls">
+  <button class="gv-btn" id="gv-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+  <button class="gv-btn" id="gv-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+  <button class="gv-btn" id="gv-reset" aria-label="Fit view" title="Fit view">⟲</button>
+</div>
+<button class="gv-btn" id="legend-toggle" aria-label="Toggle legend" title="What do the colors mean?">?</button>
+<div id="legend"></div>
 <div id="brand">CafresoHQ</div>
 <script src="graph-viewer.js"></script>
 </body>
