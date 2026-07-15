@@ -22,6 +22,21 @@
   let health = null;
   let shown = 24;            // client-side paging over the (≤500) index
 
+  // Filter/sort the already-fetched index client-side — no extra fetch, the
+  // whole (≤500-entry) index is already local by the time this page renders.
+  let filterText = '';
+  let sortBy = 'newest';     // 'newest' | 'sources' — index arrives newest-first
+  $: filteredEntries = index && index.entries
+    ? (() => {
+        const needle = filterText.trim().toLowerCase();
+        const out = needle
+          ? index.entries.filter((e) => plain(e.query).toLowerCase().includes(needle))
+          : index.entries;
+        return sortBy === 'sources' ? [...out].sort((a, b) => b.sources - a.sources) : out;
+      })()
+    : [];
+  function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
+
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
   let searchPhase = 'idle';  // idle | checking | queued | rejected | dark
@@ -240,24 +255,54 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
-    <div class="lib-grid">
-      {#each index.entries.slice(0, shown) as e (e.id)}
-        <button class="lib-card lib-card-btn" on:click={() => openEntry(e.id)}>
-          <h3>{plain(e.query)}</h3>
-          <div class="lib-chips">
-            <span class="lib-chip">{fmtDate(e.ts)}</span>
-            <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-            <span class="lib-chip lib-chip-chain">on-chain</span>
-          </div>
-        </button>
-      {/each}
-    </div>
-    {#if index.entries.length > shown}
-      <div style="text-align: center;">
-        <button class="lib-more" on:click={() => (shown += 24)}>
-          Show more ({index.entries.length - shown} remaining)
-        </button>
+    <div class="lib-filterbar">
+      <div class="lib-filter-input">
+        <Icon name="funnel" size={14} style="color: hsl(40 20% 55%); flex-shrink: 0;" />
+        <input
+          type="text"
+          placeholder="Filter {index.entries.length} entries…"
+          bind:value={filterText}
+          on:input={onFilterChange}
+          aria-label="Filter library entries"
+        />
+        {#if filterText}
+          <button class="lib-filter-clear" on:click={() => { filterText = ''; onFilterChange(); }} aria-label="Clear filter">
+            <Icon name="x" size={12} />
+          </button>
+        {/if}
       </div>
+      <select class="lib-sort-select" bind:value={sortBy} on:change={onFilterChange} aria-label="Sort entries">
+        <option value="newest">Newest first</option>
+        <option value="sources">Most sources</option>
+      </select>
+    </div>
+
+    {#if filteredEntries.length === 0}
+      <div class="lib-empty">
+        <div class="lib-empty-glyph" aria-hidden="true">◌</div>
+        <h2>No entries match "{filterText}"</h2>
+        <p>Try a shorter word, or <button class="lib-filter-reset-link" on:click={() => { filterText = ''; onFilterChange(); }}>clear the filter</button> to browse everything.</p>
+      </div>
+    {:else}
+      <div class="lib-grid">
+        {#each filteredEntries.slice(0, shown) as e (e.id)}
+          <button class="lib-card lib-card-btn" on:click={() => openEntry(e.id)}>
+            <h3>{plain(e.query)}</h3>
+            <div class="lib-chips">
+              <span class="lib-chip">{fmtDate(e.ts)}</span>
+              <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+              <span class="lib-chip lib-chip-chain">on-chain</span>
+            </div>
+          </button>
+        {/each}
+      </div>
+      {#if filteredEntries.length > shown}
+        <div style="text-align: center;">
+          <button class="lib-more" on:click={() => (shown += 24)}>
+            Show more ({filteredEntries.length - shown} remaining)
+          </button>
+        </div>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -459,6 +504,35 @@
   .lib-graph-open:hover { border-color: hsl(45 85% 55%); }
 
   /* ── Entry stream ──────────────────────────────────────────────────────── */
+  .lib-filterbar {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  }
+  .lib-filter-input {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+    background: white; border: 1px solid hsl(26 30% 85%); border-radius: 999px;
+    padding: 8px 14px; transition: border-color 0.14s;
+  }
+  .lib-filter-input:focus-within { border-color: hsl(45 75% 60%); }
+  .lib-filter-input input {
+    flex: 1; min-width: 0; border: none; outline: none; background: none;
+    font: 14px Inter, system-ui, sans-serif; color: hsl(222 47% 11%);
+  }
+  .lib-filter-input input::placeholder { color: hsl(40 15% 60%); }
+  .lib-filter-clear {
+    display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+    background: hsl(26 30% 90%); color: hsl(215 16% 40%); flex-shrink: 0; padding: 0;
+  }
+  .lib-filter-clear:hover { background: hsl(26 30% 82%); }
+  .lib-sort-select {
+    border: 1px solid hsl(26 30% 85%); background: white; border-radius: 999px;
+    padding: 8px 14px; font: 600 12.5px Inter, system-ui, sans-serif;
+    color: hsl(222 47% 11%); cursor: pointer; flex-shrink: 0;
+  }
+  .lib-filter-reset-link {
+    background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    font: inherit; color: hsl(45 70% 40%); text-decoration: underline;
+  }
   .lib-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
