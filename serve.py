@@ -1068,8 +1068,9 @@ def _sw_schema(n):
       deadline-truncated answer.
     - notes enumerates keys "1".."N" with `required` rather than a typed
       additionalProperties. OpenAI-flavoured strict mode REJECTS a typed
-      additionalProperties, and `required` is what makes a note per source
-      structurally mandatory — the actual fix for empty hover cards.
+      additionalProperties, and `required` makes a note per source structurally
+      mandatory instead of a polite request the model may ignore (observed:
+      gpt-oss-20b dropping notes and blowing the word budget on some prompts).
     """
     keys = [str(i + 1) for i in range(n)]
     return {'type': 'json_schema', 'json_schema': {

@@ -311,7 +311,7 @@ def test_payload(port):
     check('response_format is a strict json_schema', (rf.get('json_schema') or {}).get('strict') is True, rf)
     # Salvage rescues a truncated answer only because summary is emitted first.
     check('summary precedes notes in the schema', list(props.keys()) == ['summary', 'notes'], list(props.keys()))
-    check('a note per source is REQUIRED (the empty-hover-cards fix)',
+    check('a note per source is structurally REQUIRED, not requested',
           (props.get('notes') or {}).get('required') == ['1', '2', '3'],
           (props.get('notes') or {}).get('required'))
 
