@@ -170,7 +170,7 @@
             Still working — this one's a slow one. The answer joins the library either way,
             so you can leave this page and find it here.
           {:else}
-            The research network is on it — {queueNote}. Fresh answers take ~10–30s and join the web forever.
+            The research network is on it — {queueNote}. Fresh answers usually land in a few seconds and join the web forever.
           {/if}
         </div>
       {:else if searchPhase === 'rejected'}

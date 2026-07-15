@@ -1,7 +1,7 @@
 <script>
   /* Ai Cafreso Search — the anonymous quick-search sheet. Pipeline:
        1. on-chain library (instant, free)  →  2. the research network queue
-       (community workers answer in ~10-30s) →  3. honest fallbacks.
+       (community workers usually answer in a few seconds) →  3. honest fallbacks.
      Every answer shown here is a public, permanent library entry with
      provenance. Nothing a visitor types is stored unless the network answers
      it — and then it's the ANSWER that's public, never the visitor. */
@@ -27,6 +27,7 @@
   let rejectReason = '';
   let recentSearches = [];
   let searchSeq = 0;  // stale-response guard
+  let showChecking = false;  // only true once 'checking' has run long enough to be worth showing
   let darkMessage = '';  // operator-set pause / GPU-down message for the dark state
 
   $: if ($aiSearchOpen) {
@@ -85,6 +86,12 @@
     phase = 'checking';
     entry = null;
     darkMessage = '';
+    // The library/health round trip usually resolves in well under 200ms —
+    // showing a spinner for that just reads as a flash. Only show it if
+    // 'checking' is still the phase once the delay elapses (guarding on `seq`
+    // means a fast resolution never flips this on after the fact).
+    showChecking = false;
+    setTimeout(() => { if (phase === 'checking' && seq === searchSeq) showChecking = true; }, 180);
 
     // 1. Library first — instant and free. Still works even when the operator
     //    has paused the network (reads aren't gated — only NEW queries are).
@@ -328,8 +335,20 @@
       </div>
     {/if}
 
-    <!-- Phase: checking / queued -->
-    {#if phase === 'checking' || phase === 'queued'}
+    <!-- Phase: checking — a near-instant round trip; only shown if it's slow
+         enough to notice, and lightly (no full spinner block, no page-jump). -->
+    {#if phase === 'checking' && showChecking}
+      <div style="text-align: center; padding: 10px 0 8px; display: flex; align-items: center; justify-content: center; gap: 7px;">
+        <div
+          class="spin"
+          style="display: inline-block; width: 13px; height: 13px; border: 2px solid hsl(26 30% 85%); border-top-color: hsl(260 70% 55%); border-radius: 50%;"
+        ></div>
+        <span style="font-size: 12px; color: hsl(215 16% 55%);">Checking the library…</span>
+      </div>
+    {/if}
+
+    <!-- Phase: queued — a real wait, worth a real progress indicator. -->
+    {#if phase === 'queued'}
       <div style="text-align: center; padding: 28px 0 24px;">
         <div
           class="spin"
@@ -342,9 +361,7 @@
             margin-bottom: 14px;
           "
         ></div>
-        {#if phase === 'checking'}
-          <div style="font-size: 13px; color: hsl(215 16% 47%);">Checking the on-chain library…</div>
-        {:else if queueNote === 'slow'}
+        {#if queueNote === 'slow'}
           <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">Still working — this one's a slow one</div>
           <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
             The answer joins <a href="/library" on:click={close} style="color: hsl(260 70% 55%);">the library</a>
@@ -353,7 +370,7 @@
         {:else}
           <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">The research network is on it</div>
           <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
-            {queueNote} · fresh answers take ~10–30s and join the library forever
+            {queueNote} · fresh answers usually land in a few seconds and join the library forever
           </div>
         {/if}
       </div>
