@@ -16,6 +16,8 @@ These cover the two things a future edit is most likely to break silently:
 No network and no GPU: a fake OpenAI-compatible endpoint with scriptable
 pathologies stands in for the gateway. Run: python3 scripts/test_search_worker.py
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -91,6 +93,8 @@ BODY = ('{"summary": "ICP is a blockchain that runs canister smart contracts [1]
         'It offers web-speed finality [2].", "notes": {"1": "Overview of the protocol", '
         '"2": "Benchmarks and finality", "3": "Tokenomics detail"}}')
 MODE, TOKEN_SLEEP, STALL_AT, BLOCK_SECS = 'slow', 0.0, 3, 75
+REQS = []        # every request body the fake saw, in order
+HITS = {}        # port -> request count (proves which path was used)
 
 
 class _H(http.server.BaseHTTPRequestHandler):
@@ -101,6 +105,11 @@ class _H(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or '{}')
+        REQS.append(req)
+        port = self.server.server_address[1]
+        HITS[port] = HITS.get(port, 0) + 1
+        if MODE == 'reject_response_format' and 'response_format' in req:
+            self.send_error(400, 'unknown param response_format'); return
         if MODE == 'reject_stream_options' and 'stream_options' in req:
             self.send_error(400, 'unknown param'); return
         if MODE == 'reject_stream' and req.get('stream'):
@@ -152,15 +161,44 @@ R = [{'title': 'ICP Overview', 'url': 'https://a.com/x',
       'description': 'ICP token supply and staking mechanics explained in detail here.'}]
 
 
-def test_llm(port):
-    global MODE, TOKEN_SLEEP, STALL_AT
-    print('llm bounds + salvage')
+def _use_direct(port):
+    """Route _sw_llm's DIRECT path at the fake, and make the gateway unreachable
+    so anything that reaches it fails loudly rather than passing by accident."""
+    import night_runner as nr
+    serve._sw_backend = lambda: nr.Backend(
+        provider='lmstudio', raw_provider='lmstudio', model='fake-1',
+        url='http://127.0.0.1:%d/v1/chat/completions' % port,
+        headers={'Content-Type': 'application/json'}, key='', local=True)
+    serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', 9
+
+
+def _use_gateway(port):
+    """No direct backend resolvable (e.g. an anthropic operator) → gateway."""
+    serve._sw_backend = lambda: None
     serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', port
-    serve._SW_MODEL_HINT = ''
+
+
+def _mode(m):
+    """Change the fake's personality AND forget the memoised ladder rung.
+
+    _SW_CAPS is sticky per-url per-process on purpose — a real backend doesn't
+    change which params it accepts mid-run, so paying for that discovery once is
+    the whole point. This test does change it, so it has to say so; otherwise a
+    rung learned in the reject_stream case silently rewrites the next case."""
+    global MODE
+    MODE = m
+    serve._SW_CAPS.clear()
+
+
+def test_llm(port, label):
+    """The SAME assertion body, run once per path. These only ever assert on
+    _sw_llm's return, so both routes must satisfy them identically."""
+    global MODE, TOKEN_SLEEP, STALL_AT
+    print('llm bounds + salvage [%s]' % label)
     serve._SW_IDLE_TIMEOUT = 3.0          # keep the stall cases quick
 
     # The deadline lands mid-generation → salvage rather than lose everything.
-    MODE, TOKEN_SLEEP = 'slow', 0.25
+    _mode('slow'); TOKEN_SLEEP = 0.25
     t = time.monotonic()
     s, _m, _n, tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 4)
     el = time.monotonic() - t
@@ -169,7 +207,7 @@ def test_llm(port):
     check('salvage still counts tokens (delta fallback)', tok > 0, tok)
 
     # Stalled backend: abort on the idle bound, don't burn the whole budget.
-    MODE, TOKEN_SLEEP, STALL_AT = 'stall', 0.01, 3
+    _mode('stall'); TOKEN_SLEEP, STALL_AT = 0.01, 3
     t = time.monotonic()
     s, _m, _n, _tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 120)
     el = time.monotonic() - t
@@ -180,45 +218,143 @@ def test_llm(port):
     check('idle stall past a sentence salvages it', bool(s) and s.endswith('.'), repr(s)[:60])
     STALL_AT = 3
 
-    MODE, TOKEN_SLEEP = 'slow', 0.0
+    _mode('slow'); TOKEN_SLEEP = 0.0
     s, _m, n, tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
     check('full stream parses', 'canister smart contracts [1]' in s, repr(s)[:60])
     check('full stream keeps every note', len(n) == 3, n)
     check('full stream uses reported usage', tok == 1234, tok)
 
-    MODE = 'blocking'
+    _mode('blocking')
     s, _m, _n, tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    check('gateway ignoring stream still works', 'canister smart contracts [1]' in s and tok == 1234, tok)
+    check('backend ignoring stream still works', 'canister smart contracts [1]' in s and tok == 1234, tok)
 
-    MODE = 'reject_stream_options'
+    _mode('reject_stream_options')
     s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
     check('4xx on stream_options climbs down', 'canister smart contracts [1]' in s, repr(s)[:40])
 
-    MODE = 'reject_stream'
+    _mode('reject_stream')
     s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
     check('4xx on stream falls back to blocking', 'canister smart contracts [1]' in s, repr(s)[:40])
 
-    MODE = 'no_usage'
+    _mode('no_usage')
     _s, _m, _n, tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
     check('missing usage chunk falls back to delta count', tok > 0 and tok != 1234, tok)
 
-    # Regression: a BLOCKING gateway withholds headers until it's done, so the
+    # Regression: a BLOCKING backend withholds headers until it's done, so the
     # open must cover the whole generation. Bounding it by TTFT killed a healthy
     # 75s answer at exactly 60s with budget to spare.
-    MODE = 'blocking_slow'
+    _mode('blocking_slow')
     t = time.monotonic()
     s, _m, _n, _t2 = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 180)
     el = time.monotonic() - t
-    check('blocking gateway slower than TTFT still succeeds',
+    check('blocking backend slower than TTFT still succeeds',
           'canister smart contracts [1]' in s, '%.0fs %r' % (el, s[:30]))
-    check('blocking gateway was actually waited for', el > 70, '%.1fs' % el)
+    check('blocking backend was actually waited for', el > 70, '%.1fs' % el)
 
-    # Dead backend: sources + graph are still worth fulfilling, so degrade quietly.
+    # Everything dead: sources + graph are still worth fulfilling, so degrade quietly.
+    _mode('slow')
+    import night_runner as nr
+    serve._sw_backend = lambda: nr.Backend('lmstudio', 'lmstudio', 'fake-1',
+                                           'http://127.0.0.1:9/v1/chat/completions',
+                                           {'Content-Type': 'application/json'}, '', True)
     serve.HERMES_PORT = 9
     t = time.monotonic()
     out = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 30)
     check('dead backend degrades to empty', out == ('', '', {}, 0), out)
     check('dead backend fails fast', time.monotonic() - t < 15)
+
+
+def test_ordering(direct_port, gw_port):
+    """The one test that catches a regression back to gateway-first. The gateway
+    is ~13k prompt tokens per answer and ignores max_tokens/model — if a direct
+    backend resolves, nothing should reach it."""
+    global MODE
+    print('routing')
+    MODE = 'slow'
+    HITS.clear()
+    import night_runner as nr
+    serve._sw_backend = lambda: nr.Backend(
+        'lmstudio', 'lmstudio', 'fake-1',
+        'http://127.0.0.1:%d/v1/chat/completions' % direct_port,
+        {'Content-Type': 'application/json'}, '', True)
+    serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', gw_port
+    s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('direct path answered', bool(s))
+    check('direct backend was called', HITS.get(direct_port, 0) > 0, HITS)
+    check('gateway saw ZERO requests when a direct backend exists',
+          HITS.get(gw_port, 0) == 0, HITS)
+
+    # An operator we cannot resolve directly (e.g. anthropic — no
+    # _PROVIDER_ENDPOINTS entry) must still get answers. Do not delete this path.
+    HITS.clear()
+    _use_gateway(gw_port)
+    s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('unresolvable backend still answers via the gateway', bool(s))
+    check('gateway was used as the fallback', HITS.get(gw_port, 0) > 0, HITS)
+
+
+def test_payload(port):
+    """What we actually send. These params were no-ops on the gateway; going
+    direct is the whole point, so pin them."""
+    global MODE
+    print('request payload')
+    MODE = 'slow'
+    _use_direct(port)
+    REQS.clear()
+    serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    req = REQS[0]
+    check('max_tokens is sent and is the new default', req.get('max_tokens') == 700, req.get('max_tokens'))
+    check('model is the resolved backend model', req.get('model') == 'fake-1', req.get('model'))
+    rf = req.get('response_format') or {}
+    props = (((rf.get('json_schema') or {}).get('schema') or {}).get('properties') or {})
+    check('response_format is a strict json_schema', (rf.get('json_schema') or {}).get('strict') is True, rf)
+    # Salvage rescues a truncated answer only because summary is emitted first.
+    check('summary precedes notes in the schema', list(props.keys()) == ['summary', 'notes'], list(props.keys()))
+    check('a note per source is REQUIRED (the empty-hover-cards fix)',
+          (props.get('notes') or {}).get('required') == ['1', '2', '3'],
+          (props.get('notes') or {}).get('required'))
+
+
+def test_schema_climbdown(port):
+    """A backend that hates response_format must still answer — and must not
+    re-pay for that discovery on every job."""
+    global MODE
+    print('response_format climb-down')
+    MODE = 'reject_response_format'
+    _use_direct(port)
+    serve._SW_CAPS.clear()
+    REQS.clear()
+    s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('still answers without response_format', 'canister smart contracts [1]' in s, repr(s)[:50])
+    check('it did climb down', any('response_format' not in r for r in REQS), len(REQS))
+    n_first = len(REQS)
+    REQS.clear()
+    serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('the rung is memoised — no wasted 4xx on the next job',
+          all('response_format' not in r for r in REQS), 'first=%d then=%d' % (n_first, len(REQS)))
+
+
+def test_trial_notice(port, tmp):
+    """Uncapped is a DECISION, so pin it: the notice fires, and nothing is
+    metered. If someone later adds a bump here, this test fails on purpose."""
+    global MODE
+    print('trial key notice')
+    MODE = 'slow'
+    _use_direct(port)
+    serve._trial_state = lambda: {'active': True, 'provider': 'openrouter'}
+    serve._trial_usage = lambda p: (3, 25)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    out = buf.getvalue()
+    check('says it is spending the shared trial key', 'SHARED TRIAL key' in out, out[:90])
+    check('says search is not metered', 'NOT metered' in out, out[:90])
+    before = serve._night_load('trial-usage.json', {})
+    with contextlib.redirect_stdout(io.StringIO()):
+        serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('search does NOT consume the trial cap (decided: uncapped)',
+          serve._night_load('trial-usage.json', {}) == before)
+    serve._trial_state = lambda: {'active': False}
 
 
 def test_focus():
@@ -232,8 +368,24 @@ def test_focus():
 def main():
     srv = _S(('127.0.0.1', 0), _H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    # A second fake so routing can be proven by which port got hit.
+    gw = _S(('127.0.0.1', 0), _H)
+    threading.Thread(target=gw.serve_forever, daemon=True).start()
+    gw_port = gw.server_address[1]
+
     test_parse()
-    test_llm(srv.server_address[1])
+    # The same bounds/salvage body must hold on BOTH routes.
+    _use_direct(port)
+    test_llm(port, 'direct')
+    serve._SW_CAPS.clear()
+    _use_gateway(port)
+    test_llm(port, 'gateway fallback')
+    serve._SW_CAPS.clear()
+    test_ordering(port, gw_port)
+    test_payload(port)
+    test_schema_climbdown(port)
+    test_trial_notice(port, None)
     test_focus()
     print()
     print(('FAILED: %s' % FAILS) if FAILS else 'search-worker: all checks passed')

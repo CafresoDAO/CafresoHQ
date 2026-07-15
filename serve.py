@@ -627,6 +627,7 @@ threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 #   SEARCH_STATE_URL=<override for local-replica testing; defaults to mainnet>
 #   WORKER_JOB_BUDGET=<seconds for the whole claim→fulfill window; default 200>
 #   WORKER_IDLE_TIMEOUT=<seconds of LLM silence before giving up; default 25>
+#   WORKER_MAX_TOKENS=<completion cap for the answer; default 700>
 #   WORKER_MODEL=<OPTIONAL override; by default search follows the operator's
 #                 HQ brain picker — see _sw_model()>
 #
@@ -655,7 +656,7 @@ _SW_BASE = os.environ.get(
 _SW_JOB_BUDGET = float(os.environ.get('WORKER_JOB_BUDGET', '') or 200)
 _SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
 _SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
-_SW_MAX_TOKENS = 360
+_SW_MAX_TOKENS = int(os.environ.get('WORKER_MAX_TOKENS', '') or 700)
 _SW_ANSWER_CAP = 4000      # LIB_MAX_ANSWER — the canister rejects anything longer
 _sw_last_ts = 0
 
@@ -747,14 +748,35 @@ def _sw_model():
     hint = os.environ.get('WORKER_MODEL', '').strip()
     if hint:
         return hint
+    import night_runner as _nr
+    return _nr.read_model_config(_hermes_home())['model'] or 'default'
+
+
+def _sw_backend():
+    """The operator's brain, callable directly — or None when only the agent
+    gateway can reach it. The single seam the tests monkeypatch."""
+    import night_runner as _nr
+    return _nr.resolve_backend(_hermes_home(),
+                               model_override=os.environ.get('WORKER_MODEL', '').strip())
+
+
+def _sw_trial_notice():
+    """Say it out loud when search is about to spend the SHARED trial key.
+
+    Deliberately a log line, not a meter: search is uncapped by decision. The
+    backstops are the canister's 500/day answer budget and the fact that becoming
+    a worker requires manual planAdmin approval. _trial_usage is non-mutating, so
+    reading it here doesn't consume anyone's chat allowance."""
     try:
-        with open(os.path.join(_hermes_home(), 'config.yaml'), 'r', encoding='utf-8') as f:
-            m = re.search(r'(?m)^\s*default:\s*(\S+)', f.read())
-        if m:
-            return m.group(1).strip()
+        st = _trial_state()
+        if not st.get('active'):
+            return
+        used, cap = _trial_usage(_SW_PRINCIPAL or 'local')
+        print('[search-worker] spending the SHARED TRIAL key (provider=%s) — search is NOT '
+              'metered by the trial cap; %s is at %d/%d today'
+              % (st.get('provider') or '?', (_SW_PRINCIPAL or 'local')[:12], used, cap))
     except Exception:
         pass
-    return 'default'
 
 
 _SW_ESCAPES = {'"': '"', '\\': '\\', '/': '/', 'b': '\b',
@@ -1000,24 +1022,64 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
             pass
 
 
-def _sw_stream_or_block(url, headers, payload, deadline):
-    """_sw_chat with a graceful climb-down for gateways that reject `stream`.
+# (stream, usage_opt, schema) — richest first. response_format is dropped LAST
+# because it's the rung that carries real value: it's what makes a note per
+# source structurally required rather than a polite request.
+_SW_ATTEMPTS = ((True, True, True), (True, False, True),
+                (True, False, False), (False, False, False))
+_SW_CAPS = {}          # url → index of the last rung that worked
 
-    A 4xx means the gateway dislikes a parameter, so retry smaller: first drop
-    stream_options (the newer of the two, and the one an older gateway is
-    likeliest to choke on), then streaming entirely. A 5xx means the backend
-    itself is unhappy and re-sending the same work won't help — raise so the
-    caller moves on to the next backend."""
-    attempts = ((True, True), (True, False), (False, False))
-    for stream, usage_opt in attempts:
+
+def _sw_stream_or_block(url, headers, payload, deadline):
+    """_sw_chat with a graceful climb-down for backends that reject a param.
+
+    A 4xx means the backend dislikes something we sent, so retry smaller. A 5xx
+    means the backend itself is unhappy and re-sending the same work won't help
+    — raise so the caller moves on.
+
+    The per-url memo is what makes a 4-rung ladder affordable: a backend that
+    hates response_format costs ONE wasted round-trip per process, not one per
+    job. A 4xx carries no decode, so even uncached the cost is milliseconds."""
+    start = _SW_CAPS.get(url, 0)
+    for i in range(start, len(_SW_ATTEMPTS)):
+        stream, usage_opt, schema = _SW_ATTEMPTS[i]
+        body = dict(payload)
+        if not schema:
+            body.pop('response_format', None)
         try:
-            return _sw_chat(url, headers, payload, deadline, stream=stream, usage_opt=usage_opt)
+            out = _sw_chat(url, headers, body, deadline, stream=stream, usage_opt=usage_opt)
+            _SW_CAPS[url] = i
+            return out
         except urllib.error.HTTPError as e:
-            if not (400 <= e.code < 500) or not stream:
-                raise          # 5xx, or blocking itself 4xx'd — genuinely broken
-            print('[search-worker] gateway rejected %s (%s) — climbing down'
-                  % ('stream_options' if usage_opt else 'stream', e.code))
+            if not (400 <= e.code < 500) or i == len(_SW_ATTEMPTS) - 1:
+                raise      # 5xx, or the last rung 4xx'd — genuinely broken
+            dropped = ('stream_options' if usage_opt else
+                       'response_format' if schema else 'stream')
+            print('[search-worker] backend rejected %s (%s) — climbing down' % (dropped, e.code))
     raise RuntimeError('unreachable')
+
+
+def _sw_schema(n):
+    """Strict json_schema for the {summary, notes} answer.
+
+    Two deliberate choices:
+    - `summary` is FIRST in properties. Constrained decoders emit in schema
+      order, and _sw_salvage_json depends on summary-before-notes to rescue a
+      deadline-truncated answer.
+    - notes enumerates keys "1".."N" with `required` rather than a typed
+      additionalProperties. OpenAI-flavoured strict mode REJECTS a typed
+      additionalProperties, and `required` is what makes a note per source
+      structurally mandatory — the actual fix for empty hover cards.
+    """
+    keys = [str(i + 1) for i in range(n)]
+    return {'type': 'json_schema', 'json_schema': {
+        'name': 'search_analysis', 'strict': True,
+        'schema': {'type': 'object', 'properties': {
+            'summary': {'type': 'string'},
+            'notes': {'type': 'object',
+                      'properties': {k: {'type': 'string'} for k in keys},
+                      'required': keys, 'additionalProperties': False}},
+            'required': ['summary', 'notes'], 'additionalProperties': False}}}
 
 
 _SW_STOP = frozenset(('the', 'and', 'for', 'are', 'was', 'were', 'what', 'which',
@@ -1080,42 +1142,55 @@ def _sw_llm(q, results, deadline=None):
     want = _sw_model()
     payload = {'model': want,
                'messages': [{'role': 'user', 'content': prompt}],
-               'max_tokens': _SW_MAX_TOKENS}
-    import night_runner as _nr
+               'max_tokens': _SW_MAX_TOKENS,
+               'response_format': _sw_schema(len(results))}
+    _sw_trial_notice()
+
+    def _finish(text, rmodel, tokens, truncated, via):
+        summary, notes = _sw_parse_analysis(text)
+        if truncated:
+            print('[search-worker] %s truncated at deadline — salvaged %d chars, %d notes'
+                  % (via, len(summary or ''), len(notes)))
+        if rmodel and want and rmodel.split('/')[-1] != want.split('/')[-1]:
+            # The gateway echoes back whatever model you asked for while running
+            # config.yaml's — so this catches a chip that would otherwise lie on
+            # a permanent public entry.
+            print('[search-worker] asked for %s, backend answered as %s — chip follows the backend'
+                  % (want, rmodel))
+        # A salvaged partial IS success: falling through would trade a usable
+        # summary for a second full decode we can't afford inside the lease.
+        return summary, (rmodel or want or via)[:80], notes, tokens
+
+    # 1. Direct to the operator's brain. Preferred: the agent gateway layers a
+    #    ~13k-token system prompt on every call and ignores max_tokens/model.
+    b = _sw_backend()
+    if b is not None:
+        try:
+            text, rmodel, tokens, truncated = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+            return _finish(text, rmodel, tokens, truncated, b.provider or 'direct')
+        except Exception as e:
+            print('[search-worker] direct backend failed (provider=%s url=%s model=%s): %s'
+                  % (b.provider, b.url, b.model or want, str(e)[:120]))
+
+    # 2. Fall back to the agent gateway. Costly and it ignores our params, but
+    #    it's the only path for operators we can't resolve directly (e.g.
+    #    anthropic, which has no _PROVIDER_ENDPOINTS entry). Do NOT delete.
     key = _sw_hermes_key()
     if key:
         try:
-            text, model, tokens, truncated = _sw_stream_or_block(
+            text, rmodel, tokens, truncated = _sw_stream_or_block(
                 'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
                 {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
                 payload, deadline)
-            summary, notes = _sw_parse_analysis(text)
-            if truncated:
-                print('[search-worker] hermes truncated at deadline — salvaged %d chars, %d notes'
-                      % (len(summary or ''), len(notes)))
-            # A salvaged partial IS success: falling through to the provider
-            # would trade a usable summary for a second full decode we can't
-            # afford inside the lease.
-            return summary, (model or want or 'hermes-local')[:80], notes, tokens
+            return _finish(text, rmodel, tokens, truncated, 'hermes-local')
         except Exception as e:
-            # Name the model: the overwhelmingly likely cause is that it isn't
-            # loaded on the backend, and a bare error hid that for weeks.
             print('[search-worker] hermes llm failed (model=%s): %s' % (want, str(e)[:120]))
-    else:
-        print('[search-worker] no gateway key (%s/.env, API_SERVER_KEY) — '
-              'answers will be sources-only' % _hermes_home())
-    try:
-        provider, model, pkey = _nr.read_provider_config(_hermes_home())
-        if pkey:
-            spec = _nr._PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
-            payload = dict(payload, model=model or payload['model'])
-            text, rmodel, tokens, truncated = _sw_stream_or_block(
-                spec[1], {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + pkey},
-                payload, deadline)
-            summary, notes = _sw_parse_analysis(text)
-            return summary, (rmodel or model or provider)[:80], notes, tokens
-    except Exception as e:
-        print('[search-worker] provider llm failed:', str(e)[:120])
+    elif b is None:
+        print('[search-worker] no direct backend and no gateway key (%s/.env, '
+              'API_SERVER_KEY) — answers will be sources-only' % _hermes_home())
+
+    # 3. Sources + graph are still worth fulfilling.
     return '', '', {}, 0
 
 
