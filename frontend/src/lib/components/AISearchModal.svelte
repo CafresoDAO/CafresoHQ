@@ -29,6 +29,7 @@
   let searchSeq = 0;  // stale-response guard
   let showChecking = false;  // only true once 'checking' has run long enough to be worth showing
   let darkMessage = '';  // operator-set pause / GPU-down message for the dark state
+  let linkCopied = false;
 
   $: if ($aiSearchOpen) {
     phase = 'idle';
@@ -61,6 +62,13 @@
       try { bits.push(new Date(Number(e.answeredAt) / 1e6).toLocaleDateString()); } catch {}
     }
     return bits.join(' · ');
+  }
+  async function copyLink(id) {
+    try {
+      await navigator.clipboard.writeText(location.origin + '/library?e=' + id);
+      linkCopied = true;
+      setTimeout(() => { linkCopied = false; }, 1800);
+    } catch {}
   }
 
   async function runSearch(q) {
@@ -422,6 +430,17 @@
             Explore in the library
             <Icon name="arrow-up-right" size={12} />
           </button>
+          {#if entry.id}
+            <button type="button" on:click={() => copyLink(entry.id)} style="
+              display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent;
+              padding: 0; font-family: inherit; font-size: 12.5px; font-weight: 600;
+              color: {linkCopied ? 'hsl(112 43% 32%)' : 'hsl(215 16% 40%)'};
+              cursor: pointer;
+            ">
+              <Icon name={linkCopied ? 'check' : 'link'} size={12} />
+              {linkCopied ? 'Copied' : 'Copy link'}
+            </button>
+          {/if}
           {#if entry.id && libraryGraphViewerUrl(entry.id)}
             <a href={libraryGraphViewerUrl(entry.id)} target="_blank" rel="noopener noreferrer" style="
               display: inline-flex; align-items: center; gap: 5px;
