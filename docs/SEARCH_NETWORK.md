@@ -37,8 +37,10 @@ canister (cafresohq_state)
    WORKER_SECRET=<the 64-hex secret>
    BRAVE_API_KEY=<free key from brave.com/search/api>
    ```
-   Optional: `WORKER_MODEL` (model hint for the local hermes gateway),
-   `SEARCH_STATE_URL` (local-replica override for development),
+   Optional: `WORKER_MODEL` (**override only** — by default search follows your
+   HQ brain picker, so switching brains moves search too; set this only to run
+   search on a different model than your agents, and only on one your backend
+   has **loaded**), `SEARCH_STATE_URL` (local-replica override for development),
    `WORKER_JOB_BUDGET` (seconds for the whole claim→fulfill window, default
    `200`), `WORKER_IDLE_TIMEOUT` (seconds of LLM silence before the worker
    gives up on a generation, default `25`).
@@ -131,11 +133,24 @@ like "ICP i" is discarded and the entry lands sources-only, which is the honest
 outcome. An LLM failure never fails the job — sources and the graph are still
 worth fulfilling.
 
-If entries are consistently landing without summaries, the model is too slow
-for the budget: give it more GPU (eject unused models so the search model gets
-full offload), pick a smaller/faster model via `WORKER_MODEL`, or accept
-sources-only. Raising `WORKER_JOB_BUDGET` past ~210 makes things *worse*, not
-better — see the lease warning above.
+**Entries consistently landing without summaries?** Check these in order — the
+worker prints the reason, so read its log first:
+
+1. **Is the model loaded?** By far the most common cause. Asking a local
+   backend for a model it hasn't loaded fails every job, and the entry falls
+   back to sources-only. `curl <backend>/api/v0/models` (LM Studio) shows
+   `state: loaded` vs `not-loaded`. Either load it or pick one that is.
+2. **Can the worker reach the gateway?** `no gateway key … answers will be
+   sources-only` in the log means it never even tried: check `API_SERVER_KEY`
+   or `$HERMES_HOME/.env`.
+3. **Only then, is it too slow?** Pick a faster model, or accept sources-only.
+   Raising `WORKER_JOB_BUDGET` past ~210 makes things *worse*, not better —
+   see the lease warning above.
+
+Note that routing search through the hermes gateway means each answer also
+carries the agent system prompt, so `total_tokens` (and the model chip) reads
+much higher than the search prompt alone — a reasoning model can spend ~14k
+tokens on a 3-source answer.
 
 ## Payouts
 
