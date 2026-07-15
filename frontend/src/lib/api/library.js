@@ -47,12 +47,14 @@ export function libraryGraphViewerUrl(id) {
   return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
 }
 
-/** The whole library as one neural web — the /library page hero. */
+/** The whole library as one neural web — the /library page hero. Runs with
+    chrome=none: the hero overlays its own headline and search box, so the
+    viewer's controls would only compete with them. */
 export function libraryMergedGraphViewerUrl() {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/graph.json`);
-  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight`;
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&chrome=none`;
 }
 
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */

@@ -8,89 +8,204 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; height: 100%; min-height: 100vh; background: #171310; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+  /* The graph plane sits a step darker than the chrome: that gap is what makes
+     small dots and near-invisible edges read as floating rather than painted on. */
+  :root {
+    --gv-plane: #14110E;
+    --gv-card: rgba(18,15,11,.85);
+    --gv-line: rgba(245,210,93,.16);
+    --gv-text: #e9e2d4;
+    --gv-muted: #8f8574;
+    --gv-accent: #F5D25D;
+  }
+  body.gv-light {
+    --gv-plane: #F6F1E7;
+    --gv-card: rgba(251,247,239,.9);
+    --gv-line: rgba(138,98,16,.25);
+    --gv-text: #3A342B;
+    --gv-muted: #6f6858;
+    --gv-accent: #8A6210;
+  }
+
+  html, body { margin: 0; height: 100%; min-height: 100vh; background: var(--gv-plane); font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
   #graph { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+
+  .gv-muted { color: var(--gv-muted); }
+  .gv-panel-title { font-weight: 600; color: var(--gv-accent); margin-bottom: 6px; }
+  .gv-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 20px; margin-bottom: 8px;
+    background: color-mix(in srgb, var(--gv-accent) 16%, transparent);
+    color: var(--gv-accent); text-transform: capitalize;
+  }
+  .gv-card {
+    background: var(--gv-card); backdrop-filter: blur(8px);
+    border: 1px solid var(--gv-line); border-radius: 10px; color: var(--gv-text);
+  }
+
   #brand {
     position: fixed; left: 14px; bottom: 12px; z-index: 5;
-    color: #cabfa9; font-size: 12px; letter-spacing: .02em; opacity: .8;
-    background: rgba(20,18,12,.5); padding: 4px 10px; border-radius: 14px;
+    color: var(--gv-muted); font-size: 12px; letter-spacing: .02em; opacity: .6;
+    background: var(--gv-card); padding: 4px 10px; border-radius: 14px;
+    transition: opacity .2s ease;
   }
+  #brand:hover { opacity: 1; }
+
   #analytics {
     display: none; position: fixed; top: 14px; right: 14px; z-index: 5; width: 230px;
-    background: rgba(20,18,12,.82); backdrop-filter: blur(6px);
-    border: 1px solid rgba(245,210,93,.22); border-radius: 10px;
-    padding: 12px 13px; color: #e9e2d4; font-size: 12px; line-height: 1.5;
+    padding: 12px 13px; font-size: 12px; line-height: 1.5;
   }
   #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
   #tip {
     display: none; position: fixed; z-index: 6; max-width: 280px; pointer-events: none;
-    background: rgba(24,21,16,.94); backdrop-filter: blur(8px);
-    border: 1px solid rgba(245,210,93,.28); border-radius: 12px;
-    padding: 11px 13px; color: #e9e2d4; font-size: 12.5px; line-height: 1.5;
+    padding: 11px 13px; font-size: 12.5px; line-height: 1.5;
     box-shadow: 0 12px 32px -8px rgba(0,0,0,.6);
   }
   #tip .tip-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-  #tip .tip-domain { color: #F5D25D; font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
-  #tip .tip-note { color: #cabfa9; }
-  #tip .tip-hint { color: #8f8574; font-size: 10.5px; margin-top: 7px; }
+  #tip .tip-domain { color: var(--gv-accent); font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
+  #tip .tip-note { color: var(--gv-muted); }
+  #tip .tip-hint { color: var(--gv-muted); font-size: 10.5px; margin-top: 7px; opacity: .8; }
 
-  /* Zoom / pan / reset — the graph is otherwise only discoverable via mouse-wheel. */
   #controls {
     position: fixed; right: 14px; bottom: 14px; z-index: 5;
     display: flex; flex-direction: column; gap: 6px;
   }
   .gv-btn {
     width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-    background: rgba(24,21,16,.82); backdrop-filter: blur(6px);
-    border: 1px solid rgba(245,210,93,.22); border-radius: 8px;
-    color: #cabfa9; font-size: 16px; line-height: 1; cursor: pointer;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 8px;
+    color: var(--gv-muted); font-size: 16px; line-height: 1; cursor: pointer;
     font-family: 'Inter', system-ui, sans-serif; padding: 0; user-select: none;
     transition: background .12s, color .12s, border-color .12s;
   }
-  .gv-btn:hover { background: rgba(245,210,93,.14); color: #F5D25D; border-color: rgba(245,210,93,.4); }
-  .gv-btn:active { background: rgba(245,210,93,.22); }
-  #gv-reset { font-size: 14px; }
+  .gv-btn:hover {
+    background: color-mix(in srgb, var(--gv-accent) 14%, var(--gv-card));
+    color: var(--gv-accent);
+    border-color: color-mix(in srgb, var(--gv-accent) 40%, transparent);
+  }
+  .gv-btn:active { background: color-mix(in srgb, var(--gv-accent) 22%, var(--gv-card)); }
+  #gv-reset, #gv-settings-toggle { font-size: 14px; }
 
-  /* Legend — collapsed by default (a small toggle), so it doesn't compete with
-     the graph on first paint; only offered when the graph actually has domain
-     data to explain (search-network graphs), since a generic knowledge graph
-     has no fixed legend to show. */
+  /* Search — top-left is the only free corner (hint is top-center, analytics
+     top-right, legend/brand bottom-left, controls bottom-right). */
+  #gv-search { position: fixed; left: 14px; top: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; }
+  #gv-search-toggle { display: none; }
+  #gv-search-input {
+    width: 190px; padding: 7px 11px; font-size: 12px; font-family: inherit;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 8px; color: var(--gv-text);
+    outline: none; transition: border-color .12s, width .18s ease;
+  }
+  #gv-search-input::placeholder { color: var(--gv-muted); }
+  #gv-search-input:focus, #gv-search.gv-has-q #gv-search-input {
+    border-color: color-mix(in srgb, var(--gv-accent) 45%, transparent);
+  }
+
+  #gv-settings {
+    display: none; position: fixed; right: 54px; bottom: 14px; z-index: 6; width: 200px;
+    padding: 12px 13px; font-size: 11px;
+    max-height: calc(100vh - 28px); overflow-y: auto;
+  }
+  #gv-settings.gv-open { display: block; }
+  #gv-settings .gv-row { margin-bottom: 10px; }
+  #gv-settings .gv-row:last-child { margin-bottom: 0; }
+  #gv-settings label { display: block; color: var(--gv-muted); margin-bottom: 4px; font-size: 10.5px; letter-spacing: .02em; }
+  #gv-settings input[type=range] { width: 100%; accent-color: var(--gv-accent); margin: 0; }
+  #gv-settings .gv-check { display: flex; align-items: center; gap: 7px; color: var(--gv-text); font-size: 11.5px; cursor: pointer; }
+  #gv-settings .gv-check input { accent-color: var(--gv-accent); margin: 0; cursor: pointer; }
+  #gv-settings.gv-no-physics .gv-physics { display: none; }
+
   #legend-toggle { position: fixed; left: 14px; bottom: 44px; z-index: 5; }
   #legend {
     display: none; position: fixed; left: 14px; bottom: 84px; z-index: 5; max-width: 220px;
-    background: rgba(20,18,12,.88); backdrop-filter: blur(6px);
-    border: 1px solid rgba(245,210,93,.22); border-radius: 10px;
-    padding: 10px 12px; color: #e9e2d4; font-size: 11.5px; line-height: 1.7;
+    padding: 10px 12px; font-size: 11.5px; line-height: 1.7;
   }
-  #legend .legend-title { font-weight: 600; color: #F5D25D; margin-bottom: 4px; font-size: 11px; letter-spacing: .02em; }
+  #legend.gv-open { display: block; }
+  #legend .legend-title { font-weight: 600; color: var(--gv-accent); margin-bottom: 4px; font-size: 11px; letter-spacing: .02em; }
   #legend .legend-row { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #legend .legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 
-  /* First-visit hint — the interaction model (scroll to zoom, drag to pan,
-     hover for detail) isn't otherwise discoverable. Fades once the camera
-     actually moves. */
   #hint {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
-    background: rgba(20,18,12,.72); backdrop-filter: blur(6px);
-    border: 1px solid rgba(245,210,93,.18); border-radius: 999px;
-    padding: 6px 14px; color: #cabfa9; font-size: 11px; letter-spacing: .01em;
-    opacity: 1; transition: opacity .5s ease; pointer-events: none; white-space: nowrap;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 999px;
+    padding: 6px 14px; color: var(--gv-muted); font-size: 11px; letter-spacing: .01em;
+    opacity: .8; transition: opacity .5s ease; pointer-events: none; white-space: nowrap;
   }
   #hint.gv-hidden { opacity: 0; }
+
+  /* Backdrop mode (?chrome=none): the embedding page supplies its own headline
+     and controls over the top, so ours would only compete. The graph and its
+     hover tip stay. */
+  body.gv-nochrome #hint,
+  body.gv-nochrome #controls,
+  body.gv-nochrome #gv-search,
+  body.gv-nochrome #gv-settings,
+  body.gv-nochrome #legend-toggle,
+  body.gv-nochrome #legend,
+  body.gv-nochrome #analytics,
+  body.gv-nochrome #brand { display: none !important; }
+
+  /* Embedded (the library page frames this ~260-440px tall): the chrome has to
+     get out of the way of a canvas that small. */
+  body.gv-compact #hint,
+  body.gv-compact #legend-toggle,
+  body.gv-compact #legend,
+  body.gv-compact #analytics { display: none !important; }
+  body.gv-compact #controls { right: 8px; bottom: 8px; gap: 4px; }
+  body.gv-compact .gv-btn { width: 26px; height: 26px; font-size: 13px; }
+  body.gv-compact #gv-reset, body.gv-compact #gv-settings-toggle { font-size: 12px; }
+  body.gv-compact #brand { font-size: 10px; padding: 2px 8px; left: 8px; bottom: 8px; opacity: .65; }
+  body.gv-compact #tip { max-width: 200px; font-size: 11.5px; padding: 9px 11px; }
+  body.gv-compact #gv-search { left: 8px; top: 8px; }
+  body.gv-compact #gv-settings { right: 40px; bottom: 8px; width: 170px; }
+  /* Collapse search to a magnifier until asked for — a 190px input would eat a
+     third of an embedded canvas. */
+  body.gv-compact #gv-search-toggle { display: flex; }
+  body.gv-compact #gv-search-input { display: none; width: 150px; }
+  body.gv-compact #gv-search.gv-open #gv-search-input { display: block; }
 </style>
 </head>
 <body>
 <div id="graph"></div>
-<div id="tip"></div>
-<div id="analytics"></div>
-<div id="hint">scroll to zoom · drag to pan · hover a node for details</div>
+<div id="tip" class="gv-card"></div>
+<div id="analytics" class="gv-card"></div>
+<div id="hint">scroll to zoom · drag the canvas or a node · hover for details</div>
+
+<div id="gv-search">
+  <button class="gv-btn" id="gv-search-toggle" aria-label="Search nodes" title="Search nodes">⌕</button>
+  <input id="gv-search-input" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off" spellcheck="false"/>
+</div>
+
 <div id="controls">
   <button class="gv-btn" id="gv-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
   <button class="gv-btn" id="gv-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
   <button class="gv-btn" id="gv-reset" aria-label="Fit view" title="Fit view">⟲</button>
+  <button class="gv-btn" id="gv-settings-toggle" aria-label="Graph settings" title="Graph settings">⚙</button>
 </div>
+
+<div id="gv-settings" class="gv-card">
+  <div class="gv-row gv-physics">
+    <label for="gv-gravity">Center force</label>
+    <input type="range" id="gv-gravity" min="0" max="100" value="54" aria-label="Center force"/>
+  </div>
+  <div class="gv-row gv-physics">
+    <label for="gv-repel">Repel force</label>
+    <input type="range" id="gv-repel" min="0" max="100" value="61" aria-label="Repel force"/>
+  </div>
+  <div class="gv-row">
+    <label for="gv-fade">Text fade threshold</label>
+    <input type="range" id="gv-fade" min="0" max="12" step="0.5" value="6" aria-label="Text fade threshold"/>
+  </div>
+  <div class="gv-row gv-physics">
+    <label class="gv-check" for="gv-animate">
+      <input type="checkbox" id="gv-animate" checked/> Animate
+    </label>
+  </div>
+</div>
+
 <button class="gv-btn" id="legend-toggle" aria-label="Toggle legend" title="What do the colors mean?">?</button>
-<div id="legend"></div>
+<div id="legend" class="gv-card"></div>
 <div id="brand">CafresoHQ</div>
 <script src="graph-viewer.js"></script>
 </body>
