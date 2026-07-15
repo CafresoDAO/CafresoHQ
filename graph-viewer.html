@@ -133,6 +133,25 @@
     opacity: .8; transition: opacity .5s ease; pointer-events: none; white-space: nowrap;
   }
   #hint.gv-hidden { opacity: 0; }
+  /* Centred hint vs. a 190px search box pinned left: below ~780px the two
+     collide and the hint loses its first few words. It's the least important
+     thing on screen — drop it rather than let it render as garbage. */
+  @media (max-width: 780px) { #hint { display: none; } }
+
+  /* "+N new since your last visit" — the growth report. Sits under the hint,
+     brighter than the rest of the chrome because it's the one thing here that
+     is news. Click walks the new nodes. */
+  #gv-new {
+    display: none; position: fixed; top: 46px; left: 50%; z-index: 6;
+    transform: translateX(-50%) translateY(-6px);
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid color-mix(in srgb, var(--gv-accent) 40%, transparent);
+    border-radius: 999px; padding: 6px 14px; color: var(--gv-accent);
+    font-size: 11px; font-family: inherit; letter-spacing: .01em; white-space: nowrap;
+    cursor: pointer; opacity: 0; transition: opacity .5s ease, transform .5s ease;
+  }
+  #gv-new.gv-in { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #gv-new:hover { background: color-mix(in srgb, var(--gv-accent) 16%, var(--gv-card)); }
 
   /* Backdrop mode (?chrome=none): the embedding page supplies its own headline
      and controls over the top, so ours would only compete. The graph and its
@@ -144,6 +163,7 @@
   body.gv-nochrome #legend-toggle,
   body.gv-nochrome #legend,
   body.gv-nochrome #analytics,
+  body.gv-nochrome #gv-new,
   body.gv-nochrome #brand { display: none !important; }
 
   /* Embedded (the library page frames this ~260-440px tall): the chrome has to
@@ -157,6 +177,8 @@
   body.gv-compact #gv-reset, body.gv-compact #gv-settings-toggle { font-size: 12px; }
   body.gv-compact #brand { font-size: 10px; padding: 2px 8px; left: 8px; bottom: 8px; opacity: .65; }
   body.gv-compact #tip { max-width: 200px; font-size: 11.5px; padding: 9px 11px; }
+  /* The hint is hidden at this size, so the badge takes the top line itself. */
+  body.gv-compact #gv-new { top: 8px; font-size: 10px; padding: 4px 10px; }
   body.gv-compact #gv-search { left: 8px; top: 8px; }
   body.gv-compact #gv-settings { right: 40px; bottom: 8px; width: 170px; }
   /* Collapse search to a magnifier until asked for — a 190px input would eat a
@@ -171,6 +193,7 @@
 <div id="tip" class="gv-card"></div>
 <div id="analytics" class="gv-card"></div>
 <div id="hint">scroll to zoom · drag the canvas or a node · hover for details</div>
+<button id="gv-new" type="button" title="Fly to the next new node"></button>
 
 <div id="gv-search">
   <button class="gv-btn" id="gv-search-toggle" aria-label="Search nodes" title="Search nodes">⌕</button>
@@ -200,6 +223,11 @@
   <div class="gv-row gv-physics">
     <label class="gv-check" for="gv-animate">
       <input type="checkbox" id="gv-animate" checked/> Animate
+    </label>
+  </div>
+  <div class="gv-row">
+    <label class="gv-check" for="gv-signals">
+      <input type="checkbox" id="gv-signals" checked/> Signals
     </label>
   </div>
 </div>
