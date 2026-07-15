@@ -19,6 +19,7 @@ pathologies stands in for the gateway. Run: python3 scripts/test_search_worker.p
 import contextlib
 import io
 import json
+import tempfile
 import os
 import sys
 import threading
@@ -357,6 +358,41 @@ def test_trial_notice(port, tmp):
     serve._trial_state = lambda: {'active': False}
 
 
+def test_chip_honesty(port, tmpdir):
+    """The chip is written to a PERMANENT PUBLIC on-chain entry, so it must name
+    the model that actually decoded.
+
+    The trap this pins: the gateway ECHOES the requested model back while running
+    config.yaml's. An echo can never disagree with the request, so a naive
+    "reported != requested" check passes while the chip lies. On the gateway path
+    the config is the truth, not the response."""
+    global MODE
+    print('chip honesty')
+    MODE = 'slow'
+    serve._SW_CAPS.clear()
+    cfg = os.path.join(tmpdir, 'config.yaml')
+    with open(cfg, 'w') as f:
+        f.write('model:\n  default: real/loaded-model\n  provider: lmstudio\n'
+                '  base_url: http://127.0.0.1:%d/v1\napprovals:\n  mode: manual\n' % port)
+    serve._hermes_home = lambda: tmpdir
+    os.environ['WORKER_MODEL'] = 'ghost/not-loaded'      # the fake echoes 'fake-1'
+
+    # Gateway path: the fake echoes back whatever we send, exactly like hermes.
+    _use_gateway(port)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _s, m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('gateway chip does NOT parrot the request', 'ghost' not in m, m)
+    check('gateway chip reports the config model (what really ran)', m == 'real/loaded-model', m)
+    check('the discrepancy is logged', 'asked for ghost/not-loaded' in buf.getvalue(), buf.getvalue()[:80])
+
+    # Direct path: the backend genuinely runs what it says, so believe it.
+    _use_direct(port)
+    _s, m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('direct chip trusts the backend it actually called', m == 'fake-1', m)
+    del os.environ['WORKER_MODEL']
+
+
 def test_focus():
     print('focus mode')
     f = serve._sw_focus(R[0]['description'], 'what is ICP', max_chars=60)
@@ -386,6 +422,7 @@ def main():
     test_payload(port)
     test_schema_climbdown(port)
     test_trial_notice(port, None)
+    test_chip_honesty(port, tempfile.mkdtemp())
     test_focus()
     print()
     print(('FAILED: %s' % FAILS) if FAILS else 'search-worker: all checks passed')

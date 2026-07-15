@@ -1146,20 +1146,27 @@ def _sw_llm(q, results, deadline=None):
                'response_format': _sw_schema(len(results))}
     _sw_trial_notice()
 
-    def _finish(text, rmodel, tokens, truncated, via):
+    def _finish(text, rmodel, tokens, truncated, via, trust_reported=True):
+        """trust_reported=False for the gateway: it ECHOES the model you asked
+        for while actually running config.yaml's. That echo can never disagree
+        with our request, so believing it would write a confident lie onto a
+        permanent public entry (ask for nemotron, get gpt-oss, entry says
+        nemotron). On that path the config IS the truth."""
         summary, notes = _sw_parse_analysis(text)
         if truncated:
             print('[search-worker] %s truncated at deadline — salvaged %d chars, %d notes'
                   % (via, len(summary or ''), len(notes)))
-        if rmodel and want and rmodel.split('/')[-1] != want.split('/')[-1]:
-            # The gateway echoes back whatever model you asked for while running
-            # config.yaml's — so this catches a chip that would otherwise lie on
-            # a permanent public entry.
-            print('[search-worker] asked for %s, backend answered as %s — chip follows the backend'
-                  % (want, rmodel))
+        if trust_reported:
+            actual = rmodel or want
+        else:
+            import night_runner as _nr
+            actual = _nr.read_model_config(_hermes_home())['model'] or via
+        if actual and want and actual.split('/')[-1] != want.split('/')[-1]:
+            print('[search-worker] asked for %s but %s answered as %s — the chip reports what '
+                  'actually ran' % (want, via, actual))
         # A salvaged partial IS success: falling through would trade a usable
         # summary for a second full decode we can't afford inside the lease.
-        return summary, (rmodel or want or via)[:80], notes, tokens
+        return summary, (actual or via)[:80], notes, tokens
 
     # 1. Direct to the operator's brain. Preferred: the agent gateway layers a
     #    ~13k-token system prompt on every call and ignores max_tokens/model.
@@ -1183,7 +1190,7 @@ def _sw_llm(q, results, deadline=None):
                 'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
                 {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
                 payload, deadline)
-            return _finish(text, rmodel, tokens, truncated, 'hermes-local')
+            return _finish(text, rmodel, tokens, truncated, 'hermes-local', trust_reported=False)
         except Exception as e:
             print('[search-worker] hermes llm failed (model=%s): %s' % (want, str(e)[:120]))
     elif b is None:
