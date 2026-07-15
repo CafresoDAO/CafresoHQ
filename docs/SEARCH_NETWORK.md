@@ -16,7 +16,7 @@ anonymous visitor (cafreso.com /library page or the AI Search modal)
 
 worker container (serve.py, SEARCH_WORKER=1)      HMAC-signed HTTPS POSTs
   /worker/heartbeat · /worker/claim · /worker/fulfill · /worker/fail
-  per job: Brave (own key) → local LLM (hermes first) → graph → fulfill
+  per job: Brave (own key) → local LLM (operator's backend, direct) → graph → fulfill
 
 canister (cafresohq_state)
   worker registry (admin-approved) · job queue · public library with
@@ -120,6 +120,35 @@ is asleep") instead of spinning.
 > and remember `postupgrade` rebuilds `libraryByQuery` — re-keying without that
 > rebuild strands every existing entry.
 
+## Which model answers, and why not through the gateway
+
+**Agent tasks → Hermes. Plain model calls → direct.** Search is a single-shot
+summarisation, not an agent turn, so it calls the operator's backend directly
+(`night_runner.resolve_backend` reads the same `model:` block the HQ brain picker
+writes). Pick a brain in HQ and search follows it — per job, no restart.
+`WORKER_MODEL` overrides that for operators who want search on a different model
+than their agents.
+
+This is not a preference. The hermes gateway is an **agent runtime** and, verified
+against hermes-agent 0.15.1:
+
+- it layers a **~13k-token agent system prompt** onto every call (a 3-source
+  answer cost 15–27k tokens and 37–66s; the same answer direct is ~430 tokens
+  and ~3.5s),
+- it **silently drops `max_tokens` and `response_format`** — they never reach the
+  model,
+- it **ignores `model`** entirely (the real one comes from `config.yaml`) while
+  **echoing your requested name back in the response**. Ask it for
+  `totally/made-up-model-xyz` and it answers, calling itself that.
+
+That last one is why the gateway path reads the model from `config.yaml` rather
+than from the response: library entries are permanent and public, and an echo
+would let a chip claim a model that never ran.
+
+The gateway remains the **fallback** for operators we can't resolve directly —
+`anthropic` has no `_PROVIDER_ENDPOINTS` entry, so the gateway is its only path.
+Don't delete that branch.
+
 ## Answer quality on a slow box
 
 The worker streams the model's reply and asks for `{"summary", "notes"}` with
@@ -140,17 +169,17 @@ worker prints the reason, so read its log first:
    backend for a model it hasn't loaded fails every job, and the entry falls
    back to sources-only. `curl <backend>/api/v0/models` (LM Studio) shows
    `state: loaded` vs `not-loaded`. Either load it or pick one that is.
-2. **Can the worker reach the gateway?** `no gateway key … answers will be
-   sources-only` in the log means it never even tried: check `API_SERVER_KEY`
-   or `$HERMES_HOME/.env`.
+2. **Can the worker reach a backend at all?** `direct backend failed` names the
+   provider, url and model it tried. `no direct backend and no gateway key`
+   means it never got to try: check the brain picker, or `API_SERVER_KEY` /
+   `$HERMES_HOME/.env` for the gateway fallback.
 3. **Only then, is it too slow?** Pick a faster model, or accept sources-only.
    Raising `WORKER_JOB_BUDGET` past ~210 makes things *worse*, not better —
    see the lease warning above.
 
-Note that routing search through the hermes gateway means each answer also
-carries the agent system prompt, so `total_tokens` (and the model chip) reads
-much higher than the search prompt alone — a reasoning model can spend ~14k
-tokens on a 3-source answer.
+If the chip reads ~15k+ tokens for a 3-source answer, search fell back to the
+gateway and is paying the agent system-prompt tax — check the log for why the
+direct path failed.
 
 ## Payouts
 
