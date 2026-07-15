@@ -183,7 +183,7 @@
       </div>
       <div style="display: flex; align-items: center; justify-content: center;">
         <img
-          src="/assets/cafreso-roaster.png"
+          src="/assets/cafreso-roaster.webp"
           alt="Cafreso roaster"
           loading="lazy"
           decoding="async"

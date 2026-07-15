@@ -98,7 +98,7 @@ export const PRODUCTS = [
 ];
 
 export function productImage(img) {
-  return img === 'roaster' ? '/assets/cafreso-roaster.png' : '/assets/not-yet-available.png';
+  return img === 'roaster' ? '/assets/cafreso-roaster.webp' : '/assets/not-yet-available.png';
 }
 
 export function usd(nanas) {

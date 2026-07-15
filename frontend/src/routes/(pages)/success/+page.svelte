@@ -51,7 +51,7 @@
 <svelte:head><title>Order submitted · Cafreso</title></svelte:head>
 
 <div class="mx-auto text-center px-6 py-16 sm:py-20" style="max-width: 620px;">
-  <img src="/assets/cafreso-roaster.png" alt="" class="mx-auto" style="width: 160px; opacity: 0.9;" />
+  <img src="/assets/cafreso-roaster.webp" alt="" class="mx-auto" style="width: 160px; opacity: 0.9;" />
 
   <h1 class="mt-4 mb-2 font-extrabold" style="font-size: clamp(26px, 6vw, 36px);">
     {method === 'card' ? 'Payment confirmed' : 'Order submitted'}
