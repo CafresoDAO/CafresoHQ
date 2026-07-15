@@ -12,7 +12,7 @@ anonymous visitor (cafreso.com /library page or the AI Search modal)
   GET  <state>.icp0.io/library/find.json?q=…      library cache hit → instant
   GET  <state>.icp0.io/search/health.json         workers online?
   POST <state>.icp0.io/search/submit              queue a job
-  GET  <state>.icp0.io/search/job/<id>.json       poll (~3s, ≤90s)
+  GET  <state>.icp0.io/search/job/<id>.json       poll (~3s, ≤200s)
 
 worker container (serve.py, SEARCH_WORKER=1)      HMAC-signed HTTPS POSTs
   /worker/heartbeat · /worker/claim · /worker/fulfill · /worker/fail
@@ -38,7 +38,18 @@ canister (cafresohq_state)
    BRAVE_API_KEY=<free key from brave.com/search/api>
    ```
    Optional: `WORKER_MODEL` (model hint for the local hermes gateway),
-   `SEARCH_STATE_URL` (local-replica override for development).
+   `SEARCH_STATE_URL` (local-replica override for development),
+   `WORKER_JOB_BUDGET` (seconds for the whole claim→fulfill window, default
+   `200`), `WORKER_IDLE_TIMEOUT` (seconds of LLM silence before the worker
+   gives up on a generation, default `25`).
+
+   **Don't raise `WORKER_JOB_BUDGET` above ~210.** The canister's claim lease is
+   240s and is not renewable — heartbeats don't extend it and there's no renew
+   op. Overrun it and your fulfill is rejected with `not-your-claim`: the GPU
+   time is wasted, the job's attempt counter still ticks, and three strikes
+   fail it permanently. The default leaves 40s of headroom for the graph build
+   and the upload. If your box is too slow to answer inside that, the worker
+   salvages a partial summary rather than nothing — see below.
 3. Wait for the plan admin to **approve** your worker (Settings shows
    "awaiting approval" → "approved"; your container heartbeats meanwhile, so
    the admin can see it's connected).
@@ -71,6 +82,12 @@ Header `x-worker-signature: hex(HMAC-SHA256(secret, raw-body-bytes))`.
   and rejects anything ≤ it. Serialize your calls (one at a time).
 - **Skew:** `|now - ts| ≤ 5 minutes`.
 - `claim` → `{"job":{"id","q"}}` or `{"job":null}`. Claims lease for 4 minutes.
+  The lease is **not renewable** — `heartbeat` does not touch `claimedAt` and
+  there is no renew op — and fulfill is **one-shot**: there's no way to post a
+  partial or "still working" update. Budget your whole pipeline (search + model
+  + upload) under 240s from the claim, or your fulfill returns `not-your-claim`
+  after the job has already been handed to someone else with `attempts`
+  incremented. serve.py targets 200s (`WORKER_JOB_BUDGET`).
 - `fulfill` lines: `jobId`, `model`(pct), `engine`(pct), `answer`(pct),
   `N` source count, then N lines of `"<title-pct> <url-pct>"` (single space),
   finally `graphJson`(pct) — a graph-viewer snapshot
@@ -83,11 +100,42 @@ Header `x-worker-signature: hex(HMAC-SHA256(secret, raw-body-bytes))`.
 
 ## Queue rules (anonymous submit)
 
-Dedup by ASCII-normalized query (repeat submissions join the existing job or
-hit the library). Global cap 25 pending; **daily answer budget** (default 500,
-admin-set); jobs expire unclaimed after 15 min; submit is rejected with
-`dark` when no approved worker has heartbeated within 10 min — the UI then
-degrades honestly ("network is asleep") instead of spinning.
+Dedup by normalized query — ASCII-lowercased, punctuation stripped, whitespace
+collapsed (`libKey`), so "What is ICP?" and "what is icp" are one cache entry
+rather than two jobs. Repeat submissions join the existing job or hit the
+library. Normalization is deliberately conservative: no stopword removal and no
+word reordering, since "cat eats mouse" ≠ "mouse eats cat".
+
+Global cap 25 pending; **daily answer budget** (default 500, admin-set); jobs
+expire unclaimed after 15 min; submit is rejected with `dark` when no approved
+worker has heartbeated within 10 min — the UI then degrades honestly ("network
+is asleep") instead of spinning.
+
+> `libKey` is separate from `libNorm` on purpose. `libNorm` also normalizes HTTP
+> header names and the hex signature in `verifyWorker`; teaching *it* to strip
+> punctuation would turn `x-worker-signature` into `xworkersignature`, no header
+> would ever match, and every worker call would fail auth. Change `libKey` only,
+> and remember `postupgrade` rebuilds `libraryByQuery` — re-keying without that
+> rebuild strands every existing entry.
+
+## Answer quality on a slow box
+
+The worker streams the model's reply and asks for `{"summary", "notes"}` with
+**summary first, deliberately**. If the deadline cuts the stream short, the
+summary is usually complete and only some per-source notes are lost, so the
+entry still gets a real answer instead of degrading to sources-only.
+
+Library entries are permanent and public, so salvage has a floor: a truncated
+summary is published only if at least one whole sentence survived. A fragment
+like "ICP i" is discarded and the entry lands sources-only, which is the honest
+outcome. An LLM failure never fails the job — sources and the graph are still
+worth fulfilling.
+
+If entries are consistently landing without summaries, the model is too slow
+for the budget: give it more GPU (eject unused models so the search model gets
+full offload), pick a smaller/faster model via `WORKER_MODEL`, or accept
+sources-only. Raising `WORKER_JOB_BUDGET` past ~210 makes things *worse*, not
+better — see the lease warning above.
 
 ## Payouts
 
