@@ -80,6 +80,8 @@
       bind:this={imgEl}
       src={productImage(p.img)}
       alt={p.name}
+      loading="lazy"
+      decoding="async"
       style="max-width: 100%; max-height: 100%; object-fit: contain;
         filter: {p.unavailable ? 'grayscale(1) opacity(0.55)' : 'none'};
         transition: transform .5s cubic-bezier(.2,.8,.2,1);"

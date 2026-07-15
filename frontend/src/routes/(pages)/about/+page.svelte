@@ -185,6 +185,8 @@
         <img
           src="/assets/cafreso-roaster.png"
           alt="Cafreso roaster"
+          loading="lazy"
+          decoding="async"
           style="width: min(260px, 100%); border-radius: 14px;"
         />
       </div>

@@ -575,6 +575,8 @@
           src="/assets/banking-brave-logo.png"
           alt=""
           class="absolute pointer-events-none"
+          loading="lazy"
+          decoding="async"
           style="right: -60px; top: -60px; width: 280px; opacity: 0.08;"
         />
         <div class="relative" style="max-width: 640px; z-index: 1;">

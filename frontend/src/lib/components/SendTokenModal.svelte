@@ -132,7 +132,7 @@
             style="background: hsl(42 80% 92%); border: 1px solid hsl(42 70% 78%);"
           >
             {#if token.logo}
-              <img src={token.logo} alt="" class="w-[22px] h-[22px] object-contain" />
+              <img src={token.logo} alt="" class="w-[22px] h-[22px] object-contain" loading="lazy" decoding="async" />
             {:else}
               <span class="text-[10.5px] font-bold" style="color: hsl(32 56% 25%);">
                 {token.symbol.replace('$', '').slice(0, 3).toUpperCase()}

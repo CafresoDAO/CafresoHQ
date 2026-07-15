@@ -180,7 +180,7 @@
           border: 1px solid hsl(26 30% 85%); border-radius: 16px;
         "
       >
-        <img src="/assets/cf-gold.png" alt="" style="width: 56px; height: 56px; flex-shrink: 0;" />
+        <img src="/assets/cf-gold.png" alt="" loading="lazy" decoding="async" style="width: 56px; height: 56px; flex-shrink: 0;" />
         <div style="flex: 1; min-width: 220px;">
           <h3 style="margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
             Subscribe to the Dev Log

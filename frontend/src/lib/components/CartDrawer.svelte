@@ -54,7 +54,7 @@
             class="flex gap-4 py-4 items-center"
             style="border-bottom: 1px solid hsl(26 30% 60%);"
           >
-            <img src={productImage(it.img)} alt="" class="w-16 h-16 object-contain" />
+            <img src={productImage(it.img)} alt="" class="w-16 h-16 object-contain" loading="lazy" decoding="async" />
             <div class="flex-1">
               <div class="font-medium text-sm">{it.name}</div>
               <div class="text-[13px] mt-1 inline-flex items-center gap-1">
