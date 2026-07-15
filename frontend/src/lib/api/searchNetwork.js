@@ -79,15 +79,20 @@ export function pollJob(jobId) {
 
 /**
  * Poll until the job reaches a terminal state or ~maxMs elapses.
- * onTick(status) fires per poll so the UI can narrate progress.
+ * onTick(status, elapsedMs) fires per poll so the UI can narrate progress.
+ *
+ * maxMs tracks the worker's own budget (WORKER_JOB_BUDGET, 200s) rather than
+ * the old 90s: the canister's claim lease is 240s, so giving up at 90s showed
+ * a healthy worker's 120s answer as "still researching" — a failure state for
+ * a job that actually succeeded.
  */
-export async function awaitJob(jobId, { maxMs = 90_000, intervalMs = 3_000, onTick = (_status) => {} } = {}) {
+export async function awaitJob(jobId, { maxMs = 200_000, intervalMs = 3_000, onTick = (_status, _elapsedMs) => {} } = {}) {
   const t0 = Date.now();
   while (Date.now() - t0 < maxMs) {
     await new Promise((res) => setTimeout(res, intervalMs));
     const st = await pollJob(jobId);
     if (!st) continue;
-    if (onTick) onTick(st.status);
+    if (onTick) onTick(st.status, Date.now() - t0);
     if (st.status === 'done' || st.status === 'failed' || st.status === 'expired') return st;
   }
   return { status: 'timeout' };

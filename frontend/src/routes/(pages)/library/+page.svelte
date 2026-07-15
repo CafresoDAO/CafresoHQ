@@ -25,6 +25,7 @@
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
   let searchPhase = 'idle';  // idle | checking | queued | rejected | dark
+  const SLOW_AFTER_MS = 45_000;   // past this, name the slowness instead of just spinning
   let queueNote = '';
   let rejectReason = '';
   let searchSeq = 0;
@@ -85,7 +86,14 @@
     searchPhase = 'queued';
     queueNote = h.activeWorkers === 1 ? '1 worker researching' : `${h.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      onTick: (st) => { if (seq === searchSeq && st === 'claimed') queueNote = 'a worker picked it up…'; }
+      onTick: (st, elapsedMs) => {
+        if (seq !== searchSeq) return;
+        // Past ~45s a slow box is still healthy — say so rather than spin.
+        // 'slow' is a sentinel: the template swaps the whole sentence, since the
+        // default one promises "~10–30s" and would contradict itself here.
+        if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
+        else if (st === 'claimed') queueNote = 'a worker picked it up…';
+      }
     });
     if (seq !== searchSeq) return;
     if (done.status === 'done' && done.entry) {
@@ -158,7 +166,12 @@
       {#if searchPhase === 'queued'}
         <div class="lib-search-note">
           <span class="lib-pulse-dot"></span>
-          The research network is on it — {queueNote}. Fresh answers take ~10–30s and join the web forever.
+          {#if queueNote === 'slow'}
+            Still working — this one's a slow one. The answer joins the library either way,
+            so you can leave this page and find it here.
+          {:else}
+            The research network is on it — {queueNote}. Fresh answers take ~10–30s and join the web forever.
+          {/if}
         </div>
       {:else if searchPhase === 'rejected'}
         <div class="lib-search-note lib-warn">

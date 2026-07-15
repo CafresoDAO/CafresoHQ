@@ -16,6 +16,7 @@
   import { operatorConfig, refreshOperatorConfig, searchPaused, gpuNodeDown, gpuDownMessage } from '$lib/stores/operator.js';
 
   const CACHE_TTL = 5 * 60 * 1000; // 5 min — library hits only (queue results change state)
+  const SLOW_AFTER_MS = 45_000;    // past this, tell the user it's slow rather than just spinning
 
   let inputEl;
   let query = '';
@@ -126,7 +127,14 @@
     queueNote = health.activeWorkers === 1
       ? '1 worker online' : `${health.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      onTick: (st) => { if (seq === searchSeq && st === 'claimed') queueNote = 'a worker picked it up…'; }
+      onTick: (st, elapsedMs) => {
+        if (seq !== searchSeq) return;
+        // A slow box can legitimately take most of the worker's 200s budget.
+        // Past ~45s say so plainly instead of leaving a spinner implying
+        // something is wrong — the answer joins the library either way.
+        if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
+        else if (st === 'claimed') queueNote = 'a worker picked it up…';
+      }
     });
     if (seq !== searchSeq) return;
     if (done.status === 'done' && done.entry) {
@@ -336,6 +344,12 @@
         ></div>
         {#if phase === 'checking'}
           <div style="font-size: 13px; color: hsl(215 16% 47%);">Checking the on-chain library…</div>
+        {:else if queueNote === 'slow'}
+          <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">Still working — this one's a slow one</div>
+          <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
+            The answer joins <a href="/library" on:click={close} style="color: hsl(260 70% 55%);">the library</a>
+            either way — you can close this and find it there.
+          </div>
         {:else}
           <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">The research network is on it</div>
           <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
