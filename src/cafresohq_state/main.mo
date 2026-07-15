@@ -890,7 +890,11 @@ actor CafresoHQState {
   // so an eager call here would hit M0016 (use before definition). Upgrades:
   // postupgrade (runs after all definitions; init does not re-run). Re-arms
   // BOTH recurring timers; timers never survive an upgrade.
-  system func postupgrade() { armPayrollTimer<system>(); armWakeTimer<system>() };
+  system func postupgrade() {
+    armPayrollTimer<system>();
+    armWakeTimer<system>();
+    rebuildLibraryIndex();     // libNorm → libKey re-keying; see the func for why
+  };
 
   // ── Payroll public API (caller-keyed, like everything else here) ───────────
   public shared (msg) func putSalary(
@@ -1297,14 +1301,55 @@ actor CafresoHQState {
   let LIB_MAX_PER_OWNER : Nat = 200;
   let LIB_INDEX_LIMIT : Nat = 500;
 
-  // ASCII-lowercase + collapse whitespace: the dedup key. Unicode case folding
-  // is deliberately out of scope — a miss just means one extra library entry.
+  // ASCII-lowercase + collapse whitespace. NOT just a cache key: headerValue
+  // and the signature check below both normalize with this, so it must keep
+  // hyphens and hex intact. Widening it (e.g. to strip punctuation) would turn
+  // "x-worker-signature" into "xworkersignature", the header lookup would never
+  // match, and EVERY worker call would fail auth. Use libKey for query keys.
   func libNorm(q : Text) : Text {
     let lowered = Text.map(q, func(c : Char) : Char {
       if (c >= 'A' and c <= 'Z') { Char.fromNat32(Char.toNat32(c) + 32) } else { c };
     });
     Text.join(" ", Iter.filter<Text>(
       Text.split(lowered, #char ' '), func(w : Text) : Bool { w.size() > 0 }));
+  };
+
+  // The library/job dedup key: libNorm plus punctuation stripping, so
+  // "What is ICP?" and "what is icp" are one cache entry instead of two jobs.
+  // Deliberately conservative — no stopword removal and no word sorting, since
+  // "cat eats mouse" and "mouse eats cat" are not the same question. Unicode
+  // case folding stays out of scope; a miss just costs one extra entry.
+  func libKey(q : Text) : Text {
+    let stripped = Text.map(q, func(c : Char) : Char {
+      switch (c) {
+        case ('?' or '!' or '.' or ',' or ';' or ':' or '\'' or '\"'
+              or '(' or ')' or '[' or ']' or '{' or '}' or '-' or '_'
+              or '/' or '\\' or '*' or '#' or '@' or '&' or '+' or '=' or '~'
+              or '<' or '>' or '|' or '`' or '^' or '%' or '$') { ' ' };
+        case (_) { c };
+      };
+    });
+    libNorm(stripped);
+  };
+
+  // libKey widened the dedup key (punctuation stripping), which makes every
+  // libraryByQuery key written before that change stale: library_find would
+  // miss and re-queue a duplicate job for an answer we already have on chain.
+  // Rebuild the index from the entries themselves on upgrade. Iterating in id
+  // order (ids are zero-padded, so map order == insertion order) means the
+  // OLDEST entry wins any new-key collision — matching the "first answer wins"
+  // cache semantics in library_put. Idempotent: re-running on an
+  // already-migrated index is a no-op that produces the same map.
+  func rebuildLibraryIndex() {
+    var m = tOps.empty<Text>();
+    for ((id, e) in tOps.entries(libraryEntries)) {
+      let k = libKey(e.q);
+      switch (tOps.get(m, k)) {
+        case (?_) {};                        // an older entry already holds this key
+        case null { m := tOps.put(m, k, id) };
+      };
+    };
+    libraryByQuery := m;
   };
 
   // Zero-padded ids keep Text.compare order == insertion order, so the newest
@@ -1317,7 +1362,7 @@ actor CafresoHQState {
 
   // Shared validation for both publish paths (user opt-in + network fulfill).
   func libValidate(q : Text, answer : Text, sources : [LibrarySource], graphJson : Text) : ?Text {
-    if (libNorm(q).size() == 0 or q.size() > LIB_MAX_QUERY) { return ?"bad query" };
+    if (libKey(q).size() == 0 or q.size() > LIB_MAX_QUERY) { return ?"bad query" };
     if (answer.size() > LIB_MAX_ANSWER) { return ?"answer too long" };
     if (sources.size() > LIB_MAX_SOURCES) { return ?"too many sources" };
     for (s in sources.vals()) {
@@ -1336,7 +1381,7 @@ actor CafresoHQState {
     libraryEntries := tOps.put(libraryEntries, id, {
       id; owner; q; answer; sources; graphJson; ts = now(); prov;
     });
-    libraryByQuery := tOps.put(libraryByQuery, libNorm(q), id);
+    libraryByQuery := tOps.put(libraryByQuery, libKey(q), id);
     id;
   };
 
@@ -1347,7 +1392,7 @@ actor CafresoHQState {
     if (Principal.isAnonymous(msg.caller)) { return #err("sign in to publish to the library") };
     if (model.size() > LIB_MAX_PROV_TEXT or searchEngine.size() > LIB_MAX_PROV_TEXT) { return #err("bad provenance") };
     switch (libValidate(q, answer, sources, graphJson)) { case (?e) { return #err(e) }; case null {} };
-    switch (tOps.get(libraryByQuery, libNorm(q))) {
+    switch (tOps.get(libraryByQuery, libKey(q))) {
       case (?id) { return #ok({ id; existing = true }) };  // cache semantics: first answer wins
       case null {};
     };
@@ -1361,7 +1406,7 @@ actor CafresoHQState {
   };
 
   public query func library_find(q : Text) : async ?LibraryEntry {
-    switch (tOps.get(libraryByQuery, libNorm(q))) {
+    switch (tOps.get(libraryByQuery, libKey(q))) {
       case (?id) tOps.get(libraryEntries, id);
       case null null;
     };
@@ -1397,7 +1442,7 @@ actor CafresoHQState {
         let isAdmin = switch (planAdmin) { case (?a) a == msg.caller; case null false };
         if (e.owner != msg.caller and not isAdmin) { return false };
         libraryEntries := tOps.delete(libraryEntries, id);
-        libraryByQuery := tOps.delete(libraryByQuery, libNorm(e.q));
+        libraryByQuery := tOps.delete(libraryByQuery, libKey(e.q));
         switch (pOps.get(libraryCounts, e.owner)) {
           case (?n) { if (n > 0) { libraryCounts := pOps.put(libraryCounts, e.owner, n - 1 : Nat) } };
           case null {};
@@ -1842,7 +1887,7 @@ actor CafresoHQState {
   func submitSearch(qRaw : Text) : SubmitOutcome {
     tendJobs();
     let q = qRaw;
-    let norm = libNorm(q);
+    let norm = libKey(q);
     if (norm.size() == 0 or q.size() > LIB_MAX_QUERY) { return #rejected("bad-query") };
     switch (tOps.get(libraryByQuery, norm)) { case (?id) { return #hit(id) }; case null {} };
     switch (tOps.get(jobsByNorm, norm)) { case (?jid) { return #queued(jid) }; case null {} };
@@ -2053,7 +2098,7 @@ actor CafresoHQState {
         if (pair.size() == 2 and pair[0] == "q") {
           switch (pctDecode(pair[1])) {
             case (?q) {
-              switch (tOps.get(libraryByQuery, libNorm(q))) {
+              switch (tOps.get(libraryByQuery, libKey(q))) {
                 case (?id) {
                   switch (tOps.get(libraryEntries, id)) {
                     case (?e) { return ?libJsonResponse(entryJson(e)) };

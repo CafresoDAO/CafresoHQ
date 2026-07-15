@@ -601,12 +601,6 @@ def _sw_left(deadline, floor=1.0):
     return max(floor, deadline - time.monotonic())
 
 
-def _sw_elapsed(deadline):
-    """Seconds spent on this job so far (deadline == claim + _SW_JOB_BUDGET).
-    0 when unbounded — the _sw_* functions stay callable with deadline=None."""
-    if deadline is None:
-        return 0.0
-    return _SW_JOB_BUDGET - (deadline - time.monotonic())
 
 
 def _sw_call(op, extra_lines):
@@ -1071,6 +1065,7 @@ def _sw_graph(q, results, notes=None):
 
 def _sw_process(job, deadline=None):
     jid, q = job['id'], job['q']
+    started = time.monotonic()
     P = lambda s: urllib.parse.quote(s, safe='')
     try:
         print('[search-worker] claimed %s: %s' % (jid, q[:80]))
@@ -1105,7 +1100,7 @@ def _sw_process(job, deadline=None):
         status, resp = _sw_call('fulfill', lines)
         if status == 200 and resp.get('ok'):
             print('[search-worker] fulfilled %s -> %s (%.0fs)'
-                  % (jid, resp.get('libraryId'), _sw_elapsed(deadline)))
+                  % (jid, resp.get('libraryId'), time.monotonic() - started))
         else:
             print('[search-worker] fulfill rejected %s: %s %s' % (jid, status, resp))
     except Exception as e:
