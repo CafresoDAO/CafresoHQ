@@ -66,8 +66,8 @@
     {:else}
       <span
         bind:this={arrEl}
-        class="w-7 h-7 rounded-full text-white inline-flex items-center justify-center"
-        style="background: hsl(222 47% 11%);
+        class="w-7 h-7 rounded-full text-white inline-flex items-center justify-center bg-primary"
+        style="
           opacity: 0;
           transform: translate(6px, -6px);
           transition: opacity .25s ease, transform .35s cubic-bezier(.2,.8,.2,1);"

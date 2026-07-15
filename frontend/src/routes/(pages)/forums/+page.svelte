@@ -63,20 +63,18 @@
       class="flex-1 flex items-center gap-2 rounded-[12px] px-3 py-2"
       style="background: hsl(26 45% 98%); border: 1px solid hsl(26 30% 85%);"
     >
-      <Icon name="magnifying-glass" size={14} style="color: hsl(215 16% 47%);" />
+      <Icon name="magnifying-glass" size={14} class="text-muted-foreground" />
       <input
         bind:value={q}
         placeholder="Search threads…"
         aria-label="Search threads"
-        class="flex-1 min-w-0 text-[13.5px] bg-transparent border-none outline-none"
-        style="color: hsl(222 47% 11%);"
+        class="flex-1 min-w-0 text-[13.5px] bg-transparent border-none outline-none text-primary"
       />
       {#if q}
         <button
           type="button"
           on:click={() => (q = '')}
-          class="text-[11px] cursor-pointer bg-transparent border-none"
-          style="color: hsl(215 16% 47%);"
+          class="text-[11px] cursor-pointer bg-transparent border-none text-muted-foreground"
           aria-label="Clear search"
         >
           Clear
@@ -96,8 +94,8 @@
   </div>
 
   {#if loading}
-    <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px]"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(215 16% 47%);"
+    <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px] text-muted-foreground"
+      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
     >
       <Icon name="spinner-gap" size={16} /> Loading threads…
     </div>
@@ -112,10 +110,10 @@
       style="background: hsl(26 40% 98%); border: 1px dashed hsl(26 30% 75%);"
     >
       <Icon name="chats-circle" size={28} style="color: hsl(32 56% 35%);" />
-      <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(222 47% 11%);">
+      <h3 class="font-bold text-[17px] mt-3 mb-1.5 text-primary">
         {q ? 'No matches' : 'Be the first voice'}
       </h3>
-      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px]" style="color: hsl(215 16% 47%);">
+      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px] text-muted-foreground">
         {q
           ? 'Try a different search term.'
           : 'Open the first thread — coffee gossip, DAO proposals, mining strategy, anything goes. Tips in $nanas reward good writing.'}
@@ -141,12 +139,12 @@
           <div class="flex items-start gap-3 sm:gap-4">
             <Avatar name={p.author?.name || 'Guest'} hue={p.author?.hue || 24} size={36} />
             <div class="flex-1 min-w-0">
-              <div class="font-bold text-[15.5px] sm:text-[16px] leading-[1.3] mb-0.5"
-                style="color: hsl(222 47% 11%); text-wrap: pretty;"
+              <div class="font-bold text-[15.5px] sm:text-[16px] leading-[1.3] mb-0.5 text-primary"
+                style="text-wrap: pretty;"
               >
                 {p.title}
               </div>
-              <div class="text-[12.5px] mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5" style="color: hsl(215 16% 47%);">
+              <div class="text-[12.5px] mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
                 <span class="font-medium">{p.author?.name || 'Guest'}</span>
                 <span>·</span>
                 <span>{fmtDate(p.date)}</span>
@@ -156,7 +154,7 @@
               <p class="text-[13.5px] leading-[1.55] mb-2 line-clamp-2" style="color: hsl(215 25% 25%);">
                 {p.excerpt}
               </p>
-              <div class="flex items-center gap-3 text-[11.5px]" style="color: hsl(215 16% 47%);">
+              <div class="flex items-center gap-3 text-[11.5px] text-muted-foreground">
                 <span class="inline-flex items-center gap-1 tabular-nums">
                   <Icon name="fire" size={12} /> {p.burned.toLocaleString()} burned
                 </span>
@@ -165,7 +163,7 @@
                 </span>
               </div>
             </div>
-            <Icon name="caret-right" size={14} style="color: hsl(215 16% 47%); margin-top: 4px;" />
+            <Icon name="caret-right" size={14} class="text-muted-foreground" style="margin-top: 4px;" />
           </div>
         </a>
       {/each}
