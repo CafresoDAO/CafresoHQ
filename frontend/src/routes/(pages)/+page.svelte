@@ -183,12 +183,12 @@
     width: 84%;
     height: 162%;
     transform: translate(-50%, -50%);
-    background: radial-gradient(ellipse at center, hsl(45 95% 58% / 0.44), transparent 70%);
+    background: radial-gradient(ellipse at center, hsl(45 95% 58% / 0.1), transparent 72%);
     filter: blur(26px);
     pointer-events: none;
   }
   :global(.dark) .wordmark-glow {
-    background: radial-gradient(ellipse at center, hsl(40 90% 50% / 0.36), transparent 68%);
+    background: radial-gradient(ellipse at center, hsl(40 90% 50% / 0.1), transparent 70%);
   }
   @keyframes wm-rise {
     from { opacity: 0; transform: translateY(16px); }
