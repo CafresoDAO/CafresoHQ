@@ -164,11 +164,15 @@
     width: clamp(258px, 62vw, 560px);
     height: auto;
     /* Light: the art is already black ink — a soft shadow lifts it off the
-       cream. Dark: invert the ink to white chalk (tiles become negative). */
+       cream. */
     filter: drop-shadow(0 8px 22px hsl(24 40% 20% / 0.14));
   }
+  /* Dark: invert the ink to a WARM paper tone (not stark white) so the mark
+     sits in the coffee palette — invert to white, then sepia/hue warm it to a
+     cream ivory. The tiles read as clean negative tiles either way. */
   :global(.dark) .wordmark-img {
-    filter: invert(1) drop-shadow(0 10px 26px hsl(0 0% 0% / 0.55));
+    filter: invert(1) sepia(0.34) saturate(1.45) hue-rotate(-8deg) brightness(1.03)
+      drop-shadow(0 10px 26px hsl(0 0% 0% / 0.55));
   }
   /* Warm halo behind the mark — gold in light, a deeper ember in dark. */
   .wordmark-glow {
@@ -176,15 +180,15 @@
     z-index: 0;
     top: 50%;
     left: 50%;
-    width: 78%;
-    height: 150%;
+    width: 84%;
+    height: 162%;
     transform: translate(-50%, -50%);
-    background: radial-gradient(ellipse at center, hsl(45 95% 60% / 0.30), transparent 68%);
-    filter: blur(22px);
+    background: radial-gradient(ellipse at center, hsl(45 95% 58% / 0.44), transparent 70%);
+    filter: blur(26px);
     pointer-events: none;
   }
   :global(.dark) .wordmark-glow {
-    background: radial-gradient(ellipse at center, hsl(38 82% 46% / 0.24), transparent 66%);
+    background: radial-gradient(ellipse at center, hsl(40 90% 50% / 0.36), transparent 68%);
   }
   @keyframes wm-rise {
     from { opacity: 0; transform: translateY(16px); }
