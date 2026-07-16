@@ -267,7 +267,7 @@
   {:else}
     <div class="lib-filterbar">
       <div class="lib-filter-input">
-        <Icon name="funnel" size={14} style="color: hsl(40 20% 55%); flex-shrink: 0;" />
+        <Icon name="funnel" size={14} style="color: hsl(var(--pg-fg-muted)); flex-shrink: 0;" />
         <input
           type="text"
           placeholder="Filter {index.entries.length} entries…"
@@ -525,25 +525,25 @@
   }
   .lib-filter-input {
     flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-    background: white; border: 1px solid hsl(26 30% 85%); border-radius: 999px;
+    background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 999px;
     padding: 8px 14px; transition: border-color 0.14s;
   }
   .lib-filter-input:focus-within { border-color: hsl(45 75% 60%); }
   .lib-filter-input input {
     flex: 1; min-width: 0; border: none; outline: none; background: none;
-    font: 14px Inter, system-ui, sans-serif; color: hsl(222 47% 11%);
+    font: 14px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg));
   }
   .lib-filter-input input::placeholder { color: hsl(40 15% 60%); }
   .lib-filter-clear {
     display: flex; align-items: center; justify-content: center;
     width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
-    background: hsl(26 30% 90%); color: hsl(215 16% 40%); flex-shrink: 0; padding: 0;
+    background: hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted)); flex-shrink: 0; padding: 0;
   }
-  .lib-filter-clear:hover { background: hsl(26 30% 82%); }
+  .lib-filter-clear:hover { background: hsl(var(--pg-border)); }
   .lib-sort-select {
-    border: 1px solid hsl(26 30% 85%); background: white; border-radius: 999px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
     padding: 8px 14px; font: 600 12.5px Inter, system-ui, sans-serif;
-    color: hsl(222 47% 11%); cursor: pointer; flex-shrink: 0;
+    color: hsl(var(--pg-fg)); cursor: pointer; flex-shrink: 0;
   }
   .lib-filter-reset-link {
     background: none; border: none; padding: 0; margin: 0; cursor: pointer;
@@ -555,8 +555,8 @@
     gap: 14px;
   }
   .lib-card {
-    background: hsl(26 45% 98%);
-    border: 1px solid hsl(26 30% 87%);
+    background: hsl(var(--pg-surface));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 18px;
     padding: 20px;
     box-shadow: 0 4px 18px -10px hsl(24 35% 15% / 0.15);
@@ -573,14 +573,14 @@
   .lib-card h3 {
     font-family: 'Playfair Display', serif;
     font-size: 17.5px; font-weight: 600; line-height: 1.35;
-    color: hsl(222 47% 11%);
+    color: hsl(var(--pg-fg));
     margin: 0 0 12px;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
   .lib-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .lib-chip {
-    font-size: 10.5px; font-weight: 600; color: hsl(215 16% 40%);
-    background: hsl(26 35% 93%); border-radius: 999px; padding: 3px 9px;
+    font-size: 10.5px; font-weight: 600; color: hsl(var(--pg-fg-muted));
+    background: hsl(var(--pg-hover)); border-radius: 999px; padding: 3px 9px;
   }
   .lib-chip-chain { background: hsl(45 80% 88%); color: hsl(38 65% 30%); }
   /* Louder than the other chips on purpose: "a machine chose to ask this" is
@@ -592,22 +592,22 @@
   }
 
   .lib-more {
-    border: 1px solid hsl(26 30% 82%); background: white; border-radius: 999px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
     padding: 10px 22px; font: 600 13px Inter, system-ui, sans-serif;
-    color: hsl(222 47% 11%); cursor: pointer;
+    color: hsl(var(--pg-fg)); cursor: pointer;
   }
 
   .lib-empty {
     text-align: center; padding: 70px 20px;
-    background: hsl(26 45% 98%); border: 1px dashed hsl(26 30% 82%); border-radius: 1.75rem;
+    background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-border)); border-radius: 1.75rem;
   }
   .lib-empty-glyph { font-size: 40px; color: hsl(45 80% 55%); margin-bottom: 12px; }
-  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(222 47% 11%); }
-  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(215 16% 45%); max-width: 48ch; margin: 0 auto; }
+  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(var(--pg-fg)); }
+  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(var(--pg-fg-muted)); max-width: 48ch; margin: 0 auto; }
 
   .lib-skel {
     display: inline-block; height: 14px; border-radius: 6px;
-    background: linear-gradient(90deg, hsl(26 30% 90%) 25%, hsl(26 35% 95%) 50%, hsl(26 30% 90%) 75%);
+    background: linear-gradient(90deg, hsl(var(--pg-hover)) 25%, hsl(var(--pg-border)) 50%, hsl(var(--pg-hover)) 75%);
     background-size: 200% 100%;
     animation: lib-shimmer 1.4s ease-in-out infinite;
   }
@@ -623,8 +623,8 @@
     position: fixed; z-index: 61;
     top: 0; right: 0; bottom: 0;
     width: min(520px, 94vw);
-    background: hsl(26 45% 98%);
-    border-left: 1px solid hsl(26 30% 85%);
+    background: hsl(var(--pg-surface));
+    border-left: 1px solid hsl(var(--pg-border));
     box-shadow: -24px 0 60px -20px hsl(24 40% 8% / 0.4);
     padding: 26px 26px calc(26px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
@@ -634,26 +634,26 @@
   .lib-drawer-close {
     position: absolute; top: 16px; right: 16px;
     width: 32px; height: 32px; border: none; border-radius: 9px;
-    background: hsl(26 35% 93%); color: hsl(215 16% 40%);
+    background: hsl(var(--pg-hover)); color: hsl(var(--pg-fg-muted));
     cursor: pointer; display: grid; place-items: center;
   }
   .lib-drawer-q {
     font-family: 'Playfair Display', serif;
     font-size: 24px; font-weight: 700; line-height: 1.25;
-    color: hsl(222 47% 11%); margin: 8px 0 12px;
+    color: hsl(var(--pg-fg)); margin: 8px 0 12px;
   }
-  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(222 30% 18%); margin: 0; }
-  .lib-muted { color: hsl(215 16% 50%); font-style: italic; }
+  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(var(--pg-fg)); margin: 0; }
+  .lib-muted { color: hsl(var(--pg-fg-muted)); font-style: italic; }
   .lib-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .lib-sources a {
     display: flex; align-items: baseline; gap: 8px; text-decoration: none;
-    font-size: 13px; color: hsl(222 47% 11%);
+    font-size: 13px; color: hsl(var(--pg-fg));
   }
-  .lib-src-n { color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0; }
+  .lib-src-n { color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0; }
   .lib-src-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lib-src-d { color: hsl(215 16% 55%); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  .lib-src-d { color: hsl(var(--pg-fg-muted)); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
   .lib-drawer-graph {
-    width: 100%; height: 260px; border: 1px solid hsl(26 30% 85%); border-radius: 14px;
+    width: 100%; height: 260px; border: 1px solid hsl(var(--pg-border)); border-radius: 14px;
     background: hsl(250 30% 7%); margin-top: 8px;
   }
   .lib-drawer-actions { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; }
@@ -666,7 +666,7 @@
     .lib-drawer {
       top: auto; left: 0; right: 0; width: auto;
       max-height: 86dvh;
-      border-left: none; border-top: 1px solid hsl(26 30% 85%);
+      border-left: none; border-top: 1px solid hsl(var(--pg-border));
       border-radius: 22px 22px 0 0;
       animation: lib-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
@@ -679,4 +679,20 @@
     .lib-drawer { animation: none; }
     .lib-card-btn { transition: none; }
   }
+
+  /* Dark-mode text/fills for the branded pills + gold links. Their light
+     values (pale-gold / pale-purple washes with dark ink) would read as loud
+     bright chips on the dark cards, so flip to translucent fills + light ink.
+     Everything else flips automatically via the --pg-* tokens above. */
+  :global(.dark) .lib-chip-chain {
+    background: hsl(45 85% 55% / 0.16);
+    color: hsl(45 88% 72%);
+  }
+  :global(.dark) .lib-chip-ai {
+    background: hsl(266 55% 32% / 0.4);
+    color: hsl(266 85% 85%);
+    border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-filter-reset-link { color: hsl(45 85% 64%); }
+  :global(.dark) .lib-drawer-actions .lib-link { color: hsl(45 85% 66%); }
 </style>
