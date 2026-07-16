@@ -1491,6 +1491,12 @@ actor CafresoHQState {
     switch (tOps.get(libraryAskedBy, id)) { case (?a) a; case null "human" };
   };
 
+  // A deep-research entry is exactly one that has note pages stored — the
+  // library uses this to give deep results their own section.
+  func entryMode(id : Text) : Text {
+    switch (tOps.get(researchPages, id)) { case (?_) "deep"; case null "fast" };
+  };
+
   func entryJson(e : LibraryEntry) : Text {
     // Owner principal intentionally omitted: publishing is opt-in, but the
     // public surface must not link queries to identities.
@@ -1513,7 +1519,12 @@ actor CafresoHQState {
     "\",\"worker\":" # workerJson #
     ",\"firstSearchedAt\":" # Int.toText(e.prov.firstSearchedAt) #
     ",\"answeredAt\":" # Int.toText(e.prov.answeredAt) #
-    ",\"graphUrl\":\"/library/" # jsonEsc(e.id) # "/graph.json\"}";
+    ",\"graphUrl\":\"/library/" # jsonEsc(e.id) # "/graph.json\"" #
+    ",\"mode\":\"" # entryMode(e.id) # "\"" #
+    (if (entryMode(e.id) == "deep") {
+       ",\"researchUrl\":\"/library/" # jsonEsc(e.id) # "/research.json\""
+     } else { "" }) #
+    "}";
   };
 
   // /library/index.json               → newest-first summaries (≤ LIB_INDEX_LIMIT)
@@ -1547,7 +1558,7 @@ actor CafresoHQState {
         // could only ever render inside the drawer.
         body #= "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
                 "\",\"ts\":" # Int.toText(e.ts) # ",\"sources\":" # Nat.toText(e.sources.size()) #
-                ",\"askedBy\":\"" # entryAskedBy(e.id) # "\"}";
+                ",\"askedBy\":\"" # entryAskedBy(e.id) # "\",\"mode\":\"" # entryMode(e.id) # "\"}";
         emitted += 1;
       };
       return ?libJsonResponse("{\"count\":" # Nat.toText(tOps.size(libraryEntries)) # ",\"entries\":[" # body # "]}");
@@ -1558,6 +1569,14 @@ actor CafresoHQState {
     if (parts.size() == 3 and parts[2] == "graph.json") {
       return switch (tOps.get(libraryEntries, parts[1])) {
         case (?e) { if (e.graphJson.size() == 0) { ?libNotFound() } else { ?libJsonResponse(e.graphJson) } };
+        case null ?libNotFound();
+      };
+    };
+    // Deep-research note pages — the tree the graph nodes link to. Only deep
+    // entries have them (side-table absence = a fast entry, so 404).
+    if (parts.size() == 3 and parts[2] == "research.json") {
+      return switch (tOps.get(researchPages, parts[1])) {
+        case (?rp) { if (rp.size() == 0) { ?libNotFound() } else { ?libJsonResponse(rp) } };
         case null ?libNotFound();
       };
     };
@@ -1851,6 +1870,11 @@ actor CafresoHQState {
   stable var libraryAskedBy : OrderedMap.Map<Text, Text> = tOps.empty<Text>();  // entryId → "ai-gap"
   stable var deepDailyBudget : Nat = 20;
   stable var deepAnsweredToday : Nat = 0;
+  // Deep-research note pages, keyed by ENTRY id (same side-table pattern as
+  // libraryAskedBy). Presence = the entry is a deep-research result; the value
+  // is the {q, answer, pages:[{id,title,question,body,sources}], ts} JSON the
+  // worker built. Absent for every fast entry and every entry before today.
+  stable var researchPages : OrderedMap.Map<Text, Text> = tOps.empty<Text>();
 
   let MAX_PENDING_JOBS : Nat = 25;
   let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
@@ -2110,15 +2134,24 @@ actor CafresoHQState {
         i += 1;
       };
       let graphJson = switch (pctDecode(lines[10 + nSrc])) { case (?t) t; case null { return ?workerDeny() } };
-      // Absent (old worker) → "human". Only "ai-gap" is honoured; anything else
-      // is ignored rather than trusted, so a worker can't invent provenance
-      // values that later render as unknown chips on permanent public entries.
-      let askedBy = if (lines.size() > 11 + nSrc) {
-        switch (pctDecode(lines[11 + nSrc])) {
-          case (?t) { if (t == "ai-gap") { "ai-gap" } else { "human" } };
-          case null "human";
-        };
-      } else { "human" };
+      // The trailing field at 11+nSrc is overloaded by job mode, disambiguated
+      // by jobMode(j.id) — never guessed from content:
+      //   fast job → optional askedBy ("ai-gap" honoured, else "human")
+      //   deep job → the research-pages JSON; deep is always user-asked.
+      // Absent (old worker) → "human". Only "ai-gap" is honoured for askedBy;
+      // anything else is ignored rather than trusted, so a worker can't invent
+      // provenance values that render as unknown chips on permanent entries.
+      let isDeepJob = jobMode(j.id) == "deep";
+      let askedBy = if (isDeepJob) { "human" }
+        else if (lines.size() > 11 + nSrc) {
+          switch (pctDecode(lines[11 + nSrc])) {
+            case (?t) { if (t == "ai-gap") { "ai-gap" } else { "human" } };
+            case null "human";
+          };
+        } else { "human" };
+      let pagesJson = if (isDeepJob and lines.size() > 11 + nSrc) {
+        switch (pctDecode(lines[11 + nSrc])) { case (?t) textTake(t, LIB_MAX_GRAPH); case null "" };
+      } else { "" };
       let sources = Buffer.toArray(srcs);
       switch (libValidate(j.q, answer, sources, graphJson)) {
         case (?e) { return ?libJsonNoStore("{\"ok\":false,\"error\":\"" # jsonEsc(e) # "\"}") };
@@ -2141,6 +2174,8 @@ actor CafresoHQState {
       });
       // Store only the exception; absent = "human" (see libraryAskedBy).
       if (askedBy == "ai-gap") { libraryAskedBy := tOps.put(libraryAskedBy, libId2, "ai-gap") };
+      // Deep-research note pages ride alongside the entry (presence = deep).
+      if (pagesJson.size() > 0) { researchPages := tOps.put(researchPages, libId2, pagesJson) };
       putJob({ j with status = "done"; libraryId = ?libId2 });
       jobsByNorm := tOps.delete(jobsByNorm, j.norm);
       bumpJobDay();

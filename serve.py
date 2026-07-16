@@ -1570,12 +1570,16 @@ def _sw_process_deep(jid, q, deadline, started, P):
         model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
     if len(answer) > _SW_ANSWER_CAP:
         answer = answer[:_SW_ANSWER_CAP]
-    # Dedupe sources across pages for the entry's flat source list.
+    # Dedupe sources across pages for the entry's flat source list, capped at
+    # LIB_MAX_SOURCES (10) — the canister rejects more. The FULL per-angle source
+    # set is preserved in the research tree (graph) and note pages, which are
+    # bounded only by LIB_MAX_GRAPH.
     seen, sources = set(), []
     for r in all_sources:
         if r['url'] not in seen:
             seen.add(r['url'])
             sources.append(r)
+    sources = sources[:10]
     pages_json = json.dumps({
         'q': q, 'answer': answer,
         'pages': [{'id': p['id'], 'title': p['title'], 'question': p['question'],
