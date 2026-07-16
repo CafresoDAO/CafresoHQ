@@ -116,6 +116,22 @@ def test_resolve_local():
     b = nr.resolve_backend(home('model:\n  default: m\n  provider: somethingnew\n'), env={})
     check('unknown provider without base_url → None', b is None, b)
 
+    # Regression (audit): an inline YAML comment on the provider line must not
+    # drop the provider and silently reroute a private local call to the
+    # openrouter cloud on a stale key.
+    COMMENTED = ('model:\n  default: openai/gpt-oss-20b\n'
+                 '  provider: lmstudio  # local box, keep queries private\n'
+                 '  base_url: http://10.0.0.100:1234/v1\n')
+    check('inline comment does not drop the provider',
+          nr.read_model_config(home(COMMENTED))['raw_provider'] == 'lmstudio')
+    b = nr.resolve_backend(home(COMMENTED), env={'OPENROUTER_API_KEY': 'sk-or-stale'})
+    check('commented-provider local stays local, not openrouter cloud',
+          b is not None and b.local and b.provider == 'lmstudio' and b.local, b)
+    # Even with NO provider line, a base_url must not default to the cloud.
+    b = nr.resolve_backend(home('model:\n  default: m\n  base_url: http://10.0.0.9:1234/v1\n'),
+                           env={'OPENROUTER_API_KEY': 'sk-or-stale'})
+    check('base_url without a provider resolves local, not openrouter', b is not None and b.local, b)
+
 
 def test_resolve_cloud():
     print('resolve_backend — cloud')
@@ -175,24 +191,43 @@ def test_base_url_allowlist():
         ok, err = v(u)
         check('accept %s' % u, ok, err)
     for u, why in (
-        # example.com RESOLVES, so this exercises the public-address check
-        # rather than passing by DNS failure — the reject must be for the right
-        # reason or the guard is theatre.
-        ('https://example.com/v1', 'resolvable public host'),
+        # Any DNS name is rejected up front — not because it resolves public, but
+        # because a name can rebind between write-time validation and call-time
+        # use (the rebinding TOCTOU). This is the rule the docstring promises.
+        ('https://example.com/v1', 'dns name (resolves public)'),
+        ('http://rebind.attacker.example:1234/v1', 'dns name (could rebind to metadata)'),
+        ('http://myhost.local:1234/v1', 'dns name (mdns)'),
         ('http://169.254.169.254/latest/meta-data/', 'cloud metadata'),
         ('file:///etc/passwd', 'scheme'),
         ('http://u:p@10.0.0.1/v1', 'userinfo'),
         ('http://10.0.0.1:1234/v1/../../x', 'path traversal'),
         ('http://10.0.0.1:1234/v1?x=1', 'query'),
-        ('http://8.8.8.8:1234/v1', 'public IP'),
+        ('http://2130706433:1234/v1', 'int-encoded 127.0.0.1'),
+        ('http://8.8.8.8:1234/v1', 'public IP literal'),
         ('', 'empty'),
         ('http://', 'no host'),
     ):
         ok, err = v(u)
         check('reject %s (%s)' % (u or '<empty>', why), not ok)
-        if why == 'resolvable public host':
-            check('  ...and rejects it for being PUBLIC, not for failing DNS',
+        if why.startswith('dns name'):
+            check('  ...%s rejected as a hostname, before resolution' % u,
+                  'IP literal' in err, err)
+        if why == 'public IP literal':
+            check('  ...and 8.8.8.8 is rejected for being PUBLIC, having passed the literal gate',
                   'public address' in err, err)
+
+    # The documented escape hatch: an operator with a real internal DNS name can
+    # opt into the rebinding risk. Verify it flips the hostname rule.
+    _prev = os.environ.get('HQ_ALLOW_REMOTE_BACKEND')
+    os.environ['HQ_ALLOW_REMOTE_BACKEND'] = '1'
+    try:
+        ok, err = v('http://gpu.internal.example:1234/v1')
+        check('HQ_ALLOW_REMOTE_BACKEND=1 accepts an internal DNS name', ok, err)
+    finally:
+        if _prev is None:
+            os.environ.pop('HQ_ALLOW_REMOTE_BACKEND', None)
+        else:
+            os.environ['HQ_ALLOW_REMOTE_BACKEND'] = _prev
 
 
 def main():

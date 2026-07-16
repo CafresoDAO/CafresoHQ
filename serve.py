@@ -425,6 +425,22 @@ def _validate_local_base_url(u):
         return False, 'base_url has no host'
     if os.environ.get('HQ_ALLOW_REMOTE_BACKEND', '').strip() == '1':
         return True, ''
+    # IP literal (or the resolver-fixed name 'localhost') ONLY — this is the line
+    # that actually closes DNS rebinding, and the docstring above promises it. We
+    # validate here at WRITE time, but hermes re-resolves the stored base_url at
+    # CALL time, so any real DNS name that passes now can point at 169.254.169.254
+    # (or an internal service) a second later. An IP literal can't drift;
+    # 'localhost' is resolver-pinned to loopback. A genuine internal DNS name
+    # needs HQ_ALLOW_REMOTE_BACKEND=1 (above), accepting that risk knowingly.
+    # ipaddress.ip_address() is also strict, so it rejects int/octal/hex-encoded
+    # hosts (e.g. http://2130706433/) that getaddrinfo would otherwise accept.
+    if host != 'localhost':
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return False, ('base_url host must be an IP literal or "localhost" — a DNS '
+                           'name can rebind between validation and use (set '
+                           'HQ_ALLOW_REMOTE_BACKEND=1 to allow a hostname)')
     try:
         infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == 'https' else 80),
                                    proto=socket.IPPROTO_TCP)

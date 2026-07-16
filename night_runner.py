@@ -136,7 +136,12 @@ def read_model_config(hermes_home):
     end = re.search(r'(?m)^(?=\S)', rest)
     block = rest[:end.start()] if end else rest
     for field, key in (('default', 'model'), ('provider', 'raw_provider'), ('base_url', 'base_url')):
-        f_m = re.search(r'(?m)^[ \t]+%s:[ \t]*(\S+)[ \t]*$' % field, block)
+        # No trailing `$`: `(\S+)` already stops at whitespace, and anchoring to
+        # end-of-line dropped the value whenever an inline YAML comment followed
+        # (`provider: lmstudio  # local box`) — which then defaulted the whole
+        # backend to the openrouter cloud. Indentation + block-scoping still keep
+        # a decoy `default:` under another top-level key from matching.
+        f_m = re.search(r'(?m)^[ \t]+%s:[ \t]*(\S+)' % field, block)
         if f_m:
             out[key] = f_m.group(1).strip().strip('"\'')
     out['ok'] = bool(out['raw_provider'] or out['model'])
@@ -173,10 +178,14 @@ def resolve_backend(hermes_home, model_override='', env=None):
     Agent work still belongs on the gateway; this is for everything that isn't.
     """
     cfg = read_model_config(hermes_home)
-    raw = cfg['raw_provider'] or 'openrouter'
+    base_url = cfg['base_url']
+    # openrouter is the zero-config default, but ONLY when nothing else is known.
+    # A base_url with no provider is a local/custom backend — defaulting it to
+    # openrouter would POST the operator's prompt to a third-party cloud on any
+    # stale OPENROUTER_API_KEY and silently ignore the box they actually chose.
+    raw = cfg['raw_provider'] or ('' if base_url else 'openrouter')
     provider = _PROVIDER_ALIASES.get(raw, raw)
     model = (model_override or '').strip() or cfg['model']
-    base_url = cfg['base_url']
 
     spec = _PROVIDER_ENDPOINTS.get(provider)
     if spec:
