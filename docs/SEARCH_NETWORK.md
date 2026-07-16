@@ -120,6 +120,66 @@ is asleep") instead of spinning.
 > and remember `postupgrade` rebuilds `libraryByQuery` — re-keying without that
 > rebuild strands every existing entry.
 
+## Brave quota is the real ceiling — not the daily budget
+
+**The canister's `searchDailyBudget` (500/day) is not what limits this network.**
+Brave's plan allows **1000 queries per month** (~33/day). 500/day is 15,000/month
+— 15x the quota. That cap has never bound because volume is low, and it does not
+protect the key at all. Brave's 50/s rate limit is irrelevant next to the monthly
+volume; nobody is going to hit 50/s.
+
+`serve.py` keeps the real ledger (`hq-state/brave-usage.json`, calendar month
+UTC, cap via `BRAVE_MONTHLY_CAP`). Every Brave call spends against it *before*
+going to the wire, and each spender has a **reserve floor it may not dip below**,
+so scarcity degrades in a fixed order rather than first-come-first-served:
+
+| Spender | Reserve | Yields when |
+|---|---|---|
+| `human` | 0% | never — a person is waiting; it gets the last query in the month |
+| `deep` | 15% | month has <15% left |
+| `gap` | 35% | month has <35% left — **always starves first** |
+
+That table *is* the "human questions weigh more" policy. It's enforced in the
+budget because a prompt can't enforce it.
+
+A worker with a spent month **stops claiming** rather than claiming and failing:
+claim hands out the oldest pending job, so a dry key would otherwise chew through
+the queue burning one of each job's three attempts, and fail jobs that a second
+operator with quota could have answered. Leaving them pending costs nothing.
+
+`GET /gap/status` reports the ledger, per-spender headroom, and recent runs.
+
+## The gap cron — the library asks its own questions
+
+Daily at **10:00 America/New_York** (`GAP_HOUR_ET`/`GAP_TZ`), the worker reads
+the public library, works out what it doesn't cover, and submits up to
+`GAP_DAILY_MAX` (10) questions through the ordinary anonymous
+`POST /search/submit`. Human questions outrank machine ones twice over: the
+proposal prompt is anchored on what **people** recently asked (a previously
+AI-asked question is never counted as demand — that's how a feedback loop
+starts), and `gap` holds the largest Brave reserve.
+
+> **Do not schedule this through `_night_scan`.** That scheduler rolls a daily
+> job with `nextRunAt += 86_400_000`, which holds *UTC* constant — so a job
+> pinned to 10:00 New York silently becomes 11:00 for half the year, and is
+> wrong every day after a DST boundary until someone re-saves it. `_gap_next_run_ms`
+> recomputes from the zone each time. `scripts/test_gap_cron.py` pins both
+> transitions.
+
+The batch is **reserved up front and refunded on every exit path** — dedup and
+validation drop most proposals on a mature library, so a day that reserves 10 and
+submits 2 must give 8 back or it leaks ~240 queries/month and starves the cron
+against its own reserve having done no work.
+
+Answers become **permanent, append-only public entries**, so the worker marks
+them: `engine` reads `brave · ai-gap` and the library drawer shows *"Asked by
+Cafreso to fill a gap"*. This rides the engine field because the entry has no
+`askedBy` — same trick the token count uses on `model`. **Limit:** only the node
+that submitted the question knows it was a gap question, so another operator's
+worker fulfilling it writes plain `brave`. And `LibrarySummary` carries no
+provenance at all, so the list cards can't show the badge. Both want a real
+`askedBy` on the job + summary, which is a canister upgrade.
+
 ## Which model answers, and why not through the gateway
 
 **Agent tasks → Hermes. Plain model calls → direct.** Search is a single-shot

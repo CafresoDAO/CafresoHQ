@@ -695,11 +695,93 @@ def _sw_call(op, extra_lines):
         return 0, {'error': str(e)[:200]}
 
 
-def _sw_brave(q, deadline=None):
+# ── Brave quota ledger ──────────────────────────────────────────────────────
+# Brave's plan allows 1000 queries per MONTH (~33/day). Its 50/s rate limit is
+# irrelevant next to that — volume is what binds, and nothing else in this
+# process was counting it. Note the canister's searchDailyBudget is 500/day
+# (main.mo:1823) = ~15,000/month, i.e. 15x this quota: that cap has never bound
+# because volume is low, and it does NOT protect the key. This ledger does.
+#
+# Three spenders, and they are NOT equal. Priority is encoded as a reserve each
+# one may not dip below, so scarcity degrades in a fixed order:
+#   human  — a person is waiting. Served until the quota is gone.
+#   deep   — user-requested deep research. Yields once the month is 15% left.
+#   gap    — the 10am cron's machine-invented questions. Yields at 35%, so it
+#            is always the first to starve. This is what "weigh human questions
+#            more" means in the only place it can be enforced: the budget.
+_BRAVE_CAP = int(os.environ.get('BRAVE_MONTHLY_CAP', '') or 1000)
+_BRAVE_RESERVE = {'human': 0.0, 'deep': 0.15, 'gap': 0.35}
+_brave_lock = threading.Lock()
+
+
+def _brave_month():
+    """Calendar month in UTC. If your Brave plan renews on a billing date rather
+    than the 1st, this under-counts near the boundary — set BRAVE_MONTHLY_CAP
+    lower to buy margin rather than trying to model the billing cycle here."""
+    return time.strftime('%Y-%m', time.gmtime())
+
+
+def _brave_usage():
+    u = _night_load('brave-usage.json', {})
+    if not isinstance(u, dict) or u.get('month') != _brave_month():
+        return {'month': _brave_month(), 'used': 0, 'byKind': {}}
+    return u
+
+
+def _brave_remaining():
+    return max(0, _BRAVE_CAP - int(_brave_usage().get('used', 0) or 0))
+
+
+def _brave_spend(kind='human', n=1):
+    """Reserve n queries for `kind`. True = go ahead (and it's already counted).
+
+    Counts on RESERVE, not on success: a Brave call that 500s or times out has
+    still consumed quota on their side, so counting after the fact would drift
+    optimistic exactly when the key is in trouble."""
+    with _brave_lock:
+        u = _brave_usage()
+        used = int(u.get('used', 0) or 0)
+        floor = _BRAVE_CAP * _BRAVE_RESERVE.get(kind, 0.35)
+        if used + n > _BRAVE_CAP - floor:
+            return False
+        u['used'] = used + n
+        u['byKind'][kind] = int(u['byKind'].get(kind, 0) or 0) + n
+        try:
+            _night_save('brave-usage.json', u)
+        except Exception:
+            pass   # a ledger we can't persist is still better than no ceiling
+        return True
+
+
+def _brave_refund(kind, n):
+    """Hand back reserved-but-unspent queries.
+
+    The gap cron reserves its whole batch up front (it must — it can't submit
+    questions it might not be able to pay for), but dedup and validation
+    routinely drop most of them. Without this, a day that reserves 10 and
+    submits 2 leaks 8 queries, and at ~240/month leaked the cron would starve
+    itself against its own reserve for no work done."""
+    if n <= 0:
+        return
+    with _brave_lock:
+        u = _brave_usage()
+        u['used'] = max(0, int(u.get('used', 0) or 0) - n)
+        u['byKind'][kind] = max(0, int(u['byKind'].get(kind, 0) or 0) - n)
+        try:
+            _night_save('brave-usage.json', u)
+        except Exception:
+            pass
+
+
+def _sw_brave(q, deadline=None, kind='human'):
     """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
     stored sources are title+url (deliberate Brave-ToS posture)."""
     key = os.environ.get('BRAVE_API_KEY', '').strip()
     if not key:
+        return None
+    if not _brave_spend(kind):
+        print('[brave] %s query refused — month at %d/%d (reserve for higher '
+              'priority callers)' % (kind, _brave_usage().get('used', 0), _BRAVE_CAP))
         return None
     url = ('https://api.search.brave.com/res/v1/web/search?q='
            + urllib.parse.quote(q) + '&count=8')
@@ -1265,9 +1347,15 @@ def _sw_process(job, deadline=None):
         print('[search-worker] claimed %s: %s' % (jid, q[:80]))
         results = _sw_brave(q, deadline)
         if not results:
-            print('[search-worker] %s: no results (key set: %s)'
-                  % (jid, bool(os.environ.get('BRAVE_API_KEY', '').strip())))
-            _sw_call('fail', [jid, P('no brave key or no results')])
+            # Three different failures used to share one message. They need
+            # different operator responses — top up the plan, set the key, or
+            # nothing at all — so say which one it is.
+            has_key = bool(os.environ.get('BRAVE_API_KEY', '').strip())
+            why = ('brave month exhausted (%d/%d)' % (_brave_usage().get('used', 0), _BRAVE_CAP)
+                   if has_key and not _brave_remaining()
+                   else 'no brave key' if not has_key else 'no results')
+            print('[search-worker] %s: %s' % (jid, why))
+            _sw_call('fail', [jid, P(why)])
             return
         answer, model, notes, tokens = _sw_llm(q, results, deadline)
         if tokens:
@@ -1282,7 +1370,17 @@ def _sw_process(job, deadline=None):
             print('[search-worker] answer %d chars — clamping to %d' % (len(answer), _SW_ANSWER_CAP))
             answer = answer[:_SW_ANSWER_CAP]
         graph = _sw_graph(q, results, notes)
-        lines = [jid, P(model), P('brave'), P(answer), str(len(results))]
+        # Provenance: say so when the AI asked this, not a person. It rides the
+        # engine field because the canister entry has no askedBy — the same
+        # trick the token count uses on the model field, and it renders wherever
+        # the engine chip already does with no schema change.
+        #
+        # Known limit: only the node that SUBMITTED the question knows it was a
+        # gap question, so if another operator's worker claims it the entry
+        # reads plain 'brave'. Correct attribution needs an askedBy field on
+        # the job, which is a canister upgrade.
+        engine = 'brave · ai-gap' if q in set(_gap_asked()) else 'brave'
+        lines = [jid, P(model), P(engine), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
         lines.append(P(graph))
@@ -1306,6 +1404,7 @@ def _sw_loop():
     print('[search-worker] joining the search network as %s -> %s'
           % (_SW_PRINCIPAL[:12] + '…', _SW_BASE))
     paused = False
+    dry = False
     while True:
         try:
             # Operator can take this node down from the admin panel
@@ -1321,6 +1420,23 @@ def _sw_loop():
             if paused:
                 print('[search-worker] resumed by operator')
                 paused = False
+            # Don't claim work we can't do. Claiming with the month spent would
+            # fail the job, burn one of its three attempts, and — since claim
+            # hands out the OLDEST pending — do it again to the next one, so a
+            # dry key would chew through the whole queue in minutes and fail
+            # jobs a second operator with quota could have answered. Leaving
+            # them pending costs nothing; heartbeat keeps us visible.
+            if not _brave_remaining():
+                if not dry:
+                    print('[search-worker] brave month exhausted (%d/%d) — not claiming; '
+                          'heartbeat continues' % (_brave_usage().get('used', 0), _BRAVE_CAP))
+                    dry = True
+                _sw_call('heartbeat', [])
+                time.sleep(60)
+                continue
+            if dry:
+                print('[search-worker] brave quota available again — claiming')
+                dry = False
             # Clock starts BEFORE the claim: the canister stamps claimedAt during
             # that request, so a pre-call reading is guaranteed conservative.
             # monotonic, never time.time() — an NTP step mid-job would silently
@@ -1343,6 +1459,274 @@ if _SW_ENABLED and _SW_PRINCIPAL and re.fullmatch(r'[0-9a-fA-F]{64}', _SW_SECRET
     threading.Thread(target=_sw_loop, daemon=True, name='search-worker').start()
 elif _SW_ENABLED:
     print('[search-worker] SEARCH_WORKER=1 but WORKER_PRINCIPAL/WORKER_SECRET missing — not starting')
+
+
+# ---- Gap cron: the library asks its own next questions ----------------------
+# Every day at 10:00 America/New_York this reads the public library, works out
+# what it does NOT cover, and submits N questions to close those gaps — the
+# library extending itself instead of waiting to be asked.
+#
+# Human questions are weighted above machine ones in two separate places, and
+# both matter:
+#   direction — the prompt is anchored on what PEOPLE recently asked, so the
+#               proposals chase real demand instead of drifting into whatever
+#               the model finds interesting. A machine question is never used
+#               as evidence of interest; that's how a feedback loop starts.
+#   budget    — 'gap' has the largest Brave reserve (_BRAVE_RESERVE), so when
+#               the month runs short the cron starves before any human does.
+#
+# Answers land as PERMANENT, append-only public entries, so this is deliberately
+# conservative: it dedups against everything already in the library, submits at
+# most GAP_DAILY_MAX, and refuses outright when the Brave month is tight.
+GAP_ENABLED = os.environ.get('GAP_CRON', '').strip() != '0'
+GAP_DAILY_MAX = int(os.environ.get('GAP_DAILY_MAX', '') or 10)
+GAP_HOUR_ET = int(os.environ.get('GAP_HOUR_ET', '') or 10)
+GAP_TZ = os.environ.get('GAP_TZ', '') or 'America/New_York'
+MAX_GAP_RUNS_KEPT = 60
+_gap_lock = threading.Lock()
+
+
+def _gap_next_run_ms(after_ms=None):
+    """Epoch-ms of the next GAP_HOUR_ET in GAP_TZ, strictly after `after_ms`.
+
+    Computed from the zone each time rather than rolling +86_400_000 like
+    _night_scan does. That roll holds UTC constant, so a job pinned to 10:00
+    New York silently becomes 11:00 for half the year — across a DST boundary
+    it is wrong every day until someone re-saves the schedule. Recomputing from
+    the wall clock is the only thing that keeps "10am" meaning 10am."""
+    from zoneinfo import ZoneInfo
+    import datetime as _dt
+    tz = ZoneInfo(GAP_TZ)
+    now = (_dt.datetime.fromtimestamp(after_ms / 1000.0, tz) if after_ms
+           else _dt.datetime.now(tz))
+    run = now.replace(hour=GAP_HOUR_ET, minute=0, second=0, microsecond=0)
+    if run <= now:
+        run = run + _dt.timedelta(days=1)
+    # Re-resolve the offset: adding a day to an aware datetime keeps the OLD
+    # offset across a DST change, which would land the run an hour off on
+    # exactly the two days a year this is hardest to notice.
+    run = run.replace(tzinfo=None).replace(tzinfo=tz)
+    return int(run.timestamp() * 1000)
+
+
+def _gap_asked():
+    """Queries this node submitted as gap questions. Exact strings: the canister
+    stores `q` verbatim and hands it back on claim, so matching needs no copy of
+    libNorm/libKey here (and a drifting copy of that would be worse than none)."""
+    return _night_load('gap-asked.json', [])
+
+
+def _gap_library():
+    """(all_questions, human_questions) from the public library index."""
+    try:
+        with urllib.request.urlopen(_SW_BASE + '/library/index.json', timeout=20) as r:
+            idx = json.loads(r.read().decode('utf-8'))
+    except Exception as e:
+        print('[gap] could not read the library index:', str(e)[:120])
+        return None, None
+    entries = idx if isinstance(idx, list) else (idx.get('entries') or [])
+    asked = set(_gap_asked())
+    all_qs, human_qs = [], []
+    for e in entries:
+        q = (e.get('q') or '').strip()
+        if not q:
+            continue
+        all_qs.append(q)
+        if q not in asked:
+            human_qs.append(q)
+    return all_qs, human_qs
+
+
+def _gap_schema(n):
+    return {'type': 'json_schema', 'json_schema': {'name': 'gap_questions', 'strict': True,
+            'schema': {'type': 'object', 'additionalProperties': False,
+                       'properties': {'questions': {
+                           'type': 'array', 'minItems': 1, 'maxItems': n,
+                           'items': {'type': 'string'}}},
+                       'required': ['questions']}}}
+
+
+def _gap_propose(all_qs, human_qs, n, deadline):
+    """Ask the model for n gap-closing questions. Returns [] on any failure —
+    a quiet no-op day is the correct outcome; there is nothing to salvage and
+    a bad question becomes a permanent public entry."""
+    recent_human = human_qs[:25]
+    prompt = (
+        'You curate a public Q&A library that grows over time. Below is what it '
+        'already covers, and separately the questions REAL PEOPLE recently asked.\n\n'
+        'Propose %d NEW questions that close the biggest gaps in coverage.\n'
+        'Rules:\n'
+        '- Aim at the topics real people are asking about: extend and deepen '
+        'those areas rather than wandering into unrelated subjects.\n'
+        '- Do NOT restate, rephrase, or narrowly re-ask anything already covered.\n'
+        '- Each question must be self-contained and answerable from public web '
+        'sources — no opinions, no predictions, nothing time-sensitive.\n'
+        '- One sentence each, under 100 characters, phrased as a real question.\n'
+        'Output STRICT JSON only: {"questions": ["...", "..."]}\n\n'
+        'Recently asked by people (this is the demand signal — follow it):\n%s\n\n'
+        'Already covered (do not repeat):\n%s'
+        % (n,
+           '\n'.join('- ' + q for q in recent_human) or '- (nothing yet)',
+           '\n'.join('- ' + q for q in all_qs[:120]) or '- (empty library)'))
+    want = _sw_model()
+    payload = {'model': want, 'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': 600, 'response_format': _gap_schema(n)}
+    b = _sw_backend()
+    try:
+        if b is not None:
+            text, _m, _t, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+        else:
+            key = _sw_hermes_key()
+            if not key:
+                print('[gap] no model reachable — skipping today')
+                return []
+            text, _m, _t, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+        # Same shape as _sw_parse_analysis: strip a code fence, take the outer
+        # object. No salvage tier here on purpose — a half-decoded question is
+        # not worth publishing permanently, and skipping a day costs nothing.
+        t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+        m = re.search(r'\{.*\}', t, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        out = [str(q).strip() for q in (data.get('questions') or []) if str(q).strip()]
+        # 400 chars is the canister's hard query cap (LIB_MAX_QUERY); the prompt
+        # asks for <100 but the cap is what actually protects the submit.
+        return [q for q in out if len(q) <= 400][:n]
+    except Exception as e:
+        print('[gap] proposal failed:', str(e)[:160])
+        return []
+
+
+def _gap_submit(q):
+    """POST /search/submit — the same anonymous route the website uses. Returns
+    the canister's outcome word ('queued' | 'hit' | 'rejected:...' | 'error')."""
+    try:
+        req = urllib.request.Request(_SW_BASE + '/search/submit',
+                                     data=q.encode('utf-8'),
+                                     headers={'Content-Type': 'text/plain'})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            d = json.loads(r.read().decode('utf-8'))
+        if d.get('id'):
+            return 'queued'
+        return str(d.get('status') or d.get('error') or 'unknown')[:60]
+    except Exception as e:
+        return 'error: ' + str(e)[:60]
+
+
+def _gap_run():
+    t0 = time.monotonic()
+    run = {'at': int(time.time() * 1000), 'submitted': [], 'skipped': [], 'note': ''}
+
+    # Ask for the Brave budget FIRST. Each question becomes a job some worker
+    # answers with one Brave query, so N proposals cost N queries even though
+    # this process may not spend them itself. Reserving up front is what stops
+    # the cron from quietly handing the network a bill it can't pay.
+    n = GAP_DAILY_MAX
+    while n > 0 and not _brave_spend('gap', n):
+        n -= 1
+    if n <= 0:
+        run['note'] = ('brave month too tight for gap questions (%d/%d used) — '
+                       'human searches keep the rest'
+                       % (_brave_usage().get('used', 0), _BRAVE_CAP))
+        print('[gap]', run['note'])
+        _gap_log(run)
+        return
+    if n < GAP_DAILY_MAX:
+        print('[gap] trimmed %d → %d questions to stay inside the brave month'
+              % (GAP_DAILY_MAX, n))
+
+    # From here on the batch is reserved, so every exit has to give it back or
+    # a bad-library-index day permanently costs 10 queries for zero questions.
+    all_qs, human_qs = _gap_library()
+    if all_qs is None:
+        _brave_refund('gap', n)
+        run['note'] = 'library index unreachable'
+        _gap_log(run)
+        return
+
+    proposed = _gap_propose(all_qs, human_qs, n, time.monotonic() + 90)
+    if not proposed:
+        _brave_refund('gap', n)
+        run['note'] = 'no questions proposed'
+        _gap_log(run)
+        return
+
+    # Dedup locally before spending a submit. The canister dedups too (libKey),
+    # but a #hit there still costs a round trip and tells us nothing new.
+    seen = {q.strip().lower() for q in all_qs}
+    asked = _gap_asked()
+    fresh = []
+    for q in proposed:
+        if q.strip().lower() in seen:
+            run['skipped'].append({'q': q, 'why': 'already covered'})
+            continue
+        seen.add(q.strip().lower())
+        fresh.append(q)
+
+    for q in fresh:
+        outcome = _gap_submit(q)
+        if outcome == 'queued':
+            run['submitted'].append(q)
+            asked.append(q)
+        else:
+            run['skipped'].append({'q': q, 'why': outcome})
+
+    # Give back what we reserved but didn't use. Dedup and validation drop most
+    # proposals on a mature library, so this is the common path, not the edge.
+    _brave_refund('gap', n - len(run['submitted']))
+
+    _night_save('gap-asked.json', asked[-500:])
+    run['spent'] = len(run['submitted'])
+    run['note'] = ('submitted %d of %d proposed in %.1fs (reserved %d, refunded %d)'
+                   % (len(run['submitted']), len(proposed), time.monotonic() - t0,
+                      n, n - len(run['submitted'])))
+    print('[gap] %s' % run['note'])
+    for q in run['submitted']:
+        print('[gap]   + %s' % q[:90])
+    _gap_log(run)
+
+
+def _gap_log(run):
+    try:
+        runs = _night_load('gap-runs.json', [])
+        runs.append(run)
+        _night_save('gap-runs.json', runs[-MAX_GAP_RUNS_KEPT:])
+    except Exception:
+        pass
+
+
+def _gap_loop():
+    sched = _night_load('gap-schedule.json', {})
+    nxt = int(sched.get('nextRunAt', 0) or 0)
+    if not nxt or nxt < int(time.time() * 1000) - 86_400_000:
+        # No schedule, or one so stale it would fire immediately on boot and
+        # then again at 10:00 — pin it to the next real 10am instead.
+        nxt = _gap_next_run_ms()
+        _night_save('gap-schedule.json', {'nextRunAt': nxt})
+    print('[gap] next run %s (%s %02d:00 %s)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)),
+             GAP_TZ, GAP_HOUR_ET, 'ET'))
+    while True:
+        time.sleep(60)
+        try:
+            now_ms = int(time.time() * 1000)
+            if now_ms < nxt:
+                continue
+            with _gap_lock:
+                nxt = _gap_next_run_ms(now_ms)
+                _night_save('gap-schedule.json', {'nextRunAt': nxt})
+            _gap_run()
+            print('[gap] next run %s'
+                  % time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)))
+        except Exception as e:
+            print('[gap] loop error:', str(e)[:200])
+
+
+if GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
+    threading.Thread(target=_gap_loop, daemon=True, name='gap-cron').start()
 
 
 # ---- External approvals (Claude Code PreToolUse hook bridge) ---------------
@@ -3013,6 +3397,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._missions_scheduled_get()
         if self.path == '/missions/runs':
             return self._missions_runs()
+        if self.path == '/gap/status':
+            return self._gap_status()
         if self.path.startswith('/brave/'):
             return self._brave_search()
         if self.path == '/hermes/capability':
@@ -3733,6 +4119,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _missions_runs(self):
         return self._send_json(200, {'runs': _night_load('mission-runs.json', [])})
+
+    def _gap_status(self):
+        """Brave quota + gap cron state. The quota is the binding constraint on
+        the whole search network (1000/month vs the canister's 500/DAY budget),
+        so an operator needs to see it somewhere that isn't a log line."""
+        u = _brave_usage()
+        used = int(u.get('used', 0) or 0)
+        return self._send_json(200, {
+            'brave': {
+                'month': u.get('month'), 'used': used, 'cap': _BRAVE_CAP,
+                'remaining': max(0, _BRAVE_CAP - used),
+                'byKind': u.get('byKind', {}),
+                # What each spender can still get at, given its reserve. This is
+                # the "human questions weigh more" policy, made legible.
+                'headroom': {k: max(0, int(_BRAVE_CAP - _BRAVE_CAP * r - used))
+                             for k, r in _BRAVE_RESERVE.items()},
+            },
+            'gap': {
+                'enabled': bool(GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL),
+                'dailyMax': GAP_DAILY_MAX,
+                'runAt': '%02d:00 %s' % (GAP_HOUR_ET, GAP_TZ),
+                'nextRunAt': int((_night_load('gap-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
+                'askedTotal': len(_gap_asked()),
+                'runs': _night_load('gap-runs.json', [])[-10:],
+            },
+        })
 
     def _missions_schedule(self):
         """POST /missions/schedule — create/update one night-shift schedule.

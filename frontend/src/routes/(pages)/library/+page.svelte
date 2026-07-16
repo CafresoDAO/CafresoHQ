@@ -133,6 +133,16 @@
   function domain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
   }
+  /* Who asked this question — a person, or the library noticing its own gap?
+     The worker marks gap questions by appending 'ai-gap' to the engine field
+     (the canister entry has no askedBy; adding one is a canister upgrade).
+     Read it here rather than rendering the raw marker at the user. */
+  function askedByAi(entry) {
+    return /\bai-gap\b/.test(String(entry?.engine || ''));
+  }
+  function engineLabel(entry) {
+    return String(entry?.engine || '').replace(/\s*·?\s*\bai-gap\b/, '').trim() || 'brave';
+  }
 </script>
 
 <svelte:head>
@@ -320,8 +330,14 @@
       <div class="lib-kicker">Library entry · {drawerEntry.id}</div>
       <h2 class="lib-drawer-q">{plain(drawerEntry.query)}</h2>
       <div class="lib-chips" style="margin-bottom: 18px;">
+        {#if askedByAi(drawerEntry)}
+          <span class="lib-chip lib-chip-ai"
+                title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">
+            ✦ Asked by Cafreso to fill a gap
+          </span>
+        {/if}
         {#if drawerEntry.model}<span class="lib-chip">🤖 {drawerEntry.model}</span>{/if}
-        {#if drawerEntry.engine}<span class="lib-chip">🔎 {drawerEntry.engine}</span>{/if}
+        {#if drawerEntry.engine}<span class="lib-chip">🔎 {engineLabel(drawerEntry)}</span>{/if}
         <span class="lib-chip">📅 {fmtDate(drawerEntry.answeredAt || drawerEntry.ts)}</span>
         {#if drawerEntry.worker}<span class="lib-chip" title={drawerEntry.worker}>⚙ {shortPrincipal(drawerEntry.worker)}</span>{/if}
       </div>
@@ -567,6 +583,13 @@
     background: hsl(26 35% 93%); border-radius: 999px; padding: 3px 9px;
   }
   .lib-chip-chain { background: hsl(45 80% 88%); color: hsl(38 65% 30%); }
+  /* Louder than the other chips on purpose: "a machine chose to ask this" is
+     the one thing on this card a reader would want to know unprompted, and it
+     should never be mistaken for a neutral metadata pill. */
+  .lib-chip-ai {
+    background: hsl(266 70% 95%); color: hsl(266 55% 40%);
+    border: 1px solid hsl(266 55% 85%); cursor: help;
+  }
 
   .lib-more {
     border: 1px solid hsl(26 30% 82%); background: white; border-radius: 999px;
