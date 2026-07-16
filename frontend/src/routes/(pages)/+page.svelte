@@ -13,13 +13,13 @@
 
   let q = '';
 
+  // The homepage bar is a TRIGGER, not a second search UI: any click/focus
+  // opens the AI search modal (which has its own autofocused input), carrying
+  // along anything already typed. Submit stays wired for keyboard users who
+  // hit Enter before the modal opens.
   function runSearch() {
     const term = q.trim();
-    if (!term) {
-      aiSearchOpen.set(true);
-      return;
-    }
-    aiSearchPrefill.set(term);
+    if (term) aiSearchPrefill.set(term);
     aiSearchOpen.set(true);
   }
 
@@ -84,6 +84,8 @@
       aria-label="Search the on-chain library"
       autocomplete="off"
       class="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-ink-400"
+      on:focus={runSearch}
+      on:click={runSearch}
     />
     {#if q.trim()}
       <button type="submit" class="shrink-0 rounded-full bg-brand-500 px-4 py-1.5 text-sm font-medium text-ink-900 transition hover:bg-brand-400">
