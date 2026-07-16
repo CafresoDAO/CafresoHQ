@@ -29,6 +29,10 @@
   let posts = SEED_POSTS;
   let filter = _initialCat;
   let query = '';
+  // The posts=[] -> tick() -> posts=merged swap below (load-bearing — see its
+  // own comment) briefly makes `filtered` empty, which without this flag
+  // flashed the real "no posts match" empty state on every single page load.
+  let isSwapping = false;
 
   onMount(async () => {
     const fresh = await listPosts();
@@ -51,9 +55,11 @@
     );
     // Force a reactive flush so dependent derivations (featured, filtered)
     // pick up the merged list instead of the initial seed reference.
+    isSwapping = true;
     posts = [];
     await tick();
     posts = merged;
+    isSwapping = false;
   });
 
   $: filtered = posts.filter((p) => {
@@ -88,8 +94,8 @@
       class="inline-flex items-center gap-2.5 font-medium"
       style="
         font-size: 12px;
-        background: hsl(26 45% 96% / 0.7);
-        border: 1px solid hsl(26 30% 85%);
+        background: hsl(var(--pg-hover) / 0.7);
+        border: 1px solid hsl(var(--pg-border));
         padding: 5px 14px; border-radius: 999px; margin-bottom: 16px;
         white-space: nowrap;
       "
@@ -103,7 +109,7 @@
     <h1 style="font-size: clamp(32px, 8vw, 52px); font-weight: 800; margin: 0 0 10px; letter-spacing: -0.03em; line-height: 1;">
       The Dev Log
     </h1>
-    <p style="font-size: clamp(14.5px, 2.2vw, 17px); color: hsl(215 16% 35%); margin: 0 auto; max-width: 56ch; line-height: 1.55;">
+    <p style="font-size: clamp(14.5px, 2.2vw, 17px); color: hsl(var(--pg-fg-muted)); margin: 0 auto; max-width: 56ch; line-height: 1.55;">
       Every build, every proposal, every bag of beans. We ship updates here before anywhere else — signed on-chain, tippable in $nanas, open to the community.
     </p>
     {#if canAuthor}
@@ -120,7 +126,7 @@
     class="blog-filters flex items-center flex-wrap"
     style="
       gap: 12px; padding: 14px 16px;
-      background: hsl(26 45% 98% / 0.55); border: 1px solid hsl(26 30% 85%);
+      background: hsl(var(--pg-surface) / 0.55); border: 1px solid hsl(var(--pg-border));
       border-radius: 14px; margin-bottom: 20px;
     "
   >
@@ -132,11 +138,11 @@
     <label
       class="blog-search inline-flex items-center gap-2"
       style="
-        background: white; border: 1px solid hsl(26 30% 85%); border-radius: 9999px;
+        background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 9999px;
         padding: 6px 14px; width: 240px; max-width: 100%;
       "
     >
-      <Icon name="magnifying-glass" size={15} style="color: hsl(215 16% 47%);" />
+      <Icon name="magnifying-glass" size={15} style="color: hsl(var(--pg-fg-muted));" />
       <input
         bind:value={query}
         placeholder="Search posts"
@@ -164,8 +170,14 @@
           {/each}
         </div>
       {/if}
-      {#if filtered.length === 0}
-        <div class="text-center" style="padding: 64px 24px; color: hsl(215 16% 47%);">
+      {#if isSwapping}
+        <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px]"
+          style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted));"
+        >
+          <Icon name="spinner-gap" size={16} class="spin" /> Loading posts…
+        </div>
+      {:else if filtered.length === 0}
+        <div class="text-center" style="padding: 64px 24px; color: hsl(var(--pg-fg-muted));">
           <Icon name="coffee" size={36} style="opacity: 0.4;" />
           <p style="margin-top: 12px;">No posts match that filter yet.</p>
         </div>
@@ -176,16 +188,16 @@
         class="flex items-center flex-wrap mt-7"
         style="
           gap: 20px; padding: 28px;
-          background: linear-gradient(180deg, hsl(26 45% 98% / 0.9), hsl(26 40% 92% / 0.9));
-          border: 1px solid hsl(26 30% 85%); border-radius: 16px;
+          background: linear-gradient(180deg, hsl(var(--pg-surface) / 0.9), hsl(var(--pg-hover) / 0.9));
+          border: 1px solid hsl(var(--pg-border)); border-radius: 16px;
         "
       >
-        <img src="/assets/cf-gold.png" alt="" style="width: 56px; height: 56px; flex-shrink: 0;" />
+        <img src="/assets/cf-gold.png" alt="" loading="lazy" decoding="async" style="width: 56px; height: 56px; flex-shrink: 0;" />
         <div style="flex: 1; min-width: 220px;">
           <h3 style="margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
             Subscribe to the Dev Log
           </h3>
-          <p style="margin: 0; font-size: 14px; color: hsl(215 16% 40%); line-height: 1.5;">
+          <p style="margin: 0; font-size: 14px; color: hsl(var(--pg-fg-muted)); line-height: 1.5;">
             Burn 500 $nanas once, and every new post lands on-chain in your inbox — no email, no tracking, just canister-signed updates.
           </p>
         </div>
@@ -201,13 +213,13 @@
       style="
         position: sticky; top: 92px; width: 250px; align-self: flex-start;
         padding: 16px 16px 12px;
-        background: hsl(26 45% 98% / 0.55); border: 1px solid hsl(26 30% 85%);
+        background: hsl(var(--pg-surface) / 0.55); border: 1px solid hsl(var(--pg-border));
         border-radius: 14px; max-height: calc(100vh - 110px); overflow: auto;
       "
     >
       <h4
         class="flex items-center gap-1.5 uppercase font-bold m-0 mb-3.5"
-        style="font-size: 10.5px; letter-spacing: 0.12em; color: hsl(215 16% 47%);"
+        style="font-size: 10.5px; letter-spacing: 0.12em; color: hsl(var(--pg-fg-muted));"
       >
         <Icon name="git-commit" size={13} /> Timeline
       </h4>
@@ -227,7 +239,7 @@
               border-radius: 6px;
               transition: background .15s;
             "
-            on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(26 40% 90% / 0.5)')}
+            on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.5)')}
             on:mouseleave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
             <span
@@ -235,7 +247,7 @@
                 position: absolute; left: 0; top: 11px;
                 width: 16px; height: 12px; border-radius: 50%;
                 background: linear-gradient(135deg, hsl({CATEGORIES[p.cat]?.hue ?? 24} 55% 55%), hsl({CATEGORIES[p.cat]?.hue ?? 24} 55% 35%));
-                box-shadow: 0 0 0 3px hsl(26 45% 98% / 0.55), 0 1px 2px hsl(24 30% 20% / 0.3);
+                box-shadow: 0 0 0 3px hsl(var(--pg-surface) / 0.55), 0 1px 2px hsl(24 30% 20% / 0.3);
                 transform: rotate(-20deg);
               "
             >
@@ -247,7 +259,7 @@
                 "
               ></span>
             </span>
-            <div style="font-size: 11px; color: hsl(215 16% 47%); margin-bottom: 2px;">{fmtDate(p.date)}</div>
+            <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); margin-bottom: 2px;">{fmtDate(p.date)}</div>
             <div
               class="overflow-hidden"
               style="

@@ -87,7 +87,7 @@
     <div style="position: relative;">
       <Icon name="magnifying-glass" size={18} style="
         position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
-        color: hsl(215 16% 47%); pointer-events: none;
+        color: hsl(var(--pg-fg-muted)); pointer-events: none;
       " />
       <input
         bind:this={inputEl}
@@ -99,8 +99,8 @@
         autofocus
         style="
           width: 100%; padding: 14px 48px 14px 46px; border-radius: 14px;
-          border: 1.5px solid hsl(26 30% 82%); font-size: 16px; font-family: inherit;
-          background: white; color: hsl(222 47% 11%); outline: none;
+          border: 1.5px solid hsl(var(--pg-border)); font-size: 16px; font-family: inherit;
+          background: hsl(var(--pg-elevated)); color: hsl(var(--pg-fg)); outline: none;
           box-shadow: 0 2px 12px -4px hsl(24 20% 20% / 0.1);
           box-sizing: border-box;
           transition: border-color 0.15s, box-shadow 0.15s;
@@ -110,7 +110,7 @@
           e.currentTarget.style.boxShadow = '0 0 0 3px hsl(32 72% 50% / 0.15), 0 2px 12px -4px hsl(24 20% 20% / 0.1)';
         }}
         onblur={(e) => {
-          e.currentTarget.style.borderColor = 'hsl(26 30% 82%)';
+          e.currentTarget.style.borderColor = 'hsl(var(--pg-border))';
           e.currentTarget.style.boxShadow = '0 2px 12px -4px hsl(24 20% 20% / 0.1)';
         }}
       />
@@ -131,7 +131,7 @@
       {/if}
     </div>
     {#if query}
-      <div style="font-size: 12px; color: hsl(215 16% 47%); margin-top: 8px; text-align: center;">
+      <div style="font-size: 12px; color: hsl(var(--pg-fg-muted)); margin-top: 8px; text-align: center;">
         {#if totalHits === 0}
           No results for <strong>"{query}"</strong>
         {:else}
@@ -167,10 +167,10 @@
         <Icon name="brain" size={22} style="color: hsl(260 70% 50%);" />
       </span>
       <div style="flex: 1; min-width: 0;">
-        <div style="font-size: 14px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 2px;">
+        <div style="font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 2px;">
           Try AI Search
         </div>
-        <div style="font-size: 12.5px; color: hsl(215 16% 47%);">
+        <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted));">
           Ask anything — searches the CafresoDAO vault, then the web if needed
         </div>
       </div>
@@ -179,9 +179,9 @@
 
     <!-- Empty state / suggestions -->
     <div style="text-align: center; padding: 20px 0 40px;">
-      <Icon name="magnifying-glass" size={32} style="opacity: 0.2; display: block; margin: 0 auto 12px; color: hsl(222 47% 11%);" />
-      <div style="font-size: 15px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 6px;">Search the Cafreso ecosystem</div>
-      <div style="font-size: 13px; color: hsl(215 16% 47%);">Dev Log posts · Forum threads · Governance proposals</div>
+      <Icon name="magnifying-glass" size={32} style="opacity: 0.2; display: block; margin: 0 auto 12px; color: hsl(var(--pg-fg));" />
+      <div style="font-size: 15px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 6px;">Search the Cafreso ecosystem</div>
+      <div style="font-size: 13px; color: hsl(var(--pg-fg-muted));">Dev Log posts · Forum threads · Governance proposals</div>
     </div>
     <!-- Quick links -->
     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
@@ -192,16 +192,16 @@
       ] as link}
         <a href={link.href} style="
           display: block; border-radius: 12px; padding: 16px;
-          border: 1px solid hsl(26 30% 88%); text-decoration: none;
-          background: white; text-align: center;
+          border: 1px solid hsl(var(--pg-border)); text-decoration: none;
+          background: hsl(var(--pg-surface)); text-align: center;
           transition: border-color 0.15s, box-shadow 0.15s;
         "
           onmouseenter={(e) => { e.currentTarget.style.borderColor = link.color; e.currentTarget.style.boxShadow = `0 4px 16px -6px ${link.color}44`; }}
-          onmouseleave={(e) => { e.currentTarget.style.borderColor = 'hsl(26 30% 88%)'; e.currentTarget.style.boxShadow = 'none'; }}
+          onmouseleave={(e) => { e.currentTarget.style.borderColor = 'hsl(var(--pg-border))'; e.currentTarget.style.boxShadow = 'none'; }}
         >
           <Icon name={link.icon} size={22} style="color: {link.color}; display: block; margin: 0 auto 8px;" />
-          <div style="font-size: 13px; font-weight: 700; color: hsl(222 47% 11%);">{link.label}</div>
-          <div style="font-size: 11px; color: hsl(215 16% 47%); margin-top: 2px;">{link.desc}</div>
+          <div style="font-size: 13px; font-weight: 700; color: hsl(var(--pg-fg));">{link.label}</div>
+          <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); margin-top: 2px;">{link.desc}</div>
         </a>
       {/each}
     </div>
@@ -214,36 +214,36 @@
         <section>
           <div style="
             display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-            padding-bottom: 8px; border-bottom: 1px solid hsl(26 30% 90%);
+            padding-bottom: 8px; border-bottom: 1px solid hsl(var(--pg-border));
           ">
             <Icon name="article" size={15} style="color: hsl(32 72% 50%);" />
             <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(32 72% 44%);">Dev Log</span>
-            <span style="font-size: 11px; color: hsl(215 16% 56%);">{posts.length} result{posts.length !== 1 ? 's' : ''}</span>
+            <span style="font-size: 11px; color: hsl(var(--pg-fg-subtle));">{posts.length} result{posts.length !== 1 ? 's' : ''}</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             {#each posts as p (p.slug)}
               <a href="/blog/{p.slug}" style="
                 display: flex; gap: 12px; padding: 14px 16px;
-                border-radius: 12px; border: 1px solid hsl(26 30% 88%);
-                background: white; text-decoration: none;
+                border-radius: 12px; border: 1px solid hsl(var(--pg-border));
+                background: hsl(var(--pg-surface)); text-decoration: none;
                 transition: border-color 0.12s;
               "
                 onmouseenter={(e) => (e.currentTarget.style.borderColor = 'hsl(32 72% 70%)')}
-                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(26 30% 88%)')}
+                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--pg-border))')}
               >
                 <div style="
                   width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
-                  background: linear-gradient(180deg, hsl(26 45% 96%), hsl(26 40% 88%));
+                  background: linear-gradient(180deg, hsl(var(--pg-hover)), hsl(var(--pg-border)));
                   display: flex; align-items: center; justify-content: center;
                 ">
                   <Icon name="article" size={18} style="color: hsl(32 72% 50%); opacity: 0.6;" />
                 </div>
                 <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 3px; line-height: 1.25;">{p.title}</div>
-                  <div style="font-size: 12.5px; color: hsl(215 16% 47%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{p.excerpt}</div>
-                  <div style="font-size: 10.5px; color: hsl(215 16% 56%); margin-top: 4px;">{fmtDate(p.date)} · {p.readMin} min read</div>
+                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 3px; line-height: 1.25;">{p.title}</div>
+                  <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{p.excerpt}</div>
+                  <div style="font-size: 10.5px; color: hsl(var(--pg-fg-subtle)); margin-top: 4px;">{fmtDate(p.date)} · {p.readMin} min read</div>
                 </div>
-                <Icon name="arrow-right" size={14} style="color: hsl(215 16% 56%); flex-shrink: 0; margin-top: 14px;" />
+                <Icon name="arrow-right" size={14} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0; margin-top: 14px;" />
               </a>
             {/each}
           </div>
@@ -255,11 +255,11 @@
         <section>
           <div style="
             display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-            padding-bottom: 8px; border-bottom: 1px solid hsl(26 30% 90%);
+            padding-bottom: 8px; border-bottom: 1px solid hsl(var(--pg-border));
           ">
             <Icon name="gavel" size={15} style="color: hsl(260 70% 62%);" />
             <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(260 52% 44%);">Governance</span>
-            <span style="font-size: 11px; color: hsl(215 16% 56%);">{proposals.length} result{proposals.length !== 1 ? 's' : ''}</span>
+            <span style="font-size: 11px; color: hsl(var(--pg-fg-subtle));">{proposals.length} result{proposals.length !== 1 ? 's' : ''}</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             {#each proposals as p (p.id)}
@@ -267,12 +267,12 @@
               {@const ps = proposalStatus(p.status)}
               <a href="/governance/{p.id}" style="
                 display: flex; gap: 12px; padding: 14px 16px;
-                border-radius: 12px; border: 1px solid hsl(26 30% 88%);
-                background: white; text-decoration: none;
+                border-radius: 12px; border: 1px solid hsl(var(--pg-border));
+                background: hsl(var(--pg-surface)); text-decoration: none;
                 transition: border-color 0.12s;
               "
                 onmouseenter={(e) => (e.currentTarget.style.borderColor = 'hsl(260 50% 70%)')}
-                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(26 30% 88%)')}
+                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--pg-border))')}
               >
                 <div style="
                   width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0;
@@ -285,10 +285,10 @@
                   <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 3px; flex-wrap: wrap;">
                     <span style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: {ps.color}; background: {ps.bg}; border-radius: 4px; padding: 1px 5px;">{ps.label}</span>
                   </div>
-                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 3px; line-height: 1.25;">{p.title}</div>
-                  <div style="font-size: 12.5px; color: hsl(215 16% 47%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{p.summary}</div>
+                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 3px; line-height: 1.25;">{p.title}</div>
+                  <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{p.summary}</div>
                 </div>
-                <Icon name="arrow-right" size={14} style="color: hsl(215 16% 56%); flex-shrink: 0; margin-top: 14px;" />
+                <Icon name="arrow-right" size={14} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0; margin-top: 14px;" />
               </a>
             {/each}
           </div>
@@ -300,22 +300,22 @@
         <section>
           <div style="
             display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-            padding-bottom: 8px; border-bottom: 1px solid hsl(26 30% 90%);
+            padding-bottom: 8px; border-bottom: 1px solid hsl(var(--pg-border));
           ">
             <Icon name="chats-circle" size={15} style="color: hsl(112 43% 40%);" />
             <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(112 43% 30%);">Forums</span>
-            <span style="font-size: 11px; color: hsl(215 16% 56%);">{forums.length} result{forums.length !== 1 ? 's' : ''}</span>
+            <span style="font-size: 11px; color: hsl(var(--pg-fg-subtle));">{forums.length} result{forums.length !== 1 ? 's' : ''}</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             {#each forums as f (f.slug)}
               <a href="/forums/{f.slug}" style="
                 display: flex; gap: 12px; padding: 14px 16px;
-                border-radius: 12px; border: 1px solid hsl(26 30% 88%);
-                background: white; text-decoration: none;
+                border-radius: 12px; border: 1px solid hsl(var(--pg-border));
+                background: hsl(var(--pg-surface)); text-decoration: none;
                 transition: border-color 0.12s;
               "
                 onmouseenter={(e) => (e.currentTarget.style.borderColor = 'hsl(112 40% 60%)')}
-                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(26 30% 88%)')}
+                onmouseleave={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--pg-border))')}
               >
                 <div style="
                   width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0;
@@ -324,10 +324,10 @@
                   <Icon name="chats-circle" size={18} style="color: hsl(112 43% 40%);" />
                 </div>
                 <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 3px; line-height: 1.25;">{f.title}</div>
-                  <div style="font-size: 12.5px; color: hsl(215 16% 47%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{f.excerpt}</div>
+                  <div style="font-size: 14.5px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 3px; line-height: 1.25;">{f.title}</div>
+                  <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{f.excerpt}</div>
                 </div>
-                <Icon name="arrow-right" size={14} style="color: hsl(215 16% 56%); flex-shrink: 0; margin-top: 14px;" />
+                <Icon name="arrow-right" size={14} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0; margin-top: 14px;" />
               </a>
             {/each}
           </div>
@@ -336,9 +336,9 @@
 
       {#if totalHits === 0}
         <div style="text-align: center; padding: 36px 20px 20px;">
-          <Icon name="magnifying-glass" size={28} style="opacity: 0.2; display: block; margin: 0 auto 10px; color: hsl(222 47% 11%);" />
-          <div style="font-size: 15px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 6px;">No local results found</div>
-          <div style="font-size: 13px; color: hsl(215 16% 47%); margin-bottom: 20px;">Try AI Search to query the vault and the web.</div>
+          <Icon name="magnifying-glass" size={28} style="opacity: 0.2; display: block; margin: 0 auto 10px; color: hsl(var(--pg-fg));" />
+          <div style="font-size: 15px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 6px;">No local results found</div>
+          <div style="font-size: 13px; color: hsl(var(--pg-fg-muted)); margin-bottom: 20px;">Try AI Search to query the vault and the web.</div>
           <button
             type="button"
             onclick={() => aiSearchOpen.set(true)}

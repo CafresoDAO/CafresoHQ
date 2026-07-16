@@ -45,14 +45,14 @@
 <div class="mx-auto" style="max-width: 900px; padding: 28px 18px 48px;">
   <div class="text-center mb-6 sm:mb-8">
     <div class="inline-flex items-center gap-2 text-[12.5px] font-medium rounded-full px-3 py-1 mb-3"
-      style="background: hsl(26 45% 96% / 0.7); border: 1px solid hsl(26 30% 85%);"
+      style="background: hsl(var(--pg-hover) / 0.7); border: 1px solid hsl(var(--pg-border));"
     >
       <Icon name="chats-circle" size={14} /> Community · open to everyone
     </div>
     <h1 class="font-extrabold m-0 leading-[1.05]" style="font-size: clamp(32px, 8vw, 48px); letter-spacing: -0.03em;">
       Forums
     </h1>
-    <p class="mx-auto text-[14.5px] sm:text-[16px] leading-[1.55] mt-3 max-w-[52ch]" style="color: hsl(215 16% 35%);">
+    <p class="mx-auto text-[14.5px] sm:text-[16px] leading-[1.55] mt-3 max-w-[52ch]" style="color: hsl(var(--pg-fg-muted));">
       Anyone with an Internet Identity can start a thread, comment, or tip
       other authors with $nanas. Separate from the <a href="/blog" class="underline" style="color: hsl(38 85% 30%);">Dev Log</a>, which stays curated by the core team.
     </p>
@@ -61,22 +61,20 @@
   <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-5">
     <div
       class="flex-1 flex items-center gap-2 rounded-[12px] px-3 py-2"
-      style="background: hsl(26 45% 98%); border: 1px solid hsl(26 30% 85%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
-      <Icon name="magnifying-glass" size={14} style="color: hsl(215 16% 47%);" />
+      <Icon name="magnifying-glass" size={14} class="text-muted-foreground" />
       <input
         bind:value={q}
         placeholder="Search threads…"
         aria-label="Search threads"
-        class="flex-1 min-w-0 text-[13.5px] bg-transparent border-none outline-none"
-        style="color: hsl(222 47% 11%);"
+        class="flex-1 min-w-0 text-[13.5px] bg-transparent border-none outline-none text-primary"
       />
       {#if q}
         <button
           type="button"
           on:click={() => (q = '')}
-          class="text-[11px] cursor-pointer bg-transparent border-none"
-          style="color: hsl(215 16% 47%);"
+          class="text-[11px] cursor-pointer bg-transparent border-none text-muted-foreground"
           aria-label="Clear search"
         >
           Clear
@@ -96,8 +94,8 @@
   </div>
 
   {#if loading}
-    <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px]"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(215 16% 47%);"
+    <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px] text-muted-foreground"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <Icon name="spinner-gap" size={16} /> Loading threads…
     </div>
@@ -109,13 +107,13 @@
     </div>
   {:else if filtered.length === 0}
     <div class="rounded-[14px] px-4 py-10 text-center"
-      style="background: hsl(26 40% 98%); border: 1px dashed hsl(26 30% 75%);"
+      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-border));"
     >
       <Icon name="chats-circle" size={28} style="color: hsl(32 56% 35%);" />
-      <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(222 47% 11%);">
+      <h3 class="font-bold text-[17px] mt-3 mb-1.5 text-primary">
         {q ? 'No matches' : 'Be the first voice'}
       </h3>
-      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px]" style="color: hsl(215 16% 47%);">
+      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px] text-muted-foreground">
         {q
           ? 'Try a different search term.'
           : 'Open the first thread — coffee gossip, DAO proposals, mining strategy, anything goes. Tips in $nanas reward good writing.'}
@@ -129,34 +127,34 @@
   {:else}
     <div
       class="rounded-[14px] overflow-hidden"
-      style="background: white; border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));"
     >
       {#each filtered as p, i (p.slug)}
         {@const viewSlug = stripForumPrefix(p.slug)}
         <a
           href="/forums/{viewSlug}"
           class="block no-underline px-4 sm:px-5 py-4 sm:py-5"
-          style="color: inherit; {i > 0 ? 'border-top: 1px solid hsl(26 30% 92%);' : ''}"
+          style="color: inherit; {i > 0 ? 'border-top: 1px solid hsl(var(--pg-border));' : ''}"
         >
           <div class="flex items-start gap-3 sm:gap-4">
             <Avatar name={p.author?.name || 'Guest'} hue={p.author?.hue || 24} size={36} />
             <div class="flex-1 min-w-0">
-              <div class="font-bold text-[15.5px] sm:text-[16px] leading-[1.3] mb-0.5"
-                style="color: hsl(222 47% 11%); text-wrap: pretty;"
+              <div class="font-bold text-[15.5px] sm:text-[16px] leading-[1.3] mb-0.5 text-primary"
+                style="text-wrap: pretty;"
               >
                 {p.title}
               </div>
-              <div class="text-[12.5px] mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5" style="color: hsl(215 16% 47%);">
+              <div class="text-[12.5px] mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
                 <span class="font-medium">{p.author?.name || 'Guest'}</span>
                 <span>·</span>
                 <span>{fmtDate(p.date)}</span>
                 <span>·</span>
                 <span>~{p.readMin || 1} min</span>
               </div>
-              <p class="text-[13.5px] leading-[1.55] mb-2 line-clamp-2" style="color: hsl(215 25% 25%);">
+              <p class="text-[13.5px] leading-[1.55] mb-2 line-clamp-2" style="color: hsl(var(--pg-fg-muted));">
                 {p.excerpt}
               </p>
-              <div class="flex items-center gap-3 text-[11.5px]" style="color: hsl(215 16% 47%);">
+              <div class="flex items-center gap-3 text-[11.5px] text-muted-foreground">
                 <span class="inline-flex items-center gap-1 tabular-nums">
                   <Icon name="fire" size={12} /> {p.burned.toLocaleString()} burned
                 </span>
@@ -165,7 +163,7 @@
                 </span>
               </div>
             </div>
-            <Icon name="caret-right" size={14} style="color: hsl(215 16% 47%); margin-top: 4px;" />
+            <Icon name="caret-right" size={14} class="text-muted-foreground" style="margin-top: 4px;" />
           </div>
         </a>
       {/each}

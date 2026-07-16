@@ -5,9 +5,9 @@
   export let chartType = 'area'; // 'area' | 'line' | 'bar'
   export let title = '';
   export let color = 'hsl(43 74% 54%)';
-  export let bodyBg = 'white';
-  export let bodyBorder = 'hsl(26 30% 85%)';
-  export let textColor = 'hsl(222 47% 11%)';
+  export let bodyBg = 'hsl(var(--pg-elevated))';
+  export let bodyBorder = 'hsl(var(--pg-border))';
+  export let textColor = 'hsl(var(--pg-fg))';
 
   const W = 520;
   const H = 168;
@@ -57,7 +57,7 @@
   {/if}
 
   {#if points.length < 2}
-    <div style="font-size: 13px; color: hsl(215 16% 55%); padding: 24px 0; text-align: center;">
+    <div style="font-size: 13px; color: hsl(var(--pg-fg-muted)); padding: 24px 0; text-align: center;">
       Add at least 2 data points to render the chart.
     </div>
   {:else}
@@ -102,7 +102,7 @@
       <line
         x1={padL} y1={padT + chartH}
         x2={W - padR} y2={padT + chartH}
-        stroke="hsl(215 16% 85%)"
+        stroke="hsl(var(--pg-border))"
         stroke-width="1"
       />
 
@@ -112,7 +112,7 @@
           x={chartType === 'bar' ? barX(i) + barW / 2 : xPos(i)}
           y={H - 6}
           text-anchor="middle"
-          style="font-size: 10px; fill: hsl(215 16% 55%); font-family: inherit;"
+          style="font-size: 10px; fill: hsl(var(--pg-fg-muted)); font-family: inherit;"
         >{p.label}</text>
       {/each}
     </svg>

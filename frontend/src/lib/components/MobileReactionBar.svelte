@@ -27,9 +27,9 @@
   class="mobile-only fixed z-[15] flex items-center"
   style="
     left: 12px; right: 12px; bottom: 78px;
-    background: hsl(26 45% 98% / 0.92);
+    background: hsl(var(--pg-surface) / 0.92);
     backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    border: 1px solid hsl(26 30% 85%); border-radius: 14px;
+    border: 1px solid hsl(var(--pg-border)); border-radius: 14px;
     padding: 10px; gap: 10px;
     box-shadow: 0 12px 30px -10px hsl(24 35% 15% / 0.3);
   "
@@ -47,12 +47,12 @@
   </button>
   <div class="flex-1 text-xs" style="line-height: 1.3;">
     <div class="font-semibold">{(post.burned + userBurned).toLocaleString()} burned</div>
-    <div style="color: hsl(215 16% 47%);">{post.comments} comments</div>
+    <div style="color: hsl(var(--pg-fg-muted));">{post.comments} comments</div>
   </div>
-  <button on:click={scrollToComments} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Comments">
+  <button on:click={scrollToComments} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(var(--pg-fg-muted));" aria-label="Comments">
     <Icon name="chat-circle" size={18} />
   </button>
-  <button on:click={share} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(215 16% 47%);" aria-label="Share">
+  <button on:click={share} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(var(--pg-fg-muted));" aria-label="Share">
     <Icon name="share-network" size={18} />
   </button>
 </div>

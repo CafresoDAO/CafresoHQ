@@ -63,3 +63,4 @@ oci-fleet/_or.json
 
 # Machine-local Claude Code settings (per-developer paths/permissions)
 .claude/settings.local.json
+worker.env

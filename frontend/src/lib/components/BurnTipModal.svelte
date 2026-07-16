@@ -83,8 +83,8 @@
       class="relative overflow-hidden bg-white rounded-2xl"
       style="
         max-width: 440px; width: 100%; padding: 28px;
-        background: hsl(26 45% 98%);
-        border: 1px solid hsl(26 30% 85%);
+        background: hsl(var(--pg-surface));
+        border: 1px solid hsl(var(--pg-border));
         box-shadow: 0 28px 60px -20px hsl(24 40% 8% / 0.55);
       "
     >
@@ -92,7 +92,7 @@
         on:click={close}
         aria-label="Close"
         class="absolute bg-transparent border-none cursor-pointer"
-        style="top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 8px; color: hsl(215 16% 47%);"
+        style="top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 8px; color: hsl(var(--pg-fg-muted));"
       >
         <Icon name="x" size={18} />
       </button>
@@ -106,7 +106,7 @@
           <h2 style="font-size: 28px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.02em;">
             Burning $nanas
           </h2>
-          <p class="m-0 mx-auto" style="font-size: 13.5px; color: hsl(215 16% 40%); line-height: 1.5; max-width: 40ch;">
+          <p class="m-0 mx-auto" style="font-size: 13.5px; color: hsl(var(--pg-fg-muted)); line-height: 1.5; max-width: 40ch;">
             Your burn is atomic — it writes the post's tip counter and your leaderboard rank in the same on-chain call.
           </p>
         </div>
@@ -119,8 +119,8 @@
                 class="flex flex-col items-center gap-0.5 cursor-pointer"
                 style="
                   padding: 12px 0; border-radius: 10px;
-                  background: {amount === n ? 'hsl(45 95% 62%)' : 'white'};
-                  border: 1px solid {amount === n ? 'hsl(32 72% 50%)' : 'hsl(26 30% 85%)'};
+                  background: {amount === n ? 'hsl(45 95% 62%)' : 'hsl(var(--pg-elevated))'};
+                  border: 1px solid {amount === n ? 'hsl(32 72% 50%)' : 'hsl(var(--pg-border))'};
                   font-family: inherit; font-size: 14px; font-weight: 600;
                 "
               >
@@ -139,7 +139,7 @@
               >
                 {amount.toLocaleString()} <NanasCoin size={32} />
               </div>
-              <div style="font-size: 12px; color: hsl(215 16% 47%);">
+              <div style="font-size: 12px; color: hsl(var(--pg-fg-muted));">
                 ≈ ${(amount * 0.0015).toFixed(2)} USD · {Math.round((amount / $nanasBalance) * 100)}% of your balance
               </div>
             </div>
@@ -153,7 +153,7 @@
               aria-valuetext="{amount.toLocaleString()} $nanas"
               style="width: 100%; accent-color: hsl(32 72% 50%);"
             />
-            <div class="flex justify-between text-[11px] mt-1" style="color: hsl(215 16% 47%);">
+            <div class="flex justify-between text-[11px] mt-1" style="color: hsl(var(--pg-fg-muted));">
               <span>50</span><span>10,000</span>
             </div>
           </div>
@@ -161,7 +161,7 @@
 
         {#if $tweaks.burnModel === 'hold'}
           <div class="text-center mb-3.5">
-            <div class="text-[13px] mb-3.5" style="color: hsl(215 16% 47%);">Amount to burn</div>
+            <div class="text-[13px] mb-3.5" style="color: hsl(var(--pg-fg-muted));">Amount to burn</div>
             <div class="flex gap-2 justify-center mb-5">
               {#each [100, 500, 1000, 5000] as n}
                 <button
@@ -169,9 +169,9 @@
                   class="cursor-pointer"
                   style="
                     padding: 8px 16px; border-radius: 999px;
-                    background: {amount === n ? 'hsl(24 48% 12%)' : 'white'};
-                    color: {amount === n ? 'white' : 'hsl(222 47% 11%)'};
-                    border: 1px solid {amount === n ? 'hsl(24 48% 12%)' : 'hsl(26 30% 85%)'};
+                    background: {amount === n ? 'hsl(24 48% 12%)' : 'hsl(var(--pg-elevated))'};
+                    color: {amount === n ? 'white' : 'hsl(var(--pg-fg))'};
+                    border: 1px solid {amount === n ? 'hsl(24 48% 12%)' : 'hsl(var(--pg-border))'};
                     font-family: inherit; font-size: 13px; font-weight: 600;
                   "
                 >{n.toLocaleString()}</button>
@@ -179,7 +179,7 @@
             </div>
             <div class="relative mx-auto mb-3.5" style="width: 150px; height: 150px;">
               <svg viewBox="0 0 130 130" width="150" height="150">
-                <circle cx="65" cy="65" r="58" fill="none" stroke="hsl(26 30% 85%)" stroke-width="5" />
+                <circle cx="65" cy="65" r="58" fill="none" stroke="hsl(var(--pg-border))" stroke-width="5" />
                 <circle
                   cx="65" cy="65" r="58" fill="none"
                   stroke="hsl(32 72% 50%)" stroke-width="5" stroke-linecap="round"
@@ -212,7 +212,7 @@
                 </div>
               </button>
             </div>
-            <div style="font-size: 12.5px; color: hsl(215 16% 47%);">
+            <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted));">
               Hold the button until the ring fills.
             </div>
           </div>
@@ -231,7 +231,7 @@
 
         <div
           class="flex justify-between items-center mt-3.5 pt-3.5 text-xs"
-          style="border-top: 1px dashed hsl(26 25% 80%); color: hsl(215 16% 47%);"
+          style="border-top: 1px dashed hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted));"
         >
           <span>Your balance</span>
           <span class="inline-flex items-center gap-1 font-semibold text-primary">
@@ -245,14 +245,14 @@
           <div class="relative mx-auto mb-4" style="width: 110px; height: 110px;">
             <div
               class="spin"
-              style="width: 100%; height: 100%; border: 4px solid hsl(26 30% 85%); border-top-color: hsl(32 72% 50%); border-radius: 50%;"
+              style="width: 100%; height: 100%; border: 4px solid hsl(var(--pg-border)); border-top-color: hsl(32 72% 50%); border-radius: 50%;"
             ></div>
             <NanasCoin size={56} style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
           </div>
           <h3 style="font-size: 22px; font-weight: 800; margin: 0 0 6px;">
             Burning {amount.toLocaleString()} $nanas
           </h3>
-          <p class="m-0 text-[13px]" style="color: hsl(215 16% 47%);">
+          <p class="m-0 text-[13px]" style="color: hsl(var(--pg-fg-muted));">
             Writing to canister <code style="font-size: 12px;">chkoj-v…cai</code>
           </p>
         </div>
@@ -267,7 +267,7 @@
             <Icon name="check" size={44} weight="fill" style="color: white;" />
           </div>
           <h3 style="font-size: 22px; font-weight: 800; margin: 0 0 6px;">Burned</h3>
-          <p class="m-0 mb-2.5 text-[13.5px]" style="color: hsl(215 16% 40%);">
+          <p class="m-0 mb-2.5 text-[13.5px]" style="color: hsl(var(--pg-fg-muted));">
             Block <code>#{(lastBlock ?? 4821971).toLocaleString()}</code> · the leaderboard just updated.
           </p>
         </div>

@@ -1,0 +1,47 @@
+# ── CafresoHQ — local Mac container (Docker Desktop) ────────────────────────
+# Replaces the hand-made `cafresohq` container with a declarative setup:
+#
+#   docker compose -f docker-compose.local.yml up -d      # start (or apply changes)
+#   docker compose -f docker-compose.local.yml logs -f    # watch logs
+#   docker compose -f docker-compose.local.yml down       # stop
+#
+# Worker credentials (SEARCH_WORKER / WORKER_* / BRAVE_API_KEY) live in
+# `worker.env` — gitignored, chmod 600. Edit that file, then re-run `up -d`;
+# compose recreates the container with the new env automatically.
+#
+# `restart: unless-stopped` = auto-restart after crashes and Mac reboots
+# (as long as Docker Desktop launches at login). This matters for the search
+# worker: cafreso.com shows "network asleep" whenever no worker has
+# heartbeated for 10 minutes.
+
+services:
+  cafresohq:
+    # Built locally from this repo — the Docker Hub image (anthonycf1/
+    # cafresoai-serve:latest) predates the search-network worker code.
+    # After a `git pull`: docker compose -f docker-compose.local.yml up -d --build
+    build:
+      context: .
+      dockerfile: oci-fleet/Dockerfile
+    image: cafresoai-serve:local
+    container_name: cafresohq
+    ports:
+      - "8787:8787"
+    env_file:
+      - worker.env
+    environment:
+      # Line-buffered stdout so [search-worker] logs show up in `docker logs`
+      # immediately instead of sitting in Python's block buffer.
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - cafresohq-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  cafresohq-data:
+    external: true   # reuse the existing volume — all your HQ state is in it

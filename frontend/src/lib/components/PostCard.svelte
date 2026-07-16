@@ -36,8 +36,8 @@
   on:mouseleave={leave}
   class="post-card fade-up relative flex flex-col cursor-pointer overflow-hidden no-underline text-primary"
   style="
-    background: linear-gradient(180deg, hsl(26 45% 98% / 0.9), hsl(26 40% 94% / 0.78));
-    border: 1px solid hsl(26 35% 88%);
+    background: linear-gradient(180deg, hsl(var(--pg-surface) / 0.9), hsl(var(--pg-hover) / 0.78));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 16px;
     padding: 20px;
     gap: 14px;
@@ -56,7 +56,7 @@
       title="Edit this post"
       class="absolute z-[2] inline-flex items-center gap-1.5 rounded-full no-underline"
       style="top: 12px; right: 12px; padding: 5px 10px; font-size: 11.5px; font-weight: 600;
-        background: hsl(222 47% 11%); color: white; box-shadow: 0 4px 10px -4px hsl(222 47% 11% / 0.45);"
+        background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); box-shadow: 0 4px 10px -4px hsl(222 47% 11% / 0.45);"
     >
       <Icon name="pencil-simple" size={11} /> Edit
     </a>
@@ -66,8 +66,8 @@
       <div>
         <div class="flex gap-2 items-center mb-3">
           <span
-            class="text-[10.5px] font-bold uppercase text-white"
-            style="background: hsl(222 47% 11%); padding: 4px 10px; border-radius: 999px; letter-spacing: 0.12em;"
+            class="text-[10.5px] font-bold uppercase"
+            style="background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); padding: 4px 10px; border-radius: 999px; letter-spacing: 0.12em;"
           >Latest</span>
           <CategoryTag cat={post.cat} />
         </div>
@@ -75,7 +75,7 @@
           class="post-hero-title"
           style="font-size: 44px; font-weight: 800; line-height: 1.05; margin: 0 0 14px; letter-spacing: -0.02em;"
         >{post.title}</h1>
-        <p class="m-0 mb-4" style="font-size: 16px; line-height: 1.55; color: hsl(215 16% 35%); max-width: 58ch;">
+        <p class="m-0 mb-4" style="font-size: 16px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); max-width: 58ch;">
           {post.excerpt}
         </p>
         <div class="post-meta-row flex items-center gap-3.5 flex-wrap">
@@ -83,22 +83,22 @@
             <Avatar name={post.author.name} hue={post.author.hue} size={32} />
             <div class="text-[13px]">
               <div class="font-semibold">{post.author.name}</div>
-              <div style="color: hsl(215 16% 47%); font-size: 11.5px;">
+              <div style="color: hsl(var(--pg-fg-muted)); font-size: 11.5px;">
                 {post.author.role} · {fmtDate(post.date)}
               </div>
             </div>
           </div>
-          <span class="w-px h-6" style="background: hsl(26 25% 80%);"></span>
+          <span class="w-px h-6" style="background: hsl(var(--pg-border));"></span>
           <div class="inline-flex items-center gap-1 text-[13px] font-semibold">
             <Icon name="fire" size={15} style="color: hsl(32 72% 50%);" />
             {post.burned.toLocaleString()}
             <NanasCoin size={15} />
-            <span class="font-normal ml-1" style="color: hsl(215 16% 47%);">burned</span>
+            <span class="font-normal ml-1" style="color: hsl(var(--pg-fg-muted));">burned</span>
           </div>
-          <div class="inline-flex items-center gap-1 text-[13px]" style="color: hsl(215 16% 47%);">
+          <div class="inline-flex items-center gap-1 text-[13px]" style="color: hsl(var(--pg-fg-muted));">
             <Icon name="chat-circle" size={15} /> {post.comments}
           </div>
-          <div class="inline-flex items-center gap-1 text-[13px]" style="color: hsl(215 16% 47%);">
+          <div class="inline-flex items-center gap-1 text-[13px]" style="color: hsl(var(--pg-fg-muted));">
             <Icon name="clock" size={15} /> {post.readMin} min read
           </div>
         </div>
@@ -113,13 +113,15 @@
           border-radius: 12px;
           background: {post.hero === 'farm'
             ? 'radial-gradient(ellipse at 50% 70%, hsl(112 40% 82%), hsl(26 30% 74%))'
-            : 'linear-gradient(180deg, hsl(26 45% 96%), hsl(26 40% 88%))'};
-          border: 1px solid hsl(26 30% 82%);
+            : 'linear-gradient(180deg, hsl(var(--pg-hover)), hsl(var(--pg-border)))'};
+          border: 1px solid hsl(var(--pg-border));
         "
       >
         <img
           src={postHeroImg(post.hero)}
           alt={post.title}
+          loading="lazy"
+          decoding="async"
           style="
             width: 86%; height: 86%; object-fit: contain;
             image-rendering: {post.hero === 'farm' ? 'pixelated' : 'auto'};
@@ -138,7 +140,7 @@
   {:else}
     <div class="flex justify-between items-start gap-2.5">
       <CategoryTag cat={post.cat} size="sm" />
-      <div class="text-[11px]" style="color: hsl(215 16% 47%);">{fmtDate(post.date)}</div>
+      <div class="text-[11px]" style="color: hsl(var(--pg-fg-muted));">{fmtDate(post.date)}</div>
     </div>
     <div
       class="flex items-center justify-center overflow-hidden"
@@ -146,13 +148,15 @@
         height: 120px; border-radius: 10px;
         background: {post.hero === 'farm'
           ? 'radial-gradient(ellipse at 50% 70%, hsl(112 40% 82%), hsl(26 30% 74%))'
-          : 'linear-gradient(180deg, hsl(26 45% 96%), hsl(26 40% 88%))'};
-        border: 1px solid hsl(26 30% 85%);
+          : 'linear-gradient(180deg, hsl(var(--pg-hover)), hsl(var(--pg-border)))'};
+        border: 1px solid hsl(var(--pg-border));
       "
     >
       <img
         src={postHeroImg(post.hero)}
         alt={post.title}
+        loading="lazy"
+        decoding="async"
         style="
           width: 70%; height: 70%; object-fit: contain;
           image-rendering: {post.hero === 'farm' ? 'pixelated' : 'auto'};
@@ -166,29 +170,37 @@
       <p
         class="m-0 overflow-hidden"
         style="
-          font-size: 13.5px; color: hsl(215 16% 40%); line-height: 1.5;
+          font-size: 13.5px; color: hsl(var(--pg-fg-muted)); line-height: 1.5;
           display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
         "
       >{post.excerpt}</p>
     </div>
     <div
       class="flex items-center justify-between pt-3 mt-auto"
-      style="border-top: 1px dashed hsl(26 25% 75%);"
+      style="border-top: 1px dashed hsl(var(--pg-border));"
     >
       <div class="inline-flex items-center gap-2">
         <Avatar name={post.author.name} hue={post.author.hue} size={22} />
         <span class="text-xs font-medium">{post.author.name}</span>
       </div>
       <div class="inline-flex items-center gap-2.5 text-xs">
-        <span class="inline-flex items-center gap-[3px] font-semibold" style="color: hsl(24 40% 22%);">
+        <span class="inline-flex items-center gap-[3px] font-semibold pc-burn" style="color: hsl(24 40% 22%);">
           <Icon name="fire" size={13} style="color: hsl(32 72% 50%);" />
           {(post.burned / 1000).toFixed(1)}k
           <NanasCoin size={12} />
         </span>
-        <span class="inline-flex items-center gap-[3px]" style="color: hsl(215 16% 47%);">
+        <span class="inline-flex items-center gap-[3px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="chat-circle" size={13} /> {post.comments}
         </span>
       </div>
     </div>
   {/if}
 </a>
+
+<style>
+  /* Warm-brown burn count keeps its light value; brighten in dark so it
+     stays legible on the dark card. */
+  :global(.dark) .pc-burn {
+    color: hsl(var(--pg-fg));
+  }
+</style>

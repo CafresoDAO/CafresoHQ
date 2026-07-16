@@ -539,24 +539,38 @@ const HERMES_PROVIDER_KEY_FIELD = {
   gemini: 'geminiKey',
   groq: 'groqKey',
 };
+/* Local backends are identified by a URL rather than a key — this is what
+   hermesEnsureProvider re-pushes after a container recreate wipes ~/.hermes. */
+const HERMES_PROVIDER_URL_FIELD = {
+  lmstudio: 'hermesLmUrl',
+  ollama: 'hermesOlUrl',
+};
 
 /* Set the Hermes backend provider + its free key. Persists locally (per-provider
    field + active backend) AND pushes to the container, which rewrites config.yaml
    to that provider and restarts the gateway. Reliability path from the research:
    the user can move off OpenRouter :free (20 RPM / 50 RPD) to Gemini direct
    (≈15 RPM / 1500 RPD) or Groq with their own free key. */
-async function hermesSetProvider(provider, key, model) {
+/* Local backends are the operator's own hardware: keyless, addressed by a URL.
+   Mirrors serve.py _HERMES_PROVIDERS' `local` flag. */
+const HERMES_LOCAL_PROVIDERS = ['lmstudio', 'ollama'];
+
+async function hermesSetProvider(provider, key, model, baseUrl) {
   const prov = (provider || 'openrouter').toLowerCase();
+  const local = HERMES_LOCAL_PROVIDERS.includes(prov);
   const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
   const trimmed = String(key || '').trim();
   // persist locally so it survives reload AND container recreate (re-push)
-  setSettings({ hermesBackend: prov, [field]: trimmed });
-  if (!trimmed) return { ok: true, serverStored: false, detail: 'cleared' };
+  setSettings(local ? { hermesBackend: prov } : { hermesBackend: prov, [field]: trimmed });
+  // An empty key means "cleared" — but a local backend never has one, so that
+  // guard must not swallow it.
+  if (!trimmed && !local) return { ok: true, serverStored: false, detail: 'cleared' };
   try {
     const r = await fetch(_API_BASE + '/hermes/provider', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ provider: prov, key: trimmed, model: model || '' }),
+      body: JSON.stringify({ provider: prov, key: trimmed, model: model || '',
+                             base_url: baseUrl || '' }),
     });
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
@@ -581,6 +595,21 @@ async function hermesSetProvider(provider, key, model) {
   }
 }
 
+/* Which models a LOCAL backend has, and which are LOADED. Proxied through
+   serve.py because the browser can't reach an arbitrary picked URL (and because
+   serve.py validates it against the same allowlist as the write path).
+   Always resolves — an unreachable box must not block configuring it. */
+async function hermesLocalModels(baseUrl) {
+  try {
+    const r = await fetch(_API_BASE + '/hermes/local-models?base_url='
+                          + encodeURIComponent(baseUrl || ''));
+    if (!r.ok) return { models: [], detail: 'server ' + r.status };
+    return await r.json();
+  } catch (e) {
+    return { models: [], detail: 'offline' };
+  }
+}
+
 /* Read the container's CURRENT backend + whether it has a key. Used on load to
    decide whether to re-push the saved key after a recreate. */
 async function hermesGetProvider() {
@@ -600,6 +629,15 @@ async function hermesEnsureProvider() {
     if (cur && cur.configured) return { restored: false, configured: true };
     const s = getSettings();
     const prov = (s.hermesBackend || 'openrouter').toLowerCase();
+    if (HERMES_LOCAL_PROVIDERS.includes(prov)) {
+      // Local backends have no key to restore — their config IS the URL, and a
+      // recreate wipes ~/.hermes, so re-push it or the container silently
+      // reverts to whatever bootstrap picks.
+      const url = (s[HERMES_PROVIDER_URL_FIELD[prov]] || '').trim();
+      if (!url) return { restored: false, configured: false };
+      await hermesSetProvider(prov, '', '', url);
+      return { restored: true, provider: prov };
+    }
     const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
     const key = (s[field] || '').trim();
     if (!key) return { restored: false, configured: false };
@@ -2130,6 +2168,7 @@ window.CafresoHQClient = {
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
+  hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,

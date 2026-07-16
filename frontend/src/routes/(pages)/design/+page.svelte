@@ -302,12 +302,12 @@
     <h2 class="text-2xl font-bold mb-4">Illustrations</h2>
     <div class="flex gap-3.5 flex-wrap">
       <div class="bg-white rounded-lg p-2.5 flex-1" style="min-width: 280px;">
-        <img src="/assets/cafreso.png" alt="" class="w-full rounded-md block" style="height: 200px; object-fit: cover;" />
-        <div class="text-[11px] font-mono text-muted-foreground pt-2">cafreso.png — pixel-art vertical farm hero</div>
+        <img src="/assets/cafreso.webp" alt="" class="w-full rounded-md block" style="height: 200px; object-fit: cover;" />
+        <div class="text-[11px] font-mono text-muted-foreground pt-2">cafreso.webp — pixel-art vertical farm hero</div>
       </div>
       <div class="bg-white rounded-lg p-2.5 flex-1" style="min-width: 280px;">
-        <img src="/assets/cafreso-roaster.png" alt="" class="w-full rounded-md block" style="height: 200px; object-fit: contain; background: #fafafa;" />
-        <div class="text-[11px] font-mono text-muted-foreground pt-2">cafreso-roaster.png — pencil sketch</div>
+        <img src="/assets/cafreso-roaster.webp" alt="" class="w-full rounded-md block" style="height: 200px; object-fit: contain; background: #fafafa;" />
+        <div class="text-[11px] font-mono text-muted-foreground pt-2">cafreso-roaster.webp — pencil sketch</div>
       </div>
     </div>
   </section>

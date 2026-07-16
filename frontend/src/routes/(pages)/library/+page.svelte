@@ -14,7 +14,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import {
-    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob
+    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl } from '$lib/api/library.js';
 
@@ -22,9 +22,27 @@
   let health = null;
   let shown = 24;            // client-side paging over the (≤500) index
 
+  // Filter/sort the already-fetched index client-side — no extra fetch, the
+  // whole (≤500-entry) index is already local by the time this page renders.
+  let filterText = '';
+  let sortBy = 'newest';     // 'newest' | 'sources' — index arrives newest-first
+  let modeFilter = 'all';    // 'all' | 'deep' — Deep Research has its own section
+  $: deepCount = index && index.entries ? index.entries.filter((e) => e.mode === 'deep').length : 0;
+  $: filteredEntries = index && index.entries
+    ? (() => {
+        const needle = filterText.trim().toLowerCase();
+        let out = modeFilter === 'deep' ? index.entries.filter((e) => e.mode === 'deep') : index.entries;
+        if (needle) out = out.filter((e) => plain(e.query).toLowerCase().includes(needle));
+        return sortBy === 'sources' ? [...out].sort((a, b) => b.sources - a.sources) : out;
+      })()
+    : [];
+  function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
+  function setMode(m) { modeFilter = m; onFilterChange(); }
+
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
   let searchPhase = 'idle';  // idle | checking | queued | rejected | dark
+  const SLOW_AFTER_MS = 45_000;   // past this, name the slowness instead of just spinning
   let queueNote = '';
   let rejectReason = '';
   let searchSeq = 0;
@@ -33,6 +51,8 @@
   let drawerId = null;
   let drawerEntry = null;    // null while loading
   let drawerMissing = false;
+  let drawerResearch = null; // deep entries: {pages:[…]} note pages, lazily fetched
+  let openPageId = null;     // which note page is expanded in the drawer
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
 
@@ -44,11 +64,22 @@
   async function loadDrawer(id) {
     drawerEntry = null;
     drawerMissing = false;
+    drawerResearch = null;
+    openPageId = null;
     if (!id) return;
     const e = await libraryEntry(id);
     if (id !== drawerId) return;
-    if (e && e.id) drawerEntry = e; else drawerMissing = true;
+    if (e && e.id) {
+      drawerEntry = e;
+      // Deep entries carry a browsable set of note pages — load them so the
+      // drawer can show the research as pages, not just one synthesized answer.
+      if (e.mode === 'deep') {
+        const r = await libraryResearch(id);
+        if (id === drawerId && r && r.pages) drawerResearch = r;
+      }
+    } else drawerMissing = true;
   }
+  function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
   function openEntry(id) { goto(`/library?e=${encodeURIComponent(id)}`, { noScroll: true }); }
   function closeDrawer() { goto('/library', { noScroll: true }); }
@@ -85,7 +116,14 @@
     searchPhase = 'queued';
     queueNote = h.activeWorkers === 1 ? '1 worker researching' : `${h.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      onTick: (st) => { if (seq === searchSeq && st === 'claimed') queueNote = 'a worker picked it up…'; }
+      onTick: (st, elapsedMs) => {
+        if (seq !== searchSeq) return;
+        // Past ~45s a slow box is still healthy — say so rather than spin.
+        // 'slow' is a sentinel: the template swaps the whole sentence, since the
+        // default one promises "~10–30s" and would contradict itself here.
+        if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
+        else if (st === 'claimed') queueNote = 'a worker picked it up…';
+      }
     });
     if (seq !== searchSeq) return;
     if (done.status === 'done' && done.entry) {
@@ -109,6 +147,16 @@
   }
   function domain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+  }
+  /* Who asked this question — a person, or the library noticing its own gap?
+     The worker marks gap questions by appending 'ai-gap' to the engine field
+     (the canister entry has no askedBy; adding one is a canister upgrade).
+     Read it here rather than rendering the raw marker at the user. */
+  function askedByAi(entry) {
+    return /\bai-gap\b/.test(String(entry?.engine || ''));
+  }
+  function engineLabel(entry) {
+    return String(entry?.engine || '').replace(/\s*·?\s*\bai-gap\b/, '').trim() || 'brave';
   }
 </script>
 
@@ -158,7 +206,12 @@
       {#if searchPhase === 'queued'}
         <div class="lib-search-note">
           <span class="lib-pulse-dot"></span>
-          The research network is on it — {queueNote}. Fresh answers take ~10–30s and join the web forever.
+          {#if queueNote === 'slow'}
+            Still working — this one's a slow one. The answer joins the library either way,
+            so you can leave this page and find it here.
+          {:else}
+            The research network is on it — {queueNote}. Fresh answers usually land in a few seconds and join the web forever.
+          {/if}
         </div>
       {:else if searchPhase === 'rejected'}
         <div class="lib-search-note lib-warn">
@@ -227,24 +280,74 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
-    <div class="lib-grid">
-      {#each index.entries.slice(0, shown) as e (e.id)}
-        <button class="lib-card lib-card-btn" on:click={() => openEntry(e.id)}>
-          <h3>{plain(e.query)}</h3>
-          <div class="lib-chips">
-            <span class="lib-chip">{fmtDate(e.ts)}</span>
-            <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-            <span class="lib-chip lib-chip-chain">on-chain</span>
-          </div>
+    {#if deepCount > 0}
+      <div class="lib-modebar" role="group" aria-label="Filter by research depth">
+        <button class="lib-modetab" class:on={modeFilter === 'all'} on:click={() => setMode('all')}>
+          All questions
         </button>
-      {/each}
-    </div>
-    {#if index.entries.length > shown}
-      <div style="text-align: center;">
-        <button class="lib-more" on:click={() => (shown += 24)}>
-          Show more ({index.entries.length - shown} remaining)
+        <button class="lib-modetab lib-modetab-deep" class:on={modeFilter === 'deep'} on:click={() => setMode('deep')}>
+          <Icon name="tree-structure" size={14} /> Deep Research
+          <span class="lib-modecount">{deepCount}</span>
         </button>
       </div>
+      {#if modeFilter === 'deep'}
+        <p class="lib-modehint">
+          Multi-angle research queries — each broke a question into several searches and note pages you can walk as a tree.
+        </p>
+      {/if}
+    {/if}
+
+    <div class="lib-filterbar">
+      <div class="lib-filter-input">
+        <Icon name="funnel" size={14} style="color: hsl(var(--pg-fg-muted)); flex-shrink: 0;" />
+        <input
+          type="text"
+          placeholder="Filter {index.entries.length} entries…"
+          bind:value={filterText}
+          on:input={onFilterChange}
+          aria-label="Filter library entries"
+        />
+        {#if filterText}
+          <button class="lib-filter-clear" on:click={() => { filterText = ''; onFilterChange(); }} aria-label="Clear filter">
+            <Icon name="x" size={12} />
+          </button>
+        {/if}
+      </div>
+      <select class="lib-sort-select" bind:value={sortBy} on:change={onFilterChange} aria-label="Sort entries">
+        <option value="newest">Newest first</option>
+        <option value="sources">Most sources</option>
+      </select>
+    </div>
+
+    {#if filteredEntries.length === 0}
+      <div class="lib-empty">
+        <div class="lib-empty-glyph" aria-hidden="true">◌</div>
+        <h2>No entries match "{filterText}"</h2>
+        <p>Try a shorter word, or <button class="lib-filter-reset-link" on:click={() => { filterText = ''; onFilterChange(); }}>clear the filter</button> to browse everything.</p>
+      </div>
+    {:else}
+      <div class="lib-grid">
+        {#each filteredEntries.slice(0, shown) as e (e.id)}
+          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
+            <h3>{plain(e.query)}</h3>
+            <div class="lib-chips">
+              {#if e.mode === 'deep'}
+                <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+              {/if}
+              <span class="lib-chip">{fmtDate(e.ts)}</span>
+              <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+              <span class="lib-chip lib-chip-chain">on-chain</span>
+            </div>
+          </button>
+        {/each}
+      </div>
+      {#if filteredEntries.length > shown}
+        <div style="text-align: center;">
+          <button class="lib-more" on:click={() => (shown += 24)}>
+            Show more ({filteredEntries.length - shown} remaining)
+          </button>
+        </div>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -262,8 +365,17 @@
       <div class="lib-kicker">Library entry · {drawerEntry.id}</div>
       <h2 class="lib-drawer-q">{plain(drawerEntry.query)}</h2>
       <div class="lib-chips" style="margin-bottom: 18px;">
+        {#if drawerEntry.mode === 'deep'}
+          <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+        {/if}
+        {#if askedByAi(drawerEntry)}
+          <span class="lib-chip lib-chip-ai"
+                title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">
+            ✦ Asked by Cafreso to fill a gap
+          </span>
+        {/if}
         {#if drawerEntry.model}<span class="lib-chip">🤖 {drawerEntry.model}</span>{/if}
-        {#if drawerEntry.engine}<span class="lib-chip">🔎 {drawerEntry.engine}</span>{/if}
+        {#if drawerEntry.engine}<span class="lib-chip">🔎 {engineLabel(drawerEntry)}</span>{/if}
         <span class="lib-chip">📅 {fmtDate(drawerEntry.answeredAt || drawerEntry.ts)}</span>
         {#if drawerEntry.worker}<span class="lib-chip" title={drawerEntry.worker}>⚙ {shortPrincipal(drawerEntry.worker)}</span>{/if}
       </div>
@@ -289,17 +401,67 @@
         </ol>
       {/if}
 
+      {#if drawerEntry.mode === 'deep' && drawerResearch?.pages?.length}
+        <div class="lib-kicker" style="margin-top: 24px;">The research tree · {drawerResearch.pages.length} note pages</div>
+        <p class="lib-deep-lede">
+          This question was researched from several angles. Open a page to read the note, browse the whole
+          thing as a vault of linked markdown files, or explore the tree in the graph below.
+        </p>
+        <a class="lib-vault-btn" href="/library/vault?e={drawerEntry.id}">
+          <Icon name="vault" size={15} />
+          <span class="lib-vault-btn-t">
+            <strong>Browse Research</strong>
+            <small>File tree · wikilinks · download as .md for Obsidian</small>
+          </span>
+          <Icon name="arrow-right" size={14} />
+        </a>
+        <div class="lib-pages">
+          {#each drawerResearch.pages as p, i}
+            <div class="lib-page" class:open={openPageId === p.id}>
+              <button class="lib-page-head" on:click={() => togglePage(p.id)} aria-expanded={openPageId === p.id}>
+                <span class="lib-page-n">{i + 1}</span>
+                <span class="lib-page-title">
+                  <span class="lib-page-t">{plain(p.title)}</span>
+                  {#if p.question}<span class="lib-page-q">{plain(p.question)}</span>{/if}
+                </span>
+                <Icon name={openPageId === p.id ? 'caret-up' : 'caret-down'} size={14} style="flex-shrink: 0; color: hsl(var(--pg-fg-muted));" />
+              </button>
+              {#if openPageId === p.id}
+                <div class="lib-page-body">
+                  <p class="lib-page-note">{plain(p.body)}</p>
+                  {#if p.sources?.length}
+                    <ol class="lib-sources" style="margin-top: 12px;">
+                      {#each p.sources as s, si}
+                        <li>
+                          <a href={s.url} target="_blank" rel="noopener noreferrer">
+                            <span class="lib-src-n">[{si + 1}]</span>
+                            <span class="lib-src-t">{plain(s.title)}</span>
+                            <span class="lib-src-d">{domain(s.url)}</span>
+                          </a>
+                        </li>
+                      {/each}
+                    </ol>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       {#if libraryGraphViewerUrl(drawerEntry.id)}
-        <div class="lib-kicker" style="margin-top: 22px;">This answer as a graph</div>
+        {@const deepEntry = drawerEntry.mode === 'deep'}
+        {@const gvUrl = libraryGraphViewerUrl(drawerEntry.id, { deep: deepEntry })}
+        <div class="lib-kicker" style="margin-top: 22px;">{deepEntry ? 'The research tree, explorable' : 'This answer as a graph'}</div>
         <iframe
-          src={libraryGraphViewerUrl(drawerEntry.id)}
-          title="Graph of this answer"
+          src={gvUrl}
+          title={deepEntry ? 'The research tree — click a topic to read its note' : 'Graph of this answer'}
           class="lib-drawer-graph"
           loading="lazy"
         ></iframe>
         <div class="lib-drawer-actions">
-          <a class="lib-link" href={libraryGraphViewerUrl(drawerEntry.id)} target="_blank" rel="noopener noreferrer">
-            Open graph <Icon name="arrow-up-right" size={12} />
+          <a class="lib-link" href={gvUrl} target="_blank" rel="noopener noreferrer">
+            {deepEntry ? 'Open the research tree' : 'Open graph'} <Icon name="arrow-up-right" size={12} />
           </a>
           <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
             on:click={() => { try { navigator.clipboard.writeText(location.origin + '/library?e=' + drawerEntry.id); } catch {} }}>
@@ -446,14 +608,43 @@
   .lib-graph-open:hover { border-color: hsl(45 85% 55%); }
 
   /* ── Entry stream ──────────────────────────────────────────────────────── */
+  .lib-filterbar {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  }
+  .lib-filter-input {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+    background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 999px;
+    padding: 8px 14px; transition: border-color 0.14s;
+  }
+  .lib-filter-input:focus-within { border-color: hsl(45 75% 60%); }
+  .lib-filter-input input {
+    flex: 1; min-width: 0; border: none; outline: none; background: none;
+    font: 14px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg));
+  }
+  .lib-filter-input input::placeholder { color: hsl(40 15% 60%); }
+  .lib-filter-clear {
+    display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+    background: hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted)); flex-shrink: 0; padding: 0;
+  }
+  .lib-filter-clear:hover { background: hsl(var(--pg-border)); }
+  .lib-sort-select {
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
+    padding: 8px 14px; font: 600 12.5px Inter, system-ui, sans-serif;
+    color: hsl(var(--pg-fg)); cursor: pointer; flex-shrink: 0;
+  }
+  .lib-filter-reset-link {
+    background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    font: inherit; color: hsl(45 70% 40%); text-decoration: underline;
+  }
   .lib-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
     gap: 14px;
   }
   .lib-card {
-    background: hsl(26 45% 98%);
-    border: 1px solid hsl(26 30% 87%);
+    background: hsl(var(--pg-surface));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 18px;
     padding: 20px;
     box-shadow: 0 4px 18px -10px hsl(24 35% 15% / 0.15);
@@ -470,34 +661,110 @@
   .lib-card h3 {
     font-family: 'Playfair Display', serif;
     font-size: 17.5px; font-weight: 600; line-height: 1.35;
-    color: hsl(222 47% 11%);
+    color: hsl(var(--pg-fg));
     margin: 0 0 12px;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
   .lib-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .lib-chip {
-    font-size: 10.5px; font-weight: 600; color: hsl(215 16% 40%);
-    background: hsl(26 35% 93%); border-radius: 999px; padding: 3px 9px;
+    font-size: 10.5px; font-weight: 600; color: hsl(var(--pg-fg-muted));
+    background: hsl(var(--pg-hover)); border-radius: 999px; padding: 3px 9px;
   }
   .lib-chip-chain { background: hsl(45 80% 88%); color: hsl(38 65% 30%); }
+  .lib-chip-deep {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: hsl(266 70% 94%); color: hsl(266 60% 42%); border: 1px solid hsl(266 55% 86%);
+  }
+
+  /* Deep Research section toggle — a distinct tab pair above the filter bar. */
+  .lib-modebar { display: flex; gap: 8px; margin-bottom: 14px; }
+  .lib-modetab {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));
+    border-radius: 999px; padding: 8px 16px; cursor: pointer;
+    font: 600 13px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg-muted));
+    transition: border-color .14s, color .14s, background .14s;
+  }
+  .lib-modetab.on { color: hsl(var(--pg-fg)); border-color: hsl(45 75% 60%); background: hsl(var(--pg-surface)); }
+  .lib-modetab-deep.on {
+    color: hsl(266 60% 42%); border-color: hsl(266 60% 70%);
+    background: hsl(266 70% 96%);
+  }
+  .lib-modecount {
+    font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: hsl(266 60% 88%); color: hsl(266 55% 38%);
+  }
+  .lib-modehint { font-size: 12.5px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: -4px 0 16px; max-width: 60ch; }
+
+  /* Deep card accent — a soft violet edge so a deep entry reads as richer. */
+  .lib-card-deep { border-color: hsl(266 55% 84%); }
+  .lib-card-deep:hover { border-color: hsl(266 60% 66%); }
+
+  /* Vault CTA — the flagship way into a deep entry. */
+  .lib-vault-btn {
+    display: flex; align-items: center; gap: 12px; text-decoration: none;
+    border: 1px solid hsl(266 55% 78%); border-radius: 13px; padding: 12px 14px;
+    background: linear-gradient(120deg, hsl(266 70% 96%), hsl(266 60% 98%));
+    color: hsl(266 60% 40%); margin: 0 0 14px;
+    transition: border-color .14s, transform .14s;
+  }
+  .lib-vault-btn:hover { border-color: hsl(266 60% 58%); transform: translateY(-1px); }
+  .lib-vault-btn-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .lib-vault-btn-t strong { font-size: 13.5px; }
+  .lib-vault-btn-t small { font-size: 11px; color: hsl(266 30% 52%); }
+  :global(.dark) .lib-vault-btn {
+    background: linear-gradient(120deg, hsl(266 55% 30% / 0.35), hsl(266 55% 24% / 0.2));
+    border-color: hsl(266 45% 48%); color: hsl(266 85% 85%);
+  }
+  :global(.dark) .lib-vault-btn-t small { color: hsl(266 40% 70%); }
+
+  /* Drawer note pages — the research as a small notebook. */
+  .lib-deep-lede { font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 6px 0 12px; }
+  .lib-pages { display: flex; flex-direction: column; gap: 8px; }
+  .lib-page { border: 1px solid hsl(var(--pg-border)); border-radius: 12px; overflow: hidden; background: hsl(var(--pg-surface)); }
+  .lib-page.open { border-color: hsl(266 55% 72%); }
+  .lib-page-head {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 12px 14px; border: none; background: transparent; cursor: pointer; font: inherit;
+  }
+  .lib-page-n {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 7px;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    background: hsl(266 60% 92%); color: hsl(266 55% 42%);
+  }
+  .lib-page-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .lib-page-t { font-size: 13.5px; font-weight: 600; color: hsl(var(--pg-fg)); }
+  .lib-page-q {
+    font-size: 11.5px; color: hsl(var(--pg-fg-muted)); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lib-page-body { padding: 0 14px 14px 47px; }
+  .lib-page-note { font-size: 13.5px; line-height: 1.68; color: hsl(var(--pg-fg)); margin: 0; white-space: pre-wrap; }
+  /* Louder than the other chips on purpose: "a machine chose to ask this" is
+     the one thing on this card a reader would want to know unprompted, and it
+     should never be mistaken for a neutral metadata pill. */
+  .lib-chip-ai {
+    background: hsl(266 70% 95%); color: hsl(266 55% 40%);
+    border: 1px solid hsl(266 55% 85%); cursor: help;
+  }
 
   .lib-more {
-    border: 1px solid hsl(26 30% 82%); background: white; border-radius: 999px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
     padding: 10px 22px; font: 600 13px Inter, system-ui, sans-serif;
-    color: hsl(222 47% 11%); cursor: pointer;
+    color: hsl(var(--pg-fg)); cursor: pointer;
   }
 
   .lib-empty {
     text-align: center; padding: 70px 20px;
-    background: hsl(26 45% 98%); border: 1px dashed hsl(26 30% 82%); border-radius: 1.75rem;
+    background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-border)); border-radius: 1.75rem;
   }
   .lib-empty-glyph { font-size: 40px; color: hsl(45 80% 55%); margin-bottom: 12px; }
-  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(222 47% 11%); }
-  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(215 16% 45%); max-width: 48ch; margin: 0 auto; }
+  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(var(--pg-fg)); }
+  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(var(--pg-fg-muted)); max-width: 48ch; margin: 0 auto; }
 
   .lib-skel {
     display: inline-block; height: 14px; border-radius: 6px;
-    background: linear-gradient(90deg, hsl(26 30% 90%) 25%, hsl(26 35% 95%) 50%, hsl(26 30% 90%) 75%);
+    background: linear-gradient(90deg, hsl(var(--pg-hover)) 25%, hsl(var(--pg-border)) 50%, hsl(var(--pg-hover)) 75%);
     background-size: 200% 100%;
     animation: lib-shimmer 1.4s ease-in-out infinite;
   }
@@ -513,8 +780,8 @@
     position: fixed; z-index: 61;
     top: 0; right: 0; bottom: 0;
     width: min(520px, 94vw);
-    background: hsl(26 45% 98%);
-    border-left: 1px solid hsl(26 30% 85%);
+    background: hsl(var(--pg-surface));
+    border-left: 1px solid hsl(var(--pg-border));
     box-shadow: -24px 0 60px -20px hsl(24 40% 8% / 0.4);
     padding: 26px 26px calc(26px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
@@ -524,26 +791,26 @@
   .lib-drawer-close {
     position: absolute; top: 16px; right: 16px;
     width: 32px; height: 32px; border: none; border-radius: 9px;
-    background: hsl(26 35% 93%); color: hsl(215 16% 40%);
+    background: hsl(var(--pg-hover)); color: hsl(var(--pg-fg-muted));
     cursor: pointer; display: grid; place-items: center;
   }
   .lib-drawer-q {
     font-family: 'Playfair Display', serif;
     font-size: 24px; font-weight: 700; line-height: 1.25;
-    color: hsl(222 47% 11%); margin: 8px 0 12px;
+    color: hsl(var(--pg-fg)); margin: 8px 0 12px;
   }
-  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(222 30% 18%); margin: 0; }
-  .lib-muted { color: hsl(215 16% 50%); font-style: italic; }
+  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(var(--pg-fg)); margin: 0; }
+  .lib-muted { color: hsl(var(--pg-fg-muted)); font-style: italic; }
   .lib-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .lib-sources a {
     display: flex; align-items: baseline; gap: 8px; text-decoration: none;
-    font-size: 13px; color: hsl(222 47% 11%);
+    font-size: 13px; color: hsl(var(--pg-fg));
   }
-  .lib-src-n { color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0; }
+  .lib-src-n { color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0; }
   .lib-src-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lib-src-d { color: hsl(215 16% 55%); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  .lib-src-d { color: hsl(var(--pg-fg-muted)); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
   .lib-drawer-graph {
-    width: 100%; height: 260px; border: 1px solid hsl(26 30% 85%); border-radius: 14px;
+    width: 100%; height: 260px; border: 1px solid hsl(var(--pg-border)); border-radius: 14px;
     background: hsl(250 30% 7%); margin-top: 8px;
   }
   .lib-drawer-actions { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; }
@@ -556,7 +823,7 @@
     .lib-drawer {
       top: auto; left: 0; right: 0; width: auto;
       max-height: 86dvh;
-      border-left: none; border-top: 1px solid hsl(26 30% 85%);
+      border-left: none; border-top: 1px solid hsl(var(--pg-border));
       border-radius: 22px 22px 0 0;
       animation: lib-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
@@ -569,4 +836,31 @@
     .lib-drawer { animation: none; }
     .lib-card-btn { transition: none; }
   }
+
+  /* Dark-mode text/fills for the branded pills + gold links. Their light
+     values (pale-gold / pale-purple washes with dark ink) would read as loud
+     bright chips on the dark cards, so flip to translucent fills + light ink.
+     Everything else flips automatically via the --pg-* tokens above. */
+  :global(.dark) .lib-chip-chain {
+    background: hsl(45 85% 55% / 0.16);
+    color: hsl(45 88% 72%);
+  }
+  :global(.dark) .lib-chip-ai {
+    background: hsl(266 55% 32% / 0.4);
+    color: hsl(266 85% 85%);
+    border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-filter-reset-link { color: hsl(45 85% 64%); }
+  :global(.dark) .lib-drawer-actions .lib-link { color: hsl(45 85% 66%); }
+  :global(.dark) .lib-chip-deep {
+    background: hsl(266 55% 32% / 0.4); color: hsl(266 85% 85%); border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-modetab-deep.on {
+    background: hsl(266 55% 30% / 0.35); color: hsl(266 85% 84%); border-color: hsl(266 50% 52%);
+  }
+  :global(.dark) .lib-modecount { background: hsl(266 55% 40% / 0.5); color: hsl(266 85% 86%); }
+  :global(.dark) .lib-card-deep { border-color: hsl(266 45% 40% / 0.6); }
+  :global(.dark) .lib-card-deep:hover { border-color: hsl(266 55% 58%); }
+  :global(.dark) .lib-page.open { border-color: hsl(266 50% 52%); }
+  :global(.dark) .lib-page-n { background: hsl(266 55% 38% / 0.5); color: hsl(266 85% 85%); }
 </style>

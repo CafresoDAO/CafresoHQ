@@ -119,7 +119,7 @@
   >
     <div
       class="w-full sm:max-w-[460px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[92vh] overflow-y-auto"
-      style="background: white; border-top: 1px solid hsl(26 30% 85%);"
+      style="background: hsl(var(--pg-elevated)); border-top: 1px solid hsl(var(--pg-border));"
       on:click|stopPropagation
       on:keydown|stopPropagation
       role="document"
@@ -132,7 +132,7 @@
             style="background: hsl(42 80% 92%); border: 1px solid hsl(42 70% 78%);"
           >
             {#if token.logo}
-              <img src={token.logo} alt="" class="w-[22px] h-[22px] object-contain" />
+              <img src={token.logo} alt="" class="w-[22px] h-[22px] object-contain" loading="lazy" decoding="async" />
             {:else}
               <span class="text-[10.5px] font-bold" style="color: hsl(32 56% 25%);">
                 {token.symbol.replace('$', '').slice(0, 3).toUpperCase()}
@@ -140,10 +140,10 @@
             {/if}
           </div>
           <div class="min-w-0">
-            <div class="font-bold text-[16px] leading-tight" style="color: hsl(222 47% 11%);">
+            <div class="font-bold text-[16px] leading-tight" style="color: hsl(var(--pg-fg));">
               Send {token.symbol}
             </div>
-            <div class="text-[11.5px] truncate" style="color: hsl(215 16% 47%);">
+            <div class="text-[11.5px] truncate" style="color: hsl(var(--pg-fg-muted));">
               Balance: <span class="tabular-nums">{balanceFormatted}</span> {token.symbol}
             </div>
           </div>
@@ -183,7 +183,7 @@
         <!-- Form -->
         <form on:submit={submit} class="space-y-3">
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(215 16% 47%);" for="send-to">
+            <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="send-to">
               Recipient principal
             </label>
             <input
@@ -191,7 +191,7 @@
               bind:value={recipient}
               placeholder="e.g. rc62u-qypnw-…-jae"
               class="w-full text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none"
-              style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+              style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
               autocomplete="off"
               spellcheck="false"
               disabled={phase === 'sending'}
@@ -200,7 +200,7 @@
 
           <div>
             <div class="flex items-center justify-between mb-1.5">
-              <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(215 16% 47%);" for="send-amount">
+              <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(var(--pg-fg-muted));" for="send-amount">
                 Amount
               </label>
               <button
@@ -215,7 +215,7 @@
             </div>
             <div
               class="flex items-center gap-2 rounded-[10px] px-3 py-2"
-              style="background: white; border: 1px solid hsl(26 30% 85%);"
+              style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));"
             >
               <input
                 id="send-amount"
@@ -229,7 +229,7 @@
               />
               <span class="text-[12px] font-semibold" style="color: hsl(32 56% 25%);">{token.symbol}</span>
             </div>
-            <div class="text-[11px] mt-1.5 flex items-center gap-1.5" style="color: hsl(215 16% 47%);">
+            <div class="text-[11px] mt-1.5 flex items-center gap-1.5" style="color: hsl(var(--pg-fg-muted));">
               <Icon name="info" size={12} />
               Network fee:
               <span class="tabular-nums">{loadingFee ? '…' : feeFormatted}</span>
@@ -241,8 +241,8 @@
           </div>
 
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(215 16% 47%);" for="send-memo">
-              Memo <span class="font-normal normal-case" style="color: hsl(215 16% 62%);">(optional, 32 bytes max)</span>
+            <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="send-memo">
+              Memo <span class="font-normal normal-case" style="color: hsl(var(--pg-fg-subtle));">(optional, 32 bytes max)</span>
             </label>
             <input
               id="send-memo"
@@ -250,7 +250,7 @@
               placeholder="e.g. order-0042"
               maxlength="32"
               class="w-full text-[13px] bg-white rounded-[10px] px-3 py-2 outline-none"
-              style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+              style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
               disabled={phase === 'sending'}
             />
           </div>
@@ -278,7 +278,7 @@
             </Button>
           </div>
 
-          <p class="text-[11px] text-center pt-1" style="color: hsl(215 16% 55%);">
+          <p class="text-[11px] text-center pt-1" style="color: hsl(var(--pg-fg-muted));">
             Transfer is signed with your Internet Identity and lands directly on the {token.symbol} ICRC-1 ledger. This dapp never custodies the funds.
           </p>
         </form>

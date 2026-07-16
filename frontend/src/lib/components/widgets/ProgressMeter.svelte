@@ -5,10 +5,10 @@
   export let label = '';
   export let sub = '';
   export let accent = 'hsl(43 74% 54%)';
-  export let bg = 'hsl(26 40% 96%)';
-  export let border = 'hsl(26 30% 85%)';
-  export let textColor = 'hsl(222 47% 11%)';
-  export let subColor = 'hsl(215 16% 47%)';
+  export let bg = 'hsl(var(--pg-hover))';
+  export let border = 'hsl(var(--pg-border))';
+  export let textColor = 'hsl(var(--pg-fg))';
+  export let subColor = 'hsl(var(--pg-fg-muted))';
 
   $: pct = Math.min(100, Math.max(0, (value / max) * 100));
   $: trackColor = bg === 'white' ? 'hsl(215 16% 92%)' : 'hsl(0 0% 100% / 0.3)';

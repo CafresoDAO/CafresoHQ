@@ -65,8 +65,8 @@
           {#if !p.unavailable}
             <span class="text-sm">Quantity</span>
             <div
-              class="inline-flex items-center bg-white overflow-hidden rounded-md"
-              style="border: 1px solid hsl(214 32% 91%);"
+              class="inline-flex items-center overflow-hidden rounded-md"
+              style="border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));"
             >
               <button
                 on:click={() => (qty = Math.max(1, qty - 1))}
@@ -104,7 +104,18 @@
     </div>
   </div>
 {:else}
-  <div class="mx-auto p-10 text-center">
-    <h1 class="text-3xl font-bold">Not found</h1>
+  <div class="mx-auto p-10" style="max-width: 640px;">
+    <div class="rounded-[14px] px-4 py-10 text-center"
+      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(26 30% 75%);"
+    >
+      <Icon name="package" size={28} style="color: hsl(32 56% 35%);" />
+      <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(var(--pg-fg));">Product not found</h3>
+      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px]" style="color: hsl(var(--pg-fg-muted));">
+        This item may have been renamed or removed. Browse everything else in the shop.
+      </p>
+      <Button href="/shop">
+        <Icon name="storefront" size={14} /> Back to shop
+      </Button>
+    </div>
   </div>
 {/if}

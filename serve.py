@@ -387,6 +387,84 @@ def _hermes_home():
     return os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
 
 
+def _validate_local_base_url(u):
+    """(ok, error) for a LOCAL model backend URL the operator typed.
+
+    ALLOWLIST, not blocklist — whatever this accepts, the container will later
+    POST to, and /hermes is only key-protected when CAFRESOHQ_API_KEY is set. So
+    this is the whole defence, not a layer of it.
+
+    IP-literal/localhost only is deliberate and is what closes DNS rebinding: we
+    validate at write time but hermes resolves at call time, so a hostname that
+    passes here can point anywhere seconds later. An IP literal has no such gap.
+    Operators with a real internal DNS name can set HQ_ALLOW_REMOTE_BACKEND=1
+    and accept that risk knowingly.
+    """
+    import ipaddress
+    u = (u or '').strip()
+    if not u:
+        return False, 'base_url is required'
+    if len(u) > 300:
+        return False, 'base_url too long'
+    try:
+        p = urllib.parse.urlsplit(u)
+    except Exception:
+        return False, 'unparseable base_url'
+    if p.scheme not in ('http', 'https'):
+        return False, 'base_url must be http or https'
+    if p.username or p.password:
+        return False, 'base_url must not contain credentials'
+    if p.query or p.fragment:
+        return False, 'base_url must not contain a query or fragment'
+    if '..' in p.path:
+        return False, 'base_url path must not contain ".."'
+    if not re.fullmatch(r'(/[\w\-.]+)*/?', p.path or ''):
+        return False, 'base_url has an unexpected path'
+    host = p.hostname
+    if not host:
+        return False, 'base_url has no host'
+    if os.environ.get('HQ_ALLOW_REMOTE_BACKEND', '').strip() == '1':
+        return True, ''
+    # IP literal (or the resolver-fixed name 'localhost') ONLY — this is the line
+    # that actually closes DNS rebinding, and the docstring above promises it. We
+    # validate here at WRITE time, but hermes re-resolves the stored base_url at
+    # CALL time, so any real DNS name that passes now can point at 169.254.169.254
+    # (or an internal service) a second later. An IP literal can't drift;
+    # 'localhost' is resolver-pinned to loopback. A genuine internal DNS name
+    # needs HQ_ALLOW_REMOTE_BACKEND=1 (above), accepting that risk knowingly.
+    # ipaddress.ip_address() is also strict, so it rejects int/octal/hex-encoded
+    # hosts (e.g. http://2130706433/) that getaddrinfo would otherwise accept.
+    if host != 'localhost':
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return False, ('base_url host must be an IP literal or "localhost" — a DNS '
+                           'name can rebind between validation and use (set '
+                           'HQ_ALLOW_REMOTE_BACKEND=1 to allow a hostname)')
+    try:
+        infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == 'https' else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except Exception:
+        return False, 'could not resolve %s' % host
+    addrs = {i[4][0] for i in infos}
+    if not addrs:
+        return False, 'could not resolve %s' % host
+    for a in addrs:
+        try:
+            ip = ipaddress.ip_address(a)
+        except ValueError:
+            return False, 'unexpected address for %s' % host
+        # link-local (169.254/16, fe80::/10) covers the cloud metadata endpoint,
+        # which some definitions call "private" — it must never be reachable.
+        if ip.is_link_local:
+            return False, 'link-local addresses are not allowed'
+        if not (ip.is_private or ip.is_loopback):
+            return False, ('%s resolves to the public address %s — a local backend must be '
+                           'on private or loopback space (set HQ_ALLOW_REMOTE_BACKEND=1 to '
+                           'override)' % (host, a))
+    return True, ''
+
+
 def _trial_state():
     """{'active': bool, 'provider': str} — read fresh so a BYOK clear takes effect
     without a restart. The operator can also kill the shared trial network-wide
@@ -563,19 +641,59 @@ threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 #   WORKER_SECRET=<64-hex secret shown once at registration>
 #   BRAVE_API_KEY=<your free Brave key>
 #   SEARCH_STATE_URL=<override for local-replica testing; defaults to mainnet>
+#   WORKER_JOB_BUDGET=<seconds for the whole claim→fulfill window; default 200>
+#   WORKER_IDLE_TIMEOUT=<seconds of LLM silence before giving up; default 25>
+#   WORKER_MAX_TOKENS=<completion cap for the answer; default 700>
+#   WORKER_MODEL=<OPTIONAL override; by default search follows the operator's
+#                 HQ brain picker — see _sw_model()>
+#
+# The model comes from the brain picker by default, deliberately: an operator
+# who switches their brain in HQ expects search to follow, and a stale
+# WORKER_MODEL pin pointing at a model the backend no longer has loaded fails
+# EVERY job (silently, sources-only) with no hint as to why.
 #
 # The loop is SINGLE-THREADED by design: the canister's replay guard requires
 # each worker's signed timestamps to strictly increase, which serialized calls
 # guarantee for free. Workers run standalone — this loop makes only outbound
 # calls and never touches the idle tracker, so it will not keep a fleet
 # container awake by itself; a worker box must have idle-stop disabled.
+#
+# EVERY job runs against one wall-clock deadline. The canister's claim lease is
+# 240s (CLAIM_LEASE_NS) and is NOT renewable — heartbeat does not touch
+# claimedAt and there is no renew op. Overrunning it is silent and lossy: the
+# fulfill comes back not-your-claim, the work is discarded, attempts increments,
+# and three strikes fail the job for good. So Brave + LLM + graph + upload all
+# have to fit inside _SW_JOB_BUDGET, which sits 40s inside the lease.
 _SW_ENABLED = os.environ.get('SEARCH_WORKER', '').strip() == '1'
 _SW_PRINCIPAL = os.environ.get('WORKER_PRINCIPAL', '').strip()
 _SW_SECRET_HEX = os.environ.get('WORKER_SECRET', '').strip()
 _SW_BASE = os.environ.get(
     'SEARCH_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
-_SW_MODEL_HINT = os.environ.get('WORKER_MODEL', '').strip()
+_SW_JOB_BUDGET = float(os.environ.get('WORKER_JOB_BUDGET', '') or 200)
+_SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
+_SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
+_SW_MAX_TOKENS = int(os.environ.get('WORKER_MAX_TOKENS', '') or 700)
+_SW_ANSWER_CAP = 4000      # LIB_MAX_ANSWER — the canister rejects anything longer
+# Deep research (job['mode']=='deep') runs a multi-hop loop — plan angles, then
+# search + write a note page per angle, then synthesise — so it needs a bigger
+# wall-clock budget. The canister hands deep jobs a ~6.3-min lease
+# (DEEP_LEASE_NS); this sits ~30s inside it, same margin discipline as the fast
+# budget vs the 240s lease.
+_SW_DEEP_BUDGET = float(os.environ.get('WORKER_DEEP_BUDGET', '') or 350)
+_SW_DEEP_MAX_TOPICS = int(os.environ.get('WORKER_DEEP_TOPICS', '') or 5)
+_SW_DEEP_PAGE_CAP = 1400   # per note-page body; the whole tree caps at LIB_MAX_GRAPH
 _sw_last_ts = 0
+
+
+def _sw_left(deadline, floor=1.0):
+    """Seconds until `deadline`, floored. The floor is load-bearing: urlopen
+    reads timeout=0 as 'block forever', so passing a non-positive remaining
+    straight through would turn a blown deadline into a hang."""
+    if deadline is None:
+        return None
+    return max(floor, deadline - time.monotonic())
+
+
 
 
 def _sw_call(op, extra_lines):
@@ -601,18 +719,101 @@ def _sw_call(op, extra_lines):
         return 0, {'error': str(e)[:200]}
 
 
-def _sw_brave(q):
+# ── Brave quota ledger ──────────────────────────────────────────────────────
+# Brave's plan allows 1000 queries per MONTH (~33/day). Its 50/s rate limit is
+# irrelevant next to that — volume is what binds, and nothing else in this
+# process was counting it. Note the canister's searchDailyBudget is 500/day
+# (main.mo:1823) = ~15,000/month, i.e. 15x this quota: that cap has never bound
+# because volume is low, and it does NOT protect the key. This ledger does.
+#
+# Three spenders, and they are NOT equal. Priority is encoded as a reserve each
+# one may not dip below, so scarcity degrades in a fixed order:
+#   human  — a person is waiting. Served until the quota is gone.
+#   deep   — user-requested deep research. Yields once the month is 15% left.
+#   gap    — the 10am cron's machine-invented questions. Yields at 35%, so it
+#            is always the first to starve. This is what "weigh human questions
+#            more" means in the only place it can be enforced: the budget.
+_BRAVE_CAP = int(os.environ.get('BRAVE_MONTHLY_CAP', '') or 1000)
+_BRAVE_RESERVE = {'human': 0.0, 'deep': 0.15, 'gap': 0.35}
+_brave_lock = threading.Lock()
+
+
+def _brave_month():
+    """Calendar month in UTC. If your Brave plan renews on a billing date rather
+    than the 1st, this under-counts near the boundary — set BRAVE_MONTHLY_CAP
+    lower to buy margin rather than trying to model the billing cycle here."""
+    return time.strftime('%Y-%m', time.gmtime())
+
+
+def _brave_usage():
+    u = _night_load('brave-usage.json', {})
+    if not isinstance(u, dict) or u.get('month') != _brave_month():
+        return {'month': _brave_month(), 'used': 0, 'byKind': {}}
+    return u
+
+
+def _brave_remaining():
+    return max(0, _BRAVE_CAP - int(_brave_usage().get('used', 0) or 0))
+
+
+def _brave_spend(kind='human', n=1):
+    """Reserve n queries for `kind`. True = go ahead (and it's already counted).
+
+    Counts on RESERVE, not on success: a Brave call that 500s or times out has
+    still consumed quota on their side, so counting after the fact would drift
+    optimistic exactly when the key is in trouble."""
+    with _brave_lock:
+        u = _brave_usage()
+        used = int(u.get('used', 0) or 0)
+        floor = _BRAVE_CAP * _BRAVE_RESERVE.get(kind, 0.35)
+        if used + n > _BRAVE_CAP - floor:
+            return False
+        u['used'] = used + n
+        u['byKind'][kind] = int(u['byKind'].get(kind, 0) or 0) + n
+        try:
+            _night_save('brave-usage.json', u)
+        except Exception:
+            pass   # a ledger we can't persist is still better than no ceiling
+        return True
+
+
+def _brave_refund(kind, n):
+    """Hand back reserved-but-unspent queries.
+
+    The gap cron reserves its whole batch up front (it must — it can't submit
+    questions it might not be able to pay for), but dedup and validation
+    routinely drop most of them. Without this, a day that reserves 10 and
+    submits 2 leaks 8 queries, and at ~240/month leaked the cron would starve
+    itself against its own reserve for no work done."""
+    if n <= 0:
+        return
+    with _brave_lock:
+        u = _brave_usage()
+        u['used'] = max(0, int(u.get('used', 0) or 0) - n)
+        u['byKind'][kind] = max(0, int(u['byKind'].get(kind, 0) or 0) - n)
+        try:
+            _night_save('brave-usage.json', u)
+        except Exception:
+            pass
+
+
+def _sw_brave(q, deadline=None, kind='human'):
     """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
     stored sources are title+url (deliberate Brave-ToS posture)."""
     key = os.environ.get('BRAVE_API_KEY', '').strip()
     if not key:
+        return None
+    if not _brave_spend(kind):
+        print('[brave] %s query refused — month at %d/%d (reserve for higher '
+              'priority callers)' % (kind, _brave_usage().get('used', 0), _BRAVE_CAP))
         return None
     url = ('https://api.search.brave.com/res/v1/web/search?q='
            + urllib.parse.quote(q) + '&count=8')
     req = urllib.request.Request(url, headers={
         'Accept': 'application/json', 'Accept-Encoding': 'identity',
         'X-Subscription-Token': key, 'User-Agent': 'CafresoHQ/1.0'})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    timeout = 30 if deadline is None else min(30, _sw_left(deadline))
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read().decode('utf-8'))
     out = []
     for x in (data.get('web') or {}).get('results', [])[:8]:
@@ -624,11 +825,15 @@ def _sw_brave(q):
 
 
 def _sw_hermes_key():
+    """The gateway key. MUST resolve via _hermes_home(): containers set
+    HERMES_HOME=/data/hermes and have no ~/.hermes at all, so hardcoding the
+    home here silently returned '' — which made _sw_llm skip the gateway
+    entirely and fulfill every job sources-only, with any model."""
     key = os.environ.get('API_SERVER_KEY', '').strip()
     if key:
         return key
     try:
-        with open(os.path.expanduser('~/.hermes/.env'), 'r', encoding='utf-8') as f:
+        with open(os.path.join(_hermes_home(), '.env'), 'r', encoding='utf-8') as f:
             m = re.search(r'(?m)^API_SERVER_KEY\s*=\s*(\S+)', f.read())
         if m:
             return m.group(1).strip().strip('"\'')
@@ -637,46 +842,470 @@ def _sw_hermes_key():
     return ''
 
 
-def _sw_llm(q, results):
-    """(answer, model) via the local hermes gateway, falling back to the
-    night-runner provider config. ('', '') when no model is reachable —
-    sources + graph are still worth fulfilling."""
-    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'], r['description'])
-                      for i, r in enumerate(results))
-    prompt = ('Answer this search query in 2-4 sentences using ONLY the sources below. '
-              "Cite with [n]. If the sources don't answer it, say what they do cover.\n\n"
-              'Query: %s\n\nSources:\n%s' % (q, src))
-    payload = {'model': _SW_MODEL_HINT or 'default',
-               'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 400}
+def _sw_model():
+    """Which model answers searches.
+
+    Follows the operator's HQ brain picker by default: the picker writes
+    `model.default` into the hermes config, and reading it here means flipping
+    the picker moves the search worker too — resolved per job, so no restart.
+    WORKER_MODEL stays as an explicit override for operators who deliberately
+    want search on a different (e.g. cheaper/faster) model than their agents.
+    """
+    hint = os.environ.get('WORKER_MODEL', '').strip()
+    if hint:
+        return hint
     import night_runner as _nr
+    return _nr.read_model_config(_hermes_home())['model'] or 'default'
+
+
+def _sw_backend():
+    """The operator's brain, callable directly — or None when only the agent
+    gateway can reach it. The single seam the tests monkeypatch."""
+    import night_runner as _nr
+    return _nr.resolve_backend(_hermes_home(),
+                               model_override=os.environ.get('WORKER_MODEL', '').strip())
+
+
+def _sw_trial_notice():
+    """Say it out loud when search is about to spend the SHARED trial key.
+
+    Deliberately a log line, not a meter: search is uncapped by decision. The
+    backstops are the canister's 500/day answer budget and the fact that becoming
+    a worker requires manual planAdmin approval. _trial_usage is non-mutating, so
+    reading it here doesn't consume anyone's chat allowance."""
+    try:
+        st = _trial_state()
+        if not st.get('active'):
+            return
+        used, cap = _trial_usage(_SW_PRINCIPAL or 'local')
+        print('[search-worker] spending the SHARED TRIAL key (provider=%s) — search is NOT '
+              'metered by the trial cap; %s is at %d/%d today'
+              % (st.get('provider') or '?', (_SW_PRINCIPAL or 'local')[:12], used, cap))
+    except Exception:
+        pass
+
+
+_SW_ESCAPES = {'"': '"', '\\': '\\', '/': '/', 'b': '\b',
+               'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+_SW_MIN_SALVAGE_WORDS = 3  # a salvaged sentence shorter than this isn't worth publishing
+
+
+def _sw_json_str_at(t, i):
+    """Scan the JSON string literal starting at t[i] == '"'.
+    Returns (value, end_index, complete). complete=False means the text ran out
+    mid-literal (a truncated stream) — value is then everything decoded so far,
+    which is exactly what we want to keep."""
+    if i >= len(t) or t[i] != '"':
+        return '', i, False
+    out = []
+    i += 1
+    while i < len(t):
+        c = t[i]
+        if c == '"':
+            return ''.join(out), i + 1, True
+        if c != '\\':
+            out.append(c)
+            i += 1
+            continue
+        # Escape: needs at least one more char, \u needs four more.
+        if i + 1 >= len(t):
+            break
+        e = t[i + 1]
+        if e == 'u':
+            if i + 5 >= len(t):
+                break                       # cut inside \uXXXX — keep what we have
+            try:
+                out.append(chr(int(t[i + 2:i + 6], 16)))
+            except ValueError:
+                out.append(t[i + 2:i + 6])  # malformed \u — pass through, never raise
+            i += 6
+        else:
+            out.append(_SW_ESCAPES.get(e, e))
+            i += 2
+    return ''.join(out), len(t), False
+
+
+def _sw_salvage_json(t):
+    """Best-effort (summary, notes) from possibly-truncated JSON.
+
+    Targeted scanning, NOT general repair — brace-balancing mis-repairs
+    silently. This works because the prompt pins "summary" FIRST: a stream cut
+    anywhere inside "notes" still yields a complete summary, which is the
+    artifact that actually matters. Returns (None, None) when there's no
+    "summary" key at all, so the caller can fall through to plain text."""
+    ks = t.find('"summary"')
+    if ks < 0:
+        return None, None
+    vs = t.find('"', ks + len('"summary"'))
+    if vs < 0:
+        return None, None
+    summary, end, complete = _sw_json_str_at(t, vs)
+    summary = summary.strip()
+    if not complete:
+        # Library entries are permanent and public, so only publish a truncated
+        # summary if a WHOLE sentence survived: trim back to the last boundary,
+        # and if there wasn't one, a half-thought like "ICP i" is worse than no
+        # answer — degrade to source-only and let the entry be honestly
+        # summary-less. Applies to truncated text ONLY; a model that
+        # deliberately returns one terse complete sentence keeps it.
+        cut = max(summary.rfind('.'), summary.rfind('!'), summary.rfind('?'))
+        if cut <= 0:
+            return None, None
+        summary = summary[:cut + 1]
+        if len(summary.split()) < _SW_MIN_SALVAGE_WORDS:
+            return None, None
+        return summary, {}
+    notes = {}
+    kn = t.find('"notes"', end)
+    if kn < 0:
+        return (summary or None), notes
+    i = t.find('{', kn)
+    if i < 0:
+        return (summary or None), notes
+    i += 1
+    while i < len(t):
+        ks = t.find('"', i)
+        if ks < 0:
+            break
+        # A '}' before the next key means the notes object closed — stop here
+        # rather than reading keys from whatever follows it.
+        close = t.find('}', i)
+        if close >= 0 and close < ks:
+            break
+        key, i, ok = _sw_json_str_at(t, ks)
+        if not ok:
+            break                            # truncated key — nothing usable past here
+        vs = t.find('"', i)
+        if vs < 0:
+            break
+        val, i, ok = _sw_json_str_at(t, vs)
+        if not ok:
+            break                            # truncated value — drop this partial note
+        try:
+            notes[int(key) - 1] = val.strip()[:200]
+        except (ValueError, TypeError):
+            pass
+    return (summary or None), notes
+
+
+def _sw_parse_analysis(text):
+    """Parse the model's {"summary", "notes"} JSON; degrade to plain text.
+    Returns (summary, notes) where notes maps 0-based source index → blurb.
+
+    Three tiers: strict parse (well-formed output) → salvage (stream truncated
+    by the deadline) → raw text."""
+    t = (text or '').strip()
+    t = re.sub(r'^```(?:json)?\s*|\s*```$', '', t)
+    m = re.search(r'\{.*\}', t, re.S)
+    if m:
+        try:
+            d = json.loads(m.group(0))
+            summary = str(d.get('summary') or '').strip()
+            notes = {}
+            for k, v in (d.get('notes') or {}).items():
+                try:
+                    notes[int(k) - 1] = str(v).strip()[:200]
+                except (ValueError, TypeError):
+                    pass
+            if summary:
+                return summary, notes
+        except Exception:
+            pass
+    summary, notes = _sw_salvage_json(t)
+    if summary:
+        return summary, notes or {}
+    if t.startswith('{') or '"summary"' in t:
+        # It was trying to be our JSON and nothing usable survived. Returning the
+        # raw text here would publish a broken `{"summary": "ICP i` fragment as
+        # the permanent public answer — an empty answer degrades to source-only,
+        # which is honest.
+        return '', {}
+    return t, {}
+
+
+def _sw_fmt_tokens(n):
+    return '%.1fk' % (n / 1000.0) if n >= 1000 else str(n)
+
+
+def _sw_settimeout(resp, secs):
+    """Re-bound an open response's socket. Reaches through private API
+    (fp.raw._sock), so it's best-effort by design: on failure the socket keeps
+    the coarser timeout from urlopen, which still bounds us — just less tightly.
+    Never raises."""
+    try:
+        fp = getattr(resp, 'fp', None)
+        s = getattr(getattr(fp, 'raw', None), '_sock', None) or getattr(fp, '_sock', None)
+        if s is not None:
+            s.settimeout(secs)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
+    """One OpenAI-compatible chat call → (text, model, tokens, truncated).
+
+    Streams by default so a slow backend yields a PARTIAL answer at the deadline
+    instead of nothing. Raises on hard failure (connection refused, HTTP error,
+    zero content) so the caller can try the next backend; returns whatever
+    arrived when the wall clock or the idle timer fires."""
+    body = dict(payload)
+    if stream:
+        body['stream'] = True
+        if usage_opt:
+            # usage is omitted from streamed responses unless asked for explicitly.
+            body['stream_options'] = {'include_usage': True}
+    req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers)
+    # Open with the WHOLE remaining budget, not the TTFT bound. A blocking
+    # gateway withholds headers until generation finishes, so a TTFT-bounded open
+    # would kill a healthy 100s blocking generation with 140s still on the clock.
+    # Streaming costs nothing here — SSE headers land immediately — and its
+    # tighter TTFT/idle bounds go on the socket below, where they belong. If the
+    # socket isn't reachable those bounds degrade to this one: coarser, but the
+    # deadline still holds and we still salvage.
+    r = urllib.request.urlopen(req, timeout=_sw_left(deadline) or (_SW_TTFT_TIMEOUT * 3))
+    try:
+        # Backward-compat gate: a gateway that ignored `stream` just sends JSON.
+        # Read it as a blocking response — no exception, no retry, no wasted decode.
+        if 'text/event-stream' not in (r.headers.get('Content-Type') or ''):
+            data = json.loads(r.read().decode('utf-8'))
+            text = data['choices'][0]['message']['content']
+            tokens = int((data.get('usage') or {}).get('total_tokens') or 0)
+            return text, data.get('model') or '', tokens, False
+
+        # Streaming: bound the FIRST token by TTFT (prefill on a saturated box is
+        # slow but not unbounded), then tighten to the idle timeout once tokens
+        # are flowing. Best-effort — see _sw_sock.
+        _sw_settimeout(r, _SW_TTFT_TIMEOUT)
+        chunks, model, tokens, deltas, truncated = [], '', 0, 0, False
+        while True:
+            if deadline is not None and time.monotonic() > deadline:
+                truncated = True
+                break
+            try:
+                line = r.readline()
+            except (socket.timeout, TimeoutError):
+                truncated = True          # backend went quiet — keep what we have
+                break
+            if not line:
+                break
+            line = line.decode('utf-8', 'replace').strip()
+            if not line.startswith('data:'):
+                continue
+            data = line[5:].strip()
+            if data == '[DONE]':
+                break
+            try:
+                obj = json.loads(data)
+            except ValueError:
+                continue
+            model = obj.get('model') or model
+            usage = obj.get('usage')
+            if usage:
+                tokens = int(usage.get('total_tokens') or 0)
+            for ch in (obj.get('choices') or []):
+                piece = (ch.get('delta') or {}).get('content')
+                if piece:
+                    chunks.append(piece)
+                    deltas += 1
+                    if deltas == 1:
+                        # First token is in: tighten from the prefill bound to
+                        # the idle bound so a mid-stream stall aborts fast.
+                        _sw_settimeout(r, _SW_IDLE_TIMEOUT)
+        text = ''.join(chunks)
+        if not text:
+            raise RuntimeError('empty stream')
+        # A truncated stream never carries the final usage chunk, so fall back to
+        # the delta count. That's completion-only (excludes prefill) and so
+        # UNDER-reports — deliberate: the chip says "~", and guessing a prompt
+        # estimate to close the gap would be inventing numbers.
+        return text, model, (tokens or deltas), truncated
+    finally:
+        try:
+            r.close()          # drop a slow socket rather than leak it into the next job
+        except Exception:
+            pass
+
+
+# (stream, usage_opt, schema) — richest first. response_format is dropped LAST
+# because it's the rung that carries real value: it's what makes a note per
+# source structurally required rather than a polite request.
+_SW_ATTEMPTS = ((True, True, True), (True, False, True),
+                (True, False, False), (False, False, False))
+_SW_CAPS = {}          # url → index of the last rung that worked
+
+
+def _sw_stream_or_block(url, headers, payload, deadline):
+    """_sw_chat with a graceful climb-down for backends that reject a param.
+
+    A 4xx means the backend dislikes something we sent, so retry smaller. A 5xx
+    means the backend itself is unhappy and re-sending the same work won't help
+    — raise so the caller moves on.
+
+    The per-url memo is what makes a 4-rung ladder affordable: a backend that
+    hates response_format costs ONE wasted round-trip per process, not one per
+    job. A 4xx carries no decode, so even uncached the cost is milliseconds."""
+    start = _SW_CAPS.get(url, 0)
+    for i in range(start, len(_SW_ATTEMPTS)):
+        stream, usage_opt, schema = _SW_ATTEMPTS[i]
+        body = dict(payload)
+        if not schema:
+            body.pop('response_format', None)
+        try:
+            out = _sw_chat(url, headers, body, deadline, stream=stream, usage_opt=usage_opt)
+            _SW_CAPS[url] = i
+            return out
+        except urllib.error.HTTPError as e:
+            if not (400 <= e.code < 500) or i == len(_SW_ATTEMPTS) - 1:
+                raise      # 5xx, or the last rung 4xx'd — genuinely broken
+            dropped = ('stream_options' if usage_opt else
+                       'response_format' if schema else 'stream')
+            print('[search-worker] backend rejected %s (%s) — climbing down' % (dropped, e.code))
+    raise RuntimeError('unreachable')
+
+
+def _sw_schema(n):
+    """Strict json_schema for the {summary, notes} answer.
+
+    Two deliberate choices:
+    - `summary` is FIRST in properties. Constrained decoders emit in schema
+      order, and _sw_salvage_json depends on summary-before-notes to rescue a
+      deadline-truncated answer.
+    - notes enumerates keys "1".."N" with `required` rather than a typed
+      additionalProperties. OpenAI-flavoured strict mode REJECTS a typed
+      additionalProperties, and `required` makes a note per source structurally
+      mandatory instead of a polite request the model may ignore (observed:
+      gpt-oss-20b dropping notes and blowing the word budget on some prompts).
+    """
+    keys = [str(i + 1) for i in range(n)]
+    return {'type': 'json_schema', 'json_schema': {
+        'name': 'search_analysis', 'strict': True,
+        'schema': {'type': 'object', 'properties': {
+            'summary': {'type': 'string'},
+            'notes': {'type': 'object',
+                      'properties': {k: {'type': 'string'} for k in keys},
+                      'required': keys, 'additionalProperties': False}},
+            'required': ['summary', 'notes'], 'additionalProperties': False}}}
+
+
+_SW_STOP = frozenset(('the', 'and', 'for', 'are', 'was', 'were', 'what', 'which',
+                      'who', 'how', 'why', 'when', 'where', 'this', 'that', 'with',
+                      'from', 'into', 'does', 'did', 'has', 'have', 'can', 'you'))
+
+
+def _sw_focus(desc, q, max_chars=220):
+    """Keep only the query-relevant sentence(s) of a Brave description.
+
+    Decode dominates the job budget, but prefill isn't free either, and a
+    saturated box feels every token. This only ever NARROWS text that was
+    already prompt-only, so the Brave-ToS posture is unchanged: descriptions
+    still never leave this function's caller, and graph notes stay the LLM's
+    own words."""
+    d = (desc or '').strip()
+    if len(d) <= max_chars:
+        return d
+    terms = set(w for w in re.findall(r'[a-z0-9]+', q.lower())
+                if len(w) > 2 and w not in _SW_STOP)
+    sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', d) if s.strip()]
+    if not terms or not sents:
+        return d[:max_chars]
+    scored = sorted(((sum(1 for w in terms if w in s.lower()), -i, s)
+                     for i, s in enumerate(sents)), reverse=True)
+    if scored[0][0] == 0:
+        return d[:max_chars]          # nothing matched (synonyms only) — take the head
+    keep, out = [], 0
+    for score, negi, s in scored[:2]:  # 2 not 1: cheap hedge against a mis-scored pick
+        if score == 0 or out + len(s) > max_chars:
+            break
+        keep.append((-negi, s))
+        out += len(s)
+    if not keep:
+        return d[:max_chars]
+    return ' '.join(s for _, s in sorted(keep))
+
+
+def _sw_llm(q, results, deadline=None):
+    """(answer, model, notes, tokens) via the local hermes gateway, falling
+    back to the night-runner provider config. Empty values when no model is
+    reachable — sources + graph are still worth fulfilling."""
+    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'],
+                                           _sw_focus(r['description'], q))
+                      for i, r in enumerate(results))
+    # "summary" MUST come first and the prompt must say so: the salvage parser
+    # in _sw_parse_analysis relies on it, so a stream the deadline cuts short
+    # still yields a complete summary and merely loses some notes. Field order
+    # here is load-bearing, not cosmetic.
+    prompt = (
+        'You are a research summarizer. Use ONLY the numbered sources below.\n'
+        '"summary": 2-3 sentences, 60 words MAX total, on what the sources '
+        'collectively say about the query, citing like [1][3]. If they do not '
+        'answer it, say what they DO cover.\n'
+        '"notes": for each source number, at most 12 words in your own words on '
+        'what that page contributes. Do not copy phrases from the source text.\n'
+        'Output STRICT JSON only — no prose, no code fence, "summary" first:\n'
+        '{"summary": "...", "notes": {"1": "...", "2": "..."}}\n\n'
+        'Query: %s\n\nSources:\n%s' % (q, src))
+    want = _sw_model()
+    payload = {'model': want,
+               'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': _SW_MAX_TOKENS,
+               'response_format': _sw_schema(len(results))}
+    _sw_trial_notice()
+
+    def _finish(text, rmodel, tokens, truncated, via, trust_reported=True):
+        """trust_reported=False for the gateway: it ECHOES the model you asked
+        for while actually running config.yaml's. That echo can never disagree
+        with our request, so believing it would write a confident lie onto a
+        permanent public entry (ask for nemotron, get gpt-oss, entry says
+        nemotron). On that path the config IS the truth."""
+        summary, notes = _sw_parse_analysis(text)
+        if truncated:
+            print('[search-worker] %s truncated at deadline — salvaged %d chars, %d notes'
+                  % (via, len(summary or ''), len(notes)))
+        if trust_reported:
+            actual = rmodel or want
+        else:
+            import night_runner as _nr
+            actual = _nr.read_model_config(_hermes_home())['model'] or via
+        if actual and want and actual.split('/')[-1] != want.split('/')[-1]:
+            print('[search-worker] asked for %s but %s answered as %s — the chip reports what '
+                  'actually ran' % (want, via, actual))
+        # A salvaged partial IS success: falling through would trade a usable
+        # summary for a second full decode we can't afford inside the lease.
+        return summary, (actual or via)[:80], notes, tokens
+
+    # 1. Direct to the operator's brain. Preferred: the agent gateway layers a
+    #    ~13k-token system prompt on every call and ignores max_tokens/model.
+    b = _sw_backend()
+    if b is not None:
+        try:
+            text, rmodel, tokens, truncated = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+            return _finish(text, rmodel, tokens, truncated, b.provider or 'direct')
+        except Exception as e:
+            print('[search-worker] direct backend failed (provider=%s url=%s model=%s): %s'
+                  % (b.provider, b.url, b.model or want, str(e)[:120]))
+
+    # 2. Fall back to the agent gateway. Costly and it ignores our params, but
+    #    it's the only path for operators we can't resolve directly (e.g.
+    #    anthropic, which has no _PROVIDER_ENDPOINTS entry). Do NOT delete.
     key = _sw_hermes_key()
     if key:
         try:
-            req = urllib.request.Request(
+            text, rmodel, tokens, truncated = _sw_stream_or_block(
                 'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                data = json.loads(r.read().decode('utf-8'))
-            text = data['choices'][0]['message']['content'].strip()
-            return text, (data.get('model') or _SW_MODEL_HINT or 'hermes-local')[:80]
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+            return _finish(text, rmodel, tokens, truncated, 'hermes-local', trust_reported=False)
         except Exception as e:
-            print('[search-worker] hermes llm failed:', str(e)[:120])
-    try:
-        provider, model, pkey = _nr.read_provider_config(os.path.expanduser('~/.hermes'))
-        if pkey:
-            spec = _nr._PROVIDER_ENDPOINTS.get({'google-openai': 'gemini'}.get(provider, provider))
-            payload['model'] = model or payload['model']
-            req = urllib.request.Request(spec[1], data=json.dumps(payload).encode('utf-8'),
-                                         headers={'Content-Type': 'application/json',
-                                                  'Authorization': 'Bearer ' + pkey})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                data = json.loads(r.read().decode('utf-8'))
-            return (data['choices'][0]['message']['content'].strip(),
-                    (data.get('model') or model or provider)[:80])
-    except Exception as e:
-        print('[search-worker] provider llm failed:', str(e)[:120])
-    return '', ''
+            print('[search-worker] hermes llm failed (model=%s): %s' % (want, str(e)[:120]))
+    elif b is None:
+        print('[search-worker] no direct backend and no gateway key (%s/.env, '
+              'API_SERVER_KEY) — answers will be sources-only' % _hermes_home())
+
+    # 3. Sources + graph are still worth fulfilling.
+    return '', '', {}, 0
 
 
 _SW_PALETTE = ['#7DC9B0', '#C9B8E0', '#E8A9A9', '#F0C987',
@@ -697,27 +1326,34 @@ def _sw_color(name):
     return _SW_PALETTE[h % len(_SW_PALETTE)]
 
 
-def _sw_graph(q, results):
-    """Python port of the /hq/search page's buildGraphSnapshot — query hub →
-    result ring → domain ring, wrapped exactly as graph-viewer.html expects."""
+def _sw_graph(q, results, notes=None):
+    """Query hub → result ring → domain ring, wrapped exactly as
+    graph-viewer.html expects. Result nodes carry url/domain/note attributes
+    so the viewer can render hover cards and click-through — the note is the
+    worker LLM's own one-liner (never Brave's description text)."""
     import math
+    notes = notes or {}
     nodes = [{'key': 'q', 'attributes': {'label': q, 'size': 18, 'x': 0, 'y': 0,
-                                         'color': '#F5D25D'}}]
+                                         'color': '#F5D25D', 'kind': 'query'}}]
     edges = []
     domains = {}
     for i, r in enumerate(results):
         a = (i / max(1, len(results))) * math.pi * 2
+        d = _sw_domain(r['url'])
         nodes.append({'key': 'r%d' % i, 'attributes': {
             'label': r['title'][:60], 'size': 8,
             'x': math.cos(a) * 10, 'y': math.sin(a) * 10,
-            'color': _sw_color(_sw_domain(r['url']))}})
+            'color': _sw_color(d), 'kind': 'source',
+            'url': r['url'][:600], 'domain': d,
+            'note': (notes.get(i) or '')[:200]}})
         edges.append({'key': 'eq%d' % i, 'source': 'q', 'target': 'r%d' % i, 'attributes': {}})
-        domains.setdefault(_sw_domain(r['url']), []).append(i)
+        domains.setdefault(d, []).append(i)
     for di, (d, ixs) in enumerate(domains.items()):
         a = (di / max(1, len(domains))) * math.pi * 2 + 0.35
         nodes.append({'key': 'd:' + d, 'attributes': {
             'label': d, 'size': 5 + len(ixs),
-            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d)}})
+            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d),
+            'kind': 'domain', 'domain': d}})
         for i in ixs:
             edges.append({'key': 'ed%d_%d' % (di, i), 'source': 'r%d' % i,
                           'target': 'd:' + d, 'attributes': {}})
@@ -727,23 +1363,306 @@ def _sw_graph(q, results):
                        'title': 'Search: ' + q, 'ts': int(time.time() * 1000)})
 
 
-def _sw_process(job):
+# ── Deep research (job['mode']=='deep') ─────────────────────────────────────
+# The fast path is one Brave search + one summarising LLM call. Deep research is
+# the HQ "Kip" pattern ported into the worker: decompose the question into
+# angles, then for each angle run its own Brave search and write a synthesised
+# NOTE PAGE, then write a top-level synthesis over the pages. The output is a
+# research TREE (query → topics → sources) plus the note pages, which the viewer
+# lets a reader click through. It spends the reserved `deep` Brave lane.
+
+def _sw_json_obj(text):
+    """First JSON object/array in possibly code-fenced model text, or None.
+    Deep steps ask for small JSON; this is the lenient extractor (the fast path
+    keeps its own truncation-salvage parser, which deep steps don't need)."""
+    t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+    m = re.search(r'(\{.*\}|\[.*\])', t, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+def _sw_complete(prompt, deadline, max_tokens=600, schema=None):
+    """One free-form completion via the operator's brain: direct backend first,
+    hermes gateway as fallback (mirrors _sw_llm's dispatch, without the fixed
+    summary/notes schema). Returns (text, model, tokens, via); ('','',0,'') when
+    nothing is reachable so the caller can degrade."""
+    want = _sw_model()
+    payload = {'model': want,
+               'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': max_tokens}
+    if schema is not None:
+        payload['response_format'] = schema
+    b = _sw_backend()
+    if b is not None:
+        try:
+            text, rmodel, tokens, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+            return text, (rmodel or want), tokens, (b.provider or 'direct')
+        except Exception as e:
+            print('[deep] direct backend failed: %s' % str(e)[:120])
+    key = _sw_hermes_key()
+    if key:
+        try:
+            text, rmodel, tokens, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+            import night_runner as _nr
+            actual = _nr.read_model_config(_hermes_home())['model'] or 'hermes-local'
+            return text, actual, tokens, 'hermes-local'
+        except Exception as e:
+            print('[deep] hermes gateway failed: %s' % str(e)[:120])
+    return '', '', 0, ''
+
+
+def _sw_deep_plan(q, deadline):
+    """Decompose the question into distinct, independently-searchable angles."""
+    prompt = (
+        'You are planning a research report that will thoroughly answer a '
+        'question. Break it into %d DISTINCT, focused sub-questions ("angles") '
+        'that together cover the topic — e.g. background, mechanism, evidence, '
+        'trade-offs, current state. Each must be independently searchable on the '
+        'open web.\nOutput STRICT JSON only: {"angles": ["...", "..."]}\n\n'
+        'Question: %s' % (_SW_DEEP_MAX_TOPICS, q))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=400)
+    obj = _sw_json_obj(text) or {}
+    angles = obj.get('angles') if isinstance(obj, dict) else obj
+    out = []
+    for a in (angles or []):
+        a = str(a).strip()
+        if a and a not in out and len(out) < _SW_DEEP_MAX_TOPICS:
+            out.append(a[:200])
+    return out, model, tokens
+
+
+def _sw_deep_note(q, angle, results, deadline):
+    """Write one research note page from an angle's sources.
+    Returns (title, body, model, tokens)."""
+    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'],
+                                           _sw_focus(r['description'], angle))
+                      for i, r in enumerate(results))
+    prompt = (
+        'You are writing ONE section of a research report.\n'
+        'The report answers: %s\n'
+        'This section covers: %s\n'
+        'Using ONLY the numbered sources, write a focused note of 100-160 words '
+        'in your OWN words, opening with a one-line takeaway and citing sources '
+        'inline like [1][3]. Do not copy phrases from the sources.\n'
+        'Output STRICT JSON only: {"title": "3-6 word section title", '
+        '"body": "the note with [n] citations"}\n\nSources:\n%s'
+        % (q, angle, src))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=500)
+    obj = _sw_json_obj(text)
+    if isinstance(obj, dict) and str(obj.get('body') or '').strip():
+        title = str(obj.get('title') or angle)[:80]
+        body = str(obj['body']).strip()[:_SW_DEEP_PAGE_CAP]
+    else:
+        # Degrade: keep the raw prose as the body rather than losing the work.
+        title = angle[:80]
+        body = (text or '').strip()[:_SW_DEEP_PAGE_CAP]
+    return title, body, model, tokens
+
+
+def _sw_deep_synth(q, pages, deadline):
+    """Top-level synthesis over the note pages. Returns (answer, model, tokens)."""
+    joined = '\n\n'.join('## %s\n%s' % (p['title'], p['body']) for p in pages)
+    prompt = (
+        'You are writing the executive summary of a research report.\n'
+        'Question: %s\n'
+        'Below are the report sections. Write a cohesive 80-130 word synthesis '
+        'that directly answers the question, weaving the sections together. '
+        'Plain prose — no JSON, no headings, no citations markup.\n\n'
+        'Sections:\n%s' % (q, joined))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=500)
+    return (text or '').strip()[:_SW_ANSWER_CAP], model, tokens
+
+
+def _sw_deep_graph(q, pages):
+    """Research tree wrapped for graph-viewer.html: query hub → topic nodes →
+    source nodes. Topic nodes carry a `page` attribute (the note-page id) so the
+    viewer opens the note on click instead of linking out; source nodes keep the
+    url/domain/note attributes and click through to the source."""
+    import math
+    nodes = [{'key': 'q', 'attributes': {'label': q[:60], 'size': 20, 'x': 0, 'y': 0,
+                                         'color': '#F5D25D', 'kind': 'query'}}]
+    edges = []
+    n = max(1, len(pages))
+    for ti, p in enumerate(pages):
+        ta = (ti / n) * math.pi * 2
+        tk = p['id']
+        nodes.append({'key': tk, 'attributes': {
+            'label': p['title'][:60], 'size': 12,
+            'x': math.cos(ta) * 12, 'y': math.sin(ta) * 12,
+            'color': '#C9B8E0', 'kind': 'topic',
+            'page': p['id'], 'note': (p.get('question') or '')[:200]}})
+        edges.append({'key': 'eq_%s' % tk, 'source': 'q', 'target': tk, 'attributes': {}})
+        srcs = p.get('sources') or []
+        for si, r in enumerate(srcs):
+            sa = ta + (si - (len(srcs) - 1) / 2.0) * 0.16
+            sk = '%s_r%d' % (tk, si)
+            d = _sw_domain(r['url'])
+            nodes.append({'key': sk, 'attributes': {
+                'label': r['title'][:60], 'size': 6,
+                'x': math.cos(sa) * 22, 'y': math.sin(sa) * 22,
+                'color': _sw_color(d), 'kind': 'source',
+                'url': r['url'][:600], 'domain': d, 'note': (r.get('note') or '')[:200]}})
+            edges.append({'key': 'e_%s' % sk, 'source': tk, 'target': sk, 'attributes': {}})
+    return json.dumps({'graph': {'options': {'type': 'mixed', 'multi': False,
+                                             'allowSelfLoops': True},
+                                 'attributes': {}, 'nodes': nodes, 'edges': edges},
+                       'title': 'Deep research: ' + q, 'ts': int(time.time() * 1000)})
+
+
+def _sw_deep(q, deadline):
+    """Run the deep-research loop. Returns
+    (answer, model, pages, graphJson, tokens, sources) or None to signal the
+    caller should degrade to a normal single-shot answer."""
+    total_tokens = 0
+    angles, model_seen, pt = _sw_deep_plan(q, deadline)
+    total_tokens += pt
+    if not angles:
+        return None                       # planning failed → degrade
+    print('[deep] %s → %d angles' % (q[:60], len(angles)))
+    pages, all_sources = [], []
+    for angle in angles:
+        # Leave room for the synthesis call + graph + fulfill upload.
+        if _sw_left(deadline) < 45:
+            print('[deep] budget low (%.0fs left) — stopping at %d pages'
+                  % (_sw_left(deadline), len(pages)))
+            break
+        results = _sw_brave(angle, deadline, kind='deep')
+        if not results:
+            continue                      # deep lane refused, or no results
+        title, body, nmodel, nt = _sw_deep_note(q, angle, results, deadline)
+        total_tokens += nt
+        model_seen = nmodel or model_seen
+        pages.append({'id': 't%d' % len(pages), 'title': title, 'question': angle,
+                      'body': body,
+                      'sources': [{'title': r['title'], 'url': r['url'], 'note': ''}
+                                  for r in results]})
+        all_sources.extend(results)
+    if not pages:
+        return None                       # every angle failed → degrade
+    answer, smodel, st = _sw_deep_synth(q, pages, deadline)
+    total_tokens += st
+    model_seen = smodel or model_seen
+    if not answer:
+        # Synthesis failed: stitch each page's opening sentence as the answer.
+        answer = ' '.join(p['body'].split('.')[0].strip() + '.'
+                          for p in pages if p['body'])[:_SW_ANSWER_CAP]
+    graph = _sw_deep_graph(q, pages)
+    return answer, model_seen, pages, graph, total_tokens, all_sources
+
+
+def _sw_process_deep(jid, q, deadline, started, P):
+    """Deep-research fulfill. Returns True if it fulfilled/terminally handled the
+    job, False to let the caller fall back to a single-shot answer."""
+    print('[deep] claimed %s: %s' % (jid, q[:80]))
+    out = _sw_deep(q, deadline)
+    if out is None:
+        return False
+    answer, model, pages, graph, tokens, all_sources = out
+    if tokens:
+        model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
+    if len(answer) > _SW_ANSWER_CAP:
+        answer = answer[:_SW_ANSWER_CAP]
+    # Dedupe sources across pages for the entry's flat source list, capped at
+    # LIB_MAX_SOURCES (10) — the canister rejects more. The FULL per-angle source
+    # set is preserved in the research tree (graph) and note pages, which are
+    # bounded only by LIB_MAX_GRAPH.
+    seen, sources = set(), []
+    for r in all_sources:
+        if r['url'] not in seen:
+            seen.add(r['url'])
+            sources.append(r)
+    sources = sources[:10]
+    pages_json = json.dumps({
+        'q': q, 'answer': answer,
+        'pages': [{'id': p['id'], 'title': p['title'], 'question': p['question'],
+                   'body': p['body'], 'sources': p['sources']} for p in pages],
+        'ts': int(time.time() * 1000)})
+    # Deep fulfill == fast fulfill + one trailing pages field. `brave · deep`
+    # marks provenance (renders wherever the engine chip does); the canister
+    # tags the job mode itself, this is the human-readable echo.
+    lines = [jid, P(model), P('brave · deep'), P(answer), str(len(sources))]
+    for r in sources:
+        lines.append('%s %s' % (P(r['title']), P(r['url'])))
+    lines.append(P(graph))
+    lines.append(P(pages_json))
+    status, resp = _sw_call('fulfill', lines)
+    if status == 200 and resp.get('ok'):
+        print('[deep] fulfilled %s -> %s (%d pages, %.0fs)'
+              % (jid, resp.get('libraryId'), len(pages), time.monotonic() - started))
+    else:
+        print('[deep] fulfill rejected %s: %s %s' % (jid, status, resp))
+    return True
+
+
+def _sw_process(job, deadline=None):
     jid, q = job['id'], job['q']
+    mode = job.get('mode') or 'fast'
+    started = time.monotonic()
     P = lambda s: urllib.parse.quote(s, safe='')
     try:
-        results = _sw_brave(q)
+        if mode == 'deep':
+            # Deep can degrade to the single-shot path below (planning/notes/
+            # Brave all failed) so the user still gets an answer within the lease.
+            if _sw_process_deep(jid, q, deadline, started, P):
+                return
+            print('[deep] %s: degrading to single-shot' % jid)
+        print('[search-worker] claimed %s: %s' % (jid, q[:80]))
+        results = _sw_brave(q, deadline)
         if not results:
-            _sw_call('fail', [jid, P('no brave key or no results')])
+            # Three different failures used to share one message. They need
+            # different operator responses — top up the plan, set the key, or
+            # nothing at all — so say which one it is.
+            has_key = bool(os.environ.get('BRAVE_API_KEY', '').strip())
+            why = ('brave month exhausted (%d/%d)' % (_brave_usage().get('used', 0), _BRAVE_CAP)
+                   if has_key and not _brave_remaining()
+                   else 'no brave key' if not has_key else 'no results')
+            print('[search-worker] %s: %s' % (jid, why))
+            _sw_call('fail', [jid, P(why)])
             return
-        answer, model = _sw_llm(q, results)
-        graph = _sw_graph(q, results)
-        lines = [jid, P(model), P('brave'), P(answer), str(len(results))]
+        answer, model, notes, tokens = _sw_llm(q, results, deadline)
+        if tokens:
+            # Token burn rides in the model field ("llama-3.1-8b · ~1.2k tok")
+            # — the canister entry has no dedicated field and this shows
+            # everywhere the model chip renders, with zero schema changes.
+            model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
+        # libValidate hard-rejects an over-cap answer, and a rejected fulfill
+        # leaves the job claimed until the lease expires — burning an attempt
+        # each time. The degrade path can hand us raw model prose, so clamp.
+        if len(answer) > _SW_ANSWER_CAP:
+            print('[search-worker] answer %d chars — clamping to %d' % (len(answer), _SW_ANSWER_CAP))
+            answer = answer[:_SW_ANSWER_CAP]
+        graph = _sw_graph(q, results, notes)
+        # Provenance: say so when the AI asked this, not a person. It rides the
+        # engine field because the canister entry has no askedBy — the same
+        # trick the token count uses on the model field, and it renders wherever
+        # the engine chip already does with no schema change.
+        #
+        # Known limit: only the node that SUBMITTED the question knows it was a
+        # gap question, so if another operator's worker claims it the entry
+        # reads plain 'brave'. Correct attribution needs an askedBy field on
+        # the job, which is a canister upgrade.
+        engine = 'brave · ai-gap' if q in set(_gap_asked()) else 'brave'
+        lines = [jid, P(model), P(engine), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
         lines.append(P(graph))
+        # Always attempt fulfill, even past our budget: the budget is soft and
+        # sits 40s inside the lease, so the common case still lands. When we're
+        # genuinely late the reap fires on the next worker's claim regardless,
+        # so `attempts` increments whether we call or stay quiet — bailing would
+        # save nothing and guarantee the loss.
         status, resp = _sw_call('fulfill', lines)
         if status == 200 and resp.get('ok'):
-            print('[search-worker] fulfilled %s -> %s' % (jid, resp.get('libraryId')))
+            print('[search-worker] fulfilled %s -> %s (%.0fs)'
+                  % (jid, resp.get('libraryId'), time.monotonic() - started))
         else:
             print('[search-worker] fulfill rejected %s: %s %s' % (jid, status, resp))
     except Exception as e:
@@ -755,6 +1674,7 @@ def _sw_loop():
     print('[search-worker] joining the search network as %s -> %s'
           % (_SW_PRINCIPAL[:12] + '…', _SW_BASE))
     paused = False
+    dry = False
     while True:
         try:
             # Operator can take this node down from the admin panel
@@ -770,13 +1690,39 @@ def _sw_loop():
             if paused:
                 print('[search-worker] resumed by operator')
                 paused = False
+            # Don't claim work we can't do. Claiming with the month spent would
+            # fail the job, burn one of its three attempts, and — since claim
+            # hands out the OLDEST pending — do it again to the next one, so a
+            # dry key would chew through the whole queue in minutes and fail
+            # jobs a second operator with quota could have answered. Leaving
+            # them pending costs nothing; heartbeat keeps us visible.
+            if not _brave_remaining():
+                if not dry:
+                    print('[search-worker] brave month exhausted (%d/%d) — not claiming; '
+                          'heartbeat continues' % (_brave_usage().get('used', 0), _BRAVE_CAP))
+                    dry = True
+                _sw_call('heartbeat', [])
+                time.sleep(60)
+                continue
+            if dry:
+                print('[search-worker] brave quota available again — claiming')
+                dry = False
+            # Clock starts BEFORE the claim: the canister stamps claimedAt during
+            # that request, so a pre-call reading is guaranteed conservative.
+            # monotonic, never time.time() — an NTP step mid-job would silently
+            # blow (or extend) the budget.
+            t0 = time.monotonic()
             status, resp = _sw_call('claim', [])
             if status == 403:
                 # Not approved yet (or suspended): heartbeat keeps the
                 # registration's lastSeen fresh so the operator sees "connected".
                 _sw_call('heartbeat', [])
             elif status == 200 and resp.get('job'):
-                _sw_process(resp['job'])
+                _job = resp['job']
+                # Deep jobs get the longer lease (DEEP_LEASE_NS), so give the
+                # worker the matching wall-clock budget for its multi-hop loop.
+                _budget = _SW_DEEP_BUDGET if _job.get('mode') == 'deep' else _SW_JOB_BUDGET
+                _sw_process(_job, t0 + _budget)
                 continue          # drain the queue without sleeping between jobs
         except Exception as e:
             print('[search-worker] loop error:', str(e)[:200])
@@ -787,6 +1733,274 @@ if _SW_ENABLED and _SW_PRINCIPAL and re.fullmatch(r'[0-9a-fA-F]{64}', _SW_SECRET
     threading.Thread(target=_sw_loop, daemon=True, name='search-worker').start()
 elif _SW_ENABLED:
     print('[search-worker] SEARCH_WORKER=1 but WORKER_PRINCIPAL/WORKER_SECRET missing — not starting')
+
+
+# ---- Gap cron: the library asks its own next questions ----------------------
+# Every day at 10:00 America/New_York this reads the public library, works out
+# what it does NOT cover, and submits N questions to close those gaps — the
+# library extending itself instead of waiting to be asked.
+#
+# Human questions are weighted above machine ones in two separate places, and
+# both matter:
+#   direction — the prompt is anchored on what PEOPLE recently asked, so the
+#               proposals chase real demand instead of drifting into whatever
+#               the model finds interesting. A machine question is never used
+#               as evidence of interest; that's how a feedback loop starts.
+#   budget    — 'gap' has the largest Brave reserve (_BRAVE_RESERVE), so when
+#               the month runs short the cron starves before any human does.
+#
+# Answers land as PERMANENT, append-only public entries, so this is deliberately
+# conservative: it dedups against everything already in the library, submits at
+# most GAP_DAILY_MAX, and refuses outright when the Brave month is tight.
+GAP_ENABLED = os.environ.get('GAP_CRON', '').strip() != '0'
+GAP_DAILY_MAX = int(os.environ.get('GAP_DAILY_MAX', '') or 10)
+GAP_HOUR_ET = int(os.environ.get('GAP_HOUR_ET', '') or 10)
+GAP_TZ = os.environ.get('GAP_TZ', '') or 'America/New_York'
+MAX_GAP_RUNS_KEPT = 60
+_gap_lock = threading.Lock()
+
+
+def _gap_next_run_ms(after_ms=None):
+    """Epoch-ms of the next GAP_HOUR_ET in GAP_TZ, strictly after `after_ms`.
+
+    Computed from the zone each time rather than rolling +86_400_000 like
+    _night_scan does. That roll holds UTC constant, so a job pinned to 10:00
+    New York silently becomes 11:00 for half the year — across a DST boundary
+    it is wrong every day until someone re-saves the schedule. Recomputing from
+    the wall clock is the only thing that keeps "10am" meaning 10am."""
+    from zoneinfo import ZoneInfo
+    import datetime as _dt
+    tz = ZoneInfo(GAP_TZ)
+    now = (_dt.datetime.fromtimestamp(after_ms / 1000.0, tz) if after_ms
+           else _dt.datetime.now(tz))
+    run = now.replace(hour=GAP_HOUR_ET, minute=0, second=0, microsecond=0)
+    if run <= now:
+        run = run + _dt.timedelta(days=1)
+    # Re-resolve the offset: adding a day to an aware datetime keeps the OLD
+    # offset across a DST change, which would land the run an hour off on
+    # exactly the two days a year this is hardest to notice.
+    run = run.replace(tzinfo=None).replace(tzinfo=tz)
+    return int(run.timestamp() * 1000)
+
+
+def _gap_asked():
+    """Queries this node submitted as gap questions. Exact strings: the canister
+    stores `q` verbatim and hands it back on claim, so matching needs no copy of
+    libNorm/libKey here (and a drifting copy of that would be worse than none)."""
+    return _night_load('gap-asked.json', [])
+
+
+def _gap_library():
+    """(all_questions, human_questions) from the public library index."""
+    try:
+        with urllib.request.urlopen(_SW_BASE + '/library/index.json', timeout=20) as r:
+            idx = json.loads(r.read().decode('utf-8'))
+    except Exception as e:
+        print('[gap] could not read the library index:', str(e)[:120])
+        return None, None
+    entries = idx if isinstance(idx, list) else (idx.get('entries') or [])
+    asked = set(_gap_asked())
+    all_qs, human_qs = [], []
+    for e in entries:
+        q = (e.get('q') or '').strip()
+        if not q:
+            continue
+        all_qs.append(q)
+        if q not in asked:
+            human_qs.append(q)
+    return all_qs, human_qs
+
+
+def _gap_schema(n):
+    return {'type': 'json_schema', 'json_schema': {'name': 'gap_questions', 'strict': True,
+            'schema': {'type': 'object', 'additionalProperties': False,
+                       'properties': {'questions': {
+                           'type': 'array', 'minItems': 1, 'maxItems': n,
+                           'items': {'type': 'string'}}},
+                       'required': ['questions']}}}
+
+
+def _gap_propose(all_qs, human_qs, n, deadline):
+    """Ask the model for n gap-closing questions. Returns [] on any failure —
+    a quiet no-op day is the correct outcome; there is nothing to salvage and
+    a bad question becomes a permanent public entry."""
+    recent_human = human_qs[:25]
+    prompt = (
+        'You curate a public Q&A library that grows over time. Below is what it '
+        'already covers, and separately the questions REAL PEOPLE recently asked.\n\n'
+        'Propose %d NEW questions that close the biggest gaps in coverage.\n'
+        'Rules:\n'
+        '- Aim at the topics real people are asking about: extend and deepen '
+        'those areas rather than wandering into unrelated subjects.\n'
+        '- Do NOT restate, rephrase, or narrowly re-ask anything already covered.\n'
+        '- Each question must be self-contained and answerable from public web '
+        'sources — no opinions, no predictions, nothing time-sensitive.\n'
+        '- One sentence each, under 100 characters, phrased as a real question.\n'
+        'Output STRICT JSON only: {"questions": ["...", "..."]}\n\n'
+        'Recently asked by people (this is the demand signal — follow it):\n%s\n\n'
+        'Already covered (do not repeat):\n%s'
+        % (n,
+           '\n'.join('- ' + q for q in recent_human) or '- (nothing yet)',
+           '\n'.join('- ' + q for q in all_qs[:120]) or '- (empty library)'))
+    want = _sw_model()
+    payload = {'model': want, 'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': 600, 'response_format': _gap_schema(n)}
+    b = _sw_backend()
+    try:
+        if b is not None:
+            text, _m, _t, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+        else:
+            key = _sw_hermes_key()
+            if not key:
+                print('[gap] no model reachable — skipping today')
+                return []
+            text, _m, _t, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+        # Same shape as _sw_parse_analysis: strip a code fence, take the outer
+        # object. No salvage tier here on purpose — a half-decoded question is
+        # not worth publishing permanently, and skipping a day costs nothing.
+        t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+        m = re.search(r'\{.*\}', t, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        out = [str(q).strip() for q in (data.get('questions') or []) if str(q).strip()]
+        # 400 chars is the canister's hard query cap (LIB_MAX_QUERY); the prompt
+        # asks for <100 but the cap is what actually protects the submit.
+        return [q for q in out if len(q) <= 400][:n]
+    except Exception as e:
+        print('[gap] proposal failed:', str(e)[:160])
+        return []
+
+
+def _gap_submit(q):
+    """POST /search/submit — the same anonymous route the website uses. Returns
+    the canister's outcome word ('queued' | 'hit' | 'rejected:...' | 'error')."""
+    try:
+        req = urllib.request.Request(_SW_BASE + '/search/submit',
+                                     data=q.encode('utf-8'),
+                                     headers={'Content-Type': 'text/plain'})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            d = json.loads(r.read().decode('utf-8'))
+        if d.get('id'):
+            return 'queued'
+        return str(d.get('status') or d.get('error') or 'unknown')[:60]
+    except Exception as e:
+        return 'error: ' + str(e)[:60]
+
+
+def _gap_run():
+    t0 = time.monotonic()
+    run = {'at': int(time.time() * 1000), 'submitted': [], 'skipped': [], 'note': ''}
+
+    # Ask for the Brave budget FIRST. Each question becomes a job some worker
+    # answers with one Brave query, so N proposals cost N queries even though
+    # this process may not spend them itself. Reserving up front is what stops
+    # the cron from quietly handing the network a bill it can't pay.
+    n = GAP_DAILY_MAX
+    while n > 0 and not _brave_spend('gap', n):
+        n -= 1
+    if n <= 0:
+        run['note'] = ('brave month too tight for gap questions (%d/%d used) — '
+                       'human searches keep the rest'
+                       % (_brave_usage().get('used', 0), _BRAVE_CAP))
+        print('[gap]', run['note'])
+        _gap_log(run)
+        return
+    if n < GAP_DAILY_MAX:
+        print('[gap] trimmed %d → %d questions to stay inside the brave month'
+              % (GAP_DAILY_MAX, n))
+
+    # From here on the batch is reserved, so every exit has to give it back or
+    # a bad-library-index day permanently costs 10 queries for zero questions.
+    all_qs, human_qs = _gap_library()
+    if all_qs is None:
+        _brave_refund('gap', n)
+        run['note'] = 'library index unreachable'
+        _gap_log(run)
+        return
+
+    proposed = _gap_propose(all_qs, human_qs, n, time.monotonic() + 90)
+    if not proposed:
+        _brave_refund('gap', n)
+        run['note'] = 'no questions proposed'
+        _gap_log(run)
+        return
+
+    # Dedup locally before spending a submit. The canister dedups too (libKey),
+    # but a #hit there still costs a round trip and tells us nothing new.
+    seen = {q.strip().lower() for q in all_qs}
+    asked = _gap_asked()
+    fresh = []
+    for q in proposed:
+        if q.strip().lower() in seen:
+            run['skipped'].append({'q': q, 'why': 'already covered'})
+            continue
+        seen.add(q.strip().lower())
+        fresh.append(q)
+
+    for q in fresh:
+        outcome = _gap_submit(q)
+        if outcome == 'queued':
+            run['submitted'].append(q)
+            asked.append(q)
+        else:
+            run['skipped'].append({'q': q, 'why': outcome})
+
+    # Give back what we reserved but didn't use. Dedup and validation drop most
+    # proposals on a mature library, so this is the common path, not the edge.
+    _brave_refund('gap', n - len(run['submitted']))
+
+    _night_save('gap-asked.json', asked[-500:])
+    run['spent'] = len(run['submitted'])
+    run['note'] = ('submitted %d of %d proposed in %.1fs (reserved %d, refunded %d)'
+                   % (len(run['submitted']), len(proposed), time.monotonic() - t0,
+                      n, n - len(run['submitted'])))
+    print('[gap] %s' % run['note'])
+    for q in run['submitted']:
+        print('[gap]   + %s' % q[:90])
+    _gap_log(run)
+
+
+def _gap_log(run):
+    try:
+        runs = _night_load('gap-runs.json', [])
+        runs.append(run)
+        _night_save('gap-runs.json', runs[-MAX_GAP_RUNS_KEPT:])
+    except Exception:
+        pass
+
+
+def _gap_loop():
+    sched = _night_load('gap-schedule.json', {})
+    nxt = int(sched.get('nextRunAt', 0) or 0)
+    if not nxt or nxt < int(time.time() * 1000) - 86_400_000:
+        # No schedule, or one so stale it would fire immediately on boot and
+        # then again at 10:00 — pin it to the next real 10am instead.
+        nxt = _gap_next_run_ms()
+        _night_save('gap-schedule.json', {'nextRunAt': nxt})
+    print('[gap] next run %s (%s %02d:00 %s)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)),
+             GAP_TZ, GAP_HOUR_ET, 'ET'))
+    while True:
+        time.sleep(60)
+        try:
+            now_ms = int(time.time() * 1000)
+            if now_ms < nxt:
+                continue
+            with _gap_lock:
+                nxt = _gap_next_run_ms(now_ms)
+                _night_save('gap-schedule.json', {'nextRunAt': nxt})
+            _gap_run()
+            print('[gap] next run %s'
+                  % time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)))
+        except Exception as e:
+            print('[gap] loop error:', str(e)[:200])
+
+
+if GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
+    threading.Thread(target=_gap_loop, daemon=True, name='gap-cron').start()
 
 
 # ---- External approvals (Claude Code PreToolUse hook bridge) ---------------
@@ -2457,6 +3671,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._missions_scheduled_get()
         if self.path == '/missions/runs':
             return self._missions_runs()
+        if self.path == '/gap/status':
+            return self._gap_status()
         if self.path.startswith('/brave/'):
             return self._brave_search()
         if self.path == '/hermes/capability':
@@ -2465,6 +3681,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_get_model()
         if self.path == '/hermes/provider':
             return self._hermes_get_provider()
+        if self.path.split('?')[0] == '/hermes/local-models':
+            return self._hermes_local_models(
+                self.path.split('?', 1)[1] if '?' in self.path else '')
         if self.path == '/hermes/config/export':
             return self._hermes_export_config()
         if self.path == '/hermes/trial-status':
@@ -3174,6 +4393,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _missions_runs(self):
         return self._send_json(200, {'runs': _night_load('mission-runs.json', [])})
+
+    def _gap_status(self):
+        """Brave quota + gap cron state. The quota is the binding constraint on
+        the whole search network (1000/month vs the canister's 500/DAY budget),
+        so an operator needs to see it somewhere that isn't a log line."""
+        u = _brave_usage()
+        used = int(u.get('used', 0) or 0)
+        return self._send_json(200, {
+            'brave': {
+                'month': u.get('month'), 'used': used, 'cap': _BRAVE_CAP,
+                'remaining': max(0, _BRAVE_CAP - used),
+                'byKind': u.get('byKind', {}),
+                # What each spender can still get at, given its reserve. This is
+                # the "human questions weigh more" policy, made legible.
+                'headroom': {k: max(0, int(_BRAVE_CAP - _BRAVE_CAP * r - used))
+                             for k, r in _BRAVE_RESERVE.items()},
+            },
+            'gap': {
+                'enabled': bool(GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL),
+                'dailyMax': GAP_DAILY_MAX,
+                'runAt': '%02d:00 %s' % (GAP_HOUR_ET, GAP_TZ),
+                'nextRunAt': int((_night_load('gap-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
+                'askedTotal': len(_gap_asked()),
+                'runs': _night_load('gap-runs.json', [])[-10:],
+            },
+        })
 
     def _missions_schedule(self):
         """POST /missions/schedule — create/update one night-shift schedule.
@@ -7248,10 +8493,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
         model = str(req.get('model', '')).strip()
-        # allow presets OR any plausible "vendor/model[:tag]" id
+        # Allow presets OR any plausible model id. The vendor slash is OPTIONAL:
+        # cloud ids look like "vendor/model[:tag]" but local ones often don't —
+        # Ollama's are bare ("llama3.3:70b"), and requiring the slash 400'd every
+        # local backend.
         import re as _re
         valid = any(p['id'] == model for p in self._HERMES_MODEL_PRESETS) or \
-            bool(_re.match(r'^[\w.\-]+/[\w.\-:]+$', model))
+            bool(_re.match(r'^[\w.\-]+(/[\w.\-]+)*(:[\w.\-]+)?$', model))
         if not model or not valid:
             return self._send_json(400, {'error': 'invalid model id'})
 
@@ -7355,6 +8603,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # Groq is fast + free. Gemini + Groq ride their OpenAI-compatible endpoints
     # (custom_providers) so they use the exact chat_completions path OpenRouter
     # uses — no unverified native adapter, no silent config keys.
+    # 'local' backends are the operator's own hardware: no key, reached at a
+    # base_url they supply. They write `provider: lmstudio` either way — there is
+    # no `ollama` provider in hermes-agent (bootstrap's model block is explicit
+    # that Ollama rides the lmstudio block as a generic OpenAI-compatible
+    # endpoint), and since hermes is a pinned third-party package we can't add
+    # one. 'ollama' is a UI label, not a config value.
     _HERMES_PROVIDERS = {
         'openrouter': {'env': 'OPENROUTER_API_KEY', 'model': 'openai/gpt-oss-120b:free',
                        're': r'^sk-or-[A-Za-z0-9_\-]{8,}$', 'label': 'OpenRouter'},
@@ -7362,11 +8616,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                        're': r'^AIza[A-Za-z0-9_\-]{30,}$', 'label': 'Google Gemini'},
         'groq':       {'env': 'GROQ_API_KEY',       'model': 'llama-3.3-70b-versatile',
                        're': r'^gsk_[A-Za-z0-9]{20,}$', 'label': 'Groq'},
+        'lmstudio':   {'env': '', 'model': 'local-model', 're': None, 'local': True,
+                       'label': 'LM Studio (local)', 'default_url': 'http://localhost:1234/v1'},
+        'ollama':     {'env': '', 'model': 'llama3.1', 're': None, 'local': True,
+                       'label': 'Ollama (local)', 'default_url': 'http://localhost:11434/v1'},
     }
 
     @staticmethod
-    def _hermes_model_block(provider, model):
+    def _hermes_model_block(provider, model, base_url=None):
         """Return the config.yaml model block (+ custom_providers) for a provider."""
+        if provider in ('lmstudio', 'ollama'):
+            # Mirrors oci-fleet/hermes-bootstrap.py's lmstudio block exactly:
+            # no key_env, no custom_providers. Both UI labels write `lmstudio`.
+            return (f'model:\n  default: {model}\n  provider: lmstudio\n'
+                    f'  base_url: {base_url}\n')
         if provider == 'gemini':
             return (f'model:\n  default: {model}\n  provider: google-openai\n'
                     '  base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
@@ -7387,29 +8650,70 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return (f'model:\n  default: {model}\n  provider: openrouter\n'
                 '  base_url: https://openrouter.ai/api/v1\n')
 
+    def _hermes_local_models(self, query):
+        """GET /hermes/local-models?base_url=… → {models:[{id, state, loaded}], detail}
+
+        Which models the operator's local backend actually has, and crucially
+        WHICH ARE LOADED. Asking a local backend for an unloaded model fails
+        every call; showing loaded state in the picker makes that unpickable
+        instead of a mystery.
+
+        The browser can't fetch this itself: the /lmstudio/ proxy is hardcoded to
+        one host, so it can't serve a URL the operator just typed. Runs the same
+        allowlist as the write path — discovery must not become the SSRF hole the
+        writer isn't. Always 200: a backend that's merely offline must not block
+        the operator from saving a config for it.
+        """
+        base_url = urllib.parse.parse_qs(query or '').get('base_url', [''])[0].strip()
+        ok, err = _validate_local_base_url(base_url)
+        if not ok:
+            return self._send_json(400, {'error': err})
+        root = base_url.rstrip('/')
+        # LM Studio's native REST API carries load state; the OpenAI-compatible
+        # /models (which Ollama also answers) does not.
+        native = re.sub(r'/v\d+$', '', root) + '/api/v0/models'
+        for url, has_state in ((native, True), (root + '/models', False)):
+            try:
+                with urllib.request.urlopen(url, timeout=3) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+            except Exception:
+                continue
+            out = []
+            for m in (data.get('data') or []):
+                mid = m.get('id')
+                if not mid:
+                    continue
+                if has_state:
+                    out.append({'id': mid, 'state': m.get('state'),
+                                'loaded': m.get('state') == 'loaded',
+                                'type': m.get('type')})
+                else:
+                    out.append({'id': mid, 'state': None, 'loaded': None,
+                                'type': m.get('type')})
+            if out:
+                # Loaded first — those are the ones that answer immediately.
+                out.sort(key=lambda x: (x['loaded'] is not True, x['id']))
+                return self._send_json(200, {'models': out, 'source': url})
+        return self._send_json(200, {'models': [], 'detail': 'no model list at %s' % root})
+
     def _hermes_get_provider(self):
         """GET /hermes/provider → {provider, model, configured}. The UI reads this
         on load to decide whether to re-push the user's saved key: a container
         recreate wipes the ephemeral ~/.hermes, so the key must be re-applied from
         the browser-side settings copy (that's the 'keys vanish on recreate' fix)."""
         import os as _os, re as _re
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        provider, model = 'openrouter', ''
-        try:
-            with open(_os.path.join(home, 'config.yaml'), 'r', encoding='utf-8') as f:
-                cfg = f.read()
-            pm = _re.search(r'^\s*provider:\s*(\S+)', cfg, _re.MULTILINE)
-            mm = _re.search(r'^\s*default:\s*(\S+)', cfg, _re.MULTILINE)
-            if pm:
-                provider = pm.group(1).strip()
-            if mm:
-                model = mm.group(1).strip()
-        except Exception:
-            pass
+        import night_runner as _nr
+        home = _hermes_home()
+        cfg = _nr.read_model_config(home)          # scoped to the model: block
+        provider = cfg['raw_provider'] or 'openrouter'
+        model, base_url = cfg['model'], cfg['base_url']
         logical = {'google-openai': 'gemini'}.get(provider, provider)
         spec = self._HERMES_PROVIDERS.get(logical)
         configured = False
-        if spec:
+        if spec and spec.get('local'):
+            # A local backend has no key — having a base_url IS being configured.
+            configured = bool(base_url)
+        elif spec:
             if _os.environ.get(spec['env'], '').strip():
                 configured = True
             else:
@@ -7420,7 +8724,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
         return self._send_json(200, {'provider': logical, 'model': model,
-                                     'configured': configured})
+                                     'base_url': base_url, 'configured': configured})
 
     def _hermes_set_provider(self, force_provider=None):
         """POST /hermes/provider {provider, key, model?} → write the provider's key
@@ -7444,7 +8748,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': f'unknown provider: {provider}'})
         key = str(req.get('key', '')).strip()
         import os as _os, re as _re
-        if not _re.match(spec['re'], key):
+        local = bool(spec.get('local'))
+        base_url = str(req.get('base_url', '')).strip() or spec.get('default_url')
+        if local:
+            # No key to validate — the gate here is the URL, which the container
+            # will go on to POST to. See _validate_local_base_url: allowlist.
+            ok, err = _validate_local_base_url(base_url)
+            if not ok:
+                return self._send_json(400, {'error': err})
+        elif not _re.match(spec['re'], key):
             return self._send_json(400, {'error': f"invalid {spec['label']} key"})
         model = str(req.get('model', '')).strip() or spec['model']
 
@@ -7453,19 +8765,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cfg_path = _os.path.join(home, 'config.yaml')
         try:
             _os.makedirs(home, exist_ok=True)
-            # 1. write the key into .env (replace any prior line for THIS env var)
-            lines = []
-            if _os.path.exists(env_path):
-                with open(env_path, 'r', encoding='utf-8') as f:
-                    lines = [l for l in f.read().splitlines()
-                             if not l.startswith(spec['env'] + '=')]
-            lines.append(f"{spec['env']}={key}")
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-            try:
-                _os.chmod(env_path, 0o600)
-            except Exception:
-                pass
+            # 1. write the key into .env (replace any prior line for THIS env var).
+            #    A local backend has no key and no env var — skip entirely.
+            if not local:
+                lines = []
+                if _os.path.exists(env_path):
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        lines = [l for l in f.read().splitlines()
+                                 if not l.startswith(spec['env'] + '=')]
+                lines.append(f"{spec['env']}={key}")
+                with open(env_path, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines) + '\n')
+                try:
+                    _os.chmod(env_path, 0o600)
+                except Exception:
+                    pass
         except Exception as e:
             return self._send_json(500, {'error': f'write .env: {e}'})
 
@@ -7478,7 +8792,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     cfg = f.read()
             header = ('# CafresoHQ — Hermes config (provider set via HQ Settings).\n'
                       '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
-            block = self._hermes_model_block(provider, model)
+            block = self._hermes_model_block(provider, model, base_url)
             m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
             if m:
                 new_cfg = header + block + cfg[m.start():]
@@ -7494,13 +8808,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json(500, {'error': f'write config: {e}'})
 
-        # The user just brought their OWN key — end the shared-trial cap. Their
-        # key draws on their own account, so it's never metered here.
+        # The user just brought their OWN key (or their own hardware) — end the
+        # shared-trial cap. Their key draws on their own account, so it's never
+        # metered here.
         _trial_deactivate()
 
         # 3. export into THIS process env so the restarted gateway (which inherits
         #    serve.py's env via the bootstrap) sees the key immediately.
-        _os.environ[spec['env']] = key
+        if not local:
+            _os.environ[spec['env']] = key
         restarted = False
         try:
             subprocess.Popen(['hermes', 'gateway', 'restart'],

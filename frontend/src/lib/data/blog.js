@@ -182,7 +182,7 @@ export const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 export function postHeroImg(hero) {
-  if (hero === 'farm') return '/assets/cafreso.png';
+  if (hero === 'farm') return '/assets/cafreso.webp';
   if (hero === 'banking-brave') return '/assets/banking-brave-logo.png';
-  return '/assets/cafreso-roaster.png';
+  return '/assets/cafreso-roaster.webp';
 }

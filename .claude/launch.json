@@ -25,6 +25,19 @@
       ],
       "port": 4173,
       "autoPort": true
+    },
+    {
+      "name": "hq-ui-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4180",
+        "--directory",
+        "hq-ui"
+      ],
+      "port": 4180,
+      "autoPort": true
     }
   ]
 }

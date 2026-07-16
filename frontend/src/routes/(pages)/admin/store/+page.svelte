@@ -154,13 +154,13 @@
 <svelte:head><title>Admin · Store · Cafreso</title></svelte:head>
 
 <section class="mx-auto px-4 sm:px-[18px] pt-6 sm:pt-8 pb-24" style="max-width: 1100px;">
-  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
     <Icon name="storefront" size={16} /> Admin tools
   </div>
-  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(222 47% 11%);">
+  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(var(--pg-fg));">
     Store
   </h1>
-  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[620px]" style="color: hsl(215 16% 47%);">
+  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[620px]" style="color: hsl(var(--pg-fg-muted));">
     Manage the product catalog, review orders, and configure the $nanas
     treasury principal. All writes are signed by your Internet Identity and
     rejected by the canister for non-admins.
@@ -169,10 +169,10 @@
   {#if !$isAuthenticated}
     <div
       class="rounded-[14px] p-6 sm:p-8 text-center"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <Icon name="fingerprint" size={28} style="color: hsl(32 56% 35%);" />
-      <h2 class="text-[18px] font-bold mt-3 mb-2" style="color: hsl(222 47% 11%);">Sign in to manage the store</h2>
+      <h2 class="text-[18px] font-bold mt-3 mb-2" style="color: hsl(var(--pg-fg));">Sign in to manage the store</h2>
       <Button on:click={login} disabled={$authStatus === 'logging-in'}>
         <Icon name="fingerprint" size={15} /> Sign in
       </Button>
@@ -223,31 +223,31 @@
     <div
       id="treasury"
       class="rounded-[14px] p-4 sm:p-5 mb-6"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <div class="flex items-center gap-2 mb-2">
-        <Icon name="vault" size={16} style="color: hsl(24 48% 28%);" />
-        <h2 class="text-[14px] sm:text-[15px] font-bold" style="color: hsl(222 47% 11%);">Treasury principal</h2>
+        <Icon name="vault" size={16} style="color: hsl(var(--pg-eyebrow));" />
+        <h2 class="text-[14px] sm:text-[15px] font-bold" style="color: hsl(var(--pg-fg));">Treasury principal</h2>
       </div>
       {#if treasury}
         <div class="text-[11.5px] font-mono break-all mb-3 p-2 rounded-[8px]"
-          style="background: white; border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+          style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
         >
           {treasury}
         </div>
       {:else}
-        <p class="text-[12.5px] italic mb-3" style="color: hsl(215 16% 47%);">
+        <p class="text-[12.5px] italic mb-3" style="color: hsl(var(--pg-fg-muted));">
           No treasury set yet. Checkouts will fail until you configure one.
         </p>
       {/if}
-      <label for="treasury-principal" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Treasury principal</label>
+      <label for="treasury-principal" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Treasury principal</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <input
           id="treasury-principal"
           bind:value={treasuryDraft}
           placeholder="<principal> (e.g. xip3r-…-mae)"
           class="flex-1 text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none min-w-0"
-          style="border: 1px solid hsl(26 30% 85%);"
+          style="border: 1px solid hsl(var(--pg-border));"
         />
         <Button on:click={saveTreasury} disabled={!treasuryDraft}>
           <Icon name="check" size={14} /> Update treasury
@@ -258,8 +258,8 @@
     <!-- Products -->
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
-        <Icon name="package" size={16} style="color: hsl(24 48% 28%);" />
-        <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(222 47% 11%);">Products ({products.length})</h2>
+        <Icon name="package" size={16} style="color: hsl(var(--pg-eyebrow));" />
+        <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Products ({products.length})</h2>
       </div>
       <Button size="sm" on:click={startNew}>
         <Icon name="plus" size={13} /> New product
@@ -267,25 +267,25 @@
     </div>
     <div
       class="rounded-[14px] overflow-hidden mb-8"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       {#if products.length === 0}
-        <div class="px-4 py-6 text-center text-[13px]" style="color: hsl(215 16% 47%);">
+        <div class="px-4 py-6 text-center text-[13px]" style="color: hsl(var(--pg-fg-muted));">
           {loading ? 'Loading…' : 'No products yet. Create the first one.'}
         </div>
       {:else}
         {#each products as p, i (p.slug)}
           <div
             class="grid grid-cols-[1fr_auto] sm:grid-cols-[1.6fr_120px_100px_90px_auto] gap-3 px-4 sm:px-5 py-3.5 sm:py-4 items-center text-[13.5px]"
-            style="{i > 0 ? 'border-top: 1px solid hsl(26 30% 92%);' : ''}"
+            style="{i > 0 ? 'border-top: 1px solid hsl(var(--pg-border));' : ''}"
           >
             <div class="min-w-0">
-              <div class="font-semibold truncate" style="color: hsl(222 47% 11%);">{p.title || p.name}</div>
-              <div class="font-mono text-[10.5px] truncate" style="color: hsl(215 16% 47%);">/{p.slug}</div>
+              <div class="font-semibold truncate" style="color: hsl(var(--pg-fg));">{p.title || p.name}</div>
+              <div class="font-mono text-[10.5px] truncate" style="color: hsl(var(--pg-fg-muted));">/{p.slug}</div>
             </div>
-            <div class="hidden sm:block text-[11.5px] capitalize" style="color: hsl(215 16% 47%);">{p.cat || p.tag}</div>
+            <div class="hidden sm:block text-[11.5px] capitalize" style="color: hsl(var(--pg-fg-muted));">{p.cat || p.tag}</div>
             <div class="hidden sm:block tabular-nums text-right">{Number(p.price).toLocaleString()} nanas</div>
-            <div class="hidden sm:block text-right text-[11.5px]" style="color: hsl(215 16% 47%);">
+            <div class="hidden sm:block text-right text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
               {p.soon ? 'soon' : p.stock == null ? '∞' : `${p.stock} left`}
             </div>
             <div class="flex gap-1.5">
@@ -293,7 +293,7 @@
                 type="button"
                 on:click={() => startEdit(p)}
                 class="h-8 px-2.5 rounded-[8px] text-[11.5px] font-medium cursor-pointer inline-flex items-center gap-1 bg-transparent border"
-                style="border-color: hsl(26 30% 85%); color: hsl(222 47% 11%);"
+                style="border-color: hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
               >
                 <Icon name="pencil-simple" size={12} /> Edit
               </button>
@@ -310,7 +310,7 @@
                   type="button"
                   on:click={() => (confirmingDelete = null)}
                   class="h-8 px-2 rounded-[8px] text-[11.5px] cursor-pointer bg-transparent border"
-                  style="border-color: hsl(26 30% 85%); color: hsl(215 16% 47%);"
+                  style="border-color: hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted));"
                 >
                   ×
                 </button>
@@ -333,26 +333,26 @@
 
     <!-- Orders -->
     <div class="flex items-center gap-2 mb-3">
-      <Icon name="receipt" size={16} style="color: hsl(24 48% 28%);" />
-      <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(222 47% 11%);">Orders ({orders.length})</h2>
+      <Icon name="receipt" size={16} style="color: hsl(var(--pg-eyebrow));" />
+      <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Orders ({orders.length})</h2>
     </div>
     <div
       class="rounded-[14px] overflow-hidden"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       {#if orders.length === 0}
-        <div class="px-4 py-6 text-center text-[13px]" style="color: hsl(215 16% 47%);">
+        <div class="px-4 py-6 text-center text-[13px]" style="color: hsl(var(--pg-fg-muted));">
           No orders yet.
         </div>
       {:else}
         {#each orders as o, i (o.id)}
-          <div class="px-4 sm:px-5 py-4 text-[13px]" style="{i > 0 ? 'border-top: 1px solid hsl(26 30% 92%);' : ''}">
+          <div class="px-4 sm:px-5 py-4 text-[13px]" style="{i > 0 ? 'border-top: 1px solid hsl(var(--pg-border));' : ''}">
             <div class="flex items-center justify-between gap-3 flex-wrap">
               <div class="min-w-0">
-                <div class="font-semibold" style="color: hsl(222 47% 11%);">
+                <div class="font-semibold" style="color: hsl(var(--pg-fg));">
                   Order #{o.id} · {o.totalNanas.toLocaleString()} nanas
                 </div>
-                <div class="font-mono text-[10.5px] truncate" style="color: hsl(215 16% 47%);">
+                <div class="font-mono text-[10.5px] truncate" style="color: hsl(var(--pg-fg-muted));">
                   {o.buyer.slice(0, 5)}…{o.buyer.slice(-3)} · {fmtTime(o.createdAt)}
                 </div>
               </div>
@@ -363,14 +363,14 @@
                 {o.status}
               </span>
             </div>
-            <div class="mt-2 text-[12px]" style="color: hsl(215 25% 25%);">
+            <div class="mt-2 text-[12px]" style="color: hsl(var(--pg-fg));">
               {o.items.map((it) => `${it.qty}× ${it.slug}`).join(' · ')}
             </div>
-            <div class="mt-1 text-[11.5px]" style="color: hsl(215 16% 47%);">
+            <div class="mt-1 text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
               Ship to: {o.shipping.name} · {o.shipping.street}, {o.shipping.city} {o.shipping.postal}
             </div>
             {#if o.paidBlock != null}
-              <div class="mt-1 text-[11.5px] font-mono" style="color: hsl(215 16% 47%);">
+              <div class="mt-1 text-[11.5px] font-mono" style="color: hsl(var(--pg-fg-muted));">
                 $nanas tx block #{o.paidBlock}
               </div>
             {/if}
@@ -380,7 +380,7 @@
                   type="button"
                   on:click={() => changeOrderStatus(o, next)}
                   class="h-7 px-2 rounded-[7px] text-[10.5px] font-medium cursor-pointer bg-transparent border uppercase"
-                  style="border-color: hsl(26 30% 85%); color: hsl(222 47% 11%);"
+                  style="border-color: hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
                 >
                   → {next}
                 </button>
@@ -402,11 +402,11 @@
   >
     <div
       class="w-full sm:max-w-[520px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
-      style="background: white; border-top: 1px solid hsl(26 30% 85%);"
+      style="background: hsl(var(--pg-surface)); border-top: 1px solid hsl(var(--pg-border));"
       on:click|stopPropagation
     >
       <div class="flex items-center justify-between mb-4">
-        <h3 class="font-bold text-[16px]" style="color: hsl(222 47% 11%);">
+        <h3 class="font-bold text-[16px]" style="color: hsl(var(--pg-fg));">
           {editing.createdAtNs ? 'Edit product' : 'New product'}
         </h3>
         <button
@@ -421,55 +421,55 @@
 
       <div class="space-y-3">
         <div>
-          <label for="product-title" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Title</label>
-          <input id="product-title" bind:value={editing.title} required class="w-full text-[14px] bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+          <label for="product-title" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Title</label>
+          <input id="product-title" bind:value={editing.title} required class="w-full text-[14px] bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));" />
         </div>
         <div>
-          <label for="product-slug" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Slug</label>
-          <input id="product-slug" bind:value={editing.slug} required pattern="[a-z0-9-]+" placeholder="url-safe-slug" class="w-full text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
-          <p class="text-[10.5px] mt-1" style="color: hsl(215 16% 47%);">Lowercase letters, numbers, and hyphens only.</p>
+          <label for="product-slug" class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Slug</label>
+          <input id="product-slug" bind:value={editing.slug} required pattern="[a-z0-9-]+" placeholder="url-safe-slug" class="w-full text-[13px] font-mono bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));" />
+          <p class="text-[10.5px] mt-1" style="color: hsl(var(--pg-fg-muted));">Lowercase letters, numbers, and hyphens only.</p>
         </div>
         <div>
-          <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Excerpt</label>
-          <textarea bind:value={editing.excerpt} rows="2" class="w-full text-[13.5px] bg-white rounded-[10px] px-3 py-2 outline-none resize-none" style="border: 1px solid hsl(26 30% 85%);"></textarea>
+          <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Excerpt</label>
+          <textarea bind:value={editing.excerpt} rows="2" class="w-full text-[13.5px] bg-white rounded-[10px] px-3 py-2 outline-none resize-none" style="border: 1px solid hsl(var(--pg-border));"></textarea>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Category</label>
-            <select bind:value={editing.cat} class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);">
+            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Category</label>
+            <select bind:value={editing.cat} class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));">
               {#each CATS as c}<option value={c}>{c}</option>{/each}
             </select>
           </div>
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Image</label>
-            <select bind:value={editing.img} class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);">
+            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Image</label>
+            <select bind:value={editing.img} class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));">
               {#each IMAGES as i}<option value={i.key}>{i.label}</option>{/each}
             </select>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Price · $nanas</label>
-            <input type="number" min="0" bind:value={editing.price} class="w-full text-[13.5px] tabular-nums bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Price · $nanas</label>
+            <input type="number" min="0" bind:value={editing.price} class="w-full text-[13.5px] tabular-nums bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));" />
           </div>
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">USD cents (display)</label>
-            <input type="number" min="0" bind:value={editing.priceCentsUSD} class="w-full text-[13.5px] tabular-nums bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(26 30% 85%);" />
+            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">USD cents (display)</label>
+            <input type="number" min="0" bind:value={editing.priceCentsUSD} class="w-full text-[13.5px] tabular-nums bg-white rounded-[10px] px-3 py-2 outline-none" style="border: 1px solid hsl(var(--pg-border));" />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <label class="inline-flex items-center gap-2 text-[13px]" style="color: hsl(222 47% 11%);">
+          <label class="inline-flex items-center gap-2 text-[13px]" style="color: hsl(var(--pg-fg));">
             <input type="checkbox" bind:checked={editing.soon} /> Coming soon
           </label>
           <div>
-            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(215 16% 47%);">Stock (blank = ∞)</label>
+            <label class="block text-[11.5px] font-semibold uppercase mb-1" style="color: hsl(var(--pg-fg-muted));">Stock (blank = ∞)</label>
             <input
               type="number"
               min="0"
               bind:value={editing.stock}
               placeholder="∞"
               class="w-full text-[13.5px] tabular-nums bg-white rounded-[10px] px-3 py-2 outline-none"
-              style="border: 1px solid hsl(26 30% 85%);"
+              style="border: 1px solid hsl(var(--pg-border));"
             />
           </div>
         </div>
