@@ -195,7 +195,7 @@
 </svelte:head>
 
 <section class="mx-auto px-4 sm:px-[18px] pt-6 sm:pt-8 pb-24" style="max-width: 840px;">
-  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
     <Icon name="user-circle" size={16} /> Your account
   </div>
   <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(var(--pg-fg));">
@@ -326,7 +326,7 @@
       style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <div class="flex items-center gap-2 mb-1">
-        <Icon name="shield-check" size={15} style="color: hsl(24 48% 28%);" />
+        <Icon name="shield-check" size={15} style="color: hsl(var(--pg-eyebrow));" />
         <h2 class="text-[13.5px] font-semibold" style="color: hsl(var(--pg-fg));">Account</h2>
       </div>
       <p class="text-[12.5px] leading-[1.55] mb-3" style="color: hsl(var(--pg-fg-muted));">
@@ -363,7 +363,7 @@
     <!-- Wallet -->
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
-        <Icon name="wallet" size={16} style="color: hsl(24 48% 28%);" />
+        <Icon name="wallet" size={16} style="color: hsl(var(--pg-eyebrow));" />
         <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Wallet</h2>
       </div>
       <button
@@ -492,7 +492,7 @@
 
     <!-- Orders -->
     <div class="mt-7 flex items-center gap-2 mb-3">
-      <Icon name="receipt" size={16} style="color: hsl(24 48% 28%);" />
+      <Icon name="receipt" size={16} style="color: hsl(var(--pg-eyebrow));" />
       <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Orders</h2>
     </div>
     <div

@@ -141,7 +141,7 @@
 
 <div class="mx-auto px-4 py-8" style="max-width: 720px;">
   <div class="text-center">
-    <div class="inline-flex items-center gap-2 text-[13px] font-medium mb-2" style="color: hsl(24 48% 28%);">
+    <div class="inline-flex items-center gap-2 text-[13px] font-medium mb-2" style="color: hsl(var(--pg-eyebrow));">
       <Icon name="shopping-cart" size={14} /> Checkout
     </div>
     <h1 class="text-[28px] sm:text-[32px] font-bold">Your order</h1>

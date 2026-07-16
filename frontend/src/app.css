@@ -131,6 +131,7 @@
   --pg-header-edge: 26 35% 95%;
   --pg-solid: 222 47% 11%;
   --pg-solid-fg: 0 0% 100%;
+  --pg-eyebrow: 24 48% 28%;   /* warm coffee section labels/icons */
 }
 
 .dark {
@@ -153,6 +154,7 @@
   --pg-header-edge: 34 24% 26%;
   --pg-solid: 38 58% 90%;
   --pg-solid-fg: 24 48% 11%;
+  --pg-eyebrow: 34 46% 62%;   /* warm tan — readable coffee label on dark */
 
   /* Dark mode keeps the banana scale but anchors against deeper coffee */
   --brand-50:  47 100% 94%;

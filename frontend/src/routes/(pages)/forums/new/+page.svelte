@@ -228,7 +228,7 @@
     <Icon name="caret-left" size={13} /> {isEditing ? 'Back to thread' : 'Back to Forums'}
   </a>
 
-  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
     <Icon name={isEditing ? 'pencil-line' : 'chats-circle'} size={16} />
     {isEditing ? 'Editing your thread' : 'Community · open to everyone'}
   </div>

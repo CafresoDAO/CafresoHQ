@@ -31,7 +31,7 @@
 
 <div class="mx-auto px-4 py-6 md:p-10" style="max-width: 960px;">
   <div class="text-center">
-    <div class="flex items-center justify-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+    <div class="flex items-center justify-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
       <Icon name="trophy" size={16} /> Leaderboard
     </div>
     <h2 class="font-bold my-2" style="font-size: clamp(24px, 5vw, 32px);">Cafreso Community Leaderboard</h2>

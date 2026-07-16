@@ -281,7 +281,7 @@
     <Icon name="caret-left" size={13} /> Back to Dev Log
   </a>
 
-  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
     <Icon name={isEditing ? 'pencil-line' : 'pencil-simple'} size={16} />
     {isEditing ? 'Editing existing post' : 'Author tools'}
   </div>

@@ -158,7 +158,7 @@
   {:else}
     <article>
       <div class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase mb-3"
-        style="background: hsl(var(--pg-hover)); color: hsl(24 48% 28%); letter-spacing: 0.05em;"
+        style="background: hsl(var(--pg-hover)); color: hsl(var(--pg-eyebrow)); letter-spacing: 0.05em;"
       >
         <Icon name="chats-circle" size={11} /> Forum thread
       </div>
@@ -207,7 +207,7 @@
       <!-- Comments -->
       <div class="mt-8">
         <div class="flex items-center gap-2 mb-3">
-          <Icon name="chat-circle" size={16} style="color: hsl(24 48% 28%);" />
+          <Icon name="chat-circle" size={16} style="color: hsl(var(--pg-eyebrow));" />
           <h2 class="font-bold text-[15.5px]" style="color: hsl(var(--pg-fg));">
             Comments ({comments.length})
           </h2>
