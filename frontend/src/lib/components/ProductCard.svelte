@@ -38,8 +38,8 @@
   on:mouseleave={leave}
   class="relative flex flex-col overflow-hidden no-underline text-primary"
   style="cursor: {p.unavailable ? 'not-allowed' : 'pointer'};
-    background: linear-gradient(180deg, hsl(26 45% 98% / 0.9), hsl(26 40% 94% / 0.75));
-    border: 1px solid hsl(26 35% 88%);
+    background: linear-gradient(180deg, hsl(var(--pg-surface) / 0.9), hsl(var(--pg-hover) / 0.75));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 16px;
     padding: 18px;
     box-shadow: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 10px 24px -14px hsl(24 30% 20% / 0.3);
@@ -47,10 +47,8 @@
 >
   <div class="flex justify-between items-start mb-1.5">
     <span
-      class="text-[11px] font-semibold uppercase"
+      class="cat-chip text-[11px] font-semibold uppercase"
       style="letter-spacing: 0.08em;
-        background: hsl(26 30% 74% / 0.5);
-        color: hsl(24 40% 22%);
         padding: 4px 10px;
         border-radius: 999px;"
     >{TAG_LABEL[p.tag] || p.tag}</span>
@@ -107,3 +105,15 @@
     <span class="text-xs text-muted-foreground">${usd(p.price)} USD</span>
   </div>
 </svelte:element>
+
+<style>
+  /* Category chip: keep light values exact, flip to a warm chip in dark. */
+  .cat-chip {
+    background: hsl(26 30% 74% / 0.5);
+    color: hsl(24 40% 22%);
+  }
+  :global(.dark) .cat-chip {
+    background: hsl(30 25% 55% / 0.35);
+    color: hsl(30 35% 85%);
+  }
+</style>

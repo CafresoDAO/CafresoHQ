@@ -75,7 +75,7 @@
   <!-- Back -->
   <a href="/forums" style="
     display: inline-flex; align-items: center; gap: 5px;
-    font-size: 12.5px; color: hsl(215 16% 47%); text-decoration: none; margin-bottom: 20px;
+    font-size: 12.5px; color: hsl(var(--pg-fg-muted)); text-decoration: none; margin-bottom: 20px;
   ">
     <Icon name="caret-left" size={13} /> Community
   </a>
@@ -133,12 +133,12 @@
     <!-- No data state -->
     <div style="
       text-align: center; padding: 48px 24px;
-      border-radius: 14px; border: 1.5px dashed hsl(26 30% 82%);
-      background: hsl(26 40% 98%);
+      border-radius: 14px; border: 1.5px dashed hsl(var(--pg-border));
+      background: hsl(var(--pg-surface));
     ">
-      <Icon name="user-circle" size={32} style="opacity: 0.2; display: block; margin: 0 auto 12px; color: hsl(222 47% 11%);" />
-      <div style="font-size: 15px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 6px;">No public activity found</div>
-      <div style="font-size: 13px; color: hsl(215 16% 47%); margin-bottom: 20px; max-width: 340px; margin-left: auto; margin-right: auto; line-height: 1.55;">
+      <Icon name="user-circle" size={32} style="opacity: 0.2; display: block; margin: 0 auto 12px; color: hsl(var(--pg-fg));" />
+      <div style="font-size: 15px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 6px;">No public activity found</div>
+      <div style="font-size: 13px; color: hsl(var(--pg-fg-muted)); margin-bottom: 20px; max-width: 340px; margin-left: auto; margin-right: auto; line-height: 1.55;">
         On-chain activity for this principal will appear here once the canister audit log is live.
       </div>
     </div>
@@ -146,22 +146,22 @@
     <!-- Authored posts -->
     {#if authoredPosts.length > 0}
       <div style="margin-bottom: 24px;">
-        <h2 style="font-size: 14px; font-weight: 700; color: hsl(215 16% 47%); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px;">
+        <h2 style="font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg-muted)); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px;">
           Dev Log posts
         </h2>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           {#each authoredPosts as p (p.slug)}
             <a href="/blog/{p.slug}" style="
               display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-              border-radius: 12px; border: 1px solid hsl(26 30% 88%);
-              background: white; text-decoration: none;
+              border-radius: 12px; border: 1px solid hsl(var(--pg-border));
+              background: hsl(var(--pg-elevated)); text-decoration: none;
             ">
               <Icon name="article" size={16} style="color: hsl(32 72% 50%); flex-shrink: 0;" />
               <div style="flex: 1; min-width: 0;">
-                <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%);">{p.title}</div>
-                <div style="font-size: 11px; color: hsl(215 16% 47%); margin-top: 2px;">{p.date} · {p.readMin} min read</div>
+                <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg));">{p.title}</div>
+                <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); margin-top: 2px;">{p.date} · {p.readMin} min read</div>
               </div>
-              <Icon name="arrow-right" size={13} style="color: hsl(215 16% 56%); flex-shrink: 0;" />
+              <Icon name="arrow-right" size={13} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0;" />
             </a>
           {/each}
         </div>
@@ -171,7 +171,7 @@
     <!-- Governance proposals -->
     {#if proposedBy.length > 0}
       <div style="margin-bottom: 24px;">
-        <h2 style="font-size: 14px; font-weight: 700; color: hsl(215 16% 47%); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px;">
+        <h2 style="font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg-muted)); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px;">
           Governance proposals
         </h2>
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -179,17 +179,17 @@
             {@const ps = proposalStatus(p.status)}
             <a href="/governance/{p.id}" style="
               display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-              border-radius: 12px; border: 1px solid hsl(26 30% 88%);
-              background: white; text-decoration: none;
+              border-radius: 12px; border: 1px solid hsl(var(--pg-border));
+              background: hsl(var(--pg-elevated)); text-decoration: none;
             ">
               <Icon name="gavel" size={16} style="color: hsl(260 70% 62%); flex-shrink: 0;" />
               <div style="flex: 1; min-width: 0;">
-                <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%);">{p.title}</div>
+                <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg));">{p.title}</div>
                 <div style="font-size: 11px; margin-top: 2px;">
                   <span style="color: {ps.color}; background: {ps.bg}; border-radius: 4px; padding: 1px 5px; font-weight: 600; font-size: 10px;">{ps.label}</span>
                 </div>
               </div>
-              <Icon name="arrow-right" size={13} style="color: hsl(215 16% 56%); flex-shrink: 0;" />
+              <Icon name="arrow-right" size={13} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0;" />
             </a>
           {/each}
         </div>
@@ -200,7 +200,7 @@
     {#if seedEvents.length > 0}
       <div style="
         border-radius: 16px; padding: 20px; margin-bottom: 16px;
-        background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);
+        background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));
       ">
         <AuditTrail
           principalId={id.length > 20 ? `${id.slice(0, 10)}…${id.slice(-5)}` : id}

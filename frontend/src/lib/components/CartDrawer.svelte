@@ -22,8 +22,8 @@
     role="presentation"
   ></div>
   <div
-    class="fixed right-0 top-0 bottom-0 w-full z-[20] flex flex-col"
-    style="max-width: 520px; background: hsl(26 30% 74%);"
+    class="cart-drawer fixed right-0 top-0 bottom-0 w-full z-[20] flex flex-col"
+    style="max-width: 520px;"
   >
     <div class="flex justify-between items-center px-5 py-4">
       <h1 class="text-xl font-bold m-0">
@@ -88,3 +88,13 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  /* Warm tan drawer panel: keep light value exact, flip to a themed surface in dark. */
+  .cart-drawer {
+    background: hsl(26 30% 74%);
+  }
+  :global(.dark) .cart-drawer {
+    background: hsl(var(--pg-surface));
+  }
+</style>

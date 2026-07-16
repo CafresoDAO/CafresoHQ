@@ -276,7 +276,7 @@
   <a
     href="/blog"
     class="inline-flex items-center gap-1.5 text-[12.5px] no-underline mb-4"
-    style="color: hsl(215 16% 47%);"
+    style="color: hsl(var(--pg-fg-muted));"
   >
     <Icon name="caret-left" size={13} /> Back to Dev Log
   </a>
@@ -285,10 +285,10 @@
     <Icon name={isEditing ? 'pencil-line' : 'pencil-simple'} size={16} />
     {isEditing ? 'Editing existing post' : 'Author tools'}
   </div>
-  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(222 47% 11%);">
+  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(var(--pg-fg));">
     {heading}
   </h1>
-  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[560px]" style="color: hsl(215 16% 47%);">
+  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[560px]" style="color: hsl(var(--pg-fg-muted));">
     {#if isEditing}
       Updating <code style="font-size: 12.5px;">/blog/{editSlug}</code>. The canister's <code style="font-size: 12.5px;">upsertPost</code> keys by slug, so saving overwrites the existing post.
     {:else}
@@ -307,11 +307,11 @@
   {#if !$isAuthenticated}
     <div
       class="rounded-[14px] p-6 sm:p-8 text-center"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <Icon name="fingerprint" size={28} style="color: hsl(32 56% 35%);" />
-      <h2 class="text-[18px] font-bold mt-3 mb-2" style="color: hsl(222 47% 11%);">Sign in to write</h2>
-      <p class="text-[13.5px] mb-5 max-w-[360px] mx-auto" style="color: hsl(215 16% 47%);">
+      <h2 class="text-[18px] font-bold mt-3 mb-2" style="color: hsl(var(--pg-fg));">Sign in to write</h2>
+      <p class="text-[13.5px] mb-5 max-w-[360px] mx-auto" style="color: hsl(var(--pg-fg-muted));">
         Connect your Internet Identity so the canister can verify you're an admin.
       </p>
       <Button on:click={login} disabled={$authStatus === 'logging-in'}>
@@ -350,35 +350,35 @@
 
     <div class="grid grid-cols-1 gap-4 sm:gap-5">
       <!-- Title + slug -->
-      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
-        <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(215 16% 47%);" for="post-title">Title</label>
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
+        <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="post-title">Title</label>
         <input
           id="post-title"
           bind:value={title}
           placeholder="Week 43: what we shipped"
-          class="w-full text-[18px] sm:text-[20px] font-bold bg-white rounded-[10px] px-3 py-2.5 outline-none"
-          style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+          class="w-full text-[18px] sm:text-[20px] font-bold rounded-[10px] px-3 py-2.5 outline-none"
+          style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
         />
 
-        <label class="block text-[11.5px] font-semibold uppercase tracking-wide mt-4 mb-1.5" style="color: hsl(215 16% 47%);" for="post-slug">
-          URL slug <span class="font-normal normal-case" style="color: hsl(215 16% 62%);">(auto from title)</span>
+        <label class="block text-[11.5px] font-semibold uppercase tracking-wide mt-4 mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="post-slug">
+          URL slug <span class="font-normal normal-case" style="color: hsl(var(--pg-fg-subtle));">(auto from title)</span>
         </label>
-        <div class="flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 bg-white" style="border: 1px solid hsl(26 30% 85%);">
-          <span class="text-[12.5px] font-mono shrink-0" style="color: hsl(215 16% 47%);">/blog/</span>
+        <div class="flex items-center gap-1.5 rounded-[10px] px-2.5 py-2" style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));">
+          <span class="text-[12.5px] font-mono shrink-0" style="color: hsl(var(--pg-fg-muted));">/blog/</span>
           <input
             id="post-slug"
             bind:value={slug}
             on:input={() => (slugTouched = true)}
             placeholder={slugify(title) || 'my-post-slug'}
             class="flex-1 min-w-0 text-[13px] font-mono bg-transparent border-none outline-none"
-            style="color: hsl(222 47% 11%);"
+            style="color: hsl(var(--pg-fg));"
           />
         </div>
       </div>
 
       <!-- Theme picker -->
-      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
-        <div class="text-[11.5px] font-semibold uppercase tracking-wide mb-3" style="color: hsl(215 16% 47%);">
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
+        <div class="text-[11.5px] font-semibold uppercase tracking-wide mb-3" style="color: hsl(var(--pg-fg-muted));">
           Post theme
         </div>
         <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));">
@@ -406,31 +406,31 @@
               <div
                 style="
                   padding: 7px 10px 8px;
-                  background: {theme === t.key ? 'hsl(32 72% 50%)' : 'white'};
-                  border-top: 1px solid hsl(26 30% 88%);
+                  background: {theme === t.key ? 'hsl(32 72% 50%)' : 'hsl(var(--pg-elevated))'};
+                  border-top: 1px solid hsl(var(--pg-border));
                 "
               >
                 <div class="text-[12px] font-semibold leading-tight"
-                  style="color: {theme === t.key ? 'white' : 'hsl(222 47% 11%)'};"
+                  style="color: {theme === t.key ? 'white' : 'hsl(var(--pg-fg))'};"
                 >{t.label}</div>
                 <div class="text-[10px] leading-tight mt-0.5"
-                  style="color: {theme === t.key ? 'hsl(0 0% 100% / 0.8)' : 'hsl(215 16% 50%)'};"
+                  style="color: {theme === t.key ? 'hsl(0 0% 100% / 0.8)' : 'hsl(var(--pg-fg-muted))'};"
                 >{t.description}</div>
               </div>
             </button>
           {/each}
         </div>
         {#if theme === 'banking-brave'}
-          <p class="text-[11.5px] mt-3" style="color: hsl(215 16% 55%);">
+          <p class="text-[11.5px] mt-3" style="color: hsl(var(--pg-fg-subtle));">
             Banking.Brave uses a full-page layout with a built-in yield calculator and roadmap — body widgets are rendered inside that layout.
           </p>
         {/if}
       </div>
 
       <!-- Hero image picker -->
-      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
-        <div class="text-[11.5px] font-semibold uppercase tracking-wide mb-3" style="color: hsl(215 16% 47%);">
-          Hero image <span class="font-normal normal-case" style="color: hsl(215 16% 62%);">(shown on the card and post header)</span>
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
+        <div class="text-[11.5px] font-semibold uppercase tracking-wide mb-3" style="color: hsl(var(--pg-fg-muted));">
+          Hero image <span class="font-normal normal-case" style="color: hsl(var(--pg-fg-subtle));">(shown on the card and post header)</span>
         </div>
         <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));">
           {#each HEROES as h}
@@ -463,15 +463,15 @@
               <div
                 style="
                   padding: 6px 10px 7px;
-                  background: {hero === h.key ? 'hsl(32 72% 50%)' : 'white'};
-                  border-top: 1px solid hsl(26 30% 88%);
+                  background: {hero === h.key ? 'hsl(32 72% 50%)' : 'hsl(var(--pg-elevated))'};
+                  border-top: 1px solid hsl(var(--pg-border));
                 "
               >
                 <div class="text-[12px] font-semibold leading-tight"
-                  style="color: {hero === h.key ? 'white' : 'hsl(222 47% 11%)'};"
+                  style="color: {hero === h.key ? 'white' : 'hsl(var(--pg-fg))'};"
                 >{h.label}</div>
                 <div class="text-[10px] leading-tight mt-0.5"
-                  style="color: {hero === h.key ? 'hsl(0 0% 100% / 0.8)' : 'hsl(215 16% 50%)'};"
+                  style="color: {hero === h.key ? 'hsl(0 0% 100% / 0.8)' : 'hsl(var(--pg-fg-muted))'};"
                 >{h.desc}</div>
               </div>
             </button>
@@ -481,15 +481,15 @@
 
       <!-- Category + author role -->
       <div class="rounded-[14px] p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-4"
-        style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+        style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
       >
         <div>
-          <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(215 16% 47%);" for="post-cat">Category</label>
+          <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="post-cat">Category</label>
           <select
             id="post-cat"
             bind:value={category}
-            class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none"
-            style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+            class="w-full text-[13.5px] rounded-[10px] px-2.5 py-2 outline-none"
+            style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
           >
             {#each Object.entries(CATEGORIES) as [k, m]}
               <option value={k}>{m.label}</option>
@@ -497,27 +497,27 @@
           </select>
         </div>
         <div>
-          <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(215 16% 47%);" for="post-role">Author role</label>
+          <label class="block text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style="color: hsl(var(--pg-fg-muted));" for="post-role">Author role</label>
           <input
             id="post-role"
             bind:value={authorRole}
             placeholder="Core team"
-            class="w-full text-[13.5px] bg-white rounded-[10px] px-2.5 py-2 outline-none"
-            style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+            class="w-full text-[13.5px] rounded-[10px] px-2.5 py-2 outline-none"
+            style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
           />
         </div>
-        <label class="sm:col-span-2 inline-flex items-center gap-2 cursor-pointer text-[13px]" style="color: hsl(222 47% 11%);">
+        <label class="sm:col-span-2 inline-flex items-center gap-2 cursor-pointer text-[13px]" style="color: hsl(var(--pg-fg));">
           <input type="checkbox" bind:checked={pinned} /> Pin this post to the top of the dev log
         </label>
       </div>
 
       <!-- Excerpt -->
-      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
         <div class="flex items-center justify-between mb-1.5">
-          <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(215 16% 47%);" for="post-excerpt">
-            Excerpt <span class="font-normal normal-case" style="color: hsl(215 16% 62%);">(optional — auto-filled from first paragraph)</span>
+          <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(var(--pg-fg-muted));" for="post-excerpt">
+            Excerpt <span class="font-normal normal-case" style="color: hsl(var(--pg-fg-subtle));">(optional — auto-filled from first paragraph)</span>
           </label>
-          <span class="text-[11px] tabular-nums" style="color: hsl(215 16% 47%);">{excerpt.length}/280</span>
+          <span class="text-[11px] tabular-nums" style="color: hsl(var(--pg-fg-muted));">{excerpt.length}/280</span>
         </div>
         <textarea
           id="post-excerpt"
@@ -525,22 +525,22 @@
           placeholder="Leave blank and we'll use the first paragraph of the body."
           rows="2"
           maxlength="280"
-          class="w-full text-[13.5px] bg-white rounded-[10px] px-3 py-2 outline-none resize-none"
-          style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%); line-height: 1.55;"
+          class="w-full text-[13.5px] rounded-[10px] px-3 py-2 outline-none resize-none"
+          style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg)); line-height: 1.55;"
         ></textarea>
         {#if !excerpt.trim() && deriveExcerpt()}
-          <div class="mt-2 text-[11.5px]" style="color: hsl(215 16% 47%);">
+          <div class="mt-2 text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
             <Icon name="sparkle" size={11} /> Auto-fill preview:
-            <span style="color: hsl(222 47% 11%);">{deriveExcerpt()}</span>
+            <span style="color: hsl(var(--pg-fg));">{deriveExcerpt()}</span>
           </div>
         {/if}
       </div>
 
       <!-- Body -->
-      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
+      <div class="rounded-[14px] p-4 sm:p-5" style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
         <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
-          <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(215 16% 47%);" for="post-body">Body</label>
-          <span class="text-[11px] tabular-nums" style="color: hsl(215 16% 47%);">~{readMin} min read</span>
+          <label class="text-[11.5px] font-semibold uppercase tracking-wide" style="color: hsl(var(--pg-fg-muted));" for="post-body">Body</label>
+          <span class="text-[11px] tabular-nums" style="color: hsl(var(--pg-fg-muted));">~{readMin} min read</span>
         </div>
 
         <!-- Toolbar: text formats -->
@@ -552,14 +552,14 @@
               title={btn.title}
               aria-label={btn.title}
               class="h-8 px-2.5 rounded-[8px] inline-flex items-center gap-1.5 text-[11.5px] font-semibold cursor-pointer"
-              style="background: white; border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+              style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
             >
               <Icon name={btn.icon} size={13} />
               {#if btn.label}{btn.label}{/if}
             </button>
           {/each}
 
-          <span style="width: 1px; height: 28px; align-self: center; background: hsl(26 30% 82%); margin: 0 2px;"></span>
+          <span style="width: 1px; height: 28px; align-self: center; background: hsl(var(--pg-border)); margin: 0 2px;"></span>
 
           <!-- Widget inserts -->
           {#each TOOLBAR_WIDGETS as btn}
@@ -581,7 +581,7 @@
             type="button"
             on:click={clearAndStartOver}
             class="h-8 px-2.5 rounded-[8px] inline-flex items-center gap-1.5 text-[11.5px] font-medium cursor-pointer"
-            style="background: transparent; border: 1px solid hsl(26 30% 85%); color: hsl(0 72% 42%);"
+            style="background: transparent; border: 1px solid hsl(var(--pg-border)); color: hsl(0 72% 42%);"
           >
             <Icon name="arrow-counter-clockwise" size={12} /> Reset
           </button>
@@ -609,10 +609,10 @@ Use the toolbar above to insert widgets:
 ::progress | 614/1000 | Testnet seats | Opens May 12
 ::calculator | apy=7.25 | max=50000 | currency=CF`}
           rows="14"
-          class="w-full text-[14.5px] bg-white rounded-[10px] px-3 py-3 outline-none resize-y"
-          style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%); line-height: 1.6; font-family: ui-monospace, 'SF Mono', Consolas, monospace;"
+          class="w-full text-[14.5px] rounded-[10px] px-3 py-3 outline-none resize-y"
+          style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg)); line-height: 1.6; font-family: ui-monospace, 'SF Mono', Consolas, monospace;"
         ></textarea>
-        <div class="mt-2 flex items-center justify-between text-[11px] flex-wrap gap-2" style="color: hsl(215 16% 47%);">
+        <div class="mt-2 flex items-center justify-between text-[11px] flex-wrap gap-2" style="color: hsl(var(--pg-fg-muted));">
           <span>
             <code>##</code> heading ·
             <code>-</code> bullets ·
@@ -665,7 +665,7 @@ Use the toolbar above to insert widgets:
           {previewing ? 'Hide preview' : 'Show preview'}
         </Button>
         {#if validationError}
-          <span class="text-[11.5px] self-center" style="color: hsl(215 16% 47%);">
+          <span class="text-[11.5px] self-center" style="color: hsl(var(--pg-fg-muted));">
             {validationError}
           </span>
         {/if}
@@ -674,8 +674,8 @@ Use the toolbar above to insert widgets:
 
     <!-- Themed live preview -->
     {#if previewing}
-      <div class="mt-8 sm:mt-10 pt-6 sm:pt-8" style="border-top: 1px dashed hsl(26 30% 80%);">
-        <div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-wide mb-4" style="color: hsl(215 16% 47%);">
+      <div class="mt-8 sm:mt-10 pt-6 sm:pt-8" style="border-top: 1px dashed hsl(var(--pg-border));">
+        <div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-wide mb-4" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="eye" size={13} /> Live preview · {selectedTheme.emoji} {selectedTheme.label} theme
         </div>
 
@@ -708,7 +708,7 @@ Use the toolbar above to insert widgets:
         {:else}
           <div
             class="rounded-[14px] py-10 text-center text-[13px] italic"
-            style="border: 1px dashed hsl(26 30% 80%); color: hsl(215 16% 55%);"
+            style="border: 1px dashed hsl(var(--pg-border)); color: hsl(var(--pg-fg-subtle));"
           >
             Body preview will appear once you start writing.
           </div>

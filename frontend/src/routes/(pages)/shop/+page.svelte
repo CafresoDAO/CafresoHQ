@@ -53,17 +53,17 @@
   </div>
   {#if isLoading && products.length === 0}
     <div class="rounded-[14px] px-4 py-10 text-center text-[13.5px]"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(215 16% 47%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted));"
     >
       <Icon name="spinner-gap" size={16} class="spin" /> Loading products…
     </div>
   {:else if filtered.length === 0}
     <div class="rounded-[14px] px-4 py-10 text-center"
-      style="background: hsl(26 40% 98%); border: 1px dashed hsl(26 30% 75%);"
+      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(26 30% 75%);"
     >
       <Icon name="storefront" size={28} style="color: hsl(32 56% 35%);" />
-      <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(222 47% 11%);">Nothing here yet</h3>
-      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px]" style="color: hsl(215 16% 47%);">
+      <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(var(--pg-fg));">Nothing here yet</h3>
+      <p class="text-[13.5px] mx-auto mb-4 max-w-[380px]" style="color: hsl(var(--pg-fg-muted));">
         No products in this category right now — try another filter above.
       </p>
     </div>

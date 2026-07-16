@@ -115,7 +115,7 @@
 
 {#if !proposal}
   <div style="max-width: 760px; margin: 0 auto; padding: 60px 18px; text-align: center;">
-    <h1 style="font-size: 28px; font-weight: 700; color: hsl(222 47% 11%);">Proposal not found</h1>
+    <h1 style="font-size: 28px; font-weight: 700; color: hsl(var(--pg-fg));">Proposal not found</h1>
     <a href="/governance" style="color: hsl(260 52% 44%); text-decoration: underline;">← Back to Governance</a>
   </div>
 {:else}
@@ -282,7 +282,7 @@
         <!-- Simulated vote panel -->
         <div style="
           border-radius: 14px; overflow: hidden;
-          background: white; border: 1px solid hsl(260 20% 88%);
+          background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
           box-shadow: 0 2px 16px -6px hsl(262 40% 20% / 0.15);
           position: sticky; top: 88px;
         ">
@@ -301,7 +301,7 @@
             {#if proposal.status !== 'open'}
               <div style="
                 text-align: center; padding: 20px 12px; font-size: 12.5px;
-                color: hsl(215 16% 47%); line-height: 1.5;
+                color: hsl(var(--pg-fg-muted)); line-height: 1.5;
               ">
                 <Icon name="lock-simple" size={22} style="opacity: 0.35; display: block; margin: 0 auto 8px;" />
                 Voting is {proposal.status === 'pending' ? 'not yet open' : 'closed'} for this proposal.
@@ -311,7 +311,7 @@
               <div style="text-align: center; padding: 12px 0 8px;">
                 <div style="
                   width: 44px; height: 44px; border-radius: 50%; margin: 0 auto 10px;
-                  background: {localVote === 'yes' ? 'hsl(112 40% 92%)' : localVote === 'no' ? 'hsl(0 50% 94%)' : 'hsl(215 20% 92%)'};
+                  background: {localVote === 'yes' ? 'hsl(112 45% 45% / 0.16)' : localVote === 'no' ? 'hsl(0 62% 50% / 0.16)' : 'hsl(215 16% 50% / 0.16)'};
                   display: flex; align-items: center; justify-content: center;
                 ">
                   <Icon
@@ -320,19 +320,19 @@
                     style="color: {localVote === 'yes' ? 'hsl(112 43% 40%)' : localVote === 'no' ? 'hsl(0 62% 40%)' : 'hsl(215 20% 44%)'};"
                   />
                 </div>
-                <div style="font-size: 13.5px; font-weight: 700; color: hsl(222 47% 11%);">
+                <div style="font-size: 13.5px; font-weight: 700; color: hsl(var(--pg-fg));">
                   Voted {localVote?.toUpperCase()}
                 </div>
-                <div style="font-size: 11px; color: hsl(215 16% 47%); margin: 4px 0 14px;">
+                <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); margin: 4px 0 14px;">
                   Simulated · not yet on-chain
                 </div>
                 <button
                   type="button"
                   onclick={resetVote}
                   style="
-                    background: none; border: 1px solid hsl(26 30% 82%); border-radius: 8px;
+                    background: none; border: 1px solid hsl(var(--pg-border)); border-radius: 8px;
                     font-size: 11.5px; font-family: inherit; cursor: pointer; padding: 6px 14px;
-                    color: hsl(215 16% 47%);
+                    color: hsl(var(--pg-fg-muted));
                   "
                 >Change vote</button>
               </div>
@@ -340,9 +340,9 @@
               <!-- Vote choices -->
               <div style="display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px;">
                 {#each [
-                  { choice: 'yes',     label: 'Vote YES',     color: 'hsl(112 43% 40%)',  border: 'hsl(112 40% 70%)', bg: 'hsl(112 40% 94%)' },
-                  { choice: 'no',      label: 'Vote NO',      color: 'hsl(0 62% 42%)',    border: 'hsl(0 55% 72%)',   bg: 'hsl(0 50% 96%)' },
-                  { choice: 'abstain', label: 'Abstain',      color: 'hsl(215 16% 38%)',  border: 'hsl(215 20% 72%)', bg: 'hsl(215 20% 95%)' },
+                  { choice: 'yes',     label: 'Vote YES',     color: 'hsl(112 43% 40%)',  border: 'hsl(112 40% 70%)', bg: 'hsl(112 45% 45% / 0.16)' },
+                  { choice: 'no',      label: 'Vote NO',      color: 'hsl(0 62% 42%)',    border: 'hsl(0 55% 72%)',   bg: 'hsl(0 62% 50% / 0.16)' },
+                  { choice: 'abstain', label: 'Abstain',      color: 'hsl(215 16% 38%)',  border: 'hsl(215 20% 72%)', bg: 'hsl(215 16% 50% / 0.16)' },
                 ] as v}
                   <button
                     type="button"
@@ -361,12 +361,12 @@
               </div>
 
               {#if !$isAuthenticated}
-                <div style="font-size: 11px; color: hsl(215 16% 47%); text-align: center; line-height: 1.5;">
+                <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); text-align: center; line-height: 1.5;">
                   <Icon name="info" size={12} style="vertical-align: middle;" />
                   Sign in to cast a real vote when the DAO goes live.
                 </div>
               {:else}
-                <div style="font-size: 11px; color: hsl(215 16% 47%); text-align: center; line-height: 1.5;">
+                <div style="font-size: 11px; color: hsl(var(--pg-fg-muted)); text-align: center; line-height: 1.5;">
                   Votes are simulated locally. Real governance requires neuron staking.
                 </div>
               {/if}
@@ -398,7 +398,7 @@
     <!-- Related proposals -->
     {#if related.length > 0}
       <div style="margin-top: 36px;">
-        <div style="font-size: 13px; font-weight: 700; color: hsl(215 16% 47%); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+        <div style="font-size: 13px; font-weight: 700; color: hsl(var(--pg-fg-muted)); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
           Related proposals
         </div>
         <div class="related-grid">
@@ -406,14 +406,14 @@
             {@const rps = proposalStatus(r.status)}
             <a href="/governance/{r.id}" style="
               display: block; border-radius: 12px; padding: 14px 16px; text-decoration: none;
-              background: white; border: 1px solid hsl(26 30% 88%);
+              background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
             ">
               <div style="
                 display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
                 text-transform: uppercase; color: {rps.color}; background: {rps.bg};
                 border-radius: 4px; padding: 2px 6px; margin-bottom: 6px;
               ">{rps.label}</div>
-              <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); line-height: 1.3;">{r.title}</div>
+              <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg)); line-height: 1.3;">{r.title}</div>
             </a>
           {/each}
         </div>

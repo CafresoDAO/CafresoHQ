@@ -50,7 +50,7 @@
     style="
       position: relative; background: none; border: none;
       cursor: pointer; padding: 6px; border-radius: 8px;
-      color: hsl(215 16% 47%);
+      color: hsl(var(--pg-fg-muted));
       display: inline-flex; align-items: center; justify-content: center;
     "
   >
@@ -75,7 +75,7 @@
       style="
         position: absolute; top: calc(100% + 8px); right: 0;
         width: 340px; max-height: 480px;
-        background: white; border: 1px solid hsl(26 30% 85%);
+        background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));
         border-radius: 14px; box-shadow: 0 8px 32px -4px hsl(222 30% 20% / 0.18);
         z-index: 1000; overflow: hidden;
         display: flex; flex-direction: column;
@@ -85,10 +85,10 @@
       <div style="
         display: flex; align-items: center; justify-content: space-between;
         padding: 13px 16px 10px;
-        border-bottom: 1px solid hsl(26 30% 90%);
+        border-bottom: 1px solid hsl(var(--pg-border));
         flex-shrink: 0;
       ">
-        <span style="font-size: 14px; font-weight: 700; color: hsl(222 47% 11%);">Notifications</span>
+        <span style="font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg));">Notifications</span>
         {#if $unreadCount > 0}
           <button
             type="button"
@@ -108,7 +108,7 @@
         {#if $notifications.length === 0}
           <div style="
             padding: 36px 20px; text-align: center;
-            color: hsl(215 16% 56%); font-size: 13px;
+            color: hsl(var(--pg-fg-subtle)); font-size: 13px;
           ">
             <Icon name="bell-slash" size={28} style="opacity: 0.35; display: block; margin: 0 auto 10px;" />
             No notifications yet
@@ -122,8 +122,8 @@
               style="
                 width: 100%; display: flex; gap: 11px; align-items: flex-start;
                 padding: 12px 16px; border: none; cursor: pointer;
-                background: {n.read ? 'white' : 'hsl(43 60% 97%)'};
-                border-bottom: 1px solid hsl(26 25% 93%);
+                background: {n.read ? 'hsl(var(--pg-surface))' : 'hsl(43 70% 55% / 0.12)'};
+                border-bottom: 1px solid hsl(var(--pg-border));
                 text-align: left; font-family: inherit;
                 transition: background 0.1s;
               "
@@ -141,15 +141,15 @@
               <div style="flex: 1; min-width: 0;">
                 <div style="
                   font-size: 13px; font-weight: {n.read ? 500 : 700};
-                  color: hsl(222 47% 11%); line-height: 1.35; margin-bottom: 2px;
+                  color: hsl(var(--pg-fg)); line-height: 1.35; margin-bottom: 2px;
                 ">{n.title}</div>
                 {#if n.body}
                   <div style="
-                    font-size: 11.5px; color: hsl(215 16% 47%);
+                    font-size: 11.5px; color: hsl(var(--pg-fg-muted));
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
                   ">{n.body}</div>
                 {/if}
-                <div style="font-size: 10.5px; color: hsl(215 16% 60%); margin-top: 4px;">
+                <div style="font-size: 10.5px; color: hsl(var(--pg-fg-subtle)); margin-top: 4px;">
                   {fmtTime(n.createdAt)}
                 </div>
               </div>
@@ -167,7 +167,7 @@
 
       <!-- Footer: link to all notifications / activity -->
       <div style="
-        border-top: 1px solid hsl(26 30% 90%); padding: 10px 16px;
+        border-top: 1px solid hsl(var(--pg-border)); padding: 10px 16px;
         flex-shrink: 0;
       ">
         <a

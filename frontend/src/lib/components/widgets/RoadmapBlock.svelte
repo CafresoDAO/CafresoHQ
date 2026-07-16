@@ -4,8 +4,8 @@
   export let phases = []; // [{ num, status, date, title }]
   export let accent = 'hsl(43 74% 54%)';
   export let dark = 'hsl(222 47% 11%)';
-  export let bodyBg = 'white';
-  export let bodyBorder = 'hsl(26 30% 85%)';
+  export let bodyBg = 'hsl(var(--pg-elevated))';
+  export let bodyBorder = 'hsl(var(--pg-border))';
 
   const STATUS_LABEL = { done: 'Shipped', now: 'Now', next: 'Upcoming' };
 
@@ -25,10 +25,10 @@
     return status === 'now' ? dark : bodyBg;
   }
   function cardText(status) {
-    return status === 'now' ? 'hsl(42 40% 96%)' : 'hsl(222 47% 11%)';
+    return status === 'now' ? 'hsl(42 40% 96%)' : 'hsl(var(--pg-fg))';
   }
   function cardSub(status) {
-    return status === 'now' ? 'hsl(42 20% 72%)' : 'hsl(215 16% 47%)';
+    return status === 'now' ? 'hsl(42 20% 72%)' : 'hsl(var(--pg-fg-muted))';
   }
 </script>
 
@@ -69,7 +69,7 @@
     >
       <div style="display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: baseline; gap: 10px;">
-          <span style="font-size: 10.5px; font-family: ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; color: {ph.status === 'now' ? accent : 'hsl(215 16% 47%)'};">
+          <span style="font-size: 10.5px; font-family: ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; color: {ph.status === 'now' ? accent : 'hsl(var(--pg-fg-muted))'};">
             PHASE {ph.num}
           </span>
           <span style="font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">{ph.title}</span>
@@ -81,7 +81,7 @@
           display: inline-flex; align-items: center; gap: 4px;
           margin-top: 7px;
           font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
-          color: {ph.status === 'now' ? accent : ph.status === 'done' ? 'hsl(142 55% 40%)' : 'hsl(215 16% 55%)'};
+          color: {ph.status === 'now' ? accent : ph.status === 'done' ? 'hsl(142 55% 40%)' : 'hsl(var(--pg-fg-muted))'};
         "
       >
         {#if ph.status === 'done'}✓ {/if}{STATUS_LABEL[ph.status] ?? ph.status}

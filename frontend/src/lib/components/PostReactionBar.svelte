@@ -53,20 +53,20 @@
   style="
     position: sticky; top: 92px; align-self: flex-start;
     width: 170px; gap: 12px; padding: 16px 14px;
-    background: hsl(26 45% 98% / 0.7); border: 1px solid hsl(26 30% 85%);
+    background: hsl(var(--pg-surface) / 0.7); border: 1px solid hsl(var(--pg-border));
     border-radius: 14px;
   "
 >
   <h4
     class="uppercase font-bold m-0"
-    style="font-size: 10.5px; letter-spacing: 0.12em; color: hsl(215 16% 47%);"
+    style="font-size: 10.5px; letter-spacing: 0.12em; color: hsl(var(--pg-fg-muted));"
   >Reactions</h4>
 
   <button
     on:click={onTip}
     class="flex flex-col items-center gap-1.5 cursor-pointer"
     style="
-      background: {userBurned > 0 ? 'hsl(45 95% 62%)' : 'white'};
+      background: {userBurned > 0 ? 'hsl(45 95% 62%)' : 'hsl(var(--pg-elevated))'};
       border: 1px solid hsl(32 72% 50%);
       border-radius: 12px; padding: 14px 10px;
       font-family: inherit;
@@ -79,12 +79,12 @@
     <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;">
       {(post.burned + userBurned).toLocaleString()}
     </div>
-    <div class="inline-flex items-center gap-1 text-[11px]" style="color: hsl(24 40% 22%);">
+    <div class="inline-flex items-center gap-1 text-[11px] rb-burned" style="color: hsl(24 40% 22%);">
       <NanasCoin size={11} /> burned
     </div>
     <div
-      class="mt-0.5 font-semibold text-[11px] text-white"
-      style="padding: 4px 10px; border-radius: 999px; background: hsl(24 48% 12%);"
+      class="mt-0.5 font-semibold text-[11px] rb-burn-pill"
+      style="padding: 4px 10px; border-radius: 999px; background: hsl(24 48% 12%); color: hsl(var(--pg-solid-fg));"
     >
       {userBurned > 0 ? `You burned ${userBurned}` : 'Tap to burn'}
     </div>
@@ -96,14 +96,25 @@
       on:click={() => handleReaction(label)}
       class="flex items-center gap-2.5 cursor-pointer bg-transparent border-none text-primary text-[13px]"
       style="padding: 8px 6px; border-radius: 8px; font-family: inherit; transition: background .15s;"
-      on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(26 40% 92% / 0.6)')}
+      on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.6)')}
       on:mouseleave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
-      <Icon name={icon} size={17} style="color: hsl(215 16% 47%);" />
+      <Icon name={icon} size={17} style="color: hsl(var(--pg-fg-muted));" />
       <span class="flex-1 text-left">{label}</span>
       {#if n != null}
-        <span class="text-xs" style="color: hsl(215 16% 47%);">{n}</span>
+        <span class="text-xs" style="color: hsl(var(--pg-fg-muted));">{n}</span>
       {/if}
     </button>
   {/each}
 </div>
+
+<style>
+  /* Warm-brown burn accents keep their light values; flip to readable tokens
+     in dark so they don't sink into the dark card. */
+  :global(.dark) .rb-burned {
+    color: hsl(var(--pg-fg-muted));
+  }
+  :global(.dark) .rb-burn-pill {
+    background: hsl(var(--pg-solid));
+  }
+</style>

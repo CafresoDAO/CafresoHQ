@@ -103,13 +103,13 @@
     <div style="
       position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 50;
       min-width: 220px; max-width: 300px;
-      background: white; border: 1px solid hsl(26 30% 85%);
+      background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
       border-radius: 12px; box-shadow: 0 8px 24px -6px hsl(222 30% 20% / 0.2);
       overflow: hidden; padding: 4px;
     ">
       <div style="
         font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-        color: hsl(215 16% 56%); padding: 5px 10px 3px;
+        color: hsl(var(--pg-fg-subtle)); padding: 5px 10px 3px;
       ">Mention a member</div>
       {#each filtered as u, i}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -119,18 +119,18 @@
           style="
             display: flex; align-items: center; gap: 8px;
             padding: 7px 10px; border-radius: 8px; cursor: pointer;
-            background: {selectedIdx === i ? 'hsl(43 74% 94%)' : 'transparent'};
+            background: {selectedIdx === i ? 'hsl(var(--pg-hover))' : 'transparent'};
           "
         >
           <Avatar name={u.name} hue={u.hue} size={24} />
-          <span style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">
+          <span style="font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg));">
             @{u.name}
           </span>
         </div>
       {/each}
       <div style="
-        font-size: 10px; color: hsl(215 16% 56%); padding: 4px 10px 6px;
-        border-top: 1px solid hsl(26 25% 92%); margin-top: 2px;
+        font-size: 10px; color: hsl(var(--pg-fg-subtle)); padding: 4px 10px 6px;
+        border-top: 1px solid hsl(var(--pg-border)); margin-top: 2px;
       ">↑↓ navigate · Enter to select · Esc to close</div>
     </div>
   {/if}

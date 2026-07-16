@@ -194,10 +194,10 @@
       position: fixed; left: 12px; right: 12px;
       bottom: calc(82px + env(safe-area-inset-bottom, 0px));
       z-index: 56;
-      background: hsl(26 45% 98% / 0.97);
+      background: hsl(var(--pg-surface) / 0.97);
       backdrop-filter: blur(24px) saturate(160%);
       -webkit-backdrop-filter: blur(24px) saturate(160%);
-      border: 1px solid hsl(26 30% 85%);
+      border: 1px solid hsl(var(--pg-border));
       border-radius: 20px;
       box-shadow: 0 24px 60px -16px hsl(24 40% 10% / 0.45), 0 2px 0 hsl(26 40% 98% / 0.5) inset;
       padding: 18px 16px 20px;
@@ -209,11 +209,11 @@
     <!-- Header row -->
     <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px;">
       <div>
-        <div style="font-size: 15px; font-weight: 700; color: hsl(222 47% 11%); display: flex; align-items: center; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 700; color: hsl(var(--pg-fg)); display: flex; align-items: center; gap: 6px;">
           <Icon name="brain" size={16} style="color: hsl(260 70% 50%);" />
           Ai Cafreso Search
         </div>
-        <div style="font-size: 10.5px; color: hsl(215 16% 47%); margin-top: 2px;">
+        <div style="font-size: 10.5px; color: hsl(var(--pg-fg-muted)); margin-top: 2px;">
           Answered on-chain · every answer joins the public library
         </div>
       </div>
@@ -223,7 +223,7 @@
         aria-label="Close AI Search"
         style="
           width: 30px; height: 30px; border: none; background: transparent;
-          border-radius: 8px; cursor: pointer; color: hsl(215 16% 47%);
+          border-radius: 8px; cursor: pointer; color: hsl(var(--pg-fg-muted));
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0; margin-top: -2px;
         "
@@ -237,7 +237,7 @@
       <div style="position: relative;">
         <Icon name="magnifying-glass" size={16} style="
           position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
-          color: hsl(215 16% 47%); pointer-events: none;
+          color: hsl(var(--pg-fg-muted)); pointer-events: none;
         " />
         <input
           bind:this={inputEl}
@@ -247,8 +247,8 @@
           placeholder="Ask anything…"
           style="
             width: 100%; padding: 12px 14px 12px 38px; border-radius: 12px;
-            border: 1.5px solid hsl(26 30% 82%); font-size: 15px; font-family: inherit;
-            background: white; color: hsl(222 47% 11%); outline: none;
+            border: 1.5px solid hsl(var(--pg-border)); font-size: 15px; font-family: inherit;
+            background: hsl(var(--pg-elevated)); color: hsl(var(--pg-fg)); outline: none;
             box-sizing: border-box;
             box-shadow: 0 1px 4px hsl(24 20% 20% / 0.06);
             transition: border-color .15s, box-shadow .15s;
@@ -258,7 +258,7 @@
             e.currentTarget.style.boxShadow = '0 0 0 3px hsl(260 70% 62% / 0.15), 0 1px 4px hsl(24 20% 20% / 0.06)';
           }}
           on:blur={(e) => {
-            e.currentTarget.style.borderColor = 'hsl(26 30% 82%)';
+            e.currentTarget.style.borderColor = 'hsl(var(--pg-border))';
             e.currentTarget.style.boxShadow = '0 1px 4px hsl(24 20% 20% / 0.06)';
           }}
         />
@@ -271,7 +271,7 @@
         <div style="margin-bottom: 14px;">
           <div style="
             font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.08em; color: hsl(215 16% 47%); margin-bottom: 7px;
+            letter-spacing: 0.08em; color: hsl(var(--pg-fg-muted)); margin-bottom: 7px;
           ">Recent</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             {#each recentSearches as r}
@@ -280,9 +280,9 @@
                 on:click={() => runSearch(r)}
                 style="
                   padding: 5px 11px; border-radius: 999px;
-                  border: 1px solid hsl(26 30% 85%); background: white;
+                  border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));
                   font-family: inherit; font-size: 12.5px; font-weight: 500;
-                  color: hsl(222 47% 11%); cursor: pointer;
+                  color: hsl(var(--pg-fg)); cursor: pointer;
                   transition: border-color .12s;
                 "
               >{r}</button>
@@ -295,7 +295,7 @@
       <div style="margin-bottom: 4px;">
         <div style="
           font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.08em; color: hsl(215 16% 47%); margin-bottom: 7px;
+          letter-spacing: 0.08em; color: hsl(var(--pg-fg-muted)); margin-bottom: 7px;
         ">Quick access</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
           <a
@@ -304,12 +304,12 @@
             style="
               display: flex; flex-direction: column; align-items: center; gap: 5px;
               padding: 12px 6px; border-radius: 12px; text-decoration: none;
-              border: 1px solid hsl(26 30% 88%); background: white; text-align: center;
+              border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); text-align: center;
               transition: border-color .12s;
             "
           >
             <Icon name="books" size={20} style="color: hsl(45 85% 45%);" />
-            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Library</span>
+            <span style="font-size: 11px; font-weight: 600; color: hsl(var(--pg-fg));">Library</span>
           </a>
           <a
             href="/governance"
@@ -317,12 +317,12 @@
             style="
               display: flex; flex-direction: column; align-items: center; gap: 5px;
               padding: 12px 6px; border-radius: 12px; text-decoration: none;
-              border: 1px solid hsl(26 30% 88%); background: white; text-align: center;
+              border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); text-align: center;
               transition: border-color .12s;
             "
           >
             <Icon name="gavel" size={20} style="color: hsl(260 70% 62%);" />
-            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">DAO</span>
+            <span style="font-size: 11px; font-weight: 600; color: hsl(var(--pg-fg));">DAO</span>
           </a>
           <a
             href={bankingBraveOrigin}
@@ -332,12 +332,12 @@
             style="
               display: flex; flex-direction: column; align-items: center; gap: 5px;
               padding: 12px 6px; border-radius: 12px; text-decoration: none;
-              border: 1px solid hsl(26 30% 88%); background: white; text-align: center;
+              border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); text-align: center;
               transition: border-color .12s;
             "
           >
             <Icon name="bank" size={20} style="color: hsl(220 78% 44%);" />
-            <span style="font-size: 11px; font-weight: 600; color: hsl(222 47% 11%);">Banking</span>
+            <span style="font-size: 11px; font-weight: 600; color: hsl(var(--pg-fg));">Banking</span>
           </a>
         </div>
       </div>
@@ -349,9 +349,9 @@
       <div style="text-align: center; padding: 10px 0 8px; display: flex; align-items: center; justify-content: center; gap: 7px;">
         <div
           class="spin"
-          style="display: inline-block; width: 13px; height: 13px; border: 2px solid hsl(26 30% 85%); border-top-color: hsl(260 70% 55%); border-radius: 50%;"
+          style="display: inline-block; width: 13px; height: 13px; border: 2px solid hsl(var(--pg-border)); border-top-color: hsl(260 70% 55%); border-radius: 50%;"
         ></div>
-        <span style="font-size: 12px; color: hsl(215 16% 55%);">Checking the library…</span>
+        <span style="font-size: 12px; color: hsl(var(--pg-fg-muted));">Checking the library…</span>
       </div>
     {/if}
 
@@ -363,21 +363,21 @@
           style="
             display: inline-block;
             width: 34px; height: 34px;
-            border: 3px solid hsl(26 30% 85%);
+            border: 3px solid hsl(var(--pg-border));
             border-top-color: hsl(260 70% 55%);
             border-radius: 50%;
             margin-bottom: 14px;
           "
         ></div>
         {#if queueNote === 'slow'}
-          <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">Still working — this one's a slow one</div>
-          <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
+          <div style="font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg));">Still working — this one's a slow one</div>
+          <div style="font-size: 11.5px; color: hsl(var(--pg-fg-muted)); margin-top: 4px;">
             The answer joins <a href="/library" on:click={close} style="color: hsl(260 70% 55%);">the library</a>
             either way — you can close this and find it there.
           </div>
         {:else}
-          <div style="font-size: 13px; font-weight: 600; color: hsl(222 47% 11%);">The research network is on it</div>
-          <div style="font-size: 11.5px; color: hsl(215 16% 55%); margin-top: 4px;">
+          <div style="font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg));">The research network is on it</div>
+          <div style="font-size: 11.5px; color: hsl(var(--pg-fg-muted)); margin-top: 4px;">
             {queueNote} · fresh answers usually land in a few seconds and join the library forever
           </div>
         {/if}
@@ -397,13 +397,13 @@
             {fromLibrary ? 'On-chain library' : 'Fresh from the network'}
           </span>
           {#if provLine(entry)}
-            <span style="font-size: 10.5px; color: hsl(215 16% 55%);">{provLine(entry)}</span>
+            <span style="font-size: 10.5px; color: hsl(var(--pg-fg-muted));">{provLine(entry)}</span>
           {/if}
         </div>
         {#if entry.answer}
-          <p style="font-size: 14px; line-height: 1.65; color: hsl(222 47% 11%); margin: 0 0 12px;">{plain(entry.answer)}</p>
+          <p style="font-size: 14px; line-height: 1.65; color: hsl(var(--pg-fg)); margin: 0 0 12px;">{plain(entry.answer)}</p>
         {:else}
-          <p style="font-size: 13px; line-height: 1.6; color: hsl(215 16% 40%); margin: 0 0 12px;">
+          <p style="font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 0 0 12px;">
             Sources collected — no summary was generated for this one yet.
           </p>
         {/if}
@@ -412,11 +412,11 @@
             {#each entry.sources.slice(0, 3) as s, i}
               <a href={s.url} target="_blank" rel="noopener noreferrer" style="
                 display: flex; align-items: baseline; gap: 7px; text-decoration: none;
-                font-size: 12.5px; color: hsl(222 47% 11%);
+                font-size: 12.5px; color: hsl(var(--pg-fg));
               ">
-                <span style="color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0;">[{i + 1}]</span>
+                <span style="color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0;">[{i + 1}]</span>
                 <span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{plain(s.title)}</span>
-                <span style="color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0;">{domain(s.url)}</span>
+                <span style="color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0;">{domain(s.url)}</span>
               </a>
             {/each}
           </div>
@@ -434,7 +434,7 @@
             <button type="button" on:click={() => copyLink(entry.id)} style="
               display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent;
               padding: 0; font-family: inherit; font-size: 12.5px; font-weight: 600;
-              color: {linkCopied ? 'hsl(112 43% 32%)' : 'hsl(215 16% 40%)'};
+              color: {linkCopied ? 'hsl(112 43% 32%)' : 'hsl(var(--pg-fg-muted))'};
               cursor: pointer;
             ">
               <Icon name={linkCopied ? 'check' : 'link'} size={12} />
@@ -444,7 +444,7 @@
           {#if entry.id && libraryGraphViewerUrl(entry.id)}
             <a href={libraryGraphViewerUrl(entry.id)} target="_blank" rel="noopener noreferrer" style="
               display: inline-flex; align-items: center; gap: 5px;
-              font-size: 12.5px; font-weight: 600; color: hsl(215 16% 40%); text-decoration: none;
+              font-size: 12.5px; font-weight: 600; color: hsl(var(--pg-fg-muted)); text-decoration: none;
             ">
               Graph view
               <Icon name="arrow-up-right" size={12} />
@@ -458,13 +458,13 @@
     {#if phase === 'rejected'}
       <div style="text-align: center; padding: 20px 0 16px;">
         <Icon name="warning-circle" size={28} style="color: hsl(32 72% 50%); display: block; margin: 0 auto 10px;" />
-        <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 4px;">
+        <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 4px;">
           {rejectReason === 'busy' ? 'The network is at capacity'
             : rejectReason === 'budget' ? "Today's research budget is spent"
             : rejectReason === 'timeout' ? 'Still researching — check the library shortly'
             : "The network couldn't answer this one"}
         </div>
-        <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">
+        <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); margin-bottom: 16px;">
           {rejectReason === 'timeout'
             ? 'Your question stays queued; the answer lands in the public library when a worker finishes.'
             : 'You can search with your own container instead — or try again in a bit.'}
@@ -476,8 +476,8 @@
           ">Sign in &amp; search</a>
           <button type="button" on:click={fallbackToLocal} style="
             display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
-            border: 1px solid hsl(26 30% 82%); background: white; font-family: inherit;
-            font-size: 13px; font-weight: 600; color: hsl(222 47% 11%); cursor: pointer;
+            border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); font-family: inherit;
+            font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg)); cursor: pointer;
           ">Search this site</button>
         </div>
       </div>
@@ -487,10 +487,10 @@
     {#if phase === 'dark'}
       <div style="text-align: center; padding: 20px 0 16px;">
         <Icon name="moon" size={28} style="color: hsl(260 40% 55%); display: block; margin: 0 auto 10px;" />
-        <div style="font-size: 14px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 4px;">
+        <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 4px;">
           {darkMessage ? 'Heads up' : 'The research network is asleep'}
         </div>
-        <div style="font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 16px;">
+        <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); margin-bottom: 16px;">
           {darkMessage || 'No workers are online right now. Sign in to search with your own container — or browse everything already answered.'}
         </div>
         <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
@@ -500,8 +500,8 @@
           ">Sign in &amp; search</a>
           <a href="/library" on:click={close} style="
             display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
-            border: 1px solid hsl(26 30% 82%); background: white;
-            font-size: 13px; font-weight: 600; color: hsl(222 47% 11%); text-decoration: none;
+            border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));
+            font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg)); text-decoration: none;
           ">Explore the library</a>
         </div>
       </div>
@@ -509,9 +509,9 @@
 
     <!-- Persistent library link -->
     {#if phase === 'idle' || phase === 'result'}
-      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed hsl(26 25% 82%); text-align: center;">
+      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed hsl(var(--pg-border)); text-align: center;">
         <a href="/library" on:click={close} style="
-          font-size: 12px; font-weight: 600; color: hsl(215 16% 47%); text-decoration: none;
+          font-size: 12px; font-weight: 600; color: hsl(var(--pg-fg-muted)); text-decoration: none;
         ">Explore the library — every answer, one growing web →</a>
       </div>
     {/if}
