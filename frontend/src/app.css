@@ -102,6 +102,35 @@
      mint variant lives in the .dark override below. */
   --brand-link-green: 134 45% 30%;
   --brand-link-green-hover: 142 55% 24%;
+
+  /* ── Consumer-surface (Cafreso Pages) chrome tokens ──
+     The (pages) header/footer/nav/cards were hand-authored with literal
+     hsl() light values. These tokens carry those EXACT light values so light
+     mode is pixel-identical, and the .dark block below gives each a warm
+     coffee equivalent so the consumer surface flips cleanly. Convert inline
+     literals to `hsl(var(--pg-*))` as pages are migrated.
+       --pg-fg          hsl(222 47% 11%)   primary text + icons
+       --pg-fg-muted    hsl(215 16% 47%)   secondary text
+       --pg-fg-subtle   hsl(215 16% 56%)   tertiary text / placeholders
+       --pg-surface     hsl(26 45% 98%)    menus, drawers, popovers
+       --pg-elevated    hsl(0 0% 100%)     raised cards (library/product)
+       --pg-border      hsl(26 30% 88%)    hairlines / dividers
+       --pg-hover       hsl(26 40% 96%)    subtle hover wash
+       --pg-header      hsl(26 30% 82%)    header glass tint (used w/ alpha)
+       --pg-header-edge hsl(26 35% 95%)    header inner top highlight
+       --pg-solid       hsl(222 47% 11%)   solid control bg (login / active)
+       --pg-solid-fg    hsl(0 0% 100%)     text on --pg-solid   */
+  --pg-fg: 222 47% 11%;
+  --pg-fg-muted: 215 16% 47%;
+  --pg-fg-subtle: 215 16% 56%;
+  --pg-surface: 26 45% 98%;
+  --pg-elevated: 0 0% 100%;
+  --pg-border: 26 30% 88%;
+  --pg-hover: 26 40% 96%;
+  --pg-header: 26 30% 82%;
+  --pg-header-edge: 26 35% 95%;
+  --pg-solid: 222 47% 11%;
+  --pg-solid-fg: 0 0% 100%;
 }
 
 .dark {
@@ -109,6 +138,21 @@
 
   --brand-link-green: 134 61% 70%;
   --brand-link-green-hover: 142 71% 78%;
+
+  /* Warm-coffee equivalents of the consumer-surface chrome tokens. Text stays
+     high-contrast for WCAG AA on the dark cards; the solid control inverts to
+     warm paper + coffee text (mirrors the /hq header's ink-50/ink-900 pill). */
+  --pg-fg: 38 46% 91%;
+  --pg-fg-muted: 33 13% 62%;
+  --pg-fg-subtle: 30 12% 52%;
+  --pg-surface: 24 40% 13%;
+  --pg-elevated: 25 33% 16%;
+  --pg-border: 30 16% 26%;
+  --pg-hover: 32 26% 20%;
+  --pg-header: 24 44% 10%;
+  --pg-header-edge: 34 24% 26%;
+  --pg-solid: 38 58% 90%;
+  --pg-solid-fg: 24 48% 11%;
 
   /* Dark mode keeps the banana scale but anchors against deeper coffee */
   --brand-50:  47 100% 94%;
@@ -154,23 +198,25 @@
     radial-gradient(circle at 84% 14%, hsl(280 38% 22% / 0.22), transparent 30rem),
     linear-gradient(135deg, hsl(24 48% 8%), hsl(24 38% 10%) 50%, hsl(24 30% 12%));
 
-  /* ── Cafreso Pages dark semantic tokens ── */
+  /* ── Cafreso Pages dark semantic tokens ──
+     Warm-coffee tuned (were flat 0% grays, which clashed with the brand and
+     read as a loud blue-gray). Foreground/muted keep AA contrast. */
   --background: 24 48% 9%;
-  --foreground: 210 40% 98%;
-  --muted: 0 0% 25%;
-  --muted-foreground: 0 0% 80%;
-  --popover: 24 48% 12%;
-  --popover-foreground: 210 40% 98%;
-  --card: 24 48% 12%;
-  --card-foreground: 210 40% 98%;
-  --border: 0 0% 50%;
-  --input: 0 0% 50%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217 33% 18%;
-  --secondary-foreground: 210 40% 98%;
-  --accent: 0 0% 25%;
-  --accent-foreground: 210 40% 98%;
+  --foreground: 38 46% 95%;
+  --muted: 26 22% 20%;
+  --muted-foreground: 33 14% 66%;
+  --popover: 24 40% 13%;
+  --popover-foreground: 38 46% 95%;
+  --card: 25 33% 15%;
+  --card-foreground: 38 46% 95%;
+  --border: 30 16% 26%;
+  --input: 30 16% 28%;
+  --primary: 38 58% 90%;
+  --primary-foreground: 24 48% 11%;
+  --secondary: 26 24% 22%;
+  --secondary-foreground: 38 46% 95%;
+  --accent: 32 30% 24%;
+  --accent-foreground: 38 46% 95%;
   --destructive: 0 63% 31%;
   --destructive-foreground: 210 40% 98%;
   --ring: 213 27% 84%;
