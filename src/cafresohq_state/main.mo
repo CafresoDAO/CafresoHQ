@@ -1484,6 +1484,13 @@ actor CafresoHQState {
       body = Text.encodeUtf8("Not found"); streaming_strategy = null; upgrade = null };
   };
 
+  // Who asked: a person, or the gap cron noticing the library's own blind spot.
+  // Absent = "human", which is right for every entry written before this
+  // existed — they were all asked by people.
+  func entryAskedBy(id : Text) : Text {
+    switch (tOps.get(libraryAskedBy, id)) { case (?a) a; case null "human" };
+  };
+
   func entryJson(e : LibraryEntry) : Text {
     // Owner principal intentionally omitted: publishing is opt-in, but the
     // public surface must not link queries to identities.
@@ -1502,6 +1509,7 @@ actor CafresoHQState {
     "\",\"answer\":\"" # jsonEsc(e.answer) # "\",\"sources\":[" # src #
     "],\"ts\":" # Int.toText(e.ts) #
     ",\"model\":\"" # jsonEsc(e.prov.model) # "\",\"engine\":\"" # jsonEsc(e.prov.searchEngine) #
+    "\",\"askedBy\":\"" # entryAskedBy(e.id) #
     "\",\"worker\":" # workerJson #
     ",\"firstSearchedAt\":" # Int.toText(e.prov.firstSearchedAt) #
     ",\"answeredAt\":" # Int.toText(e.prov.answeredAt) #
@@ -1533,8 +1541,13 @@ actor CafresoHQState {
         let e = all.get(i);
         if (not first) { body #= "," };
         first := false;
+        // askedBy rides the SUMMARY too, not just the full entry: the list
+        // cards are where "the library asked this one itself" is actually worth
+        // seeing, and a summary without it is why the first cut of this badge
+        // could only ever render inside the drawer.
         body #= "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
-                "\",\"ts\":" # Int.toText(e.ts) # ",\"sources\":" # Nat.toText(e.sources.size()) # "}";
+                "\",\"ts\":" # Int.toText(e.ts) # ",\"sources\":" # Nat.toText(e.sources.size()) #
+                ",\"askedBy\":\"" # entryAskedBy(e.id) # "\"}";
         emitted += 1;
       };
       return ?libJsonResponse("{\"count\":" # Nat.toText(tOps.size(libraryEntries)) # ",\"entries\":[" # body # "]}");
@@ -1822,12 +1835,40 @@ actor CafresoHQState {
   stable var jobDayStamp : Int = 0;
   stable var searchDailyBudget : Nat = 500;
 
+  // ── Side tables, NOT new fields on SearchJob / LibraryProvenance ─────────
+  // A stored value of the old type can only be read back as the new type when
+  // old <: new. Record subtyping makes MORE fields the SUBtype, so a field can
+  // be removed but never added: `{a}` is not a subtype of `{a; b}`, and dfx
+  // rejects the upgrade (or drops the variable). moc 0.13.4 predates migration
+  // expressions, so there is no in-place escape hatch either.
+  //
+  // Keying the new data beside the records instead costs one map lookup and
+  // buys a trivially compatible upgrade: a NEW stable var simply starts empty.
+  // Absence is also the correct default rather than a hole needing backfill —
+  // every entry written before today WAS asked by a human, and every job
+  // before today WAS a fast one.
+  stable var jobModes : OrderedMap.Map<Text, Text> = tOps.empty<Text>();        // jobId → "deep"
+  stable var libraryAskedBy : OrderedMap.Map<Text, Text> = tOps.empty<Text>();  // entryId → "ai-gap"
+  stable var deepDailyBudget : Nat = 20;
+  stable var deepAnsweredToday : Nat = 0;
+
   let MAX_PENDING_JOBS : Nat = 25;
   let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
   let CLAIM_LEASE_NS : Int = 240_000_000_000;         // 4 min claimed → back to pending
+  // Deep research runs a multi-pass loop, so it needs longer than a fast job —
+  // but the lease is what protects the QUEUE from a dead worker, not a courtesy
+  // to the worker. Keep it as tight as the work honestly needs.
+  let DEEP_LEASE_NS : Int = 380_000_000_000;          // ~6.3 min
   let MAX_JOB_ATTEMPTS : Nat = 3;
   let MAX_JOBS_KEPT : Nat = 500;
   // DAY_NS reused from the Night Shift wake section below (same 24h constant).
+
+  func jobMode(id : Text) : Text {
+    switch (tOps.get(jobModes, id)) { case (?m) m; case null "fast" };
+  };
+  func leaseFor(id : Text) : Int {
+    if (jobMode(id) == "deep") { DEEP_LEASE_NS } else { CLAIM_LEASE_NS };
+  };
 
   func jobId(n : Nat) : Text {
     var s = Nat.toText(n);
@@ -1837,7 +1878,10 @@ actor CafresoHQState {
 
   func bumpJobDay() {
     let day = now() / DAY_NS;
-    if (day != jobDayStamp) { jobDayStamp := day; jobsAnsweredToday := 0 };
+    // deepAnsweredToday rolls with the same stamp. Forgetting it here would not
+    // fail loudly — it would just count up forever until deep silently stopped
+    // being available, permanently, with no error anywhere.
+    if (day != jobDayStamp) { jobDayStamp := day; jobsAnsweredToday := 0; deepAnsweredToday := 0 };
   };
 
   func putJob(j : SearchJob) { searchJobs := tOps.put(searchJobs, j.id, j) };
@@ -1849,7 +1893,10 @@ actor CafresoHQState {
     let expired = Buffer.Buffer<SearchJob>(4);
     for ((_, j) in tOps.entries(searchJobs)) {
       if (j.status == "pending" and now() - j.submittedAt > JOB_PENDING_TTL_NS) { expired.add(j) }
-      else if (j.status == "claimed" and now() - j.claimedAt > CLAIM_LEASE_NS) { expired.add(j) };
+      // Per-job lease: reaping a deep job on the fast 4-min lease would yank it
+      // back mid-run, every time, and three strikes later fail it for good —
+      // deep research would never once complete.
+      else if (j.status == "claimed" and now() - j.claimedAt > leaseFor(j.id)) { expired.add(j) };
     };
     for (j in expired.vals()) {
       if (j.status == "pending") {
@@ -1873,7 +1920,13 @@ actor CafresoHQState {
         if (excess == 0) { break prune };
         if (j.status != "pending" and j.status != "claimed") { victims.add(id); excess -= 1 };
       };
-      for (id in victims.vals()) { searchJobs := tOps.delete(searchJobs, id) };
+      // Drop the mode alongside the job. A side table keyed by an id that no
+      // longer exists is a leak that MAX_JOBS_KEPT would never catch — the job
+      // map stays capped at 500 while jobModes grows without bound forever.
+      for (id in victims.vals()) {
+        searchJobs := tOps.delete(searchJobs, id);
+        jobModes := tOps.delete(jobModes, id);
+      };
     };
   };
 
@@ -1884,20 +1937,32 @@ actor CafresoHQState {
   };
 
   public type SubmitOutcome = { #hit : Text; #queued : Text; #rejected : Text };
-  func submitSearch(qRaw : Text) : SubmitOutcome {
+  func submitSearch(qRaw : Text, modeRaw : Text) : SubmitOutcome {
     tendJobs();
     let q = qRaw;
     let norm = libKey(q);
+    let deep = modeRaw == "deep";
     if (norm.size() == 0 or q.size() > LIB_MAX_QUERY) { return #rejected("bad-query") };
     switch (tOps.get(libraryByQuery, norm)) { case (?id) { return #hit(id) }; case null {} };
+    // Dedup is mode-blind on purpose: an answer to this question already exists
+    // or is coming, and the library caches ANSWERS, not effort. Letting a deep
+    // request queue a second job for a question already in flight would spend
+    // ~6x the Brave quota to overwrite nothing (first answer wins).
     switch (tOps.get(jobsByNorm, norm)) { case (?jid) { return #queued(jid) }; case null {} };
     if (jobsAnsweredToday >= searchDailyBudget) { return #rejected("budget") };
+    // Deep costs several web queries per run against a monthly Brave quota, so
+    // it gets its OWN budget. Sharing the 500/day would let a handful of deep
+    // requests quietly drain the month out from under ordinary searches.
+    if (deep and deepAnsweredToday >= deepDailyBudget) { return #rejected("deep-budget") };
     if (livePendingCount() >= MAX_PENDING_JOBS) { return #rejected("busy") };
     if (activeWorkerCount() == 0) { return #rejected("dark") };
     jobSeq += 1;
     let id = jobId(jobSeq);
     putJob({ id; q; norm; status = "pending"; submittedAt = now(); claimedBy = null;
              claimedAt = 0; attempts = 0; libraryId = null; error = "" });
+    // Only store the exception. "fast" is the default everywhere (jobMode), so
+    // writing it would double this table's size to say nothing.
+    if (deep) { jobModes := tOps.put(jobModes, id, "deep") };
     jobsByNorm := tOps.put(jobsByNorm, norm, id);
     #queued(id);
   };
@@ -1978,7 +2043,10 @@ actor CafresoHQState {
       label find for ((_, j) in tOps.entries(searchJobs)) {
         if (j.status == "pending") {
           putJob({ j with status = "claimed"; claimedBy = ?p; claimedAt = now() });
-          return ?libJsonNoStore("{\"job\":{\"id\":\"" # jsonEsc(j.id) # "\",\"q\":\"" # jsonEsc(j.q) # "\"}}");
+          // `mode` tells the worker which loop to run and, implicitly, how long
+          // it has: the lease it is racing is leaseFor(id), not a fixed 240s.
+          return ?libJsonNoStore("{\"job\":{\"id\":\"" # jsonEsc(j.id) # "\",\"q\":\"" # jsonEsc(j.q)
+                                 # "\",\"mode\":\"" # jobMode(j.id) # "\"}}");
         };
       };
       return ?libJsonNoStore("{\"job\":null}");
@@ -2008,7 +2076,17 @@ actor CafresoHQState {
     };
 
     if (op == "fulfill") {
-      // Lines: 5 jobId · 6 model · 7 engine · 8 answer · 9 N · 10..10+N-1 "title url" · last graphJson
+      // Lines: 5 jobId · 6 model · 7 engine · 8 answer · 9 N · 10..10+N-1
+      //        "title url" · 10+N graphJson · [11+N askedBy]
+      //
+      // askedBy is a TRAILING, OPTIONAL line — appended after graphJson rather
+      // than inserted at a fixed index. That is not stylistic. A worker is live
+      // on this network right now running the previous serve.py, which sends
+      // the 11-line envelope; requiring a 12th would workerDeny every fulfill
+      // it makes, burn all three attempts, and fail the job for good. The
+      // canister cannot be upgraded and the worker restarted atomically, so the
+      // old envelope has to keep working across that window. nSrc is known
+      // before this point, so the position is unambiguous either way.
       if (lines.size() < 11) { return ?workerDeny() };
       let jid = lines[5];
       let j = switch (tOps.get(searchJobs, jid)) { case (?x) x; case null { return ?workerDeny() } };
@@ -2032,6 +2110,15 @@ actor CafresoHQState {
         i += 1;
       };
       let graphJson = switch (pctDecode(lines[10 + nSrc])) { case (?t) t; case null { return ?workerDeny() } };
+      // Absent (old worker) → "human". Only "ai-gap" is honoured; anything else
+      // is ignored rather than trusted, so a worker can't invent provenance
+      // values that later render as unknown chips on permanent public entries.
+      let askedBy = if (lines.size() > 11 + nSrc) {
+        switch (pctDecode(lines[11 + nSrc])) {
+          case (?t) { if (t == "ai-gap") { "ai-gap" } else { "human" } };
+          case null "human";
+        };
+      } else { "human" };
       let sources = Buffer.toArray(srcs);
       switch (libValidate(j.q, answer, sources, graphJson)) {
         case (?e) { return ?libJsonNoStore("{\"ok\":false,\"error\":\"" # jsonEsc(e) # "\"}") };
@@ -2052,10 +2139,16 @@ actor CafresoHQState {
         model; searchEngine = engine; worker = ?p;
         firstSearchedAt = j.submittedAt; answeredAt = now();
       });
+      // Store only the exception; absent = "human" (see libraryAskedBy).
+      if (askedBy == "ai-gap") { libraryAskedBy := tOps.put(libraryAskedBy, libId2, "ai-gap") };
       putJob({ j with status = "done"; libraryId = ?libId2 });
       jobsByNorm := tOps.delete(jobsByNorm, j.norm);
       bumpJobDay();
       jobsAnsweredToday += 1;
+      // Deep meters on ANSWER, not submit: a job that failed and went back to
+      // pending cost the worker nothing it can publish, and charging the budget
+      // for it would let three flaky attempts eat a day's deep allowance.
+      if (jobMode(j.id) == "deep") { deepAnsweredToday += 1 };
       patchWorker(p, func(x) { { x with jobsDone = x.jobsDone + 1;
                                  accruedE8s = x.accruedE8s + searchPayRateE8s } });
       return ?libJsonNoStore("{\"ok\":true,\"libraryId\":\"" # jsonEsc(libId2) # "\",\"existing\":false}");
@@ -2122,7 +2215,17 @@ actor CafresoHQState {
       if (req.body.size() > 2_048) { return ?libNotFound() };
       let raw = switch (Text.decodeUtf8(req.body)) { case (?t) t; case null { return ?libNotFound() } };
       let q = switch (pctDecode(raw)) { case (?t) t; case null raw };
-      switch (submitSearch(q)) {
+      // Mode rides the QUERY STRING, not the body: the body is the whole query
+      // verbatim, and the frontend deployed right now posts exactly that. A
+      // body format change would break every live client the moment this
+      // upgrade lands. Absent → "fast", which is what every existing caller
+      // means.
+      var mode = "fast";
+      for (kv in Text.split(queryStr, #char '&')) {
+        let pair = Iter.toArray(Text.split(kv, #char '='));
+        if (pair.size() == 2 and pair[0] == "mode" and pair[1] == "deep") { mode := "deep" };
+      };
+      switch (submitSearch(q, mode)) {
         case (#hit(id)) {
           let e = switch (tOps.get(libraryEntries, id)) { case (?x) ?entryJson(x); case null null };
           return ?libJsonNoStore("{\"status\":\"hit\",\"entry\":" #
