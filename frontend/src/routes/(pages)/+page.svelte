@@ -53,11 +53,21 @@
 </svelte:head>
 
 <section class="home mx-auto flex w-full max-w-3xl flex-col items-center px-5 text-center">
-  <!-- Wordmark -->
-  <h1 class="wordmark mt-[12vh] font-serif-display text-5xl font-semibold tracking-tight text-foreground sm:text-6xl">
-    Cafreso
+  <!-- Wordmark lockup — the brand mark itself, keyed to transparency so the
+       black ink art inverts cleanly to white between themes (ink on cream,
+       chalk on coffee). A soft gold glow sits behind it for depth. -->
+  <h1 class="wordmark-lockup mt-[10vh]">
+    <span class="wordmark-glow" aria-hidden="true"></span>
+    <img
+      src="/assets/cafreso-wordmark-alpha.png"
+      alt="Cafreso — a blockchain DAO"
+      class="wordmark-img"
+      width="1039"
+      height="544"
+      fetchpriority="high"
+    />
   </h1>
-  <p class="mt-3 text-sm text-ink-400 sm:text-base">
+  <p class="wordmark-sub mt-5 text-sm text-ink-400 sm:text-base">
     Open software on the Internet Computer, owned by the community.
   </p>
 
@@ -140,8 +150,47 @@
 </section>
 
 <style>
-  .wordmark { letter-spacing: -0.02em; }
+  .wordmark-lockup {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 0;
+    animation: wm-rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .wordmark-img {
+    position: relative;
+    z-index: 1;
+    width: clamp(258px, 62vw, 560px);
+    height: auto;
+    /* Light: the art is already black ink — a soft shadow lifts it off the
+       cream. Dark: invert the ink to white chalk (tiles become negative). */
+    filter: drop-shadow(0 8px 22px hsl(24 40% 20% / 0.14));
+  }
+  :global(.dark) .wordmark-img {
+    filter: invert(1) drop-shadow(0 10px 26px hsl(0 0% 0% / 0.55));
+  }
+  /* Warm halo behind the mark — gold in light, a deeper ember in dark. */
+  .wordmark-glow {
+    position: absolute;
+    z-index: 0;
+    top: 50%;
+    left: 50%;
+    width: 78%;
+    height: 150%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse at center, hsl(45 95% 60% / 0.30), transparent 68%);
+    filter: blur(22px);
+    pointer-events: none;
+  }
+  :global(.dark) .wordmark-glow {
+    background: radial-gradient(ellipse at center, hsl(38 82% 46% / 0.24), transparent 66%);
+  }
+  @keyframes wm-rise {
+    from { opacity: 0; transform: translateY(16px); }
+  }
   @media (prefers-reduced-motion: reduce) {
+    .wordmark-lockup { animation: none; }
     .search-box, .project-card { transition: none; }
   }
 </style>
