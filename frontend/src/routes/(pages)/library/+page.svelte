@@ -404,9 +404,17 @@
       {#if drawerEntry.mode === 'deep' && drawerResearch?.pages?.length}
         <div class="lib-kicker" style="margin-top: 24px;">The research tree · {drawerResearch.pages.length} note pages</div>
         <p class="lib-deep-lede">
-          This question was researched from several angles. Open a page to read the note, or explore the
-          tree in the graph below — every topic node opens its page.
+          This question was researched from several angles. Open a page to read the note, browse the whole
+          thing as a vault of linked markdown files, or explore the tree in the graph below.
         </p>
+        <a class="lib-vault-btn" href="/library/vault?e={drawerEntry.id}">
+          <Icon name="vault" size={15} />
+          <span class="lib-vault-btn-t">
+            <strong>Browse as a vault</strong>
+            <small>File tree · wikilinks · download as .md for Obsidian</small>
+          </span>
+          <Icon name="arrow-right" size={14} />
+        </a>
         <div class="lib-pages">
           {#each drawerResearch.pages as p, i}
             <div class="lib-page" class:open={openPageId === p.id}>
@@ -691,6 +699,24 @@
   /* Deep card accent — a soft violet edge so a deep entry reads as richer. */
   .lib-card-deep { border-color: hsl(266 55% 84%); }
   .lib-card-deep:hover { border-color: hsl(266 60% 66%); }
+
+  /* Vault CTA — the flagship way into a deep entry. */
+  .lib-vault-btn {
+    display: flex; align-items: center; gap: 12px; text-decoration: none;
+    border: 1px solid hsl(266 55% 78%); border-radius: 13px; padding: 12px 14px;
+    background: linear-gradient(120deg, hsl(266 70% 96%), hsl(266 60% 98%));
+    color: hsl(266 60% 40%); margin: 0 0 14px;
+    transition: border-color .14s, transform .14s;
+  }
+  .lib-vault-btn:hover { border-color: hsl(266 60% 58%); transform: translateY(-1px); }
+  .lib-vault-btn-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .lib-vault-btn-t strong { font-size: 13.5px; }
+  .lib-vault-btn-t small { font-size: 11px; color: hsl(266 30% 52%); }
+  :global(.dark) .lib-vault-btn {
+    background: linear-gradient(120deg, hsl(266 55% 30% / 0.35), hsl(266 55% 24% / 0.2));
+    border-color: hsl(266 45% 48%); color: hsl(266 85% 85%);
+  }
+  :global(.dark) .lib-vault-btn-t small { color: hsl(266 40% 70%); }
 
   /* Drawer note pages — the research as a small notebook. */
   .lib-deep-lede { font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 6px 0 12px; }

@@ -527,6 +527,15 @@
               {linkCopied ? 'Copied' : 'Copy link'}
             </button>
           {/if}
+          {#if entry.id && entry.mode === 'deep'}
+            <a href={'/library/vault?e=' + encodeURIComponent(entry.id)} style="
+              display: inline-flex; align-items: center; gap: 5px;
+              font-size: 12.5px; font-weight: 600;
+              color: hsl(260 70% 55%); text-decoration: none;
+            ">
+              <Icon name="vault" size={12} /> Browse as a vault
+            </a>
+          {/if}
           {#if entry.id && libraryGraphViewerUrl(entry.id)}
             <a href={libraryGraphViewerUrl(entry.id, { deep: entry.mode === 'deep' })} target="_blank" rel="noopener noreferrer" style="
               display: inline-flex; align-items: center; gap: 5px;
