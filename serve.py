@@ -674,6 +674,14 @@ _SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
 _SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
 _SW_MAX_TOKENS = int(os.environ.get('WORKER_MAX_TOKENS', '') or 700)
 _SW_ANSWER_CAP = 4000      # LIB_MAX_ANSWER — the canister rejects anything longer
+# Deep research (job['mode']=='deep') runs a multi-hop loop — plan angles, then
+# search + write a note page per angle, then synthesise — so it needs a bigger
+# wall-clock budget. The canister hands deep jobs a ~6.3-min lease
+# (DEEP_LEASE_NS); this sits ~30s inside it, same margin discipline as the fast
+# budget vs the 240s lease.
+_SW_DEEP_BUDGET = float(os.environ.get('WORKER_DEEP_BUDGET', '') or 350)
+_SW_DEEP_MAX_TOPICS = int(os.environ.get('WORKER_DEEP_TOPICS', '') or 5)
+_SW_DEEP_PAGE_CAP = 1400   # per note-page body; the whole tree caps at LIB_MAX_GRAPH
 _sw_last_ts = 0
 
 
@@ -1355,11 +1363,253 @@ def _sw_graph(q, results, notes=None):
                        'title': 'Search: ' + q, 'ts': int(time.time() * 1000)})
 
 
+# ── Deep research (job['mode']=='deep') ─────────────────────────────────────
+# The fast path is one Brave search + one summarising LLM call. Deep research is
+# the HQ "Kip" pattern ported into the worker: decompose the question into
+# angles, then for each angle run its own Brave search and write a synthesised
+# NOTE PAGE, then write a top-level synthesis over the pages. The output is a
+# research TREE (query → topics → sources) plus the note pages, which the viewer
+# lets a reader click through. It spends the reserved `deep` Brave lane.
+
+def _sw_json_obj(text):
+    """First JSON object/array in possibly code-fenced model text, or None.
+    Deep steps ask for small JSON; this is the lenient extractor (the fast path
+    keeps its own truncation-salvage parser, which deep steps don't need)."""
+    t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+    m = re.search(r'(\{.*\}|\[.*\])', t, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+def _sw_complete(prompt, deadline, max_tokens=600, schema=None):
+    """One free-form completion via the operator's brain: direct backend first,
+    hermes gateway as fallback (mirrors _sw_llm's dispatch, without the fixed
+    summary/notes schema). Returns (text, model, tokens, via); ('','',0,'') when
+    nothing is reachable so the caller can degrade."""
+    want = _sw_model()
+    payload = {'model': want,
+               'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': max_tokens}
+    if schema is not None:
+        payload['response_format'] = schema
+    b = _sw_backend()
+    if b is not None:
+        try:
+            text, rmodel, tokens, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+            return text, (rmodel or want), tokens, (b.provider or 'direct')
+        except Exception as e:
+            print('[deep] direct backend failed: %s' % str(e)[:120])
+    key = _sw_hermes_key()
+    if key:
+        try:
+            text, rmodel, tokens, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+            import night_runner as _nr
+            actual = _nr.read_model_config(_hermes_home())['model'] or 'hermes-local'
+            return text, actual, tokens, 'hermes-local'
+        except Exception as e:
+            print('[deep] hermes gateway failed: %s' % str(e)[:120])
+    return '', '', 0, ''
+
+
+def _sw_deep_plan(q, deadline):
+    """Decompose the question into distinct, independently-searchable angles."""
+    prompt = (
+        'You are planning a research report that will thoroughly answer a '
+        'question. Break it into %d DISTINCT, focused sub-questions ("angles") '
+        'that together cover the topic — e.g. background, mechanism, evidence, '
+        'trade-offs, current state. Each must be independently searchable on the '
+        'open web.\nOutput STRICT JSON only: {"angles": ["...", "..."]}\n\n'
+        'Question: %s' % (_SW_DEEP_MAX_TOPICS, q))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=400)
+    obj = _sw_json_obj(text) or {}
+    angles = obj.get('angles') if isinstance(obj, dict) else obj
+    out = []
+    for a in (angles or []):
+        a = str(a).strip()
+        if a and a not in out and len(out) < _SW_DEEP_MAX_TOPICS:
+            out.append(a[:200])
+    return out, model, tokens
+
+
+def _sw_deep_note(q, angle, results, deadline):
+    """Write one research note page from an angle's sources.
+    Returns (title, body, model, tokens)."""
+    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'],
+                                           _sw_focus(r['description'], angle))
+                      for i, r in enumerate(results))
+    prompt = (
+        'You are writing ONE section of a research report.\n'
+        'The report answers: %s\n'
+        'This section covers: %s\n'
+        'Using ONLY the numbered sources, write a focused note of 100-160 words '
+        'in your OWN words, opening with a one-line takeaway and citing sources '
+        'inline like [1][3]. Do not copy phrases from the sources.\n'
+        'Output STRICT JSON only: {"title": "3-6 word section title", '
+        '"body": "the note with [n] citations"}\n\nSources:\n%s'
+        % (q, angle, src))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=500)
+    obj = _sw_json_obj(text)
+    if isinstance(obj, dict) and str(obj.get('body') or '').strip():
+        title = str(obj.get('title') or angle)[:80]
+        body = str(obj['body']).strip()[:_SW_DEEP_PAGE_CAP]
+    else:
+        # Degrade: keep the raw prose as the body rather than losing the work.
+        title = angle[:80]
+        body = (text or '').strip()[:_SW_DEEP_PAGE_CAP]
+    return title, body, model, tokens
+
+
+def _sw_deep_synth(q, pages, deadline):
+    """Top-level synthesis over the note pages. Returns (answer, model, tokens)."""
+    joined = '\n\n'.join('## %s\n%s' % (p['title'], p['body']) for p in pages)
+    prompt = (
+        'You are writing the executive summary of a research report.\n'
+        'Question: %s\n'
+        'Below are the report sections. Write a cohesive 80-130 word synthesis '
+        'that directly answers the question, weaving the sections together. '
+        'Plain prose — no JSON, no headings, no citations markup.\n\n'
+        'Sections:\n%s' % (q, joined))
+    text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=500)
+    return (text or '').strip()[:_SW_ANSWER_CAP], model, tokens
+
+
+def _sw_deep_graph(q, pages):
+    """Research tree wrapped for graph-viewer.html: query hub → topic nodes →
+    source nodes. Topic nodes carry a `page` attribute (the note-page id) so the
+    viewer opens the note on click instead of linking out; source nodes keep the
+    url/domain/note attributes and click through to the source."""
+    import math
+    nodes = [{'key': 'q', 'attributes': {'label': q[:60], 'size': 20, 'x': 0, 'y': 0,
+                                         'color': '#F5D25D', 'kind': 'query'}}]
+    edges = []
+    n = max(1, len(pages))
+    for ti, p in enumerate(pages):
+        ta = (ti / n) * math.pi * 2
+        tk = p['id']
+        nodes.append({'key': tk, 'attributes': {
+            'label': p['title'][:60], 'size': 12,
+            'x': math.cos(ta) * 12, 'y': math.sin(ta) * 12,
+            'color': '#C9B8E0', 'kind': 'topic',
+            'page': p['id'], 'note': (p.get('question') or '')[:200]}})
+        edges.append({'key': 'eq_%s' % tk, 'source': 'q', 'target': tk, 'attributes': {}})
+        srcs = p.get('sources') or []
+        for si, r in enumerate(srcs):
+            sa = ta + (si - (len(srcs) - 1) / 2.0) * 0.16
+            sk = '%s_r%d' % (tk, si)
+            d = _sw_domain(r['url'])
+            nodes.append({'key': sk, 'attributes': {
+                'label': r['title'][:60], 'size': 6,
+                'x': math.cos(sa) * 22, 'y': math.sin(sa) * 22,
+                'color': _sw_color(d), 'kind': 'source',
+                'url': r['url'][:600], 'domain': d, 'note': (r.get('note') or '')[:200]}})
+            edges.append({'key': 'e_%s' % sk, 'source': tk, 'target': sk, 'attributes': {}})
+    return json.dumps({'graph': {'options': {'type': 'mixed', 'multi': False,
+                                             'allowSelfLoops': True},
+                                 'attributes': {}, 'nodes': nodes, 'edges': edges},
+                       'title': 'Deep research: ' + q, 'ts': int(time.time() * 1000)})
+
+
+def _sw_deep(q, deadline):
+    """Run the deep-research loop. Returns
+    (answer, model, pages, graphJson, tokens, sources) or None to signal the
+    caller should degrade to a normal single-shot answer."""
+    total_tokens = 0
+    angles, model_seen, pt = _sw_deep_plan(q, deadline)
+    total_tokens += pt
+    if not angles:
+        return None                       # planning failed → degrade
+    print('[deep] %s → %d angles' % (q[:60], len(angles)))
+    pages, all_sources = [], []
+    for angle in angles:
+        # Leave room for the synthesis call + graph + fulfill upload.
+        if _sw_left(deadline) < 45:
+            print('[deep] budget low (%.0fs left) — stopping at %d pages'
+                  % (_sw_left(deadline), len(pages)))
+            break
+        results = _sw_brave(angle, deadline, kind='deep')
+        if not results:
+            continue                      # deep lane refused, or no results
+        title, body, nmodel, nt = _sw_deep_note(q, angle, results, deadline)
+        total_tokens += nt
+        model_seen = nmodel or model_seen
+        pages.append({'id': 't%d' % len(pages), 'title': title, 'question': angle,
+                      'body': body,
+                      'sources': [{'title': r['title'], 'url': r['url'], 'note': ''}
+                                  for r in results]})
+        all_sources.extend(results)
+    if not pages:
+        return None                       # every angle failed → degrade
+    answer, smodel, st = _sw_deep_synth(q, pages, deadline)
+    total_tokens += st
+    model_seen = smodel or model_seen
+    if not answer:
+        # Synthesis failed: stitch each page's opening sentence as the answer.
+        answer = ' '.join(p['body'].split('.')[0].strip() + '.'
+                          for p in pages if p['body'])[:_SW_ANSWER_CAP]
+    graph = _sw_deep_graph(q, pages)
+    return answer, model_seen, pages, graph, total_tokens, all_sources
+
+
+def _sw_process_deep(jid, q, deadline, started, P):
+    """Deep-research fulfill. Returns True if it fulfilled/terminally handled the
+    job, False to let the caller fall back to a single-shot answer."""
+    print('[deep] claimed %s: %s' % (jid, q[:80]))
+    out = _sw_deep(q, deadline)
+    if out is None:
+        return False
+    answer, model, pages, graph, tokens, all_sources = out
+    if tokens:
+        model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
+    if len(answer) > _SW_ANSWER_CAP:
+        answer = answer[:_SW_ANSWER_CAP]
+    # Dedupe sources across pages for the entry's flat source list.
+    seen, sources = set(), []
+    for r in all_sources:
+        if r['url'] not in seen:
+            seen.add(r['url'])
+            sources.append(r)
+    pages_json = json.dumps({
+        'q': q, 'answer': answer,
+        'pages': [{'id': p['id'], 'title': p['title'], 'question': p['question'],
+                   'body': p['body'], 'sources': p['sources']} for p in pages],
+        'ts': int(time.time() * 1000)})
+    # Deep fulfill == fast fulfill + one trailing pages field. `brave · deep`
+    # marks provenance (renders wherever the engine chip does); the canister
+    # tags the job mode itself, this is the human-readable echo.
+    lines = [jid, P(model), P('brave · deep'), P(answer), str(len(sources))]
+    for r in sources:
+        lines.append('%s %s' % (P(r['title']), P(r['url'])))
+    lines.append(P(graph))
+    lines.append(P(pages_json))
+    status, resp = _sw_call('fulfill', lines)
+    if status == 200 and resp.get('ok'):
+        print('[deep] fulfilled %s -> %s (%d pages, %.0fs)'
+              % (jid, resp.get('libraryId'), len(pages), time.monotonic() - started))
+    else:
+        print('[deep] fulfill rejected %s: %s %s' % (jid, status, resp))
+    return True
+
+
 def _sw_process(job, deadline=None):
     jid, q = job['id'], job['q']
+    mode = job.get('mode') or 'fast'
     started = time.monotonic()
     P = lambda s: urllib.parse.quote(s, safe='')
     try:
+        if mode == 'deep':
+            # Deep can degrade to the single-shot path below (planning/notes/
+            # Brave all failed) so the user still gets an answer within the lease.
+            if _sw_process_deep(jid, q, deadline, started, P):
+                return
+            print('[deep] %s: degrading to single-shot' % jid)
         print('[search-worker] claimed %s: %s' % (jid, q[:80]))
         results = _sw_brave(q, deadline)
         if not results:
@@ -1464,7 +1714,11 @@ def _sw_loop():
                 # registration's lastSeen fresh so the operator sees "connected".
                 _sw_call('heartbeat', [])
             elif status == 200 and resp.get('job'):
-                _sw_process(resp['job'], t0 + _SW_JOB_BUDGET)
+                _job = resp['job']
+                # Deep jobs get the longer lease (DEEP_LEASE_NS), so give the
+                # worker the matching wall-clock budget for its multi-hop loop.
+                _budget = _SW_DEEP_BUDGET if _job.get('mode') == 'deep' else _SW_JOB_BUDGET
+                _sw_process(_job, t0 + _budget)
                 continue          # drain the queue without sleeping between jobs
         except Exception as e:
             print('[search-worker] loop error:', str(e)[:200])
