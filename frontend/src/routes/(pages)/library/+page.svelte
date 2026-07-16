@@ -410,7 +410,7 @@
         <a class="lib-vault-btn" href="/library/vault?e={drawerEntry.id}">
           <Icon name="vault" size={15} />
           <span class="lib-vault-btn-t">
-            <strong>Browse as a vault</strong>
+            <strong>Browse Research</strong>
             <small>File tree · wikilinks · download as .md for Obsidian</small>
           </span>
           <Icon name="arrow-right" size={14} />

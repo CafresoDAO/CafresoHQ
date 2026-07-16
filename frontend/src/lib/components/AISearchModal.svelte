@@ -533,7 +533,7 @@
               font-size: 12.5px; font-weight: 600;
               color: hsl(260 70% 55%); text-decoration: none;
             ">
-              <Icon name="vault" size={12} /> Browse as a vault
+              <Icon name="vault" size={12} /> Browse Research
             </a>
           {/if}
           {#if entry.id && libraryGraphViewerUrl(entry.id)}
