@@ -12,14 +12,17 @@
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { findPublic, networkHealth, submitJob, awaitJob } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl } from '$lib/api/library.js';
+  import DeepResearchProgress from './DeepResearchProgress.svelte';
   import { get } from 'svelte/store';
   import { operatorConfig, refreshOperatorConfig, searchPaused, gpuNodeDown, gpuDownMessage } from '$lib/stores/operator.js';
 
   const CACHE_TTL = 5 * 60 * 1000; // 5 min — library hits only (queue results change state)
   const SLOW_AFTER_MS = 45_000;    // past this, tell the user it's slow rather than just spinning
+  const DEEP_MAX_MS = 400_000;     // a deep pass runs several searches + notes (~4–6 min)
 
   let inputEl;
   let query = '';
+  let deep = false;   // Deep Research mode — the multi-angle HQ research pass
   let phase = 'idle'; // idle | checking | queued | result | rejected | dark
   let entry = null;   // library entry JSON {id, query, answer, sources, model, engine, answeredAt}
   let fromLibrary = false;
@@ -30,10 +33,12 @@
   let showChecking = false;  // only true once 'checking' has run long enough to be worth showing
   let darkMessage = '';  // operator-set pause / GPU-down message for the dark state
   let linkCopied = false;
+  let elapsedMs = 0;     // wall-clock into the current queued job (drives deep progress)
 
   $: if ($aiSearchOpen) {
     phase = 'idle';
     query = '';
+    deep = false;
     entry = null;
     try { recentSearches = JSON.parse(localStorage.getItem('cafreso:ai-recent') || '[]'); } catch { recentSearches = []; }
     refreshOperatorConfig();
@@ -71,20 +76,25 @@
     } catch {}
   }
 
-  async function runSearch(q) {
+  async function runSearch(q, isDeep = deep) {
     q = q.trim();
     if (!q) return;
     query = q;
+    deep = isDeep;   // reflect the chosen mode in the UI for this run
     const seq = ++searchSeq;
 
+    // Deep research is deliberate and rare — never serve it from the fast
+    // session cache. (A prior DEEP library entry is still honored below.)
     const cacheKey = 'cafreso:ai-cache:' + q;
-    try {
-      const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
-      if (cached && Date.now() - cached.ts < CACHE_TTL) {
-        entry = cached.entry; fromLibrary = true; phase = 'result';
-        return;
-      }
-    } catch {}
+    if (!isDeep) {
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+        if (cached && Date.now() - cached.ts < CACHE_TTL) {
+          entry = cached.entry; fromLibrary = true; phase = 'result';
+          return;
+        }
+      } catch {}
+    }
     try {
       const updated = [q, ...recentSearches.filter((r) => r !== q)].slice(0, 6);
       recentSearches = updated;
@@ -103,11 +113,13 @@
 
     // 1. Library first — instant and free. Still works even when the operator
     //    has paused the network (reads aren't gated — only NEW queries are).
+    //    In deep mode, only a prior DEEP entry counts as a hit; a fast answer
+    //    to the same question shouldn't short-circuit an explicit deep request.
     const hit = await findPublic(q);
     if (seq !== searchSeq) return;
-    if (hit && hit.id) {
+    if (hit && hit.id && (!isDeep || hit.mode === 'deep')) {
       entry = hit; fromLibrary = true; phase = 'result';
-      try { sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), entry: hit })); } catch {}
+      if (!isDeep) { try { sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), entry: hit })); } catch {} }
       return;
     }
 
@@ -124,7 +136,7 @@
       phase = 'dark'; return;
     }
 
-    const sub = await submitJob(q);
+    const sub = await submitJob(q, { deep: isDeep });
     if (seq !== searchSeq) return;
     if (!sub) { phase = 'dark'; return; }
     if (sub.status === 'hit' && sub.entry) {
@@ -137,14 +149,18 @@
       return;
     }
 
-    // 3. Queued — a worker is on it.
+    // 3. Queued — a worker is on it. Deep gets a longer budget and its own
+    //    progress surface (the research pass narrates its steps).
     phase = 'queued';
+    elapsedMs = 0;
     queueNote = health.activeWorkers === 1
       ? '1 worker online' : `${health.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      onTick: (st, elapsedMs) => {
+      maxMs: isDeep ? DEEP_MAX_MS : undefined,
+      onTick: (st, ms) => {
         if (seq !== searchSeq) return;
-        // A slow box can legitimately take most of the worker's 200s budget.
+        elapsedMs = ms;
+        // A slow box can legitimately take most of the worker's budget.
         // Past ~45s say so plainly instead of leaving a spinner implying
         // something is wrong — the answer joins the library either way.
         if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
@@ -265,6 +281,61 @@
       </div>
     </form>
 
+    <!-- Mode activation — Quick vs Deep Research. Deep is a deliberate,
+         minutes-long research pass, so it gets its own switch and a plain-words
+         explanation of what it does before a visitor commits to it. -->
+    {#if phase !== 'checking' && phase !== 'queued'}
+      <div style="margin-bottom: 14px;">
+        <div role="group" aria-label="Search mode" style="
+          display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px;
+          background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
+          border-radius: 12px;
+        ">
+          <button
+            type="button"
+            aria-pressed={!deep}
+            on:click={() => (deep = false)}
+            style="
+              display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+              padding: 8px 10px; border-radius: 9px; border: none; cursor: pointer;
+              font-family: inherit; font-size: 12.5px; font-weight: 600;
+              background: {deep ? 'transparent' : 'hsl(var(--pg-surface))'};
+              color: {deep ? 'hsl(var(--pg-fg-muted))' : 'hsl(var(--pg-fg))'};
+              box-shadow: {deep ? 'none' : '0 1px 4px hsl(24 20% 20% / 0.08)'};
+              transition: background .15s, color .15s;
+            "
+          >
+            <Icon name="magnifying-glass" size={14} /> Quick answer
+          </button>
+          <button
+            type="button"
+            aria-pressed={deep}
+            on:click={() => (deep = true)}
+            style="
+              display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+              padding: 8px 10px; border-radius: 9px; border: none; cursor: pointer;
+              font-family: inherit; font-size: 12.5px; font-weight: 700;
+              background: {deep ? 'linear-gradient(135deg, hsl(260 70% 58%), hsl(280 68% 54%))' : 'transparent'};
+              color: {deep ? 'white' : 'hsl(var(--pg-fg-muted))'};
+              box-shadow: {deep ? '0 2px 10px -2px hsl(268 70% 50% / 0.55)' : 'none'};
+              transition: background .15s, color .15s;
+            "
+          >
+            <Icon name="tree-structure" size={14} /> Deep Research
+          </button>
+        </div>
+        <p style="font-size: 10.5px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 7px 2px 0;">
+          {#if deep}
+            <strong style="color: hsl(260 70% 60%);">HQ-style research.</strong>
+            A worker breaks your question into angles, runs several searches, and writes a
+            note page for each — then an explorable research tree. Takes a few minutes.
+          {:else}
+            One fast, sourced answer from the on-chain library or the research network — seconds.
+          {/if}
+        </p>
+      </div>
+    {/if}
+
     <!-- Phase: idle -->
     {#if phase === 'idle'}
       {#if recentSearches.length > 0}
@@ -355,8 +426,13 @@
       </div>
     {/if}
 
-    <!-- Phase: queued — a real wait, worth a real progress indicator. -->
-    {#if phase === 'queued'}
+    <!-- Phase: queued (deep) — narrate the research method, not just a spinner. -->
+    {#if phase === 'queued' && deep}
+      <DeepResearchProgress {elapsedMs} workers={queueNote === 'slow' ? '' : queueNote} />
+    {/if}
+
+    <!-- Phase: queued (fast) — a real wait, worth a real progress indicator. -->
+    {#if phase === 'queued' && !deep}
       <div style="text-align: center; padding: 28px 0 24px;">
         <div
           class="spin"
@@ -388,14 +464,24 @@
     {#if phase === 'result' && entry}
       <div>
         <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-          <span style="
-            font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-            padding: 2px 7px; border-radius: 5px;
-            background: {fromLibrary ? 'hsl(112 43% 90%)' : 'hsl(260 60% 92%)'};
-            color: {fromLibrary ? 'hsl(112 43% 28%)' : 'hsl(260 60% 35%)'};
-          ">
-            {fromLibrary ? 'On-chain library' : 'Fresh from the network'}
-          </span>
+          {#if entry.mode === 'deep'}
+            <span style="
+              font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+              padding: 2px 8px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;
+              background: linear-gradient(135deg, hsl(260 70% 58%), hsl(280 68% 54%)); color: white;
+            ">
+              <Icon name="tree-structure" size={11} /> Deep research
+            </span>
+          {:else}
+            <span style="
+              font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+              padding: 2px 7px; border-radius: 5px;
+              background: {fromLibrary ? 'hsl(112 43% 90%)' : 'hsl(260 60% 92%)'};
+              color: {fromLibrary ? 'hsl(112 43% 28%)' : 'hsl(260 60% 35%)'};
+            ">
+              {fromLibrary ? 'On-chain library' : 'Fresh from the network'}
+            </span>
+          {/if}
           {#if provLine(entry)}
             <span style="font-size: 10.5px; color: hsl(var(--pg-fg-muted));">{provLine(entry)}</span>
           {/if}
@@ -442,11 +528,12 @@
             </button>
           {/if}
           {#if entry.id && libraryGraphViewerUrl(entry.id)}
-            <a href={libraryGraphViewerUrl(entry.id)} target="_blank" rel="noopener noreferrer" style="
+            <a href={libraryGraphViewerUrl(entry.id, { deep: entry.mode === 'deep' })} target="_blank" rel="noopener noreferrer" style="
               display: inline-flex; align-items: center; gap: 5px;
-              font-size: 12.5px; font-weight: 600; color: hsl(var(--pg-fg-muted)); text-decoration: none;
+              font-size: 12.5px; font-weight: 600;
+              color: {entry.mode === 'deep' ? 'hsl(260 70% 55%)' : 'hsl(var(--pg-fg-muted))'}; text-decoration: none;
             ">
-              Graph view
+              {#if entry.mode === 'deep'}<Icon name="tree-structure" size={12} /> Explore the research tree{:else}Graph view{/if}
               <Icon name="arrow-up-right" size={12} />
             </a>
           {/if}

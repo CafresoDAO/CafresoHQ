@@ -105,6 +105,18 @@ async function main() {
   document.body.classList.toggle('gv-nochrome', P('chrome', '') === 'none');
 
   const src = P('g', null) || P('graph', null);
+  // Deep-research note pages (research.json): when present, a topic node opens
+  // its note page IN this viewer instead of linking out — the explorable
+  // research tree. Fetched lazily on the first topic-node click.
+  const pagesSrc = P('pages', null);
+  let pagesData = null, pagesReq = null;
+  async function loadPages() {
+    if (pagesData) return pagesData;
+    if (!pagesSrc) return null;
+    if (!pagesReq) pagesReq = fetch(pagesSrc).then((r) => r.json()).catch(() => null);
+    pagesData = await pagesReq;
+    return pagesData;
+  }
   let snap = window.__SNAPSHOT__ || null;
   try { if (!snap && src) snap = await (await fetch(src)).json(); }
   catch (_) { container.textContent = 'Could not load this graph.'; return; }
@@ -500,14 +512,18 @@ async function main() {
   function showTip(node) {
     if (!tip || !g.hasNode(node)) return;
     const a = g.getNodeAttributes(node);
-    if (!a.note && !a.url && !a.domain) { tip.style.display = 'none'; return; }
+    if (!a.note && !a.url && !a.domain && !a.page) { tip.style.display = 'none'; return; }
     if (tip.dataset.node !== node) {
       tip.dataset.node = node;
+      const isPage = a.page && pagesSrc;
+      const hint = isPage
+        ? (coarse ? 'tap again to read the note' : 'click to read the note')
+        : (a.url ? (coarse ? 'tap again to open ↗' : 'click to open ↗') : '');
       tip.innerHTML =
         '<div class="tip-title">' + esc(a.label) + '</div>' +
         (a.domain ? '<div class="tip-domain">' + esc(a.domain) + '</div>' : '') +
         (a.note ? '<div class="tip-note">' + esc(a.note) + '</div>' : '') +
-        (a.url ? '<div class="tip-hint">' + (coarse ? 'tap again to open ↗' : 'click to open ↗') + '</div>' : '');
+        (hint ? '<div class="tip-hint">' + hint + '</div>' : '');
     }
     const p = renderer.graphToViewport({ x: a.x, y: a.y });
     tip.style.display = 'block';
@@ -517,9 +533,119 @@ async function main() {
   }
   function hideTip() { if (tip) { tip.style.display = 'none'; tip.dataset.node = ''; } }
 
+  /* ── deep-research note panel ─────────────────────────────────────────────
+     A slide-in reader for a topic node's note page: title, the angle it
+     answers, the note body, and its sources — with prev/next to walk the tree
+     as a small notebook. Built once, in JS, so the whole feature lives in this
+     one bundled file (no graph-viewer.html edit to keep in sync across copies). */
+  let notePanel = null, noteEls = null;
+  function buildNotePanel() {
+    if (notePanel) return;
+    const st = document.createElement('style');
+    st.textContent =
+      '.gv-note-back{position:fixed;inset:0;z-index:40;background:rgba(10,8,6,0.5);' +
+      'backdrop-filter:blur(3px);opacity:0;transition:opacity .2s;pointer-events:none;}' +
+      '.gv-note-back.on{opacity:1;pointer-events:auto;}' +
+      '.gv-note{position:fixed;z-index:41;top:0;right:0;bottom:0;width:min(460px,92vw);' +
+      'background:#1b1712;color:#e8e0d2;border-left:1px solid #3a332a;' +
+      'box-shadow:-24px 0 60px -20px rgba(0,0,0,0.6);transform:translateX(100%);' +
+      'transition:transform .26s cubic-bezier(.2,.8,.2,1);overflow-y:auto;' +
+      'padding:22px 22px 30px;font:14px/1.6 Inter,system-ui,sans-serif;}' +
+      '.gv-note.on{transform:none;}' +
+      '.gv-light .gv-note{background:#fbf7ee;color:#2e2820;border-left-color:#e2d9c6;}' +
+      '.gv-note-x{position:absolute;top:14px;right:14px;width:30px;height:30px;border:0;' +
+      'border-radius:8px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer;' +
+      'font-size:17px;line-height:1;display:grid;place-items:center;}' +
+      '.gv-light .gv-note-x{background:rgba(0,0,0,0.06);}' +
+      '.gv-note-kick{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#c9b8e0;}' +
+      '.gv-note-title{font-size:21px;font-weight:700;line-height:1.25;margin:8px 0 6px;}' +
+      '.gv-note-q{font-size:12.5px;color:#a99;opacity:.85;margin:0 0 16px;font-style:italic;}' +
+      '.gv-light .gv-note-q{color:#8a7f6c;}' +
+      '.gv-note-body{font-size:14px;line-height:1.72;white-space:pre-wrap;margin:0 0 18px;}' +
+      '.gv-note-srch{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#c9b8e0;opacity:.7;margin:16px 0 8px;}' +
+      '.gv-note-src{display:block;text-decoration:none;color:inherit;padding:7px 0;border-top:1px solid rgba(255,255,255,0.07);}' +
+      '.gv-light .gv-note-src{border-top-color:rgba(0,0,0,0.08);}' +
+      '.gv-note-src b{font-weight:600;font-size:13px;}.gv-note-src span{display:block;font-size:11px;color:#a99;opacity:.8;font-family:ui-monospace,monospace;}' +
+      '.gv-note-nav{display:flex;justify-content:space-between;gap:10px;margin-top:20px;}' +
+      '.gv-note-nav button{flex:1;padding:9px;border:1px solid #3a332a;border-radius:9px;background:transparent;' +
+      'color:inherit;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;}' +
+      '.gv-light .gv-note-nav button{border-color:#e2d9c6;}' +
+      '.gv-note-nav button:disabled{opacity:.35;cursor:default;}';
+    document.head.appendChild(st);
+    const back = document.createElement('div'); back.className = 'gv-note-back';
+    const panel = document.createElement('div'); panel.className = 'gv-note';
+    panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Research note');
+    panel.innerHTML =
+      '<button class="gv-note-x" aria-label="Close">✕</button>' +
+      '<div class="gv-note-kick">Research note</div>' +
+      '<h2 class="gv-note-title"></h2>' +
+      '<p class="gv-note-q"></p>' +
+      '<div class="gv-note-body"></div>' +
+      '<div class="gv-note-srcwrap"></div>' +
+      '<div class="gv-note-nav"><button class="gv-note-prev">← Previous</button>' +
+      '<button class="gv-note-next">Next →</button></div>';
+    document.body.appendChild(back); document.body.appendChild(panel);
+    noteEls = {
+      back, panel,
+      title: panel.querySelector('.gv-note-title'),
+      q: panel.querySelector('.gv-note-q'),
+      body: panel.querySelector('.gv-note-body'),
+      srcwrap: panel.querySelector('.gv-note-srcwrap'),
+      prev: panel.querySelector('.gv-note-prev'),
+      next: panel.querySelector('.gv-note-next'),
+    };
+    back.addEventListener('click', closeNote);
+    panel.querySelector('.gv-note-x').addEventListener('click', closeNote);
+    noteEls.prev.addEventListener('click', () => stepNote(-1));
+    noteEls.next.addEventListener('click', () => stepNote(1));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && notePanel && notePanel.open) closeNote(); });
+    notePanel = { open: false, pages: [], idx: 0 };
+  }
+  function renderNote() {
+    const p = notePanel.pages[notePanel.idx];
+    if (!p) return;
+    noteEls.title.textContent = p.title || 'Untitled note';
+    noteEls.q.textContent = p.question ? 'Angle: ' + p.question : '';
+    noteEls.body.textContent = p.body || '';
+    const srcs = p.sources || [];
+    noteEls.srcwrap.innerHTML = srcs.length
+      ? '<div class="gv-note-srch">Sources</div>' + srcs.map((s) => {
+          const u = /^https?:\/\//i.test(s.url || '') ? s.url : '';
+          const dom = (() => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return ''; } })();
+          return '<a class="gv-note-src" ' + (u ? 'href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"' : '') +
+            '><b>' + esc(s.title || u) + '</b>' + (dom ? '<span>' + esc(dom) + '</span>' : '') + '</a>';
+        }).join('')
+      : '';
+    noteEls.prev.disabled = notePanel.idx <= 0;
+    noteEls.next.disabled = notePanel.idx >= notePanel.pages.length - 1;
+  }
+  function stepNote(d) {
+    const i = notePanel.idx + d;
+    if (i < 0 || i >= notePanel.pages.length) return;
+    notePanel.idx = i; renderNote();
+    // Nudge attention on the graph to the matching topic node.
+    const key = notePanel.pages[i].id;
+    if (g.hasNode(key)) { setHovered(key); }
+  }
+  function closeNote() {
+    if (!notePanel) return;
+    notePanel.open = false;
+    noteEls.back.classList.remove('on'); noteEls.panel.classList.remove('on');
+  }
+  async function openNote(pageId) {
+    buildNotePanel();
+    const data = await loadPages();
+    const pages = (data && data.pages) || [];
+    if (!pages.length) return;
+    const idx = Math.max(0, pages.findIndex((p) => p.id === pageId));
+    notePanel.pages = pages; notePanel.idx = idx; notePanel.open = true;
+    renderNote();
+    noteEls.back.classList.add('on'); noteEls.panel.classList.add('on');
+  }
+
   renderer.on('enterNode', ({ node }) => {
     setHovered(node);
-    container.style.cursor = g.getNodeAttribute(node, 'url') ? 'pointer' : 'grab';
+    container.style.cursor = nodeAction(node) ? 'pointer' : 'grab';
     showTip(node);
   });
   renderer.on('leaveNode', () => {
@@ -580,21 +706,37 @@ async function main() {
     });
   }
 
-  /* Click opens the source. On touch there is no hover, so the first tap
-     stands in for it and a second tap on the same node opens. */
+  /* What a click DOES on a node: a source node opens its URL; a topic node in a
+     deep-research tree (carries a `page` id) opens its note page in the panel
+     below. A node with neither just highlights. */
+  function nodeAction(node) {
+    const url = g.getNodeAttribute(node, 'url');
+    if (url && /^https?:\/\//i.test(url)) return { kind: 'url', url };
+    const page = g.getNodeAttribute(node, 'page');
+    if (page && pagesSrc) return { kind: 'page', page };
+    return null;
+  }
+  function doAction(act) {
+    if (!act) return;
+    if (act.kind === 'url') window.open(act.url, '_blank', 'noopener,noreferrer');
+    else if (act.kind === 'page') openNote(act.page);
+  }
+
+  /* Click acts. On touch there is no hover, so the first tap stands in for it
+     and a second tap on the same node acts. */
   let tapped = null, tapAt = 0;
   renderer.on('clickNode', ({ node }) => {
     if (didDrag) { didDrag = false; return; }
-    const url = g.getNodeAttribute(node, 'url');
-    if (!url || !/^https?:\/\//i.test(url)) return;
+    const act = nodeAction(node);
+    if (!act) return;
     if (coarse) {
       const now = Date.now();
-      if (tapped === node && now - tapAt < 4000) { window.open(url, '_blank', 'noopener,noreferrer'); tapped = null; return; }
+      if (tapped === node && now - tapAt < 4000) { doAction(act); tapped = null; return; }
       tapped = node; tapAt = now;
       setHovered(node); showTip(node);
       return;
     }
-    window.open(url, '_blank', 'noopener,noreferrer');
+    doAction(act);
   });
   renderer.on('clickStage', () => { if (coarse) { tapped = null; setHovered(null); hideTip(); } });
   renderer.on('doubleClickNode', (e) => {

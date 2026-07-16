@@ -120,6 +120,52 @@ is asleep") instead of spinning.
 > and remember `postupgrade` rebuilds `libraryByQuery` — re-keying without that
 > rebuild strands every existing entry.
 
+## Deep Research — the multi-hop HQ research pass
+
+A normal job is one search → one answer. A **deep** job runs the same research
+loop HQ's agent does: decompose → search each angle → write a note page per
+angle → synthesize. It's opt-in and deliberate, with its own activation in the
+UI (the "Deep Research" toggle in the search sheet and the library hero).
+
+**Submit.** `POST /search/submit?mode=deep` (same body). The canister records the
+mode in a `jobModes` side-table and hands `mode:"deep"` back to the worker on
+claim. Deep jobs draw on a **separate daily budget** (`deepDailyBudget`, default
+20) and get a **longer claim lease** (`DEEP_LEASE_NS` ≈ 6.3 min vs 240 s) so the
+worker has room for several searches. A spent deep budget rejects with
+`budget` — distinct from the fast lane, which is untouched.
+
+**Worker loop** (`serve.py` `_sw_deep`): `_sw_deep_plan` breaks the question into
+≤`WORKER_DEEP_TOPICS` (5) angles; each angle runs a Brave search on the **`deep`
+reserve lane** (see the quota table below) and `_sw_deep_note` writes a 100–160
+word note page citing its sources; `_sw_deep_synth` writes the top-level answer
+(with a stitched-takeaways fallback). `_sw_deep_graph` wraps it as a research
+tree: a query hub → one **topic node per angle carrying a `page` id** → source
+nodes. Every step runs against the claim-lease deadline and **degrades to a
+single-shot answer** (returns `None`) if planning fails, no angle yields sources,
+or the budget runs low — a deep job never fails outright when a fast answer is
+still possible.
+
+**Fulfill + storage.** A deep fulfill is a normal fulfill plus one trailing
+field: the note pages as JSON. The flat source list is capped at
+`LIB_MAX_SOURCES` (10) for the entry; the **full per-angle source set lives in
+the graph + note pages** (bounded by `LIB_MAX_GRAPH`). The canister stores the
+pages in a `researchPages` stable side-table keyed by library id — a new empty
+`stable var`, so the upgrade is record-compatible (same pattern as `jobModes` /
+`libraryAskedBy`; no stored record changes shape). Entry + summary JSON gain
+`"mode"`, and deep entries also expose `"researchUrl"` →
+`GET /library/<id>/research.json` (`{q, answer, pages:[{id,title,question,body,
+sources}]}`).
+
+**Explore.** The graph-viewer reads `&pages=<research.json>`: clicking a topic
+node opens that note page **in the viewer** (title, angle, body, sources, with
+prev/next to walk the tree) instead of linking out — source nodes still open
+their URL. The library gives deep queries their **own section** (a "Deep
+Research" tab, gated on `deepCount > 0`), a violet card chip, and a drawer that
+lists the note pages as a browsable accordion above the explorable tree.
+
+Tunables: `WORKER_DEEP_BUDGET` (worker wall-clock, default 350 s),
+`WORKER_DEEP_TOPICS` (angles, default 5). Canister: `deepDailyBudget`.
+
 ## Brave quota is the real ceiling — not the daily budget
 
 **The canister's `searchDailyBudget` (500/day) is not what limits this network.**

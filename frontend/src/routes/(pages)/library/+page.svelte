@@ -14,7 +14,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import {
-    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob
+    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl } from '$lib/api/library.js';
 
@@ -26,16 +26,18 @@
   // whole (≤500-entry) index is already local by the time this page renders.
   let filterText = '';
   let sortBy = 'newest';     // 'newest' | 'sources' — index arrives newest-first
+  let modeFilter = 'all';    // 'all' | 'deep' — Deep Research has its own section
+  $: deepCount = index && index.entries ? index.entries.filter((e) => e.mode === 'deep').length : 0;
   $: filteredEntries = index && index.entries
     ? (() => {
         const needle = filterText.trim().toLowerCase();
-        const out = needle
-          ? index.entries.filter((e) => plain(e.query).toLowerCase().includes(needle))
-          : index.entries;
+        let out = modeFilter === 'deep' ? index.entries.filter((e) => e.mode === 'deep') : index.entries;
+        if (needle) out = out.filter((e) => plain(e.query).toLowerCase().includes(needle));
         return sortBy === 'sources' ? [...out].sort((a, b) => b.sources - a.sources) : out;
       })()
     : [];
   function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
+  function setMode(m) { modeFilter = m; onFilterChange(); }
 
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
@@ -49,6 +51,8 @@
   let drawerId = null;
   let drawerEntry = null;    // null while loading
   let drawerMissing = false;
+  let drawerResearch = null; // deep entries: {pages:[…]} note pages, lazily fetched
+  let openPageId = null;     // which note page is expanded in the drawer
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
 
@@ -60,11 +64,22 @@
   async function loadDrawer(id) {
     drawerEntry = null;
     drawerMissing = false;
+    drawerResearch = null;
+    openPageId = null;
     if (!id) return;
     const e = await libraryEntry(id);
     if (id !== drawerId) return;
-    if (e && e.id) drawerEntry = e; else drawerMissing = true;
+    if (e && e.id) {
+      drawerEntry = e;
+      // Deep entries carry a browsable set of note pages — load them so the
+      // drawer can show the research as pages, not just one synthesized answer.
+      if (e.mode === 'deep') {
+        const r = await libraryResearch(id);
+        if (id === drawerId && r && r.pages) drawerResearch = r;
+      }
+    } else drawerMissing = true;
   }
+  function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
   function openEntry(id) { goto(`/library?e=${encodeURIComponent(id)}`, { noScroll: true }); }
   function closeDrawer() { goto('/library', { noScroll: true }); }
@@ -265,6 +280,23 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
+    {#if deepCount > 0}
+      <div class="lib-modebar" role="group" aria-label="Filter by research depth">
+        <button class="lib-modetab" class:on={modeFilter === 'all'} on:click={() => setMode('all')}>
+          All questions
+        </button>
+        <button class="lib-modetab lib-modetab-deep" class:on={modeFilter === 'deep'} on:click={() => setMode('deep')}>
+          <Icon name="tree-structure" size={14} /> Deep Research
+          <span class="lib-modecount">{deepCount}</span>
+        </button>
+      </div>
+      {#if modeFilter === 'deep'}
+        <p class="lib-modehint">
+          Multi-angle research queries — each broke a question into several searches and note pages you can walk as a tree.
+        </p>
+      {/if}
+    {/if}
+
     <div class="lib-filterbar">
       <div class="lib-filter-input">
         <Icon name="funnel" size={14} style="color: hsl(var(--pg-fg-muted)); flex-shrink: 0;" />
@@ -296,9 +328,12 @@
     {:else}
       <div class="lib-grid">
         {#each filteredEntries.slice(0, shown) as e (e.id)}
-          <button class="lib-card lib-card-btn" on:click={() => openEntry(e.id)}>
+          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
             <h3>{plain(e.query)}</h3>
             <div class="lib-chips">
+              {#if e.mode === 'deep'}
+                <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+              {/if}
               <span class="lib-chip">{fmtDate(e.ts)}</span>
               <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
               <span class="lib-chip lib-chip-chain">on-chain</span>
@@ -330,6 +365,9 @@
       <div class="lib-kicker">Library entry · {drawerEntry.id}</div>
       <h2 class="lib-drawer-q">{plain(drawerEntry.query)}</h2>
       <div class="lib-chips" style="margin-bottom: 18px;">
+        {#if drawerEntry.mode === 'deep'}
+          <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+        {/if}
         {#if askedByAi(drawerEntry)}
           <span class="lib-chip lib-chip-ai"
                 title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">
@@ -363,17 +401,59 @@
         </ol>
       {/if}
 
+      {#if drawerEntry.mode === 'deep' && drawerResearch?.pages?.length}
+        <div class="lib-kicker" style="margin-top: 24px;">The research tree · {drawerResearch.pages.length} note pages</div>
+        <p class="lib-deep-lede">
+          This question was researched from several angles. Open a page to read the note, or explore the
+          tree in the graph below — every topic node opens its page.
+        </p>
+        <div class="lib-pages">
+          {#each drawerResearch.pages as p, i}
+            <div class="lib-page" class:open={openPageId === p.id}>
+              <button class="lib-page-head" on:click={() => togglePage(p.id)} aria-expanded={openPageId === p.id}>
+                <span class="lib-page-n">{i + 1}</span>
+                <span class="lib-page-title">
+                  <span class="lib-page-t">{plain(p.title)}</span>
+                  {#if p.question}<span class="lib-page-q">{plain(p.question)}</span>{/if}
+                </span>
+                <Icon name={openPageId === p.id ? 'caret-up' : 'caret-down'} size={14} style="flex-shrink: 0; color: hsl(var(--pg-fg-muted));" />
+              </button>
+              {#if openPageId === p.id}
+                <div class="lib-page-body">
+                  <p class="lib-page-note">{plain(p.body)}</p>
+                  {#if p.sources?.length}
+                    <ol class="lib-sources" style="margin-top: 12px;">
+                      {#each p.sources as s, si}
+                        <li>
+                          <a href={s.url} target="_blank" rel="noopener noreferrer">
+                            <span class="lib-src-n">[{si + 1}]</span>
+                            <span class="lib-src-t">{plain(s.title)}</span>
+                            <span class="lib-src-d">{domain(s.url)}</span>
+                          </a>
+                        </li>
+                      {/each}
+                    </ol>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       {#if libraryGraphViewerUrl(drawerEntry.id)}
-        <div class="lib-kicker" style="margin-top: 22px;">This answer as a graph</div>
+        {@const deepEntry = drawerEntry.mode === 'deep'}
+        {@const gvUrl = libraryGraphViewerUrl(drawerEntry.id, { deep: deepEntry })}
+        <div class="lib-kicker" style="margin-top: 22px;">{deepEntry ? 'The research tree, explorable' : 'This answer as a graph'}</div>
         <iframe
-          src={libraryGraphViewerUrl(drawerEntry.id)}
-          title="Graph of this answer"
+          src={gvUrl}
+          title={deepEntry ? 'The research tree — click a topic to read its note' : 'Graph of this answer'}
           class="lib-drawer-graph"
           loading="lazy"
         ></iframe>
         <div class="lib-drawer-actions">
-          <a class="lib-link" href={libraryGraphViewerUrl(drawerEntry.id)} target="_blank" rel="noopener noreferrer">
-            Open graph <Icon name="arrow-up-right" size={12} />
+          <a class="lib-link" href={gvUrl} target="_blank" rel="noopener noreferrer">
+            {deepEntry ? 'Open the research tree' : 'Open graph'} <Icon name="arrow-up-right" size={12} />
           </a>
           <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
             on:click={() => { try { navigator.clipboard.writeText(location.origin + '/library?e=' + drawerEntry.id); } catch {} }}>
@@ -583,6 +663,57 @@
     background: hsl(var(--pg-hover)); border-radius: 999px; padding: 3px 9px;
   }
   .lib-chip-chain { background: hsl(45 80% 88%); color: hsl(38 65% 30%); }
+  .lib-chip-deep {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: hsl(266 70% 94%); color: hsl(266 60% 42%); border: 1px solid hsl(266 55% 86%);
+  }
+
+  /* Deep Research section toggle — a distinct tab pair above the filter bar. */
+  .lib-modebar { display: flex; gap: 8px; margin-bottom: 14px; }
+  .lib-modetab {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));
+    border-radius: 999px; padding: 8px 16px; cursor: pointer;
+    font: 600 13px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg-muted));
+    transition: border-color .14s, color .14s, background .14s;
+  }
+  .lib-modetab.on { color: hsl(var(--pg-fg)); border-color: hsl(45 75% 60%); background: hsl(var(--pg-surface)); }
+  .lib-modetab-deep.on {
+    color: hsl(266 60% 42%); border-color: hsl(266 60% 70%);
+    background: hsl(266 70% 96%);
+  }
+  .lib-modecount {
+    font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: hsl(266 60% 88%); color: hsl(266 55% 38%);
+  }
+  .lib-modehint { font-size: 12.5px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: -4px 0 16px; max-width: 60ch; }
+
+  /* Deep card accent — a soft violet edge so a deep entry reads as richer. */
+  .lib-card-deep { border-color: hsl(266 55% 84%); }
+  .lib-card-deep:hover { border-color: hsl(266 60% 66%); }
+
+  /* Drawer note pages — the research as a small notebook. */
+  .lib-deep-lede { font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 6px 0 12px; }
+  .lib-pages { display: flex; flex-direction: column; gap: 8px; }
+  .lib-page { border: 1px solid hsl(var(--pg-border)); border-radius: 12px; overflow: hidden; background: hsl(var(--pg-surface)); }
+  .lib-page.open { border-color: hsl(266 55% 72%); }
+  .lib-page-head {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 12px 14px; border: none; background: transparent; cursor: pointer; font: inherit;
+  }
+  .lib-page-n {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 7px;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    background: hsl(266 60% 92%); color: hsl(266 55% 42%);
+  }
+  .lib-page-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .lib-page-t { font-size: 13.5px; font-weight: 600; color: hsl(var(--pg-fg)); }
+  .lib-page-q {
+    font-size: 11.5px; color: hsl(var(--pg-fg-muted)); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lib-page-body { padding: 0 14px 14px 47px; }
+  .lib-page-note { font-size: 13.5px; line-height: 1.68; color: hsl(var(--pg-fg)); margin: 0; white-space: pre-wrap; }
   /* Louder than the other chips on purpose: "a machine chose to ask this" is
      the one thing on this card a reader would want to know unprompted, and it
      should never be mistaken for a neutral metadata pill. */
@@ -695,4 +826,15 @@
   }
   :global(.dark) .lib-filter-reset-link { color: hsl(45 85% 64%); }
   :global(.dark) .lib-drawer-actions .lib-link { color: hsl(45 85% 66%); }
+  :global(.dark) .lib-chip-deep {
+    background: hsl(266 55% 32% / 0.4); color: hsl(266 85% 85%); border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-modetab-deep.on {
+    background: hsl(266 55% 30% / 0.35); color: hsl(266 85% 84%); border-color: hsl(266 50% 52%);
+  }
+  :global(.dark) .lib-modecount { background: hsl(266 55% 40% / 0.5); color: hsl(266 85% 86%); }
+  :global(.dark) .lib-card-deep { border-color: hsl(266 45% 40% / 0.6); }
+  :global(.dark) .lib-card-deep:hover { border-color: hsl(266 55% 58%); }
+  :global(.dark) .lib-page.open { border-color: hsl(266 50% 52%); }
+  :global(.dark) .lib-page-n { background: hsl(266 55% 38% / 0.5); color: hsl(266 85% 85%); }
 </style>

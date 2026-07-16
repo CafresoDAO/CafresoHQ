@@ -39,12 +39,25 @@ export function graphViewerOrigin() {
   return HQ_UI_CANISTER_ORIGIN;
 }
 
-/** Fully public graph-viewer link for a library entry — canister-hosted end to end. */
-export function libraryGraphViewerUrl(id) {
+/** Fully public graph-viewer link for a library entry — canister-hosted end to end.
+
+    For a deep-research entry, pass `{ deep:true }` to also hand the viewer the
+    entry's note pages (`&pages=<research.json>`): the research tree then opens
+    the note page IN the viewer when a topic node is clicked, instead of only
+    linking sources out — the "explorable research" experience. */
+export function libraryGraphViewerUrl(id, { deep = false } = {}) {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/${id}/graph.json`);
-  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+  let url = `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+  if (deep) url += `&pages=${encodeURIComponent(`${base}/library/${id}/research.json`)}`;
+  return url;
+}
+
+/** Public URL of a deep entry's note pages (research.json), or '' if unconfigured. */
+export function libraryResearchUrl(id) {
+  const base = libraryPublicBase();
+  return base ? `${base}/library/${id}/research.json` : '';
 }
 
 /** The whole library as one neural web — the /library page hero. Runs with
