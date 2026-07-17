@@ -10,18 +10,28 @@
   // Phase 4+ will add Banking.Brave mining stats via inter-canister call.
   let rows = $state([]);
   let loading = $state(true);
+  /* Distinct from `rows.length === 0`. Collapsing a failed fetch into the empty
+     array made the page claim "No rankings yet — be the first!" when the truth
+     was "we couldn't reach the canister", which is a straight-up false
+     statement to the user and hides an outage as an invitation. */
+  let loadError = $state(null);
   const trophyColors = ['hsl(45 95% 50%)', 'hsl(0 0% 65%)', 'hsl(28 60% 50%)'];
 
-  onMount(async () => {
+  async function load() {
+    loading = true;
+    loadError = null;
     try {
       rows = await getLeaderboard(100);
     } catch (e) {
       console.warn('[leaderboard] load failed', e);
       rows = [];
+      loadError = e?.message || String(e);
     } finally {
       loading = false;
     }
-  });
+  }
+
+  onMount(load);
 </script>
 
 <svelte:head>
@@ -56,6 +66,29 @@
       <p class="text-[13.5px] sm:text-[14px] leading-[1.55] mx-auto" style="max-width: 460px; color: hsl(var(--pg-fg-muted));">
         Loading the leaderboard…
       </p>
+    </div>
+  {:else if loadError}
+    <!-- Say the board couldn't be reached, rather than implying it's empty. -->
+    <div
+      class="mt-8 rounded-[16px] p-6 sm:p-10 text-center"
+      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-danger-border));"
+    >
+      <div
+        class="w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-full flex items-center justify-center mb-4"
+        style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg));"
+      >
+        <Icon name="warning" size={28} />
+      </div>
+      <h3 class="font-bold text-[18px] sm:text-[20px] mb-2" style="color: hsl(var(--pg-fg));">
+        Couldn't load the leaderboard
+      </h3>
+      <p class="text-[13.5px] sm:text-[14px] leading-[1.55] mx-auto mb-5" style="max-width: 460px; color: hsl(var(--pg-fg-muted));">
+        The rankings live on-chain and the canister didn't answer — this is a
+        connection problem, not an empty board.
+      </p>
+      <div class="flex justify-center">
+        <Button on:click={load}><Icon name="arrow-clockwise" size={15} /> Try again</Button>
+      </div>
     </div>
   {:else if rows.length === 0}
     <div
