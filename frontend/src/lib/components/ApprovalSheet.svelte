@@ -3,34 +3,19 @@
      Mounted once (hq/app page) above the fullscreen iframe. Cancel is the
      data-autofocus default: pressing Enter reflexively must never sign. */
   import { approvalRequest, settleApproval } from '$lib/stores/approvalSheet.js';
-  import { trapFocus } from '$lib/actions/trapFocus.js';
+  import Modal from './Modal.svelte';
 
   $: req = $approvalRequest;
-
-  function onKeydown(e) {
-    if (e.key === 'Escape') { e.stopPropagation(); settleApproval(false); }
-  }
-  /* mousedown (not click) on the backdrop, matching the HQ app's modals:
-     a drag that starts inside the sheet and ends outside must not decline. */
-  function onBackdrop(e) {
-    if (e.target === e.currentTarget) settleApproval(false);
-  }
 </script>
 
-{#if req}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="fixed inset-0 z-[70] grid place-items-center bg-ink-900/60 p-4 backdrop-blur-sm"
-    on:mousedown={onBackdrop}
-    on:keydown={onKeydown}
-  >
-    <div
-      use:trapFocus
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="approval-sheet-title"
-      class="card w-full max-w-md p-6 shadow-2xl"
-    >
+<Modal
+  open={!!req}
+  on:close={() => settleApproval(false)}
+  z="sheet"
+  labelledby="approval-sheet-title"
+  panelClass="card w-full max-w-md p-6 shadow-2xl"
+>
+  {#if req}
       <div class="page-kicker">{req.kicker || 'Signature required'}</div>
       <h2 id="approval-sheet-title" class="mt-2 text-xl font-semibold">{req.title}</h2>
 
@@ -70,6 +55,5 @@
           {req.confirmLabel || 'Approve'}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+  {/if}
+</Modal>

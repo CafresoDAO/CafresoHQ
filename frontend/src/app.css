@@ -488,6 +488,19 @@ body {
   }
   .fade-up { animation: fade-up .5s cubic-bezier(.2,.8,.2,1) both; }
 
+  /* Modal panel entrance. Lives here (global) rather than in a component's
+     scoped <style> because it's applied to the shared <Modal> panel — and
+     because a component-scoped @keyframes gets renamed to
+     `svelte-<hash>-modal-up`, which an inline `animation:` string can't
+     reference. AISearchModal hit exactly that: its scoped `modalUp` was
+     renamed, the inline style still said `modalUp`, and the entrance silently
+     never ran. */
+  @keyframes modal-up {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-up { animation: modal-up .22s cubic-bezier(.2,.8,.2,1); }
+
   @keyframes pulse-ring {
     0% { box-shadow: 0 0 0 0 hsl(112 60% 45% / 0.4); }
     70% { box-shadow: 0 0 0 14px hsl(112 60% 45% / 0); }

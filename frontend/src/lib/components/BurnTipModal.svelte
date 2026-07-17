@@ -2,9 +2,9 @@
   import { burnTarget, nanasBalance, tweaks, confirmBurn } from '$lib/stores/blog.js';
   import { burnTip } from '$lib/api/devlog.js';
   import Icon from './Icon.svelte';
+  import Modal from './Modal.svelte';
   import NanasCoin from './NanasCoin.svelte';
   import Button from './Button.svelte';
-  import { trapFocus } from '$lib/actions/trapFocus.js';
 
   let amount = 500;
   let phase = 'choose'; // 'choose' | 'burning' | 'done'
@@ -66,28 +66,20 @@
   const C = 2 * Math.PI * 58;
 </script>
 
-{#if $burnTarget}
-  <div
-    on:click={close}
-    on:keydown={(e) => e.key === 'Escape' && close()}
-    role="presentation"
-    class="fade-up fixed inset-0 z-[50] flex items-center justify-center"
-    style="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); padding: 16px;"
-  >
-    <div
-      on:click|stopPropagation
-      use:trapFocus
-      role="dialog"
-      aria-modal="true"
-      aria-label="Burn $nanas to tip"
-      class="relative overflow-hidden bg-white rounded-2xl"
-      style="
-        max-width: 440px; width: 100%; padding: 28px;
-        background: hsl(var(--pg-surface));
-        border: 1px solid hsl(var(--pg-border));
-        box-shadow: 0 28px 60px -20px hsl(24 40% 8% / 0.55);
-      "
-    >
+<Modal
+  open={!!$burnTarget}
+  on:close={close}
+  ariaLabel="Burn $nanas to tip"
+  backdropClass="fade-up flex items-center justify-center"
+  backdropStyle="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); padding: 16px;"
+  panelClass="relative overflow-hidden rounded-2xl"
+  panelStyle="
+    max-width: 440px; width: 100%; padding: 28px;
+    background: hsl(var(--pg-surface));
+    border: 1px solid hsl(var(--pg-border));
+    box-shadow: 0 28px 60px -20px hsl(24 40% 8% / 0.55);
+  "
+>
       <button
         on:click={close}
         aria-label="Close"
@@ -272,6 +264,4 @@
           </p>
         </div>
       {/if}
-    </div>
-  </div>
-{/if}
+</Modal>

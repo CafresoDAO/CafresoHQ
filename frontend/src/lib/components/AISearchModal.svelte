@@ -9,7 +9,7 @@
   import { bankingBraveOrigin } from '$lib/links.js';
   import { goto } from '$app/navigation';
   import Icon from './Icon.svelte';
-  import { trapFocus } from '$lib/actions/trapFocus.js';
+  import Modal from './Modal.svelte';
   import { findPublic, networkHealth, submitJob, awaitJob } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl } from '$lib/api/library.js';
   import DeepResearchProgress from './DeepResearchProgress.svelte';
@@ -53,7 +53,6 @@
   }
 
   function close() { aiSearchOpen.set(false); }
-  function onKeydown(e) { if (e.key === 'Escape') close(); }
 
   function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
   function domain(url) {
@@ -181,47 +180,27 @@
   function openLibrary() { close(); goto('/library' + (entry ? `?e=${entry.id}` : '')); }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
-
-{#if $aiSearchOpen}
-  <!-- Backdrop -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    on:click={close}
-    style="
-      position: fixed; inset: 0; z-index: 55;
-      background: hsl(24 48% 8% / 0.55);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-    "
-  ></div>
-
-  <!-- Panel -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-label="Ai Cafreso Search"
-    use:trapFocus
-    on:click|stopPropagation
-    style="
-      position: fixed; left: 12px; right: 12px;
-      bottom: calc(82px + env(safe-area-inset-bottom, 0px));
-      z-index: 56;
-      background: hsl(var(--pg-surface) / 0.97);
-      backdrop-filter: blur(24px) saturate(160%);
-      -webkit-backdrop-filter: blur(24px) saturate(160%);
-      border: 1px solid hsl(var(--pg-border));
-      border-radius: 20px;
-      box-shadow: 0 24px 60px -16px hsl(24 40% 10% / 0.45), 0 2px 0 hsl(26 40% 98% / 0.5) inset;
-      padding: 18px 16px 20px;
-      max-height: calc(100dvh - 120px);
-      overflow-y: auto;
-      animation: modalUp .22s cubic-bezier(.2,.8,.2,1);
-    "
-  >
+<Modal
+  open={$aiSearchOpen}
+  on:close={close}
+  ariaLabel="Ai Cafreso Search"
+  placement="pinned"
+  backdropStyle="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"
+  panelClass="modal-up"
+  panelStyle="
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+    background: hsl(var(--pg-surface) / 0.97);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid hsl(var(--pg-border));
+    border-radius: 20px;
+    box-shadow: 0 24px 60px -16px hsl(24 40% 10% / 0.45), 0 2px 0 hsl(26 40% 98% / 0.5) inset;
+    padding: 18px 16px 20px;
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+  "
+>
     <!-- Header row -->
     <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px;">
       <div>
@@ -611,12 +590,4 @@
         ">Explore the library — every answer, one growing web →</a>
       </div>
     {/if}
-  </div>
-{/if}
-
-<style>
-  @keyframes modalUp {
-    from { opacity: 0; transform: translateY(12px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-  }
-</style>
+</Modal>

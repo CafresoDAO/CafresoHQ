@@ -4,6 +4,7 @@
   import { productImage, usd } from '$lib/data/products.js';
   import Icon from './Icon.svelte';
   import Button from './Button.svelte';
+  import Modal from './Modal.svelte';
 
   function close() {
     cartOpen.set(false);
@@ -14,19 +15,17 @@
   }
 </script>
 
-{#if $cartOpen}
-  <div
-    on:click={close}
-    class="fixed inset-0 z-[15]"
-    style="background: rgba(0,0,0,0.4);"
-    role="presentation"
-  ></div>
-  <div
-    class="cart-drawer fixed right-0 top-0 bottom-0 w-full z-[20] flex flex-col"
-    style="max-width: 520px;"
-  >
+<Modal
+  open={$cartOpen}
+  on:close={close}
+  placement="drawer-right"
+  z="drawer"
+  labelledby="cart-drawer-title"
+  panelClass="cart-drawer w-full"
+  panelStyle="max-width: 520px;"
+>
     <div class="flex justify-between items-center px-5 py-4">
-      <h1 class="text-xl font-bold m-0">
+      <h1 id="cart-drawer-title" class="text-xl font-bold m-0">
         {$cart.length}
         {$cart.length === 1 ? 'item' : 'items'}
       </h1>
@@ -86,15 +85,15 @@
         </Button>
       </div>
     {/if}
-  </div>
-{/if}
+</Modal>
 
 <style>
-  /* Warm tan drawer panel: keep light value exact, flip to a themed surface in dark. */
-  .cart-drawer {
+  /* Warm tan drawer panel: keep light value exact, flip to a themed surface in dark.
+     :global because the element now lives inside <Modal>'s slot. */
+  :global(.cart-drawer) {
     background: hsl(26 30% 74%);
   }
-  :global(.dark) .cart-drawer {
+  :global(.dark) :global(.cart-drawer) {
     background: hsl(var(--pg-surface));
   }
 </style>

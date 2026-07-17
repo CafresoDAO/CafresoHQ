@@ -4,6 +4,7 @@
   import { Principal } from '@dfinity/principal';
   import Icon from './Icon.svelte';
   import Button from './Button.svelte';
+  import Modal from './Modal.svelte';
   import { TOKENS, transfer, getFee, formatBalance } from '$lib/api/icrc1.js';
 
   // Props. Modal is "controlled" — parent owns open/close state.
@@ -107,23 +108,15 @@
   const balanceFormatted = $derived(rawBalance == null ? '—' : formatBalance(rawBalance, token.decimals, token.decimals >= 8 ? 4 : 2));
 </script>
 
-{#if open}
-  <div
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-    style="background: hsl(222 47% 11% / 0.5);"
-    on:click={close}
-    on:keydown={(e) => e.key === 'Escape' && close()}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-  >
-    <div
-      class="w-full sm:max-w-[460px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[92vh] overflow-y-auto"
-      style="background: hsl(var(--pg-elevated)); border-top: 1px solid hsl(var(--pg-border));"
-      on:click|stopPropagation
-      on:keydown|stopPropagation
-      role="document"
-    >
+<Modal
+  {open}
+  on:close={close}
+  ariaLabel="Send {TOKENS[tokenKey]?.symbol || 'token'}"
+  backdropClass="flex items-end sm:items-center justify-center"
+  backdropStyle="background: hsl(222 47% 11% / 0.5);"
+  panelClass="w-full sm:max-w-[460px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[92vh] overflow-y-auto"
+  panelStyle="background: hsl(var(--pg-elevated)); border-top: 1px solid hsl(var(--pg-border));"
+>
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -283,6 +276,4 @@
           </p>
         </form>
       {/if}
-    </div>
-  </div>
-{/if}
+</Modal>

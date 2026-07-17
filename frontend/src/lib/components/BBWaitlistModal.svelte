@@ -1,5 +1,6 @@
 <script>
   import Icon from './Icon.svelte';
+  import Modal from './Modal.svelte';
   import { bbModalOpen } from '$lib/stores/blog.js';
 
   let step = 0;
@@ -34,24 +35,20 @@
   };
 </script>
 
-{#if $bbModalOpen}
-  <div
-    on:click={close}
-    role="presentation"
-    class="fade-up fixed inset-0 z-[60] flex items-center justify-center"
-    style="background: hsl(220 78% 8% / 0.72); backdrop-filter: blur(6px); padding: 20px;"
-  >
-    <div
-      on:click|stopPropagation
-      role="dialog"
-      class="overflow-hidden"
-      style="
-        width: min(520px, 100%);
-        background: {BB.ivory}; border: 2px solid {BB.gold};
-        border-radius: 16px;
-        box-shadow: 0 40px 80px -20px {BB.navyDeep};
-      "
-    >
+<Modal
+  open={$bbModalOpen}
+  on:close={close}
+  ariaLabel="Banking.Brave testnet waitlist"
+  backdropClass="fade-up"
+  backdropStyle="background: hsl(220 78% 8% / 0.72); backdrop-filter: blur(6px); padding: 20px;"
+  panelClass="overflow-hidden"
+  panelStyle="
+    width: min(520px, 100%);
+    background: {BB.ivory}; border: 2px solid {BB.gold};
+    border-radius: 16px;
+    box-shadow: 0 40px 80px -20px {BB.navyDeep};
+  "
+>
       <!-- Navy header -->
       <div
         class="relative"
@@ -229,6 +226,4 @@
           {#if step === 2}Back to Dev Log{/if}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>

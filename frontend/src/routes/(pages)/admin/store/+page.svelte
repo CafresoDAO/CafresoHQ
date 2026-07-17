@@ -3,6 +3,7 @@
 <script>
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/Button.svelte';
+  import Modal from '$lib/components/Modal.svelte';
   import {
     listProducts,
     upsertProduct,
@@ -388,17 +389,16 @@
 </section>
 
 <!-- Edit drawer -->
-{#if editing}
-  <div
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-    style="background: hsl(222 47% 11% / 0.5);"
-    on:click={cancelEdit}
-  >
-    <div
-      class="w-full sm:max-w-[520px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
-      style="background: hsl(var(--pg-surface)); border-top: 1px solid hsl(var(--pg-border));"
-      on:click|stopPropagation
-    >
+<Modal
+  open={!!editing}
+  on:close={cancelEdit}
+  ariaLabel="Edit product"
+  backdropClass="flex items-end sm:items-center justify-center"
+  backdropStyle="background: hsl(222 47% 11% / 0.5);"
+  panelClass="w-full sm:max-w-[520px] rounded-t-[18px] sm:rounded-[16px] p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
+  panelStyle="background: hsl(var(--pg-surface)); border-top: 1px solid hsl(var(--pg-border));"
+>
+  {#if editing}
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-bold text-[16px]" style="color: hsl(var(--pg-fg));">
           {editing.createdAtNs ? 'Edit product' : 'New product'}
@@ -475,6 +475,5 @@
         </Button>
         <Button variant="ghost" on:click={cancelEdit} class="flex-1">Cancel</Button>
       </div>
-    </div>
-  </div>
-{/if}
+  {/if}
+</Modal>
