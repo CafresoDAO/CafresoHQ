@@ -17,6 +17,7 @@
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl } from '$lib/api/library.js';
+  import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
   let health = null;
@@ -137,10 +138,7 @@
   }
 
   function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
-  function fmtDate(ns) {
-    try { return new Date(Number(ns) / 1e6).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch { return ''; }
-  }
+  const fmtDate = (ns) => fmtNsDate(ns, 'short');
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
@@ -793,6 +791,11 @@
     width: 32px; height: 32px; border: none; border-radius: 9px;
     background: hsl(var(--pg-hover)); color: hsl(var(--pg-fg-muted));
     cursor: pointer; display: grid; place-items: center;
+  }
+  /* The drawer becomes a bottom sheet on touch, where 32px is too small to
+     hit reliably — and dismissing is the one thing that must always work. */
+  @media (pointer: coarse) {
+    .lib-drawer-close { width: 40px; height: 40px; }
   }
   .lib-drawer-q {
     font-family: 'Playfair Display', serif;

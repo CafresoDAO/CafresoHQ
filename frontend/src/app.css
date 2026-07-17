@@ -412,6 +412,17 @@ body {
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }
+  /* ~28px tall, which is under the ~44px touch guideline — but .btn-sm is used
+     34× across the /hq control plane, a dense desktop admin surface where a
+     blanket bump would just add bloat for a precise mouse. Enlarge only where
+     the pointer is actually coarse (touch), so density survives on desktop and
+     fingers get a real target on phones/tablets. */
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-height: 40px;
+      @apply px-3.5 py-2;
+    }
+  }
 
   .input {
     @apply w-full rounded-lg px-3 py-2 text-sm font-mono

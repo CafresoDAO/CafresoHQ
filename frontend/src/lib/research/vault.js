@@ -12,6 +12,8 @@
 // state, no new routes on the worker — the vault is a *view*.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { fmtNsDate } from '$lib/utils/time.js';
+
 /** Strip tags/control chars from model-written text before it becomes content. */
 function plain(t) {
   return String(t || '').replace(/<[^>]+>/g, '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim();
@@ -27,11 +29,7 @@ function domain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
-function fmtDate(ns) {
-  try {
-    return new Date(Number(ns) / 1e6).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-  } catch { return ''; }
-}
+const fmtDate = (ns) => fmtNsDate(ns, 'long');
 
 // ── Vault construction ───────────────────────────────────────────────────────
 

@@ -99,11 +99,23 @@
       const f = vault.byPath.get(path);
       if (!f) return;
       const r = a.getBoundingClientRect();
+      /* Clamp into the viewport on BOTH axes. The old `Math.min(r.left,
+         innerWidth - 380)` had no lower bound, so any viewport under ~380px
+         produced a negative x and pushed the card off-screen left; 380 also
+         didn't match the card's real width. Measured against PREVIEW_W/H,
+         which mirror the .v-preview rule below. Recomputed per hover, and the
+         card is transient (it closes on mouseout), so no resize listener. */
+      const PREVIEW_W = Math.min(360, window.innerWidth * 0.9);
+      const PREVIEW_H = 300;
+      const M = 8;
+      const flipsAbove = r.bottom + M + PREVIEW_H > window.innerHeight;
       preview = {
         path,
         html: renderMd(f.md.split('\n').slice(0, 14).join('\n'), vault),
-        x: Math.min(r.left, window.innerWidth - 380),
-        y: r.bottom + 8
+        x: Math.max(M, Math.min(r.left, window.innerWidth - PREVIEW_W - M)),
+        y: flipsAbove
+          ? Math.max(M, r.top - PREVIEW_H - M)
+          : r.bottom + M
       };
     }, 250);
   }
@@ -411,6 +423,9 @@
     padding: 5px 7px; color: hsl(var(--pg-fg-subtle));
   }
   .v-mode.on { background: hsl(var(--pg-hover)); color: hsl(var(--pg-fg)); }
+  @media (pointer: coarse) {
+    .v-mode { min-width: 40px; min-height: 40px; display: grid; place-items: center; }
+  }
 
   .v-reader { flex: 1; overflow-y: auto; padding: 26px clamp(18px, 5vw, 56px) 30px; }
   .v-raw {

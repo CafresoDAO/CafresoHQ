@@ -12,6 +12,7 @@
   import Modal from './Modal.svelte';
   import { findPublic, networkHealth, submitJob, awaitJob } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl } from '$lib/api/library.js';
+  import { fmtNsDate } from '$lib/utils/time.js';
   import DeepResearchProgress from './DeepResearchProgress.svelte';
   import { get } from 'svelte/store';
   import { operatorConfig, refreshOperatorConfig, searchPaused, gpuNodeDown, gpuDownMessage } from '$lib/stores/operator.js';
@@ -63,7 +64,8 @@
     if (e.model) bits.push('answered by ' + e.model);
     if (e.engine) bits.push('via ' + e.engine);
     if (e.answeredAt) {
-      try { bits.push(new Date(Number(e.answeredAt) / 1e6).toLocaleDateString()); } catch {}
+      const d = fmtNsDate(e.answeredAt, 'short');
+      if (d) bits.push(d);
     }
     return bits.join(' · ');
   }
