@@ -82,6 +82,7 @@
       type="text"
       placeholder="Ask the on-chain library anything…"
       aria-label="Search the on-chain library"
+      aria-haspopup="dialog"
       autocomplete="off"
       class="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-ink-400"
       on:focus={runSearch}

@@ -64,6 +64,7 @@
 
   <button
     on:click={onTip}
+    aria-label={userBurned > 0 ? `You burned ${userBurned} $nanas — burn more` : 'Burn $nanas on this post'}
     class="flex flex-col items-center gap-1.5 cursor-pointer"
     style="
       background: {userBurned > 0 ? 'hsl(45 95% 62%)' : 'hsl(var(--pg-elevated))'};

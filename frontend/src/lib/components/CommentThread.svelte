@@ -64,6 +64,11 @@
   </div>
 
   <div class="flex flex-col gap-6">
+    {#if comments.length === 0}
+      <p class="text-[13.5px] m-0 py-6 text-center" style="color: hsl(var(--pg-fg-muted));">
+        No comments yet — be the first to share your thoughts.
+      </p>
+    {/if}
     {#each comments as c (c.date + c.author.name)}
       <div class="flex flex-col gap-4">
         <div class="flex gap-3">
@@ -93,14 +98,34 @@
               {/if}
             </div>
             <p class="m-0 text-sm" style="line-height: 1.55;"><MentionText text={c.text} /></p>
+            <!-- Reply / Tip / Verify aren't built yet. They previously rendered
+                 as normal buttons with no handler at all — clickable-looking
+                 controls that silently did nothing. Until they're wired, say so:
+                 disabled + a title, matching the "coming soon" treatment used on
+                 unavailable products and the SneedDAO teaser. -->
             <div class="flex gap-3.5 mt-2 text-xs" style="color: hsl(var(--pg-fg-muted));">
-              <button class="bg-transparent border-none p-0 inline-flex items-center gap-1 cursor-pointer" style="color: inherit; font-family: inherit; font-size: 12px;">
+              <button
+                disabled
+                title="Threaded replies are coming with the on-chain comment upgrade"
+                class="comment-soon bg-transparent border-none p-0 inline-flex items-center gap-1"
+                style="color: inherit; font-family: inherit; font-size: 12px;"
+              >
                 <Icon name="arrow-bend-up-left" size={13} /> Reply
               </button>
-              <button class="bg-transparent border-none p-0 inline-flex items-center gap-1 cursor-pointer" style="color: inherit; font-family: inherit; font-size: 12px;">
+              <button
+                disabled
+                title="Tipping a comment is coming with the on-chain comment upgrade"
+                class="comment-soon bg-transparent border-none p-0 inline-flex items-center gap-1"
+                style="color: inherit; font-family: inherit; font-size: 12px;"
+              >
                 <Icon name="fire" size={13} /> Tip
               </button>
-              <button class="bg-transparent border-none p-0 cursor-pointer" style="color: inherit; font-family: inherit; font-size: 12px;">
+              <button
+                disabled
+                title="Per-comment receipts are coming with the on-chain comment upgrade"
+                class="comment-soon bg-transparent border-none p-0"
+                style="color: inherit; font-family: inherit; font-size: 12px;"
+              >
                 Verify on-chain
               </button>
             </div>
@@ -131,3 +156,7 @@
     {/each}
   </div>
 </div>
+
+<style>
+  .comment-soon { cursor: not-allowed; opacity: 0.5; }
+</style>

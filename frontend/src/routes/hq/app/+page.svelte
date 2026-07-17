@@ -573,9 +573,10 @@
       <button
         class="absolute right-3 top-3 z-50 grid h-9 w-9 place-items-center rounded-full border border-ink-600/60 bg-ink-900/80 text-ink-200 backdrop-blur-md transition-colors hover:bg-ink-800/80 hover:text-ink-50"
         title="Show controls (Esc)"
+        aria-label="Show controls"
         on:click={() => controlsCollapsed = false}
       >
-        ...
+        <span aria-hidden="true">...</span>
       </button>
     {:else}
       <div class="absolute right-3 top-3 z-50 flex items-center gap-1 rounded-full border border-ink-600/60 bg-ink-900/80 p-1 shadow-lg backdrop-blur-md">
