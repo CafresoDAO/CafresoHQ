@@ -38,6 +38,7 @@
 import Graph from 'graphology';
 import Sigma from 'sigma';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
+import louvain from 'graphology-communities-louvain';
 
 const qs = new URLSearchParams(location.search);
 const P = (k, d) => { const v = qs.get(k); return v == null ? d : v; };
@@ -143,6 +144,52 @@ async function main() {
   // Blend the snapshot's own weighting with degree: the snapshot sizes a query
   // hub by betweenness, but Obsidian's read of "important" is how many things
   // connect here, and the blend keeps both legible after maxnodes pruning.
+  /* ── library mode ────────────────────────────────────────────────────────
+     The merged library snapshot marks question nodes with `entryId` (the
+     on-chain entry the node IS) and carries domain nodes with hash-random
+     palette colors. When that shape is detected:
+       · labels get clamped (questions arrive as full 70-char sentences that
+         spill off the canvas), with the full text kept for the tip and search;
+       · Louvain communities recolor the domain nodes, so color becomes topic
+         structure instead of hash noise — and the legend can honestly name
+         each cluster after its biggest question. Questions stay gold: that is
+         their identity channel, and the topic tint belongs to the sources. */
+  const fullLabel = new Map();
+  const LABEL_MAX = 44;
+  let libMode = false;
+  g.forEachNode((id, a) => {
+    fullLabel.set(id, a.label || '');
+    if (a.entryId) libMode = true;
+    if ((a.label || '').length > LABEL_MAX) {
+      g.setNodeAttribute(id, 'label', a.label.slice(0, LABEL_MAX - 2).trimEnd() + '…');
+    }
+  });
+
+  // community -> {color, size, topLabel} — built only when the recolor runs.
+  let commOf = null, commMeta = null;
+  const COMM_PALETTE = ['#7DC9B0', '#C9B8E0', '#E8A9A9', '#F0C987', '#9BC0E8', '#B8E09A', '#E0A47C', '#D89BE0'];
+  if (libMode && g.order > 12) {
+    try {
+      commOf = louvain(g);
+      const bySize = new Map();
+      g.forEachNode((id) => {
+        const c = commOf[id];
+        bySize.set(c, (bySize.get(c) || 0) + 1);
+      });
+      const ranked = [...bySize.entries()].sort((a, b) => b[1] - a[1]);
+      commMeta = new Map();
+      ranked.forEach(([c, n], i) => commMeta.set(c, { color: COMM_PALETTE[i % COMM_PALETTE.length], size: n, topLabel: '', topSize: -1 }));
+      g.forEachNode((id, a) => {
+        // Name each topic after its most-connected question — a question names
+        // a topic the way a domain never can.
+        const m = commMeta.get(commOf[id]);
+        if (a.entryId && m && g.degree(id) > m.topSize) { m.topSize = g.degree(id); m.topLabel = fullLabel.get(id) || ''; }
+        // Recolor sources only; gold stays the question channel.
+        if (!a.entryId && m) g.setNodeAttribute(id, 'color', m.color);
+      });
+    } catch (_) { commOf = null; commMeta = null; }
+  }
+
   const baseRgb = new Map();   // node -> [r,g,b] as authored (dim lerps from this)
   const baseSize = new Map();
   const minSize = compact() ? 3 : 2.5;
@@ -512,16 +559,29 @@ async function main() {
   function showTip(node) {
     if (!tip || !g.hasNode(node)) return;
     const a = g.getNodeAttributes(node);
-    if (!a.note && !a.url && !a.domain && !a.page) { tip.style.display = 'none'; return; }
+    if (!a.note && !a.url && !a.domain && !a.page && !libMode) { tip.style.display = 'none'; return; }
     if (tip.dataset.node !== node) {
       tip.dataset.node = node;
       const isPage = a.page && pagesSrc;
       const hint = isPage
         ? (coarse ? 'tap again to read the note' : 'click to read the note')
-        : (a.url ? (coarse ? 'tap again to open ↗' : 'click to open ↗') : '');
+        : a.entryId
+          ? (coarse ? 'tap again to read the answer' : 'click to read the answer')
+          : (a.url ? (coarse ? 'tap again to open ↗' : 'click to open ↗') : '');
+      // Library mode: every node has a story even without note/url attrs — a
+      // question knows how many sources answered it, a source knows how many
+      // questions cite it. Full (unclamped) label in the title.
+      let meta = '';
+      if (libMode && !a.note) {
+        const deg = g.degree(node);
+        meta = a.entryId
+          ? 'Question · ' + deg + (deg === 1 ? ' source' : ' sources') + ' · answered on-chain'
+          : 'Source · cited by ' + deg + (deg === 1 ? ' question' : ' questions');
+      }
       tip.innerHTML =
-        '<div class="tip-title">' + esc(a.label) + '</div>' +
+        '<div class="tip-title">' + esc(fullLabel.get(node) || a.label) + '</div>' +
         (a.domain ? '<div class="tip-domain">' + esc(a.domain) + '</div>' : '') +
+        (meta ? '<div class="tip-domain">' + esc(meta) + '</div>' : '') +
         (a.note ? '<div class="tip-note">' + esc(a.note) + '</div>' : '') +
         (hint ? '<div class="tip-hint">' + hint + '</div>' : '');
     }
@@ -709,17 +769,29 @@ async function main() {
   /* What a click DOES on a node: a source node opens its URL; a topic node in a
      deep-research tree (carries a `page` id) opens its note page in the panel
      below. A node with neither just highlights. */
+  // Where a question node's entry lives. Overridable (&entrylink=…) so a
+  // staging deploy can point at itself; the default is the public library.
+  const entryLink = P('entrylink', 'https://cafreso.com/library?e=');
   function nodeAction(node) {
     const url = g.getNodeAttribute(node, 'url');
     if (url && /^https?:\/\//i.test(url)) return { kind: 'url', url };
     const page = g.getNodeAttribute(node, 'page');
     if (page && pagesSrc) return { kind: 'page', page };
+    const entryId = g.getNodeAttribute(node, 'entryId');
+    if (entryId) return { kind: 'entry', url: entryLink + encodeURIComponent(entryId) };
     return null;
   }
   function doAction(act) {
     if (!act) return;
     if (act.kind === 'url') window.open(act.url, '_blank', 'noopener,noreferrer');
     else if (act.kind === 'page') openNote(act.page);
+    // Standalone, reading the answer is the natural next step — navigate in
+    // place and let Back return to the web. Embedded (the library hero / an
+    // explore iframe), never hijack the host page: new tab.
+    else if (act.kind === 'entry') {
+      if (window.top === window.self) location.href = act.url;
+      else window.open(act.url, '_blank', 'noopener,noreferrer');
+    }
   }
 
   /* Click acts. On touch there is no hover, so the first tap stands in for it
@@ -791,7 +863,9 @@ async function main() {
       if (!q) searchSet = null;
       else {
         searchSet = new Set();
-        g.forEachNode((id, a) => { if (String(a.label || '').toLowerCase().includes(q)) searchSet.add(id); });
+        // Match the full label, not the clamped one — the tail of a question
+        // is often the part someone remembers.
+        g.forEachNode((id, a) => { if (String(fullLabel.get(id) || a.label || '').toLowerCase().includes(q)) searchSet.add(id); });
       }
       searchWrap.classList.toggle('gv-has-q', !!q);
       renderer.refresh({ skipIndexation: true });
@@ -810,7 +884,7 @@ async function main() {
         // hub named ICP, not on the first source that mentions it.
         let best = null, bestScore = -1;
         for (const id of searchSet) {
-          const label = String(g.getNodeAttribute(id, 'label') || '').toLowerCase();
+          const label = String(fullLabel.get(id) || g.getNodeAttribute(id, 'label') || '').toLowerCase();
           const score = (label.startsWith(q) ? 1000 : 0) + (baseSize.get(id) || 0);
           if (score > bestScore) { bestScore = score; best = id; }
         }
@@ -903,13 +977,46 @@ async function main() {
         )).join('') +
         (rest > 0 ? '<div class="legend-row gv-muted">+' + rest + ' more</div>' : '');
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
+    } else if (commMeta && commMeta.size > 1) {
+      // Library mode: colors are Louvain topic clusters, each named after its
+      // most-connected question. Clicking a topic row flies to that question.
+      const top = [...commMeta.entries()].filter(([, m]) => m.topLabel).sort((a, b) => b[1].size - a[1].size).slice(0, 7);
+      legend.innerHTML =
+        '<div class="legend-title">Topics in the web</div>' +
+        '<div class="legend-row gv-muted"><span class="legend-swatch" style="background:#F5D25D"></span>questions (gold)</div>' +
+        top.map(([c, m]) => (
+          '<div class="legend-row" data-comm="' + esc(String(c)) + '" style="cursor:pointer" title="' + esc(m.topLabel) + '">' +
+          '<span class="legend-swatch" style="background:' + esc(m.color) + '"></span>' +
+          esc(m.topLabel.length > 30 ? m.topLabel.slice(0, 28).trimEnd() + '…' : m.topLabel) + '</div>'
+        )).join('');
+      legend.addEventListener('click', (ev) => {
+        const row = ev.target.closest('[data-comm]');
+        if (!row) return;
+        const m = commMeta.get(isNaN(+row.dataset.comm) ? row.dataset.comm : +row.dataset.comm);
+        if (!m) return;
+        let best = null;
+        g.forEachNode((id) => { if (fullLabel.get(id) === m.topLabel) best = best || id; });
+        if (!best) return;
+        const d = renderer.getNodeDisplayData(best);
+        if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.3 }, { duration: 400 });
+        setHovered(best); showTip(best);
+      });
+      legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
     } else {
       legendToggle.style.display = 'none';
     }
   }
 
   const brand = document.getElementById('brand');
-  if (brand) brand.textContent = (snap.title || 'Knowledge graph') + ' · CafresoHQ';
+  if (brand) {
+    let stats = '';
+    if (libMode) {
+      let nq = 0;
+      g.forEachNode((id, a) => { if (a.entryId) nq++; });
+      stats = ' · ' + nq + (nq === 1 ? ' question' : ' questions') + ' · ' + (g.order - nq) + ' sources';
+    }
+    brand.textContent = (snap.title || 'Knowledge graph') + stats + ' · CafresoHQ';
+  }
 
   if (P('show_analytics', '0') === '1' && snap.analytics && snap.analytics.metrics) {
     const m = snap.analytics.metrics;
