@@ -256,9 +256,11 @@
     <div class="lib-grid">
       {#each Array(6) as _}
         <div class="lib-card">
-          <div class="lib-skel" style="width: 85%; height: 20px; margin-bottom: 10px;"></div>
-          <div class="lib-skel" style="width: 55%; height: 12px; margin-bottom: 16px;"></div>
-          <div class="lib-skel" style="width: 40%; height: 12px;"></div>
+          <div class="lib-skel" style="width: 80%; height: 16px; margin-bottom: 12px;"></div>
+          <div class="lib-skel" style="width: 100%; height: 11px; margin-bottom: 7px;"></div>
+          <div class="lib-skel" style="width: 92%; height: 11px; margin-bottom: 7px;"></div>
+          <div class="lib-skel" style="width: 60%; height: 11px; margin-bottom: 16px;"></div>
+          <div class="lib-skel" style="width: 40%; height: 11px;"></div>
         </div>
       {/each}
     </div>
@@ -278,6 +280,18 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
+    <!-- The graph hero above is the primary way to explore; this list is the
+         browse/search fallback. Framing it as such keeps the "one growing web"
+         idea front-and-centre rather than letting the flat list read as the
+         whole library. -->
+    <div class="lib-browse-head">
+      <h2 class="lib-browse-title">Browse every answer</h2>
+      <p class="lib-browse-sub">
+        The whole web as a list — filter or sort below, or
+        <a href={mergedGraphUrl} target="_blank" rel="noopener noreferrer" class="lib-link">explore it visually in the graph ↑</a>
+      </p>
+    </div>
+
     {#if deepCount > 0}
       <div class="lib-modebar" role="group" aria-label="Filter by research depth">
         <button class="lib-modetab" class:on={modeFilter === 'all'} on:click={() => setMode('all')}>
@@ -327,14 +341,25 @@
       <div class="lib-grid">
         {#each filteredEntries.slice(0, shown) as e (e.id)}
           <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
+            {#if e.mode === 'deep' || e.askedBy === 'ai-gap'}
+              <div class="lib-card-top">
+                {#if e.mode === 'deep'}
+                  <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+                {/if}
+                {#if e.askedBy === 'ai-gap'}
+                  <span class="lib-chip lib-chip-ai" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>
+                {/if}
+              </div>
+            {/if}
             <h3>{plain(e.query)}</h3>
-            <div class="lib-chips">
-              {#if e.mode === 'deep'}
-                <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
-              {/if}
-              <span class="lib-chip">{fmtDate(e.ts)}</span>
-              <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-              <span class="lib-chip lib-chip-chain">on-chain</span>
+            {#if e.snippet}
+              <p class="lib-card-snippet">{plain(e.snippet)}</p>
+            {/if}
+            <div class="lib-card-meta">
+              <span>{fmtDate(e.ts)}</span>
+              <span class="lib-meta-dot" aria-hidden="true">·</span>
+              <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+              <Icon name="arrow-right" size={13} class="lib-card-go" />
             </div>
           </button>
         {/each}
@@ -635,19 +660,32 @@
     background: none; border: none; padding: 0; margin: 0; cursor: pointer;
     font: inherit; color: hsl(45 70% 40%); text-decoration: underline;
   }
+  /* Section header framing the list as the secondary browse surface. */
+  .lib-browse-head { margin-bottom: 16px; }
+  .lib-browse-title {
+    font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700;
+    color: hsl(var(--pg-fg)); margin: 0 0 4px;
+  }
+  .lib-browse-sub { font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 0; }
+
+  /* Wider tracks than before — cards now carry an answer snippet, which needs
+     room to read. Auto-fill still collapses to 1-up on narrow screens. */
   .lib-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 14px;
   }
   .lib-card {
     background: hsl(var(--pg-surface));
     border: 1px solid hsl(var(--pg-border));
     border-radius: 18px;
-    padding: 20px;
+    padding: 18px 20px;
     box-shadow: 0 4px 18px -10px hsl(24 35% 15% / 0.15);
   }
+  /* Flex column so the meta line pins to the bottom and cards in a row stay the
+     same height regardless of question/snippet length — kills the ragged grid. */
   .lib-card-btn {
+    display: flex; flex-direction: column; height: 100%;
     text-align: left; cursor: pointer; font: inherit;
     transition: transform 0.14s, border-color 0.14s, box-shadow 0.14s;
   }
@@ -656,13 +694,38 @@
     border-color: hsl(45 75% 60%);
     box-shadow: 0 12px 28px -12px hsl(24 35% 15% / 0.25);
   }
+  .lib-card-top { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  /* The question is now the card's eyebrow/title — smaller and clamped tighter,
+     because the answer snippet is what a browser actually reads. */
   .lib-card h3 {
     font-family: 'Playfair Display', serif;
-    font-size: 17.5px; font-weight: 600; line-height: 1.35;
+    font-size: 16px; font-weight: 600; line-height: 1.3;
     color: hsl(var(--pg-fg));
-    margin: 0 0 12px;
+    margin: 0 0 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .lib-card-snippet {
+    font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted));
+    margin: 0 0 14px;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* Meta pinned to the bottom (margin-top:auto), one quiet line instead of the
+     old row of four pills. The universal "on-chain" chip is gone — everything
+     here is on-chain, so it discriminated nothing; on-chain provenance now
+     lives once, in the drawer. */
+  .lib-card-meta {
+    margin-top: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 11.5px; color: hsl(var(--pg-fg-subtle));
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .lib-meta-dot { opacity: 0.5; }
+  :global(.lib-card-go) {
+    margin-left: auto; color: hsl(var(--pg-fg-subtle));
+    opacity: 0; transform: translateX(-4px);
+    transition: opacity .14s, transform .14s;
+  }
+  .lib-card-btn:hover :global(.lib-card-go) { opacity: 1; transform: none; }
+
   .lib-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .lib-chip {
     font-size: 10.5px; font-weight: 600; color: hsl(var(--pg-fg-muted));

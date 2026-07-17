@@ -1467,6 +1467,30 @@ actor CafresoHQState {
     out;
   };
 
+  // A short preview of an entry's answer for the index list cards. The full
+  // answer already lives on the record, but index.json deliberately omitted it
+  // (the list is a browse surface, not 34 full answers) — so cards could only
+  // show the question and a reader couldn't tell a real answer from a stub
+  // without clicking. This caps at ~a sentence, cutting on the last space
+  // before the budget so a word isn't sliced mid-token, and appends an ellipsis
+  // only when something was actually dropped.
+  let LIB_SNIPPET_CHARS : Nat = 160;
+  func libSnippet(answer : Text) : Text {
+    if (Text.size(answer) <= LIB_SNIPPET_CHARS) { return answer };
+    var out = "";
+    var lastSpace = "";
+    var n : Nat = 0;
+    label scan for (c in answer.chars()) {
+      if (n >= LIB_SNIPPET_CHARS) { break scan };
+      out #= Text.fromChar(c);
+      if (c == ' ') { lastSpace := out };
+      n += 1;
+    };
+    // Prefer the word boundary unless it would throw away most of the budget.
+    let base = if (Text.size(lastSpace) * 2 >= LIB_SNIPPET_CHARS) { lastSpace } else { out };
+    Text.trimEnd(base, #char ' ') # "…";
+  };
+
   func libJsonHeaders() : [(Text, Text)] {
     [("Content-Type", "application/json; charset=utf-8"),
      ("Access-Control-Allow-Origin", "*"),
@@ -1557,6 +1581,7 @@ actor CafresoHQState {
         // seeing, and a summary without it is why the first cut of this badge
         // could only ever render inside the drawer.
         body #= "{\"id\":\"" # jsonEsc(e.id) # "\",\"query\":\"" # jsonEsc(e.q) #
+                "\",\"snippet\":\"" # jsonEsc(libSnippet(e.answer)) #
                 "\",\"ts\":" # Int.toText(e.ts) # ",\"sources\":" # Nat.toText(e.sources.size()) #
                 ",\"askedBy\":\"" # entryAskedBy(e.id) # "\",\"mode\":\"" # entryMode(e.id) # "\"}";
         emitted += 1;
