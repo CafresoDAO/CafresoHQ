@@ -1,3 +1,7 @@
+<script module>
+  let instanceSeq = 0;
+</script>
+
 <script>
   // Textarea wrapper that intercepts @ characters and shows a suggestion
   // popup of known community members. bind:value={draft} from parent works
@@ -62,6 +66,12 @@
     });
   }
 
+  /* Stable ids so aria-activedescendant/aria-controls can point at real nodes.
+     $props.id() is unavailable in this Svelte version, so a module counter
+     keeps instances distinct when two composers share a page. */
+  const LIST_ID = `mention-list-${++instanceSeq}`;
+  const optionId = (i) => `${LIST_ID}-opt-${i}`;
+
   function handleKeydown(e) {
     if (!showPopup || !filtered.length) return;
     if (e.key === 'ArrowDown') {
@@ -97,10 +107,19 @@
     onblur={handleBlur}
     class={className}
     {style}
+    role="combobox"
+    aria-autocomplete="list"
+    aria-expanded={showPopup && filtered.length > 0}
+    aria-controls={LIST_ID}
+    aria-activedescendant={showPopup && filtered.length > 0 ? optionId(selectedIdx) : undefined}
   ></textarea>
 
   {#if showPopup && filtered.length > 0}
-    <div style="
+    <div
+      id={LIST_ID}
+      role="listbox"
+      aria-label="Mention a member"
+      style="
       position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 50;
       min-width: 220px; max-width: 300px;
       background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
@@ -112,9 +131,11 @@
         color: hsl(var(--pg-fg-subtle)); padding: 5px 10px 3px;
       ">Mention a member</div>
       {#each filtered as u, i}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div
+          id={optionId(i)}
+          role="option"
+          tabindex="-1"
+          aria-selected={selectedIdx === i}
           onmousedown={(e) => { e.preventDefault(); pickSuggestion(u); }}
           style="
             display: flex; align-items: center; gap: 8px;

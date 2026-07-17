@@ -147,6 +147,9 @@
       return;
     }
     if (e.key === 'Escape' && preview) { preview = null; return; }
+    // The mobile tree drawer was closable only by the burger or a scrim click —
+    // Escape is what every other overlay in the app answers to, so it answers too.
+    if (e.key === 'Escape' && sideOpen) { sideOpen = false; return; }
     // ←/→ page through the vault when nothing focused wants the keys.
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -235,6 +238,9 @@
         </div>
       </nav>
       {#if sideOpen}
+        <!-- Tap-outside-to-close: a pointer convenience only. Keyboard users
+             close with Escape (see onKeydown) or the burger, both of which are
+             real buttons — so this scrim is deliberately not exposed to AT. -->
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div class="v-tree-scrim" on:click={() => (sideOpen = false)}></div>
@@ -255,6 +261,10 @@
           </button>
         </div>
 
+        <!-- These handlers DELEGATE for the rendered markdown: the wikilinks
+             inside are real <a> elements, so they're tab-focusable and Enter
+             fires a click that bubbles here. The div isn't itself a control,
+             hence no role/keyhandler of its own. -->
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div class="v-reader" bind:this={readerEl}
@@ -298,6 +308,9 @@
 
   <!-- ── Wikilink hover preview ──────────────────────────────────────────────── -->
   {#if preview}
+    <!-- Hover card: mouseenter/leave only, no click target. It exists to keep
+         itself open while the pointer is inside; keyboard users reach the same
+         note by activating the link itself. -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="v-preview" style="left: {preview.x}px; top: {preview.y}px;"
          on:mouseenter={holdPreview} on:mouseleave={releasePreview}>
@@ -308,6 +321,8 @@
 
   <!-- ── Quick switcher (⌘P) ────────────────────────────────────────────────── -->
   {#if switcherOpen}
+    <!-- Same as the tree scrim: pointer convenience; Escape closes the
+         switcher for everyone else. -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="v-sw-scrim" on:click={() => (switcherOpen = false)}></div>
