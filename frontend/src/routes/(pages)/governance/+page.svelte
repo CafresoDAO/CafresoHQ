@@ -221,7 +221,7 @@
                     background: hsl(0 62% 92%);
                     display: flex; gap: 1px;
                   ">
-                    <div style="width: {yp}%; background: hsl(112 43% 45%); border-radius: 999px; transition: width 0.4s;"></div>
+                    <div style="width: {yp}%; background: hsl(var(--brand-leaf)); border-radius: 999px; transition: width 0.4s;"></div>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10.5px; color: hsl(var(--pg-fg-muted));">
                     <span><span style="color: hsl(112 43% 40%); font-weight: 600;">{yp}% YES</span> · {vp}% participation</span>

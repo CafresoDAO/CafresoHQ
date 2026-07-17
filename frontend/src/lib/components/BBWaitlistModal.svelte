@@ -108,15 +108,15 @@
               class="flex justify-between items-center text-sm mb-2.5 pb-2.5"
               style="border-bottom: 1px dashed hsl(220 20% 88%);"
             >
-              <span style="color: hsl(215 16% 47%);">Stake</span>
+              <span style="color: hsl(var(--pg-fg-muted));">Stake</span>
               <span class="font-serif-display" style="font-size: 22px; font-weight: 600; color: {BB.navyDeep};">500 $CF</span>
             </div>
             <div class="flex justify-between items-center text-sm mb-2.5">
-              <span style="color: hsl(215 16% 47%);">Lock-up</span>
+              <span style="color: hsl(var(--pg-fg-muted));">Lock-up</span>
               <span class="font-semibold" style="color: {BB.navyDeep};">Until mainnet launch (est. Jun 2026)</span>
             </div>
             <div class="flex justify-between items-center text-sm">
-              <span style="color: hsl(215 16% 47%);">Founding bonus</span>
+              <span style="color: hsl(var(--pg-fg-muted));">Founding bonus</span>
               <span class="font-semibold" style="color: hsl(112 43% 35%);">+3.02 $CF (1 mo. yield)</span>
             </div>
           </div>
@@ -149,7 +149,7 @@
             <h3 class="font-serif-display m-0 mb-1.5" style="font-size: 22px; font-weight: 600; color: {BB.navyDeep}; letter-spacing: -0.01em;">
               {signed ? 'Signature accepted' : 'Sign with Internet Identity'}
             </h3>
-            <p class="mx-auto m-0" style="font-size: 14px; line-height: 1.55; color: hsl(215 16% 47%); max-width: 340px;">
+            <p class="mx-auto m-0" style="font-size: 14px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); max-width: 340px;">
               {signed
                 ? 'Broadcasting to the Banking.Brave vault canister…'
                 : 'Approve the stake transaction in your II popup. Non-custodial — your keys never leave the device.'}
@@ -208,7 +208,7 @@
           <button
             on:click={close}
             class="bg-transparent border-none cursor-pointer"
-            style="color: hsl(215 16% 47%); padding: 10px 14px; font-family: inherit; font-size: 14px;"
+            style="color: hsl(var(--pg-fg-muted)); padding: 10px 14px; font-family: inherit; font-size: 14px;"
           >Cancel</button>
         {/if}
         <button

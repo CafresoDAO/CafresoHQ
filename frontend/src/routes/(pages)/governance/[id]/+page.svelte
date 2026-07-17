@@ -202,7 +202,7 @@
           <!-- Stacked bar -->
           <div style="height: 8px; border-radius: 999px; overflow: hidden; background: hsl(260 30% 22%); display: flex; gap: 1px; margin-bottom: 10px;">
             {#if proposal.votes.yes + proposal.votes.no + proposal.votes.abstain > 0}
-              <div style="width: {yp}%; background: hsl(112 43% 45%); border-radius: 999px 0 0 999px; transition: width 0.5s;"></div>
+              <div style="width: {yp}%; background: hsl(var(--brand-leaf)); border-radius: 999px 0 0 999px; transition: width 0.5s;"></div>
               <div style="width: {Math.round(proposal.votes.no / proposal.votes.total * 1000) / 10}%; background: hsl(0 62% 48%);"></div>
               <div style="width: {Math.round(proposal.votes.abstain / proposal.votes.total * 1000) / 10}%; background: hsl(215 20% 44%); border-radius: 0 999px 999px 0;"></div>
             {:else}
@@ -212,7 +212,7 @@
 
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
             {#each [
-              { label: 'YES', val: proposal.votes.yes, color: 'hsl(112 43% 45%)', bg: 'hsl(112 40% 20%)' },
+              { label: 'YES', val: proposal.votes.yes, color: 'hsl(var(--brand-leaf))', bg: 'hsl(112 40% 20%)' },
               { label: 'NO',  val: proposal.votes.no,  color: 'hsl(0 62% 48%)',   bg: 'hsl(0 50% 20%)' },
               { label: 'ABSTAIN', val: proposal.votes.abstain, color: 'hsl(215 20% 60%)', bg: 'hsl(215 20% 22%)' },
             ] as row}

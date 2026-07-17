@@ -26,7 +26,7 @@
 
   const KIND_META = {
     post:    { icon: 'pencil-simple',  color: 'hsl(210 80% 48%)', label: 'Post authored'    },
-    comment: { icon: 'chat-circle',    color: 'hsl(112 43% 45%)', label: 'Comment posted'   },
+    comment: { icon: 'chat-circle',    color: 'hsl(var(--brand-leaf))', label: 'Comment posted'   },
     burn:    { icon: 'fire',           color: 'hsl(32 72% 50%)',  label: 'Burn / Tip'       },
     vote:    { icon: 'gavel',          color: 'hsl(260 70% 62%)', label: 'Governance vote'  },
     login:   { icon: 'fingerprint',    color: 'hsl(var(--pg-fg-muted))', label: 'Identity login'   },
@@ -72,7 +72,7 @@
           border: 1px solid hsl(112 40% 78%);
           padding: 3px 8px; border-radius: 999px;
         ">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: hsl(112 43% 45%); display: inline-block;"></span>
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--brand-leaf)); display: inline-block;"></span>
           Verified on-chain
         </span>
       </div>

@@ -174,7 +174,7 @@
   {:else if !canAdmin}
     <div
       class="rounded-[14px] p-5 sm:p-6"
-      style="background: hsl(0 70% 96%); border: 1px solid hsl(0 70% 80%); color: hsl(0 70% 30%);"
+      style="background: hsl(var(--pg-danger-bg)); border: 1px solid hsl(var(--pg-danger-border)); color: hsl(var(--pg-danger-fg));"
     >
       <div class="flex items-center gap-2 font-semibold mb-1.5">
         <Icon name="lock" size={16} /> Not on the admin allowlist
@@ -183,13 +183,13 @@
         Ask an existing admin to add this principal via the canister's <code>addAdmin</code> method.
       </p>
       <code class="block mt-2 text-[11.5px] font-mono break-all p-2 rounded-[8px]"
-        style="background: hsl(0 0% 100%); color: hsl(222 47% 11%); border: 1px solid hsl(0 70% 80%);"
+        style="background: hsl(0 0% 100%); color: hsl(222 47% 11%); border: 1px solid hsl(var(--pg-danger-border));"
       >{$principalText}</code>
     </div>
   {:else}
     {#if err}
       <div class="rounded-[10px] px-3 py-2 text-[13px] mb-4"
-        style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);"
+        style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));"
       >
         <Icon name="warning" size={13} /> {err}
       </div>
@@ -313,7 +313,7 @@
                   type="button"
                   on:click={() => (confirmingDelete = p.slug)}
                   class="h-8 w-8 rounded-[8px] cursor-pointer inline-flex items-center justify-center bg-transparent border"
-                  style="border-color: hsl(0 70% 80%); color: hsl(0 72% 42%);"
+                  style="border-color: hsl(var(--pg-danger-border)); color: hsl(0 72% 42%);"
                   aria-label="Delete"
                 >
                   <Icon name="trash" size={13} />

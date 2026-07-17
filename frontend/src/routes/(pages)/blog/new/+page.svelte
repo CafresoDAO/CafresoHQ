@@ -321,7 +321,7 @@
   {:else if !canAuthor}
     <div
       class="rounded-[14px] p-5 sm:p-6"
-      style="background: hsl(0 70% 96%); border: 1px solid hsl(0 70% 80%); color: hsl(0 70% 30%);"
+      style="background: hsl(var(--pg-danger-bg)); border: 1px solid hsl(var(--pg-danger-border)); color: hsl(var(--pg-danger-fg));"
     >
       <div class="flex items-center gap-2 font-semibold mb-1.5">
         <Icon name="lock" size={16} /> Not on the author allowlist
@@ -330,7 +330,7 @@
         Your principal isn't registered as a devlog admin. Ask an existing admin to call <code>addAdmin</code> with your principal:
       </p>
       <code class="block mt-2 text-[11.5px] font-mono break-all p-2 rounded-[8px]"
-        style="background: hsl(0 0% 100%); color: hsl(222 47% 11%); border: 1px solid hsl(0 70% 80%);"
+        style="background: hsl(0 0% 100%); color: hsl(222 47% 11%); border: 1px solid hsl(var(--pg-danger-border));"
       >{$principalText}</code>
     </div>
   {:else}
@@ -631,7 +631,7 @@ Use the toolbar above to insert widgets:
       <!-- Validation + actions -->
       {#if err}
         <div class="rounded-[10px] px-3 py-2 text-[13px]"
-          style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);"
+          style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));"
         >
           <Icon name="warning" size={14} /> {err}
         </div>

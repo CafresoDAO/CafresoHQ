@@ -101,7 +101,7 @@
     </div>
   {:else if err}
     <div class="rounded-[14px] px-4 py-6 text-[13.5px]"
-      style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);"
+      style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));"
     >
       <Icon name="warning" size={14} /> {err}
     </div>

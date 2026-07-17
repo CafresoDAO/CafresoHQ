@@ -262,7 +262,7 @@
         <div class="text-center" style="padding: 20px 0;">
           <div
             class="animate-pop mx-auto mb-3.5 flex items-center justify-center rounded-full"
-            style="width: 88px; height: 88px; background: hsl(112 43% 45%);"
+            style="width: 88px; height: 88px; background: hsl(var(--brand-leaf));"
           >
             <Icon name="check" size={44} weight="fill" style="color: white;" />
           </div>

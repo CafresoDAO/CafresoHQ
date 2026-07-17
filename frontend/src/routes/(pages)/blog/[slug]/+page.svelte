@@ -161,7 +161,7 @@
                 font-family: inherit;
               "
             >
-              <Icon name="seal-check" size={14} style="color: hsl(112 43% 45%);" /> Verify signature
+              <Icon name="seal-check" size={14} style="color: hsl(var(--brand-leaf));" /> Verify signature
             </button>
           </div>
         </header>

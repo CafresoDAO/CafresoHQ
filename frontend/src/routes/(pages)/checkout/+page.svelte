@@ -198,7 +198,7 @@
             <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">On-chain · ICRC-1</div>
           </div>
           {#if payMethod === 'nanas'}
-            <Icon name="check-circle" size={16} style="color: hsl(112 43% 45%); margin-left: auto;" weight="fill" />
+            <Icon name="check-circle" size={16} style="color: hsl(var(--brand-leaf)); margin-left: auto;" weight="fill" />
           {/if}
         </button>
 

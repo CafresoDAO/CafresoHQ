@@ -44,7 +44,7 @@
           style="gap: 10px; border-top: 1px dashed hsl(var(--pg-border));"
         >
           <div class="inline-flex items-center gap-1.5 text-xs" style="color: hsl(var(--pg-fg-muted));">
-            <Icon name="shield-check" size={14} style="color: hsl(112 43% 45%);" />
+            <Icon name="shield-check" size={14} style="color: hsl(var(--brand-leaf));" />
             Signed with Internet Identity
           </div>
           <span class="flex-1"></span>
