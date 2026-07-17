@@ -8,7 +8,7 @@
 
 <div class="error-page">
   <img
-    src="/assets/cafreso-wordmark.png"
+    src="/assets/cafreso-wordmark-alpha.png"
     alt="Cafreso"
     class="error-logo"
   />
@@ -49,10 +49,16 @@
     text-align: center;
     padding: 56px 24px;
   }
+  /* The -alpha asset is transparent (the flat .png carries a baked-in white
+     box that showed as a card once this page gained a dark mode). Same
+     invert-to-warm-ivory recipe the homepage wordmark uses. */
   .error-logo {
     width: min(280px, 70vw);
     height: auto;
     margin-bottom: 32px;
+  }
+  :global(.dark) .error-logo {
+    filter: invert(1) sepia(0.34) saturate(1.45) hue-rotate(-8deg) brightness(1.03);
   }
   .error-status {
     font-size: clamp(48px, 12vw, 72px);
