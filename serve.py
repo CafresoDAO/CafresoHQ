@@ -1640,20 +1640,26 @@ def _sw_process(job, deadline=None):
             print('[search-worker] answer %d chars — clamping to %d' % (len(answer), _SW_ANSWER_CAP))
             answer = answer[:_SW_ANSWER_CAP]
         graph = _sw_graph(q, results, notes)
-        # Provenance: say so when the AI asked this, not a person. It rides the
-        # engine field because the canister entry has no askedBy — the same
-        # trick the token count uses on the model field, and it renders wherever
-        # the engine chip already does with no schema change.
+        # Provenance: say so when the AI asked this, not a person. It rides two
+        # channels — the engine field ('brave · ai-gap', for the chip the UI
+        # already renders) AND the on-chain askedBy field (the 12th fulfill line,
+        # which the canister honours only as "ai-gap"). The engine string alone
+        # was invisible to index.json's askedBy, which read "human" for every
+        # entry; the trailing line fixes that so the gap cron is verifiable.
         #
         # Known limit: only the node that SUBMITTED the question knows it was a
         # gap question, so if another operator's worker claims it the entry
-        # reads plain 'brave'. Correct attribution needs an askedBy field on
-        # the job, which is a canister upgrade.
-        engine = 'brave · ai-gap' if q in set(_gap_asked()) else 'brave'
+        # reads plain 'brave' / "human".
+        is_gap = q in set(_gap_asked())
+        engine = 'brave · ai-gap' if is_gap else 'brave'
         lines = [jid, P(model), P(engine), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
         lines.append(P(graph))
+        # 12th line — askedBy for fast jobs (deep jobs use this slot for pages).
+        # The canister accepts the 11-line envelope too, so appending is safe
+        # across the deploy window.
+        lines.append(P('ai-gap' if is_gap else 'human'))
         # Always attempt fulfill, even past our budget: the budget is soft and
         # sits 40s inside the lease, so the common case still lands. When we're
         # genuinely late the reap fires on the next worker's claim regardless,
@@ -2001,6 +2007,146 @@ def _gap_loop():
 
 if GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
     threading.Thread(target=_gap_loop, daemon=True, name='gap-cron').start()
+
+
+# ---- Topics cron -----------------------------------------------------------
+# Every TOPICS_INTERVAL_H hours, summarise the whole library's questions into a
+# handful of named topic filters and push them on-chain (the `topics` worker op
+# → /library/topics.json). The graph viewer's legend uses them as clickable
+# filters, falling back to its own client-side clustering when they're absent.
+#
+# Unlike the gap cron this spends NO Brave budget — it only reads existing
+# questions and calls the local model — so there is no reserve/refund dance. It
+# is a pure overwrite: each run regenerates the whole topics blob.
+TOPICS_ENABLED = os.environ.get('TOPICS_CRON', '').strip() != '0'
+TOPICS_INTERVAL_S = int(os.environ.get('TOPICS_INTERVAL_H', '') or 6) * 3600
+MAX_TOPICS_RUNS_KEPT = 40
+
+
+def _topics_schema():
+    return {'type': 'json_schema', 'json_schema': {'name': 'topics', 'strict': True,
+            'schema': {'type': 'object', 'additionalProperties': False,
+                       'properties': {'topics': {
+                           'type': 'array', 'minItems': 1, 'maxItems': 10,
+                           'items': {'type': 'object', 'additionalProperties': False,
+                                     'properties': {
+                                         'label': {'type': 'string'},
+                                         'match': {'type': 'array', 'minItems': 1,
+                                                   'items': {'type': 'string'}}},
+                                     'required': ['label', 'match']}}},
+                       'required': ['topics']}}}
+
+
+def _topics_propose(all_qs, deadline):
+    """Summarise the library's questions into named topic filters. Returns a
+    list of {label, match:[...]} or [] on any failure (a skipped run just keeps
+    the previous topics.json — or the viewer's own clustering — in place)."""
+    prompt = (
+        'Below are the questions in a public Q&A library. Group them into 6-10 '
+        'broad TOPICS that a reader could use as filters.\n'
+        'For each topic return:\n'
+        '- "label": a short human-readable name, 2-4 words, Title Case '
+        '(e.g. "Internet Computer", "DAOs & Governance", "Coffee & Farming").\n'
+        '- "match": 2-5 lowercase keywords/phrases that actually appear in the '
+        'questions of that topic, used to match questions to the topic.\n'
+        'Cover the real spread of questions; do not invent topics with no '
+        'questions. Output STRICT JSON only: '
+        '{"topics":[{"label":"...","match":["...","..."]}]}\n\n'
+        'Questions:\n%s'
+        % ('\n'.join('- ' + q for q in all_qs[:200]) or '- (empty library)'))
+    want = _sw_model()
+    payload = {'model': want, 'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': 700, 'response_format': _topics_schema()}
+    b = _sw_backend()
+    try:
+        if b is not None:
+            text, _m, _t, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+        else:
+            key = _sw_hermes_key()
+            if not key:
+                print('[topics] no model reachable — skipping')
+                return []
+            text, _m, _t, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+        t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+        m = re.search(r'\{.*\}', t, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        out = []
+        for it in (data.get('topics') or []):
+            label = str(it.get('label') or '').strip()[:40]
+            match = [str(x).strip().lower() for x in (it.get('match') or []) if str(x).strip()][:5]
+            if label and match:
+                out.append({'label': label, 'match': match})
+        return out[:10]
+    except Exception as e:
+        print('[topics] proposal failed:', str(e)[:160])
+        return []
+
+
+def _topics_run():
+    t0 = time.monotonic()
+    run = {'at': int(time.time() * 1000), 'count': 0, 'note': ''}
+    all_qs, _human = _gap_library()
+    if not all_qs:
+        run['note'] = 'library index unreachable or empty'
+        _topics_log(run)
+        return
+    topics = _topics_propose(all_qs, time.monotonic() + 90)
+    if not topics:
+        run['note'] = 'no topics proposed'
+        _topics_log(run)
+        return
+    blob = json.dumps({'topics': topics, 'ts': int(time.time() * 1000)}, ensure_ascii=False)
+    status, resp = _sw_call('topics', [urllib.parse.quote(blob, safe='')])
+    if status == 200 and resp.get('ok'):
+        run['count'] = len(topics)
+        run['note'] = ('published %d topics in %.1fs' % (len(topics), time.monotonic() - t0))
+        print('[topics] %s: %s' % (run['note'], ', '.join(t['label'] for t in topics)))
+    else:
+        run['note'] = 'publish rejected: %s %s' % (status, resp)
+        print('[topics]', run['note'])
+    _topics_log(run)
+
+
+def _topics_log(run):
+    try:
+        runs = _night_load('topics-runs.json', [])
+        runs.append(run)
+        _night_save('topics-runs.json', runs[-MAX_TOPICS_RUNS_KEPT:])
+    except Exception:
+        pass
+
+
+def _topics_loop():
+    # First run shortly after boot so a fresh deploy populates topics.json, then
+    # every TOPICS_INTERVAL_S. nextRunAt is persisted so a restart doesn't reset
+    # the clock and republish on every bounce.
+    sched = _night_load('topics-schedule.json', {})
+    nxt = int(sched.get('nextRunAt', 0) or 0)
+    now_ms = int(time.time() * 1000)
+    if not nxt or nxt < now_ms:
+        nxt = now_ms + 120_000   # 2 min after boot
+        _night_save('topics-schedule.json', {'nextRunAt': nxt})
+    print('[topics] next run %s (every %dh)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)),
+             TOPICS_INTERVAL_S // 3600))
+    while True:
+        time.sleep(60)
+        try:
+            if int(time.time() * 1000) < nxt:
+                continue
+            nxt = int(time.time() * 1000) + TOPICS_INTERVAL_S * 1000
+            _night_save('topics-schedule.json', {'nextRunAt': nxt})
+            _topics_run()
+        except Exception as e:
+            print('[topics] loop error:', str(e)[:200])
+
+
+if TOPICS_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
+    threading.Thread(target=_topics_loop, daemon=True, name='topics-cron').start()
 
 
 # ---- External approvals (Claude Code PreToolUse hook bridge) ---------------

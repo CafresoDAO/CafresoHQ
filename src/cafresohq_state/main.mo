@@ -1591,6 +1591,12 @@ actor CafresoHQState {
     if (parts.size() == 2 and parts[1] == "graph.json") {
       return ?libJsonResponse(mergedLibraryGraph());
     };
+    // Curated topic-filter labels (written by the 6-hourly worker cron). Empty
+    // until the cron first runs → 404, and the viewer falls back to its own
+    // client-side Louvain topics.
+    if (parts.size() == 2 and parts[1] == "topics.json") {
+      return if (libraryTopics.size() == 0) { ?libNotFound() } else { ?libJsonResponse(libraryTopics) };
+    };
     if (parts.size() == 3 and parts[2] == "graph.json") {
       return switch (tOps.get(libraryEntries, parts[1])) {
         case (?e) { if (e.graphJson.size() == 0) { ?libNotFound() } else { ?libJsonResponse(e.graphJson) } };
@@ -1895,6 +1901,15 @@ actor CafresoHQState {
   stable var libraryAskedBy : OrderedMap.Map<Text, Text> = tOps.empty<Text>();  // entryId → "ai-gap"
   stable var deepDailyBudget : Nat = 20;
   stable var deepAnsweredToday : Nat = 0;
+  // Gap-cron observability: the ms timestamp of the most recent ai-gap fulfill,
+  // and a lifetime count. Surfaced in /search/health.json so "did the self-ask
+  // cron run" is answerable from a public endpoint — the worker's /gap/status
+  // ledger is node-local and not always reachable.
+  stable var lastGapRunMs : Int = 0;
+  stable var gapAnsweredTotal : Nat = 0;
+  // Curated topic-filter labels (topics.json), written by the 6-hourly worker
+  // `topics` op and served raw at /library/topics.json for the graph viewer.
+  stable var libraryTopics : Text = "";
   // Deep-research note pages, keyed by ENTRY id (same side-table pattern as
   // libraryAskedBy). Presence = the entry is a deep-research result; the value
   // is the {q, answer, pages:[{id,title,question,body,sources}], ts} JSON the
@@ -2087,6 +2102,17 @@ actor CafresoHQState {
       return ?libJsonNoStore("{\"ok\":true,\"status\":\"" # st # "\"}");
     };
 
+    if (op == "topics") {
+      // Curated topic-filter labels for the graph viewer. The 6-hourly cron
+      // regenerates the whole {topics:[…],ts} blob, so this is a single
+      // overwrite — capped like a graph snapshot so a runaway worker can't
+      // bloat stable state. verifyWorker already required an approved worker.
+      if (lines.size() < 6) { return ?workerDeny() };
+      let body = switch (pctDecode(lines[5])) { case (?t) textTake(t, LIB_MAX_GRAPH); case null { return ?workerDeny() } };
+      libraryTopics := body;
+      return ?libJsonNoStore("{\"ok\":true}");
+    };
+
     if (op == "claim") {
       // Oldest pending job wins.
       label find for ((_, j) in tOps.entries(searchJobs)) {
@@ -2198,7 +2224,11 @@ actor CafresoHQState {
         firstSearchedAt = j.submittedAt; answeredAt = now();
       });
       // Store only the exception; absent = "human" (see libraryAskedBy).
-      if (askedBy == "ai-gap") { libraryAskedBy := tOps.put(libraryAskedBy, libId2, "ai-gap") };
+      if (askedBy == "ai-gap") {
+        libraryAskedBy := tOps.put(libraryAskedBy, libId2, "ai-gap");
+        lastGapRunMs := now() / 1_000_000;   // ns → ms
+        gapAnsweredTotal += 1;
+      };
       // Deep-research note pages ride alongside the entry (presence = deep).
       if (pagesJson.size() > 0) { researchPages := tOps.put(researchPages, libId2, pagesJson) };
       putJob({ j with status = "done"; libraryId = ?libId2 });
@@ -2326,6 +2356,8 @@ actor CafresoHQState {
         ",\"answeredToday\":" # Nat.toText(jobsAnsweredToday) #
         ",\"budget\":" # Nat.toText(searchDailyBudget) #
         ",\"entries\":" # Nat.toText(tOps.size(libraryEntries)) #
+        ",\"lastGapRun\":" # Int.toText(lastGapRunMs) #
+        ",\"gapAnswered\":" # Nat.toText(gapAnsweredTotal) #
         ",\"payoutsEnabled\":" # (if (searchPayRateE8s > 0) "true" else "false") # "}");
     };
 
