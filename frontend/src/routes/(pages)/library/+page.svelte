@@ -16,7 +16,7 @@
   import {
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, graphViewerOrigin } from '$lib/api/library.js';
   import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
@@ -56,6 +56,7 @@
   let openPageId = null;     // which note page is expanded in the drawer
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
+  let heroIframe;   // bound to the hero graph iframe; used to gate postMessage
 
   $: {
     const e = $page.url.searchParams.get('e');
@@ -92,10 +93,22 @@
     else if (index === null) index = { count: -1, entries: [] };   // unreachable → offline state
     if (h) health = h;
   }
+  // The hero graph iframe (embed=post) posts a message when a question node is
+  // clicked; open the in-page drawer instead of letting it navigate a new tab.
+  // Strict checks: only the viewer origin, only OUR iframe's window, only the
+  // one message shape — never trust postMessage blind.
+  function onGraphMessage(ev) {
+    if (ev.origin !== graphViewerOrigin()) return;
+    if (heroIframe && ev.source !== heroIframe.contentWindow) return;
+    const d = ev.data;
+    if (!d || d.type !== 'cafreso:openEntry' || !d.entryId) return;
+    openEntry(String(d.entryId));
+  }
   onMount(() => {
     refresh();
     const t = setInterval(refresh, 60_000);
-    return () => clearInterval(t);
+    window.addEventListener('message', onGraphMessage);
+    return () => { clearInterval(t); window.removeEventListener('message', onGraphMessage); };
   });
 
   async function runSearch() {
@@ -170,6 +183,7 @@
   <div class="lib-hero">
     {#if mergedGraphUrl && index && index.count > 0}
       <iframe
+        bind:this={heroIframe}
         src={mergedGraphUrl}
         title="The library as a graph — every question and source, one web"
         class="lib-hero-graph"

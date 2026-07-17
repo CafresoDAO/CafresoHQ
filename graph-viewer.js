@@ -39,6 +39,8 @@ import Graph from 'graphology';
 import Sigma from 'sigma';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import louvain from 'graphology-communities-louvain';
+import { bidirectional } from 'graphology-shortest-path/unweighted';
+import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
 
 const qs = new URLSearchParams(location.search);
 const P = (k, d) => { const v = qs.get(k); return v == null ? d : v; };
@@ -117,6 +119,22 @@ async function main() {
     if (!pagesReq) pagesReq = fetch(pagesSrc).then((r) => r.json()).catch(() => null);
     pagesData = await pagesReq;
     return pagesData;
+  }
+  // Curated topic filters (topics.json) — the 6-hourly worker cron summarizes
+  // the library's questions into named topics with `match` terms. When present
+  // they replace the client-side Louvain topic legend; when absent (fetch fails
+  // or cron hasn't run) the Louvain fallback stands. Default URL is derived from
+  // the graph snapshot's own path, overridable with &topics=.
+  const topicsSrc = P('topics', null)
+    || (src && /\/library\/graph\.json/.test(src) ? src.replace(/\/library\/graph\.json.*$/, '/library/topics.json') : null);
+  let curatedReq = null;
+  async function loadCuratedTopics() {
+    if (!topicsSrc) return null;
+    if (!curatedReq) curatedReq = fetch(topicsSrc)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j && Array.isArray(j.topics) ? j.topics : null))
+      .catch(() => null);
+    return curatedReq;
   }
   let snap = window.__SNAPSHOT__ || null;
   try { if (!snap && src) snap = await (await fetch(src)).json(); }
@@ -222,6 +240,17 @@ async function main() {
   const HOP_FAR = 0.9;
   let hovered = null, hops = null, h = 0, hTarget = 0;
   let searchSet = null;
+  // Topic filter is independent of text search (they compose): a topic row and
+  // a typed query each own a set, and dimFactor treats them as an intersection.
+  let topicSet = null;
+  // A click on a non-actionable node latches its neighborhood highlight so you
+  // can read the labels; Escape / stage-click releases it.
+  let pinned = null;
+  // The nodes on a shift-click shortest-path route; when set, everything off the
+  // route dims so the connection reads even after the sparks fade.
+  let pathSet = null;
+  // The copy-link control (assigned in the controls block); showTip reveals it.
+  let copyBtn = null;
   const dimOf = new Map();     // node -> 0..1, written by nodeReducer, read by drawLabel
 
   /** BFS out to HOP_MAX. Returns [hops, tree] — tree is the parent→child edge
@@ -260,7 +289,9 @@ async function main() {
   // How dimmed a node currently is: search misses dim hard and immediately,
   // hover falls off by hop distance as `h` ramps in.
   function dimFactor(id) {
+    if (pathSet) return pathSet.has(id) ? 0 : 0.9;
     if (searchSet && !searchSet.has(id)) return 1;
+    if (topicSet && !topicSet.has(id)) return 1;
     if (highlight && hops) {
       const k = hops.get(id);
       return (k === undefined ? HOP_FAR : HOP_DIM[k]) * h;
@@ -392,6 +423,12 @@ async function main() {
 
   function emit(s, t, delay, rgb, hot) {
     if (!signalsOn || sparks.length >= MAX_SPARKS) return;
+    sparks.push({ s, t, at: performance.now() + delay, dur: SPARK_MS, rgb, hot });
+  }
+  // A shift-click path pulse is a direct request, not ambient life, so it fires
+  // even with Signals toggled off (still needs the canvas layer + a spark slot).
+  function emitForce(s, t, delay, rgb, hot) {
+    if (!fxc || sparks.length >= MAX_SPARKS) return;
     sparks.push({ s, t, at: performance.now() + delay, dur: SPARK_MS, rgb, hot });
   }
 
@@ -585,13 +622,25 @@ async function main() {
         (a.note ? '<div class="tip-note">' + esc(a.note) + '</div>' : '') +
         (hint ? '<div class="tip-hint">' + hint + '</div>' : '');
     }
-    const p = renderer.graphToViewport({ x: a.x, y: a.y });
     tip.style.display = 'block';
-    const r = tip.getBoundingClientRect();
-    tip.style.left = Math.min(Math.max(8, p.x + 14), innerWidth - r.width - 8) + 'px';
-    tip.style.top = Math.min(Math.max(8, p.y - r.height / 2), innerHeight - r.height - 8) + 'px';
+    // Touch: a fixed bottom sheet (CSS .gv-sheet pins it); the cursor-follow
+    // geometry below is skipped since there's no cursor and the node is under
+    // the thumb. Also surface the copy-link control for the focused node.
+    if (coarse) {
+      tip.classList.add('gv-sheet');
+    } else {
+      tip.classList.remove('gv-sheet');
+      const p = renderer.graphToViewport({ x: a.x, y: a.y });
+      const r = tip.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(8, p.x + 14), innerWidth - r.width - 8) + 'px';
+      tip.style.top = Math.min(Math.max(8, p.y - r.height / 2), innerHeight - r.height - 8) + 'px';
+    }
+    if (copyBtn) copyBtn.style.display = '';
   }
-  function hideTip() { if (tip) { tip.style.display = 'none'; tip.dataset.node = ''; } }
+  function hideTip() {
+    if (tip) { tip.style.display = 'none'; tip.dataset.node = ''; tip.classList.remove('gv-sheet'); }
+    if (copyBtn && !pinned) copyBtn.style.display = 'none';
+  }
 
   /* ── deep-research note panel ─────────────────────────────────────────────
      A slide-in reader for a topic node's note page: title, the angle it
@@ -710,6 +759,10 @@ async function main() {
   });
   renderer.on('leaveNode', () => {
     if (dragged) return;
+    // A pinned node keeps its highlight on mouseout — that's the whole point of
+    // pinning. Move to a different node re-hovers normally (enterNode fires
+    // first); leaving to empty space just holds the pin.
+    if (pinned) { container.style.cursor = 'default'; return; }
     setHovered(null);
     container.style.cursor = 'default';
     hideTip();
@@ -772,13 +825,18 @@ async function main() {
   // Where a question node's entry lives. Overridable (&entrylink=…) so a
   // staging deploy can point at itself; the default is the public library.
   const entryLink = P('entrylink', 'https://cafreso.com/library?e=');
+  // Embed bridge: with &embed=post, a question click posts to the parent frame
+  // (which opens its own in-page drawer) instead of a new tab. targetOrigin is
+  // pinned — never '*' — so the message can't leak to a hostile embedder.
+  const embedPost = P('embed', '') === 'post';
+  const embedOrigin = P('embedorigin', 'https://cafreso.com');
   function nodeAction(node) {
     const url = g.getNodeAttribute(node, 'url');
     if (url && /^https?:\/\//i.test(url)) return { kind: 'url', url };
     const page = g.getNodeAttribute(node, 'page');
     if (page && pagesSrc) return { kind: 'page', page };
     const entryId = g.getNodeAttribute(node, 'entryId');
-    if (entryId) return { kind: 'entry', url: entryLink + encodeURIComponent(entryId) };
+    if (entryId) return { kind: 'entry', url: entryLink + encodeURIComponent(entryId), entryId };
     return null;
   }
   function doAction(act) {
@@ -787,34 +845,100 @@ async function main() {
     else if (act.kind === 'page') openNote(act.page);
     // Standalone, reading the answer is the natural next step — navigate in
     // place and let Back return to the web. Embedded (the library hero / an
-    // explore iframe), never hijack the host page: new tab.
+    // explore iframe), never hijack the host page: post to the parent when it
+    // opted in (&embed=post), else a new tab.
     else if (act.kind === 'entry') {
       if (window.top === window.self) location.href = act.url;
-      else window.open(act.url, '_blank', 'noopener,noreferrer');
+      else if (embedPost && window.parent) {
+        try { window.parent.postMessage({ type: 'cafreso:openEntry', entryId: act.entryId, url: act.url }, embedOrigin); }
+        catch (_) { window.open(act.url, '_blank', 'noopener,noreferrer'); }
+      } else window.open(act.url, '_blank', 'noopener,noreferrer');
     }
+  }
+
+  /* Shift-click shortest path: the merged library web connects two questions
+     THROUGH the sources they share, so "how are these related?" has a visible
+     answer. bidirectional() returns the node route (or null if disconnected);
+     we dim everything off it and pulse a charge down the line. */
+  function showPath(a, b) {
+    let route = null;
+    try { route = bidirectional(g, a, b); } catch (_) { route = null; }
+    pinned = null;
+    if (!route || route.length < 2) {
+      // Disconnected: say so via the tip rather than silently doing nothing.
+      pathSet = null;
+      setHovered(a); showTip(a);
+      if (tip && tip.dataset.node === a) {
+        tip.innerHTML += '<div class="tip-hint">no path to “' + esc(titleOf(b)) + '”</div>';
+      }
+      renderer.refresh({ skipIndexation: true });
+      return;
+    }
+    pathSet = new Set(route);
+    hovered = null; hops = null; hTarget = 0;
+    for (let i = 0; i + 1 < route.length; i++) emitForce(route[i], route[i + 1], i * PULSE_STEP, T.pulse, true);
+    // Frame the whole route: center on its midpoint node.
+    const mid = renderer.getNodeDisplayData(route[(route.length / 2) | 0]);
+    if (mid) camera.animate({ x: mid.x, y: mid.y }, { duration: 350 });
+    renderer.refresh({ skipIndexation: true });
+    tick();
   }
 
   /* Click acts. On touch there is no hover, so the first tap stands in for it
      and a second tap on the same node acts. */
   let tapped = null, tapAt = 0;
-  renderer.on('clickNode', ({ node }) => {
+  // Shortest-path: shift-click one node, then another, and the connecting route
+  // through shared sources pulses. pathA holds the first pick.
+  let pathA = null;
+  function clearPath() { pathA = null; pathSet = null; }
+  renderer.on('clickNode', ({ node, event }) => {
     if (didDrag) { didDrag = false; return; }
+    // Shift-click builds a path between two picks (desktop only — no shift key
+    // on touch). First pick arms; second draws.
+    if (event && event.original && event.original.shiftKey && !coarse) {
+      if (!pathA || pathA === node) { pathA = node; pinned = node; setHovered(node); showTip(node); return; }
+      showPath(pathA, node);
+      pathA = null;
+      return;
+    }
     const act = nodeAction(node);
-    if (!act) return;
     if (coarse) {
+      if (!act) { setHovered(node); showTip(node); return; }
       const now = Date.now();
       if (tapped === node && now - tapAt < 4000) { doAction(act); tapped = null; return; }
       tapped = node; tapAt = now;
       setHovered(node); showTip(node);
       return;
     }
+    if (!act) {
+      // Non-actionable (a domain, or a question with no entry): latch the
+      // neighborhood so the labels are readable. Click again / Escape releases.
+      if (pinned === node) { pinned = null; clearPath(); setHovered(null); hideTip(); }
+      else { pinned = node; setHovered(node); showTip(node); }
+      return;
+    }
     doAction(act);
   });
-  renderer.on('clickStage', () => { if (coarse) { tapped = null; setHovered(null); hideTip(); } });
+  renderer.on('clickStage', () => {
+    tapped = null; pinned = null; clearPath();
+    setHovered(null); hideTip();
+  });
   renderer.on('doubleClickNode', (e) => {
     e.preventSigmaDefault();
     const d = renderer.getNodeDisplayData(e.node);
     if (d) camera.animate({ x: d.x, y: d.y, ratio: Math.max(camera.ratio / 1.7, 0.08) }, { duration: 350 });
+  });
+
+  // Escape releases a pin, a drawn path, or an armed shift-click pick. Guarded
+  // so it doesn't fight the search box / settings panel (those stopPropagation
+  // their own Escape before it reaches here).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (pinned || pathSet || pathA) {
+      pinned = null; pathA = null; pathSet = null;
+      setHovered(null); hideTip();
+      renderer.refresh({ skipIndexation: true });
+    }
   });
 
   camera.on('updated', () => { if (hovered) showTip(hovered); else hideTip(); });
@@ -835,6 +959,23 @@ async function main() {
   if (resetBtn) resetBtn.addEventListener('click', () => {
     camera.animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration: 250 });
     warm(900);
+  });
+
+  /* Copy a deep link to the focused node. Reuses the current URL, swaps in a
+     fresh &focus=<id>, so pasting it reopens the graph centered on that node
+     with its tip up — every question in the web is shareable. */
+  copyBtn = document.getElementById('gv-copy-link');
+  if (copyBtn) copyBtn.addEventListener('click', async () => {
+    const node = pinned || hovered;
+    if (!node) return;
+    const u = new URL(location.href);
+    u.searchParams.set('focus', node);
+    const link = u.toString();
+    try { await navigator.clipboard.writeText(link); }
+    catch (_) { try { prompt('Copy link to this node:', link); } catch (__) {} }
+    const prev = copyBtn.textContent;
+    copyBtn.textContent = '✓';
+    setTimeout(() => { copyBtn.textContent = prev; }, 1200);
   });
 
   const hint = document.getElementById('hint');
@@ -978,30 +1119,80 @@ async function main() {
         (rest > 0 ? '<div class="legend-row gv-muted">+' + rest + ' more</div>' : '');
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
     } else if (commMeta && commMeta.size > 1) {
-      // Library mode: colors are Louvain topic clusters, each named after its
-      // most-connected question. Clicking a topic row flies to that question.
-      const top = [...commMeta.entries()].filter(([, m]) => m.topLabel).sort((a, b) => b[1].size - a[1].size).slice(0, 7);
-      legend.innerHTML =
-        '<div class="legend-title">Topics in the web</div>' +
-        '<div class="legend-row gv-muted"><span class="legend-swatch" style="background:#F5D25D"></span>questions (gold)</div>' +
-        top.map(([c, m]) => (
-          '<div class="legend-row" data-comm="' + esc(String(c)) + '" style="cursor:pointer" title="' + esc(m.topLabel) + '">' +
-          '<span class="legend-swatch" style="background:' + esc(m.color) + '"></span>' +
-          esc(m.topLabel.length > 30 ? m.topLabel.slice(0, 28).trimEnd() + '…' : m.topLabel) + '</div>'
-        )).join('');
-      legend.addEventListener('click', (ev) => {
-        const row = ev.target.closest('[data-comm]');
-        if (!row) return;
-        const m = commMeta.get(isNaN(+row.dataset.comm) ? row.dataset.comm : +row.dataset.comm);
-        if (!m) return;
-        let best = null;
-        g.forEachNode((id) => { if (fullLabel.get(id) === m.topLabel) best = best || id; });
-        if (!best) return;
-        const d = renderer.getNodeDisplayData(best);
-        if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.3 }, { duration: 400 });
-        setHovered(best); showTip(best);
-      });
+      /* Library mode: each topic row is a FILTER — clicking dims everything
+         outside the topic (via topicSet) and frames it; clicking again clears.
+         Topics come from the Louvain clusters by default, replaced by the
+         cron's curated labels (topics.json) when those arrive. Both feed the
+         same render/wire path so the toggle behavior is identical. */
+      let activeTopic = null;
+
+      const louvainTopics = [...commMeta.entries()]
+        .filter(([, m]) => m.topLabel)
+        .sort((a, b) => b[1].size - a[1].size).slice(0, 7)
+        .map(([c, m]) => ({
+          key: 'c' + c, label: m.topLabel, color: m.color,
+          nodes: () => { const s = new Set(); g.forEachNode((id) => { if (commOf[id] === c) s.add(id); }); return s; },
+        }));
+
+      const clampLabel = (s) => (s.length > 30 ? s.slice(0, 28).trimEnd() + '…' : s);
+      function renderTopics(topics, titleText) {
+        legend.innerHTML =
+          '<div class="legend-title">' + esc(titleText) + '</div>' +
+          '<div class="legend-row gv-muted"><span class="legend-swatch" style="background:#F5D25D"></span>questions (gold)</div>' +
+          topics.map((t) => (
+            '<div class="legend-row legend-topic" data-key="' + esc(t.key) + '" title="' + esc(t.label) + '">' +
+            '<span class="legend-swatch" style="background:' + esc(t.color) + '"></span>' + esc(clampLabel(t.label)) + '</div>'
+          )).join('');
+      }
+      function wireTopics(topics) {
+        legend.onclick = (ev) => {
+          const row = ev.target.closest('[data-key]');
+          if (!row) return;
+          const t = topics.find((x) => x.key === row.dataset.key);
+          if (!t) return;
+          const rows = legend.querySelectorAll('.legend-topic');
+          if (activeTopic === t.key) {                 // toggle off
+            activeTopic = null; topicSet = null;
+            rows.forEach((r) => r.classList.remove('gv-on'));
+          } else {
+            activeTopic = t.key; topicSet = t.nodes();
+            rows.forEach((r) => r.classList.toggle('gv-on', r === row));
+            // Frame the topic: prefer a question anchor, else any member.
+            let anchor = null;
+            for (const id of topicSet) { if (g.getNodeAttribute(id, 'entryId')) { anchor = id; break; } }
+            anchor = anchor || topicSet.values().next().value;
+            const d = anchor && renderer.getNodeDisplayData(anchor);
+            if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.5 }, { duration: 400 });
+          }
+          renderer.refresh({ skipIndexation: true });
+        };
+      }
+
+      renderTopics(louvainTopics, 'Topics in the web');
+      wireTopics(louvainTopics);
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
+
+      // Swap in the cron's curated topics if they load and actually match nodes.
+      loadCuratedTopics().then((curated) => {
+        if (!curated || !curated.length) return;
+        const topics = curated.map((t, i) => ({
+          key: 'k' + i,
+          label: String(t.label || ''),
+          color: COMM_PALETTE[i % COMM_PALETTE.length],
+          nodes: () => {
+            const terms = (Array.isArray(t.match) && t.match.length ? t.match : [t.label])
+              .map((s) => String(s || '').toLowerCase()).filter(Boolean);
+            const s = new Set();
+            g.forEachNode((id) => { const lab = String(fullLabel.get(id) || '').toLowerCase(); if (terms.some((term) => lab.includes(term))) s.add(id); });
+            return s;
+          },
+        })).filter((t) => t.label && t.nodes().size > 0);
+        if (!topics.length) return;
+        activeTopic = null; topicSet = null;
+        renderTopics(topics, 'Topics');
+        wireTopics(topics);
+        renderer.refresh({ skipIndexation: true });
+      });
     } else {
       legendToggle.style.display = 'none';
     }
@@ -1018,16 +1209,45 @@ async function main() {
     brand.textContent = (snap.title || 'Knowledge graph') + stats + ' · CafresoHQ';
   }
 
-  if (P('show_analytics', '0') === '1' && snap.analytics && snap.analytics.metrics) {
-    const m = snap.analytics.metrics;
+  if (P('show_analytics', '0') === '1') {
     const el = document.getElementById('analytics');
     if (el) {
+      // Use precomputed analytics if the snapshot carries them; otherwise
+      // synthesize them client-side. The merged library graph ships none, so
+      // without this the panel never rendered. Betweenness is O(V·E) — fine at
+      // library scale (tens–hundreds of nodes), guarded above ~800 so a huge
+      // graph doesn't hang the main thread on load.
+      let m, topList;
+      if (snap.analytics && snap.analytics.metrics) {
+        m = snap.analytics.metrics;
+        topList = (snap.analytics.topInfluential || []).slice(0, 6).map((t) => titleOf(t.id));
+      } else {
+        const N = g.order, E = g.size;
+        const density = N > 1 ? (2 * E) / (N * (N - 1)) : 0;
+        let influential = [];
+        if (N > 1 && N <= 800) {
+          let bc = {};
+          try { bc = betweennessCentrality(g, { normalized: true }); } catch (_) { bc = {}; }
+          influential = Object.keys(bc).sort((a, b) => bc[b] - bc[a]).slice(0, 6);
+        } else {
+          // Too large (or trivially small) for betweenness — degree is a cheap,
+          // honest proxy for "what everything connects through".
+          influential = g.nodes().sort((a, b) => g.degree(b) - g.degree(a)).slice(0, 6);
+        }
+        topList = influential.map((id) => fullLabel.get(id) || titleOf(id));
+        m = {
+          structure: commMeta ? (commMeta.size + ' topic clusters') : 'one web',
+          nodes: N, edges: E,
+          communityCount: commMeta ? commMeta.size : 1,
+          modularity: density,   // density stands in for modularity when unshipped
+        };
+      }
       el.style.display = 'block';
-      const top = (snap.analytics.topInfluential || []).slice(0, 6).map((t) => '<div>◆ ' + esc(titleOf(t.id)) + '</div>').join('');
+      const top = topList.map((label) => '<div title="' + esc(label) + '">◆ ' + esc(label.length > 34 ? label.slice(0, 32).trimEnd() + '…' : label) + '</div>').join('');
       el.innerHTML =
         '<div class="gv-panel-title">Graph analysis</div>' +
         '<div class="gv-pill">' + esc(m.structure || '') + '</div>' +
-        '<div class="gv-muted" style="line-height:1.5">Notes <b>' + m.nodes + '</b> · Links <b>' + m.edges + '</b><br>Topics <b>' + m.communityCount + '</b> · Modularity <b>' + (m.modularity || 0).toFixed(2) + '</b></div>' +
+        '<div class="gv-muted" style="line-height:1.5">Notes <b>' + m.nodes + '</b> · Links <b>' + m.edges + '</b><br>Topics <b>' + m.communityCount + '</b> · Density <b>' + (m.modularity || 0).toFixed(2) + '</b></div>' +
         '<div class="gv-panel-title" style="margin:10px 0 4px">Most influential</div>' + top;
     }
   }
@@ -1109,6 +1329,24 @@ async function main() {
   if (!reduceMotion) warm(Math.min(1500 + g.order * 8, 5000));
   // warm() is a no-op when the layout is off, but signals still need the loop.
   if (signalsOn) tick();
+
+  /* ── deep-link focus (?focus=<nodeId>) ─────────────────────────────────────
+     Fly to a node on load, pin it, open its tip — the target of the copy-link
+     button, so a shared link lands where the sharer was looking. Fired once the
+     layout has settled (getNodeDisplayData needs indexation, and flying before
+     the web calms would leave the node drifting out from under the camera). */
+  const focusId = P('focus', null);
+  if (focusId && g.hasNode(focusId)) {
+    const settleMs = reduceMotion || layoutOff ? 60 : Math.min(1500 + g.order * 8, 5000) + 120;
+    setTimeout(() => {
+      if (!g.hasNode(focusId)) return;
+      const d = renderer.getNodeDisplayData(focusId);
+      if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.3 }, { duration: 500 });
+      pinned = focusId;
+      setHovered(focusId); showTip(focusId);
+      if (hint) hint.classList.add('gv-hidden');
+    }, settleMs);
+  }
 }
 // main() is async, so anything it throws becomes an unhandled rejection that
 // never reaches the console as an error — the viewer just half-renders and says

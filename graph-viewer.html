@@ -65,6 +65,16 @@
   #tip .tip-domain { color: var(--gv-accent); font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
   #tip .tip-note { color: var(--gv-muted); }
   #tip .tip-hint { color: var(--gv-muted); font-size: 10.5px; margin-top: 7px; opacity: .8; }
+  /* Touch: a cursor-tracked card has no cursor to track and lands under the
+     thumb. Pin it as a full-width bottom sheet instead; JS adds .gv-sheet and
+     stops overriding left/top on coarse pointers. env(safe-area-*) clears the
+     home indicator. */
+  #tip.gv-sheet {
+    left: 0 !important; right: 0 !important; top: auto !important;
+    bottom: 0; max-width: none; border-radius: 14px 14px 0 0;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -12px 32px -8px rgba(0,0,0,.6);
+  }
 
   #controls {
     position: fixed; right: 14px; bottom: 14px; z-index: 5;
@@ -124,6 +134,11 @@
   #legend .legend-title { font-weight: 600; color: var(--gv-accent); margin-bottom: 4px; font-size: 11px; letter-spacing: .02em; }
   #legend .legend-row { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #legend .legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  /* Topic rows are filters: hover invites the click, .gv-on marks the active
+     filter (dimming everything outside that topic on the canvas). */
+  #legend .legend-topic { cursor: pointer; padding: 1px 4px; margin: 0 -4px; border-radius: 5px; transition: background .12s; }
+  #legend .legend-topic:hover { background: color-mix(in srgb, var(--gv-accent) 12%, transparent); }
+  #legend .legend-topic.gv-on { background: color-mix(in srgb, var(--gv-accent) 22%, transparent); color: var(--gv-accent); }
 
   #hint {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
@@ -204,6 +219,7 @@
   <button class="gv-btn" id="gv-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
   <button class="gv-btn" id="gv-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
   <button class="gv-btn" id="gv-reset" aria-label="Fit view" title="Fit view">⟲</button>
+  <button class="gv-btn" id="gv-copy-link" aria-label="Copy link to this node" title="Copy link to the focused node" style="display:none">⚲</button>
   <button class="gv-btn" id="gv-settings-toggle" aria-label="Graph settings" title="Graph settings">⚙</button>
 </div>
 

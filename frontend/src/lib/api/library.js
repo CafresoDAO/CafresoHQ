@@ -67,7 +67,12 @@ export function libraryMergedGraphViewerUrl() {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/graph.json`);
-  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&chrome=none`;
+  // embed=post: clicking a question node posts to this page (opens the in-page
+  // drawer) instead of a new tab. embedorigin pins postMessage's target so the
+  // message can't leak to a hostile framer.
+  const origin = (typeof location !== 'undefined' && location.origin) || 'https://cafreso.com';
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&chrome=none`
+    + `&embed=post&embedorigin=${encodeURIComponent(origin)}`;
 }
 
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */
