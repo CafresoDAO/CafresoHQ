@@ -1808,7 +1808,11 @@ def _gap_library():
     asked = set(_gap_asked())
     all_qs, human_qs = [], []
     for e in entries:
-        q = (e.get('q') or '').strip()
+        # index.json emits the question as "query" (the canister's field name);
+        # "q" is only the raw submit shape. Reading only "q" made this return an
+        # empty list, which silently degraded the gap cron to proposing blind
+        # and starved the topics cron entirely.
+        q = (e.get('query') or e.get('q') or '').strip()
         if not q:
             continue
         all_qs.append(q)
