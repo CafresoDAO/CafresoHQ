@@ -17,12 +17,14 @@
   import { theme, toggleTheme } from '$lib/stores/theme.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
   import NotificationBell from './NotificationBell.svelte';
+  import { mobileOverlay, toggleMobileOverlay, closeMobileOverlay } from '$lib/stores/mobileOverlay.js';
 
   $: isAdmin = isDevlogAdmin($principalText);
 
   let menuOpen = false;
-  let mobileNavOpen = false;
-  function closeMobileNav() { mobileNavOpen = false; }
+  // Mutually exclusive with MobileNav's Explore popover — see mobileOverlay.js.
+  $: mobileNavOpen = $mobileOverlay === 'drawer';
+  function closeMobileNav() { closeMobileOverlay(); }
   function shortPrincipal(p) {
     if (!p) return '';
     return `${p.slice(0, 5)}…${p.slice(-3)}`;
@@ -256,7 +258,7 @@
         type="button"
         aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
         class="mobile-hamburger"
-        on:click={() => (mobileNavOpen = !mobileNavOpen)}
+        on:click={() => toggleMobileOverlay('drawer')}
       >
         <Icon name={mobileNavOpen ? 'x' : 'list'} size={22} />
       </button>

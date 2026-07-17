@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import Icon from './Icon.svelte';
   import { aiSearchOpen } from '$lib/stores/blog.js';
+  import { mobileOverlay, toggleMobileOverlay, closeMobileOverlay } from '$lib/stores/mobileOverlay.js';
   import { bankingBraveOrigin, aiCafresoOrigin } from '$lib/links.js';
 
   // Mobile bottom tab bar — 6 core destinations.
@@ -16,7 +17,8 @@
     { href: '/profile',    key: 'profile',    icon: 'user-circle',      label: 'Me'      },
   ];
 
-  let explorePopoverOpen = false;
+  // Mutually exclusive with PageHeader's hamburger drawer — see mobileOverlay.js.
+  $: explorePopoverOpen = $mobileOverlay === 'explore';
 
   $: path = $page.url.pathname;
   $: activeKey = path === '/'
@@ -39,11 +41,11 @@
     : path.startsWith('/library') ? 'library' : path.startsWith('/projects') ? 'projects' : null;
 
   function toggleExplorePopover() {
-    explorePopoverOpen = !explorePopoverOpen;
+    toggleMobileOverlay('explore');
   }
 
   function closeExplorePopover() {
-    explorePopoverOpen = false;
+    closeMobileOverlay();
   }
 
   function openAiSearch() {
