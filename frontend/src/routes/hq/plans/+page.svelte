@@ -155,6 +155,10 @@
   }
 </script>
 
+<svelte:head>
+  <title>Plans · CafresoHQ</title>
+</svelte:head>
+
 <section class="space-y-5">
   <header class="card p-6 sm:p-8">
     <div class="page-kicker">CafresoHQ / Plans</div>

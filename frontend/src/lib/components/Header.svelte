@@ -8,22 +8,38 @@
     logout
   } from '$lib/stores/auth.js';
   import { theme, toggleTheme } from '$lib/stores/theme.js';
+  import { navMode } from '$lib/stores/navMode.js';
   import EndpointStatus from './EndpointStatus.svelte';
   import EcosystemNav from './EcosystemNav.svelte';
 
   const navLinks = [
-    { href: '/hq', label: 'Dashboard' },
-    { href: '/hq/app', label: 'HQ' },
-    { href: '/hq/chat', label: 'Chat' },
-    { href: '/hq/search', label: 'Search' },
-    { href: '/hq/vault', label: 'Vault' },
-    { href: '/hq/plans', label: 'Plans' },
-    { href: '/hq/settings', label: 'Settings' }
+    { href: '/hq', label: 'Dashboard', slug: 'dashboard' },
+    { href: '/hq/app', label: 'HQ', slug: 'app' },
+    { href: '/hq/chat', label: 'Chat', slug: 'chat' },
+    { href: '/hq/search', label: 'Search', slug: 'search' },
+    { href: '/hq/vault', label: 'Vault', slug: 'vault' },
+    { href: '/hq/plans', label: 'Plans', slug: 'plans' },
+    { href: '/hq/settings', label: 'Settings', slug: 'settings' }
   ];
 
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 20 ? p.slice(0, 6) + '...' + p.slice(-4) : p;
+  }
+
+  // 'windows' mode: a plain left-click opens/refocuses a dedicated OS window
+  // per surface instead of navigating this one. Modified clicks (Cmd/Ctrl,
+  // Shift, middle-click) are left alone so "open in new tab" still works
+  // exactly like any other link, in either mode. The window NAME is stable
+  // per surface (`hq-<slug>`), which is what makes a second click on the same
+  // link refocus the existing window instead of spawning a duplicate — that's
+  // ordinary window.open(url, name) behavior at a fixed name + origin, no
+  // extra bookkeeping needed.
+  function onNavClick(e, href, slug) {
+    if ($navMode !== 'windows') return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    window.open(href, `hq-${slug}`);
   }
 </script>
 
@@ -35,6 +51,7 @@
       {#each navLinks as l}
         <a
           href={l.href}
+          on:click={(e) => onNavClick(e, l.href, l.slug)}
           aria-current={$page.url.pathname === l.href ? 'page' : undefined}
           class="rounded-full px-3 py-2 text-sm font-semibold transition-colors
                  {$page.url.pathname === l.href

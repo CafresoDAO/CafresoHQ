@@ -12,6 +12,7 @@
     isAuthenticated
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
+  import { navMode, setNavMode } from '$lib/stores/navMode.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
   import SearchNetworkCard from '$lib/components/SearchNetworkCard.svelte';
   import OperatorPanel from '$lib/components/OperatorPanel.svelte';
@@ -93,6 +94,10 @@
   let showAdvanced = false;
   let showHealthJson = false;
 </script>
+
+<svelte:head>
+  <title>Settings · CafresoHQ</title>
+</svelte:head>
 
 <section class="mx-auto max-w-5xl space-y-6">
   <header class="card p-6 sm:p-8">
@@ -218,6 +223,44 @@
         </p>
       </div>
     {/if}
+  </div>
+
+  <!-- Navigation: tabs vs. a dedicated OS window per HQ surface -->
+  <div class="card p-6 space-y-4">
+    <div>
+      <div class="page-kicker">Interface</div>
+      <h2 class="mt-2 text-xl font-semibold">Navigation</h2>
+      <p class="mt-1 text-sm leading-6 text-ink-400">
+        How the header's Dashboard / HQ / Chat / Search / Vault / Plans / Settings links behave.
+      </p>
+    </div>
+
+    <div class="inline-flex rounded-full border border-ink-600/60 p-1">
+      <button
+        type="button"
+        class="rounded-full px-4 py-1.5 text-sm font-semibold transition-colors
+               {$navMode === 'tabs' ? 'bg-ink-50 text-ink-900 shadow-sm' : 'text-ink-300 hover:text-ink-50'}"
+        on:click={() => setNavMode('tabs')}
+      >Tabs</button>
+      <button
+        type="button"
+        class="rounded-full px-4 py-1.5 text-sm font-semibold transition-colors
+               {$navMode === 'windows' ? 'bg-ink-50 text-ink-900 shadow-sm' : 'text-ink-300 hover:text-ink-50'}"
+        on:click={() => setNavMode('windows')}
+      >Windows</button>
+    </div>
+
+    <p class="text-xs leading-5 text-ink-400">
+      {#if $navMode === 'windows'}
+        Each surface opens in its own OS window — handy across multiple monitors. Clicking
+        a link again refocuses that surface's window instead of opening another one.
+        Cmd/Ctrl-click still opens a plain new tab. Each window unlocks the Vault
+        independently — that's intentional, the vault key never leaves the window that
+        derived it.
+      {:else}
+        Default. Every surface navigates in this one window, like any normal link.
+      {/if}
+    </p>
   </div>
 
   <!-- Advanced / developer settings -->

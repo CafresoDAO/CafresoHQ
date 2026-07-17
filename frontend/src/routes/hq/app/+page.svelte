@@ -545,6 +545,10 @@
   ];
 </script>
 
+<svelte:head>
+  <title>HQ · CafresoHQ</title>
+</svelte:head>
+
 {#if fullscreenIframe}
   <div class="fixed inset-0 z-40 bg-ink-900">
     {#if !loaded}

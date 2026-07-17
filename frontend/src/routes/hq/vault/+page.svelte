@@ -207,6 +207,10 @@
   onDestroy(() => clearTimeout(autosaveTimer));
 </script>
 
+<svelte:head>
+  <title>Vault · CafresoHQ</title>
+</svelte:head>
+
 <section class="space-y-5">
   <header class="card p-6 sm:p-8">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

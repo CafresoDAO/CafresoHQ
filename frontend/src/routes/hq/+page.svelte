@@ -14,6 +14,10 @@
   }
 </script>
 
+<svelte:head>
+  <title>Dashboard · CafresoHQ</title>
+</svelte:head>
+
 <section class="space-y-6">
   <header class="card overflow-hidden p-6 sm:p-8">
     <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
