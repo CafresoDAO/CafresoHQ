@@ -33,11 +33,14 @@
 </div>
 
 <style>
+  /* Was hand-authored light-only (literal hsl), so a 404 in dark mode painted
+     a full-bleed white page. The --pg-* tokens carry these exact light values,
+     so light stays pixel-identical and dark finally flips. */
   .error-page {
-    --ink: hsl(222 47% 11%);
-    --ink-soft: hsl(222 47% 11% / 0.6);
-    --border: hsl(0 0% 88%);
-    background: hsl(0 0% 99%);
+    --ink: hsl(var(--pg-fg));
+    --ink-soft: hsl(var(--pg-fg) / 0.6);
+    --border: hsl(var(--pg-border));
+    background: hsl(var(--pg-surface));
     min-height: 70vh;
     display: flex;
     flex-direction: column;
@@ -54,7 +57,7 @@
   .error-status {
     font-size: clamp(48px, 12vw, 72px);
     font-weight: 800;
-    color: hsl(260 70% 50%);
+    color: hsl(var(--pg-accent-purple));
     line-height: 1;
     letter-spacing: -0.03em;
     margin-bottom: 12px;
@@ -90,13 +93,15 @@
     transition: all 0.2s;
   }
   .error-btn.primary {
-    background: hsl(260 70% 50%);
+    background: hsl(var(--pg-accent-purple));
     color: #fff;
-    border: 1.5px solid hsl(260 70% 50%);
+    border: 1.5px solid hsl(var(--pg-accent-purple));
   }
+  /* --pg-accent-purple inverts to a LIGHT purple in dark mode, so white text
+     would wash out — flip to coffee ink, mirroring --pg-solid/--pg-solid-fg. */
+  :global(.dark) .error-btn.primary { color: hsl(var(--ink-900)); }
   .error-btn.primary:hover {
-    background: hsl(260 70% 44%);
-    border-color: hsl(260 70% 44%);
+    filter: brightness(0.92);
   }
   .error-btn.outline {
     background: transparent;
@@ -104,7 +109,7 @@
     border: 1.5px solid var(--border);
   }
   .error-btn.outline:hover {
-    border-color: hsl(0 0% 72%);
-    background: hsl(0 0% 96%);
+    border-color: hsl(var(--pg-fg) / 0.35);
+    background: hsl(var(--pg-hover));
   }
 </style>

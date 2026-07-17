@@ -162,7 +162,7 @@
         >
           <Icon name={it.icon} size={17} /> {it.label}
           {#if it.beta}
-            <span style="font-size: 8.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; background: hsl(260 70% 62%); color: white; padding: 1px 4px; border-radius: 4px; line-height: 1.6;">BETA</span>
+            <span style="font-size: 8.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; background: hsl(var(--pg-accent-purple)); color: white; padding: 1px 4px; border-radius: 4px; line-height: 1.6;">BETA</span>
           {/if}
           {#if it.external}
             <Icon name="arrow-up-right" size={11} style="opacity: 0.55;" />
@@ -195,7 +195,7 @@
         {#if $nanasBalanceSource === 'ledger'}
           <span
             class="w-[7px] h-[7px] rounded-full shrink-0"
-            style="background: hsl(112 60% 45%); box-shadow: 0 0 0 2px hsl(112 60% 45% / 0.25);"
+            style="background: hsl(var(--pg-success-fg)); box-shadow: 0 0 0 2px hsl(var(--pg-success-fg) / 0.25);"
             aria-label="Live balance"
           ></span>
         {/if}
@@ -238,7 +238,7 @@
         on:click={() => aiSearchOpen.set(true)}
         class="w-[38px] h-[38px] inline-flex items-center justify-center border-none bg-transparent rounded-[10px] cursor-pointer"
         style="color: hsl(var(--pg-fg-muted)); transition: background .2s, color .2s; position: relative;"
-        on:mouseenter={(e) => { e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.7)'; e.currentTarget.style.color = 'hsl(260 70% 60%)'; }}
+        on:mouseenter={(e) => { e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.7)'; e.currentTarget.style.color = 'hsl(var(--pg-accent-purple))'; }}
         on:mouseleave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'hsl(var(--pg-fg-muted))'; }}
         title="AI Search — powered by ai.cafreso.com"
       >
@@ -246,7 +246,7 @@
         <span style="
           position: absolute; top: 6px; right: 6px;
           width: 6px; height: 6px; border-radius: 50%;
-          background: hsl(260 70% 55%);
+          background: hsl(var(--pg-accent-purple));
           border: 1.5px solid hsl(var(--pg-header));
         "></span>
       </button>
@@ -349,8 +349,8 @@
                 type="button"
                 on:click={handleLogout}
                 class="w-full text-left px-2.5 py-2 rounded-[8px] text-[13px] bg-transparent border-none cursor-pointer inline-flex items-center gap-2"
-                style="color: hsl(0 72% 55%); transition: background .15s;"
-                on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(0 72% 50% / 0.14)')}
+                style="color: hsl(var(--pg-danger-fg)); transition: background .15s;"
+                on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(var(--pg-danger-fg) / 0.14)')}
                 on:mouseleave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 <Icon name="sign-out" size={15} /> Log out
@@ -401,9 +401,9 @@
           {#key $cartCount}
             <span
               class="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1.5 text-[10px] font-bold text-white rounded-full inline-flex items-center justify-center animate-pop"
-              style="background: hsl(0 84% 60%);
+              style="background: hsl(var(--brand-cart-badge));
                 border: 2px solid hsl(var(--pg-header));
-                box-shadow: 0 2px 6px hsl(0 80% 50% / 0.35);"
+                box-shadow: 0 2px 6px hsl(var(--brand-cart-badge) / 0.35);"
             >
               {$cartCount}
             </span>
@@ -595,7 +595,7 @@
   .mobile-drawer-beta {
     font-size: 8px; font-weight: 800;
     letter-spacing: 0.1em; text-transform: uppercase;
-    background: hsl(260 70% 62%); color: white;
+    background: hsl(var(--pg-accent-purple)); color: white;
     padding: 1px 5px; border-radius: 4px;
   }
 
@@ -623,11 +623,11 @@
   .mobile-drawer-signout {
     display: flex; align-items: center; gap: 8px;
     width: 100%; padding: 10px 14px; border-radius: 10px;
-    border: 1px solid hsl(0 60% 50% / 0.35); background: transparent;
-    color: hsl(0 72% 55%); font-size: 13.5px; font-weight: 500;
+    border: 1px solid hsl(var(--pg-danger-border)); background: transparent;
+    color: hsl(var(--pg-danger-fg)); font-size: 13.5px; font-weight: 500;
     cursor: pointer; transition: background .15s;
   }
-  .mobile-drawer-signout:hover { background: hsl(0 72% 50% / 0.12); }
+  .mobile-drawer-signout:hover { background: hsl(var(--pg-danger-fg) / 0.12); }
   .mobile-drawer-signin {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; padding: 12px 14px; border-radius: 10px;

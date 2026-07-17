@@ -87,7 +87,7 @@
         class="flex flex-col items-center gap-[2px] py-1.5 px-0.5 font-semibold cursor-pointer transition-colors"
         style="
           flex: 1; min-width: 0; border: none;
-          background: {active ? 'hsl(260 70% 50%)' : 'transparent'};
+          background: {active ? 'hsl(var(--pg-accent-purple))' : 'transparent'};
           color: {active ? 'white' : 'hsl(var(--pg-fg) / 0.6)'};
           border-radius: 11px;
           font-size: 8.5px; letter-spacing: 0em;
@@ -102,7 +102,7 @@
             <span style="
               position: absolute; top: -2px; right: -4px;
               width: 6px; height: 6px; border-radius: 50%;
-              background: hsl(260 70% 55%);
+              background: hsl(var(--pg-accent-purple));
               border: 1.5px solid hsl(var(--pg-surface));
             "></span>
           {/if}
@@ -177,7 +177,7 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: {exploreSub === 'projects' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(262 60% 60% / 0.2)'};
+                background: {exploreSub === 'projects' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(var(--pg-accent-purple) / 0.2)'};
                 flex-shrink: 0;
               ">
                 <Icon name="stack" size={15} />
@@ -333,10 +333,10 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: hsl(260 70% 60% / 0.2);
+                background: hsl(var(--pg-accent-purple) / 0.2);
                 flex-shrink: 0;
               ">
-                <Icon name="brain" size={15} style="color: hsl(260 70% 60%);" />
+                <Icon name="brain" size={15} style="color: hsl(var(--pg-accent-purple));" />
               </span>
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 4px;">
@@ -371,7 +371,7 @@
             <span style="
               position: absolute; top: -3px; right: -5px;
               width: 7px; height: 7px; border-radius: 50%;
-              background: hsl(260 70% 62%);
+              background: hsl(var(--pg-accent-purple));
               border: 1.5px solid hsl(var(--pg-surface));
             "></span>
           {/if}

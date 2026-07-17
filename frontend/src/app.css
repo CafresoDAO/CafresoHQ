@@ -132,6 +132,30 @@
   --pg-solid: 222 47% 11%;
   --pg-solid-fg: 0 0% 100%;
   --pg-eyebrow: 24 48% 28%;   /* warm coffee section labels/icons */
+
+  /* ── Semantic status tokens (Cafreso Pages) ──
+     Fill/foreground/border triads for the recurring success/warn/danger/link
+     pills, banners, and inline conditionals scattered across (pages) as raw
+     hsl() literals (checkout payment state, success page banners, category
+     tags, form errors). Same hues used everywhere already — this just gives
+     them one home so they participate in the .dark flip below. */
+  --pg-success-bg: 112 43% 92%;
+  --pg-success-fg: 112 43% 28%;
+  --pg-success-border: 112 40% 78%;
+  --pg-warn-bg: 38 85% 92%;
+  --pg-warn-fg: 32 72% 32%;
+  --pg-warn-border: 38 70% 78%;
+  --pg-danger-bg: 0 70% 95%;
+  --pg-danger-fg: 0 63% 38%;
+  --pg-danger-border: 0 60% 82%;
+  --pg-link: 38 65% 35%;
+
+  /* One shared purple for the AI/DAO/deep-research family — collapses the
+     266/260/280-hue near-duplicates found scattered across AISearchModal,
+     the library vault, and governance into a single token. */
+  --pg-accent-purple: 266 60% 46%;
+  --pg-accent-purple-bg: 266 70% 96%;
+  --pg-accent-purple-border: 266 55% 84%;
 }
 
 .dark {
@@ -157,6 +181,23 @@
   --pg-solid: 38 58% 90%;
   --pg-solid-fg: 24 48% 11%;
   --pg-eyebrow: 34 46% 62%;   /* warm tan — readable coffee label on dark */
+
+  /* Semantic status tokens — translucent fills + light-on-dark foreground,
+     same pattern as the other .dark pill overrides in this file. */
+  --pg-success-bg: 112 45% 32% / 0.22;
+  --pg-success-fg: 112 55% 70%;
+  --pg-success-border: 112 45% 42% / 0.5;
+  --pg-warn-bg: 38 70% 40% / 0.22;
+  --pg-warn-fg: 38 88% 72%;
+  --pg-warn-border: 38 60% 45% / 0.5;
+  --pg-danger-bg: 0 60% 32% / 0.22;
+  --pg-danger-fg: 0 85% 78%;
+  --pg-danger-border: 0 55% 42% / 0.5;
+  --pg-link: 45 85% 66%;
+
+  --pg-accent-purple: 266 85% 80%;
+  --pg-accent-purple-bg: 266 55% 32% / 0.35;
+  --pg-accent-purple-border: 266 45% 48%;
 
   /* Dark mode keeps the banana scale but anchors against deeper coffee */
   --brand-50:  47 100% 94%;

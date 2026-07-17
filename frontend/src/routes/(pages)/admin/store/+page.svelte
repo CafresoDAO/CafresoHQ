@@ -10,10 +10,12 @@
     listAllOrders,
     updateOrderStatus,
     getTreasury,
-    setTreasury
+    setTreasury,
+    orderStatusStyle
   } from '$lib/api/store.js';
   import { isAuthenticated, principalText, authStatus, login } from '$lib/stores/auth.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
+  import { theme } from '$lib/stores/theme.js';
 
   // `isDevlogAdmin` is reused as a UI-gate allowlist — the canister still
   // enforces admin on every write. If a principal is on the canister but
@@ -141,14 +143,6 @@
   }
 
   const ORDER_STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'refunded', 'cancelled'];
-  const STATUS_COLOR = {
-    pending: 'hsl(42 80% 92%)',
-    paid: 'hsl(142 50% 94%)',
-    shipped: 'hsl(215 40% 96%)',
-    delivered: 'hsl(112 45% 92%)',
-    refunded: 'hsl(26 30% 92%)',
-    cancelled: 'hsl(0 70% 96%)'
-  };
 </script>
 
 <svelte:head><title>Admin · Store · Cafreso</title></svelte:head>
@@ -358,7 +352,7 @@
               </div>
               <span
                 class="inline-flex items-center text-[11px] font-semibold uppercase px-2 py-1 rounded-full"
-                style="background: {STATUS_COLOR[o.status] || 'hsl(26 30% 92%)'}; color: hsl(222 47% 11%);"
+                style={orderStatusStyle(o.status, $theme === 'dark')}
               >
                 {o.status}
               </span>

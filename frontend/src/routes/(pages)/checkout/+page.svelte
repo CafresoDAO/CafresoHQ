@@ -268,14 +268,14 @@
               <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
                 ≈ ${usd($cartTotal)} USD · settles on the ICRC-1 ledger
                 {#if !hasSufficientNanas}
-                  <span style="color: hsl(0 70% 40%);"> · Insufficient balance</span>
+                  <span style="color: hsl(var(--pg-danger-fg));"> · Insufficient balance</span>
                 {/if}
               </div>
             </div>
             {#if hasSufficientNanas}
-              <Icon name="check-circle" size={18} style="color: hsl(112 43% 45%);" weight="fill" />
+              <Icon name="check-circle" size={18} style="color: hsl(var(--pg-success-fg));" weight="fill" />
             {:else}
-              <Icon name="warning" size={18} style="color: hsl(0 70% 50%);" weight="fill" />
+              <Icon name="warning" size={18} style="color: hsl(var(--pg-danger-fg));" weight="fill" />
             {/if}
           </div>
         {/if}
@@ -305,7 +305,7 @@
       <!-- ── Error ──────────────────────────────────────────────────────── -->
       {#if error}
         <div class="rounded-[10px] px-3 py-2 text-[13px] flex items-start gap-2"
-          style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);">
+          style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));">
           <Icon name="warning" size={14} />
           <span>{error}</span>
         </div>

@@ -47,7 +47,7 @@
       </Tag>
     {/each}
   </div>
-  <hr class="border-none m-0 mb-5" style="border-top: 1px solid hsl(26 30% 60%);" />
+  <hr class="border-none m-0 mb-5" style="border-top: 1px solid hsl(var(--pg-border));" />
   <div class="text-center mb-6 text-[15px]">
     Shop {filter.charAt(0).toUpperCase() + filter.slice(1)}
   </div>
@@ -59,7 +59,7 @@
     </div>
   {:else if filtered.length === 0}
     <div class="rounded-[14px] px-4 py-10 text-center"
-      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(26 30% 75%);"
+      style="background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-border));"
     >
       <Icon name="storefront" size={28} style="color: hsl(32 56% 35%);" />
       <h3 class="font-bold text-[17px] mt-3 mb-1.5" style="color: hsl(var(--pg-fg));">Nothing here yet</h3>

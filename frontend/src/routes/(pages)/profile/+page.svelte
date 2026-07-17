@@ -15,7 +15,8 @@
   } from '$lib/stores/auth.js';
   import { profile, ACCENTS } from '$lib/stores/profile.js';
   import { TOKENS, getAllBalances, formatBalance } from '$lib/api/icrc1.js';
-  import { listMyOrders } from '$lib/api/store.js';
+  import { listMyOrders, orderStatusStyle } from '$lib/api/store.js';
+  import { theme } from '$lib/stores/theme.js';
   import { bbLinks, bankingBraveOrigin } from '$lib/links.js';
   import SendTokenModal from '$lib/components/SendTokenModal.svelte';
   import { refreshNanasBalance } from '$lib/stores/blog.js';
@@ -91,15 +92,6 @@
       loadingOrders = false;
     }
   }
-
-  const ORDER_COLOR = {
-    pending: 'hsl(42 80% 92%)',
-    paid: 'hsl(142 50% 94%)',
-    shipped: 'hsl(215 40% 96%)',
-    delivered: 'hsl(112 45% 92%)',
-    refunded: 'hsl(26 30% 92%)',
-    cancelled: 'hsl(0 70% 96%)'
-  };
 
   async function copyPrincipal() {
     if (!$principalText) return;
@@ -524,7 +516,7 @@
               </div>
               <span
                 class="inline-flex items-center text-[10.5px] font-semibold uppercase px-2 py-0.5 rounded-full"
-                style="background: {ORDER_COLOR[o.status] || 'hsl(26 30% 92%)'}; color: hsl(222 47% 11%);"
+                style={orderStatusStyle(o.status, $theme === 'dark')}
               >
                 {o.status}
               </span>

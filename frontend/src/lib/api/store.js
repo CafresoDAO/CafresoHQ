@@ -14,6 +14,29 @@ const canisterId =
 // The index canister principal — the spender the buyer approves for ICRC-2
 // plan purchase (it calls icrc2_transfer_from to collect the fixed plan price).
 export const INDEX_CANISTER_ID = canisterId;
+
+// Order-status pill colors — one map, shared by the customer's order list
+// (/profile) and the admin order table (/admin/store), which each carried a
+// byte-identical private copy. Both fill and ink are named here so the pill
+// stays legible in dark mode: the light pastels don't flip on their own, so a
+// dark-mode-only fill/ink pair rides along in the same record.
+export const ORDER_STATUS_STYLE = {
+  pending:   { bg: 'hsl(42 80% 92%)',  darkBg: 'hsl(42 70% 28%)',  fg: 'hsl(42 90% 18%)',  darkFg: 'hsl(42 85% 82%)' },
+  paid:      { bg: 'hsl(142 50% 94%)', darkBg: 'hsl(142 40% 24%)', fg: 'hsl(142 70% 16%)', darkFg: 'hsl(142 60% 80%)' },
+  shipped:   { bg: 'hsl(215 40% 96%)', darkBg: 'hsl(215 35% 28%)', fg: 'hsl(215 60% 20%)', darkFg: 'hsl(215 70% 84%)' },
+  delivered: { bg: 'hsl(112 45% 92%)', darkBg: 'hsl(112 35% 24%)', fg: 'hsl(112 60% 16%)', darkFg: 'hsl(112 55% 80%)' },
+  refunded:  { bg: 'hsl(26 30% 92%)',  darkBg: 'hsl(26 20% 28%)',  fg: 'hsl(26 40% 20%)',  darkFg: 'hsl(26 30% 82%)' },
+  cancelled: { bg: 'hsl(0 70% 96%)',   darkBg: 'hsl(0 45% 28%)',   fg: 'hsl(0 65% 22%)',   darkFg: 'hsl(0 80% 84%)' }
+};
+const ORDER_STATUS_FALLBACK = ORDER_STATUS_STYLE.refunded;
+
+/** Inline `style` for an order-status pill. `dark` picks the dark-mode pair —
+    callers read it from the theme store rather than a CSS media query, since
+    these values land in an inline style attribute that CSS can't reach. */
+export function orderStatusStyle(status, dark = false) {
+  const s = ORDER_STATUS_STYLE[status] || ORDER_STATUS_FALLBACK;
+  return `background: ${dark ? s.darkBg : s.bg}; color: ${dark ? s.darkFg : s.fg};`;
+}
 const network = import.meta.env.PUBLIC_DFX_NETWORK || 'ic';
 const host = network === 'local' ? 'http://127.0.0.1:4943' : 'https://icp0.io';
 

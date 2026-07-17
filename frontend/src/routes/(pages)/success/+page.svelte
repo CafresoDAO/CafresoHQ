@@ -70,9 +70,9 @@
     <div
       class="rounded-[12px] px-4 py-3 mb-5 text-[13px] inline-flex items-center gap-2"
       style="
-        background: {cardRecording === 'error' ? 'hsl(0 70% 96%)' : 'hsl(112 50% 95%)'};
-        border: 1px solid {cardRecording === 'error' ? 'hsl(0 70% 82%)' : 'hsl(112 43% 75%)'};
-        color: {cardRecording === 'error' ? 'hsl(0 70% 30%)' : 'hsl(112 43% 22%)'};
+        background: hsl(var({cardRecording === 'error' ? '--pg-danger-bg' : '--pg-success-bg'}));
+        border: 1px solid hsl(var({cardRecording === 'error' ? '--pg-danger-border' : '--pg-success-border'}));
+        color: hsl(var({cardRecording === 'error' ? '--pg-danger-fg' : '--pg-success-fg'}));
       "
     >
       {#if cardRecording === 'recording'}

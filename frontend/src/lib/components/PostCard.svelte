@@ -4,6 +4,7 @@
   import NanasCoin from './NanasCoin.svelte';
   import CategoryTag from './CategoryTag.svelte';
   import OnChainBadge from './OnChainBadge.svelte';
+  import { goto } from '$app/navigation';
   import { fmtDate, postHeroImg } from '$lib/data/blog.js';
   import { principalText } from '$lib/stores/auth.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
@@ -47,19 +48,22 @@
   "
 >
   {#if canEdit}
-    <!-- Admin quick-edit. Stops the card's `<a>` navigation so the pencil
-         goes to the editor instead of the post detail. -->
-    <a
-      href="/blog/new?edit={post.slug}"
-      on:click|stopPropagation
+    <!-- Admin quick-edit. A <button> rather than an <a>: this sits INSIDE the
+         card's own <a>, and nested anchors are invalid HTML — the browser
+         hoists the inner one out of the link during parsing, which both broke
+         hydration (SSR/client trees disagreed) and made the pencil unreliable.
+         goto() keeps the same navigation without nesting a link in a link. -->
+    <button
+      type="button"
+      on:click|stopPropagation|preventDefault={() => goto(`/blog/new?edit=${post.slug}`)}
       aria-label="Edit post"
       title="Edit this post"
-      class="absolute z-[2] inline-flex items-center gap-1.5 rounded-full no-underline"
-      style="top: 12px; right: 12px; padding: 5px 10px; font-size: 11.5px; font-weight: 600;
+      class="absolute z-[2] inline-flex items-center gap-1.5 rounded-full cursor-pointer"
+      style="top: 12px; right: 12px; padding: 5px 10px; font-size: 11.5px; font-weight: 600; border: none;
         background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); box-shadow: 0 4px 10px -4px hsl(222 47% 11% / 0.45);"
     >
       <Icon name="pencil-simple" size={11} /> Edit
-    </a>
+    </button>
   {/if}
   {#if featured}
     <div class="blog-featured-inner" style="display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; align-items: center;">

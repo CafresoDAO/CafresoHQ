@@ -33,6 +33,7 @@
   role={p.unavailable ? 'presentation' : undefined}
   href={p.unavailable ? undefined : `/product/${p.slug}`}
   aria-disabled={p.unavailable ? 'true' : undefined}
+  aria-label={p.unavailable ? `${p.name} — coming soon` : undefined}
   bind:this={cardEl}
   on:mouseenter={enter}
   on:mouseleave={leave}
@@ -56,8 +57,8 @@
       <span
         class="text-[10px] font-semibold uppercase"
         style="letter-spacing: 0.06em;
-          color: hsl(0 60% 45%);
-          background: hsl(0 80% 96%);
+          color: hsl(var(--pg-danger-fg));
+          background: hsl(var(--pg-danger-bg));
           padding: 3px 8px;
           border-radius: 999px;"
       >Soon</span>
@@ -96,7 +97,7 @@
 
   <div
     class="flex items-center justify-between mt-3.5 pt-3.5"
-    style="border-top: 1px dashed hsl(26 25% 75%);"
+    style="border-top: 1px dashed hsl(var(--pg-border));"
   >
     <span class="inline-flex items-center gap-1.5 text-[15px] font-semibold">
       {p.price.toLocaleString()}
