@@ -683,6 +683,14 @@ _SW_DEEP_BUDGET = float(os.environ.get('WORKER_DEEP_BUDGET', '') or 350)
 _SW_DEEP_MAX_TOPICS = int(os.environ.get('WORKER_DEEP_TOPICS', '') or 5)
 _SW_DEEP_PAGE_CAP = 1400   # per note-page body; the whole tree caps at LIB_MAX_GRAPH
 _sw_last_ts = 0
+# Serializes signed worker calls end-to-end. The canister's replay guard rejects
+# any ts <= the last one it accepted, on the assumption that a worker serializes
+# its calls — true when only the search loop called _sw_call, but the topics
+# cron now calls it from another thread. Without this lock two threads can build
+# monotonic ts values yet have their HTTP requests arrive out of order, 403-ing
+# whichever loses the race. Holding the lock across build+send keeps arrival
+# order == ts order.
+_sw_call_lock = threading.Lock()
 
 
 def _sw_left(deadline, floor=1.0):
@@ -697,26 +705,28 @@ def _sw_left(deadline, floor=1.0):
 
 
 def _sw_call(op, extra_lines):
-    """Signed worker call. Returns (status, dict). Envelope + HMAC per docs/SEARCH_NETWORK.md."""
+    """Signed worker call. Returns (status, dict). Envelope + HMAC per docs/SEARCH_NETWORK.md.
+    Serialized across threads so ts order == arrival order (see _sw_call_lock)."""
     global _sw_last_ts
     import hmac as _hmac
-    ts = max(int(time.time() * 1000), _sw_last_ts + 1)
-    _sw_last_ts = ts
-    body = '\n'.join(['v1', _SW_PRINCIPAL, str(ts), secrets.token_hex(8), op]
-                     + list(extra_lines)).encode('utf-8')
-    sig = _hmac.new(bytes.fromhex(_SW_SECRET_HEX), body, hashlib.sha256).hexdigest()
-    req = urllib.request.Request(_SW_BASE + '/worker/' + op, data=body, headers={
-        'x-worker-signature': sig, 'Content-Type': 'text/plain'})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, json.loads(r.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
+    with _sw_call_lock:
+        ts = max(int(time.time() * 1000), _sw_last_ts + 1)
+        _sw_last_ts = ts
+        body = '\n'.join(['v1', _SW_PRINCIPAL, str(ts), secrets.token_hex(8), op]
+                         + list(extra_lines)).encode('utf-8')
+        sig = _hmac.new(bytes.fromhex(_SW_SECRET_HEX), body, hashlib.sha256).hexdigest()
+        req = urllib.request.Request(_SW_BASE + '/worker/' + op, data=body, headers={
+            'x-worker-signature': sig, 'Content-Type': 'text/plain'})
         try:
-            return e.code, json.loads(e.read().decode('utf-8'))
-        except Exception:
-            return e.code, {}
-    except Exception as e:
-        return 0, {'error': str(e)[:200]}
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.loads(r.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read().decode('utf-8'))
+            except Exception:
+                return e.code, {}
+        except Exception as e:
+            return 0, {'error': str(e)[:200]}
 
 
 # ── Brave quota ledger ──────────────────────────────────────────────────────
