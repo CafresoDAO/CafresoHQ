@@ -110,6 +110,19 @@
   #gv-search-input:focus, #gv-search.gv-has-q #gv-search-input {
     border-color: color-mix(in srgb, var(--gv-accent) 45%, transparent);
   }
+  #gv-search-go, #gv-search-news { flex-shrink: 0; font-size: 13px; }
+  #gv-search-news.gv-on { border-color: var(--gv-accent); color: var(--gv-accent); box-shadow: 0 0 0 1px var(--gv-accent) inset; }
+  #gv-search-status {
+    position: absolute; left: 0; top: calc(100% + 6px); max-width: 320px;
+    padding: 5px 10px; border-radius: 8px; font-size: 12px; line-height: 1.35;
+    background: var(--gv-panel); border: 1px solid var(--gv-border); color: var(--gv-fg);
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  #gv-search-status.gv-show { opacity: 1; }
+  #gv-search-go:disabled { opacity: .6; cursor: default; }
+  #gv-search-go.gv-spin { animation: gv-go-spin .8s linear infinite; }
+  @keyframes gv-go-spin { to { transform: rotate(360deg); } }
 
   #gv-settings {
     display: none; position: fixed; right: 54px; bottom: 14px; z-index: 6; width: 200px;
@@ -139,6 +152,9 @@
   #legend .legend-topic { cursor: pointer; padding: 1px 4px; margin: 0 -4px; border-radius: 5px; transition: background .12s; }
   #legend .legend-topic:hover { background: color-mix(in srgb, var(--gv-accent) 12%, transparent); }
   #legend .legend-topic.gv-on { background: color-mix(in srgb, var(--gv-accent) 22%, transparent); color: var(--gv-accent); }
+  #legend .legend-export { cursor: pointer; margin-top: 6px; padding: 3px 4px; border-top: 1px solid var(--gv-border); color: var(--gv-accent); border-radius: 0 0 5px 5px; }
+  #legend .legend-export:hover { background: color-mix(in srgb, var(--gv-accent) 12%, transparent); }
+  #legend .legend-export[data-busy] { opacity: .6; cursor: default; }
 
   #hint {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
@@ -213,6 +229,9 @@
 <div id="gv-search">
   <button class="gv-btn" id="gv-search-toggle" aria-label="Search nodes" title="Search nodes">⌕</button>
   <input id="gv-search-input" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off" spellcheck="false"/>
+  <button class="gv-btn" id="gv-search-go" aria-label="Run a new library search" title="Search the library — runs a new answer if it's not here yet">🔍</button>
+  <button class="gv-btn" id="gv-search-news" aria-label="News mode" aria-pressed="false" title="News mode — answers favor fresh, dated, publisher-attributed coverage">🗞</button>
+  <div id="gv-search-status" role="status" aria-live="polite"></div>
 </div>
 
 <div id="controls">
@@ -244,6 +263,11 @@
   <div class="gv-row">
     <label class="gv-check" for="gv-signals">
       <input type="checkbox" id="gv-signals" checked/> Signals
+    </label>
+  </div>
+  <div class="gv-row" id="gv-related-row" style="display:none">
+    <label class="gv-check" for="gv-related" title="Draw a link between two questions that lean on the same source">
+      <input type="checkbox" id="gv-related"/> Related links
     </label>
   </div>
 </div>

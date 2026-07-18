@@ -3160,4 +3160,116 @@ function InboxModal({ open, onClose }) {
   );
 }
 
-window.CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal };
+/* ── Furnish Shop — desk decor bought with REAL gold (sGLDT). ─────────────
+   Safety model: this modal never moves money itself. Every purchase goes
+   through chain.shop.furnish → the II-holding shell shows its approval
+   sheet, and only a user-signed ICRC-1 transfer to the DAO treasury
+   completes the sale. Declining costs nothing and changes nothing.
+   Cosmetic-only by design: no stats, no gameplay advantage, no bundles. */
+const FURNISH_CATALOG = [
+  { kind: 'wall', id: 'mini-window',  icon: '🪟', label: 'City window',   price: 0.05, note: 'a view of the skyline' },
+  { kind: 'wall', id: 'wall-shelf',   icon: '📚', label: 'Wall shelf',    price: 0.03, note: 'books they never read' },
+  { kind: 'wall', id: 'poster',       icon: '🖼', label: 'Motivation poster', price: 0.02, note: 'HANG IN THERE' },
+  { kind: 'wall', id: 'poster p1',    icon: '🎨', label: 'Art print',     price: 0.02, note: 'gallery-grade pixels' },
+  { kind: 'wall', id: 'pin-note',     icon: '📌', label: 'Pin board',     price: 0.01, note: 'for very important notes' },
+  { kind: 'rug',  id: 0,              icon: '🟥', label: 'Crimson rug',   price: 0.02, note: 'ties the desk together' },
+  { kind: 'rug',  id: 1,              icon: '🟦', label: 'Indigo rug',    price: 0.02, note: 'calm under pressure' },
+  { kind: 'rug',  id: 2,              icon: '🟩', label: 'Fern rug',      price: 0.02, note: 'the plant approves' },
+];
+
+function FurnishModal({ agent, onClose, onUpdate }) {
+  const chain = (typeof window !== 'undefined' && window.CafresoHQChain) || null;
+  const canBuy = !!(chain && chain.isAvailable && chain.isAvailable() && chain.shop);
+  const [busyId, setBusyId] = useStateM(null);
+  const [note, setNote] = useStateM('');
+
+  if (!agent) return null;
+  const owned = (agent.furnishLog || []).map(f => `${f.kind}:${f.id}`);
+  const current = agent.decor || {};
+
+  const buy = async (item) => {
+    if (!canBuy || busyId) return;
+    const key = `${item.kind}:${item.id}`;
+    const alreadyOwned = owned.includes(key);
+    /* Owned items re-place for free; new items go through the signed sale. */
+    if (!alreadyOwned) {
+      setBusyId(key); setNote('Waiting for your approval in the shell…');
+      try {
+        const res = await chain.shop.furnish({
+          agentId: agent.id, kind: item.kind, itemId: String(item.id),
+          label: item.label, priceGold: item.price,
+        });
+        if (!res || res.status !== 'paid') {
+          setNote(res && res.status === 'declined' ? 'Declined — nothing was spent.' : (res && res.error) || 'Purchase didn’t complete — nothing was spent.');
+          setBusyId(null);
+          return;
+        }
+        setNote(`Paid ${item.price} sGLDT · ledger block #${res.block}`);
+        try {
+          window.dispatchEvent(new CustomEvent('cafresohq:moneyEvent', {
+            detail: { agentId: agent.id, amount: item.price, amountRaw: String(Math.round(item.price * 1e8)), token: 'sGLDT', kind: 'furnish' },
+          }));
+        } catch (_e) {}
+        onUpdate(agent.id, {
+          furnishLog: [ ...(agent.furnishLog || []), { kind: item.kind, id: item.id, label: item.label, price: item.price, block: res.block, at: Date.now() } ],
+        });
+      } catch (e) {
+        setNote(`Couldn’t reach the shell (${(e && e.message) || 'timeout'}) — nothing was spent.`);
+        setBusyId(null);
+        return;
+      }
+      setBusyId(null);
+    }
+    // Place it (new or already-owned): cosmetic state on the agent record.
+    onUpdate(agent.id, {
+      decor: item.kind === 'wall'
+        ? { ...current, wall: item.id }
+        : { ...current, rug: item.id },
+    });
+  };
+
+  return (
+    <Modal open={!!agent} onClose={onClose} size="md"
+      title="FURNISH SHOP"
+      subtitle={`${agent.name}'s desk · paid in gold (sGLDT) · cosmetic only`}>
+      {!canBuy && (
+        <div style={{ fontFamily: 'Inter', fontSize: 11.5, lineHeight: 1.5, padding: '8px 10px', marginBottom: 10,
+                      border: '1px dashed var(--rule)', borderRadius: 6, opacity: 0.8 }}>
+          Browsing only — open HQ from ai.cafreso.com (signed in, wallet service on) to buy with gold.
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+        {FURNISH_CATALOG.map((item) => {
+          const key = `${item.kind}:${item.id}`;
+          const isOwned = owned.includes(key);
+          const isPlaced = item.kind === 'wall' ? current.wall === item.id : current.rug === item.id;
+          return (
+            <div key={key} style={{ border: '2px solid var(--ink)', borderRadius: 6, padding: '10px 10px 8px',
+                                    background: isPlaced ? 'rgba(245,210,93,0.18)' : 'var(--paper-2)' }}>
+              <div style={{ fontSize: 18, lineHeight: 1 }}>{item.icon}</div>
+              <div style={{ fontFamily: 'Press Start 2P', fontSize: 8, margin: '6px 0 2px' }}>{item.label}</div>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, opacity: 0.65, minHeight: 24 }}>{item.note}</div>
+              <button className="px-btn" style={{ width: '100%', fontSize: 8, marginTop: 6 }}
+                disabled={!!busyId || isPlaced || (!canBuy && !isOwned)}
+                onClick={() => buy(item)}>
+                {isPlaced ? '✓ PLACED'
+                  : isOwned ? 'PLACE'
+                  : busyId === key ? 'ASKING…'
+                  : `◈ ${item.price} sGLDT`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {note && (
+        <div style={{ fontFamily: 'VT323, monospace', fontSize: 13, marginTop: 10, opacity: 0.85 }}>{note}</div>
+      )}
+      <div style={{ fontFamily: 'Inter', fontSize: 10, marginTop: 10, opacity: 0.55, lineHeight: 1.5 }}>
+        Every purchase is a real, user-signed sGLDT transfer to the Cafreso DAO treasury — the shell always asks first,
+        and declining costs nothing. Items are cosmetic and stay owned by this agent.
+      </div>
+    </Modal>
+  );
+}
+
+window.CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal };

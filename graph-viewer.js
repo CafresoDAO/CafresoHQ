@@ -136,6 +136,61 @@ async function main() {
       .catch(() => null);
     return curatedReq;
   }
+  // Full entry JSON (query + answer + sources) for the in-viewer reader drawer —
+  // served at /library/<id>.json on the same canister as the graph snapshot. Lets
+  // a question-node click pop the answer open INSIDE the graph instead of
+  // navigating the whole tab away. Derived from the snapshot path; null (→ the
+  // click falls back to navigation) for a non-library graph.
+  const entryBase = src && /\/library\/graph\.json/.test(src)
+    ? src.replace(/\/library\/graph\.json.*$/, '/library/') : null;
+  const entryReqs = new Map();
+  function loadEntry(id) {
+    if (!entryBase) return Promise.resolve(null);
+    if (!entryReqs.has(id)) {
+      entryReqs.set(id, fetch(entryBase + encodeURIComponent(id) + '.json')
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null));
+    }
+    return entryReqs.get(id);
+  }
+  // Shared search-network client — the magnifying glass AND the drawer's
+  // dig-deeper button both run this: exact library hit → submit (?mode=news|deep)
+  // → poll. Resolves to an entry id; rejects with a user-facing message.
+  const searchApiBase = entryBase ? entryBase.replace(/\/library\/$/, '') : null;
+  async function netResearch(query, mode, onStatus) {
+    if (!searchApiBase) throw new Error('Not a library graph');
+    const say = onStatus || (() => {});
+    const jget = (p) => fetch(searchApiBase + p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    say('Checking the library…');
+    const hit = await jget('/library/find.json?q=' + encodeURIComponent(query));
+    if (hit && hit.id) return hit.id;
+    const health = await jget('/search/health.json');
+    if (!health || !health.activeWorkers) throw new Error('Search network is asleep — try later');
+    say(mode === 'deep' ? 'Deep research queued — takes a few minutes…' : 'Researching — a worker is on it…');
+    const sub = await fetch(searchApiBase + '/search/submit' + (mode && mode !== 'fast' ? '?mode=' + mode : ''),
+      { method: 'POST', headers: { 'content-type': 'text/plain' }, body: encodeURIComponent(query) })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (!sub) throw new Error('Network unavailable — try again');
+    if (sub.status === 'hit' && sub.entry) return sub.entry.id;
+    if (sub.status === 'rejected') {
+      throw new Error(sub.reason === 'budget' ? "Today's research budget is spent"
+        : sub.reason === 'deep-budget' ? "Today's deep-research budget is spent"
+        : 'Network busy — try again shortly');
+    }
+    if (sub.status !== 'queued' || !sub.jobId) throw new Error('Could not queue that one');
+    // Deep jobs run a multi-hop loop under a ~6.3-min canister lease — poll well
+    // past it so a slow-but-successful run still lands in this session.
+    const limit = mode === 'deep' ? 460000 : 200000;
+    const t0 = Date.now();
+    while (Date.now() - t0 < limit) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const stt = await jget('/search/job/' + encodeURIComponent(sub.jobId) + '.json');
+      if (!stt) continue;
+      if (Date.now() - t0 > 45000) say(mode === 'deep' ? 'Deep research running — notes are being written…' : 'Still researching — a slow one…');
+      if (stt.status === 'done' && stt.entry) return stt.entry.id;
+      if (stt.status === 'failed' || stt.status === 'expired') throw new Error('No answer this time — try rephrasing');
+    }
+    throw new Error('Timed out — it may still land in the library');
+  }
   let snap = window.__SNAPSHOT__ || null;
   try { if (!snap && src) snap = await (await fetch(src)).json(); }
   catch (_) { container.textContent = 'Could not load this graph.'; return; }
@@ -243,6 +298,59 @@ async function main() {
   // Topic filter is independent of text search (they compose): a topic row and
   // a typed query each own a set, and dimFactor treats them as an intersection.
   let topicSet = null;
+
+  /* ── auto-wikilinks ──────────────────────────────────────────────────────
+     Two questions that lean on the same source domain are related. The merged
+     library graph is bipartite (gold entry nodes ↔ deduped "d:" domain nodes),
+     so relatedness falls straight out of the domain nodes' neighborhoods — no
+     backend change. Domains shared by >6 entries are ambient glue (wikipedia,
+     reddit) that would link everything to everything; skipped. The pairs
+     become togglable dashed-faint edges AND the Related [[wikilinks]] in the
+     Obsidian exports. */
+  const relatedOf = new Map();   // entryId -> Map(otherEntryId -> sharedDomains)
+  let showRel = false;
+  {
+    const isEntry = (n) => !!g.getNodeAttribute(n, 'entryId');
+    const bump = (a, b) => {
+      const m = relatedOf.get(a) || new Map();
+      m.set(b, (m.get(b) || 0) + 1);
+      relatedOf.set(a, m);
+    };
+    g.forEachNode((d) => {
+      if (isEntry(d) || !String(d).startsWith('d:')) return;
+      const ents = g.neighbors(d).filter(isEntry);
+      if (ents.length < 2 || ents.length > 6) return;
+      for (let i = 0; i < ents.length; i++) {
+        for (let j = i + 1; j < ents.length; j++) { bump(ents[i], ents[j]); bump(ents[j], ents[i]); }
+      }
+    });
+    // The edges are added/dropped on toggle rather than sitting hidden in the
+    // graph: an invisible edge would still count as a hop for the hover
+    // activation, silently lighting up "neighbors" no visible line explains.
+    const relKeys = [];
+    const relRow = document.getElementById('gv-related-row');
+    const relCheck = document.getElementById('gv-related');
+    if (relRow && relCheck && relatedOf.size > 0) {
+      relRow.style.display = '';
+      relCheck.addEventListener('change', () => {
+        showRel = relCheck.checked;
+        if (showRel) {
+          for (const [a, m] of relatedOf) {
+            for (const b of m.keys()) {
+              if (a < b && !g.hasEdge(a, b)) {
+                const k = 'rel:' + a + ':' + b;
+                g.addEdgeWithKey(k, a, b, { rel: true });
+                relKeys.push(k);
+              }
+            }
+          }
+        } else {
+          while (relKeys.length) { const k = relKeys.pop(); if (g.hasEdge(k)) g.dropEdge(k); }
+        }
+        renderer.refresh();
+      });
+    }
+  }
   // A click on a non-actionable node latches its neighborhood highlight so you
   // can read the labels; Escape / stage-click releases it.
   let pinned = null;
@@ -361,6 +469,14 @@ async function main() {
     edgeReducer: (id, d) => {
       const r = { ...d };
       if (!drawEdges) { r.hidden = true; return r; }
+      // Related links (shared sources) are an overlay lens, not part of the
+      // web: hidden until toggled, and drawn as their own faint violet so they
+      // never masquerade as citation edges.
+      if (d.rel) {
+        if (!showRel) { r.hidden = true; return r; }
+        r.color = 'rgba(190,150,255,0.30)'; r.size = 0.7; r.zIndex = 0;
+        return r;
+      }
       const s = g.source(id), t = g.target(id);
       const sd = dimOf.has(s) ? dimOf.get(s) : dimFactor(s);
       const td = dimOf.has(t) ? dimOf.get(t) : dimFactor(t);
@@ -679,7 +795,23 @@ async function main() {
       '.gv-note-nav button{flex:1;padding:9px;border:1px solid #3a332a;border-radius:9px;background:transparent;' +
       'color:inherit;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;}' +
       '.gv-light .gv-note-nav button{border-color:#e2d9c6;}' +
-      '.gv-note-nav button:disabled{opacity:.35;cursor:default;}';
+      '.gv-note-nav button:disabled{opacity:.35;cursor:default;}' +
+      '.gv-note-open{display:inline-block;margin-top:18px;padding:9px 14px;border:1px solid #3a332a;' +
+      'border-radius:9px;color:inherit;text-decoration:none;font:600 12px Inter,system-ui,sans-serif;}' +
+      '.gv-note-open:hover{background:rgba(255,255,255,0.05);}' +
+      '.gv-light .gv-note-open{border-color:#e2d9c6;}' +
+      '.gv-note-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px;}' +
+      '.gv-note-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;' +
+      'padding:4px 9px;border-radius:999px;background:rgba(255,255,255,0.06);' +
+      'border:1px solid rgba(255,255,255,0.09);color:#cabfa9;white-space:nowrap;}' +
+      '.gv-light .gv-note-chip{background:rgba(0,0,0,0.05);border-color:rgba(0,0,0,0.1);color:#6a5f4c;}' +
+      '.gv-note-chip b{color:#e8e0d2;font-weight:700;}.gv-light .gv-note-chip b{color:#2e2820;}' +
+      '.gv-note-chip.gv-chip-deep{color:#d8c3f0;border-color:rgba(201,184,224,0.35);}' +
+      '.gv-note-chip.gv-chip-tok{color:#f0c98a;border-color:rgba(240,180,90,0.3);}' +
+      '.gv-note-research{display:block;width:100%;margin-top:16px;padding:11px;cursor:pointer;text-align:center;' +
+      'border:1px solid rgba(201,184,224,0.4);border-radius:9px;background:rgba(201,184,224,0.08);' +
+      'color:#d8c3f0;font:700 12.5px Inter,system-ui,sans-serif;}' +
+      '.gv-note-research:hover{background:rgba(201,184,224,0.16);}';
     document.head.appendChild(st);
     const back = document.createElement('div'); back.className = 'gv-note-back';
     const panel = document.createElement('div'); panel.className = 'gv-note';
@@ -689,17 +821,25 @@ async function main() {
       '<div class="gv-note-kick">Research note</div>' +
       '<h2 class="gv-note-title"></h2>' +
       '<p class="gv-note-q"></p>' +
+      '<div class="gv-note-chips"></div>' +
       '<div class="gv-note-body"></div>' +
       '<div class="gv-note-srcwrap"></div>' +
+      '<button class="gv-note-research" style="display:none"></button>' +
+      '<a class="gv-note-open" target="_blank" rel="noopener noreferrer" style="display:none">Open full page ↗</a>' +
       '<div class="gv-note-nav"><button class="gv-note-prev">← Previous</button>' +
       '<button class="gv-note-next">Next →</button></div>';
     document.body.appendChild(back); document.body.appendChild(panel);
     noteEls = {
       back, panel,
+      kick: panel.querySelector('.gv-note-kick'),
       title: panel.querySelector('.gv-note-title'),
       q: panel.querySelector('.gv-note-q'),
+      chips: panel.querySelector('.gv-note-chips'),
       body: panel.querySelector('.gv-note-body'),
       srcwrap: panel.querySelector('.gv-note-srcwrap'),
+      research: panel.querySelector('.gv-note-research'),
+      openLink: panel.querySelector('.gv-note-open'),
+      nav: panel.querySelector('.gv-note-nav'),
       prev: panel.querySelector('.gv-note-prev'),
       next: panel.querySelector('.gv-note-next'),
     };
@@ -746,10 +886,325 @@ async function main() {
     const data = await loadPages();
     const pages = (data && data.pages) || [];
     if (!pages.length) return;
+    // Reset the shared drawer back to research-note mode (openEntry repurposes it).
+    noteEls.kick.textContent = 'Research note';
+    noteEls.nav.style.display = ''; noteEls.openLink.style.display = 'none';
+    noteEls.chips.innerHTML = ''; noteEls.research.style.display = 'none';
     const idx = Math.max(0, pages.findIndex((p) => p.id === pageId));
     notePanel.pages = pages; notePanel.idx = idx; notePanel.open = true;
     renderNote();
     noteEls.back.classList.add('on'); noteEls.panel.classList.add('on');
+  }
+  function renderSources(wrap, srcs) {
+    wrap.innerHTML = (srcs && srcs.length)
+      ? '<div class="gv-note-srch">Sources</div>' + srcs.map((s) => {
+          const u = /^https?:\/\//i.test(s.url || '') ? s.url : '';
+          const dom = (() => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return ''; } })();
+          return '<a class="gv-note-src" ' + (u ? 'href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"' : '') +
+            '><b>' + esc(s.title || u) + '</b>' + (dom ? '<span>' + esc(dom) + '</span>' : '') + '</a>';
+        }).join('')
+      : '';
+  }
+  function fmtTokens(n) {
+    n = Number(n) || 0;
+    return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+  }
+  // Provenance chips: the AI agent that wrote the answer, the search engine, the
+  // token spend, and a deep-research marker. tokens aren't stored on-chain yet —
+  // the chip renders the instant the field appears (e.tokens / prov.tokens), so
+  // no viewer change is needed when the backend starts sending it.
+  function renderChips(e) {
+    const chips = [];
+    const model = String(e.model || '').trim();
+    if (model) chips.push('<span class="gv-note-chip" title="AI agent that wrote this answer">🤖 <b>' + esc(model.split('/').pop()) + '</b></span>');
+    const engine = String(e.engine || '').trim();
+    if (engine) chips.push('<span class="gv-note-chip" title="Search engine">🔎 ' + esc(engine) + '</span>');
+    const tok = e.tokens != null ? e.tokens : (e.tokensUsed != null ? e.tokensUsed : (e.prov && e.prov.tokens));
+    if (tok != null && Number(tok) > 0) chips.push('<span class="gv-note-chip gv-chip-tok" title="Tokens burned generating this answer">⚡ <b>' + esc(fmtTokens(tok)) + '</b> tokens</span>');
+    if (e.mode === 'deep') chips.push('<span class="gv-note-chip gv-chip-deep">✦ Deep research</span>');
+    noteEls.chips.innerHTML = chips.join('');
+  }
+  // In-viewer reader: pop a library entry's full answer + sources open as the
+  // side drawer, so a question click reads in place instead of jumping tabs.
+  // fallbackUrl (the entry's public page) is used both as the "Open full page"
+  // target and as the graceful fallback if the JSON can't be fetched.
+  async function openEntry(entryId, fallbackUrl) {
+    buildNotePanel();
+    const e = await loadEntry(entryId);
+    if (!e) {
+      if (fallbackUrl) {
+        if (window.top === window.self) location.href = fallbackUrl;
+        else window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    const meta = [];
+    const n = Number(e.answeredAt || e.ts || 0);
+    if (n > 0) {
+      const ms = n > 1e15 ? Math.round(n / 1e6) : n;   // ns snapshots vs ms
+      try { meta.push(new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })); } catch (_) {}
+    }
+    meta.push(e.askedBy === 'ai-gap' ? 'the library asked this itself' : 'community question');
+    noteEls.kick.textContent = e.mode === 'deep' ? 'Deep research' : 'Library answer';
+    noteEls.title.textContent = e.query || 'Library entry';
+    noteEls.q.textContent = meta.join(' · ');
+    renderChips(e);
+    noteEls.body.textContent = e.answer || '';
+    renderSources(noteEls.srcwrap, e.sources || []);
+    noteEls.nav.style.display = 'none';
+    // Deep entries carry a research note tree (research.json) — offer to explore it.
+    if (e.mode === 'deep') {
+      noteEls.research.style.display = '';
+      noteEls.research.textContent = '📄 Explore the research notes →';
+      noteEls.research.onclick = () => openResearch(entryId, e.query || '');
+    } else if (searchApiBase) {
+      // Fast entry → offer to escalate. Dedup on the canister is mode-blind
+      // (the exact question would just #hit this entry), so the deep run is
+      // submitted as its own "Deep dive:" question — a separate library entry
+      // with the full research tree.
+      const idle = '🔬 Dig deeper — run deep research';
+      noteEls.research.style.display = '';
+      noteEls.research.textContent = idle;
+      noteEls.research.onclick = async () => {
+        if (noteEls.research.dataset.busy) return;
+        noteEls.research.dataset.busy = '1';
+        try {
+          const nid = await netResearch('Deep dive: ' + (e.query || ''), 'deep',
+            (t) => { noteEls.research.textContent = '⏳ ' + t; });
+          delete noteEls.research.dataset.busy;
+          openEntry(nid, entryLink + encodeURIComponent(nid));
+        } catch (err) {
+          delete noteEls.research.dataset.busy;
+          noteEls.research.textContent = '⚠️ ' + ((err && err.message) || 'Failed — try again');
+          setTimeout(() => { if (!noteEls.research.dataset.busy) noteEls.research.textContent = idle; }, 3600);
+        }
+      };
+    } else {
+      noteEls.research.style.display = 'none';
+      noteEls.research.onclick = null;
+    }
+    noteEls.openLink.style.display = '';
+    noteEls.openLink.href = fallbackUrl || (entryLink + encodeURIComponent(entryId));
+    notePanel.pages = []; notePanel.idx = 0; notePanel.open = true;
+    noteEls.back.classList.add('on'); noteEls.panel.classList.add('on');
+    if (g.hasNode(entryId)) setHovered(entryId);
+  }
+
+  /* ── Deep-research browser ────────────────────────────────────────────────
+     A deep entry ships a research.json ({q, answer, pages:[{id,title,question,
+     body,sources}]}). This opens it as a full research workspace ON ONE SCREEN:
+     a Reader (synthesis + every note) and a Browse view (file-tree + notes with
+     clickable [[wikilinks]]), plus a one-click Obsidian export — a .md vault
+     (index + one note per file, wikilinked) zipped with a tiny dependency-free
+     STORE-mode zip writer. */
+  function loadResearch(id) {
+    if (!entryBase) return Promise.resolve(null);
+    const key = '__res_' + id;
+    if (!entryReqs.has(key)) {
+      entryReqs.set(key, fetch(entryBase + encodeURIComponent(id) + '/research.json')
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null));
+    }
+    return entryReqs.get(key);
+  }
+  const _crcTable = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = _crcTable[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function makeZip(files) {                                   // STORE only (no deflate)
+    const u16 = (n) => [n & 255, (n >>> 8) & 255];
+    const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+    const parts = [], central = []; let off = 0;
+    for (const f of files) {
+      const name = new TextEncoder().encode(f.name), data = f.data, crc = crc32(data);
+      const local = [0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)];
+      parts.push(new Uint8Array(local), name, data);
+      // central dir header: sig, ver-made-by, ver-needed, flags, method, modtime,
+      // moddate, crc, comp, uncomp, fnamelen, extralen, commentlen, disk#,
+      // internal attrs, external attrs, local-header offset.
+      central.push(new Uint8Array([0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+      off += local.length + name.length + data.length;
+    }
+    let cenSize = 0; for (const c of central) cenSize += c.length;
+    const end = new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cenSize), ...u32(off), ...u16(0)]);
+    return new Blob([...parts, ...central, end], { type: 'application/zip' });
+  }
+  function download(blob, name) {
+    const u = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 1500);
+  }
+  function slug(s) { return (String(s || 'note').replace(/[\\/:*?"<>|#^[\]]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)) || 'note'; }
+  function exportObsidian(s) {
+    const enc = new TextEncoder(), files = [], idxName = slug(s.query || 'Research');
+    let idx = '# ' + (s.query || 'Research') + '\n\n' + (s.answer || '') + '\n\n## Notes\n' +
+      s.pages.map((p) => '- [[' + slug(p.title) + ']]').join('\n') + '\n';
+    files.push({ name: idxName + '.md', data: enc.encode(idx) });
+    const seen = {};
+    for (const p of s.pages) {
+      let nm = slug(p.title); if (seen[nm]) nm += '-' + (++seen[slug(p.title)]); else seen[nm] = 1;
+      let md = '# ' + (p.title || 'Note') + '\n\n';
+      if (p.question) md += '> Angle: ' + p.question + '\n\n';
+      md += (p.body || '') + '\n\n';
+      const srcs = p.sources || [];
+      if (srcs.length) md += '## Sources\n' + srcs.map((sc) => '- [' + (sc.title || sc.url || 'source') + '](' + (sc.url || '') + ')').join('\n') + '\n\n';
+      md += '---\nPart of [[' + idxName + ']]\n';
+      files.push({ name: nm + '.md', data: enc.encode(md) });
+    }
+    download(makeZip(files), idxName + ' — research.zip');
+  }
+  // Whole-topic vault: every question in the active topic cluster becomes a
+  // note, cross-linked with Related [[wikilinks]] from the shared-source map —
+  // the Obsidian mirror of what the "Related links" toggle draws on the canvas.
+  const TOPIC_EXPORT_MAX = 60;
+  async function exportTopicVault(set, label) {
+    const ids = [...set].filter((id) => g.getNodeAttribute(id, 'entryId')).slice(0, TOPIC_EXPORT_MAX);
+    const entries = (await Promise.all(ids.map((id) => loadEntry(id)))).filter(Boolean);
+    if (!entries.length) throw new Error('No entries in this topic');
+    const enc = new TextEncoder(), files = [];
+    const nameOf = new Map(), seen = {};
+    for (const e of entries) {
+      let nm = slug(e.query || e.id);
+      if (seen[nm]) { seen[nm]++; nm += '-' + seen[nm]; } else seen[nm] = 1;
+      nameOf.set(e.id, nm);
+    }
+    const vault = slug(label || 'Topic');
+    files.push({ name: vault + '.md', data: enc.encode(
+      '# ' + (label || 'Topic') + '\n\nA Cafreso Library topic cluster — ' + entries.length + ' research notes.\n\n## Notes\n' +
+      entries.map((e) => '- [[' + nameOf.get(e.id) + ']]').join('\n') + '\n') });
+    for (const e of entries) {
+      let md = '# ' + (e.query || 'Entry') + '\n\n' + (e.answer || '') + '\n\n';
+      const srcs = e.sources || [];
+      if (srcs.length) md += '## Sources\n' + srcs.map((s) => '- [' + (s.title || s.url || 'source') + '](' + (s.url || '') + ')').join('\n') + '\n\n';
+      const rel = [...(relatedOf.get(e.id) || new Map()).keys()].filter((r) => nameOf.has(r));
+      if (rel.length) md += '## Related\n' + rel.map((r) => '- [[' + nameOf.get(r) + ']]').join('\n') + '\n\n';
+      md += '---\nPart of [[' + vault + ']]\n';
+      files.push({ name: nameOf.get(e.id) + '.md', data: enc.encode(md) });
+    }
+    download(makeZip(files), vault + ' — vault.zip');
+    return entries.length;
+  }
+  let resPanel = null, resEls = null, resState = null;
+  function noteSectionHtml(p) {
+    const srcs = p.sources || [];
+    return '<div class="gv-res-note"><h3>' + esc(p.title || 'Note') + '</h3>' +
+      (p.question ? '<div class="gv-res-angle">Angle: ' + esc(p.question) + '</div>' : '') +
+      '<div class="gv-res-ntext">' + esc(p.body || '').replace(/\n/g, '<br>') + '</div>' +
+      (srcs.length ? '<div class="gv-res-h">Sources</div>' + srcs.map((sc) => {
+        const u = /^https?:\/\//i.test(sc.url || '') ? sc.url : '';
+        const dom = (() => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return ''; } })();
+        return '<a class="gv-note-src" ' + (u ? 'href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"' : '') + '><b>' + esc(sc.title || u) + '</b>' + (dom ? '<span>' + esc(dom) + '</span>' : '') + '</a>';
+      }).join('') : '') + '</div>';
+  }
+  function wikilinkNav(s, cur) {
+    const links = [];
+    if (cur !== -1) links.push('<a class="gv-wl" data-i="-1">[[' + esc(s.query || 'Synthesis') + ']]</a>');
+    s.pages.forEach((p, i) => { if (i !== cur) links.push('<a class="gv-wl" data-i="' + i + '">[[' + esc(p.title || ('Note ' + (i + 1))) + ']]</a>'); });
+    return links.length ? '<div class="gv-res-links"><div class="gv-res-h">Linked notes</div>' + links.join(' ') + '</div>' : '';
+  }
+  function renderRes() {
+    const s = resState; if (!s) return;
+    resEls.title.textContent = s.query || 'Research';
+    resEls.tabs.querySelectorAll('.gv-res-tab').forEach((b) => b.classList.toggle('gv-on', b.dataset.m === s.mode));
+    resEls.treeToggle.style.display = s.mode === 'browse' ? '' : 'none';
+    if (s.mode === 'read') {
+      resEls.tree.style.display = 'none';
+      resEls.main.innerHTML = '<div class="gv-res-doc">' +
+        (s.answer ? '<div class="gv-res-synth"><div class="gv-res-h">Synthesis</div>' + esc(s.answer).replace(/\n/g, '<br>') + '</div>' : '') +
+        s.pages.map((p) => noteSectionHtml(p)).join('') + '</div>';
+    } else {
+      resEls.tree.style.display = s.treeOn ? '' : 'none';
+      resEls.tree.innerHTML = '<div class="gv-res-h">Notes</div>' +
+        '<a class="gv-res-tnode' + (s.sel === -1 ? ' gv-on' : '') + '" data-i="-1">◆ ' + esc(s.query || 'Synthesis') + '</a>' +
+        s.pages.map((p, i) => '<a class="gv-res-tnode' + (s.sel === i ? ' gv-on' : '') + '" data-i="' + i + '">' + esc(p.title || ('Note ' + (i + 1))) + '</a>').join('');
+      if (s.sel === -1) resEls.main.innerHTML = '<div class="gv-res-doc"><h2>' + esc(s.query || 'Synthesis') + '</h2><div class="gv-res-ntext">' + esc(s.answer || '').replace(/\n/g, '<br>') + '</div>' + wikilinkNav(s, -1) + '</div>';
+      else { const p = s.pages[s.sel] || s.pages[0]; resEls.main.innerHTML = '<div class="gv-res-doc">' + noteSectionHtml(p) + wikilinkNav(s, s.sel) + '</div>'; }
+      resEls.main.scrollTop = 0;
+    }
+  }
+  function buildResearchPanel() {
+    if (resPanel) return;
+    const st = document.createElement('style');
+    st.textContent =
+      '.gv-res-back{position:fixed;inset:0;z-index:50;background:rgba(10,8,6,0.55);backdrop-filter:blur(3px);opacity:0;transition:opacity .2s;pointer-events:none;}' +
+      '.gv-res-back.on{opacity:1;pointer-events:auto;}' +
+      '.gv-res{position:fixed;z-index:51;top:0;right:0;bottom:0;width:min(860px,96vw);display:flex;flex-direction:column;' +
+      'background:#1b1712;color:#e8e0d2;border-left:1px solid #3a332a;box-shadow:-24px 0 60px -20px rgba(0,0,0,0.6);' +
+      'transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);font:14px/1.6 Inter,system-ui,sans-serif;}' +
+      '.gv-res.on{transform:none;}.gv-light .gv-res{background:#fbf7ee;color:#2e2820;border-left-color:#e2d9c6;}' +
+      '.gv-res-head{position:relative;padding:18px 20px 12px;border-bottom:1px solid rgba(255,255,255,0.08);}' +
+      '.gv-light .gv-res-head{border-bottom-color:rgba(0,0,0,0.08);}' +
+      '.gv-res-x{position:absolute;top:14px;right:16px;width:30px;height:30px;border:0;border-radius:8px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer;font-size:17px;}' +
+      '.gv-light .gv-res-x{background:rgba(0,0,0,0.06);}' +
+      '.gv-res-kick{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#c9b8e0;}' +
+      '.gv-res-title{font-size:18px;font-weight:700;line-height:1.3;margin:6px 0 12px;padding-right:36px;}' +
+      '.gv-res-tabs{display:flex;align-items:center;gap:8px;}' +
+      '.gv-res-tab,.gv-res-tree-toggle,.gv-res-dl{padding:6px 12px;border:1px solid #3a332a;border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;}' +
+      '.gv-light .gv-res-tab,.gv-light .gv-res-tree-toggle,.gv-light .gv-res-dl{border-color:#e2d9c6;}' +
+      '.gv-res-tab.gv-on{background:rgba(201,184,224,0.18);border-color:rgba(201,184,224,0.5);color:#e0d0f4;}' +
+      '.gv-res-dl{margin-left:auto;color:#f0c98a;border-color:rgba(240,180,90,0.35);}.gv-res-dl:hover{background:rgba(240,180,90,0.1);}' +
+      '.gv-res-body{flex:1;display:flex;min-height:0;overflow:hidden;}' +
+      '.gv-res-tree{width:230px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid rgba(255,255,255,0.08);}' +
+      '.gv-light .gv-res-tree{border-right-color:rgba(0,0,0,0.08);}' +
+      '.gv-res-tnode{display:block;padding:6px 8px;border-radius:7px;cursor:pointer;color:inherit;text-decoration:none;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+      '.gv-res-tnode:hover{background:rgba(255,255,255,0.06);}.gv-res-tnode.gv-on{background:rgba(201,184,224,0.16);color:#e0d0f4;font-weight:600;}' +
+      '.gv-res-main{flex:1;overflow-y:auto;padding:20px 24px;}.gv-res-doc{max-width:660px;}' +
+      '.gv-res-doc h2{font-size:19px;font-weight:700;margin:0 0 12px;}' +
+      '.gv-res-h{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#c9b8e0;opacity:.75;margin:16px 0 8px;}' +
+      '.gv-res-note{margin:0 0 26px;}.gv-res-note h3{font-size:16px;font-weight:700;margin:0 0 6px;}' +
+      '.gv-res-angle{font-size:12px;font-style:italic;opacity:.75;margin:0 0 10px;}' +
+      '.gv-res-ntext,.gv-res-synth{font-size:13.5px;line-height:1.72;margin:0 0 12px;}' +
+      '.gv-res-links{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px 10px;}' +
+      '.gv-wl{cursor:pointer;color:#c9b8e0;text-decoration:none;font-size:12px;border-bottom:1px dashed rgba(201,184,224,0.4);}.gv-wl:hover{color:#e0d0f4;}' +
+      '.gv-res-note .gv-note-src,.gv-res-doc .gv-note-src{display:block;text-decoration:none;color:inherit;padding:6px 0;border-top:1px solid rgba(255,255,255,0.07);}' +
+      '.gv-light .gv-res-note .gv-note-src{border-top-color:rgba(0,0,0,0.08);}' +
+      '.gv-res-note .gv-note-src b{font-weight:600;font-size:12.5px;}.gv-res-note .gv-note-src span{display:block;font-size:11px;opacity:.7;font-family:ui-monospace,monospace;}' +
+      '@media (max-width:640px){.gv-res-tree{position:absolute;z-index:2;height:calc(100% - 0px);background:#1b1712;}.gv-light .gv-res-tree{background:#fbf7ee;}}';
+    document.head.appendChild(st);
+    const back = document.createElement('div'); back.className = 'gv-res-back';
+    const panel = document.createElement('div'); panel.className = 'gv-res';
+    panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Deep research');
+    panel.innerHTML =
+      '<div class="gv-res-head"><button class="gv-res-x" aria-label="Close">✕</button>' +
+      '<div class="gv-res-kick">Deep research</div><h2 class="gv-res-title"></h2>' +
+      '<div class="gv-res-tabs">' +
+      '<button class="gv-res-tab gv-on" data-m="read">Reader</button>' +
+      '<button class="gv-res-tab" data-m="browse">Browse</button>' +
+      '<button class="gv-res-tree-toggle" title="Toggle file tree" style="display:none">☰ Tree</button>' +
+      '<button class="gv-res-dl" title="Download as a Markdown vault for Obsidian">⬇ .md</button>' +
+      '</div></div>' +
+      '<div class="gv-res-body"><div class="gv-res-tree"></div><div class="gv-res-main"></div></div>';
+    document.body.appendChild(back); document.body.appendChild(panel);
+    resEls = {
+      back, panel,
+      title: panel.querySelector('.gv-res-title'),
+      tabs: panel.querySelector('.gv-res-tabs'),
+      tree: panel.querySelector('.gv-res-tree'),
+      main: panel.querySelector('.gv-res-main'),
+      treeToggle: panel.querySelector('.gv-res-tree-toggle'),
+      dl: panel.querySelector('.gv-res-dl'),
+    };
+    const closeRes = () => { resPanel.open = false; back.classList.remove('on'); panel.classList.remove('on'); };
+    back.addEventListener('click', closeRes);
+    panel.querySelector('.gv-res-x').addEventListener('click', closeRes);
+    resEls.tabs.addEventListener('click', (ev) => {
+      const t = ev.target.closest('.gv-res-tab'); if (!t) return;
+      resState.mode = t.dataset.m; if (resState.mode === 'browse' && resState.sel == null) resState.sel = -1; renderRes();
+    });
+    resEls.treeToggle.addEventListener('click', () => { resState.treeOn = !resState.treeOn; renderRes(); });
+    resEls.dl.addEventListener('click', () => { if (resState) exportObsidian(resState); });
+    const pick = (ev) => { const a = ev.target.closest('[data-i]'); if (!a) return; resState.sel = parseInt(a.dataset.i, 10); if (resState.mode !== 'browse') resState.mode = 'browse'; renderRes(); };
+    resEls.tree.addEventListener('click', pick);
+    resEls.main.addEventListener('click', pick);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && resPanel && resPanel.open) closeRes(); });
+    resPanel = { open: false };
+  }
+  async function openResearch(entryId, query) {
+    buildResearchPanel();
+    const data = await loadResearch(entryId);
+    const pages = (data && Array.isArray(data.pages)) ? data.pages : [];
+    resState = { id: entryId, query: (data && data.q) || query || 'Research', answer: (data && data.answer) || '', pages, mode: 'read', sel: -1, treeOn: true };
+    resEls.dl.style.display = pages.length ? '' : 'none';
+    if (!pages.length) resEls.main.innerHTML = '<div class="gv-res-doc"><p style="opacity:.7">No research notes were stored for this entry.</p></div>';
+    else renderRes();
+    resPanel.open = true; resEls.back.classList.add('on'); resEls.panel.classList.add('on');
   }
 
   renderer.on('enterNode', ({ node }) => {
@@ -848,11 +1303,14 @@ async function main() {
     // explore iframe), never hijack the host page: post to the parent when it
     // opted in (&embed=post), else a new tab.
     else if (act.kind === 'entry') {
-      if (window.top === window.self) location.href = act.url;
-      else if (embedPost && window.parent) {
-        try { window.parent.postMessage({ type: 'cafreso:openEntry', entryId: act.entryId, url: act.url }, embedOrigin); }
-        catch (_) { window.open(act.url, '_blank', 'noopener,noreferrer'); }
-      } else window.open(act.url, '_blank', 'noopener,noreferrer');
+      // Embedded with embed=post (the library hero): let the parent run its own
+      // in-page drawer. Everywhere else — the standalone full viewer, a plain
+      // iframe — pop the answer open IN this viewer instead of navigating away.
+      if (embedPost && window.parent !== window) {
+        try { window.parent.postMessage({ type: 'cafreso:openEntry', entryId: act.entryId, url: act.url }, embedOrigin); return; }
+        catch (_) {}
+      }
+      openEntry(act.entryId, act.url);
     }
   }
 
@@ -1045,6 +1503,64 @@ async function main() {
         if (!searchInput.value.trim()) searchWrap.classList.remove('gv-open');
       });
     }
+
+    /* Magnifying glass = a NEW library search (not the node filter): look for an
+       exact hit, else queue the query on the search network and open the answer
+       in the drawer when it lands. Same public HTTP the /library page uses —
+       find.json → /search/submit → poll /search/job. Needs the library base
+       (derived from the graph snapshot path); hidden if this isn't a library graph. */
+    const goBtn = document.getElementById('gv-search-go');
+    const newsBtn = document.getElementById('gv-search-news');
+    if (!searchApiBase) {
+      if (goBtn) goBtn.style.display = 'none';
+      if (newsBtn) newsBtn.style.display = 'none';
+    }
+    let netSearching = false;
+    let newsMode = false;
+    // Progress goes to a visible pill under the box — placeholder text is
+    // hidden while a query is typed, which is exactly when feedback matters.
+    const statusEl = document.getElementById('gv-search-status');
+    let statusTimer = 0;
+    const status = (t, hold) => {
+      clearTimeout(statusTimer);
+      if (statusEl) {
+        statusEl.textContent = t || '';
+        statusEl.classList.toggle('gv-show', !!t);
+        if (t && hold) statusTimer = setTimeout(() => statusEl.classList.remove('gv-show'), hold);
+      }
+    };
+    async function runNetworkSearch() {
+      const query = searchInput.value.trim();
+      if (!searchApiBase || netSearching) return;
+      if (!query) {
+        // An empty click must never be a no-op: open + focus the box and say why.
+        searchWrap.classList.add('gv-open');
+        searchInput.focus();
+        status('Type a question, then hit 🔍 to research it', 3000);
+        return;
+      }
+      netSearching = true;
+      if (goBtn) { goBtn.disabled = true; goBtn.classList.add('gv-spin'); }
+      const done = () => {
+        netSearching = false;
+        if (goBtn) { goBtn.disabled = false; goBtn.classList.remove('gv-spin'); }
+      };
+      try {
+        const id = await netResearch(query, newsMode ? 'news' : 'fast', (t) => status(t));
+        searchInput.value = ''; apply(); searchInput.blur();
+        done(); status('');
+        openEntry(id, entryLink + encodeURIComponent(id));
+      } catch (err) {
+        done(); status((err && err.message) || 'Search error — try again', 3200);
+      }
+    }
+    if (goBtn) goBtn.addEventListener('click', runNetworkSearch);
+    if (newsBtn) newsBtn.addEventListener('click', () => {
+      newsMode = !newsMode;
+      newsBtn.classList.toggle('gv-on', newsMode);
+      newsBtn.setAttribute('aria-pressed', String(newsMode));
+      status(newsMode ? 'News mode on — 🔍 will favor fresh, dated coverage' : 'News mode off', 2400);
+    });
   }
 
   /* ── settings ────────────────────────────────────────────────────────────
@@ -1142,10 +1658,30 @@ async function main() {
           topics.map((t) => (
             '<div class="legend-row legend-topic" data-key="' + esc(t.key) + '" title="' + esc(t.label) + '">' +
             '<span class="legend-swatch" style="background:' + esc(t.color) + '"></span>' + esc(clampLabel(t.label)) + '</div>'
-          )).join('');
+          )).join('') +
+          // Appears only while a topic filter is on: one click turns the whole
+          // cluster into an Obsidian vault (exportTopicVault).
+          '<div class="legend-row legend-export" style="display:none" title="Download every question in this topic as a wikilinked Obsidian .md vault">⬇ Export topic as vault</div>';
       }
       function wireTopics(topics) {
-        legend.onclick = (ev) => {
+        const exportRow = () => legend.querySelector('.legend-export');
+        legend.onclick = async (ev) => {
+          const ex = ev.target.closest('.legend-export');
+          if (ex) {
+            if (ex.dataset.busy || !topicSet) return;
+            const t = topics.find((x) => x.key === activeTopic);
+            ex.dataset.busy = '1';
+            const orig = ex.textContent;
+            ex.textContent = '⏳ Gathering entries…';
+            try {
+              const n = await exportTopicVault(topicSet, t ? t.label : 'Topic');
+              ex.textContent = '✓ ' + n + ' notes exported';
+            } catch (err) {
+              ex.textContent = '⚠️ ' + ((err && err.message) || 'Export failed');
+            }
+            setTimeout(() => { delete ex.dataset.busy; ex.textContent = orig; }, 2800);
+            return;
+          }
           const row = ev.target.closest('[data-key]');
           if (!row) return;
           const t = topics.find((x) => x.key === row.dataset.key);
@@ -1164,6 +1700,8 @@ async function main() {
             const d = anchor && renderer.getNodeDisplayData(anchor);
             if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.5 }, { duration: 400 });
           }
+          const exr = exportRow();
+          if (exr) exr.style.display = activeTopic && entryBase ? '' : 'none';
           renderer.refresh({ skipIndexation: true });
         };
       }

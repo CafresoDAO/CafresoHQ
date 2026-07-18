@@ -264,6 +264,37 @@ if (typeof window !== 'undefined') window.hqMoneyOn = moneyEnabled;
 /* Is the active provider actually usable (does the user have what it needs)?
    Drives the onboarding "no API key" nudge. Provider-aware so local/CLI backends
    (which need no browser key) don't trigger a false warning. */
+
+/* Managed-brain flag: fleet containers ship with Cafreso's own Gemma 4
+   (LM Studio behind the OCI gateway) wired into hermes server-side — no
+   browser key needed at all. /health advertises it via the `brain` field;
+   probeManagedBrain() caches the answer so hasUsableKey stays sync. */
+let _managedBrain = null;   // null unknown | {model, provider} | false
+async function probeManagedBrain() {
+  try {
+    const r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include' });
+    if (!r.ok) { _managedBrain = false; return _managedBrain; }
+    const j = await r.json().catch(() => ({}));
+    _managedBrain = (j && j.brain && j.brain.model) ? j.brain : false;
+    if (!_managedBrain) {
+      // Older container images don't emit `brain` on /health yet — fall back to
+      // the trial-status endpoint, which reports the shared managed brain
+      // directly ({active, provider}). Keeps zero-config detection working
+      // across image-rollout skew.
+      try {
+        const r2 = await fetch(_API_BASE + '/hermes/trial-status', { cache: 'no-store', credentials: 'include' });
+        if (r2.ok) {
+          const t = await r2.json().catch(() => ({}));
+          if (t && t.active) _managedBrain = { model: t.provider || 'shared', provider: 'cafreso' };
+        }
+      } catch (_e2) {}
+    }
+  } catch (_e) { _managedBrain = false; }
+  try { window.dispatchEvent(new CustomEvent('cafresohq:managedBrain', { detail: _managedBrain || null })); } catch (_e) {}
+  return _managedBrain;
+}
+function managedBrain() { return _managedBrain; }
+
 function hasUsableKey(s) {
   s = s || _settings;
   switch (s.provider || 'hermes') {
@@ -273,9 +304,11 @@ function hasUsableKey(s) {
     case 'ollama':     return !!s.ollamaModel;
     case 'claudecode':                              // CLI-backed, no key entered in the UI
     case 'codex':      return true;
-    case 'hermes':                                  // default — needs the user's OpenRouter key
+    case 'hermes':                                  // default — Cafreso's managed Gemma 4
+                                                    // makes hermes usable with zero keys;
+                                                    // an OpenRouter key stays an upgrade.
     case 'openrouter':
-    default:           return !!s.openrouterKey;
+    default:           return !!s.openrouterKey || !!_managedBrain;
   }
 }
 
@@ -2097,6 +2130,17 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       allowance(token) { return _req('chain:payroll:allowance', { token }).then(r => r.allowance); },
       approve(token, amount, expiresDays) { return _req('chain:payroll:approve', { token, amount, expiresDays }, 180000); },
     },
+    /* BANK (Banking Brave) — read-only prestige balance for the Vault Room.
+       Older shells don't know this op; callers must catch and degrade. */
+    bank: {
+      balance() { return _req('chain:bank:balance', {}).then(r => (r.raw === null || r.raw === undefined) ? null : BigInt(r.raw)); },
+    },
+    /* Furnish Shop — buys desk decor with the USER's sGLDT via a shell-side
+       approval sheet + user-signed ICRC-1 transfer. NEVER auto-spends: the
+       shell always asks, declining is free. Older shells: catch + disable. */
+    shop: {
+      furnish(item) { return _req('chain:shop:furnish', item, 240000); },
+    },
     /* Publish a collected site to the HQ public sites canister. Returns
        { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */
     publish(project, files) { return _req('chain:publish', { project, files }, 180000); },
@@ -2154,6 +2198,7 @@ function backendBase() { return _API_BASE || ''; }
 
 window.CafresoHQClient = {
   getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
+  probeManagedBrain, managedBrain,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
