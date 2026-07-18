@@ -237,7 +237,7 @@
   </h1>
   <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[560px]" style="color: hsl(var(--pg-fg-muted));">
     Your principal is your byline. Threads, comments, and tips all land on the
-    devlog canister — readers can tip you in $nanas if your take lands.
+    devlog canister — readers can tip you in gold (sGLDT) if your take lands.
   </p>
 
   {#if loadingEdit}

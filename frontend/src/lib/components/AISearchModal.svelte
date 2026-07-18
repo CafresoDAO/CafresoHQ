@@ -20,6 +20,23 @@
   const CACHE_TTL = 5 * 60 * 1000; // 5 min — library hits only (queue results change state)
   const SLOW_AFTER_MS = 45_000;    // past this, tell the user it's slow rather than just spinning
   const DEEP_MAX_MS = 400_000;     // a deep pass runs several searches + notes (~4–6 min)
+  const PACED_FOREGROUND_MS = 90_000; // how long we'll actively poll a paced (resting) deep job before handing off to "check the Library later"
+
+  // Depth presets — topics = angle count, interval = pause between angles
+  // (seconds). "Immediate" (interval 0) finishes in a few minutes, same as
+  // the original single-pass Deep Research; the longer presets spread the
+  // SAME research across hours by resting the job between angles server-side
+  // (see cafresohq_state's resumable deep-job protocol) — a visitor doesn't
+  // need to keep this tab open for those, the answer lands in the Library
+  // whenever the last angle completes.
+  const DEPTH_PRESETS = [
+    { key: 'quick',    label: 'Quick',    topics: 2,  interval: 0,    blurb: 'A couple of angles, back-to-back — a few minutes.' },
+    { key: 'standard', label: 'Standard', topics: 5,  interval: 0,    blurb: 'Five angles, back-to-back — a few minutes.' },
+    { key: 'deep',     label: 'Deep',     topics: 8,  interval: 300,  blurb: 'Eight angles, paced 5 min apart — comes together over about 40 min.' },
+    { key: 'exhaustive', label: 'Exhaustive', topics: 12, interval: 900, blurb: 'Twelve angles, paced 15 min apart — comes together over a few hours. No need to keep this open.' },
+  ];
+  let depthKey = 'standard';
+  $: depthPreset = DEPTH_PRESETS.find((d) => d.key === depthKey) || DEPTH_PRESETS[1];
 
   let inputEl;
   let query = '';
@@ -35,12 +52,15 @@
   let darkMessage = '';  // operator-set pause / GPU-down message for the dark state
   let linkCopied = false;
   let elapsedMs = 0;     // wall-clock into the current queued job (drives deep progress)
+  let queuedJobId = ''; // the job id behind a 'resting' (paced, in-progress) deep job
 
   $: if ($aiSearchOpen) {
     phase = 'idle';
     query = '';
     deep = false;
+    depthKey = 'standard';
     entry = null;
+    queuedJobId = '';
     try { recentSearches = JSON.parse(localStorage.getItem('cafreso:ai-recent') || '[]'); } catch { recentSearches = []; }
     refreshOperatorConfig();
     // A query handed in from elsewhere (e.g. the homepage box) — run it, then clear.
@@ -137,7 +157,8 @@
       phase = 'dark'; return;
     }
 
-    const sub = await submitJob(q, { deep: isDeep });
+    const preset = isDeep ? depthPreset : null;
+    const sub = await submitJob(q, { deep: isDeep, topics: preset?.topics, interval: preset?.interval });
     if (seq !== searchSeq) return;
     if (!sub) { phase = 'dark'; return; }
     if (sub.status === 'hit' && sub.entry) {
@@ -151,13 +172,20 @@
     }
 
     // 3. Queued — a worker is on it. Deep gets a longer budget and its own
-    //    progress surface (the research pass narrates its steps).
+    //    progress surface (the research pass narrates its steps). A paced
+    //    preset (interval > 0) can legitimately take hours — the job rests
+    //    between angles server-side, so there's nothing to gain by holding
+    //    this tab open that long. Poll for a reasonable foreground window,
+    //    then hand off to "check the Library later" instead of a scary
+    //    "failed/expired" for a job that's simply resting, not dead.
+    const paced = isDeep && (preset?.interval || 0) > 0;
     phase = 'queued';
     elapsedMs = 0;
+    queuedJobId = sub.jobId;
     queueNote = health.activeWorkers === 1
       ? '1 worker online' : `${health.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      maxMs: isDeep ? DEEP_MAX_MS : undefined,
+      maxMs: paced ? PACED_FOREGROUND_MS : (isDeep ? DEEP_MAX_MS : undefined),
       onTick: (st, ms) => {
         if (seq !== searchSeq) return;
         elapsedMs = ms;
@@ -166,11 +194,17 @@
         // something is wrong — the answer joins the library either way.
         if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
         else if (st === 'claimed') queueNote = 'a worker picked it up…';
+        else if (st === 'pending' && ms > 20_000) queueNote = 'resting between angles…';
       }
     });
     if (seq !== searchSeq) return;
     if (done.status === 'done' && done.entry) {
       entry = done.entry; fromLibrary = false; phase = 'result';
+    } else if (paced && (done.status === 'timeout' || done.status === 'pending')) {
+      // Still legitimately in progress, just paced beyond this foreground
+      // window — not a failure. Point them at the Library instead of
+      // claiming it failed.
+      phase = 'resting';
     } else {
       rejectReason = done.status;   // failed | expired | timeout
       phase = 'rejected';
@@ -309,11 +343,40 @@
           {#if deep}
             <strong style="color: hsl(260 70% 60%);">HQ-style research.</strong>
             A worker breaks your question into angles, runs several searches, and writes a
-            note page for each — then an explorable research tree. Takes a few minutes.
+            note page for each — then an explorable research tree.
           {:else}
             One fast, sourced answer from the on-chain library or the research network — seconds.
           {/if}
         </p>
+
+        {#if deep}
+          <!-- Depth picker — how many angles, how spread out. Quick/Standard
+               finish in one sitting; Deep/Exhaustive pace themselves across
+               hours server-side, so this tab doesn't need to stay open. -->
+          <div role="group" aria-label="Research depth" style="
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+            margin-top: 10px;
+          ">
+            {#each DEPTH_PRESETS as d}
+              <button
+                type="button"
+                aria-pressed={depthKey === d.key}
+                on:click={() => (depthKey = d.key)}
+                style="
+                  padding: 6px 4px; border-radius: 8px; cursor: pointer;
+                  font-family: inherit; font-size: 11px; font-weight: 600;
+                  border: 1.5px solid {depthKey === d.key ? 'hsl(260 70% 58%)' : 'hsl(var(--pg-border))'};
+                  background: {depthKey === d.key ? 'hsl(260 70% 58% / 0.12)' : 'hsl(var(--pg-elevated))'};
+                  color: {depthKey === d.key ? 'hsl(260 70% 55%)' : 'hsl(var(--pg-fg-muted))'};
+                  transition: border-color .12s, background .12s;
+                "
+              >{d.label}</button>
+            {/each}
+          </div>
+          <p style="font-size: 10px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 6px 2px 0;">
+            {depthPreset.blurb}
+          </p>
+        {/if}
       </div>
     {/if}
 
@@ -556,6 +619,35 @@
             border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); font-family: inherit;
             font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg)); cursor: pointer;
           ">Search this site</button>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Phase: a paced Deep/Exhaustive job resting between angles — this is
+         normal, not a failure. It can take hours; nothing to gain by holding
+         this tab open, so point at the Library where it'll show up once the
+         last angle lands. -->
+    {#if phase === 'resting'}
+      <div style="text-align: center; padding: 20px 0 16px;">
+        <Icon name="tree-structure" size={28} style="color: hsl(260 70% 58%); display: block; margin: 0 auto 10px;" />
+        <div style="font-size: 14px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 4px;">
+          Still researching — no need to wait here
+        </div>
+        <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted)); margin-bottom: 16px;">
+          {depthPreset.label} research paces itself between angles, so this can take a while. Your question
+          stays queued and the full research tree will appear in the public library once the last angle lands.
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          <button type="button" on:click={openLibrary} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
+            background: hsl(24 48% 12%); color: white; font-size: 13px; font-weight: 600;
+            border: none; cursor: pointer; font-family: inherit;
+          ">Browse the Library</button>
+          <button type="button" on:click={close} style="
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px;
+            border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); font-family: inherit;
+            font-size: 13px; font-weight: 600; color: hsl(var(--pg-fg)); cursor: pointer;
+          ">Close</button>
         </div>
       </div>
     {/if}

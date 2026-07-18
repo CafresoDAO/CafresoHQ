@@ -316,6 +316,7 @@
         </div>
         <p class="mt-2 text-xs leading-5 text-ink-400">
           We provision and run a private container for you. One click, nothing to install.
+          Includes Gemma 4 as your AI brain — free, no API key needed to start.
         </p>
       </button>
       <button class="card p-4 text-left transition-colors hover:border-brand-500/60" on:click={() => chooseTarget('local')}>
@@ -540,7 +541,8 @@
         {/if}
         <p class="mt-3 text-sm leading-6 text-ink-300">
           Your principal doesn't have a CafresoHQ HQ yet. Provisioning takes about a minute.
-          We'll spin up a private OCI container in Ashburn with 1 OCPU, 6 GB, and ARM64.
+          We'll spin up a private OCI container in Ashburn with 1 OCPU, 6 GB, and ARM64 —
+          with <strong>Gemma 4</strong> ready to chat out of the box, no key required.
         </p>
         <button class="btn-primary mt-4" on:click={startProvision}>Provision my HQ</button>
       {:else if state === 'provisioning' || state === 'waking'}
@@ -571,6 +573,7 @@
       {:else if state === 'existing' || state === 'ready'}
         <p class="mt-3 text-sm leading-6 text-ink-300">
           Your HQ is live. Endpoint adopted, and the rest of the app is already pointed at it.
+          Gemma 4 is ready to chat — see it anytime under <a href="/hq/settings" class="font-semibold text-brand-600 underline dark:text-brand-300">Settings</a>.
         </p>
         <code class="mt-2 block break-all rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-3 py-3 font-mono text-xs text-ink-100">{endpoint}</code>
         <a href="/hq/app" class="btn-primary btn-sm mt-3">Launch HQ</a>

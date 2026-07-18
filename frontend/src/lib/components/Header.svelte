@@ -17,6 +17,7 @@
     { href: '/hq/app', label: 'HQ', slug: 'app' },
     { href: '/hq/chat', label: 'Chat', slug: 'chat' },
     { href: '/hq/search', label: 'Search', slug: 'search' },
+    { href: '/library', label: 'Library', slug: 'library' },
     { href: '/hq/vault', label: 'Vault', slug: 'vault' },
     { href: '/hq/plans', label: 'Plans', slug: 'plans' },
     { href: '/hq/settings', label: 'Settings', slug: 'settings' }
@@ -47,13 +48,16 @@
   <div class="shell-panel mx-auto flex max-w-7xl items-center gap-3 rounded-[1.75rem] px-3 py-2">
     <EcosystemNav active="ai" />
 
-    <nav class="ml-2 hidden min-w-0 flex-1 items-center justify-center gap-1 md:flex">
+    <!-- overflow-x-auto + safe center: when the seven links don't fit (md–lg
+         widths) the row scrolls inside its own box instead of bleeding under
+         the brand on the left and the status chip on the right. -->
+    <nav class="ml-2 hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [justify-content:safe_center] [scrollbar-width:none] md:flex">
       {#each navLinks as l}
         <a
           href={l.href}
           on:click={(e) => onNavClick(e, l.href, l.slug)}
           aria-current={$page.url.pathname === l.href ? 'page' : undefined}
-          class="rounded-full px-3 py-2 text-sm font-semibold transition-colors
+          class="shrink-0 rounded-full px-3 py-2 text-sm font-semibold transition-colors
                  {$page.url.pathname === l.href
                    ? 'bg-ink-50 text-ink-900 shadow-sm'
                    : 'text-ink-200 hover:bg-ink-800/55 hover:text-ink-50'}"
@@ -64,7 +68,11 @@
     </nav>
 
     <div class="ml-auto flex items-center gap-2">
-      <EndpointStatus compact />
+      <!-- Container status is signed-in plumbing — an anonymous visitor has no
+           container, so a "CONTAINER LIVE · localhost" chip only confuses. -->
+      {#if $isAuthenticated}
+        <EndpointStatus compact />
+      {/if}
 
       <button
         class="btn-ghost btn-sm hidden sm:inline-flex"

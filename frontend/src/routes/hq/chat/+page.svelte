@@ -1,6 +1,6 @@
 <script>
   import { ociPost, EndpointError } from '$lib/api/ociClient.js';
-  import { isAuthenticated } from '$lib/stores/auth.js';
+  import { isAuthenticated, login } from '$lib/stores/auth.js';
   import { endpointReady, endpointUrl } from '$lib/stores/endpoint.js';
 
   /** @type {{ role: 'user'|'assistant'|'error', content: string }[]} */
@@ -54,15 +54,23 @@
   <header class="card p-6 sm:p-8">
     <div class="page-kicker">CafresoHQ / Chat</div>
     <h1 class="page-title mt-4">Chat<span class="text-brand-500">.</span></h1>
-    <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
-      Messages route through your private container's Hermes agent at
-      <code class="font-mono text-brand-600 dark:text-brand-300">{$endpointUrl || '(no endpoint)'}</code>.
-    </p>
+    {#if $isAuthenticated}
+      <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
+        Messages route through your private container's Hermes agent at
+        <code class="font-mono text-brand-600 dark:text-brand-300">{$endpointUrl || '(no endpoint)'}</code>.
+      </p>
+    {:else}
+      <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
+        A private AI chat that runs on your own container — nobody else can read it,
+        and the model is provided by Cafreso.
+      </p>
+    {/if}
   </header>
 
   {#if !$isAuthenticated}
-    <div class="card p-5 text-sm leading-6 text-ink-300">
-      Sign in to start a chat. Your messages will be scoped to your ecosystem principal.
+    <div class="card space-y-3 p-5 text-sm leading-6 text-ink-300">
+      <p>Sign in to start chatting — your messages stay private to your identity.</p>
+      <button class="btn-primary" on:click={login}>Sign in with Internet Identity</button>
     </div>
   {:else if !$endpointReady}
     <div class="card p-5 text-sm leading-6 text-ink-300">

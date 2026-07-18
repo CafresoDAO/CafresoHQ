@@ -16,7 +16,7 @@
   import {
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, graphViewerOrigin } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, graphViewerOrigin } from '$lib/api/library.js';
   import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
@@ -56,6 +56,7 @@
   let openPageId = null;     // which note page is expanded in the drawer
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
+  const fullGraphUrl = libraryFullGraphViewerUrl();   // full interactive viewer (topic filter, search, analytics)
   let heroIframe;   // bound to the hero graph iframe; used to gate postMessage
 
   $: {
@@ -215,6 +216,14 @@
         </button>
       </form>
 
+      {#if fullGraphUrl && index && index.count > 0}
+        <a class="lib-explore" href={fullGraphUrl} target="_blank" rel="noopener">
+          <Icon name="graph" size={15} style="flex-shrink:0;" />
+          Explore the full graph — filter by topic, search &amp; trace connections
+          <span class="lib-explore-arrow" aria-hidden="true">→</span>
+        </a>
+      {/if}
+
       {#if searchPhase === 'queued'}
         <div class="lib-search-note">
           <span class="lib-pulse-dot"></span>
@@ -257,8 +266,8 @@
         {/if}
       </div>
 
-      {#if mergedGraphUrl && index && index.count > 0}
-        <a class="lib-graph-open" href={mergedGraphUrl} target="_blank" rel="noopener noreferrer">
+      {#if fullGraphUrl && index && index.count > 0}
+        <a class="lib-graph-open" href={fullGraphUrl} target="_blank" rel="noopener noreferrer">
           Explore the full web <Icon name="arrow-up-right" size={12} />
         </a>
       {/if}
@@ -302,7 +311,7 @@
       <h2 class="lib-browse-title">Browse every answer</h2>
       <p class="lib-browse-sub">
         The whole web as a list — filter or sort below, or
-        <a href={mergedGraphUrl} target="_blank" rel="noopener noreferrer" class="lib-link">explore it visually in the graph ↑</a>
+        <a href={fullGraphUrl} target="_blank" rel="noopener noreferrer" class="lib-link">explore it visually in the graph ↑</a>
       </p>
     </div>
 
@@ -618,6 +627,19 @@
   }
   .lib-search-note.lib-warn { color: hsl(35 80% 72%); }
   .lib-link { color: hsl(45 85% 62%); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
+
+  .lib-explore {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding: 8px 14px;
+    font-size: 12.5px; font-weight: 600; color: hsl(45 85% 66%);
+    background: hsl(45 40% 12% / 0.55); border: 1px solid hsl(45 60% 45% / 0.35);
+    border-radius: 999px; text-decoration: none; line-height: 1;
+    backdrop-filter: blur(6px); transition: border-color .15s, background .15s, transform .15s;
+  }
+  .lib-explore:hover { border-color: hsl(45 85% 55% / 0.7); background: hsl(45 45% 14% / 0.7); transform: translateY(-1px); }
+  .lib-explore-arrow { transition: transform .15s; }
+  .lib-explore:hover .lib-explore-arrow { transform: translateX(3px); }
+  @media (max-width: 560px) { .lib-explore { font-size: 12px; } }
 
   .lib-pulse {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

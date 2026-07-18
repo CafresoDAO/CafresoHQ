@@ -1,8 +1,19 @@
 <script>
   import { isAuthenticated, principalText, login } from '$lib/stores/auth.js';
   import { endpointUrl, endpointHealth, probeHealth } from '$lib/stores/endpoint.js';
+  import { aiSearchOpen, aiSearchPrefill } from '$lib/stores/blog.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
   import ProvisionPanel from '$lib/components/ProvisionPanel.svelte';
+
+  // Signed-out landing: the hero box hands the query to the shared search
+  // modal, which runs it against the public on-chain library immediately.
+  let askQuery = '';
+  function openAsk() {
+    const q = askQuery.trim();
+    if (q) aiSearchPrefill.set(q);
+    aiSearchOpen.set(true);
+    askQuery = '';
+  }
 
   function fmtUptime(seconds) {
     if (seconds == null) return '-';
@@ -15,9 +26,65 @@
 </script>
 
 <svelte:head>
-  <title>Dashboard · CafresoHQ</title>
+  <title>{$isAuthenticated ? 'Dashboard · CafresoHQ' : 'Cafreso AI — ask the on-chain library anything'}</title>
 </svelte:head>
 
+{#if !$isAuthenticated}
+  <!-- ── Signed-out landing: AI first, plumbing later ─────────────────────
+       An anonymous visitor gets the product (search + library), not the
+       control plane. Container status, endpoints, and identity internals
+       only appear after sign-in. -->
+  <section class="space-y-6">
+    <header class="card p-6 sm:p-10 text-center">
+      <div class="page-kicker">Cafreso AI</div>
+      <h1 class="page-title mt-5">Ask anything<span class="text-brand-500">.</span></h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-7 text-ink-300">
+        Every question is answered with real sources by a network of community-run
+        AI workers — and saved forever to a public, on-chain library. No account needed.
+      </p>
+      <form
+        class="mx-auto mt-7 flex max-w-xl flex-col gap-2 sm:flex-row"
+        on:submit|preventDefault={openAsk}
+      >
+        <input
+          class="input flex-1"
+          type="text"
+          placeholder="Ask the on-chain library anything…"
+          bind:value={askQuery}
+        />
+        <button class="btn-primary px-6" type="submit">Ask</button>
+      </form>
+      <p class="mt-3 text-xs text-ink-400">
+        Quick answers in seconds — or pick Deep Research for a multi-angle report.
+      </p>
+    </header>
+
+    <div class="grid gap-4 sm:grid-cols-3">
+      <a href="/library" class="card group p-5 transition-colors hover:border-brand-500/50">
+        <div class="page-kicker">Explore</div>
+        <div class="mt-2 text-lg font-semibold transition-colors group-hover:text-brand-500">The Library</div>
+        <p class="mt-2 text-sm leading-6 text-ink-300">
+          Every answer ever given, free to browse — a growing web of cited, permanent knowledge.
+        </p>
+      </a>
+      <a href="https://cafreso.com/how-it-works" class="card group p-5 transition-colors hover:border-brand-500/50">
+        <div class="page-kicker">Learn</div>
+        <div class="mt-2 text-lg font-semibold transition-colors group-hover:text-brand-500">How it works</div>
+        <p class="mt-2 text-sm leading-6 text-ink-300">
+          The 60-second version: one identity, an office of AI agents, everything on-chain.
+        </p>
+      </a>
+      <div class="card p-5">
+        <div class="page-kicker">Yours</div>
+        <div class="mt-2 text-lg font-semibold">Your private HQ</div>
+        <p class="mt-2 text-sm leading-6 text-ink-300">
+          Sign in to open a pixel office of AI agents — private chat, encrypted vault, your own container.
+        </p>
+        <button class="btn-primary btn-sm mt-4" on:click={login}>Sign in with Internet Identity</button>
+      </div>
+    </div>
+  </section>
+{:else}
 <section class="space-y-6">
   <header class="card overflow-hidden p-6 sm:p-8">
     <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -158,3 +225,4 @@
     </a>
   </div>
 </section>
+{/if}

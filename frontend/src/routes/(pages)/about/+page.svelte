@@ -66,7 +66,7 @@
           <li><Icon name="storefront" size={13} /> Farm-to-cup coffee marketplace</li>
           <li><Icon name="gavel" size={13} /> On-chain governance (SNS proposals)</li>
           <li><Icon name="article" size={13} /> Developer log and community forums</li>
-          <li><Icon name="coin" size={13} /> $nanas token rewards on every purchase</li>
+          <li><Icon name="coin" size={13} /> sGLDT gold rewards on every purchase</li>
         </ul>
       </div>
 

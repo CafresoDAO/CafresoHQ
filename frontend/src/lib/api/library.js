@@ -75,6 +75,17 @@ export function libraryMergedGraphViewerUrl() {
     + `&embed=post&embedorigin=${encodeURIComponent(origin)}`;
 }
 
+/** The same merged web, but the FULL interactive viewer — every control on
+    (topic filter legend, node search, analytics, shortest-path). No chrome=none
+    and no embed bridge: this opens standalone in a new tab, so the hero can stay
+    a clean backdrop while "Explore the full graph" gives visitors the real tool. */
+export function libraryFullGraphViewerUrl() {
+  const base = libraryPublicBase();
+  if (!base) return '';
+  const g = encodeURIComponent(`${base}/library/graph.json`);
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&show_analytics=1`;
+}
+
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */
 export async function findInLibrary(q) {
   if (!stateCanisterConfigured()) return null;

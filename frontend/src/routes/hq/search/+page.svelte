@@ -16,6 +16,17 @@
   import { ensureHqSession, hqSessionReady, endpointNeedsSession } from '$lib/api/hqSession.js';
   import { getKeychain } from '$lib/api/keychain.js';
   import { findInLibrary, publishToLibrary, libraryGraphViewerUrl, pendingCount } from '$lib/api/library.js';
+  import { aiSearchOpen, aiSearchPrefill } from '$lib/stores/blog.js';
+
+  // Signed-out lane: hand the query to the shared anonymous search modal
+  // (public library + community worker network — no account, no container).
+  let publicQuery = '';
+  function openPublicSearch() {
+    const q = publicQuery.trim();
+    if (q) aiSearchPrefill.set(q);
+    aiSearchOpen.set(true);
+    publicQuery = '';
+  }
 
   let query = '';
   let loading = false;
@@ -211,9 +222,31 @@
   </header>
 
   {#if !$isAuthenticated}
-    <div class="card space-y-3 p-5 text-sm leading-6 text-ink-300">
-      <p>Sign in to search — queries run through your own private container and your own keys.</p>
-      <button class="btn-primary" on:click={login}>Sign in with Internet Identity</button>
+    <!-- No sign-in wall: the public lane works for everyone. Signing in adds
+         the private lane (your container, your keys), it doesn't gate search. -->
+    <div class="card p-4">
+      <form class="flex flex-col gap-2 sm:flex-row" on:submit|preventDefault={openPublicSearch}>
+        <input
+          class="input flex-1"
+          type="text"
+          placeholder="Ask the on-chain library anything…"
+          bind:value={publicQuery}
+        />
+        <button class="btn-primary px-6" type="submit">Search</button>
+      </form>
+      <p class="mt-3 text-xs leading-5 text-ink-400">
+        Public search — answered from the on-chain library or by community workers, with
+        sources. No account needed, and Deep Research is one toggle away.
+      </p>
+    </div>
+
+    <div class="card flex flex-wrap items-center gap-3 p-5 text-sm leading-6 text-ink-300">
+      <p class="min-w-0 flex-1">
+        <span class="font-semibold text-ink-100">Want a private lane?</span>
+        Sign in and searches can also run through your own container and your own
+        keys — results stay yours unless you choose to share them.
+      </p>
+      <button class="btn-ghost btn-sm" on:click={login}>Sign in with Internet Identity</button>
     </div>
   {:else}
     <div class="card p-4">

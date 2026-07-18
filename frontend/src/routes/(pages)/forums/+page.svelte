@@ -8,6 +8,8 @@
   import { listForumPosts, stripForumPrefix } from '$lib/api/devlog.js';
   import { isAuthenticated, login, authStatus } from '$lib/stores/auth.js';
   import { fmtDate } from '$lib/data/blog.js';
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
+  import GoldCoin from '$lib/components/GoldCoin.svelte';
 
   let posts = $state([]);
   let loading = $state(true);
@@ -39,7 +41,7 @@
 
 <svelte:head>
   <title>Forums · Cafreso</title>
-  <meta name="description" content="Community forums where anyone with an Internet Identity can start threads, comment, and tip authors in $nanas. Coffee, DAO proposals, and mining strategy." />
+  <meta name="description" content="Community forums where anyone with an Internet Identity can start threads, comment, and tip authors in gold (sGLDT). Coffee, DAO proposals, and mining strategy." />
 </svelte:head>
 
 <div class="mx-auto" style="max-width: 900px; padding: 28px 18px 48px;">
@@ -54,7 +56,7 @@
     </h1>
     <p class="mx-auto text-[14.5px] sm:text-[16px] leading-[1.55] mt-3 max-w-[52ch]" style="color: hsl(var(--pg-fg-muted));">
       Anyone with an Internet Identity can start a thread, comment, or tip
-      other authors with $nanas. Separate from the <a href="/blog" class="underline" style="color: hsl(38 85% 30%);">Dev Log</a>, which stays curated by the core team.
+      other authors with gold (sGLDT). Separate from the <a href="/blog" class="underline" style="color: hsl(38 85% 30%);">Dev Log</a>, which stays curated by the core team.
     </p>
   </div>
 
@@ -116,7 +118,7 @@
       <p class="text-[13.5px] mx-auto mb-4 max-w-[380px] text-muted-foreground">
         {q
           ? 'Try a different search term.'
-          : 'Open the first thread — coffee gossip, DAO proposals, mining strategy, anything goes. Tips in $nanas reward good writing.'}
+          : 'Open the first thread — coffee gossip, DAO proposals, mining strategy, anything goes. Tips in gold reward good writing.'}
       </p>
       {#if !q && $isAuthenticated}
         <Button href="/forums/new">
@@ -156,7 +158,7 @@
               </p>
               <div class="flex items-center gap-3 text-[11.5px] text-muted-foreground">
                 <span class="inline-flex items-center gap-1 tabular-nums">
-                  <Icon name="fire" size={12} /> {p.burned.toLocaleString()} burned
+                  <GoldCoin size={12} /> {fmtGold(goldFromRaw(p.burned))} tipped
                 </span>
                 <span class="inline-flex items-center gap-1 tabular-nums">
                   <Icon name="chat-circle" size={12} /> {p.comments}

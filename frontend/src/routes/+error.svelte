@@ -27,8 +27,8 @@
 
   <div class="error-links">
     <a href="/" class="error-btn primary">Back home</a>
-    <a href="/shop" class="error-btn outline">Shop</a>
-    <a href="/blog" class="error-btn outline">Blog</a>
+    <a href="/library" class="error-btn outline">Search the Library</a>
+    <a href="/blog" class="error-btn outline">Dev Log</a>
   </div>
 </div>
 
@@ -63,7 +63,7 @@
   .error-status {
     font-size: clamp(48px, 12vw, 72px);
     font-weight: 800;
-    color: hsl(var(--pg-accent-purple));
+    color: hsl(32 72% 50%);
     line-height: 1;
     letter-spacing: -0.03em;
     margin-bottom: 12px;
@@ -99,13 +99,13 @@
     transition: all 0.2s;
   }
   .error-btn.primary {
-    background: hsl(var(--pg-accent-purple));
+    /* Brand ochre — same accent the tip/burn surfaces use; the old purple
+       was Minegold's voice, not Cafreso's. */
+    background: hsl(32 72% 50%);
     color: #fff;
-    border: 1.5px solid hsl(var(--pg-accent-purple));
+    border: 1.5px solid hsl(32 72% 45%);
   }
-  /* --pg-accent-purple inverts to a LIGHT purple in dark mode, so white text
-     would wash out — flip to coffee ink, mirroring --pg-solid/--pg-solid-fg. */
-  :global(.dark) .error-btn.primary { color: hsl(var(--ink-900)); }
+  :global(.dark) .error-btn.primary { color: hsl(24 48% 10%); }
   .error-btn.primary:hover {
     filter: brightness(0.92);
   }

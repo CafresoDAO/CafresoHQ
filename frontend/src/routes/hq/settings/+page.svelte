@@ -13,9 +13,29 @@
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
   import { navMode, setNavMode } from '$lib/stores/navMode.js';
+  import { ociGet } from '$lib/api/ociClient.js';
+  import { describeBrain } from '$lib/brain.js';
   import EndpointStatus from '$lib/components/EndpointStatus.svelte';
   import SearchNetworkCard from '$lib/components/SearchNetworkCard.svelte';
   import OperatorPanel from '$lib/components/OperatorPanel.svelte';
+
+  // ── Your AI Brain — which model Hermes is actually calling right now ──
+  let brainState = 'idle';   // idle | loading | ok | error
+  let brain = null;          // {label, sublabel, managed, providerLabel}
+  async function loadBrain() {
+    if (!$endpointUrl) { brainState = 'idle'; brain = null; return; }
+    brainState = 'loading';
+    try {
+      const info = await ociGet('/hermes/provider');
+      brain = describeBrain(info);
+      brainState = 'ok';
+    } catch (_) {
+      brainState = 'error';
+      brain = null;
+    }
+  }
+  $: if ($endpointHealth.state === 'ok' && brainState === 'idle') loadBrain();
+  $: if (!$endpointUrl && brainState !== 'idle') { brainState = 'idle'; brain = null; }
 
   let fleetApiInput = $fleetApiUrl;
   let fleetTokenInput = $fleetApiAuthToken;
@@ -77,7 +97,7 @@
         setEndpoint(url);
         await testProbe();
       } else {
-        alert('No Local Companion found on http://localhost:8787. Start serve.py or paste your OCI URL.');
+        alert('No Local Companion found on this machine. Start it locally, or paste your cloud container URL.');
       }
     } finally {
       detecting = false;
@@ -106,8 +126,8 @@
         <div class="page-kicker">Control Panel / Settings</div>
         <h1 class="page-title mt-4">Settings<span class="text-brand-500">.</span></h1>
         <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
-          Connect CafresoHQ to your private serve.py instance. Your data stays
-          on your container; this app remains the polished command surface.
+          Connect CafresoHQ to your private container. Your data stays on your
+          container; this app remains the polished command surface.
         </p>
       </div>
       <EndpointStatus />
@@ -120,8 +140,8 @@
         <div class="page-kicker">Cloud Endpoint</div>
         <h2 class="mt-2 text-xl font-semibold">Container connection</h2>
         <p class="mt-1 text-sm leading-6 text-ink-400">
-          URL of your CafresoHQ serve.py instance: Local Companion, OCI self-deploy,
-          or OCI Fleet container.
+          URL of your CafresoHQ container: the Local Companion on this machine,
+          a self-deployed cloud container, or one we run for you.
         </p>
       </div>
       <EndpointStatus />
@@ -190,6 +210,44 @@
       {/if}
     {/if}
   </div>
+
+  {#if $endpointUrl}
+    <div class="card p-6 space-y-4">
+      <div>
+        <div class="page-kicker">AI Brain</div>
+        <h2 class="mt-2 text-xl font-semibold">What's answering your chats</h2>
+      </div>
+
+      {#if brainState === 'loading'}
+        <div class="flex items-center gap-2 text-sm text-ink-400">
+          <span class="glow-dot text-amber-400 animate-pulse"></span> Checking your HQ's brain…
+        </div>
+      {:else if brainState === 'ok' && brain}
+        <div class="flex items-start gap-4">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500/20 text-xl">
+            🧠
+          </div>
+          <div class="min-w-0">
+            <p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-100">
+              {brain.label}
+              {#if brain.managed}
+                <span class="pill-ok text-[10px]"><span class="glow-dot text-emerald-400"></span> Provided by Cafreso</span>
+              {/if}
+            </p>
+            <p class="mt-0.5 text-xs text-ink-400">{brain.sublabel}</p>
+          </div>
+        </div>
+        {#if !brain.managed}
+          <p class="text-xs leading-5 text-ink-500">
+            Prefer the included Gemma 4 brain instead? Re-provision without a custom key and
+            your HQ falls back to it automatically.
+          </p>
+        {/if}
+      {:else if brainState === 'error'}
+        <p class="text-xs leading-5 text-ink-500">Couldn't check — your HQ may still be starting up.</p>
+      {/if}
+    </div>
+  {/if}
 
   <div class="card p-6 space-y-4">
     <div>
@@ -348,9 +406,8 @@
     <p class="mt-3 max-w-3xl text-sm leading-6 text-ink-300">
       Go to the <a href="/" class="font-semibold text-brand-600 underline dark:text-brand-300">dashboard</a>
       and click <strong>Provision my HQ</strong>. Your container will be spun up automatically
-      and the endpoint will be set for you. To run a local dev server instead, start
-      <code class="font-mono text-brand-600 dark:text-brand-300">serve.py</code> and click
-      "Detect local companion" above.
+      and the endpoint will be set for you. Running the Local Companion on your own
+      machine instead? Click "Detect local companion" above.
     </p>
   </div>
 </section>

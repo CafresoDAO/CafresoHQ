@@ -1,10 +1,11 @@
 <script>
   import { page } from '$app/stores';
   import { cartCount, cartOpen } from '$lib/stores/cart.js';
-  import { nanasBalance, nanasBalanceSource } from '$lib/stores/blog.js';
+  import { goldBalance, goldBalanceSource } from '$lib/stores/blog.js';
+  import { fmtGold } from '$lib/gold.js';
   import Icon from './Icon.svelte';
   import Logo from './Logo.svelte';
-  import NanasCoin from './NanasCoin.svelte';
+  import GoldCoin from './GoldCoin.svelte';
   import {
     authStatus,
     isAuthenticated,
@@ -48,20 +49,34 @@
   // Items flagged `external: true` cross-link to the Banking.Brave canister.
   // They render as plain anchors (not SPA `sveltekit-preload-code`) so the
   // browser does a full navigation into the other canister's origin.
+  // Six core destinations stay visible; everything else lives under "More".
+  // The old 12-item row scrolled horizontally with the scrollbar hidden, so
+  // at most widths half the site silently disappeared past the clip edge.
   const items = [
     { href: '/', key: 'home', icon: 'house', label: 'Home' },
     { href: '/how-it-works', key: 'how', icon: 'compass', label: 'How it Works' },
     { href: '/projects', key: 'projects', icon: 'stack', label: 'Projects' },
     { href: '/library', key: 'library', icon: 'books', label: 'Library' },
     { href: '/shop', key: 'shop', icon: 'coffee-bean', label: 'Shop' },
-    { href: bbLinks.mine, key: 'mine', icon: 'coin', label: 'Mine', external: true },
-    { href: aiCafresoOrigin, key: 'ai', icon: 'brain', label: 'AI', external: true },
-    { href: '/blog', key: 'blog', icon: 'article', label: 'Dev Log' },
-    { href: '/forums', key: 'forums', icon: 'chats-circle', label: 'Forums' },
-    { href: '/governance', key: 'governance', icon: 'gavel', label: 'Governance', beta: true },
-    { href: '/leaderboard', key: 'leaderboard', icon: 'trophy', label: 'Contest' },
-    { href: '/about', key: 'about', icon: 'info', label: 'About' }
+    { href: '/blog', key: 'blog', icon: 'article', label: 'Dev Log' }
   ];
+  // Labels match the mobile tab bar ("DAO", not "Governance") so the site
+  // reads as one map on every surface.
+  const moreItems = [
+    { href: '/forums', key: 'forums', icon: 'chats-circle', label: 'Forums' },
+    { href: '/governance', key: 'governance', icon: 'gavel', label: 'DAO', beta: true },
+    { href: '/leaderboard', key: 'leaderboard', icon: 'trophy', label: 'Contest' },
+    { href: '/about', key: 'about', icon: 'info', label: 'About' },
+    { href: aiCafresoOrigin, key: 'ai', icon: 'brain', label: 'Cafreso AI', external: true },
+    { href: bbLinks.mine, key: 'mine', icon: 'coin', label: 'Mine', external: true }
+  ];
+
+  let moreOpen = false;
+  let moreWrap;
+  $: moreActive = moreItems.some((it) => it.key === activeKey);
+  function onMoreClickOutside(e) {
+    if (moreWrap && !moreWrap.contains(e.target)) moreOpen = false;
+  }
 
   let navEl;
   let ind = { x: 0, w: 0, v: 0 };
@@ -110,7 +125,11 @@
     restore();
     const on = () => restore();
     window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
+    document.addEventListener('mousedown', onMoreClickOutside);
+    return () => {
+      window.removeEventListener('resize', on);
+      document.removeEventListener('mousedown', onMoreClickOutside);
+    };
   });
 </script>
 
@@ -173,6 +192,55 @@
       {/each}
     </nav>
 
+    <!-- Sibling of the scrollable nav, not a child: the row can scroll while
+         "More" stays pinned and its menu is never clipped by the scroll box. -->
+    <div class="desktop-only relative shrink-0" bind:this={moreWrap}>
+        <button
+          type="button"
+          aria-expanded={moreOpen}
+          on:click={() => (moreOpen = !moreOpen)}
+          class="relative z-[1] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13.5px] font-medium cursor-pointer transition-colors"
+          style="color: {moreActive || moreOpen ? 'hsl(var(--pg-fg))' : 'hsl(var(--pg-fg) / 0.62)'}; background: transparent; border: 0;"
+        >
+          More <span aria-hidden="true" style="font-size: 9px;">{moreOpen ? '▴' : '▾'}</span>
+        </button>
+        {#if moreOpen}
+          <div
+            role="menu"
+            class="absolute left-0 z-50 flex flex-col gap-0.5"
+            style="top: calc(100% + 10px); min-width: 190px; padding: 6px;
+              background: hsl(var(--pg-header));
+              border: 1px solid hsl(var(--pg-header-edge) / 0.8);
+              border-radius: 12px;
+              box-shadow: 0 12px 30px -12px hsl(24 35% 25% / 0.4);"
+          >
+            {#each moreItems as it}
+              {@const active = activeKey === it.key}
+              <a
+                role="menuitem"
+                href={it.href}
+                data-sveltekit-reload={it.external ? 'on' : undefined}
+                rel={it.external ? 'noopener' : undefined}
+                on:click={() => (moreOpen = false)}
+                class="inline-flex items-center gap-2 px-3 py-2 rounded-[8px] text-[13px] font-medium cursor-pointer transition-colors"
+                style="color: {active ? 'hsl(var(--pg-fg))' : 'hsl(var(--pg-fg) / 0.72)'};
+                  background: {active ? 'hsl(var(--pg-hover) / 0.75)' : 'transparent'};"
+                on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.6)')}
+                on:mouseleave={(e) => (e.currentTarget.style.background = active ? 'hsl(var(--pg-hover) / 0.75)' : 'transparent')}
+              >
+                <Icon name={it.icon} size={16} /> {it.label}
+                {#if it.beta}
+                  <span style="font-size: 8.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; background: hsl(var(--pg-accent-purple)); color: white; padding: 1px 4px; border-radius: 4px; line-height: 1.6;">BETA</span>
+                {/if}
+                {#if it.external}
+                  <Icon name="arrow-up-right" size={11} style="opacity: 0.55;" />
+                {/if}
+              </a>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
     <div class="pg-cluster ml-auto flex items-center gap-2.5">
       <!-- Full chip: desktop. Tapping jumps to the profile (wallet) page.
            `title` reflects whether the balance is live from the ICRC-1
@@ -185,16 +253,16 @@
           padding: 6px 12px; border-radius: 999px; font-size: 13px;
           color: hsl(var(--pg-fg));
         "
-        title={$nanasBalanceSource === 'ledger'
-          ? 'Live $nanas balance from the ICRC-1 ledger · tap for wallet'
-          : $nanasBalanceSource === 'ledger-stale'
-            ? 'Ledger lookup failed — showing cached balance'
-            : 'Sign in to see your live $nanas balance'}
+        title={$goldBalanceSource === 'ledger'
+          ? 'Live sGLDT (gold) balance from the ledger · tap for wallet'
+          : $goldBalanceSource === 'ledger-stale'
+            ? 'Ledger lookup failed — balance may be stale'
+            : 'Sign in to see your gold (sGLDT) balance'}
       >
-        <NanasCoin size={16} />
-        {$nanasBalance.toLocaleString()}
-        <span class="font-normal" style="color: hsl(var(--pg-fg-muted)); font-size: 12px;">$nanas</span>
-        {#if $nanasBalanceSource === 'ledger'}
+        <GoldCoin size={16} />
+        {$goldBalance === null ? '—' : fmtGold($goldBalance)}
+        <span class="font-normal" style="color: hsl(var(--pg-fg-muted)); font-size: 12px;">sGLDT</span>
+        {#if $goldBalanceSource === 'ledger'}
           <span
             class="w-[7px] h-[7px] rounded-full shrink-0"
             style="background: hsl(var(--pg-success-fg)); box-shadow: 0 0 0 2px hsl(var(--pg-success-fg) / 0.25);"
@@ -212,10 +280,10 @@
           padding: 4px 8px; border-radius: 999px; font-size: 12px;
           color: hsl(var(--pg-fg));
         "
-        title="$nanas balance · tap for wallet"
+        title="Gold (sGLDT) balance · tap for wallet"
       >
-        <NanasCoin size={14} />
-        {$nanasBalance >= 1000 ? `${(Number($nanasBalance) / 1000).toFixed(1)}k` : $nanasBalance}
+        <GoldCoin size={14} />
+        {$goldBalance === null ? '—' : fmtGold($goldBalance)}
       </a>
 
       <NotificationBell />
@@ -346,6 +414,16 @@
                 >
                   <Icon name="storefront" size={15} /> Admin · Store
                 </a>
+                <a
+                  href="/admin/analytics"
+                  on:click={() => (menuOpen = false)}
+                  class="w-full text-left px-2.5 py-2 rounded-[8px] text-[13px] inline-flex items-center gap-2"
+                  style="color: hsl(var(--pg-fg)); transition: background .15s;"
+                  on:mouseenter={(e) => (e.currentTarget.style.background = 'hsl(var(--pg-hover))')}
+                  on:mouseleave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Icon name="chart-line" size={15} /> Admin · Analytics
+                </a>
               {/if}
               <button
                 type="button"
@@ -447,7 +525,8 @@
     </div>
 
     <nav class="mobile-drawer-nav">
-      {#each items as it}
+      <!-- The drawer is the full map — core items plus everything under More. -->
+      {#each [...items, ...moreItems] as it}
         {@const active = activeKey === it.key}
         <a
           href={it.href}
@@ -507,8 +586,8 @@
 {/if}
 
 <style>
-  /* Desktop nav scrolls horizontally when the 12 links don't fit, so the
-     action cluster (theme toggle, login, cart) is never pushed off-screen.
+  /* The six core links scroll horizontally if they ever don't fit; "More"
+     sits outside this box so it stays pinned and its menu is never clipped.
      Scrollbar hidden — the sliding indicator + hover already signal position. */
   .site-nav {
     overflow-x: auto;

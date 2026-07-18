@@ -28,7 +28,7 @@
   // transfer so the balance UI doesn't lie for the window until the user
   // manually clicks Refresh.
   let sendOpen = $state(false);
-  let sendTokenKey = $state('nanas');
+  let sendTokenKey = $state('sGLDT');
 
   function openSend(tokenKey) {
     sendTokenKey = tokenKey;
@@ -131,7 +131,9 @@
     return a?.hue ?? 45;
   }
 
-  const tokenOrder = ['ICP', 'ckUSDT', 'ckUNI', 'sGLDT', 'nanas'];
+  // Gold first — it's the ecosystem's real economy token now; $nanas stays
+  // listed so legacy test balances remain visible/sendable.
+  const tokenOrder = ['sGLDT', 'ICP', 'ckUSDT', 'ckUNI', 'nanas'];
 
   // Seed audit events — replaced by canister fetch once audit log is live.
   const NOW_SEED = 1746662400000; // 2026-05-08 00:00 UTC
@@ -572,7 +574,7 @@
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-[13.5px]">See the leaderboard</div>
-          <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">Burn $nanas to climb</div>
+          <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">Tip gold to climb</div>
         </div>
         <Icon name="arrow-right" size={14} style="color: hsl(var(--pg-fg-muted));" />
       </a>

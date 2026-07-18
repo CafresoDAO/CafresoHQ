@@ -16,7 +16,7 @@
 
   // Theme + Internet Identity are global to the whole ecosystem app.
   // Surface-specific chrome lives in (pages)/+layout.svelte and hq/+layout.svelte.
-  onMount(() => {
+  onMount(async () => {
     // Migrate legacy cafresoai.* / openclaw* storage keys BEFORE auth/vault read them.
     migrateStorageKeys();
     initTheme();
@@ -31,7 +31,18 @@
       window.location.pathname === '/' &&
       window.location.hostname === 'ai.cafreso.com'
     ) {
-      goto('/hq', { replaceState: true });
+      // Await it so the boot splash below outlives the redirect — visitors go
+      // splash → dashboard, never marketing-home-flash → dashboard.
+      await goto('/hq', { replaceState: true }).catch(() => {});
+    }
+
+    // We're hydrated (and any host redirect has landed) — drop the inline
+    // boot splash from app.html with a short fade.
+    const splash = document.getElementById('boot-splash');
+    if (splash) {
+      splash.style.transition = 'opacity 180ms ease';
+      splash.style.opacity = '0';
+      setTimeout(() => splash.remove(), 200);
     }
   });
 </script>

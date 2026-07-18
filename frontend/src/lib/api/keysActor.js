@@ -42,6 +42,13 @@ export async function getKeysActor() {
     throw new Error('Sign in with Internet Identity to access vault keys');
   }
   const identity = get(authIdentity);
+  // See stateActor.js's getStateActor for why this check exists: isAuthenticated
+  // can desync from the actual identity object, and calling the canister with
+  // an anonymous identity anyway fails as a raw candid dump, not a clean error.
+  // This is the vetKeys path — worth being just as defensive here as there.
+  if (!identity || identity.getPrincipal().isAnonymous()) {
+    throw new Error('Your sign-in session looks stale — please sign out and sign in again.');
+  }
   const principal = identity.getPrincipal().toText();
   if (_actor && _actorPrincipal === principal) return _actor;
 

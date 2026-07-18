@@ -83,7 +83,7 @@
   <title>Dev Log · Cafreso</title>
   <meta
     name="description"
-    content="Every Cafreso build, proposal, and bag of beans — shipped here first, signed on-chain, tippable in $nanas, open to the community."
+    content="Every Cafreso build, proposal, and bag of beans — shipped here first, signed on-chain, tippable in gold (sGLDT), open to the community."
   />
 </svelte:head>
 
@@ -110,7 +110,7 @@
       The Dev Log
     </h1>
     <p style="font-size: clamp(14.5px, 2.2vw, 17px); color: hsl(var(--pg-fg-muted)); margin: 0 auto; max-width: 56ch; line-height: 1.55;">
-      Every build, every proposal, every bag of beans. We ship updates here before anywhere else — signed on-chain, tippable in $nanas, open to the community.
+      Every build, every proposal, every bag of beans. We ship updates here before anywhere else — signed on-chain, tippable in gold, open to the community.
     </p>
     {#if canAuthor}
       <div class="mt-5">
@@ -198,7 +198,7 @@
             Subscribe to the Dev Log
           </h3>
           <p style="margin: 0; font-size: 14px; color: hsl(var(--pg-fg-muted)); line-height: 1.5;">
-            Burn 500 $nanas once, and every new post lands on-chain in your inbox — no email, no tracking, just canister-signed updates.
+            Tip 0.5 sGLDT once, and every new post lands on-chain in your inbox — no email, no tracking, just canister-signed updates.
           </p>
         </div>
         <Button variant="default" size="lg" class="!bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]" on:click={onSubscribe}>
