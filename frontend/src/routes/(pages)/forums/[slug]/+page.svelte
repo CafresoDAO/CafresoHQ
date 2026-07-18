@@ -1,6 +1,7 @@
 <svelte:options runes={true} />
 
 <script>
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import Icon from '$lib/components/Icon.svelte';
@@ -9,7 +10,8 @@
   import CommentThread from '$lib/components/CommentThread.svelte';
   import { fmtDate } from '$lib/data/blog.js';
   import { burnTarget, userBurns } from '$lib/stores/blog.js';
-  import { getForumPost, listComments, postComment, forumSlug } from '$lib/api/devlog.js';
+  import { getForumPost, listComments, postComment, forumSlug, getModeration, setCommentHidden, deleteForumPost } from '$lib/api/devlog.js';
+  import { goto } from '$app/navigation';
   import { isAuthenticated, login, principalText } from '$lib/stores/auth.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
   import { profile } from '$lib/stores/profile.js';
@@ -47,6 +49,37 @@
       (post.authorPrincipal === $principalText || isDevlogAdmin($principalText))
   );
   const authorHandle = $derived(post?.author?.name || 'Guest');
+  const isAdmin = $derived(isDevlogAdmin($principalText));
+
+  // Moderation overlay: hidden-comment keys, loaded once per thread view.
+  // Non-admins never see hidden comments; admins see them dimmed + can toggle.
+  let hiddenKeys = $state(new Set());
+  let deleting = $state(false);
+  let deleteErr = $state(null);
+
+  async function refreshModeration() {
+    try {
+      const mod = await getModeration();
+      hiddenKeys = new Set(mod.hiddenComments);
+    } catch (_) {}
+  }
+
+  async function onToggleHidden(c, nowHidden) {
+    const res = await setCommentHidden(forumSlug(viewSlug), c.id, nowHidden);
+    if (res?.err) { commentErr = res.err; return; }
+    hiddenKeys = new Set(res.ok);
+  }
+
+  async function deleteThread() {
+    if (deleting) return;
+    if (!confirm(`Delete this thread permanently?\n\n"${post?.title}"\n\nThis removes it on-chain for everyone and cannot be undone.`)) return;
+    deleting = true;
+    deleteErr = null;
+    const res = await deleteForumPost(viewSlug);
+    deleting = false;
+    if (res?.err) { deleteErr = res.err; return; }
+    goto('/forums');
+  }
 
   const draftKey = (s) => `cafresohq.forum_draft:${s}`;
   $effect(() => {
@@ -72,7 +105,7 @@
     try {
       const fromCanister = await getForumPost(v);
       if (loadedSlug === v) post = fromCanister;
-      await refreshComments();
+      await Promise.all([refreshComments(), refreshModeration()]);
     } finally {
       if (loadedSlug === v) loading = false;
     }
@@ -135,16 +168,32 @@
     >
       <Icon name="caret-left" size={13} /> Back to Forums
     </a>
-    {#if canEdit}
-      <a
-        href="/forums/new?edit={viewSlug}"
-        class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5 no-underline"
-        style="background: hsl(var(--pg-hover)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
-      >
-        <Icon name="pencil-simple" size={12} /> Edit
-      </a>
-    {/if}
+    <div class="flex items-center gap-2">
+      {#if canEdit}
+        <a
+          href="/forums/new?edit={viewSlug}"
+          class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5 no-underline"
+          style="background: hsl(var(--pg-hover)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
+        >
+          <Icon name="pencil-simple" size={12} /> Edit
+        </a>
+      {/if}
+      {#if isAdmin}
+        <button
+          class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5"
+          style="background: hsl(0 60% 96%); border: 1px solid hsl(0 55% 82%); color: hsl(0 55% 40%); font-family: inherit; cursor: pointer;"
+          disabled={deleting}
+          title="Admin: permanently delete this thread on-chain"
+          on:click={deleteThread}
+        >
+          <Icon name="trash" size={12} /> {deleting ? 'Deleting…' : 'Delete'}
+        </button>
+      {/if}
+    </div>
   </div>
+  {#if deleteErr}
+    <p class="text-[12.5px] mb-3" style="color: hsl(0 55% 45%);">⚠ {deleteErr}</p>
+  {/if}
 
   {#if loading}
     <div class="text-center py-10" style="color: hsl(var(--pg-fg-muted));">
@@ -186,7 +235,7 @@
         >
           <div class="text-[12.5px] inline-flex items-center gap-3 flex-wrap" style="color: hsl(var(--pg-fg-muted));">
             <span class="inline-flex items-center gap-1 tabular-nums">
-              <Icon name="fire" size={13} /> {post.burned.toLocaleString()} $nanas
+              <Icon name="fire" size={13} /> {fmtGold(goldFromRaw(post.burned))} sGLDT
             </span>
             {#if userBurned > 0}
               <span class="inline-flex items-center gap-1 text-[11.5px] font-semibold"
@@ -199,7 +248,7 @@
           <Button on:click={onTip} size="sm"
             class="!bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]"
           >
-            <Icon name="fire" size={13} /> Tip in $nanas
+            <Icon name="fire" size={13} /> Tip gold
           </Button>
         </div>
       </div>
@@ -263,7 +312,13 @@
             No comments yet. Be the first.
           </div>
         {:else}
-          <CommentThread {comments} />
+          <CommentThread
+            {comments}
+            {hiddenKeys}
+            {isAdmin}
+            {onToggleHidden}
+            modSlug={forumSlug(viewSlug)}
+          />
         {/if}
       </div>
     </article>
