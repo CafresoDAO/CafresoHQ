@@ -2,42 +2,30 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "cafresohq",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "serve.py"
-      ],
-      "port": 8787,
-      "autoPort": true
-    },
-    {
-      "name": "cafreso-pages",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "--prefix",
-        "frontend",
-        "run",
-        "preview",
-        "--",
-        "--port",
-        "4173",
-        "--host"
-      ],
-      "port": 4173,
-      "autoPort": true
-    },
-    {
       "name": "hq-ui-static",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
         "-m",
         "http.server",
-        "4180",
+        "8934",
         "--directory",
         "hq-ui"
       ],
-      "port": 4180,
-      "autoPort": true
+      "port": 8934
+    },
+    {
+      "name": "frontend-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5199"
+      ],
+      "port": 5199
     }
   ]
 }
