@@ -87,6 +87,9 @@ async function _putBlob(id, ciphertextB64) {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: ciphertextB64,
+    // Cross-origin (ai.cafreso.com → hq.cafreso.com gateway): attach the
+    // SameSite=None hq_session cookie so Caddy's forward_auth/verifier passes.
+    credentials: 'include',
   });
   if (!r.ok) throw new Error(`PUT blob ${id} → HTTP ${r.status}`);
   // Phase 2: best-effort dual-write of the ciphertext on-chain. No-op unless
@@ -101,6 +104,7 @@ async function _getBlob(id) {
   const r = await fetch(_vaultBaseUrl() + '/blob/' + encodeURIComponent(id), {
     method: 'GET',
     headers: { 'Accept': 'application/octet-stream' },
+    credentials: 'include',   // send hq_session cookie cross-origin (see _putBlob)
   });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`GET blob ${id} → HTTP ${r.status}`);
@@ -110,6 +114,7 @@ async function _getBlob(id) {
 async function _deleteBlob(id) {
   const r = await fetch(_vaultBaseUrl() + '/blob/' + encodeURIComponent(id), {
     method: 'DELETE',
+    credentials: 'include',   // send hq_session cookie cross-origin (see _putBlob)
   });
   if (!r.ok && r.status !== 404) throw new Error(`DELETE blob ${id} → HTTP ${r.status}`);
   import('$lib/api/stateSync.js')

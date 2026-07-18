@@ -1,7 +1,8 @@
 <script>
   import Icon from './Icon.svelte';
   import Avatar from './Avatar.svelte';
-  import NanasCoin from './NanasCoin.svelte';
+  import GoldCoin from './GoldCoin.svelte';
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
   import CategoryTag from './CategoryTag.svelte';
   import OnChainBadge from './OnChainBadge.svelte';
   import { goto } from '$app/navigation';
@@ -95,9 +96,9 @@
           <span class="w-px h-6" style="background: hsl(var(--pg-border));"></span>
           <div class="inline-flex items-center gap-1 text-[13px] font-semibold">
             <Icon name="fire" size={15} style="color: hsl(32 72% 50%);" />
-            {post.burned.toLocaleString()}
-            <NanasCoin size={15} />
-            <span class="font-normal ml-1" style="color: hsl(var(--pg-fg-muted));">burned</span>
+            {fmtGold(goldFromRaw(post.burned))}
+            <GoldCoin size={15} />
+            <span class="font-normal ml-1" style="color: hsl(var(--pg-fg-muted));">sGLDT tipped</span>
           </div>
           <div class="inline-flex items-center gap-1 text-[13px]" style="color: hsl(var(--pg-fg-muted));">
             <Icon name="chat-circle" size={15} /> {post.comments}
@@ -190,8 +191,8 @@
       <div class="inline-flex items-center gap-2.5 text-xs">
         <span class="inline-flex items-center gap-[3px] font-semibold pc-burn" style="color: hsl(24 40% 22%);">
           <Icon name="fire" size={13} style="color: hsl(32 72% 50%);" />
-          {(post.burned / 1000).toFixed(1)}k
-          <NanasCoin size={12} />
+          {fmtGold(goldFromRaw(post.burned))}
+          <GoldCoin size={12} />
         </span>
         <span class="inline-flex items-center gap-[3px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="chat-circle" size={13} /> {post.comments}

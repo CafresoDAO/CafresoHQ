@@ -323,7 +323,9 @@ export async function getTreasury() {
   try {
     const out = await a.getTreasury();
     if (!out || out.length === 0) return null;
-    _treasuryCache = out[0].principal;
+    // Candid `opt principal` → out[0] IS the Principal object; normalize to
+    // text so callers can hand it straight to icrc1.transfer.
+    _treasuryCache = out[0].toText ? out[0].toText() : String(out[0]);
     return _treasuryCache;
   } catch (e) {
     console.warn('[store] getTreasury failed', e);

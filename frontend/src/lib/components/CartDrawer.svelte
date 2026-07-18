@@ -1,6 +1,7 @@
 <script>
+  import GoldPrice from './GoldPrice.svelte';
   import { goto } from '$app/navigation';
-  import { cart, cartOpen, cartTotal } from '$lib/stores/cart.js';
+  import { cart, cartOpen, cartTotal, cartTotalCents } from '$lib/stores/cart.js';
   import { productImage, usd } from '$lib/data/products.js';
   import Icon from './Icon.svelte';
   import Button from './Button.svelte';
@@ -57,8 +58,7 @@
             <div class="flex-1">
               <div class="font-medium text-sm">{it.name}</div>
               <div class="text-[13px] mt-1 inline-flex items-center gap-1">
-                {it.qty} × {it.price.toLocaleString()}
-                <img src="/assets/nanas-coin.png" alt="" class="w-[14px]" />
+                {it.qty} × <GoldPrice cents={it.cents ?? Math.round(it.price * 0.15)} size="sm" />
               </div>
             </div>
             <button
@@ -78,9 +78,7 @@
         >
           <span class="font-bold text-white">Checkout</span>
           <span class="text-[13px] font-normal inline-flex items-center gap-1.5">
-            {$cartTotal.toLocaleString()} Nanas
-            <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
-            <span class="text-[11px] ml-1 opacity-80">${usd($cartTotal)} USD</span>
+            <GoldPrice cents={$cartTotalCents} size="sm" />
           </span>
         </Button>
       </div>

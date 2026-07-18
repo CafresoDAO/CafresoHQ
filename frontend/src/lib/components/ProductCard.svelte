@@ -1,4 +1,5 @@
 <script>
+  import GoldPrice from './GoldPrice.svelte';
   import Icon from './Icon.svelte';
   import { productImage, usd, TAG_LABEL } from '$lib/data/products.js';
   export let p;
@@ -99,11 +100,7 @@
     class="flex items-center justify-between mt-3.5 pt-3.5"
     style="border-top: 1px dashed hsl(var(--pg-border));"
   >
-    <span class="inline-flex items-center gap-1.5 text-[15px] font-semibold">
-      {p.price.toLocaleString()}
-      <img src="/assets/nanas-coin.png" alt="" aria-hidden="true" class="w-[18px]" />
-    </span>
-    <span class="text-xs text-muted-foreground">${usd(p.price)} USD</span>
+    <GoldPrice cents={p.priceCentsUSD ?? Math.round(p.price * 0.15)} />
   </div>
 </svelte:element>
 

@@ -1,4 +1,6 @@
 <script>
+  import GoldCoin from '$lib/components/GoldCoin.svelte';
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
   import { onMount } from 'svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/Button.svelte';
@@ -6,7 +8,7 @@
   import { getLeaderboard } from '$lib/api/devlog.js';
 
   // Leaderboard rows are fetched from the IndexCanister's `getLeaderboard`
-  // query, which aggregates `$nanas` burn receipts by caller principal.
+  // query, which aggregates gold (sGLDT) tip receipts by caller principal.
   // Phase 4+ will add Banking.Brave mining stats via inter-canister call.
   let rows = $state([]);
   let loading = $state(true);
@@ -36,7 +38,7 @@
 
 <svelte:head>
   <title>Leaderboard · Cafreso</title>
-  <meta name="description" content="See the Cafreso community leaderboard, ranked by on-chain activity — $nanas burned on dev-log tips plus UNI mined on Banking.Brave." />
+  <meta name="description" content="See the Cafreso community leaderboard, ranked by on-chain activity — gold (sGLDT) tipped on dev-log posts plus UNI mined on Banking.Brave." />
 </svelte:head>
 
 <div class="mx-auto px-4 py-6 md:p-10" style="max-width: 960px;">
@@ -46,7 +48,7 @@
     </div>
     <h2 class="font-bold my-2" style="font-size: clamp(24px, 5vw, 32px);">Cafreso Community Leaderboard</h2>
     <p class="leading-[1.55] mx-auto text-[14px] sm:text-[15px]" style="max-width: 680px; color: hsl(var(--pg-fg-muted));">
-      Ranked by combined on-chain activity — $nanas burned on dev-log tips
+      Ranked by combined on-chain activity — gold (sGLDT) tipped on dev-log posts
       plus UNI mined and sGLDT refined on Banking.Brave. One Internet Identity,
       one principal, one leaderboard.
     </p>
@@ -105,7 +107,7 @@
         Be the first on the board
       </h3>
       <p class="text-[13.5px] sm:text-[14px] leading-[1.55] mx-auto mb-5" style="max-width: 460px; color: hsl(var(--pg-fg-muted));">
-        No rankings yet. Tip a dev-log post with $nanas or submit your first
+        No rankings yet. Tip a dev-log post with gold or submit your first
         UNI deposit on Banking.Brave — both count toward your rank.
       </p>
       <div class="flex flex-col sm:flex-row gap-2 justify-center">
@@ -125,7 +127,7 @@
           <tr class="text-left" style="background: hsl(var(--pg-hover));">
             <th class="px-3 sm:px-4 py-3 text-[11px] font-semibold uppercase" style="letter-spacing: 0.05em; color: hsl(var(--pg-fg-muted));">#</th>
             <th class="px-3 sm:px-4 py-3 text-[11px] font-semibold uppercase" style="letter-spacing: 0.05em; color: hsl(var(--pg-fg-muted));">Principal</th>
-            <th class="px-3 sm:px-4 py-3 text-[11px] font-semibold uppercase text-right" style="letter-spacing: 0.05em; color: hsl(var(--pg-fg-muted));">$nanas burned</th>
+            <th class="px-3 sm:px-4 py-3 text-[11px] font-semibold uppercase text-right" style="letter-spacing: 0.05em; color: hsl(var(--pg-fg-muted));">sGLDT tipped</th>
           </tr>
         </thead>
         <tbody>
@@ -143,8 +145,8 @@
               </td>
               <td class="px-3 sm:px-4 py-3.5 text-right">
                 <span class="inline-flex items-center gap-1.5 font-medium tabular-nums">
-                  {r.burned.toLocaleString()}
-                  <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
+                  {fmtGold(goldFromRaw(r.burned))}
+                  <GoldCoin size={18} />
                 </span>
               </td>
             </tr>

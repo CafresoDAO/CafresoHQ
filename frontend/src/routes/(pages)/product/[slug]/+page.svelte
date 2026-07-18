@@ -1,4 +1,5 @@
 <script>
+  import GoldPrice from '$lib/components/GoldPrice.svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { PRODUCTS as SEED_PRODUCTS, productImage, usd } from '$lib/data/products.js';
@@ -64,11 +65,9 @@
         <h1 class="text-[36px] font-extrabold m-0 mt-3 leading-[1.1]">{p.name}</h1>
         <div class="flex items-end gap-2">
           <span class="text-[30px] inline-flex items-center gap-2">
-            {p.price.toLocaleString()} Nanas
-            <img src="/assets/nanas-coin.png" alt="" class="w-7" />
+            <GoldPrice cents={p.priceCentsUSD ?? Math.round(p.price * 0.15)} size="lg" />
           </span>
           <span class="text-[13px] text-muted-foreground pb-1">
-            (${usd(p.price)} USD)
           </span>
         </div>
         <p class="m-0 leading-[1.6]">{p.desc}</p>
@@ -105,10 +104,7 @@
           <p class="text-sm text-muted-foreground m-0">This product is coming soon.</p>
         {:else}
           <div class="flex gap-2 items-center text-sm text-primary">
-            <span>{total.toLocaleString()}</span>
-            <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
-            Nanas
-            <span class="text-muted-foreground">(${usd(total)} USD)</span>
+            <GoldPrice cents={(p.priceCentsUSD ?? Math.round(p.price * 0.15)) * qty} />
           </div>
         {/if}
       </div>

@@ -1,6 +1,7 @@
 <script>
   import Icon from './Icon.svelte';
-  import NanasCoin from './NanasCoin.svelte';
+  import GoldCoin from './GoldCoin.svelte';
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
   export let post;
   export let userBurned = 0;
   export let onTip = () => {};
@@ -43,10 +44,10 @@
       font-family: inherit; font-size: 13px; font-weight: 600;
     "
   >
-    <Icon name="fire" size={16} /> Burn <NanasCoin size={14} />
+    <Icon name="fire" size={16} /> Tip <GoldCoin size={14} />
   </button>
   <div class="flex-1 text-xs" style="line-height: 1.3;">
-    <div class="font-semibold">{(post.burned + userBurned).toLocaleString()} burned</div>
+    <div class="font-semibold">{fmtGold(goldFromRaw(post.burned) + userBurned)} sGLDT tipped</div>
     <div style="color: hsl(var(--pg-fg-muted));">{post.comments} comments</div>
   </div>
   <button on:click={scrollToComments} class="bg-transparent border-none cursor-pointer" style="padding: 8px; color: hsl(var(--pg-fg-muted));" aria-label="Comments">

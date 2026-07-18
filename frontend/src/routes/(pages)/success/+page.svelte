@@ -61,7 +61,7 @@
     {#if method === 'card'}
       Your card was charged. The farm team takes it from here — expect a shipping email within two business days.
     {:else}
-      Your $nanas are in the treasury. The farm team takes it from here — expect a shipping email within two business days.
+      Your gold is in the DAO treasury. The farm team takes it from here — expect a shipping email within two business days.
     {/if}
   </p>
 
@@ -101,7 +101,7 @@
       {#if block && method !== 'card'}
         <div class="flex items-center gap-2 text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="link" size={13} />
-          <span>$nanas ledger block</span>
+          <span>Ledger block</span>
           <span class="font-mono" style="color: hsl(var(--pg-fg));">#{block}</span>
         </div>
       {/if}

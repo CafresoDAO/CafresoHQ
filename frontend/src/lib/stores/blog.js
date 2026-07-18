@@ -20,6 +20,14 @@ function persisted(key, fallback) {
 // (checkout, tip, mint).
 export const nanasBalance = persisted('cafreso-blog:nanas', 0);
 export const nanasBalanceSource = writable('local'); // 'local' | 'ledger' | 'ledger-stale'
+
+// ── Gold (sGLDT) — the real economy token ────────────────────────────────────
+// Tips and shop payments moved from the $nanas test token to sGLDT: a low-fee
+// wrapper of GLDT (1:1 gold-backed, sVault/Sneed DAO governed). Fractional —
+// the chip shows 2dp; transfers use the exact amount. $nanas stores stay for
+// legacy wallet display only.
+export const goldBalance = writable(null);            // sGLDT whole units (float) | null = not loaded
+export const goldBalanceSource = writable('none');    // 'none' | 'ledger' | 'ledger-stale'
 export const userBurns = persisted('cafreso-blog:burns', {}); // slug -> amount
 export const tweaks = persisted('cafreso-blog:tweaks', TWEAK_DEFAULTS);
 export const tweaksOpen = writable(false);
@@ -65,9 +73,41 @@ export async function refreshNanasBalance() {
   }
 }
 
+// Optimistic decrement after a gold tip — corrected by the next refresh.
+export function confirmGoldTip(slug, amount) {
+  userBurns.update((b) => ({ ...b, [slug]: (b[slug] || 0) + amount }));
+  goldBalance.update((n) => (n === null ? null : Math.max(0, n - amount)));
+}
+
+export async function refreshGoldBalance() {
+  if (!browser) return;
+  const identity = get(authIdentity);
+  if (!identity) {
+    goldBalance.set(null);
+    goldBalanceSource.set('none');
+    return;
+  }
+  try {
+    const principal = identity.getPrincipal().toText();
+    const raw = await getBalance('sGLDT', principal);
+    if (raw === null || raw === undefined) {
+      goldBalanceSource.set('ledger-stale');
+      return;
+    }
+    goldBalance.set(Number(raw) / 10 ** TOKENS.sGLDT.decimals);
+    goldBalanceSource.set('ledger');
+  } catch (err) {
+    console.warn('[blog.js] refreshGoldBalance failed', err);
+    goldBalanceSource.set('ledger-stale');
+  }
+}
+
 // Auto-refresh whenever the signed-in principal changes.
 if (browser) {
   authIdentity.subscribe((id) => {
-    if (id) refreshNanasBalance();
+    if (id) {
+      refreshNanasBalance();
+      refreshGoldBalance();
+    }
   });
 }

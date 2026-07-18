@@ -1,6 +1,7 @@
 <script>
   import Icon from './Icon.svelte';
-  import NanasCoin from './NanasCoin.svelte';
+  import GoldCoin from './GoldCoin.svelte';
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
 
   export let post;
   export let userBurned = 0;
@@ -64,7 +65,7 @@
 
   <button
     on:click={onTip}
-    aria-label={userBurned > 0 ? `You burned ${userBurned} $nanas — burn more` : 'Burn $nanas on this post'}
+    aria-label={userBurned > 0 ? `You tipped ${fmtGold(userBurned)} sGLDT — tip more` : 'Tip gold (sGLDT) on this post'}
     class="flex flex-col items-center gap-1.5 cursor-pointer"
     style="
       background: {userBurned > 0 ? 'hsl(45 95% 62%)' : 'hsl(var(--pg-elevated))'};
@@ -78,16 +79,16 @@
   >
     <Icon name="fire" size={28} weight="fill" style="color: hsl(32 72% 45%);" />
     <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;">
-      {(post.burned + userBurned).toLocaleString()}
+      {fmtGold(goldFromRaw(post.burned) + userBurned)}
     </div>
     <div class="inline-flex items-center gap-1 text-[11px] rb-burned" style="color: hsl(24 40% 22%);">
-      <NanasCoin size={11} /> burned
+      <GoldCoin size={11} /> tipped
     </div>
     <div
       class="mt-0.5 font-semibold text-[11px] rb-burn-pill"
       style="padding: 4px 10px; border-radius: 999px; background: hsl(24 48% 12%); color: hsl(var(--pg-solid-fg));"
     >
-      {userBurned > 0 ? `You burned ${userBurned}` : 'Tap to burn'}
+      {userBurned > 0 ? `You tipped ${fmtGold(userBurned)}` : 'Tap to tip gold'}
     </div>
   </button>
 
