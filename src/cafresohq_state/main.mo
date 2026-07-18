@@ -1916,6 +1916,25 @@ actor CafresoHQState {
   // worker built. Absent for every fast entry and every entry before today.
   stable var researchPages : OrderedMap.Map<Text, Text> = tOps.empty<Text>();
 
+  // ── Resumable deep research (multi-hour, many-claim jobs) ─────────────────
+  // Side tables keyed by job id, same pattern as jobModes/libraryAskedBy —
+  // absence means "not requested" / "not started", so every job before this
+  // upgrade (and every fast/news job forever) behaves exactly as it does
+  // today. A deep job now survives MANY claims: each claim does one angle,
+  // reports back via the new "progress" worker op, and rests (pending, not
+  // claimable) until jobNextRunAt — only the LAST angle uses the existing
+  // "fulfill" op, unchanged, with the full accumulated pages.
+  stable var jobTopicsWanted : OrderedMap.Map<Text, Nat> = tOps.empty<Nat>();
+  stable var jobIntervalSec  : OrderedMap.Map<Text, Nat> = tOps.empty<Nat>();
+  // Opaque worker-owned JSON: {"angles":[...],"pages":[...],"nextAngle":N,
+  // "tokens":N,"model":"..."}. Never parsed here — same "store opaque
+  // worker-produced blob" treatment as graphJson/pagesJson elsewhere.
+  stable var jobProgress : OrderedMap.Map<Text, Text> = tOps.empty<Text>();
+  // A resting deep job isn't claimable again until this time (ns). Absent =
+  // claimable now. This IS the "interval" — real wall-clock spacing between
+  // angles, not just a courtesy delay.
+  stable var jobNextRunAt : OrderedMap.Map<Text, Int> = tOps.empty<Int>();
+
   let MAX_PENDING_JOBS : Nat = 25;
   let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
   let CLAIM_LEASE_NS : Int = 240_000_000_000;         // 4 min claimed → back to pending
@@ -1925,6 +1944,14 @@ actor CafresoHQState {
   let DEEP_LEASE_NS : Int = 380_000_000_000;          // ~6.3 min
   let MAX_JOB_ATTEMPTS : Nat = 3;
   let MAX_JOBS_KEPT : Nat = 500;
+  // Resumable deep research caps — a job the submitter never comes back to
+  // must not squat on Brave quota / worker slots forever, and no single
+  // submitter should be able to occupy the whole deep pipeline.
+  let DEEP_MAX_TOPICS_USER : Nat = 24;                 // ceiling on requested angles
+  let DEEP_MAX_INTERVAL_SEC : Nat = 21_600;            // 6h ceiling on pacing between angles
+  let DEEP_DEFAULT_INTERVAL_SEC : Nat = 60;            // used when the submitter didn't ask for pacing
+  let DEEP_JOB_MAX_LIFETIME_NS : Int = 86_400_000_000_000; // 24h wall-clock cap, resting time included
+  let MAX_INFLIGHT_DEEP_JOBS : Nat = 10;                // concurrent pending+claimed deep jobs, network-wide
   // DAY_NS reused from the Night Shift wake section below (same 24h constant).
 
   func jobMode(id : Text) : Text {
@@ -1950,13 +1977,36 @@ actor CafresoHQState {
 
   func putJob(j : SearchJob) { searchJobs := tOps.put(searchJobs, j.id, j) };
 
+  // A job with saved progress has completed at least one angle and is
+  // deliberately resting (pending, not claimable) until jobNextRunAt — this
+  // is NOT the same as a freshly-submitted job nobody has picked up yet, and
+  // must not be reaped by the short unclaimed-pending TTL below.
+  func isRestingDeep(j : SearchJob) : Bool {
+    j.status == "pending" and (switch (tOps.get(jobProgress, j.id)) { case (?_) true; case null false });
+  };
+
+  func putJobDelete(id : Text) {
+    searchJobs := tOps.delete(searchJobs, id);
+    jobModes := tOps.delete(jobModes, id);
+    jobTopicsWanted := tOps.delete(jobTopicsWanted, id);
+    jobIntervalSec := tOps.delete(jobIntervalSec, id);
+    jobProgress := tOps.delete(jobProgress, id);
+    jobNextRunAt := tOps.delete(jobNextRunAt, id);
+  };
+
   // Lazy queue maintenance — no extra timer. Expire stale pendings, reclaim
   // broken leases, prune terminal history past the cap.
   func tendJobs() {
     bumpJobDay();
     let expired = Buffer.Buffer<SearchJob>(4);
     for ((_, j) in tOps.entries(searchJobs)) {
-      if (j.status == "pending" and now() - j.submittedAt > JOB_PENDING_TTL_NS) { expired.add(j) }
+      if (isRestingDeep(j)) {
+        // Only the overall wall-clock cap applies while resting — the short
+        // pending TTL would otherwise kill every multi-hour deep job at its
+        // very first pause.
+        if (now() - j.submittedAt > DEEP_JOB_MAX_LIFETIME_NS) { expired.add(j) };
+      }
+      else if (j.status == "pending" and now() - j.submittedAt > JOB_PENDING_TTL_NS) { expired.add(j) }
       // Per-job lease: reaping a deep job on the fast 4-min lease would yank it
       // back mid-run, every time, and three strikes later fail it for good —
       // deep research would never once complete.
@@ -1984,13 +2034,11 @@ actor CafresoHQState {
         if (excess == 0) { break prune };
         if (j.status != "pending" and j.status != "claimed") { victims.add(id); excess -= 1 };
       };
-      // Drop the mode alongside the job. A side table keyed by an id that no
-      // longer exists is a leak that MAX_JOBS_KEPT would never catch — the job
-      // map stays capped at 500 while jobModes grows without bound forever.
-      for (id in victims.vals()) {
-        searchJobs := tOps.delete(searchJobs, id);
-        jobModes := tOps.delete(jobModes, id);
-      };
+      // Drop the mode (and the resumable-deep side tables) alongside the job.
+      // A side table keyed by an id that no longer exists is a leak that
+      // MAX_JOBS_KEPT would never catch — the job map stays capped at 500
+      // while these grow without bound forever.
+      for (id in victims.vals()) { putJobDelete(id) };
     };
   };
 
@@ -2000,8 +2048,20 @@ actor CafresoHQState {
     n;
   };
 
+  // Abuse guard: every deep job currently occupying a pipeline slot, whether
+  // actively claimed or resting between angles. Caps how much of the deep
+  // lane (and how many multi-hour jobs) one submitter — or a burst of
+  // submitters — can occupy at once.
+  func inflightDeepCount() : Nat {
+    var n = 0;
+    for ((id, j) in tOps.entries(searchJobs)) {
+      if ((j.status == "pending" or j.status == "claimed") and jobMode(id) == "deep") { n += 1 };
+    };
+    n;
+  };
+
   public type SubmitOutcome = { #hit : Text; #queued : Text; #rejected : Text };
-  func submitSearch(qRaw : Text, modeRaw : Text) : SubmitOutcome {
+  func submitSearch(qRaw : Text, modeRaw : Text, topicsWanted : ?Nat, intervalSec : ?Nat) : SubmitOutcome {
     tendJobs();
     let q = qRaw;
     let norm = libKey(q);
@@ -2018,6 +2078,10 @@ actor CafresoHQState {
     // it gets its OWN budget. Sharing the 500/day would let a handful of deep
     // requests quietly drain the month out from under ordinary searches.
     if (deep and deepAnsweredToday >= deepDailyBudget) { return #rejected("deep-budget") };
+    // A deep job can now occupy its slot for up to 24h (resting between
+    // angles), not seconds — so it needs its OWN concurrency cap, separate
+    // from the general pending-queue cap below.
+    if (deep and inflightDeepCount() >= MAX_INFLIGHT_DEEP_JOBS) { return #rejected("deep-busy") };
     if (livePendingCount() >= MAX_PENDING_JOBS) { return #rejected("busy") };
     if (activeWorkerCount() == 0) { return #rejected("dark") };
     jobSeq += 1;
@@ -2025,8 +2089,23 @@ actor CafresoHQState {
     putJob({ id; q; norm; status = "pending"; submittedAt = now(); claimedBy = null;
              claimedAt = 0; attempts = 0; libraryId = null; error = "" });
     // Only store the exception. "fast" is the default everywhere (jobMode), so
-    // writing it would double this table's size to say nothing.
-    if (deep) { jobModes := tOps.put(jobModes, id, "deep") };
+    // writing it would double this table's size to say nothing. "news" rides
+    // the same table: the worker reads it off the claim to pick the Brave
+    // vertical; budget-wise news is a single-shot, so it meters as fast.
+    if (modeRaw == "deep" or modeRaw == "news") { jobModes := tOps.put(jobModes, id, modeRaw) };
+    // Depth/pacing requested at submit time — absent or 0 means "let the
+    // worker use its own operator-configured default", exactly today's
+    // behavior. Capped server-side regardless of what a caller asks for.
+    if (deep) {
+      switch (topicsWanted) {
+        case (?n) { if (n > 0) { jobTopicsWanted := tOps.put(jobTopicsWanted, id, Nat.min(n, DEEP_MAX_TOPICS_USER)) } };
+        case null {};
+      };
+      switch (intervalSec) {
+        case (?n) { if (n > 0) { jobIntervalSec := tOps.put(jobIntervalSec, id, Nat.min(n, DEEP_MAX_INTERVAL_SEC)) } };
+        case null {};
+      };
+    };
     jobsByNorm := tOps.put(jobsByNorm, norm, id);
     #queued(id);
   };
@@ -2084,7 +2163,7 @@ actor CafresoHQState {
       body = Text.encodeUtf8("{\"error\":\"unauthorized\"}"); streaming_strategy = null; upgrade = null };
   };
 
-  // POST /worker/heartbeat | claim | fulfill | fail
+  // POST /worker/heartbeat | claim | fulfill | fail | progress
   func workerRoute(req : HttpRequest) : ?HttpResponse {
     var path = req.url;
     switch (Text.split(path, #char '?').next()) { case (?p) path := p; case null {} };
@@ -2114,14 +2193,30 @@ actor CafresoHQState {
     };
 
     if (op == "claim") {
-      // Oldest pending job wins.
+      // Oldest pending job wins — but a resting deep job (mid-run, waiting out
+      // its interval) is skipped until it's actually due. Without this check
+      // "oldest wins" would hand it straight back out the instant it rests,
+      // making the requested interval meaningless.
       label find for ((_, j) in tOps.entries(searchJobs)) {
         if (j.status == "pending") {
-          putJob({ j with status = "claimed"; claimedBy = ?p; claimedAt = now() });
-          // `mode` tells the worker which loop to run and, implicitly, how long
-          // it has: the lease it is racing is leaseFor(id), not a fixed 240s.
-          return ?libJsonNoStore("{\"job\":{\"id\":\"" # jsonEsc(j.id) # "\",\"q\":\"" # jsonEsc(j.q)
-                                 # "\",\"mode\":\"" # jobMode(j.id) # "\"}}");
+          let due = switch (tOps.get(jobNextRunAt, j.id)) { case (?t) now() >= t; case null true };
+          if (due) {
+            putJob({ j with status = "claimed"; claimedBy = ?p; claimedAt = now() });
+            // `mode` tells the worker which loop to run and, implicitly, how
+            // long it has: the lease it is racing is leaseFor(id), not a fixed
+            // 240s. `topics`/`interval` carry the submitter's requested depth
+            // and pacing (empty string = "use your own default", unchanged
+            // behavior). `progress` hands back exactly what an earlier claim
+            // left via the "progress" op — empty on a job's first claim.
+            let topics = switch (tOps.get(jobTopicsWanted, j.id)) { case (?n) Nat.toText(n); case null "" };
+            let interval = switch (tOps.get(jobIntervalSec, j.id)) { case (?n) Nat.toText(n); case null "" };
+            let progress = switch (tOps.get(jobProgress, j.id)) { case (?pr) pr; case null "" };
+            return ?libJsonNoStore("{\"job\":{\"id\":\"" # jsonEsc(j.id) # "\",\"q\":\"" # jsonEsc(j.q)
+                                   # "\",\"mode\":\"" # jobMode(j.id)
+                                   # "\",\"topics\":\"" # topics
+                                   # "\",\"interval\":\"" # interval
+                                   # "\",\"progress\":\"" # jsonEsc(progress) # "\"}}");
+          };
         };
       };
       return ?libJsonNoStore("{\"job\":null}");
@@ -2147,6 +2242,31 @@ actor CafresoHQState {
         };
         case null {};
       };
+      return ?libJsonNoStore("{\"ok\":true}");
+    };
+
+    if (op == "progress") {
+      // Deep-research checkpoint: one angle done, more to go. Lines: 5 jobId ·
+      // 6 progressJson (opaque, worker-owned — the same {angles,pages,
+      // nextAngle,tokens,model} blob the next "claim" hands back unchanged).
+      // The LAST angle does NOT use this op — it goes straight to "fulfill",
+      // unchanged, with the full accumulated pages. That keeps this op purely
+      // additive: no existing fast/news code path is touched by its presence.
+      if (lines.size() < 7) { return ?workerDeny() };
+      let jid = lines[5];
+      let j = switch (tOps.get(searchJobs, jid)) { case (?x) x; case null { return ?workerDeny() } };
+      if (j.status != "claimed" or j.claimedBy != ?p or jobMode(jid) != "deep") {
+        return ?libJsonNoStore("{\"ok\":false,\"error\":\"not-your-claim\"}");
+      };
+      let body = switch (pctDecode(lines[6])) { case (?t) textTake(t, LIB_MAX_GRAPH); case null { return ?workerDeny() } };
+      jobProgress := tOps.put(jobProgress, jid, body);
+      let intervalNs : Int = (switch (tOps.get(jobIntervalSec, jid)) { case (?n) n; case null DEEP_DEFAULT_INTERVAL_SEC })
+                             * 1_000_000_000;
+      jobNextRunAt := tOps.put(jobNextRunAt, jid, now() + intervalNs);
+      // Back to pending (not claimed, no attempt charged — this isn't a
+      // failure) so the NEXT claim — after the interval — picks up right
+      // where this one left off.
+      putJob({ j with status = "pending"; claimedBy = null });
       return ?libJsonNoStore("{\"ok\":true}");
     };
 
@@ -2311,11 +2431,18 @@ actor CafresoHQState {
       // upgrade lands. Absent → "fast", which is what every existing caller
       // means.
       var mode = "fast";
+      // topics/interval ride the same query string, same absent-means-default
+      // contract as mode: a live client that never sends them keeps getting
+      // exactly today's behavior (operator env-var default, no pacing).
+      var topicsWanted : ?Nat = null;
+      var intervalSec : ?Nat = null;
       for (kv in Text.split(queryStr, #char '&')) {
         let pair = Iter.toArray(Text.split(kv, #char '='));
-        if (pair.size() == 2 and pair[0] == "mode" and pair[1] == "deep") { mode := "deep" };
+        if (pair.size() == 2 and pair[0] == "mode" and (pair[1] == "deep" or pair[1] == "news")) { mode := pair[1] };
+        if (pair.size() == 2 and pair[0] == "topics") { topicsWanted := natFromText(pair[1]) };
+        if (pair.size() == 2 and pair[0] == "interval") { intervalSec := natFromText(pair[1]) };
       };
-      switch (submitSearch(q, mode)) {
+      switch (submitSearch(q, mode, topicsWanted, intervalSec)) {
         case (#hit(id)) {
           let e = switch (tOps.get(libraryEntries, id)) { case (?x) ?entryJson(x); case null null };
           return ?libJsonNoStore("{\"status\":\"hit\",\"entry\":" #

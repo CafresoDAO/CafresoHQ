@@ -674,11 +674,15 @@ _SW_TTFT_TIMEOUT = 60.0    # first token: prefill on a saturated box is slow
 _SW_IDLE_TIMEOUT = float(os.environ.get('WORKER_IDLE_TIMEOUT', '') or 25)
 _SW_MAX_TOKENS = int(os.environ.get('WORKER_MAX_TOKENS', '') or 700)
 _SW_ANSWER_CAP = 4000      # LIB_MAX_ANSWER — the canister rejects anything longer
-# Deep research (job['mode']=='deep') runs a multi-hop loop — plan angles, then
-# search + write a note page per angle, then synthesise — so it needs a bigger
-# wall-clock budget. The canister hands deep jobs a ~6.3-min lease
-# (DEEP_LEASE_NS); this sits ~30s inside it, same margin discipline as the fast
-# budget vs the 240s lease.
+# Deep research (job['mode']=='deep') is now RESUMABLE: one angle gets done
+# per claim, checkpointed via the 'progress' worker op, then the job rests
+# (pending, not claimable) until the submitter's requested interval elapses —
+# real wall-clock spacing enforced by the canister's jobNextRunAt, not by
+# anything in this process. Only the LAST angle synthesises + fulfills, same
+# as before. Each claim still needs a bigger wall-clock budget than a fast job
+# (planning on the first claim, one Brave+note step every claim). The canister
+# hands deep jobs a ~6.3-min lease (DEEP_LEASE_NS); this sits ~30s inside it,
+# same margin discipline as the fast budget vs the 240s lease.
 _SW_DEEP_BUDGET = float(os.environ.get('WORKER_DEEP_BUDGET', '') or 350)
 _SW_DEEP_MAX_TOPICS = int(os.environ.get('WORKER_DEEP_TOPICS', '') or 5)
 _SW_DEEP_PAGE_CAP = 1400   # per note-page body; the whole tree caps at LIB_MAX_GRAPH
@@ -807,9 +811,13 @@ def _brave_refund(kind, n):
             pass
 
 
-def _sw_brave(q, deadline=None, kind='human'):
+def _sw_brave(q, deadline=None, kind='human', vertical='web'):
     """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
-    stored sources are title+url (deliberate Brave-ToS posture)."""
+    stored sources are title+url (deliberate Brave-ToS posture).
+
+    vertical='news' hits Brave's news endpoint instead — fresh, dated,
+    publisher-attributed results for time-sensitive questions. Same key, same
+    monthly cap, so it spends the same lane as a web query."""
     key = os.environ.get('BRAVE_API_KEY', '').strip()
     if not key:
         return None
@@ -817,7 +825,8 @@ def _sw_brave(q, deadline=None, kind='human'):
         print('[brave] %s query refused — month at %d/%d (reserve for higher '
               'priority callers)' % (kind, _brave_usage().get('used', 0), _BRAVE_CAP))
         return None
-    url = ('https://api.search.brave.com/res/v1/web/search?q='
+    endpoint = 'news/search' if vertical == 'news' else 'web/search'
+    url = ('https://api.search.brave.com/res/v1/' + endpoint + '?q='
            + urllib.parse.quote(q) + '&count=8')
     req = urllib.request.Request(url, headers={
         'Accept': 'application/json', 'Accept-Encoding': 'identity',
@@ -825,12 +834,20 @@ def _sw_brave(q, deadline=None, kind='human'):
     timeout = 30 if deadline is None else min(30, _sw_left(deadline))
     with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read().decode('utf-8'))
+    # Web nests results under .web.results; news returns them at top level.
+    rows = (data.get('results') if vertical == 'news'
+            else (data.get('web') or {}).get('results')) or []
     out = []
-    for x in (data.get('web') or {}).get('results', [])[:8]:
+    for x in rows[:8]:
         if x.get('url'):
+            desc = re.sub(r'<[^>]+>', '', x.get('description') or '')
+            # News results carry an age ("2 hours ago") — prepend it so the
+            # LLM can weigh recency and cite dates in the answer.
+            if vertical == 'news' and x.get('age'):
+                desc = '[%s] %s' % (x['age'], desc)
             out.append({'title': (x.get('title') or x['url'])[:600],
                         'url': x['url'][:600],
-                        'description': re.sub(r'<[^>]+>', '', x.get('description') or '')})
+                        'description': desc})
     return out
 
 
@@ -1380,6 +1397,10 @@ def _sw_graph(q, results, notes=None):
 # NOTE PAGE, then write a top-level synthesis over the pages. The output is a
 # research TREE (query → topics → sources) plus the note pages, which the viewer
 # lets a reader click through. It spends the reserved `deep` Brave lane.
+#
+# RESUMABLE: one angle per claim (see _sw_deep_step), checkpointed via the
+# 'progress' worker op and resumed on a later claim after the submitter's
+# requested interval — see _sw_process_deep for the checkpoint/fulfill split.
 
 def _sw_json_obj(text):
     """First JSON object/array in possibly code-fenced model text, or None.
@@ -1429,22 +1450,26 @@ def _sw_complete(prompt, deadline, max_tokens=600, schema=None):
     return '', '', 0, ''
 
 
-def _sw_deep_plan(q, deadline):
-    """Decompose the question into distinct, independently-searchable angles."""
+def _sw_deep_plan(q, deadline, max_topics=None):
+    """Decompose the question into distinct, independently-searchable angles.
+    max_topics overrides the operator default (_SW_DEEP_MAX_TOPICS) — this is
+    the submitter's requested depth, already capped server-side by the
+    canister (DEEP_MAX_TOPICS_USER) before it ever reaches here."""
+    topics = max_topics if max_topics else _SW_DEEP_MAX_TOPICS
     prompt = (
         'You are planning a research report that will thoroughly answer a '
         'question. Break it into %d DISTINCT, focused sub-questions ("angles") '
         'that together cover the topic — e.g. background, mechanism, evidence, '
         'trade-offs, current state. Each must be independently searchable on the '
         'open web.\nOutput STRICT JSON only: {"angles": ["...", "..."]}\n\n'
-        'Question: %s' % (_SW_DEEP_MAX_TOPICS, q))
+        'Question: %s' % (topics, q))
     text, model, tokens, _via = _sw_complete(prompt, deadline, max_tokens=400)
     obj = _sw_json_obj(text) or {}
     angles = obj.get('angles') if isinstance(obj, dict) else obj
     out = []
     for a in (angles or []):
         a = str(a).strip()
-        if a and a not in out and len(out) < _SW_DEEP_MAX_TOPICS:
+        if a and a not in out and len(out) < topics:
             out.append(a[:200])
     return out, model, tokens
 
@@ -1527,55 +1552,112 @@ def _sw_deep_graph(q, pages):
                        'title': 'Deep research: ' + q, 'ts': int(time.time() * 1000)})
 
 
-def _sw_deep(q, deadline):
-    """Run the deep-research loop. Returns
-    (answer, model, pages, graphJson, tokens, sources) or None to signal the
-    caller should degrade to a normal single-shot answer."""
-    total_tokens = 0
-    angles, model_seen, pt = _sw_deep_plan(q, deadline)
-    total_tokens += pt
-    if not angles:
-        return None                       # planning failed → degrade
-    print('[deep] %s → %d angles' % (q[:60], len(angles)))
-    pages, all_sources = [], []
-    for angle in angles:
-        # Leave room for the synthesis call + graph + fulfill upload.
-        if _sw_left(deadline) < 45:
-            print('[deep] budget low (%.0fs left) — stopping at %d pages'
-                  % (_sw_left(deadline), len(pages)))
-            break
+def _sw_deep_step(q, deadline, progress_in, max_topics):
+    """Advance a resumable deep-research job by exactly ONE angle — one
+    checkpoint per claim, so 'iterations' in the UI map 1:1 to real angles
+    attempted, each spaced by the submitter's requested interval (enforced by
+    the canister's jobNextRunAt, not by anything in this process).
+
+    progress_in: the dict from a prior 'progress' checkpoint (angles, pages,
+    nextAngle, tokens, model), or None on a job's first claim, which plans the
+    angle list fresh. Returns {'angles','pages','tokens','model','nextAngle',
+    'done'} or None to signal the caller should degrade to a single-shot
+    answer (planning failed, or nothing usable was ever produced)."""
+    if progress_in:
+        angles = progress_in.get('angles') or []
+        pages = progress_in.get('pages') or []
+        tokens = progress_in.get('tokens') or 0
+        model_seen = progress_in.get('model') or ''
+        next_i = progress_in.get('nextAngle', len(pages))
+    else:
+        angles, model_seen, pt = _sw_deep_plan(q, deadline, max_topics)
+        if not angles:
+            return None                       # planning failed → degrade
+        print('[deep] %s → %d angles (requested topics=%s)'
+              % (q[:60], len(angles), max_topics or _SW_DEEP_MAX_TOPICS))
+        pages, tokens, next_i = [], pt, 0
+
+    if next_i < len(angles) and _sw_left(deadline) >= 45:
+        angle = angles[next_i]
         results = _sw_brave(angle, deadline, kind='deep')
-        if not results:
-            continue                      # deep lane refused, or no results
-        title, body, nmodel, nt = _sw_deep_note(q, angle, results, deadline)
-        total_tokens += nt
-        model_seen = nmodel or model_seen
-        pages.append({'id': 't%d' % len(pages), 'title': title, 'question': angle,
-                      'body': body,
-                      'sources': [{'title': r['title'], 'url': r['url'], 'note': ''}
-                                  for r in results]})
-        all_sources.extend(results)
+        if results:
+            title, body, nmodel, nt = _sw_deep_note(q, angle, results, deadline)
+            tokens += nt
+            model_seen = nmodel or model_seen
+            pages.append({'id': 't%d' % len(pages), 'title': title, 'question': angle,
+                          'body': body, 'ranAt': int(time.time() * 1000),
+                          'sources': [{'title': r['title'], 'url': r['url'], 'note': ''}
+                                      for r in results]})
+        else:
+            # No results for this angle — still a real, receipt-worthy
+            # iteration. Recorded (empty body/sources) rather than silently
+            # skipped, so the reader can see what was tried and came up dry.
+            pages.append({'id': 't%d' % len(pages), 'title': angle, 'question': angle,
+                          'body': '', 'ranAt': int(time.time() * 1000), 'sources': []})
+        next_i += 1
     if not pages:
-        return None                       # every angle failed → degrade
+        return None                           # nothing usable yet → degrade
+    return {'angles': angles, 'pages': pages, 'tokens': tokens, 'model': model_seen,
+            'nextAngle': next_i, 'done': next_i >= len(angles)}
+
+
+def _sw_process_deep(job, jid, q, deadline, started, P):
+    """Deep-research checkpoint/fulfill. Returns True if this claim handled the
+    job (either checkpointed a mid-run angle via 'progress', or terminally
+    fulfilled it), False to let the caller fall back to a single-shot answer.
+
+    Reads job['progress'] (JSON from an earlier checkpoint, '' on a job's
+    first claim) and job['topics'] (the submitter's requested angle count,
+    '' = use the operator default) — both come straight off the canister's
+    claim response, already validated/capped server-side."""
+    progress_raw = job.get('progress') or ''
+    progress_in = None
+    if progress_raw:
+        try:
+            progress_in = json.loads(progress_raw)
+        except Exception:
+            progress_in = None       # corrupt/unexpected → replan rather than crash
+    topics_raw = str(job.get('topics') or '')
+    max_topics = int(topics_raw) if topics_raw.isdigit() and int(topics_raw) > 0 else None
+
+    print('[deep] claimed %s: %s%s' % (jid, q[:80], ' (resuming)' if progress_in else ''))
+    state = _sw_deep_step(q, deadline, progress_in, max_topics)
+    if state is None:
+        return False
+
+    if not state['done']:
+        progress_json = json.dumps({
+            'angles': state['angles'], 'pages': state['pages'],
+            'nextAngle': state['nextAngle'], 'tokens': state['tokens'],
+            'model': state['model']})
+        status, resp = _sw_call('progress', [jid, P(progress_json)])
+        if status == 200 and resp.get('ok'):
+            print('[deep] %s checkpoint: %d/%d angles (%.0fs)'
+                  % (jid, state['nextAngle'], len(state['angles']), time.monotonic() - started))
+        else:
+            print('[deep] progress rejected %s: %s %s' % (jid, status, resp))
+        return True
+
+    # Last angle just landed — synthesize + graph + terminal fulfill, exactly
+    # like a single-shot deep run always has (this code is unchanged from
+    # before resumability; only how `pages` got built above it is new).
+    pages = state['pages']
+    model, tokens = state['model'], state['tokens']
+    if not any(p['body'] for p in pages):
+        # Every single angle came up dry across the whole run — a real,
+        # receipt-worthy outcome per angle, but nothing to synthesize or
+        # publish. Fail the job rather than fulfilling an empty answer.
+        _sw_call('fail', [jid, P('every angle returned no results')])
+        print('[deep] %s: all %d angles empty — failed, not fulfilled' % (jid, len(pages)))
+        return True
     answer, smodel, st = _sw_deep_synth(q, pages, deadline)
-    total_tokens += st
-    model_seen = smodel or model_seen
+    tokens += st
+    model = smodel or model
     if not answer:
         # Synthesis failed: stitch each page's opening sentence as the answer.
         answer = ' '.join(p['body'].split('.')[0].strip() + '.'
                           for p in pages if p['body'])[:_SW_ANSWER_CAP]
     graph = _sw_deep_graph(q, pages)
-    return answer, model_seen, pages, graph, total_tokens, all_sources
-
-
-def _sw_process_deep(jid, q, deadline, started, P):
-    """Deep-research fulfill. Returns True if it fulfilled/terminally handled the
-    job, False to let the caller fall back to a single-shot answer."""
-    print('[deep] claimed %s: %s' % (jid, q[:80]))
-    out = _sw_deep(q, deadline)
-    if out is None:
-        return False
-    answer, model, pages, graph, tokens, all_sources = out
     if tokens:
         model = ('%s · ~%s tok' % (model or 'local', _sw_fmt_tokens(tokens)))[:80]
     if len(answer) > _SW_ANSWER_CAP:
@@ -1585,15 +1667,17 @@ def _sw_process_deep(jid, q, deadline, started, P):
     # set is preserved in the research tree (graph) and note pages, which are
     # bounded only by LIB_MAX_GRAPH.
     seen, sources = set(), []
-    for r in all_sources:
-        if r['url'] not in seen:
-            seen.add(r['url'])
-            sources.append(r)
+    for p in pages:
+        for r in (p.get('sources') or []):
+            if r['url'] not in seen:
+                seen.add(r['url'])
+                sources.append(r)
     sources = sources[:10]
     pages_json = json.dumps({
         'q': q, 'answer': answer,
         'pages': [{'id': p['id'], 'title': p['title'], 'question': p['question'],
-                   'body': p['body'], 'sources': p['sources']} for p in pages],
+                   'body': p['body'], 'sources': p['sources'], 'ranAt': p.get('ranAt')}
+                  for p in pages],
         'ts': int(time.time() * 1000)})
     # Deep fulfill == fast fulfill + one trailing pages field. `brave · deep`
     # marks provenance (renders wherever the engine chip does); the canister
@@ -1621,11 +1705,15 @@ def _sw_process(job, deadline=None):
         if mode == 'deep':
             # Deep can degrade to the single-shot path below (planning/notes/
             # Brave all failed) so the user still gets an answer within the lease.
-            if _sw_process_deep(jid, q, deadline, started, P):
+            if _sw_process_deep(job, jid, q, deadline, started, P):
                 return
             print('[deep] %s: degrading to single-shot' % jid)
-        print('[search-worker] claimed %s: %s' % (jid, q[:80]))
-        results = _sw_brave(q, deadline)
+        print('[search-worker] claimed %s: %s%s' % (jid, q[:80], ' [news]' if mode == 'news' else ''))
+        results = _sw_brave(q, deadline, vertical='news' if mode == 'news' else 'web')
+        if mode == 'news' and not results:
+            # News vertical came up dry (niche query, no coverage) — a web
+            # answer beats a fail; the engine chip below still says how we got it.
+            results = _sw_brave(q, deadline)
         if not results:
             # Three different failures used to share one message. They need
             # different operator responses — top up the plan, set the key, or
@@ -1661,7 +1749,8 @@ def _sw_process(job, deadline=None):
         # gap question, so if another operator's worker claims it the entry
         # reads plain 'brave' / "human".
         is_gap = q in set(_gap_asked())
-        engine = 'brave · ai-gap' if is_gap else 'brave'
+        engine = ('brave · ai-gap' if is_gap
+                  else 'brave · news' if mode == 'news' else 'brave')
         lines = [jid, P(model), P(engine), P(answer), str(len(results))]
         for r in results:
             lines.append('%s %s' % (P(r['title']), P(r['url'])))
@@ -3770,7 +3859,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-User-Principal, X-API-Key, '
-                         'anthropic-version, x-api-key, X-Vault-Format')
+                         'anthropic-version, x-api-key, X-Vault-Format, X-Brave-Key')
         self.send_header('Access-Control-Max-Age', '86400')
         self.send_header('Vary', 'Origin')
         super().end_headers()
@@ -4209,6 +4298,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             bool(_oci_vault_namespace and _oci_vault_bucket)
             if _vault_backend == 'oci' else None
         )
+        # brain: advertises the managed default model when Cafreso provisioned
+        # this HQ with a shared endpoint (LMSTUDIO_BASE_URL injected at fleet
+        # provision time — see oci-fleet/hermes-bootstrap.py branch 0). The UI's
+        # probeManagedBrain() reads {model, provider} to suppress the "add a
+        # key" nag for zero-config users. null when no managed brain is wired.
+        _lm_base = os.environ.get('LMSTUDIO_BASE_URL', '').strip()
+        brain = None
+        if _lm_base:
+            brain = {
+                'model': os.environ.get('LMSTUDIO_MODEL', '').strip() or 'local-model',
+                'provider': 'cafreso',
+            }
         return self._send_json(200, {
             'status':           'ok',
             'version':          '1.0.0',
@@ -4229,6 +4330,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'runtime_env':      _RUNTIME_ENV,
             'auth_required':    bool(CAFRESOHQ_API_KEY),
             'oci_vault_ready':  oci_ready,
+            'brain':            brain,
         })
 
     def _claudecode_status(self):
@@ -6038,7 +6140,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('X-File-Hash', fhash)
         self.send_header('Access-Control-Expose-Headers', 'X-File-Mtime, X-File-Hash')
         self.send_header('Cache-Control', 'no-store')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         try:
             self.wfile.write(data)
@@ -6133,7 +6234,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         try:
             self.wfile.write(data)
@@ -7880,7 +7980,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 data = filepath.read_text(encoding='utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(data.encode('utf-8'))
             except Exception as e:
