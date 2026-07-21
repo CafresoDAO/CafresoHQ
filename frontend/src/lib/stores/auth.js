@@ -104,6 +104,22 @@ function _adopt(identity) {
 export async function initAuth() {
   if (!browser()) return;
   authStatus.set('initializing');
+
+  // ── Dev bypass: auto-authenticate on localhost ────────────────────────
+  // When running locally (dev server), skip II and use a synthetic principal
+  // so pages render without needing the Internet Identity popup.
+  // Set ?nodev in the URL to force real II even on localhost.
+  const loc = window.location;
+  const isLocal = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1';
+  const noDev   = new URLSearchParams(loc.search).has('nodev');
+  if (isLocal && !noDev) {
+    const devPrincipal = 'dev-local-test-principal';
+    console.info('[auth] Dev mode: auto-authenticated as', devPrincipal);
+    principalText.set(devPrincipal);
+    authStatus.set('success');
+    return;
+  }
+
   try {
     const c = await _ensureClient();
     if (await c.isAuthenticated()) {

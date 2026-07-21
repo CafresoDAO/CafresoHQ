@@ -1,0 +1,307 @@
+[
+  {
+    "id": "cafresoai-hq-local",
+    "name": "CafresoHQ",
+    "description": "AI workspace streamed live from this host — Windows desktop via Sunshine.",
+    "category": "ai",
+    "icon": "hq",
+    "provider": "hyperv",
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 8
+    },
+    "persistent": true,
+    "stream_protocol": "iframe",
+    "tags": [
+      "popular"
+    ],
+    "enabled": true,
+    "sort_order": -1
+  },
+  {
+    "id": "cafresoai-hq",
+    "name": "CafresoHQ",
+    "description": "Your personal AI workspace — isolated cloud container on OCI.",
+    "category": "ai",
+    "icon": "hq",
+    "provider": "oci",
+    "image": "cafresoai-serve:latest",
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 6
+    },
+    "persistent": true,
+    "stream_protocol": "iframe",
+    "stream_path": "/hq.html",
+    "tags": [
+      "popular"
+    ],
+    "enabled": true,
+    "sort_order": 0
+  },
+  {
+    "id": "claude-code-local",
+    "name": "Claude Code",
+    "description": "Agentic coding assistant running directly in WSL on this host.",
+    "category": "ai",
+    "icon": "terminal",
+    "provider": "local",
+    "wsl_command": "claude",
+    "resources": {},
+    "persistent": false,
+    "stream_protocol": "iframe",
+    "tags": [
+      "popular"
+    ],
+    "enabled": true,
+    "sort_order": 1
+  },
+  {
+    "id": "codex-local",
+    "name": "Codex",
+    "description": "OpenAI Codex CLI running directly in WSL on this host.",
+    "category": "ai",
+    "icon": "code",
+    "provider": "local",
+    "wsl_command": "codex",
+    "resources": {},
+    "persistent": false,
+    "stream_protocol": "iframe",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 2
+  },
+  {
+    "id": "wsl-shell",
+    "name": "WSL Terminal",
+    "description": "Plain bash shell in the default WSL distribution.",
+    "category": "productivity",
+    "icon": "terminal",
+    "provider": "local",
+    "wsl_command": "bash",
+    "resources": {},
+    "persistent": false,
+    "stream_protocol": "iframe",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 3
+  },
+  {
+    "id": "windows-dev",
+    "name": "Windows 11 Dev",
+    "description": "Full Windows 11 desktop with VS Code, Git, Docker.",
+    "category": "desktops",
+    "icon": "monitor",
+    "provider": "hyperv",
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 8,
+      "gpu_partition": "none"
+    },
+    "persistent": true,
+    "stream_protocol": "webrtc",
+    "tags": [
+      "popular"
+    ],
+    "enabled": true,
+    "sort_order": 4
+  },
+  {
+    "id": "gpu-gaming",
+    "name": "GPU Gaming VM",
+    "description": "Windows 11 with full GPU-P partition for gaming and GPU workloads.",
+    "category": "desktops",
+    "icon": "gamepad",
+    "provider": "hyperv",
+    "resources": {
+      "vcpus": 8,
+      "memory_gb": 16,
+      "gpu_partition": "100%"
+    },
+    "persistent": true,
+    "stream_protocol": "webrtc",
+    "tags": [],
+    "enabled": false,
+    "sort_order": 5
+  },
+  {
+    "id": "cafreso-pages",
+    "name": "Cafreso Pages",
+    "description": "Full-stack content platform on the Internet Computer.",
+    "category": "apps",
+    "icon": "cf",
+    "provider": "canister",
+    "canister_url": "https://cafreso.com",
+    "canister_id": "",
+    "resources": {},
+    "persistent": true,
+    "stream_protocol": "canister",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 10
+  },
+  {
+    "id": "minegold",
+    "name": "MineGold",
+    "description": "Gold mining and staking on the Internet Computer.",
+    "category": "apps",
+    "icon": "gold",
+    "provider": "canister",
+    "canister_url": "https://minegold.defi",
+    "canister_id": "",
+    "resources": {},
+    "persistent": true,
+    "stream_protocol": "canister",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 11
+  },
+  {
+    "id": "banking-brave",
+    "name": "Banking.Brave",
+    "description": "Decentralized banking on the Internet Computer.",
+    "category": "apps",
+    "icon": "shield",
+    "provider": "canister",
+    "canister_url": "https://banking.brave",
+    "canister_id": "cqyto-tiaaa-aaaau-agppa-cai",
+    "resources": {},
+    "persistent": true,
+    "stream_protocol": "canister",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 12
+  },
+  {
+    "id": "jupyter-lab",
+    "name": "Jupyter Lab",
+    "description": "Notebook + Python kernel for data science.",
+    "category": "ai",
+    "icon": "notebook",
+    "provider": "oci",
+    "image": "cafresoai-jupyter:latest",
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 4
+    },
+    "persistent": true,
+    "stream_protocol": "iframe",
+    "stream_path": "/",
+    "tags": [],
+    "enabled": false,
+    "sort_order": 14
+  },
+  {
+    "id": "ubuntu-desktop",
+    "name": "Ubuntu 24.04 LTS",
+    "description": "Full GNOME desktop, streamed to your browser.",
+    "category": "desktops",
+    "icon": "linux",
+    "provider": "oci",
+    "image": "cafresoai-linux-desktop:latest",
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
+    "persistent": false,
+    "stream_protocol": "webrtc",
+    "selkies_port": 8080,
+    "tags": [],
+    "enabled": false,
+    "sort_order": 15
+  },
+  {
+    "id": "chrome-kiosk",
+    "name": "Chrome Kiosk",
+    "description": "Sandboxed disposable browser.",
+    "category": "productivity",
+    "icon": "globe",
+    "provider": "oci",
+    "image": "cafresoai-chrome-kiosk:latest",
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 4
+    },
+    "persistent": false,
+    "stream_protocol": "webrtc",
+    "selkies_port": 8080,
+    "tags": [],
+    "enabled": false,
+    "sort_order": 16
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "description": "AI-first IDE, streamed in your browser.",
+    "category": "ai",
+    "icon": "code",
+    "provider": "hyperv",
+    "resources": {
+      "vcpus": 4,
+      "memory_gb": 16,
+      "gpu_partition": "25%"
+    },
+    "persistent": true,
+    "stream_protocol": "webrtc",
+    "tags": [],
+    "enabled": false,
+    "sort_order": 17
+  },
+  {
+    "id": "vscode",
+    "name": "VS Code",
+    "description": "Browser-served Visual Studio Code.",
+    "category": "productivity",
+    "icon": "code",
+    "provider": "oci",
+    "image": "cafresoai-vscode:latest",
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
+    "persistent": true,
+    "stream_protocol": "iframe",
+    "stream_path": "/",
+    "tags": [],
+    "enabled": false,
+    "sort_order": 18
+  },
+  {
+    "id": "kali-linux",
+    "name": "Kali Linux",
+    "description": "Pentest workstation.",
+    "category": "servers",
+    "icon": "linux",
+    "provider": "oci",
+    "image": "cafresoai-kali:latest",
+    "resources": {
+      "ocpus": 2,
+      "memory_gb": 8
+    },
+    "persistent": false,
+    "stream_protocol": "webrtc",
+    "selkies_port": 8080,
+    "tags": [],
+    "enabled": false,
+    "sort_order": 19
+  },
+  {
+    "id": "claude-code",
+    "name": "Claude Code (Cloud)",
+    "description": "Agentic coding assistant in a terminal — OCI cloud fallback.",
+    "category": "ai",
+    "icon": "terminal",
+    "provider": "oci",
+    "image": "cafresoai-serve:latest",
+    "resources": {
+      "ocpus": 1,
+      "memory_gb": 6
+    },
+    "persistent": true,
+    "stream_protocol": "iframe",
+    "stream_path": "/hq.html",
+    "tags": [],
+    "enabled": true,
+    "sort_order": 20
+  }
+]
