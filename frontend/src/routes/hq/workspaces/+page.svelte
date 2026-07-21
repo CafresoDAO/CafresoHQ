@@ -27,7 +27,9 @@
   // The on-chain operator config carries the grant list; the fleet API
   // enforces the same list server-side — this gate is UX, not security.
   let entLoading = true;
-  $: allowed = workspaceAllowed($operatorConfig, $principalText);
+  // DEV ONLY: local dev servers get the gallery without an on-chain grant so
+  // the click/launch mechanics can be tested; compiled out of production.
+  $: allowed = workspaceAllowed($operatorConfig, $principalText) || import.meta.env.DEV;
   $: previewMessage = workspacesMessage($operatorConfig);
 
   // ── Responsive: detect mobile ─────────────────────────────────────────────

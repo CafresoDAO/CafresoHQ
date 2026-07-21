@@ -199,10 +199,10 @@
       Weather
     </h2>
     <div class="wx-head-actions">
-      <button type="button" class="wx-unit" on:click={toggleUnit} title="Switch temperature unit">
+      <button type="button" class="wx-unit" onclick={toggleUnit} title="Switch temperature unit">
         <span class:on={unit === 'F'}>°F</span><span class="wx-unit-sep">/</span><span class:on={unit === 'C'}>°C</span>
       </button>
-      <button type="button" class="wx-close" on:click={close} aria-label="Close weather" data-autofocus>
+      <button type="button" class="wx-close" onclick={close} aria-label="Close weather" data-autofocus>
         <Icon name="x" size={18} />
       </button>
     </div>
@@ -215,7 +215,7 @@
       type="search"
       placeholder={geoDenied ? "Your location didn't load — search any place…" : 'Search any city or place…'}
       bind:value={q}
-      on:input={onSearchInput}
+      oninput={onSearchInput}
       aria-label="Search a place"
     />
     {#if searching}<span class="wx-spin" aria-hidden="true"></span>{/if}
@@ -223,7 +223,7 @@
       <ul class="wx-results" role="listbox">
         {#each results as r}
           <li>
-            <button type="button" on:click={() => pickResult(r)}>
+            <button type="button" onclick={() => pickResult(r)}>
               <Icon name="map-pin" size={14} />
               {r.label}
             </button>
@@ -246,7 +246,7 @@
         <div class="wx-hero-loading">
           <Icon name="cloud-slash" size={28} />
           <span>Couldn't load the forecast ({fcErr}).</span>
-          {#if sel}<button type="button" class="wx-retry" on:click={() => show(sel)}>Retry</button>{/if}
+          {#if sel}<button type="button" class="wx-retry" onclick={() => show(sel)}>Retry</button>{/if}
         </div>
       {:else if cur}
         <!-- animated layers -->
@@ -351,7 +351,7 @@
             type="button"
             class="wx-chip"
             class:active={sel?.key === l.key}
-            on:click={() => show(l)}
+            onclick={() => show(l)}
           >
             {#if saved[l.key]}
               <Icon name={wmoIcon(saved[l.key].code, saved[l.key].isDay)} size={14} />
@@ -413,7 +413,10 @@
   .wx-close:hover { background: hsl(var(--pg-hover) / 0.7); color: hsl(var(--pg-fg)); }
 
   /* ── search ── */
-  .wx-search { position: relative; margin: 0 16px 4px; }
+  /* z-index here (not just on .wx-results) so the geocode dropdown paints over
+     the scroll region below it — without a stacking context on the wrapper the
+     results list renders underneath the forecast rows it overlaps. */
+  .wx-search { position: relative; z-index: 6; margin: 0 16px 4px; }
   .wx-search-icon {
     position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
     color: hsl(var(--pg-fg-muted)); pointer-events: none; display: inline-flex;
