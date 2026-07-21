@@ -457,7 +457,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         p = _principal_from_token(tok)
         if p:
             return p
-        fallback = (query_principal or (body or {}).get('principal') or '').strip()
+        fallback = (query_principal or (body or {}).get('principal') or
+                    self.headers.get('X-User-Principal') or '').strip()
         if fallback and _validate_principal(fallback) and (DEV_MODE or self._is_fleet_admin()):
             return fallback
         return None

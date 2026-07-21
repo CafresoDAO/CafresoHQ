@@ -5,6 +5,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { fleetApiUrl, fleetApiAuthToken, FleetApiError } from '$lib/api/fleetClient.js';
 import { mintSessionToken } from '$lib/api/hqSession.js';
+import { principalText } from '$lib/stores/auth.js';
 
 // ── Stores ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,12 @@ async function _fetch(path, opts = {}) {
   const tok = get(fleetApiAuthToken);
   const headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
   if (tok) headers['X-Fleet-Auth'] = tok;
+  // Admin bridge: alongside the fleet secret, the principal header lets a
+  // FLEET_ADMIN_PRINCIPALS operator use the portal even when on-chain token
+  // verification isn't configured on the host (the server trusts the pair
+  // secret+admin-principal — same bar as every /admin route). No-op for
+  // normal users.
+  headers['X-User-Principal'] = get(principalText) || '';
   // Attach the principal-bound session token so the server can authorize the
   // caller without trusting client-supplied principal params.
   if (opts.session !== false) {
