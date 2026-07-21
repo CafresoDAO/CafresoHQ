@@ -7,7 +7,7 @@
       "Cache-Control": "public, max-age=600",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "strict-origin-when-cross-origin",
-      "Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https:; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://identity.ic0.app https://*.icp0.io https://icp0.io https://cafreso.com https://*.cafreso.com https://aserver.tail7e8ffe.ts.net http://localhost:* http://127.0.0.1:*; frame-src 'self' https://identity.ic0.app https://*.cafreso.com https://aserver.tail7e8ffe.ts.net http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*; frame-ancestors 'none'; form-action 'self';"
+      "Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https:; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://identity.ic0.app https://*.icp0.io https://icp0.io https://cafreso.com https://*.cafreso.com https://aserver.tail7e8ffe.ts.net https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.geckoterminal.com https://dashboard.internetcomputer.org http://localhost:* http://127.0.0.1:*; frame-src 'self' https://identity.ic0.app https://*.cafreso.com https://aserver.tail7e8ffe.ts.net http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*; frame-ancestors 'none'; form-action 'self';"
     }
   },
   {

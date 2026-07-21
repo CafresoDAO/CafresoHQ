@@ -662,36 +662,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             elif provider == 'hyperv':
                 # Phase 2c compat: if a guacamole_url is stored on the session
-                # (legacy sessions launched before Phase 2d), redirect there.
+                # (legacy sessions launched before Phase 2d), hand off there.
                 #
-                # Mint the Guacamole auth token FRESH on every stream load
-                # rather than reusing the one cached on the session at launch
-                # time. Guacamole tokens are short-lived; a session launched
-                # (or merely left open in a browser tab) more than a few
-                # minutes before the user actually opens the stream hit a
-                # STATIC expired token baked into guacamole_url — Guacamole's
-                # own /api/tokens rejected it with a bare 401 and the client
-                # showed its generic "An error has occurred" dialog, no login
-                # fallback. Confirmed live 2026-07-21. Re-minting here closes
-                # the staleness window to a single request.
-                guac_url   = session.get('guacamole_url', '')
-                guac_token = _fetch_guacamole_token(
-                    os.environ.get('GUAC_USER', 'anthony'),
-                    os.environ.get('GUAC_PASS', 'unused')) or session.get('guacamole_token', '')
+                # Auth handoff = write the freshly-minted token response into
+                # localStorage['GUAC_AUTH'] from this SAME-ORIGIN page, then
+                # navigate to the client route. Two failed prior designs,
+                # both confirmed live 2026-07-21:
+                #   1. token minted once at launch → expired before use;
+                #   2. fresh token appended as ?token= in the redirect URL →
+                #      Guacamole's web app simply never reads that parameter;
+                #      it POSTed its own anonymous /api/tokens, got 401, and
+                #      dead-ended on a generic error dialog.
+                # localStorage is origin-scoped and /stream/ + /guacamole/
+                # share this host, so the client picks the auth up natively —
+                # the same mechanism its own login flow uses.
+                guac_url = session.get('guacamole_url', '')
                 if guac_url:
-                    sep = '&' if '?' in guac_url else '?'
-                    target_url = f"{guac_url}{sep}token={guac_token}" if guac_token else guac_url
+                    auth = _fetch_guacamole_auth(
+                        os.environ.get('GUAC_USER', 'anthony'),
+                        os.environ.get('GUAC_PASS', 'unused'))
+                    auth_json = json.dumps(auth) if auth else 'null'
                     body = (
-                        f'<!doctype html><meta http-equiv="refresh" content="0;url={target_url}">'
-                        f'<p>Connecting to <a href="{target_url}">desktop</a>...</p>'
+                        '<!doctype html><meta charset="utf-8">'
+                        '<title>Connecting…</title>'
+                        '<p style="font-family:system-ui;color:#888">Connecting to desktop…</p>'
+                        '<script>\n'
+                        f'var auth = {auth_json};\n'
+                        'if (auth && auth.authToken) {\n'
+                        "  try { localStorage.setItem('GUAC_AUTH', JSON.stringify(auth)); } catch (e) {}\n"
+                        '}\n'
+                        f'location.replace({json.dumps(guac_url)});\n'
+                        '</script>'
                     ).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
                     self.send_header('Content-Length', str(len(body)))
+                    self.send_header('Cache-Control', 'no-store')
                     self._cors()
                     self.end_headers()
                     self.wfile.write(body)
-                    log.info('[stream-proxy] hyperv %s -> guacamole redirect %s', sid, target_url)
+                    log.info('[stream-proxy] hyperv %s -> guacamole GUAC_AUTH handoff -> %s (auth=%s)',
+                             sid, guac_url, 'ok' if auth else 'MISSING')
                     return
 
                 # Phase 2d: moonlight-web-stream sidecar proxy.
@@ -1855,11 +1866,19 @@ def _session_provision_worker(session_id: str, principal: str, template: dict):
         log.warning(f'[session:{session_id}] caddy reload non-fatal: {msg}')
 
 
-def _fetch_guacamole_token(username: str, password: str,
-                           url: str = 'http://127.0.0.1:8484/guacamole/api/tokens',
-                           timeout: int = 5) -> str:
-    """Authenticate to the local Guacamole API and return a session token.
-    Returns '' on any failure (we degrade gracefully — user sees login page).
+def _fetch_guacamole_auth(username: str, password: str,
+                          url: str = 'http://127.0.0.1:8484/guacamole/api/tokens',
+                          timeout: int = 5) -> dict:
+    """Authenticate to the local Guacamole API and return the FULL token
+    response ({authToken, username, dataSource, availableDataSources}).
+    Returns {} on any failure (we degrade gracefully — user sees login page).
+
+    The full payload matters: Guacamole's web app does NOT read a ?token=
+    URL parameter (confirmed live 2026-07-21 — its Angular client POSTed its
+    own anonymous /api/tokens, got 401, and showed a dead generic error).
+    The only reliable same-origin handoff is writing this whole object into
+    localStorage['GUAC_AUTH'] before loading the client route — which the
+    /stream/ redirect page now does.
     """
     import urllib.request, urllib.parse
     try:
@@ -1867,10 +1886,17 @@ def _fetch_guacamole_token(username: str, password: str,
         req  = urllib.request.Request(url, data=data, method='POST')
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode('utf-8'))
-            return payload.get('authToken', '')
+            return payload if payload.get('authToken') else {}
     except Exception as exc:
-        log.warning('guacamole token fetch failed: %s', exc)
-        return ''
+        log.warning('guacamole auth fetch failed: %s', exc)
+        return {}
+
+
+def _fetch_guacamole_token(username: str, password: str,
+                           url: str = 'http://127.0.0.1:8484/guacamole/api/tokens',
+                           timeout: int = 5) -> str:
+    """Back-compat shim: just the authToken string (see _fetch_guacamole_auth)."""
+    return _fetch_guacamole_auth(username, password, url, timeout).get('authToken', '')
 
 
 # ── Hyper-V provision worker ────────────────────────────────────────────────
