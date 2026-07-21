@@ -663,8 +663,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif provider == 'hyperv':
                 # Phase 2c compat: if a guacamole_url is stored on the session
                 # (legacy sessions launched before Phase 2d), redirect there.
+                #
+                # Mint the Guacamole auth token FRESH on every stream load
+                # rather than reusing the one cached on the session at launch
+                # time. Guacamole tokens are short-lived; a session launched
+                # (or merely left open in a browser tab) more than a few
+                # minutes before the user actually opens the stream hit a
+                # STATIC expired token baked into guacamole_url — Guacamole's
+                # own /api/tokens rejected it with a bare 401 and the client
+                # showed its generic "An error has occurred" dialog, no login
+                # fallback. Confirmed live 2026-07-21. Re-minting here closes
+                # the staleness window to a single request.
                 guac_url   = session.get('guacamole_url', '')
-                guac_token = session.get('guacamole_token', '')
+                guac_token = _fetch_guacamole_token(
+                    os.environ.get('GUAC_USER', 'anthony'),
+                    os.environ.get('GUAC_PASS', 'unused')) or session.get('guacamole_token', '')
                 if guac_url:
                     sep = '&' if '?' in guac_url else '?'
                     target_url = f"{guac_url}{sep}token={guac_token}" if guac_token else guac_url
