@@ -1814,6 +1814,89 @@ def _session_provision_worker(session_id: str, principal: str, template: dict):
         log.warning(f'[session:{session_id}] caddy reload non-fatal: {msg}')
 
 
+def _guac_api(method: str, path: str, token: str, payload=None,
+              base: str = 'http://127.0.0.1:8484/guacamole/api',
+              timeout: int = 5):
+    """Minimal Guacamole REST helper. Returns parsed JSON (or None on 204).
+    Raises on HTTP/network errors — callers decide how to degrade."""
+    import urllib.request
+    url  = f'{base}{path}?token={urllib.parse.quote(token)}'
+    data = json.dumps(payload).encode() if payload is not None else None
+    req  = urllib.request.Request(url, data=data, method=method,
+                                  headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read()
+        return json.loads(body) if body else None
+
+
+def _guac_client_url(connection_id: str) -> str:
+    """Build the Guacamole web-client URL for a postgresql connection id."""
+    import base64
+    ident = base64.b64encode(
+        f'{connection_id}\0c\0postgresql'.encode()).decode().rstrip('=')
+    return f'/guacamole/#/client/{ident}'
+
+
+def _guac_create_dynamic_connection(session_id: str, vm_ip: str,
+                                    template: dict) -> tuple:
+    """v2 (guac_dynamic): create a per-session RDP connection pointing at the
+    fresh clone's IP. Returns (connection_id, client_url) or ('', '') on
+    failure. The GUAC_USER service account needs CREATE_CONNECTION."""
+    try:
+        token = _fetch_guacamole_token(
+            os.environ.get('GUAC_USER', ''), os.environ.get('GUAC_PASS', ''))
+        if not token:
+            return '', ''
+        params = {
+            'hostname': vm_ip,
+            'port': str(template.get('rdp_port', 3389)),
+            'ignore-cert': 'true',
+            'security': template.get('rdp_security', 'nla'),
+            'resize-method': 'display-update',
+            'enable-font-smoothing': 'true',
+        }
+        rdp_user = os.environ.get('GUAC_RDP_USER', '')
+        rdp_pass = os.environ.get('GUAC_RDP_PASS', '')
+        if rdp_user:
+            params['username'] = rdp_user
+        if rdp_pass:
+            params['password'] = rdp_pass
+        created = _guac_api('POST', '/session/data/postgresql/connections',
+                            token, {
+                                'parentIdentifier': 'ROOT',
+                                'name': f'ws-{session_id}',
+                                'protocol': 'rdp',
+                                'parameters': params,
+                                'attributes': {'max-connections': '2',
+                                               'max-connections-per-user': '2'},
+                            })
+        conn_id = str(created.get('identifier', '')) if created else ''
+        if not conn_id:
+            return '', ''
+        log.info(f'[hyperv:{session_id}] guac dynamic connection {conn_id} -> {vm_ip}')
+        return conn_id, _guac_client_url(conn_id)
+    except Exception as exc:
+        log.warning(f'[hyperv:{session_id}] guac dynamic connection failed: {exc}')
+        return '', ''
+
+
+def _guac_delete_dynamic_connection(session_id: str, connection_id: str):
+    """v2 (guac_dynamic): delete the per-session connection at stop/reap."""
+    if not connection_id:
+        return
+    try:
+        token = _fetch_guacamole_token(
+            os.environ.get('GUAC_USER', ''), os.environ.get('GUAC_PASS', ''))
+        if not token:
+            raise RuntimeError('no guacamole token')
+        _guac_api('DELETE',
+                  f'/session/data/postgresql/connections/{connection_id}',
+                  token)
+        log.info(f'[hyperv-stop:{session_id}] guac connection {connection_id} deleted')
+    except Exception as exc:
+        log.warning(f'[hyperv-stop:{session_id}] guac connection cleanup failed: {exc}')
+
+
 def _fetch_guacamole_token(username: str, password: str,
                            url: str = 'http://127.0.0.1:8484/guacamole/api/tokens',
                            timeout: int = 5) -> str:
@@ -1931,7 +2014,15 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
         # HTML page; the browser loads it via iframe and WebRTC connects directly
         # to Sunshine inside the VM (works on LAN or with TURN for external).
         tmpl_guac_url = (template.get('guacamole_url') or '') if isinstance(template, dict) else ''
+        guac_conn_id  = ''
         guac_token    = ''
+        # v2 (guac_dynamic): per-session connection created against the fresh
+        # clone's IP; overrides any static guacamole_url from the template.
+        if isinstance(template, dict) and template.get('guac_dynamic'):
+            guac_conn_id, dyn_url = _guac_create_dynamic_connection(
+                session_id, vm_ip, template)
+            if dyn_url:
+                tmpl_guac_url = dyn_url
         if tmpl_guac_url:
             # Phase 2c path: Guacamole token pre-fetch
             guac_token = _fetch_guacamole_token(
@@ -1964,6 +2055,7 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
             # Guacamole fields — populated only in Phase 2c path.
             'guacamole_url':    tmpl_guac_url,
             'guacamole_token':  guac_token,
+            'guacamole_connection_id': guac_conn_id,
             'stream_protocol':  final_protocol,
         })
         _save_session(session_id, session)
@@ -1995,6 +2087,10 @@ def _hyperv_stop_worker(session_id: str):
         # Stop the moonlight-web-stream sidecar
         if provider:
             provider.stop_moonlight_sidecar(session_id)
+
+        # v2 (guac_dynamic): remove the per-session Guacamole connection
+        _guac_delete_dynamic_connection(
+            session_id, session.get('guacamole_connection_id', ''))
 
         # Stop (or delete) the VM
         if provider and vm_name:
