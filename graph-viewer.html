@@ -55,6 +55,21 @@
     padding: 12px 13px; font-size: 12px; line-height: 1.5;
   }
   #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gv-gap-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .gv-gap-row > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .gv-gap-row .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .gv-gap-bridge {
+    flex-shrink: 0; border: 1px solid var(--gv-line); background: transparent; color: var(--gv-accent);
+    border-radius: 7px; padding: 1px 7px; cursor: pointer; font-size: 12px; line-height: 1.5;
+  }
+  .gv-gap-bridge:hover { border-color: var(--gv-accent); }
+  #gv-colormode {
+    width: 100%; margin-top: 4px; padding: 4px 6px; font-size: 12px;
+    background: var(--gv-card); color: var(--gv-text);
+    border: 1px solid var(--gv-line); border-radius: 7px;
+  }
 
   #tip {
     display: none; position: fixed; z-index: 6; max-width: 280px; pointer-events: none;
@@ -269,6 +284,19 @@
     <label class="gv-check" for="gv-related" title="Draw a link between two questions that lean on the same source">
       <input type="checkbox" id="gv-related"/> Related links
     </label>
+  </div>
+  <div class="gv-row" id="gv-clusterlabels-row" style="display:none">
+    <label class="gv-check" for="gv-clusterlabels" title="Name each topic cluster on the canvas">
+      <input type="checkbox" id="gv-clusterlabels" checked/> Cluster labels
+    </label>
+  </div>
+  <div class="gv-row" id="gv-colormode-row" style="display:none">
+    <label for="gv-colormode">Question colors</label>
+    <select id="gv-colormode" aria-label="Question color rule">
+      <option value="identity" selected>Gold (identity)</option>
+      <option value="topic">By topic</option>
+      <option value="origin">By origin (who asked)</option>
+    </select>
   </div>
 </div>
 

@@ -112,8 +112,21 @@
     loaded = true;
     onLoaded();
     setTimeout(() => pushFiles(get(vaultFiles)), 600);
+    // Keyboard reaches the remote desktop only while the iframe's document
+    // has focus — Guacamole listens on ITS document, not ours. Focus it on
+    // load so the user can type immediately, without needing a first click.
+    focusStream();
+  }
+
+  function focusStream() {
+    try { iframe?.focus(); } catch (_) {}
   }
 </script>
+
+<!-- Any click/tap anywhere in the viewer hands focus back to the stream —
+     e.g. after using the toolbar or dock, typing keeps working without the
+     user knowing anything about focus. -->
+<svelte:window on:focus={focusStream} />
 
 {#if session?.stream_protocol === 'iframe'}
   <!-- Full-viewport iframe for agent workspaces -->

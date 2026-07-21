@@ -41,6 +41,7 @@ import forceAtlas2 from 'graphology-layout-forceatlas2';
 import louvain from 'graphology-communities-louvain';
 import { bidirectional } from 'graphology-shortest-path/unweighted';
 import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
+import modularity from 'graphology-metrics/graph/modularity';
 
 const qs = new URLSearchParams(location.search);
 const P = (k, d) => { const v = qs.get(k); return v == null ? d : v; };
@@ -261,6 +262,90 @@ async function main() {
         if (!a.entryId && m) g.setNodeAttribute(id, 'color', m.color);
       });
     } catch (_) { commOf = null; commMeta = null; }
+  }
+
+  /* ── view topics ─────────────────────────────────────────────────────────
+     One shared topic model feeding three consumers: the legend rows, the
+     on-canvas cluster labels (the InfraNodus read — "News is over THERE"),
+     and the topic color mode. Starts from the Louvain clusters, swapped for
+     the cron's curated topics.json when that loads — same shape either way:
+       { key, label, color, set:Set<nodeId> }
+     Sets are cached at build time: nodes() per frame would be O(N·topics). */
+  let viewTopics = [];
+  let topicByNode = new Map();   // node -> topic (first/biggest match wins)
+  let activeTopic = null;        // key | null — the engaged legend/label filter
+  let onTopicsChanged = [];      // consumers re-render when the model swaps
+
+  function installViewTopics(list) {
+    viewTopics = list;
+    topicByNode = new Map();
+    for (const t of list) {
+      for (const id of t.set) if (!topicByNode.has(id)) topicByNode.set(id, t);
+    }
+    activeTopic = null; topicSet = null;
+    for (const fn of onTopicsChanged) { try { fn(); } catch (_) {} }
+  }
+
+  if (commMeta && commMeta.size > 1) {
+    installViewTopics([...commMeta.entries()]
+      .filter(([, m]) => m.topLabel)
+      .sort((a, b) => b[1].size - a[1].size).slice(0, 7)
+      .map(([c, m]) => {
+        const s = new Set();
+        g.forEachNode((id) => { if (commOf[id] === c) s.add(id); });
+        return { key: 'c' + c, label: m.topLabel, color: m.color, set: s };
+      }));
+  }
+
+  // Curated topics (topics.json) replace the Louvain naming when they arrive
+  // and actually match nodes — real category names ("News", "Health") beat a
+  // cluster named after its biggest question.
+  loadCuratedTopics().then((curated) => {
+    if (!curated || !curated.length) return;
+    const list = curated.map((t, i) => {
+      const terms = (Array.isArray(t.match) && t.match.length ? t.match : [t.label])
+        .map((s) => String(s || '').toLowerCase()).filter(Boolean);
+      const s = new Set();
+      g.forEachNode((id) => {
+        const lab = String(fullLabel.get(id) || '').toLowerCase();
+        if (terms.some((term) => lab.includes(term))) s.add(id);
+      });
+      return { key: 'k' + i, label: String(t.label || ''), color: COMM_PALETTE[i % COMM_PALETTE.length], set: s };
+    }).filter((t) => t.label && t.set.size > 0);
+    if (list.length) installViewTopics(list);
+  });
+
+  /* ── provenance (Graph Styler-style rule coloring) ───────────────────────
+     index.json carries askedBy per entry: 'human' | 'ai-gap' | 'ai-news'.
+     Fetched lazily the first time the Origin color mode is selected. */
+  let provReq = null;
+  function loadProvenance() {
+    if (!entryBase) return Promise.resolve(null);
+    if (!provReq) provReq = fetch(entryBase + 'index.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const m = new Map();
+        for (const e of (j && j.entries) || []) if (e.id) m.set(e.id, e.askedBy || 'human');
+        return m.size ? m : null;
+      })
+      .catch(() => null);
+    return provReq;
+  }
+  const ORIGIN_COLORS = { human: '#F5D25D', 'ai-gap': '#C9B8E0', 'ai-news': '#9BC0E8' };
+  let colorMode = 'identity';   // 'identity' | 'topic' | 'origin'
+  let provOf = null;
+  async function applyColorMode(mode) {
+    colorMode = mode;
+    if (mode === 'origin' && !provOf) provOf = await loadProvenance();
+    g.forEachNode((id, a) => {
+      if (!a.entryId) return;    // rules retint questions; sources keep topic color
+      let c = '#F5D25D';
+      if (mode === 'topic') { const t = topicByNode.get(id); if (t) c = t.color; }
+      else if (mode === 'origin' && provOf) c = ORIGIN_COLORS[provOf.get(a.entryId)] || '#F5D25D';
+      g.setNodeAttribute(id, 'color', c);
+      baseRgb.set(id, parseColor(c));
+    });
+    renderer.refresh({ skipIndexation: true });
   }
 
   const baseRgb = new Map();   // node -> [r,g,b] as authored (dim lerps from this)
@@ -560,6 +645,101 @@ async function main() {
   }
 
   const vp = (id) => renderer.graphToViewport({ x: g.getNodeAttribute(id, 'x'), y: g.getNodeAttribute(id, 'y') });
+
+  /* ── cluster labels ──────────────────────────────────────────────────────
+     Topic names drawn ON the canvas at each cluster's weighted centroid — the
+     InfraNodus read of a knowledge graph: zoomed out you see WHERE "News" or
+     "Health" lives, zoom in and the labels yield to the node labels. Own
+     Canvas2D layer (same registration pattern as signals); redrawn from
+     sigma's afterRender so they track camera and live physics.
+     Labels are also click targets: labelRects carries the hit boxes, and the
+     clickStage handler toggles that topic's filter. &clusterlabels=0 opts out. */
+  let clc = null;
+  const clusterLabelsOn = P('clusterlabels', '1') !== '0';
+  if (clusterLabelsOn) {
+    try {
+      renderer.createCanvasContext('clusters', {
+        beforeLayer: 'mouse',
+        style: { pointerEvents: 'none' },
+      });
+      clc = renderer.canvasContexts && renderer.canvasContexts.clusters;
+      if (clc) renderer.resize(true);   // same 300x150-default gotcha as signals
+    } catch (_) { clc = null; }
+  }
+  const labelRects = [];   // {x, y, w, h, key} in viewport px, rebuilt per draw
+  function drawClusterLabels() {
+    if (!clc) return;
+    try {
+      const dims = renderer.getDimensions();
+      clc.clearRect(0, 0, dims.width, dims.height);
+      labelRects.length = 0;
+      if (!viewTopics.length) return;
+      // Fade with zoom-in (node labels take over) and duck while a hover
+      // neighborhood is hot — the cluster name must never fight the question.
+      const zoomFade = clamp((camera.ratio - 0.16) / 0.22, 0, 1);
+      const alpha = 0.85 * zoomFade * (1 - 0.6 * h);
+      if (alpha < 0.03) return;
+      clc.save();
+      clc.textAlign = 'center';
+      clc.textBaseline = 'middle';
+      for (const t of viewTopics) {
+        if (!t.set || t.set.size < 2) continue;
+        let sx = 0, sy = 0, w = 0;
+        for (const id of t.set) {
+          if (!g.hasNode(id)) continue;
+          const s = baseSize.get(id) || 3;
+          const p = vp(id);
+          sx += p.x * s; sy += p.y * s; w += s;
+        }
+        if (!w) continue;
+        const x = sx / w, y = sy / w;
+        if (x < -60 || y < -30 || x > dims.width + 60 || y > dims.height + 30) continue;
+        const fs = clamp(12 + Math.sqrt(t.set.size) * 1.5, 13, 24);
+        const a2 = activeTopic && activeTopic !== t.key ? alpha * 0.22 : alpha;
+        const label = t.label.length > 30 ? t.label.slice(0, 28).trimEnd() + '…' : t.label;
+        clc.font = '700 ' + fs + "px 'Inter', system-ui, sans-serif";
+        const tw = clc.measureText(label).width;
+        // Soft plate behind the text so it reads over edges without a box look.
+        const pad = 8, ph = fs + 8;
+        clc.fillStyle = dark
+          ? 'rgba(20,17,14,' + (0.5 * a2).toFixed(3) + ')'
+          : 'rgba(246,241,231,' + (0.55 * a2).toFixed(3) + ')';
+        const rx = x - tw / 2 - pad, ry = y - ph / 2, rw = tw + pad * 2, rr = ph / 2;
+        clc.beginPath();   // rounded rect by hand — roundRect() is still too new
+        clc.moveTo(rx + rr, ry);
+        clc.arcTo(rx + rw, ry, rx + rw, ry + ph, rr);
+        clc.arcTo(rx + rw, ry + ph, rx, ry + ph, rr);
+        clc.arcTo(rx, ry + ph, rx, ry, rr);
+        clc.arcTo(rx, ry, rx + rw, ry, rr);
+        clc.closePath();
+        clc.fill();
+        clc.fillStyle = rgbaCss(parseColor(t.color), a2.toFixed(3));
+        clc.fillText(label, x, y);
+        labelRects.push({ x: x - tw / 2 - pad, y: y - ph / 2, w: tw + pad * 2, h: ph, key: t.key });
+      }
+      clc.restore();
+    } catch (_) { /* never break the render loop over a label */ }
+  }
+  renderer.on('afterRender', drawClusterLabels);
+  onTopicsChanged.push(() => { try { renderer.refresh({ skipIndexation: true }); } catch (_) {} });
+
+  /** Engage/toggle a topic filter — shared by legend rows, cluster-label
+      clicks, and Escape. Frames the topic on engage (question anchor first). */
+  function setActiveTopic(key) {
+    const t = key ? viewTopics.find((x) => x.key === key) : null;
+    if (!t || activeTopic === key) {   // toggle off / unknown key
+      activeTopic = null; topicSet = null;
+    } else {
+      activeTopic = key; topicSet = t.set;
+      let anchor = null;
+      for (const id of t.set) { if (g.hasNode(id) && g.getNodeAttribute(id, 'entryId')) { anchor = id; break; } }
+      anchor = anchor || [...t.set].find((id) => g.hasNode(id));
+      const d = anchor && renderer.getNodeDisplayData(anchor);
+      if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.5 }, { duration: 400 });
+    }
+    for (const fn of onTopicsChanged) { try { fn(); } catch (_) {} }
+    renderer.refresh({ skipIndexation: true });
+  }
 
   // Ambient rate scales with the web's size but stays sparse — a few crossings
   // a second at library scale, so it reads as idle firing and never as traffic.
@@ -1377,7 +1557,19 @@ async function main() {
     }
     doAction(act);
   });
-  renderer.on('clickStage', () => {
+  renderer.on('clickStage', ({ event }) => {
+    // A cluster label is a click target: toggle its topic filter. Hit-test
+    // against the rects the last draw recorded (viewport px, same space as
+    // sigma's stage event coordinates).
+    if (event && labelRects.length) {
+      const { x, y } = event;
+      for (const r of labelRects) {
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          setActiveTopic(r.key);
+          return;
+        }
+      }
+    }
     tapped = null; pinned = null; clearPath();
     setHovered(null); hideTip();
   });
@@ -1608,6 +1800,26 @@ async function main() {
         tick();
       });
     }
+    // Question color rules (Graph Styler-style): identity gold, topic tint,
+    // or origin (who asked — community / gap cron / news cron). Library only.
+    const modeRow = document.getElementById('gv-colormode-row');
+    const modeEl = document.getElementById('gv-colormode');
+    if (modeRow && modeEl && libMode) {
+      modeRow.style.display = '';
+      modeEl.addEventListener('change', () => { applyColorMode(modeEl.value); });
+      onTopicsChanged.push(() => { if (colorMode === 'topic') applyColorMode('topic'); });
+    }
+    const clEl = document.getElementById('gv-clusterlabels');
+    const clRow = document.getElementById('gv-clusterlabels-row');
+    if (clEl && clRow && clc) {
+      clRow.style.display = '';
+      clEl.checked = true;
+      clEl.addEventListener('change', () => {
+        // Emptying viewTopics would kill the filter too; gate the draw instead.
+        clc.canvas.style.display = clEl.checked ? '' : 'none';
+        renderer.refresh({ skipIndexation: true });
+      });
+    }
   }
 
   /* ── legend ──────────────────────────────────────────────────────────────
@@ -1634,103 +1846,49 @@ async function main() {
         )).join('') +
         (rest > 0 ? '<div class="legend-row gv-muted">+' + rest + ' more</div>' : '');
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
-    } else if (commMeta && commMeta.size > 1) {
+    } else if (viewTopics.length) {
       /* Library mode: each topic row is a FILTER — clicking dims everything
-         outside the topic (via topicSet) and frames it; clicking again clears.
-         Topics come from the Louvain clusters by default, replaced by the
-         cron's curated labels (topics.json) when those arrive. Both feed the
-         same render/wire path so the toggle behavior is identical. */
-      let activeTopic = null;
-
-      const louvainTopics = [...commMeta.entries()]
-        .filter(([, m]) => m.topLabel)
-        .sort((a, b) => b[1].size - a[1].size).slice(0, 7)
-        .map(([c, m]) => ({
-          key: 'c' + c, label: m.topLabel, color: m.color,
-          nodes: () => { const s = new Set(); g.forEachNode((id) => { if (commOf[id] === c) s.add(id); }); return s; },
-        }));
-
+         outside the topic (via setActiveTopic) and frames it; clicking again
+         clears. Rows render from the shared viewTopics model, so the legend,
+         the on-canvas cluster labels, and the color modes always agree — and
+         when the cron's curated topics.json swaps the model in, every
+         consumer re-renders through onTopicsChanged at once. */
       const clampLabel = (s) => (s.length > 30 ? s.slice(0, 28).trimEnd() + '…' : s);
-      function renderTopics(topics, titleText) {
+      function renderTopicLegend() {
         legend.innerHTML =
-          '<div class="legend-title">' + esc(titleText) + '</div>' +
+          '<div class="legend-title">Topics</div>' +
           '<div class="legend-row gv-muted"><span class="legend-swatch" style="background:#F5D25D"></span>questions (gold)</div>' +
-          topics.map((t) => (
-            '<div class="legend-row legend-topic" data-key="' + esc(t.key) + '" title="' + esc(t.label) + '">' +
+          viewTopics.map((t) => (
+            '<div class="legend-row legend-topic' + (activeTopic === t.key ? ' gv-on' : '') + '" data-key="' + esc(t.key) + '" title="' + esc(t.label) + '">' +
             '<span class="legend-swatch" style="background:' + esc(t.color) + '"></span>' + esc(clampLabel(t.label)) + '</div>'
           )).join('') +
           // Appears only while a topic filter is on: one click turns the whole
           // cluster into an Obsidian vault (exportTopicVault).
-          '<div class="legend-row legend-export" style="display:none" title="Download every question in this topic as a wikilinked Obsidian .md vault">⬇ Export topic as vault</div>';
+          '<div class="legend-row legend-export" style="display:' + (activeTopic && entryBase ? '' : 'none') + '" title="Download every question in this topic as a wikilinked Obsidian .md vault">⬇ Export topic as vault</div>';
       }
-      function wireTopics(topics) {
-        const exportRow = () => legend.querySelector('.legend-export');
-        legend.onclick = async (ev) => {
-          const ex = ev.target.closest('.legend-export');
-          if (ex) {
-            if (ex.dataset.busy || !topicSet) return;
-            const t = topics.find((x) => x.key === activeTopic);
-            ex.dataset.busy = '1';
-            const orig = ex.textContent;
-            ex.textContent = '⏳ Gathering entries…';
-            try {
-              const n = await exportTopicVault(topicSet, t ? t.label : 'Topic');
-              ex.textContent = '✓ ' + n + ' notes exported';
-            } catch (err) {
-              ex.textContent = '⚠️ ' + ((err && err.message) || 'Export failed');
-            }
-            setTimeout(() => { delete ex.dataset.busy; ex.textContent = orig; }, 2800);
-            return;
+      legend.onclick = async (ev) => {
+        const ex = ev.target.closest('.legend-export');
+        if (ex) {
+          if (ex.dataset.busy || !topicSet) return;
+          const t = viewTopics.find((x) => x.key === activeTopic);
+          ex.dataset.busy = '1';
+          const orig = ex.textContent;
+          ex.textContent = '⏳ Gathering entries…';
+          try {
+            const n = await exportTopicVault(topicSet, t ? t.label : 'Topic');
+            ex.textContent = '✓ ' + n + ' notes exported';
+          } catch (err) {
+            ex.textContent = '⚠️ ' + ((err && err.message) || 'Export failed');
           }
-          const row = ev.target.closest('[data-key]');
-          if (!row) return;
-          const t = topics.find((x) => x.key === row.dataset.key);
-          if (!t) return;
-          const rows = legend.querySelectorAll('.legend-topic');
-          if (activeTopic === t.key) {                 // toggle off
-            activeTopic = null; topicSet = null;
-            rows.forEach((r) => r.classList.remove('gv-on'));
-          } else {
-            activeTopic = t.key; topicSet = t.nodes();
-            rows.forEach((r) => r.classList.toggle('gv-on', r === row));
-            // Frame the topic: prefer a question anchor, else any member.
-            let anchor = null;
-            for (const id of topicSet) { if (g.getNodeAttribute(id, 'entryId')) { anchor = id; break; } }
-            anchor = anchor || topicSet.values().next().value;
-            const d = anchor && renderer.getNodeDisplayData(anchor);
-            if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.5 }, { duration: 400 });
-          }
-          const exr = exportRow();
-          if (exr) exr.style.display = activeTopic && entryBase ? '' : 'none';
-          renderer.refresh({ skipIndexation: true });
-        };
-      }
-
-      renderTopics(louvainTopics, 'Topics in the web');
-      wireTopics(louvainTopics);
+          setTimeout(() => { delete ex.dataset.busy; ex.textContent = orig; }, 2800);
+          return;
+        }
+        const row = ev.target.closest('[data-key]');
+        if (row) setActiveTopic(row.dataset.key);
+      };
+      renderTopicLegend();
+      onTopicsChanged.push(renderTopicLegend);
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
-
-      // Swap in the cron's curated topics if they load and actually match nodes.
-      loadCuratedTopics().then((curated) => {
-        if (!curated || !curated.length) return;
-        const topics = curated.map((t, i) => ({
-          key: 'k' + i,
-          label: String(t.label || ''),
-          color: COMM_PALETTE[i % COMM_PALETTE.length],
-          nodes: () => {
-            const terms = (Array.isArray(t.match) && t.match.length ? t.match : [t.label])
-              .map((s) => String(s || '').toLowerCase()).filter(Boolean);
-            const s = new Set();
-            g.forEachNode((id) => { const lab = String(fullLabel.get(id) || '').toLowerCase(); if (terms.some((term) => lab.includes(term))) s.add(id); });
-            return s;
-          },
-        })).filter((t) => t.label && t.nodes().size > 0);
-        if (!topics.length) return;
-        activeTopic = null; topicSet = null;
-        renderTopics(topics, 'Topics');
-        wireTopics(topics);
-        renderer.refresh({ skipIndexation: true });
-      });
     } else {
       legendToggle.style.display = 'none';
     }
@@ -1761,7 +1919,8 @@ async function main() {
         topList = (snap.analytics.topInfluential || []).slice(0, 6).map((t) => titleOf(t.id));
       } else {
         const N = g.order, E = g.size;
-        const density = N > 1 ? (2 * E) / (N * (N - 1)) : 0;
+        let mod = 0;
+        try { if (commOf) mod = modularity(g, { communities: commOf }); } catch (_) { mod = N > 1 ? (2 * E) / (N * (N - 1)) : 0; }
         let influential = [];
         if (N > 1 && N <= 800) {
           let bc = {};
@@ -1777,7 +1936,7 @@ async function main() {
           structure: commMeta ? (commMeta.size + ' topic clusters') : 'one web',
           nodes: N, edges: E,
           communityCount: commMeta ? commMeta.size : 1,
-          modularity: density,   // density stands in for modularity when unshipped
+          modularity: mod,
         };
       }
       el.style.display = 'block';
@@ -1785,8 +1944,73 @@ async function main() {
       el.innerHTML =
         '<div class="gv-panel-title">Graph analysis</div>' +
         '<div class="gv-pill">' + esc(m.structure || '') + '</div>' +
-        '<div class="gv-muted" style="line-height:1.5">Notes <b>' + m.nodes + '</b> · Links <b>' + m.edges + '</b><br>Topics <b>' + m.communityCount + '</b> · Density <b>' + (m.modularity || 0).toFixed(2) + '</b></div>' +
-        '<div class="gv-panel-title" style="margin:10px 0 4px">Most influential</div>' + top;
+        '<div class="gv-muted" style="line-height:1.5">Notes <b>' + m.nodes + '</b> · Links <b>' + m.edges + '</b><br>Topics <b>' + m.communityCount + '</b> · Modularity <b>' + (m.modularity || 0).toFixed(2) + '</b></div>' +
+        '<div class="gv-panel-title" style="margin:10px 0 4px">Most influential</div>' + top +
+        '<div id="gv-gaps"></div>';
+
+      /* ── structural gaps (the InfraNodus move) ──────────────────────────
+         The pairs of big topic clusters with the FEWEST edges between them
+         are where the library's blind spots live. Naming them is half the
+         insight; the other half is the ⚡ button, which drops a bridging
+         question straight into the network-search box — the same pipeline
+         the gap cron feeds, but aimed by structure instead of guesswork.
+         Rendered async so curated topic names can label the clusters. */
+      function renderGaps() {
+        const gapsEl = document.getElementById('gv-gaps');
+        if (!gapsEl || !viewTopics.length || viewTopics.length < 2) return;
+        const tops = viewTopics.slice(0, 6);
+        // Count question-to-question relatedness across topics via shared
+        // domain neighborhoods (relatedOf), plus direct edges — a domain node
+        // sitting in both topics IS a connection.
+        const edgeCount = new Map();   // 'i:j' -> n
+        const idxOf = new Map();
+        tops.forEach((t, i) => { for (const id of t.set) if (!idxOf.has(id)) idxOf.set(id, i); });
+        g.forEachEdge((e, attrs, s, t2) => {
+          const a = idxOf.get(s), b = idxOf.get(t2);
+          if (a == null || b == null || a === b) return;
+          const k = Math.min(a, b) + ':' + Math.max(a, b);
+          edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+        });
+        const pairs = [];
+        for (let i = 0; i < tops.length; i++) {
+          for (let j = i + 1; j < tops.length; j++) {
+            const n = edgeCount.get(i + ':' + j) || 0;
+            pairs.push({ i, j, n, norm: n / Math.max(1, Math.min(tops[i].set.size, tops[j].set.size)) });
+          }
+        }
+        pairs.sort((a, b) => a.norm - b.norm || a.n - b.n);
+        const gaps = pairs.slice(0, 3);
+        if (!gaps.length) return;
+        const short = (s) => (s.length > 22 ? s.slice(0, 20).trimEnd() + '…' : s);
+        gapsEl.innerHTML =
+          '<div class="gv-panel-title" style="margin:10px 0 4px">Structural gaps</div>' +
+          gaps.map((p, k) => (
+            '<div class="gv-gap-row" title="' + esc(tops[p.i].label) + ' ↔ ' + esc(tops[p.j].label) + ' — ' + p.n + ' connecting link' + (p.n === 1 ? '' : 's') + '">' +
+            '<span><span class="legend-swatch" style="background:' + esc(tops[p.i].color) + '"></span>' + esc(short(tops[p.i].label)) +
+            ' <span class="gv-muted">✕</span> ' +
+            '<span class="legend-swatch" style="background:' + esc(tops[p.j].color) + '"></span>' + esc(short(tops[p.j].label)) + '</span>' +
+            (searchApiBase ? '<button class="gv-gap-bridge" data-gap="' + k + '" title="Research a question that bridges these two topics">⚡</button>' : '') +
+            '</div>'
+          )).join('');
+        gapsEl.onclick = (ev) => {
+          const btn = ev.target.closest('.gv-gap-bridge');
+          if (!btn) return;
+          const p = gaps[+btn.dataset.gap];
+          if (!p) return;
+          const q = 'How does ' + tops[p.i].label + ' relate to ' + tops[p.j].label + '?';
+          const input = document.getElementById('gv-search-input');
+          const wrap = document.getElementById('gv-search');
+          if (input && wrap) {
+            input.value = q;
+            wrap.classList.add('gv-open', 'gv-has-q');
+            input.focus();
+            const st = document.getElementById('gv-search-status');
+            if (st) { st.textContent = 'Bridge question ready — hit 🔍 to research it'; st.classList.add('gv-show'); setTimeout(() => st.classList.remove('gv-show'), 3500); }
+          }
+        };
+      }
+      renderGaps();
+      onTopicsChanged.push(renderGaps);
     }
   }
 

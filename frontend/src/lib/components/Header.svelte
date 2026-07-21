@@ -106,4 +106,24 @@
       {/if}
     </div>
   </div>
+
+  <!-- Mobile nav: below md the pill row above is hidden and the Apps dropdown
+       only holds ecosystem links — which left phones with NO route to
+       Workspaces/Chat/Vault/Settings at all (confirmed live 2026-07-21).
+       Same swipeable-pills pattern the (pages) PageHeader uses. -->
+  <nav class="mx-auto mt-2 flex max-w-7xl items-center gap-1 overflow-x-auto whitespace-nowrap rounded-full px-1 py-1 [scrollbar-width:none] md:hidden shell-panel">
+    {#each navLinks as l}
+      <a
+        href={l.href}
+        on:click={(e) => onNavClick(e, l.href, l.slug)}
+        aria-current={$page.url.pathname === l.href ? 'page' : undefined}
+        class="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors
+               {$page.url.pathname === l.href
+                 ? 'bg-ink-50 text-ink-900 shadow-sm'
+                 : 'text-ink-200 hover:bg-ink-800/55 hover:text-ink-50'}"
+      >
+        {l.label}
+      </a>
+    {/each}
+  </nav>
 </header>
