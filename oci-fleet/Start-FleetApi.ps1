@@ -64,9 +64,11 @@ if ($Force) {
     # Matches both the gateway's fleet-api.py and this host's workspaces-api.py
     # (the -Force kill only ever matched the former, so restarts on this box
     # silently no-op'd and left the old process listening — confirmed 2026-07-21).
-    Get-Process python, python3 -ErrorAction SilentlyContinue |
+    # Win32_Process, not Get-Process: Windows PowerShell 5.1's Get-Process has
+    # no CommandLine property, so the filter silently matched nothing there.
+    Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*fleet-api*' -or $_.CommandLine -like '*workspaces-api*' } |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
 }
 
