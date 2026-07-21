@@ -1934,7 +1934,9 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
         guac_token    = ''
         if tmpl_guac_url:
             # Phase 2c path: Guacamole token pre-fetch
-            guac_token = _fetch_guacamole_token('anthony', 'unused')
+            guac_token = _fetch_guacamole_token(
+                os.environ.get('GUAC_USER', 'anthony'),
+                os.environ.get('GUAC_PASS', 'unused'))
             if guac_token:
                 log.info(f'[hyperv:{session_id}] guacamole token minted ({guac_token[:8]}...)')
             else:

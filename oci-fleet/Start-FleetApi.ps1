@@ -76,12 +76,12 @@ if ($existing) {
 
 # ── 5. Launch ────────────────────────────────────────────────────────────────
 $script    = Join-Path $FleetDir 'workspaces-api.py'
-$pythonCmd = (Get-Command python -ErrorAction SilentlyContinue)?.Source
+$pythonCmd = (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
 if (-not $pythonCmd) { $pythonCmd = 'python' }
 
 if ($UseNssm) {
     # ── nssm service path (cleanest — survives reboots with proper token) ─────
-    $nssmPath = (Get-Command nssm -ErrorAction SilentlyContinue)?.Source
+    $nssmPath = (Get-Command nssm -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
     if (-not $nssmPath) {
         Write-Warning "nssm not found. Install from https://nssm.cc or `choco install nssm`."
         Write-Warning "Falling back to Start-Process method."
@@ -116,7 +116,7 @@ if ($UseNssm) {
 # Using -RedirectStandardError alone works correctly.
 # Stdout goes to the Python-level log (fleet-api writes structured logs
 # via logging module to stderr already; stdout is minimal startup banner).
-Write-Host "Starting fleet-api on :$port (stderr → $errLog)..." -ForegroundColor Yellow
+Write-Host "Starting fleet-api on :$port (stderr -> $errLog)..." -ForegroundColor Yellow
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName               = $pythonCmd
@@ -136,10 +136,10 @@ foreach ($kv in $env_vars.GetEnumerator()) {
 $proc = [System.Diagnostics.Process]::Start($psi)
 
 # Drain stderr async into the log file
-$proc.ErrorDataReceived += {
+$proc.add_ErrorDataReceived({
     param($sender, $e)
     if ($e.Data) { Add-Content -Path $errLog -Value $e.Data }
-}
+})
 $proc.BeginErrorReadLine()
 
 Write-Host "fleet-api PID $($proc.Id) started on :$port" -ForegroundColor Green
@@ -151,6 +151,6 @@ $bound = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Silent
 if ($bound) {
     Write-Host "Confirmed: port $port is listening (PID $($bound.OwningProcess))" -ForegroundColor Green
 } else {
-    Write-Warning "Port $port NOT listening after 3s — check $errLog"
+    Write-Warning "Port $port NOT listening after 3s - check $errLog"
     if (Test-Path $errLog) { Get-Content $errLog -Tail 20 }
 }
