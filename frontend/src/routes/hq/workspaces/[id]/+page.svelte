@@ -29,6 +29,16 @@
   let error   = '';
   let loaded  = false;
 
+  // Floating-controls visibility: collapsed by default so nothing overlays
+  // the remote desktop; the slim handle stays. Remembered across sessions.
+  const TOOLBAR_PREF_KEY = 'cafresohq.ws_toolbar_open';
+  let toolbarOpen = typeof localStorage !== 'undefined' &&
+                    localStorage.getItem(TOOLBAR_PREF_KEY) === 'true';
+  function toggleToolbar() {
+    toolbarOpen = !toolbarOpen;
+    try { localStorage.setItem(TOOLBAR_PREF_KEY, String(toolbarOpen)); } catch (_) {}
+  }
+
   // ── Uptime counter ────────────────────────────────────────────────────────
   let uptimeStr = '00:00:00';
   let uptimeInterval;
@@ -222,22 +232,41 @@
       <StreamAdapter {session} onLoaded={() => loaded = true} />
     </div>
 
-    <!-- Session dock (left edge) -->
-    <SessionDock
-      sessions={$activeSessions}
-      activeSessionId={sessionId}
-      onSelect={handleDockSelect}
-      onNew={handleDockNew}
-    />
-
-    <!-- Floating toolbar (bottom center) -->
-    <div class="absolute bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <SessionToolbar
-        {session}
-        onRefresh={handleRefresh}
-        onFullscreen={handleFullscreen}
-        onDisconnect={handleDisconnect}
+    <!-- Session dock (left edge) — only worth pixels when there's actually
+         more than one session to switch between. -->
+    {#if $activeSessions.length > 1}
+      <SessionDock
+        sessions={$activeSessions}
+        activeSessionId={sessionId}
+        onSelect={handleDockSelect}
+        onNew={handleDockNew}
       />
+    {/if}
+
+    <!-- Floating toolbar (bottom center) — collapsed to a slim handle by
+         default so nothing sits over the desktop; preference persists. -->
+    <div class="absolute bottom-3 left-1/2 z-50 -translate-x-1/2 flex flex-col items-center gap-2">
+      {#if toolbarOpen}
+        <SessionToolbar
+          {session}
+          onRefresh={handleRefresh}
+          onFullscreen={handleFullscreen}
+          onDisconnect={handleDisconnect}
+        />
+      {/if}
+      <button
+        class="rounded-full border border-ink-600/50 bg-ink-900/70 px-4 py-1 text-ink-300 backdrop-blur-xl transition-colors hover:bg-ink-800/80 hover:text-ink-50"
+        on:click={toggleToolbar}
+        title={toolbarOpen ? 'Hide controls' : 'Show controls (refresh · fullscreen · disconnect)'}
+      >
+        <svg class="h-3 w-6" fill="none" viewBox="0 0 24 12" stroke="currentColor" stroke-width="2">
+          {#if toolbarOpen}
+            <path d="M4 3l8 6 8-6" />
+          {:else}
+            <path d="M4 9l8-6 8 6" />
+          {/if}
+        </svg>
+      </button>
     </div>
   </div>
 {/if}

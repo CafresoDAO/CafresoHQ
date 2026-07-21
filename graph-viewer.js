@@ -275,6 +275,9 @@ async function main() {
   let topicByNode = new Map();   // node -> topic (first/biggest match wins)
   let activeTopic = null;        // key | null — the engaged legend/label filter
   let onTopicsChanged = [];      // consumers re-render when the model swaps
+  // Declared here (not in the hover/search block below) because
+  // installViewTopics runs at load, before that block would initialize it.
+  let topicSet = null;
 
   function installViewTopics(list) {
     viewTopics = list;
@@ -380,9 +383,8 @@ async function main() {
   const HOP_FAR = 0.9;
   let hovered = null, hops = null, h = 0, hTarget = 0;
   let searchSet = null;
-  // Topic filter is independent of text search (they compose): a topic row and
-  // a typed query each own a set, and dimFactor treats them as an intersection.
-  let topicSet = null;
+  // Topic filter (topicSet, declared with the view-topics model above) is
+  // independent of text search — they compose as an intersection in dimFactor.
 
   /* ── auto-wikilinks ──────────────────────────────────────────────────────
      Two questions that lean on the same source domain are related. The merged
@@ -682,14 +684,30 @@ async function main() {
       clc.save();
       clc.textAlign = 'center';
       clc.textBaseline = 'middle';
+      const placed = [];   // measured first, collision-relaxed, then drawn
       for (const t of viewTopics) {
         if (!t.set || t.set.size < 2) continue;
-        let sx = 0, sy = 0, w = 0;
+        // Centroid over the nodes this topic OWNS (topicByNode first-match):
+        // curated topic sets overlap heavily, and shared members drag every
+        // centroid to the graph's center of mass — labels end up stacked in
+        // the middle. Exclusive membership spreads them back over their
+        // actual territory. Falls back to the full set for tiny topics.
+        let sx = 0, sy = 0, w = 0, own = 0;
         for (const id of t.set) {
-          if (!g.hasNode(id)) continue;
+          if (!g.hasNode(id) || topicByNode.get(id) !== t) continue;
+          own++;
           const s = baseSize.get(id) || 3;
           const p = vp(id);
           sx += p.x * s; sy += p.y * s; w += s;
+        }
+        if (own < 2) {
+          sx = 0; sy = 0; w = 0;
+          for (const id of t.set) {
+            if (!g.hasNode(id)) continue;
+            const s = baseSize.get(id) || 3;
+            const p = vp(id);
+            sx += p.x * s; sy += p.y * s; w += s;
+          }
         }
         if (!w) continue;
         const x = sx / w, y = sy / w;
@@ -699,23 +717,42 @@ async function main() {
         const label = t.label.length > 30 ? t.label.slice(0, 28).trimEnd() + '…' : t.label;
         clc.font = '700 ' + fs + "px 'Inter', system-ui, sans-serif";
         const tw = clc.measureText(label).width;
+        placed.push({ t, x, y, fs, a2, label, tw, pad: 8, ph: fs + 8 });
+      }
+      // Dense curated topics all live near the graph's core, so their labels
+      // land on top of each other. A few greedy passes push overlapping
+      // plates apart vertically — enough separation to read, cheap enough to
+      // run every frame.
+      for (let pass = 0; pass < 3; pass++) {
+        for (let i = 0; i < placed.length; i++) {
+          for (let j = i + 1; j < placed.length; j++) {
+            const a = placed[i], b = placed[j];
+            const ox = Math.min(a.x + a.tw / 2 + a.pad, b.x + b.tw / 2 + b.pad) - Math.max(a.x - a.tw / 2 - a.pad, b.x - b.tw / 2 - b.pad);
+            const oy = Math.min(a.y + a.ph / 2, b.y + b.ph / 2) - Math.max(a.y - a.ph / 2, b.y - b.ph / 2);
+            if (ox <= 0 || oy <= 0) continue;
+            const push = (oy / 2 + 2) * (a.y <= b.y ? 1 : -1);
+            a.y -= push; b.y += push;
+          }
+        }
+      }
+      for (const p of placed) {
         // Soft plate behind the text so it reads over edges without a box look.
-        const pad = 8, ph = fs + 8;
+        clc.font = '700 ' + p.fs + "px 'Inter', system-ui, sans-serif";
         clc.fillStyle = dark
-          ? 'rgba(20,17,14,' + (0.5 * a2).toFixed(3) + ')'
-          : 'rgba(246,241,231,' + (0.55 * a2).toFixed(3) + ')';
-        const rx = x - tw / 2 - pad, ry = y - ph / 2, rw = tw + pad * 2, rr = ph / 2;
+          ? 'rgba(20,17,14,' + (0.5 * p.a2).toFixed(3) + ')'
+          : 'rgba(246,241,231,' + (0.55 * p.a2).toFixed(3) + ')';
+        const rx = p.x - p.tw / 2 - p.pad, ry = p.y - p.ph / 2, rw = p.tw + p.pad * 2, rr = p.ph / 2;
         clc.beginPath();   // rounded rect by hand — roundRect() is still too new
         clc.moveTo(rx + rr, ry);
-        clc.arcTo(rx + rw, ry, rx + rw, ry + ph, rr);
-        clc.arcTo(rx + rw, ry + ph, rx, ry + ph, rr);
-        clc.arcTo(rx, ry + ph, rx, ry, rr);
+        clc.arcTo(rx + rw, ry, rx + rw, ry + p.ph, rr);
+        clc.arcTo(rx + rw, ry + p.ph, rx, ry + p.ph, rr);
+        clc.arcTo(rx, ry + p.ph, rx, ry, rr);
         clc.arcTo(rx, ry, rx + rw, ry, rr);
         clc.closePath();
         clc.fill();
-        clc.fillStyle = rgbaCss(parseColor(t.color), a2.toFixed(3));
-        clc.fillText(label, x, y);
-        labelRects.push({ x: x - tw / 2 - pad, y: y - ph / 2, w: tw + pad * 2, h: ph, key: t.key });
+        clc.fillStyle = rgbaCss(parseColor(p.t.color), p.a2.toFixed(3));
+        clc.fillText(p.label, p.x, p.y);
+        labelRects.push({ x: rx, y: ry, w: rw, h: p.ph, key: p.t.key });
       }
       clc.restore();
     } catch (_) { /* never break the render loop over a label */ }
@@ -1529,8 +1566,25 @@ async function main() {
   // through shared sources pulses. pathA holds the first pick.
   let pathA = null;
   function clearPath() { pathA = null; pathSet = null; }
+  /** Cluster-label plates are click targets that visually cover nodes, so the
+      hit-test must run for BOTH clickNode and clickStage — sigma routes the
+      event to whichever it finds first, and a label over a dense cluster
+      almost always has a node under the cursor. */
+  function hitClusterLabel(event) {
+    try { console.log('[gv-debug] hit?', event && event.x, event && event.y, labelRects.length, JSON.stringify(labelRects.slice(0, 2))); } catch (_) {}
+    if (!event || !labelRects.length) return false;
+    const { x, y } = event;
+    for (const r of labelRects) {
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        setActiveTopic(r.key);
+        return true;
+      }
+    }
+    return false;
+  }
   renderer.on('clickNode', ({ node, event }) => {
     if (didDrag) { didDrag = false; return; }
+    if (hitClusterLabel(event)) return;
     // Shift-click builds a path between two picks (desktop only — no shift key
     // on touch). First pick arms; second draws.
     if (event && event.original && event.original.shiftKey && !coarse) {
@@ -1558,18 +1612,7 @@ async function main() {
     doAction(act);
   });
   renderer.on('clickStage', ({ event }) => {
-    // A cluster label is a click target: toggle its topic filter. Hit-test
-    // against the rects the last draw recorded (viewport px, same space as
-    // sigma's stage event coordinates).
-    if (event && labelRects.length) {
-      const { x, y } = event;
-      for (const r of labelRects) {
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          setActiveTopic(r.key);
-          return;
-        }
-      }
-    }
+    if (hitClusterLabel(event)) return;
     tapped = null; pinned = null; clearPath();
     setHovered(null); hideTip();
   });
@@ -1920,7 +1963,7 @@ async function main() {
       } else {
         const N = g.order, E = g.size;
         let mod = 0;
-        try { if (commOf) mod = modularity(g, { communities: commOf }); } catch (_) { mod = N > 1 ? (2 * E) / (N * (N - 1)) : 0; }
+        try { if (commOf) mod = modularity(g, { getNodeCommunity: (id) => commOf[id] }); } catch (_) { mod = N > 1 ? (2 * E) / (N * (N - 1)) : 0; }
         let influential = [];
         if (N > 1 && N <= 800) {
           let bc = {};
@@ -1981,7 +2024,7 @@ async function main() {
         pairs.sort((a, b) => a.norm - b.norm || a.n - b.n);
         const gaps = pairs.slice(0, 3);
         if (!gaps.length) return;
-        const short = (s) => (s.length > 22 ? s.slice(0, 20).trimEnd() + '…' : s);
+        const short = (s) => (s.length > 13 ? s.slice(0, 12).trimEnd() + '…' : s);
         gapsEl.innerHTML =
           '<div class="gv-panel-title" style="margin:10px 0 4px">Structural gaps</div>' +
           gaps.map((p, k) => (
