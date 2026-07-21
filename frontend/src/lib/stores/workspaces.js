@@ -4,8 +4,40 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { fleetApiUrl, fleetApiAuthToken, FleetApiError } from '$lib/api/fleetClient.js';
+import { mintSessionToken } from '$lib/api/hqSession.js';
 
 // ── Stores ──────────────────────────────────────────────────────────────────
+
+// The workspaces fleet-api may run on a different host than the OCI gateway
+// (today: Anthony's Windows box behind an HTTPS tunnel, running the hyperv
+// provider). Defaults to the regular fleet URL so a unified deployment needs
+// zero config. Persisted like fleetApiUrl (fleetClient.js).
+const WS_URL_KEY = 'cafresohq.workspaces_api_url';
+export const workspacesApiUrl = writable(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(WS_URL_KEY)) || ''
+);
+if (typeof localStorage !== 'undefined') {
+  workspacesApiUrl.subscribe((v) => {
+    try {
+      if (v) localStorage.setItem(WS_URL_KEY, v);
+      else localStorage.removeItem(WS_URL_KEY);
+    } catch (_) { /* private mode */ }
+  });
+}
+function _apiBase() {
+  return (get(workspacesApiUrl) || get(fleetApiUrl)).replace(/\/+$/, '');
+}
+
+// On-chain session token: the server takes the caller's principal FROM this
+// token (hq_token verify), so users can't act as someone else. Minted once
+// and cached ~50 min (tokens live 1h on-chain).
+let _tok = null, _tokAt = 0;
+async function _sessionToken() {
+  if (_tok && Date.now() - _tokAt < 50 * 60_000) return _tok;
+  _tok = await mintSessionToken();
+  _tokAt = Date.now();
+  return _tok;
+}
 
 export const templates      = writable([]);
 export const sessions       = writable([]);
@@ -16,7 +48,7 @@ export const launchingId    = writable(null);   // template id currently launchi
 const browser = () => typeof window !== 'undefined';
 
 // Persist sessions to localStorage for fast dock rendering on reload
-const SESSIONS_KEY = 'cafresoai.active_sessions';
+const SESSIONS_KEY = 'cafresohq.active_sessions';
 if (browser()) {
   try {
     const cached = localStorage.getItem(SESSIONS_KEY);
@@ -72,10 +104,15 @@ export const activeSessions = derived(sessions, ($s) =>
 // ── Internal fetch (mirrors fleetClient.js pattern) ─────────────────────────
 
 async function _fetch(path, opts = {}) {
-  const url = get(fleetApiUrl).replace(/\/+$/, '') + path;
+  const url = _apiBase() + path;
   const tok = get(fleetApiAuthToken);
   const headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
   if (tok) headers['X-Fleet-Auth'] = tok;
+  // Attach the principal-bound session token so the server can authorize the
+  // caller without trusting client-supplied principal params.
+  if (opts.session !== false) {
+    try { headers['X-Session-Token'] = await _sessionToken(); } catch (_) { /* signed out */ }
+  }
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 30_000);
   try {
@@ -154,10 +191,14 @@ export async function launchWorkspace(principal, templateId, {
 } = {}) {
   launchingId.set(templateId);
   try {
+    // Token in the body too (mirrors /fleet/provision): the server derives the
+    // principal from it; the plain principal field is legacy/dev-only.
+    let token = '';
+    try { token = await _sessionToken(); } catch (_) { /* dev mode */ }
     const start = await _fetch('/sessions/launch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ principal, template_id: templateId }),
+      body: JSON.stringify({ token, principal, template_id: templateId }),
       timeoutMs: 15_000,
     });
 

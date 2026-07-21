@@ -740,15 +740,20 @@ def _sw_call(op, extra_lines):
 # (main.mo:1823) = ~15,000/month, i.e. 15x this quota: that cap has never bound
 # because volume is low, and it does NOT protect the key. This ledger does.
 #
-# Three spenders, and they are NOT equal. Priority is encoded as a reserve each
+# Four spenders, and they are NOT equal. Priority is encoded as a reserve each
 # one may not dip below, so scarcity degrades in a fixed order:
 #   human  — a person is waiting. Served until the quota is gone.
 #   deep   — user-requested deep research. Yields once the month is 15% left.
-#   gap    — the 10am cron's machine-invented questions. Yields at 35%, so it
-#            is always the first to starve. This is what "weigh human questions
-#            more" means in the only place it can be enforced: the budget.
+#   gap    — the hourly cron's machine-invented library questions. Yields at
+#            35%, so it starves ahead of both human demand.
+#   news   — the hourly breaking-news cron. Newest and least proven of the
+#            three machine spenders, so it has the lowest priority of all:
+#            yields at 40%, ahead of gap, so a slow news day never crowds out
+#            gap questions and neither ever touches human/deep headroom.
+# This is what "weigh human questions more" means in the only place it can be
+# enforced: the budget.
 _BRAVE_CAP = int(os.environ.get('BRAVE_MONTHLY_CAP', '') or 1000)
-_BRAVE_RESERVE = {'human': 0.0, 'deep': 0.15, 'gap': 0.35}
+_BRAVE_RESERVE = {'human': 0.0, 'deep': 0.15, 'gap': 0.35, 'news': 0.40}
 _brave_lock = threading.Lock()
 
 
@@ -1749,7 +1754,9 @@ def _sw_process(job, deadline=None):
         # gap question, so if another operator's worker claims it the entry
         # reads plain 'brave' / "human".
         is_gap = q in set(_gap_asked())
+        is_news_cron = (not is_gap) and q in set(_news_asked())
         engine = ('brave · ai-gap' if is_gap
+                  else 'brave · ai-news' if is_news_cron
                   else 'brave · news' if mode == 'news' else 'brave')
         lines = [jid, P(model), P(engine), P(answer), str(len(results))]
         for r in results:
@@ -1757,8 +1764,9 @@ def _sw_process(job, deadline=None):
         lines.append(P(graph))
         # 12th line — askedBy for fast jobs (deep jobs use this slot for pages).
         # The canister accepts the 11-line envelope too, so appending is safe
-        # across the deploy window.
-        lines.append(P('ai-gap' if is_gap else 'human'))
+        # across the deploy window. 'ai-news' is its own value, never folded
+        # into 'ai-gap' or 'human' — see the news-cron block below for why.
+        lines.append(P('ai-gap' if is_gap else 'ai-news' if is_news_cron else 'human'))
         # Always attempt fulfill, even past our budget: the budget is soft and
         # sits 40s inside the lease, so the common case still lands. When we're
         # genuinely late the reap fires on the next worker's claim regardless,
@@ -1841,9 +1849,13 @@ elif _SW_ENABLED:
 
 
 # ---- Gap cron: the library asks its own next questions ----------------------
-# Every day at 10:00 America/New_York this reads the public library, works out
-# what it does NOT cover, and submits N questions to close those gaps — the
-# library extending itself instead of waiting to be asked.
+# Every GAP_INTERVAL_MIN minutes (default 60 — on the hour) this reads the
+# public library, works out what it does NOT cover, and submits N questions to
+# close those gaps — the library extending itself instead of waiting to be
+# asked. Used to fire once/day at a fixed ET hour; moved to hourly so a
+# breaking topic doesn't sit uncovered for up to 24h, with the per-run quota
+# cut accordingly (GAP_PER_RUN_MAX, not a daily total) so the monthly Brave
+# spend doesn't balloon just because the cadence got finer.
 #
 # Human questions are weighted above machine ones in two separate places, and
 # both matter:
@@ -1856,36 +1868,35 @@ elif _SW_ENABLED:
 #
 # Answers land as PERMANENT, append-only public entries, so this is deliberately
 # conservative: it dedups against everything already in the library, submits at
-# most GAP_DAILY_MAX, and refuses outright when the Brave month is tight.
+# most GAP_PER_RUN_MAX per run, and refuses outright when the Brave month is
+# tight.
 GAP_ENABLED = os.environ.get('GAP_CRON', '').strip() != '0'
-GAP_DAILY_MAX = int(os.environ.get('GAP_DAILY_MAX', '') or 10)
-GAP_HOUR_ET = int(os.environ.get('GAP_HOUR_ET', '') or 10)
-GAP_TZ = os.environ.get('GAP_TZ', '') or 'America/New_York'
-MAX_GAP_RUNS_KEPT = 60
+GAP_PER_RUN_MAX = int(os.environ.get('GAP_PER_RUN_MAX', '') or os.environ.get('GAP_DAILY_MAX', '') or 2)
+GAP_INTERVAL_MIN = int(os.environ.get('GAP_INTERVAL_MIN', '') or 60)
+GAP_TZ = os.environ.get('GAP_TZ', '') or 'America/New_York'   # display/log only now
+MAX_GAP_RUNS_KEPT = 120
 _gap_lock = threading.Lock()
 
 
-def _gap_next_run_ms(after_ms=None):
-    """Epoch-ms of the next GAP_HOUR_ET in GAP_TZ, strictly after `after_ms`.
+def _hourly_next_run_ms(after_ms=None, offset_min=0, interval_min=60):
+    """Epoch-ms of the next `interval_min`-aligned tick + offset_min, strictly
+    after `after_ms` (or now). Timezone-invariant on purpose — "on the hour"
+    doesn't need a calendar, only a clock, so this sidesteps the DST-drift trap
+    the old once/day-at-a-fixed-ET-hour scheduler had to work around
+    explicitly. Shared by the gap/news/weather crons, each at its own interval
+    and a small offset, so they don't all hit Brave/NWS in the same second."""
+    interval_ms = max(1, interval_min) * 60_000
+    off = (offset_min * 60_000) % interval_ms
+    now_ms = after_ms if after_ms else int(time.time() * 1000)
+    run = (now_ms // interval_ms) * interval_ms + off
+    if run <= now_ms:
+        run += interval_ms
+    return run
 
-    Computed from the zone each time rather than rolling +86_400_000 like
-    _night_scan does. That roll holds UTC constant, so a job pinned to 10:00
-    New York silently becomes 11:00 for half the year — across a DST boundary
-    it is wrong every day until someone re-saves the schedule. Recomputing from
-    the wall clock is the only thing that keeps "10am" meaning 10am."""
-    from zoneinfo import ZoneInfo
-    import datetime as _dt
-    tz = ZoneInfo(GAP_TZ)
-    now = (_dt.datetime.fromtimestamp(after_ms / 1000.0, tz) if after_ms
-           else _dt.datetime.now(tz))
-    run = now.replace(hour=GAP_HOUR_ET, minute=0, second=0, microsecond=0)
-    if run <= now:
-        run = run + _dt.timedelta(days=1)
-    # Re-resolve the offset: adding a day to an aware datetime keeps the OLD
-    # offset across a DST change, which would land the run an hour off on
-    # exactly the two days a year this is hardest to notice.
-    run = run.replace(tzinfo=None).replace(tzinfo=tz)
-    return int(run.timestamp() * 1000)
+
+def _gap_next_run_ms(after_ms=None):
+    """Epoch-ms of the next gap-cron run: every GAP_INTERVAL_MIN, offset 0."""
+    return _hourly_next_run_ms(after_ms, offset_min=0, interval_min=GAP_INTERVAL_MIN)
 
 
 def _gap_asked():
@@ -2007,7 +2018,7 @@ def _gap_run():
     # answers with one Brave query, so N proposals cost N queries even though
     # this process may not spend them itself. Reserving up front is what stops
     # the cron from quietly handing the network a bill it can't pay.
-    n = GAP_DAILY_MAX
+    n = GAP_PER_RUN_MAX
     while n > 0 and not _brave_spend('gap', n):
         n -= 1
     if n <= 0:
@@ -2017,9 +2028,9 @@ def _gap_run():
         print('[gap]', run['note'])
         _gap_log(run)
         return
-    if n < GAP_DAILY_MAX:
+    if n < GAP_PER_RUN_MAX:
         print('[gap] trimmed %d → %d questions to stay inside the brave month'
-              % (GAP_DAILY_MAX, n))
+              % (GAP_PER_RUN_MAX, n))
 
     # From here on the batch is reserved, so every exit has to give it back or
     # a bad-library-index day permanently costs 10 queries for zero questions.
@@ -2084,16 +2095,17 @@ def _gap_log(run):
 def _gap_loop():
     sched = _night_load('gap-schedule.json', {})
     nxt = int(sched.get('nextRunAt', 0) or 0)
-    if not nxt or nxt < int(time.time() * 1000) - 86_400_000:
-        # No schedule, or one so stale it would fire immediately on boot and
-        # then again at 10:00 — pin it to the next real 10am instead.
+    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
+        # No schedule, or one stale enough (>3h) it would otherwise fire
+        # immediately on boot — pin it to the next top-of-hour instead. Kept
+        # short (not the old 1-day window) because hourly cadence means a
+        # multi-hour-stale value is already meaningless.
         nxt = _gap_next_run_ms()
         _night_save('gap-schedule.json', {'nextRunAt': nxt})
-    print('[gap] next run %s (%s %02d:00 %s)'
-          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)),
-             GAP_TZ, GAP_HOUR_ET, 'ET'))
+    print('[gap] next run %s (hourly, every %d min)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)), GAP_INTERVAL_MIN))
     while True:
-        time.sleep(60)
+        time.sleep(30)
         try:
             now_ms = int(time.time() * 1000)
             if now_ms < nxt:
@@ -2110,6 +2122,371 @@ def _gap_loop():
 
 if GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
     threading.Thread(target=_gap_loop, daemon=True, name='gap-cron').start()
+
+
+# ---- News cron: breaking news gets its own lane in the library -------------
+# Every NEWS_INTERVAL_MIN minutes (default 60, offset 5 past the hour so it
+# never races the gap cron for the same Brave second): pull current headlines
+# from Brave's news vertical, ask the model to turn them into self-contained
+# questions, and submit each with mode=news so the worker re-queries the news
+# vertical (fresh, dated, publisher-attributed) rather than the general web
+# index. This is deliberately a SEPARATE cron from gap, not a news-flavored
+# gap run:
+#   - gap explicitly excludes anything time-sensitive (its whole point is a
+#     durable reference library); news is nothing BUT time-sensitive.
+#   - provenance needs to stay legible. A question this cron submitted is
+#     tagged askedBy='ai-news' / engine='brave · ai-news' (see _sw_process),
+#     its own distinguishable channel in the library and leaderboard/graph —
+#     never merged into 'ai-gap' or plain 'human'.
+#   - budget: 'news' has the LOWEST Brave priority of all four spenders
+#     (_BRAVE_RESERVE['news'] = 0.40) since it's the newest, least-proven use
+#     of the quota — a slow month starves it before gap, and starves gap
+#     before ever touching a real user's search.
+NEWS_ENABLED = os.environ.get('NEWS_CRON', '').strip() == '1'   # opt-in: off by default until proven out
+NEWS_PER_RUN_MAX = int(os.environ.get('NEWS_PER_RUN_MAX', '') or 3)
+NEWS_INTERVAL_MIN = int(os.environ.get('NEWS_INTERVAL_MIN', '') or 60)
+MAX_NEWS_RUNS_KEPT = 120
+_news_lock = threading.Lock()
+
+
+def _news_asked():
+    """Questions THIS node submitted via the news cron. Same exact-string
+    matching contract as _gap_asked() — see its docstring."""
+    return _night_load('news-asked.json', [])
+
+
+def _news_headlines(deadline):
+    """Current breaking headlines via Brave's news vertical, spent against the
+    'news' budget lane (not 'human') so a slow news day never looks like a
+    person searched. Returns a list of title strings, [] on any failure."""
+    try:
+        results = _sw_brave('breaking news today', deadline, kind='news', vertical='news')
+    except Exception as e:
+        print('[news] brave fetch failed:', str(e)[:120])
+        return []
+    if not results:
+        return []
+    seen, out = set(), []
+    for r in results:
+        t = (r.get('title') or '').strip()
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out
+
+
+def _news_schema(n):
+    return {'type': 'json_schema', 'json_schema': {'name': 'news_questions', 'strict': True,
+            'schema': {'type': 'object', 'additionalProperties': False,
+                       'properties': {'questions': {
+                           'type': 'array', 'minItems': 1, 'maxItems': n,
+                           'items': {'type': 'string'}}},
+                       'required': ['questions']}}}
+
+
+def _news_propose(headlines, n, deadline):
+    """Ask the model to turn today's headlines into self-contained, answerable
+    questions — unlike _gap_propose, time-sensitive framing ('this week',
+    'currently') is fine here; that's the entire point of this cron."""
+    prompt = (
+        'Below are current breaking-news headlines from a live news search.\n'
+        'Write %d clear, self-contained questions a reader could ask to get a '
+        'summary of each distinct story. One question per distinct story — do '
+        'not invent multiple angles on the same headline.\n'
+        'Rules:\n'
+        '- One sentence each, under 140 characters, phrased as a real question.\n'
+        '- Self-contained: someone with zero context should understand what is '
+        'being asked.\n'
+        'Output STRICT JSON only: {"questions": ["...", "..."]}\n\n'
+        'Headlines:\n%s'
+        % (n, '\n'.join('- ' + h for h in headlines[:15]) or '- (none)'))
+    want = _sw_model()
+    payload = {'model': want, 'messages': [{'role': 'user', 'content': prompt}],
+               'max_tokens': 500, 'response_format': _news_schema(n)}
+    b = _sw_backend()
+    try:
+        if b is not None:
+            text, _m, _t, _tr = _sw_stream_or_block(
+                b.url, b.headers, dict(payload, model=b.model or want), deadline)
+        else:
+            key = _sw_hermes_key()
+            if not key:
+                print('[news] no model reachable — skipping this run')
+                return []
+            text, _m, _t, _tr = _sw_stream_or_block(
+                'http://%s:%d/v1/chat/completions' % (HERMES_HOST, HERMES_PORT),
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+                payload, deadline)
+        t = re.sub(r'^```(?:json)?\s*|\s*```$', '', (text or '').strip())
+        m = re.search(r'\{.*\}', t, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        out = [str(q).strip() for q in (data.get('questions') or []) if str(q).strip()]
+        return [q for q in out if len(q) <= 400][:n]
+    except Exception as e:
+        print('[news] proposal failed:', str(e)[:160])
+        return []
+
+
+def _news_submit(q):
+    """POST /search/submit?mode=news — same anonymous route as _gap_submit,
+    with mode=news so submitSearch (main.mo) tags the job and the worker hits
+    Brave's news vertical instead of web for it."""
+    try:
+        url = _SW_BASE + '/search/submit?mode=news'
+        req = urllib.request.Request(url, data=q.encode('utf-8'),
+                                     headers={'Content-Type': 'text/plain'})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            d = json.loads(r.read().decode('utf-8'))
+        if d.get('id'):
+            return 'queued'
+        return str(d.get('status') or d.get('error') or 'unknown')[:60]
+    except Exception as e:
+        return 'error: ' + str(e)[:60]
+
+
+def _news_run():
+    t0 = time.monotonic()
+    run = {'at': int(time.time() * 1000), 'submitted': [], 'skipped': [], 'note': ''}
+
+    n = NEWS_PER_RUN_MAX
+    while n > 0 and not _brave_spend('news', n):
+        n -= 1
+    if n <= 0:
+        run['note'] = ('brave month too tight for news questions (%d/%d used)'
+                       % (_brave_usage().get('used', 0), _BRAVE_CAP))
+        print('[news]', run['note'])
+        _news_log(run)
+        return
+
+    deadline = time.monotonic() + 90
+    headlines = _news_headlines(deadline)
+    if not headlines:
+        _brave_refund('news', n)
+        run['note'] = 'no headlines (brave news vertical came up dry or unreachable)'
+        _news_log(run)
+        return
+
+    proposed = _news_propose(headlines, n, deadline)
+    if not proposed:
+        _brave_refund('news', n)
+        run['note'] = 'no questions proposed'
+        _news_log(run)
+        return
+
+    asked = _news_asked()
+    seen = {q.strip().lower() for q in asked[-200:]}
+    fresh = []
+    for q in proposed:
+        if q.strip().lower() in seen:
+            run['skipped'].append({'q': q, 'why': 'already asked recently'})
+            continue
+        seen.add(q.strip().lower())
+        fresh.append(q)
+
+    for q in fresh:
+        outcome = _news_submit(q)
+        if outcome == 'queued':
+            run['submitted'].append(q)
+            asked.append(q)
+        else:
+            run['skipped'].append({'q': q, 'why': outcome})
+
+    _brave_refund('news', n - len(run['submitted']))
+    _night_save('news-asked.json', asked[-1000:])
+    run['spent'] = len(run['submitted'])
+    run['note'] = ('submitted %d of %d proposed in %.1fs (reserved %d, refunded %d)'
+                   % (len(run['submitted']), len(proposed), time.monotonic() - t0,
+                      n, n - len(run['submitted'])))
+    print('[news] %s' % run['note'])
+    for q in run['submitted']:
+        print('[news]   + %s' % q[:90])
+    _news_log(run)
+
+
+def _news_log(run):
+    try:
+        runs = _night_load('news-runs.json', [])
+        runs.append(run)
+        _night_save('news-runs.json', runs[-MAX_NEWS_RUNS_KEPT:])
+    except Exception:
+        pass
+
+
+def _news_next_run_ms(after_ms=None):
+    return _hourly_next_run_ms(after_ms, offset_min=5, interval_min=NEWS_INTERVAL_MIN)
+
+
+def _news_loop():
+    sched = _night_load('news-schedule.json', {})
+    nxt = int(sched.get('nextRunAt', 0) or 0)
+    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
+        nxt = _news_next_run_ms()
+        _night_save('news-schedule.json', {'nextRunAt': nxt})
+    print('[news] next run %s (hourly, :05 past)'
+          % time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)))
+    while True:
+        time.sleep(30)
+        try:
+            now_ms = int(time.time() * 1000)
+            if now_ms < nxt:
+                continue
+            with _news_lock:
+                nxt = _news_next_run_ms(now_ms)
+                _night_save('news-schedule.json', {'nextRunAt': nxt})
+            _news_run()
+            print('[news] next run %s'
+                  % time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)))
+        except Exception as e:
+            print('[news] loop error:', str(e)[:200])
+
+
+if NEWS_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
+    threading.Thread(target=_news_loop, daemon=True, name='news-cron').start()
+
+
+# ---- Weather archive: mid-Atlantic hourly observations ----------------------
+# Every WEATHER_INTERVAL_MIN minutes (default 60, offset 10 past the hour),
+# pull the latest observation for each station in WEATHER_STATIONS from
+# api.weather.gov (NOAA/NWS — free, no key, keyed only by a descriptive
+# User-Agent per their API policy) and append one record per station to a
+# monthly JSONL file under hq-state/. This is NOT routed through the Brave
+# budget or the public search/library pipeline at all — it's a private,
+# ever-growing dataset, the intended "source of truth" for what the weather
+# was, in a given mid-Atlantic city, at a given hour, going back to whenever
+# this was turned on. JSONL + one file per month so a years-long archive never
+# means rewriting one giant JSON blob on every hourly tick (the pattern every
+# other _night_save ledger in this file uses, and the wrong one for data meant
+# to accumulate forever instead of ring-buffer).
+WEATHER_ENABLED = os.environ.get('WEATHER_CRON', '').strip() == '1'   # opt-in: off by default
+WEATHER_INTERVAL_MIN = int(os.environ.get('WEATHER_INTERVAL_MIN', '') or 60)
+WEATHER_USER_AGENT = os.environ.get(
+    'WEATHER_USER_AGENT', '') or 'CafresoHQWeatherArchive/1.0 (anthony@cafreso.com)'
+# NWS ground station IDs — a spread across the core mid-Atlantic corridor.
+WEATHER_STATIONS = {
+    'KDCA': 'Washington, DC',
+    'KBWI': 'Baltimore, MD',
+    'KPHL': 'Philadelphia, PA',
+    'KRIC': 'Richmond, VA',
+    'KILG': 'Wilmington, DE',
+    'KACY': 'Atlantic City, NJ',
+}
+_weather_lock = threading.Lock()
+
+
+def _weather_month_file(ts_ms=None):
+    ym = time.strftime('%Y-%m', time.gmtime((ts_ms or int(time.time() * 1000)) / 1000))
+    return 'weather-%s.jsonl' % ym
+
+
+def _weather_append(record):
+    """Append-only — never read-modify-write the whole file. Safe to call from
+    one cron thread; no concurrent writers to this path exist."""
+    try:
+        _hq_state_dir.mkdir(parents=True, exist_ok=True)
+        path = _hq_state_dir / _weather_month_file(record.get('ts'))
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    except Exception as e:
+        print('[weather] append failed:', str(e)[:120])
+
+
+def _weather_c_to_f(c):
+    return None if c is None else round(c * 9.0 / 5.0 + 32.0, 1)
+
+
+def _weather_fetch_station(station_id, deadline=None):
+    """One observation from api.weather.gov. Returns a dict or None on any
+    failure — a missed hour for one station is not worth retrying mid-run and
+    blocking the others behind a slow/dead station."""
+    url = 'https://api.weather.gov/stations/%s/observations/latest' % station_id
+    req = urllib.request.Request(url, headers={
+        'Accept': 'application/geo+json', 'User-Agent': WEATHER_USER_AGENT})
+    timeout = 20 if deadline is None else max(3, min(20, deadline - time.monotonic()))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode('utf-8'))
+    except Exception as e:
+        print('[weather] %s fetch failed: %s' % (station_id, str(e)[:120]))
+        return None
+    props = data.get('properties') or {}
+    temp_c = (props.get('temperature') or {}).get('value')
+    dewpoint_c = (props.get('dewpoint') or {}).get('value')
+    humidity = (props.get('relativeHumidity') or {}).get('value')
+    wind_kmh = (props.get('windSpeed') or {}).get('value')
+    pressure_pa = (props.get('barometricPressure') or {}).get('value')
+    return {
+        'station': station_id,
+        'label': WEATHER_STATIONS.get(station_id, station_id),
+        'obsTime': props.get('timestamp'),
+        'conditions': props.get('textDescription'),
+        'tempC': round(temp_c, 1) if temp_c is not None else None,
+        'tempF': _weather_c_to_f(temp_c),
+        'dewpointC': round(dewpoint_c, 1) if dewpoint_c is not None else None,
+        'humidityPct': round(humidity, 1) if humidity is not None else None,
+        'windKmh': round(wind_kmh, 1) if wind_kmh is not None else None,
+        'pressurePa': round(pressure_pa, 0) if pressure_pa is not None else None,
+    }
+
+
+def _weather_run():
+    t0 = time.monotonic()
+    deadline = time.monotonic() + 60
+    now_ms = int(time.time() * 1000)
+    run = {'at': now_ms, 'stations': [], 'errors': []}
+    for station_id in WEATHER_STATIONS:
+        obs = _weather_fetch_station(station_id, deadline)
+        if obs is None:
+            run['errors'].append(station_id)
+            continue
+        obs['ts'] = now_ms
+        _weather_append(obs)
+        run['stations'].append(station_id)
+    run['note'] = ('logged %d/%d stations in %.1fs'
+                   % (len(run['stations']), len(WEATHER_STATIONS), time.monotonic() - t0))
+    print('[weather] %s%s' % (run['note'],
+          (' — failed: %s' % ', '.join(run['errors'])) if run['errors'] else ''))
+    _weather_log(run)
+
+
+def _weather_log(run):
+    try:
+        runs = _night_load('weather-runs.json', [])
+        runs.append(run)
+        _night_save('weather-runs.json', runs[-120:])
+    except Exception:
+        pass
+
+
+def _weather_next_run_ms(after_ms=None):
+    return _hourly_next_run_ms(after_ms, offset_min=10, interval_min=WEATHER_INTERVAL_MIN)
+
+
+def _weather_loop():
+    sched = _night_load('weather-schedule.json', {})
+    nxt = int(sched.get('nextRunAt', 0) or 0)
+    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
+        nxt = _weather_next_run_ms()
+        _night_save('weather-schedule.json', {'nextRunAt': nxt})
+    print('[weather] next run %s (hourly, :10 past, %d stations)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)), len(WEATHER_STATIONS)))
+    while True:
+        time.sleep(30)
+        try:
+            now_ms = int(time.time() * 1000)
+            if now_ms < nxt:
+                continue
+            with _weather_lock:
+                nxt = _weather_next_run_ms(now_ms)
+                _night_save('weather-schedule.json', {'nextRunAt': nxt})
+            _weather_run()
+            print('[weather] next run %s'
+                  % time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)))
+        except Exception as e:
+            print('[weather] loop error:', str(e)[:200])
+
+
+if WEATHER_ENABLED:
+    threading.Thread(target=_weather_loop, daemon=True, name='weather-cron').start()
 
 
 # ---- Topics cron -----------------------------------------------------------
@@ -4674,13 +5051,69 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             },
             'gap': {
                 'enabled': bool(GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL),
-                'dailyMax': GAP_DAILY_MAX,
-                'runAt': '%02d:00 %s' % (GAP_HOUR_ET, GAP_TZ),
+                'perRunMax': GAP_PER_RUN_MAX,
+                'intervalMin': GAP_INTERVAL_MIN,
                 'nextRunAt': int((_night_load('gap-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
                 'askedTotal': len(_gap_asked()),
                 'runs': _night_load('gap-runs.json', [])[-10:],
             },
         })
+
+    def _news_status(self):
+        """Breaking-news cron state — same shape as /gap/status's 'gap' key,
+        separate endpoint because it's a genuinely separate cron/budget lane."""
+        return self._send_json(200, {
+            'news': {
+                'enabled': bool(NEWS_ENABLED and _SW_ENABLED and _SW_PRINCIPAL),
+                'perRunMax': NEWS_PER_RUN_MAX,
+                'intervalMin': NEWS_INTERVAL_MIN,
+                'nextRunAt': int((_night_load('news-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
+                'askedTotal': len(_news_asked()),
+                'runs': _night_load('news-runs.json', [])[-10:],
+            },
+        })
+
+    def _weather_status(self):
+        """Weather-archive cron state. Not Brave-budgeted (direct NWS calls),
+        so no 'brave' section here — just cadence + the last few runs."""
+        return self._send_json(200, {
+            'weather': {
+                'enabled': WEATHER_ENABLED,
+                'intervalMin': WEATHER_INTERVAL_MIN,
+                'stations': WEATHER_STATIONS,
+                'nextRunAt': int((_night_load('weather-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
+                'runs': _night_load('weather-runs.json', [])[-10:],
+            },
+        })
+
+    def _weather_history(self):
+        """GET /weather/history?station=KDCA&month=YYYY-MM (month defaults to
+        current UTC month). Reads straight off the JSONL archive — this IS the
+        "source of truth for a given hour" query surface the archive exists for."""
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        station = (qs.get('station', [''])[0] or '').strip().upper()
+        month = (qs.get('month', [''])[0] or '').strip() or time.strftime('%Y-%m', time.gmtime())
+        if not re.fullmatch(r'\d{4}-\d{2}', month):
+            return self._send_json(400, {'error': 'month must be YYYY-MM'})
+        path = _hq_state_dir / ('weather-%s.jsonl' % month)
+        records = []
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    if station and rec.get('station') != station:
+                        continue
+                    records.append(rec)
+        except FileNotFoundError:
+            pass
+        return self._send_json(200, {'month': month, 'station': station or None,
+                                      'count': len(records), 'records': records[-2000:]})
 
     def _missions_schedule(self):
         """POST /missions/schedule — create/update one night-shift schedule.

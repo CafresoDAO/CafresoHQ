@@ -12,6 +12,7 @@
     isAuthenticated
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
+  import { workspacesApiUrl } from '$lib/stores/workspaces.js';
   import { navMode, setNavMode } from '$lib/stores/navMode.js';
   import { ociGet } from '$lib/api/ociClient.js';
   import { describeBrain } from '$lib/brain.js';
@@ -38,6 +39,7 @@
   $: if (!$endpointUrl && brainState !== 'idle') { brainState = 'idle'; brain = null; }
 
   let fleetApiInput = $fleetApiUrl;
+  let workspacesApiInput = $workspacesApiUrl;
   let fleetTokenInput = $fleetApiAuthToken;
   let fleetApiState = 'idle';
   let fleetApiData = null;
@@ -50,6 +52,7 @@
 
   async function saveAndProbeFleet() {
     fleetApiUrl.set((fleetApiInput || '').trim().replace(/\/+$/, ''));
+    workspacesApiUrl.set((workspacesApiInput || '').trim().replace(/\/+$/, ''));
     fleetApiAuthToken.set((fleetTokenInput || '').trim());
     fleetApiState = 'probing';
     fleetApiError = '';
@@ -364,6 +367,20 @@
             spellcheck="false"
             bind:value={fleetApiInput}
             placeholder="http://localhost:8080"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-[0.22em] text-ink-400">
+            Workspaces API URL <span class="normal-case tracking-normal">(optional — for VM streaming on a separate host)</span>
+          </span>
+          <input
+            class="input mt-2"
+            type="url"
+            autocomplete="off"
+            spellcheck="false"
+            bind:value={workspacesApiInput}
+            placeholder="Defaults to the Fleet API URL"
           />
         </label>
 

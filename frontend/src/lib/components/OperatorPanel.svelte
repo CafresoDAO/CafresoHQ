@@ -21,6 +21,13 @@
   let searchEnabled = true;
   let trialEnabled = true, trialCap = 25;
   let moneyEnabled = true, publishEnabled = true;
+  let wsEnabled = true, wsPrincipals = '', wsMessage = 'Workspaces are in private preview — ask the operator for access.';
+
+  // Principal text sanity: dash-separated base32 groups (loose — the canister
+  // stores the blob opaquely; this just catches paste accidents).
+  const PRINCIPAL_RE = /^[a-z0-9]{2,5}(-[a-z0-9]{2,5})+$/;
+  $: wsList = wsPrincipals.split('\n').map((l) => l.trim()).filter(Boolean);
+  $: wsBad = wsList.filter((p) => !PRINCIPAL_RE.test(p));
 
   async function load() {
     loading = true; unavailable = false;
@@ -31,7 +38,10 @@
       const raw = await actor.operator_config();
       const c = raw ? JSON.parse(raw) : {};
       const g = c.gpuNode || {}, s = c.searchNetwork || {}, t = c.trialBrain || {},
-            m = c.money || {}, p = c.publish || {};
+            m = c.money || {}, p = c.publish || {}, w = c.workspaces || {};
+      wsEnabled = w.enabled !== false;
+      wsPrincipals = Array.isArray(w.allowedPrincipals) ? w.allowedPrincipals.join('\n') : '';
+      wsMessage = w.message || wsMessage;
       gpuEnabled = g.enabled !== false;
       gpuLabel = g.label || '';
       gpuMessage = g.downMessage || gpuMessage;
@@ -58,6 +68,11 @@
       trialBrain: { enabled: trialEnabled, dailyCap: Math.max(1, Math.floor(+trialCap) || 25) },
       money: { enabled: moneyEnabled },
       publish: { enabled: publishEnabled },
+      workspaces: {
+        enabled: wsEnabled,
+        allowedPrincipals: wsList.filter((p) => PRINCIPAL_RE.test(p)),
+        message: (wsMessage || '').slice(0, 240),
+      },
     };
     try {
       const actor = await getStateActor();
@@ -130,6 +145,30 @@
           Publish-to-web allowed
         </label>
         <p class="text-xs text-ink-400">Network kill switches — off refuses these operations for all clients, overriding their per-user settings.</p>
+      </div>
+
+      <!-- Workspaces (premium VM streaming) -->
+      <div class="space-y-2 border-t border-ink-700/30 pt-4">
+        <label class="flex items-center gap-3 text-sm font-medium">
+          <input type="checkbox" bind:checked={wsEnabled} />
+          Workspaces — live desktop streaming (private preview)
+        </label>
+        <p class="text-xs text-ink-400">
+          Grant list for Windows 11 VM streaming. One principal per line — only these users can see
+          the catalog and launch sessions. Enforced server-side by the fleet API reading this same
+          on-chain config; off = kill switch for everyone.
+        </p>
+        <textarea
+          class="input w-full font-mono text-xs"
+          rows="4"
+          placeholder="principal-id-one&#10;principal-id-two"
+          bind:value={wsPrincipals}
+          disabled={!wsEnabled}
+        ></textarea>
+        {#if wsBad.length > 0}
+          <p class="text-xs text-red-400">Skipped (not principal-shaped): {wsBad.join(', ')}</p>
+        {/if}
+        <input class="input w-full" placeholder="Message shown to non-granted users" bind:value={wsMessage} maxlength="240" />
       </div>
 
       <div class="flex items-center gap-3 border-t border-ink-700/30 pt-4">

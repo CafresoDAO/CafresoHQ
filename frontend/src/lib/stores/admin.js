@@ -5,32 +5,28 @@
 import { writable, derived, get } from 'svelte/store';
 import { principalText } from '$lib/stores/auth.js';
 import { fleetApiUrl, fleetApiAuthToken, FleetApiError } from '$lib/api/fleetClient.js';
+import { workspacesApiUrl } from '$lib/stores/workspaces.js';
 
 // ── Admin auth ──────────────────────────────────────────────────────────────
 
-/** List of admin principals (set from env or hardcoded for now). */
-const ADMIN_PRINCIPALS = [
-  // Anthony's ecosystem principal (shared across Banking.Brave / Cafreso / CafresoAI)
-  // Add more principals here as needed
-];
-
 const browser = () => typeof window !== 'undefined';
-const ADMIN_OVERRIDE_KEY = 'cafresoai.admin_override';
+const ADMIN_OVERRIDE_KEY = 'cafresohq.admin_override';
 
 /** True if the current user has been verified as admin by the API. */
 export const isAdminVerified = writable(false);
 
 /**
- * Derived: true if current principal is in local admin list OR the API
- * has confirmed admin status. For production, always verify via API.
+ * Derived admin flag. The API's /admin/verify (principal vs the server's
+ * FLEET_ADMIN_PRINCIPALS env) is the only production path — this is
+ * UI-gating; the server independently authorizes every /admin call.
+ * The localStorage override exists for LOCAL DEV ONLY and is compiled out
+ * of production builds.
  */
 export const isAdmin = derived(
   [principalText, isAdminVerified],
   ([$p, $verified]) => {
     if ($verified) return true;
-    if (ADMIN_PRINCIPALS.includes($p)) return true;
-    // Dev override: localStorage flag for testing
-    if (browser()) {
+    if (import.meta.env.DEV && browser()) {
       try { return localStorage.getItem(ADMIN_OVERRIDE_KEY) === 'true'; }
       catch (_) { /* private mode */ }
     }
@@ -50,7 +46,9 @@ export const adminTab           = writable('dashboard');
 // ── Internal fetch ──────────────────────────────────────────────────────────
 
 async function _fetch(path, opts = {}) {
-  const url = get(fleetApiUrl).replace(/\/+$/, '') + path;
+  // Admin console targets the workspaces fleet-api host (falls back to the
+  // regular fleet URL when no separate workspaces host is configured).
+  const url = (get(workspacesApiUrl) || get(fleetApiUrl)).replace(/\/+$/, '') + path;
   const tok = get(fleetApiAuthToken);
   const headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
   if (tok) headers['X-Fleet-Auth'] = tok;

@@ -21,6 +21,14 @@
   import WorkspaceCard from '$lib/components/WorkspaceCard.svelte';
   import AppIcon from '$lib/components/AppIcon.svelte';
   import AddVmModal from '$lib/components/AddVmModal.svelte';
+  import { operatorConfig, refreshOperatorConfig, workspaceAllowed, workspacesMessage } from '$lib/stores/operator.js';
+
+  // ── Entitlement (private preview) ────────────────────────────────────────
+  // The on-chain operator config carries the grant list; the fleet API
+  // enforces the same list server-side — this gate is UX, not security.
+  let entLoading = true;
+  $: allowed = workspaceAllowed($operatorConfig, $principalText);
+  $: previewMessage = workspacesMessage($operatorConfig);
 
   // ── Responsive: detect mobile ─────────────────────────────────────────────
   let isMobile = false;
@@ -86,7 +94,7 @@
       });
       launchProgress = '';
       if (session?.session_id) {
-        goto(`/workspaces/${session.session_id}`);
+        goto(`/hq/workspaces/${session.session_id}`);
       }
     } catch (err) {
       launchError = err.message || 'Launch failed';
@@ -98,7 +106,7 @@
     if (session?.stream_protocol === 'canister' && session.stream_url) {
       window.open(session.stream_url, '_blank', 'noopener,noreferrer');
     } else if (session?.session_id) {
-      goto(`/workspaces/${session.session_id}`);
+      goto(`/hq/workspaces/${session.session_id}`);
     }
   }
 
@@ -116,10 +124,7 @@
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', checkMobile);
     }
-    fetchTemplates($principalText || '').catch(() => {});
-    if ($principalText) {
-      fetchSessions($principalText).catch(() => {});
-    }
+    refreshOperatorConfig().finally(() => { entLoading = false; });
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('resize', checkMobile);
@@ -127,8 +132,12 @@
     };
   });
 
-  // Re-fetch sessions when principal changes
-  $: if ($principalText) {
+  // Fetch catalog + sessions only once the user is granted — the server 403s
+  // otherwise, so skipping the calls keeps the console clean.
+  let _fetchedFor = '';
+  $: if (allowed && $principalText && _fetchedFor !== $principalText) {
+    _fetchedFor = $principalText;
+    fetchTemplates($principalText).catch(() => {});
     fetchSessions($principalText).catch(() => {});
   }
 
@@ -148,6 +157,29 @@
       <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
         Your Internet Identity principal scopes every workspace, vault, and session.
       </p>
+    </header>
+  </section>
+
+{:else if entLoading}
+  <section class="space-y-5">
+    <header class="card p-6 sm:p-8">
+      <div class="page-kicker">Workspaces</div>
+      <p class="mt-4 text-sm text-ink-300">Checking access…</p>
+    </header>
+  </section>
+
+{:else if !allowed}
+  <!-- ── Private preview gate (grant list lives on-chain) ─────────────────── -->
+  <section class="space-y-5">
+    <header class="card p-6 sm:p-8">
+      <div class="page-kicker">Workspaces · private preview</div>
+      <h1 class="page-title mt-4">Live desktops, streaming soon<span class="text-brand-500">.</span></h1>
+      <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
+        Full Windows 11 workspaces streamed to your browser — your HQ, your VMs, your desktop,
+        anywhere. Access is granted per Internet Identity principal during the preview.
+      </p>
+      <p class="mt-3 max-w-2xl text-sm leading-6 text-ink-400">{previewMessage}</p>
+      <p class="mt-4 text-xs text-ink-500 font-mono break-all">Your principal: {$principalText}</p>
     </header>
   </section>
 

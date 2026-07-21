@@ -13,8 +13,17 @@
   import StreamAdapter from '$lib/components/StreamAdapter.svelte';
   import SessionToolbar from '$lib/components/SessionToolbar.svelte';
   import SessionDock from '$lib/components/SessionDock.svelte';
+  import { operatorConfig, refreshOperatorConfig, workspaceAllowed } from '$lib/stores/operator.js';
 
   $: sessionId = $page.params.id;
+
+  // Entitlement gate (UX only — the server 403s unentitled calls anyway).
+  // Non-granted users get bounced to the gallery, which shows the preview panel.
+  $: if (typeof window !== 'undefined' && $isAuthenticated &&
+         Object.keys($operatorConfig).length > 0 &&
+         !workspaceAllowed($operatorConfig, $principalText)) {
+    goto('/hq/workspaces');
+  }
 
   let session = null;
   let error   = '';
@@ -74,15 +83,15 @@
     try {
       await stopSession(session.session_id);
     } catch (_) { /* ignore */ }
-    goto('/workspaces');
+    goto('/hq/workspaces');
   }
 
   function handleDockSelect(sid) {
-    goto(`/workspaces/${sid}`);
+    goto(`/hq/workspaces/${sid}`);
   }
 
   function handleDockNew() {
-    goto('/workspaces');
+    goto('/hq/workspaces');
   }
 
   async function loadSession() {
@@ -90,7 +99,7 @@
       session = await getSession(sessionId);
       if (session?.stream_protocol === 'canister' && session.stream_url) {
         window.open(session.stream_url, '_blank', 'noopener,noreferrer');
-        goto('/workspaces');
+        goto('/hq/workspaces');
         return;
       }
     } catch (err) {
@@ -99,6 +108,7 @@
   }
 
   onMount(() => {
+    refreshOperatorConfig().catch(() => {});
     loadSession();
     if ($principalText) {
       fetchSessions($principalText).catch(() => {});
@@ -111,7 +121,7 @@
   });
 
   function onKey(e) {
-    if (e.key === 'Escape') goto('/workspaces');
+    if (e.key === 'Escape') goto('/hq/workspaces');
   }
 </script>
 
@@ -123,7 +133,7 @@
       <div class="page-kicker">Workspaces / Session</div>
       <h1 class="page-title mt-4">Session not found<span class="text-brand-500">.</span></h1>
       <p class="mt-4 text-sm text-ink-300">{error}</p>
-      <a href="/workspaces" class="btn-primary mt-4 inline-block">Back to workspaces</a>
+      <a href="/hq/workspaces" class="btn-primary mt-4 inline-block">Back to workspaces</a>
     </header>
   </section>
 
@@ -148,7 +158,7 @@
         <button class="btn-primary" on:click={() => window.open(session.stream_url, '_blank')}>
           Open in new tab
         </button>
-        <a href="/workspaces" class="btn-ghost">Back</a>
+        <a href="/hq/workspaces" class="btn-ghost">Back</a>
       </div>
     </header>
   </section>
@@ -160,7 +170,7 @@
     <div class="absolute top-0 inset-x-0 z-50 flex items-center justify-between px-4 py-2 bg-ink-900/80 backdrop-blur-md border-b border-ink-700/50">
       <div class="flex items-center gap-3">
         <a
-          href="/workspaces"
+          href="/hq/workspaces"
           class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-ink-300 transition-colors hover:bg-ink-800/80 hover:text-ink-50"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg>

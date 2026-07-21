@@ -18,6 +18,7 @@
     { href: '/hq/chat', label: 'Chat', slug: 'chat' },
     { href: '/hq/search', label: 'Search', slug: 'search' },
     { href: '/library', label: 'Library', slug: 'library' },
+    { href: '/hq/workspaces', label: 'Workspaces', slug: 'workspaces' },
     { href: '/hq/vault', label: 'Vault', slug: 'vault' },
     { href: '/hq/plans', label: 'Plans', slug: 'plans' },
     { href: '/hq/settings', label: 'Settings', slug: 'settings' }
