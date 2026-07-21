@@ -604,6 +604,105 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 pass
             return
 
+        # ── Guacamole desktop proxy (/guacamole/...) — NO auth header check ──
+        # Loaded via <iframe src=...>, a plain browser navigation that can
+        # never attach X-Fleet-Auth/X-Session-Token. Auth is supplied instead
+        # via a token already baked into the URL by _hyperv_provision_worker
+        # (pre-fetched at session launch using credentials in
+        # user-mapping.xml); no header injection needed because the
+        # file-auth provider's connections only surface when the token came
+        # from that same provider.
+        if u.path.startswith('/guacamole/'):
+            guac_path = u.path + (('?' + u.query) if u.query else '')
+            return self._stream_proxy('127.0.0.1', 8484, guac_path)
+
+        # ── Stream proxy (/stream/{sid}/...) — NO auth header check ─────
+        # Same constraint as /guacamole/ above: this is the iframe's own src,
+        # a bare navigation. The session_id itself (uuid4-derived, ~48 bits,
+        # unguessable) is the de facto capability token here — this endpoint
+        # requiring X-Fleet-Auth was confirmed live 2026-07-21 to make every
+        # workspace session unusable: the session lookup would succeed
+        # (fetched via JS, headers attached fine) but the iframe's plain GET
+        # to its own stream_url always 401'd, rendering literally
+        # {"error":"unauthorized"} inside the desktop viewport.
+        #   local    → ttyd WebSocket terminal on localhost:{port}
+        #   hyperv   → 302 redirect to the per-session Guacamole URL
+        if u.path.startswith('/stream/'):
+            tail  = u.path[len('/stream/'):]           # 'ses_abc/ws' or 'ses_abc/'
+            slash = tail.find('/')
+            if slash < 0:
+                sid  = tail
+                rest = '/'
+            else:
+                sid  = tail[:slash]
+                rest = tail[slash:] or '/'
+            if u.query:
+                rest = rest + '?' + u.query
+
+            if not sid:
+                return self._send_json(400, {'error': 'missing session id in stream path'})
+
+            sessions = _load_sessions()
+            session  = sessions.get(sid)
+            if not session:
+                return self._send_json(404, {'error': 'stream session not found'})
+            if session.get('status') not in ('running', 'starting'):
+                return self._send_json(410, {
+                    'error':  'session not running',
+                    'status': session.get('status'),
+                })
+
+            provider = session.get('provider')
+            if provider == 'local':
+                b_port = session.get('port')
+                if not b_port:
+                    return self._send_json(502, {'error': 'no port recorded in session'})
+                log.info('[stream-proxy] local session %s -> localhost:%s%s', sid, b_port, rest)
+                return self._stream_proxy('127.0.0.1', b_port, rest)
+
+            elif provider == 'hyperv':
+                # Phase 2c compat: if a guacamole_url is stored on the session
+                # (legacy sessions launched before Phase 2d), redirect there.
+                guac_url   = session.get('guacamole_url', '')
+                guac_token = session.get('guacamole_token', '')
+                if guac_url:
+                    sep = '&' if '?' in guac_url else '?'
+                    target_url = f"{guac_url}{sep}token={guac_token}" if guac_token else guac_url
+                    body = (
+                        f'<!doctype html><meta http-equiv="refresh" content="0;url={target_url}">'
+                        f'<p>Connecting to <a href="{target_url}">desktop</a>...</p>'
+                    ).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(body)
+                    log.info('[stream-proxy] hyperv %s -> guacamole redirect %s', sid, target_url)
+                    return
+
+                # Phase 2d: moonlight-web-stream sidecar proxy.
+                # The sidecar container runs on *this host* (ASERVER), so the
+                # proxy destination is always 127.0.0.1:{moonlight_port}.
+                # Only fall back to the VM's Sunshine HTTP port if no sidecar
+                # is running (e.g. during pool-warmup or first-launch race).
+                ml_port = session.get('moonlight_port')
+                if ml_port:
+                    log.info('[stream-proxy] hyperv %s -> moonlight@localhost:%s%s',
+                             sid, ml_port, rest)
+                    return self._stream_proxy('127.0.0.1', ml_port, rest)
+
+                # Last resort: proxy raw to Sunshine HTTP port on the VM.
+                b_host = session.get('ip', '10.0.0.19')
+                b_port = session.get('sunshine_http_port', 47990)
+                log.info('[stream-proxy] hyperv %s -> sunshine@%s:%s%s', sid, b_host, b_port, rest)
+                return self._stream_proxy(b_host, b_port, rest)
+
+            else:
+                return self._send_json(501, {
+                    'error': f'stream proxy not implemented for provider: {provider}'
+                })
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
 
@@ -736,96 +835,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._admin_sessions()
             return self._admin_infrastructure()
 
-        # ── Guacamole desktop proxy (/guacamole/...) ──────────────────────
-        # Plain pass-through to the local Guacamole web app for hyperv
-        # workspaces. Auth is supplied via a token already baked into the
-        # iframe URL by _hyperv_provision_worker (pre-fetched at session
-        # launch using credentials in user-mapping.xml); no header injection
-        # needed because the file-auth provider's connections only surface
-        # when the token came from that same provider.
-        if u.path.startswith('/guacamole/'):
-            guac_path = u.path + (('?' + u.query) if u.query else '')
-            return self._stream_proxy('127.0.0.1', 8484, guac_path)
-
-        # ── Stream proxy (/stream/{sid}/...) ──────────────────────────────
-        # Routes browser traffic to the local streaming backend:
-        #   local    → ttyd WebSocket terminal on localhost:{port}
-        #   hyperv   → 302 redirect to the per-session Guacamole URL
-        if u.path.startswith('/stream/'):
-            tail  = u.path[len('/stream/'):]           # 'ses_abc/ws' or 'ses_abc/'
-            slash = tail.find('/')
-            if slash < 0:
-                sid  = tail
-                rest = '/'
-            else:
-                sid  = tail[:slash]
-                rest = tail[slash:] or '/'
-            if u.query:
-                rest = rest + '?' + u.query
-
-            if not sid:
-                return self._send_json(400, {'error': 'missing session id in stream path'})
-
-            sessions = _load_sessions()
-            session  = sessions.get(sid)
-            if not session:
-                return self._send_json(404, {'error': 'stream session not found'})
-            if session.get('status') not in ('running', 'starting'):
-                return self._send_json(410, {
-                    'error':  'session not running',
-                    'status': session.get('status'),
-                })
-
-            provider = session.get('provider')
-            if provider == 'local':
-                b_port = session.get('port')
-                if not b_port:
-                    return self._send_json(502, {'error': 'no port recorded in session'})
-                log.info('[stream-proxy] local session %s -> localhost:%s%s', sid, b_port, rest)
-                return self._stream_proxy('127.0.0.1', b_port, rest)
-
-            elif provider == 'hyperv':
-                # Phase 2c compat: if a guacamole_url is stored on the session
-                # (legacy sessions launched before Phase 2d), redirect there.
-                guac_url   = session.get('guacamole_url', '')
-                guac_token = session.get('guacamole_token', '')
-                if guac_url:
-                    sep = '&' if '?' in guac_url else '?'
-                    target_url = f"{guac_url}{sep}token={guac_token}" if guac_token else guac_url
-                    body = (
-                        f'<!doctype html><meta http-equiv="refresh" content="0;url={target_url}">'
-                        f'<p>Connecting to <a href="{target_url}">desktop</a>...</p>'
-                    ).encode()
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'text/html; charset=utf-8')
-                    self.send_header('Content-Length', str(len(body)))
-                    self._cors()
-                    self.end_headers()
-                    self.wfile.write(body)
-                    log.info('[stream-proxy] hyperv %s -> guacamole redirect %s', sid, target_url)
-                    return
-
-                # Phase 2d: moonlight-web-stream sidecar proxy.
-                # The sidecar container runs on *this host* (ASERVER), so the
-                # proxy destination is always 127.0.0.1:{moonlight_port}.
-                # Only fall back to the VM's Sunshine HTTP port if no sidecar
-                # is running (e.g. during pool-warmup or first-launch race).
-                ml_port = session.get('moonlight_port')
-                if ml_port:
-                    log.info('[stream-proxy] hyperv %s -> moonlight@localhost:%s%s',
-                             sid, ml_port, rest)
-                    return self._stream_proxy('127.0.0.1', ml_port, rest)
-
-                # Last resort: proxy raw to Sunshine HTTP port on the VM.
-                b_host = session.get('ip', '10.0.0.19')
-                b_port = session.get('sunshine_http_port', 47990)
-                log.info('[stream-proxy] hyperv %s -> sunshine@%s:%s%s', sid, b_host, b_port, rest)
-                return self._stream_proxy(b_host, b_port, rest)
-
-            else:
-                return self._send_json(501, {
-                    'error': f'stream proxy not implemented for provider: {provider}'
-                })
+        # /guacamole/* and /stream/* are handled above, before the auth gate
+        # (iframe navigations can't carry X-Fleet-Auth) — see that block.
 
         return self._send_json(404, {'error': 'not found'})
 
