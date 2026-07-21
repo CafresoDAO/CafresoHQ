@@ -29,6 +29,27 @@ function _apiBase() {
   return (get(workspacesApiUrl) || get(fleetApiUrl)).replace(/\/+$/, '');
 }
 
+// The Workspaces API is typically a SEPARATE machine from the Fleet API (OCI
+// gateway) — it has its own independently-generated FLEET_API_SECRET. Reusing
+// fleetApiAuthToken here silently 401s every call once the two hosts'
+// secrets diverge (confirmed live 2026-07-21). Falls back to the fleet token
+// only when no dedicated one is set, so a single-host setup still works.
+const WS_TOKEN_KEY = 'cafresohq.workspaces_api_token';
+export const workspacesApiAuthToken = writable(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(WS_TOKEN_KEY)) || ''
+);
+if (typeof localStorage !== 'undefined') {
+  workspacesApiAuthToken.subscribe((v) => {
+    try {
+      if (v) localStorage.setItem(WS_TOKEN_KEY, v);
+      else localStorage.removeItem(WS_TOKEN_KEY);
+    } catch (_) { /* private mode */ }
+  });
+}
+function _apiToken() {
+  return get(workspacesApiAuthToken) || get(fleetApiAuthToken);
+}
+
 // On-chain session token: the server takes the caller's principal FROM this
 // token (hq_token verify), so users can't act as someone else. Minted once
 // and cached ~50 min (tokens live 1h on-chain).
@@ -106,7 +127,7 @@ export const activeSessions = derived(sessions, ($s) =>
 
 async function _fetch(path, opts = {}) {
   const url = _apiBase() + path;
-  const tok = get(fleetApiAuthToken);
+  const tok = _apiToken();
   const headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
   if (tok) headers['X-Fleet-Auth'] = tok;
   // Admin bridge: alongside the fleet secret, the principal header lets a

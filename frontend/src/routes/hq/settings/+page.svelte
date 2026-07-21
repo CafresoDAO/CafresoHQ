@@ -12,7 +12,7 @@
     isAuthenticated
   } from '$lib/stores/auth.js';
   import { fleetApiUrl, fleetApiAuthToken, fleetHealth } from '$lib/api/fleetClient.js';
-  import { workspacesApiUrl } from '$lib/stores/workspaces.js';
+  import { workspacesApiUrl, workspacesApiAuthToken } from '$lib/stores/workspaces.js';
   import { navMode, setNavMode } from '$lib/stores/navMode.js';
   import { ociGet } from '$lib/api/ociClient.js';
   import { describeBrain } from '$lib/brain.js';
@@ -41,6 +41,7 @@
   let fleetApiInput = $fleetApiUrl;
   let workspacesApiInput = $workspacesApiUrl;
   let fleetTokenInput = $fleetApiAuthToken;
+  let workspacesTokenInput = $workspacesApiAuthToken;
   let fleetApiState = 'idle';
   let fleetApiData = null;
   let fleetApiError = '';
@@ -87,6 +88,12 @@
     workspacesApiUrl.set((workspacesApiInput || '').trim().replace(/\/+$/, ''));
     const tok = (fleetTokenInput || '').trim();
     fleetApiAuthToken.set(tok);
+    // Separate secret — the workspaces host generates its own
+    // FLEET_API_SECRET independently of the Fleet API's. Reusing `tok` here
+    // silently 401'd every workspaces call once the two diverged (confirmed
+    // live 2026-07-21).
+    const wsTok = (workspacesTokenInput || '').trim();
+    workspacesApiAuthToken.set(wsTok);
     fleetApiState = 'probing';
     fleetApiError = '';
     fleetApiData = null;
@@ -99,7 +106,7 @@
     }
     // Independent of the Fleet API's result — a separate host, separate
     // success/failure.
-    await probeWorkspacesApi(tok);
+    await probeWorkspacesApi(wsTok || tok);
   }
 
   let inputValue = $endpointUrl;
@@ -430,6 +437,19 @@
             autocomplete="off"
             bind:value={fleetTokenInput}
             placeholder="X-Fleet-Auth header value"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-[0.22em] text-ink-400">
+            Workspaces auth token <span class="normal-case tracking-normal">(only if the Workspaces host has its own secret)</span>
+          </span>
+          <input
+            class="input mt-2"
+            type="password"
+            autocomplete="off"
+            bind:value={workspacesTokenInput}
+            placeholder="Falls back to the Auth token above if left blank"
           />
         </label>
 

@@ -2104,11 +2104,15 @@ def _gap_log(run):
 def _gap_loop():
     sched = _night_load('gap-schedule.json', {})
     nxt = int(sched.get('nextRunAt', 0) or 0)
-    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
-        # No schedule, or one stale enough (>3h) it would otherwise fire
-        # immediately on boot — pin it to the next top-of-hour instead. Kept
-        # short (not the old 1-day window) because hourly cadence means a
-        # multi-hour-stale value is already meaningless.
+    now_ms = int(time.time() * 1000)
+    bound = max(2 * GAP_INTERVAL_MIN, 180) * 60_000
+    if not nxt or abs(nxt - now_ms) > bound:
+        # No schedule, one stale enough it would otherwise fire immediately on
+        # boot, OR (the migration case) a next-run left over from the OLD
+        # once/day-at-10am scheduler — that value is a future timestamp, so a
+        # past-only staleness check would never catch it and gap would
+        # silently stay on the daily cadence until that old run time arrived.
+        # Bounding BOTH directions around "now" catches that too.
         nxt = _gap_next_run_ms()
         _night_save('gap-schedule.json', {'nextRunAt': nxt})
     print('[gap] next run %s (hourly, every %d min)'
@@ -2328,7 +2332,9 @@ def _news_next_run_ms(after_ms=None):
 def _news_loop():
     sched = _night_load('news-schedule.json', {})
     nxt = int(sched.get('nextRunAt', 0) or 0)
-    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
+    now_ms = int(time.time() * 1000)
+    bound = max(2 * NEWS_INTERVAL_MIN, 180) * 60_000
+    if not nxt or abs(nxt - now_ms) > bound:   # see _gap_loop for why both directions
         nxt = _news_next_run_ms()
         _night_save('news-schedule.json', {'nextRunAt': nxt})
     print('[news] next run %s (hourly, :05 past)'
@@ -2473,7 +2479,9 @@ def _weather_next_run_ms(after_ms=None):
 def _weather_loop():
     sched = _night_load('weather-schedule.json', {})
     nxt = int(sched.get('nextRunAt', 0) or 0)
-    if not nxt or nxt < int(time.time() * 1000) - 3 * 3_600_000:
+    now_ms = int(time.time() * 1000)
+    bound = max(2 * WEATHER_INTERVAL_MIN, 180) * 60_000
+    if not nxt or abs(nxt - now_ms) > bound:   # see _gap_loop for why both directions
         nxt = _weather_next_run_ms()
         _night_save('weather-schedule.json', {'nextRunAt': nxt})
     print('[weather] next run %s (hourly, :10 past, %d stations)'

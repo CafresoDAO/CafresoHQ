@@ -5,7 +5,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { principalText } from '$lib/stores/auth.js';
 import { fleetApiUrl, fleetApiAuthToken, FleetApiError } from '$lib/api/fleetClient.js';
-import { workspacesApiUrl } from '$lib/stores/workspaces.js';
+import { workspacesApiUrl, workspacesApiAuthToken } from '$lib/stores/workspaces.js';
 
 // ── Admin auth ──────────────────────────────────────────────────────────────
 
@@ -49,7 +49,9 @@ async function _fetch(path, opts = {}) {
   // Admin console targets the workspaces fleet-api host (falls back to the
   // regular fleet URL when no separate workspaces host is configured).
   const url = (get(workspacesApiUrl) || get(fleetApiUrl)).replace(/\/+$/, '') + path;
-  const tok = get(fleetApiAuthToken);
+  // Separate secret from the Fleet API's — the workspaces host generates
+  // its own FLEET_API_SECRET independently (confirmed live 2026-07-21).
+  const tok = get(workspacesApiAuthToken) || get(fleetApiAuthToken);
   const headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
   if (tok) headers['X-Fleet-Auth'] = tok;
   headers['X-User-Principal'] = get(principalText) || '';
