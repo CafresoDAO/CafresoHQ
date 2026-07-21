@@ -865,6 +865,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._send_json(404, {'error': 'not found'})
 
     def do_DELETE(self):
+        # /guacamole/* passes through untouched for EVERY method — Guacamole's
+        # client DELETEs /api/tokens/<t> on logout. See do_POST for the full
+        # story of why gating these behind X-Fleet-Auth broke everything.
+        if self.path.startswith('/guacamole/'):
+            return self._stream_proxy('127.0.0.1', 8484, self.path)
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
         u = urllib.parse.urlparse(self.path)
@@ -917,6 +922,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._send_json(404, {'error': 'not found'})
 
     def do_POST(self):
+        # /guacamole/* passes through untouched for EVERY method. The GET
+        # exemption alone was not enough: Guacamole's client POSTs
+        # /guacamole/api/tokens during BOOTSTRAP (its normal login/anonymous
+        # flow). With do_POST still behind the blanket _check_auth, that
+        # request never reached Guacamole — OUR api answered
+        # {"error":"unauthorized"} (server header: CafresoAI-Fleet-API), a
+        # 401 shape the Angular client can't interpret, so it fatals with
+        # the generic error modal before even showing a login screen.
+        # Confirmed live 2026-07-21 via curl: the 401 came from this process.
+        # Guacamole enforces its own auth; the unguessable session id +
+        # Guacamole tokens are the access control on this path.
+        if self.path.startswith('/guacamole/'):
+            return self._stream_proxy('127.0.0.1', 8484, self.path)
+
         if not self._check_auth():
             return self._send_json(401, {'error': 'unauthorized'})
 
