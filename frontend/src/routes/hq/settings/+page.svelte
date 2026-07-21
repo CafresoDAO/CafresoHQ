@@ -45,15 +45,48 @@
   let fleetApiData = null;
   let fleetApiError = '';
 
+  // Separate probe state for the Workspaces API — it was previously silent:
+  // Save only ever checked fleetHealth() (the regular Fleet API / OCI
+  // gateway), so a broken or unset Workspaces API URL looked identical to a
+  // working one — the "Fleet API: OK" result belonged to a different host
+  // entirely. Confirmed live 2026-07-21.
+  let wsApiState = 'idle';
+  let wsApiData = null;
+  let wsApiError = '';
+
   // NOTE: these are initialized once (above) and only updated explicitly in
   // saveAndProbeFleet(). A reactive `$: fleetApiInput = $fleetApiUrl` used to live
   // here — it re-clobbered the field from the store and fought the user's typing,
   // so the inputs couldn't hold an edit. Removed.
 
+  async function probeWorkspacesApi(token) {
+    // Read the just-saved values directly rather than the stores (Svelte
+    // store updates via .set() are synchronous, but reading raw inputs here
+    // avoids any ambiguity about ordering with the reactive $ subscriptions).
+    const base = ((workspacesApiInput || fleetApiInput || '').trim()).replace(/\/+$/, '');
+    if (!base) { wsApiState = 'idle'; wsApiData = null; return; }
+    wsApiState = 'probing'; wsApiError = ''; wsApiData = null;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 5_000);
+      const headers = { Accept: 'application/json' };
+      if (token) headers['X-Fleet-Auth'] = token;
+      const r = await fetch(base + '/fleet/health', { headers, signal: ctrl.signal });
+      clearTimeout(t);
+      wsApiData = await r.json();
+      wsApiState = r.ok ? 'ok' : 'err';
+      if (!r.ok) wsApiError = `HTTP ${r.status}`;
+    } catch (err) {
+      wsApiError = String(err?.message || err);
+      wsApiState = 'err';
+    }
+  }
+
   async function saveAndProbeFleet() {
     fleetApiUrl.set((fleetApiInput || '').trim().replace(/\/+$/, ''));
     workspacesApiUrl.set((workspacesApiInput || '').trim().replace(/\/+$/, ''));
-    fleetApiAuthToken.set((fleetTokenInput || '').trim());
+    const tok = (fleetTokenInput || '').trim();
+    fleetApiAuthToken.set(tok);
     fleetApiState = 'probing';
     fleetApiError = '';
     fleetApiData = null;
@@ -64,6 +97,9 @@
       fleetApiError = String(err?.message || err);
       fleetApiState = 'err';
     }
+    // Independent of the Fleet API's result — a separate host, separate
+    // success/failure.
+    await probeWorkspacesApi(tok);
   }
 
   let inputValue = $endpointUrl;
@@ -402,13 +438,42 @@
         </button>
 
         {#if fleetApiState === 'ok' && fleetApiData}
+          <div class="text-xs uppercase tracking-[0.15em] text-ink-400">Fleet API result</div>
           <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(fleetApiData, null, 2)}</pre>
         {:else if fleetApiState === 'err'}
           <div class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
-            <div class="font-semibold">Probe failed</div>
+            <div class="font-semibold">Fleet API probe failed</div>
             <div class="mt-1 font-mono text-xs">{fleetApiError}</div>
             <div class="mt-2 text-xs">Start it locally: <code class="font-mono">python oci-fleet/fleet-api.py</code></div>
           </div>
+        {/if}
+
+        <!-- Workspaces API — a SEPARATE host from the Fleet API above. Its
+             own probe used to be silent; the Fleet API's "OK" pill could
+             mislead you into thinking Workspaces was reachable when it
+             wasn't (they're different services, different machines). -->
+        {#if workspacesApiInput}
+          <div class="flex items-center justify-between gap-3 border-t border-ink-700/30 pt-3">
+            <div class="text-xs uppercase tracking-[0.22em] text-ink-400">Workspaces API</div>
+            {#if wsApiState === 'ok'}
+              <span class="pill-ok"><span class="glow-dot text-emerald-400"></span> Reachable</span>
+            {:else if wsApiState === 'probing'}
+              <span class="pill-warn"><span class="glow-dot text-amber-400 animate-pulse"></span> Probing</span>
+            {:else if wsApiState === 'err'}
+              <span class="pill-err"><span class="glow-dot text-rose-400"></span> Unreachable</span>
+            {:else}
+              <span class="pill-idle"><span class="glow-dot text-ink-400"></span> Idle</span>
+            {/if}
+          </div>
+          {#if wsApiState === 'ok' && wsApiData}
+            <pre class="overflow-x-auto rounded-xl border border-ink-600/60 bg-[var(--code-bg)] px-4 py-3 font-mono text-xs text-ink-100">{JSON.stringify(wsApiData, null, 2)}</pre>
+          {:else if wsApiState === 'err'}
+            <div class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+              <div class="font-semibold">Workspaces API probe failed</div>
+              <div class="mt-1 font-mono text-xs">{wsApiError}</div>
+              <div class="mt-2 text-xs">This must resolve on its own — the Fleet API above being reachable does not mean this one is.</div>
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}

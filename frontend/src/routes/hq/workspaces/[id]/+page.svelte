@@ -70,11 +70,26 @@
     loadSession();
   }
 
-  function handleFullscreen() {
+  async function handleFullscreen() {
     if (document.fullscreenElement) {
+      try { navigator.keyboard?.unlock?.(); } catch (_) {}
       document.exitFullscreen();
     } else {
-      document.documentElement.requestFullscreen();
+      await document.documentElement.requestFullscreen();
+      // Keyboard Lock (Chromium): while fullscreen, system shortcuts —
+      // Alt+Tab, Ctrl+W, the Windows/Cmd key — go to the REMOTE desktop
+      // instead of the browser. This is the difference between "web viewer"
+      // and "native RDP feel". Esc is deliberately left unlocked so a long
+      // Esc press still exits fullscreen (also our back-to-gallery key).
+      try { await navigator.keyboard?.lock?.(); } catch (_) { /* non-Chromium */ }
+    }
+  }
+
+  // If the user exits fullscreen via Esc/browser UI (not our button),
+  // release the keyboard lock too.
+  function onFsChange() {
+    if (!document.fullscreenElement) {
+      try { navigator.keyboard?.unlock?.(); } catch (_) {}
     }
   }
 
@@ -114,10 +129,13 @@
       fetchSessions($principalText).catch(() => {});
     }
     uptimeInterval = setInterval(updateUptime, 1000);
+    document.addEventListener('fullscreenchange', onFsChange);
   });
 
   onDestroy(() => {
     clearInterval(uptimeInterval);
+    document.removeEventListener('fullscreenchange', onFsChange);
+    try { navigator.keyboard?.unlock?.(); } catch (_) {}
   });
 
   function onKey(e) {
