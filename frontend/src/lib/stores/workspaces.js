@@ -53,12 +53,35 @@ function _apiToken() {
 // On-chain session token: the server takes the caller's principal FROM this
 // token (hq_token verify), so users can't act as someone else. Minted once
 // and cached ~50 min (tokens live 1h on-chain).
+//
+// This host has no HQ_SESSION_SECRET configured (workspaces auth currently
+// runs on the admin-principal bridge instead — see _caller_principal on the
+// server), so mintHqSession() has nothing to fail against cleanly: agent-js
+// retries the update call repeatedly against a 400 from the boundary node,
+// visibly spamming the console and adding real latency to EVERY portal
+// request (confirmed live 2026-07-21). A short client-side timeout plus a
+// negative-result cache stop each call from re-triggering that retry storm.
 let _tok = null, _tokAt = 0;
+let _tokFailAt = 0;
+const TOK_FAIL_BACKOFF_MS = 30_000;
+
+function _timeout(ms) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('mint timeout')), ms));
+}
+
 async function _sessionToken() {
   if (_tok && Date.now() - _tokAt < 50 * 60_000) return _tok;
-  _tok = await mintSessionToken();
-  _tokAt = Date.now();
-  return _tok;
+  if (Date.now() - _tokFailAt < TOK_FAIL_BACKOFF_MS) {
+    throw new Error('session token unavailable (recent failure, backing off)');
+  }
+  try {
+    _tok = await Promise.race([mintSessionToken(), _timeout(4_000)]);
+    _tokAt = Date.now();
+    return _tok;
+  } catch (e) {
+    _tokFailAt = Date.now();
+    throw e;
+  }
 }
 
 export const templates      = writable([]);

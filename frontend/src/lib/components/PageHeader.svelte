@@ -15,6 +15,7 @@
   } from '$lib/stores/auth.js';
   import { bbLinks, aiCafresoOrigin } from '$lib/links.js';
   import { aiSearchOpen } from '$lib/stores/blog.js';
+  import { weatherOpen } from '$lib/stores/weather.js';
   import { theme, toggleTheme } from '$lib/stores/theme.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
   import NotificationBell from './NotificationBell.svelte';
@@ -300,6 +301,19 @@
         on:mouseleave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'hsl(var(--pg-fg-muted))'; }}
       >
         <Icon name={$theme === 'dark' ? 'sun' : 'moon'} size={19} />
+      </button>
+
+      <button
+        type="button"
+        aria-label="Weather"
+        on:click={() => weatherOpen.set(true)}
+        class="w-[38px] h-[38px] inline-flex items-center justify-center border-none bg-transparent rounded-[10px] cursor-pointer"
+        style="color: hsl(var(--pg-fg-muted)); transition: background .2s, color .2s;"
+        on:mouseenter={(e) => { e.currentTarget.style.background = 'hsl(var(--pg-hover) / 0.7)'; e.currentTarget.style.color = 'hsl(205 80% 55%)'; }}
+        on:mouseleave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'hsl(var(--pg-fg-muted))'; }}
+        title="Weather — live + archived by the Search Network"
+      >
+        <Icon name="cloud" size={19} />
       </button>
 
       <button
