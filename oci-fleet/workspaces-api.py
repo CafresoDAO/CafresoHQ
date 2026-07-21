@@ -116,6 +116,16 @@ OPERATOR_STATE_URL = os.environ.get(
     'OPERATOR_STATE_URL', 'https://ydacz-riaaa-aaaal-qxeja-cai.icp0.io').rstrip('/')
 DEV_MODE = not SHARED_SECRET and os.environ.get('CAFRESOHQ_DEV') == '1'
 
+# Public hostname for hyperv/local sessions, which run entirely ON THIS HOST
+# and are never fronted by the OCI gateway. Without this, stream_url fell
+# back to fleet.json's gateway.public_hostname (hq.cafreso.com) — a
+# DIFFERENT machine that doesn't run this service, silently breaking every
+# hyperv/local session's iframe (confirmed live 2026-07-21: launched session
+# got stream_url=https://hq.cafreso.com/stream/... instead of this host's
+# Tailscale Funnel URL). Set to this host's externally-reachable hostname
+# (e.g. the Tailscale Funnel / named tunnel host) in .env.host.
+WORKSPACES_PUBLIC_HOSTNAME = os.environ.get('WORKSPACES_PUBLIC_HOSTNAME', '').strip()
+
 try:
     import hq_token as _hq_token
 except Exception:            # pragma: no cover — module ships alongside this file
@@ -1077,10 +1087,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except RuntimeError as e:
                     return self._send_json(500, {'error': str(e)})
 
-                # Build stream_url — Caddy will proxy /stream/{sid}/ → localhost:{port}
+                # Build stream_url — Caddy will proxy /stream/{sid}/ → localhost:{port}.
+                # This session runs on THIS host, not the OCI gateway.
                 fleet = _load_fleet_full()
                 gw = fleet.get('gateway', {})
-                hostname = gw.get('public_hostname', 'hq.cafreso.com')
+                hostname = WORKSPACES_PUBLIC_HOSTNAME or gw.get('public_hostname', 'hq.cafreso.com')
                 stream_url = f'https://{hostname}/stream/{sid}/'
 
                 session = {
@@ -1916,9 +1927,11 @@ def _hyperv_provision_worker(session_id: str, principal: str, template: dict):
             )
 
         # ── Step 3: Build stream URL and update session ────────────────
+        # Hyper-V VMs run on THIS host, not the OCI gateway — never use the
+        # gateway's hostname here.
         fleet = _load_fleet_full()
         gw = fleet.get('gateway', {})
-        hostname = gw.get('public_hostname', 'hq.cafreso.com')
+        hostname = WORKSPACES_PUBLIC_HOSTNAME or gw.get('public_hostname', 'hq.cafreso.com')
         stream_url = f'https://{hostname}/stream/{session_id}/'
 
         # TURN server info for the client

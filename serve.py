@@ -2359,33 +2359,78 @@ if NEWS_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
     threading.Thread(target=_news_loop, daemon=True, name='news-cron').start()
 
 
-# ---- Weather archive: mid-Atlantic hourly observations ----------------------
+# ---- Weather archive: mid-Atlantic + El Salvador hourly observations -------
 # Every WEATHER_INTERVAL_MIN minutes (default 60, offset 10 past the hour),
-# pull the latest observation for each station in WEATHER_STATIONS from
-# api.weather.gov (NOAA/NWS — free, no key, keyed only by a descriptive
-# User-Agent per their API policy) and append one record per station to a
-# monthly JSONL file under hq-state/. This is NOT routed through the Brave
-# budget or the public search/library pipeline at all — it's a private,
-# ever-growing dataset, the intended "source of truth" for what the weather
-# was, in a given mid-Atlantic city, at a given hour, going back to whenever
-# this was turned on. JSONL + one file per month so a years-long archive never
-# means rewriting one giant JSON blob on every hourly tick (the pattern every
-# other _night_save ledger in this file uses, and the wrong one for data meant
-# to accumulate forever instead of ring-buffer).
+# pull current conditions for every point in WEATHER_LOCATIONS and append one
+# record per location to a monthly JSONL file under hq-state/. This is NOT
+# routed through the Brave budget or the public search/library pipeline at
+# all — it's a private, ever-growing dataset, the intended "source of truth"
+# for what the weather was, in a given place, at a given hour, going back to
+# whenever this was turned on. JSONL + one file per month so a years-long
+# archive never means rewriting one giant JSON blob on every hourly tick (the
+# pattern every other _night_save ledger in this file uses, and the wrong one
+# for data meant to accumulate forever instead of ring-buffer).
+#
+# Provider: Open-Meteo, not NWS. NWS/api.weather.gov (used by the first cut of
+# this cron) ONLY covers US stations — it has no concept of El Salvador, so it
+# could never satisfy "all departments weather" no matter how the station list
+# was tuned. Open-Meteo is free, needs no key, and takes plain lat/lon anywhere
+# on Earth, so one provider now covers both US mid-Atlantic points and every
+# El Salvador department capital through the same code path. It also supports
+# batching many coordinates into ONE request (see WEATHER_LOCATIONS below),
+# so this cron is a single HTTP call per run, not one per location.
 WEATHER_ENABLED = os.environ.get('WEATHER_CRON', '').strip() == '1'   # opt-in: off by default
 WEATHER_INTERVAL_MIN = int(os.environ.get('WEATHER_INTERVAL_MIN', '') or 60)
 WEATHER_USER_AGENT = os.environ.get(
     'WEATHER_USER_AGENT', '') or 'CafresoHQWeatherArchive/1.0 (anthony@cafreso.com)'
-# NWS ground station IDs — a spread across the core mid-Atlantic corridor.
-WEATHER_STATIONS = {
-    'KDCA': 'Washington, DC',
-    'KBWI': 'Baltimore, MD',
-    'KPHL': 'Philadelphia, PA',
-    'KRIC': 'Richmond, VA',
-    'KILG': 'Wilmington, DE',
-    'KACY': 'Atlantic City, NJ',
-}
+# Order matters: it's the order results come back in from the batched call.
+# key = the 'station' field written to the JSONL and the ?station= query param
+# on /weather/history — kept short and stable so historical rows stay lookup-
+# able even if a label wording changes later.
+WEATHER_LOCATIONS = [
+    # -- US mid-Atlantic corridor --
+    {'key': 'DC',      'label': 'Washington, DC',     'region': 'US-VA-DC-MD', 'lat': 38.9072, 'lon': -77.0369},
+    {'key': 'BALT',    'label': 'Baltimore, MD',      'region': 'US-VA-DC-MD', 'lat': 39.2904, 'lon': -76.6122},
+    {'key': 'PHL',     'label': 'Philadelphia, PA',   'region': 'US-VA-DC-MD', 'lat': 39.9526, 'lon': -75.1652},
+    {'key': 'RIC',     'label': 'Richmond, VA',       'region': 'US-VA-DC-MD', 'lat': 37.5407, 'lon': -77.4360},
+    {'key': 'WILM',    'label': 'Wilmington, DE',     'region': 'US-VA-DC-MD', 'lat': 39.7391, 'lon': -75.5398},
+    {'key': 'AC',      'label': 'Atlantic City, NJ',  'region': 'US-VA-DC-MD', 'lat': 39.3643, 'lon': -74.4229},
+    # -- Northern Virginia (explicitly requested, not just DC-adjacent) --
+    {'key': 'ASHBURN', 'label': 'Ashburn, VA',        'region': 'US-VA-NoVA',  'lat': 39.0437, 'lon': -77.4875},
+    {'key': 'FAIRFAX', 'label': 'Fairfax, VA',        'region': 'US-VA-NoVA',  'lat': 38.8462, 'lon': -77.3064},
+    # -- El Salvador: all 14 departments, by department-capital coordinates --
+    {'key': 'SV-AHUA', 'label': 'Ahuachapán, SV',       'region': 'SV', 'lat': 13.9214, 'lon': -89.8450},
+    {'key': 'SV-CAB',  'label': 'Cabañas (Sensuntepeque), SV', 'region': 'SV', 'lat': 13.8722, 'lon': -88.6314},
+    {'key': 'SV-CHAL', 'label': 'Chalatenango, SV',      'region': 'SV', 'lat': 14.0333, 'lon': -88.9333},
+    {'key': 'SV-CUSC', 'label': 'Cuscatlán (Cojutepeque), SV', 'region': 'SV', 'lat': 13.7167, 'lon': -88.9333},
+    {'key': 'SV-LLIB', 'label': 'La Libertad (Santa Tecla), SV', 'region': 'SV', 'lat': 13.6769, 'lon': -89.2797},
+    {'key': 'SV-LPAZ', 'label': 'La Paz (Zacatecoluca), SV', 'region': 'SV', 'lat': 13.5000, 'lon': -88.8667},
+    {'key': 'SV-LUNI', 'label': 'La Unión, SV',          'region': 'SV', 'lat': 13.3369, 'lon': -87.8433},
+    {'key': 'SV-MORA', 'label': 'Morazán (San Francisco Gotera), SV', 'region': 'SV', 'lat': 13.7000, 'lon': -88.1000},
+    {'key': 'SV-SMIG', 'label': 'San Miguel, SV',        'region': 'SV', 'lat': 13.4833, 'lon': -88.1833},
+    {'key': 'SV-SSAL', 'label': 'San Salvador, SV',      'region': 'SV', 'lat': 13.6929, 'lon': -89.2182},
+    {'key': 'SV-SVIC', 'label': 'San Vicente, SV',       'region': 'SV', 'lat': 13.6408, 'lon': -88.7844},
+    {'key': 'SV-SANA', 'label': 'Santa Ana, SV',         'region': 'SV', 'lat': 13.9942, 'lon': -89.5592},
+    {'key': 'SV-SONS', 'label': 'Sonsonate, SV',         'region': 'SV', 'lat': 13.7167, 'lon': -89.7239},
+    {'key': 'SV-USUL', 'label': 'Usulután, SV',          'region': 'SV', 'lat': 13.3500, 'lon': -88.4500},
+]
 _weather_lock = threading.Lock()
+
+# WMO weather codes (shared by Open-Meteo) → short human text. Only the ones
+# that actually occur in `current.weather_code`; unmapped codes fall back to
+# the bare numeric code rather than guessing at wording.
+_WMO_TEXT = {
+    0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
+    45: 'Fog', 48: 'Depositing rime fog',
+    51: 'Light drizzle', 53: 'Drizzle', 55: 'Dense drizzle',
+    56: 'Light freezing drizzle', 57: 'Freezing drizzle',
+    61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+    66: 'Light freezing rain', 67: 'Freezing rain',
+    71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+    80: 'Light rain showers', 81: 'Rain showers', 82: 'Violent rain showers',
+    85: 'Light snow showers', 86: 'Snow showers',
+    95: 'Thunderstorm', 96: 'Thunderstorm with light hail', 99: 'Thunderstorm with heavy hail',
+}
 
 
 def _weather_month_file(ts_ms=None):
@@ -2405,42 +2450,46 @@ def _weather_append(record):
         print('[weather] append failed:', str(e)[:120])
 
 
-def _weather_c_to_f(c):
-    return None if c is None else round(c * 9.0 / 5.0 + 32.0, 1)
-
-
-def _weather_fetch_station(station_id, deadline=None):
-    """One observation from api.weather.gov. Returns a dict or None on any
-    failure — a missed hour for one station is not worth retrying mid-run and
-    blocking the others behind a slow/dead station."""
-    url = 'https://api.weather.gov/stations/%s/observations/latest' % station_id
-    req = urllib.request.Request(url, headers={
-        'Accept': 'application/geo+json', 'User-Agent': WEATHER_USER_AGENT})
-    timeout = 20 if deadline is None else max(3, min(20, deadline - time.monotonic()))
+def _weather_fetch_all(deadline=None):
+    """One batched Open-Meteo call for every WEATHER_LOCATIONS point. Returns
+    a list the same length/order as WEATHER_LOCATIONS, with None in any slot
+    the API didn't return a matching entry for (so one bad coordinate can't
+    take the whole run down, and callers can still tell which ones failed)."""
+    lats = ','.join(str(loc['lat']) for loc in WEATHER_LOCATIONS)
+    lons = ','.join(str(loc['lon']) for loc in WEATHER_LOCATIONS)
+    url = ('https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s'
+           '&current=temperature_2m,relative_humidity_2m,apparent_temperature,'
+           'precipitation,weather_code,wind_speed_10m,surface_pressure'
+           '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto'
+           % (lats, lons))
+    req = urllib.request.Request(url, headers={'User-Agent': WEATHER_USER_AGENT})
+    timeout = 25 if deadline is None else max(5, min(25, deadline - time.monotonic()))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode('utf-8'))
     except Exception as e:
-        print('[weather] %s fetch failed: %s' % (station_id, str(e)[:120]))
-        return None
-    props = data.get('properties') or {}
-    temp_c = (props.get('temperature') or {}).get('value')
-    dewpoint_c = (props.get('dewpoint') or {}).get('value')
-    humidity = (props.get('relativeHumidity') or {}).get('value')
-    wind_kmh = (props.get('windSpeed') or {}).get('value')
-    pressure_pa = (props.get('barometricPressure') or {}).get('value')
-    return {
-        'station': station_id,
-        'label': WEATHER_STATIONS.get(station_id, station_id),
-        'obsTime': props.get('timestamp'),
-        'conditions': props.get('textDescription'),
-        'tempC': round(temp_c, 1) if temp_c is not None else None,
-        'tempF': _weather_c_to_f(temp_c),
-        'dewpointC': round(dewpoint_c, 1) if dewpoint_c is not None else None,
-        'humidityPct': round(humidity, 1) if humidity is not None else None,
-        'windKmh': round(wind_kmh, 1) if wind_kmh is not None else None,
-        'pressurePa': round(pressure_pa, 0) if pressure_pa is not None else None,
-    }
+        print('[weather] batched fetch failed:', str(e)[:160])
+        return [None] * len(WEATHER_LOCATIONS)
+    # Open-Meteo returns a single object (not a list) when only one coordinate
+    # pair is passed — normalize so the zip below always works.
+    rows = data if isinstance(data, list) else [data]
+    out = [None] * len(WEATHER_LOCATIONS)
+    for i, row in enumerate(rows):
+        if i >= len(WEATHER_LOCATIONS) or not isinstance(row, dict):
+            continue
+        cur = row.get('current') or {}
+        code = cur.get('weather_code')
+        out[i] = {
+            'obsTime': cur.get('time'),
+            'conditions': _WMO_TEXT.get(code, ('code %s' % code) if code is not None else None),
+            'tempF': cur.get('temperature_2m'),
+            'feelsLikeF': cur.get('apparent_temperature'),
+            'humidityPct': cur.get('relative_humidity_2m'),
+            'precipMm': cur.get('precipitation'),
+            'windMph': cur.get('wind_speed_10m'),
+            'pressureHpa': cur.get('surface_pressure'),
+        }
+    return out
 
 
 def _weather_run():
@@ -2448,16 +2497,17 @@ def _weather_run():
     deadline = time.monotonic() + 60
     now_ms = int(time.time() * 1000)
     run = {'at': now_ms, 'stations': [], 'errors': []}
-    for station_id in WEATHER_STATIONS:
-        obs = _weather_fetch_station(station_id, deadline)
+    obs_list = _weather_fetch_all(deadline)
+    for loc, obs in zip(WEATHER_LOCATIONS, obs_list):
         if obs is None:
-            run['errors'].append(station_id)
+            run['errors'].append(loc['key'])
             continue
-        obs['ts'] = now_ms
-        _weather_append(obs)
-        run['stations'].append(station_id)
-    run['note'] = ('logged %d/%d stations in %.1fs'
-                   % (len(run['stations']), len(WEATHER_STATIONS), time.monotonic() - t0))
+        record = dict(obs, station=loc['key'], label=loc['label'], region=loc['region'],
+                       lat=loc['lat'], lon=loc['lon'], ts=now_ms)
+        _weather_append(record)
+        run['stations'].append(loc['key'])
+    run['note'] = ('logged %d/%d locations in %.1fs'
+                   % (len(run['stations']), len(WEATHER_LOCATIONS), time.monotonic() - t0))
     print('[weather] %s%s' % (run['note'],
           (' — failed: %s' % ', '.join(run['errors'])) if run['errors'] else ''))
     _weather_log(run)
@@ -2484,8 +2534,8 @@ def _weather_loop():
     if not nxt or abs(nxt - now_ms) > bound:   # see _gap_loop for why both directions
         nxt = _weather_next_run_ms()
         _night_save('weather-schedule.json', {'nextRunAt': nxt})
-    print('[weather] next run %s (hourly, :10 past, %d stations)'
-          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)), len(WEATHER_STATIONS)))
+    print('[weather] next run %s (hourly, :10 past, %d locations)'
+          % (time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt / 1000)), len(WEATHER_LOCATIONS)))
     while True:
         time.sleep(30)
         try:
@@ -5097,13 +5147,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _weather_status(self):
-        """Weather-archive cron state. Not Brave-budgeted (direct NWS calls),
-        so no 'brave' section here — just cadence + the last few runs."""
+        """Weather-archive cron state. Not Brave-budgeted (direct Open-Meteo
+        calls), so no 'brave' section here — just cadence + the last few runs."""
         return self._send_json(200, {
             'weather': {
                 'enabled': WEATHER_ENABLED,
                 'intervalMin': WEATHER_INTERVAL_MIN,
-                'stations': WEATHER_STATIONS,
+                'locations': [{'key': l['key'], 'label': l['label'], 'region': l['region']}
+                              for l in WEATHER_LOCATIONS],
                 'nextRunAt': int((_night_load('weather-schedule.json', {}) or {}).get('nextRunAt', 0) or 0),
                 'runs': _night_load('weather-runs.json', [])[-10:],
             },
