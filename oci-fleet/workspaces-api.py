@@ -419,8 +419,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', allowed)
         self.send_header('Access-Control-Allow-Credentials', 'true')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+        # X-Session-Token carries the on-chain identity (_caller_principal) —
+        # omitting it here silently breaks every browser call: the preflight
+        # succeeds, but the browser then blocks the real request as a
+        # disallowed header, the fetch throws, and the client falls back to
+        # the bundled demo catalog with no visible error. Confirmed live 2026-07-21.
         self.send_header('Access-Control-Allow-Headers',
-                         'Content-Type, X-Fleet-Auth, X-User-Principal')
+                         'Content-Type, X-Fleet-Auth, X-User-Principal, X-Session-Token')
         self.send_header('Vary', 'Origin')
         self.send_header('Access-Control-Max-Age', '86400')
 
