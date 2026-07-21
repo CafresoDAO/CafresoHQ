@@ -1,6 +1,13 @@
 # CafresoHQ → Workspace Portal Blueprint
 > Extending CafresoHQ into a Kasm-like portal for Windows VMs, Linux containers, and AI-agentic workflows
 
+> **Ported 2026-07-21.** This blueprint predates the pages-trunk merge. What changed in the port:
+> routes moved `/workspaces` → **`/hq/workspaces`** and `/admin` → **`/hq/admin`**; the API now runs
+> as its own service **`oci-fleet/workspaces-api.py`** (the gateway's `fleet-api.py` is untouched);
+> access is **premium-gated** — caller identity comes from on-chain session tokens and the grant
+> list lives in the state canister's operator config (`workspaces.allowedPrincipals`), enforced
+> server-side at catalog AND launch. See the header docstring of `workspaces-api.py`.
+
 ---
 
 ## What We're Building
