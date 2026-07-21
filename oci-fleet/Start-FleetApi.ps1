@@ -61,8 +61,11 @@ $outLog = Join-Path $LogDir 'fleet-api-stdout.log'
 
 # ── 3. Optionally kill existing instance ─────────────────────────────────────
 if ($Force) {
+    # Matches both the gateway's fleet-api.py and this host's workspaces-api.py
+    # (the -Force kill only ever matched the former, so restarts on this box
+    # silently no-op'd and left the old process listening — confirmed 2026-07-21).
     Get-Process python, python3 -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*fleet-api*' } |
+        Where-Object { $_.CommandLine -like '*fleet-api*' -or $_.CommandLine -like '*workspaces-api*' } |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 }
