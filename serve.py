@@ -4299,6 +4299,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._missions_runs()
         if self.path == '/gap/status':
             return self._gap_status()
+        if self.path == '/news/status':
+            return self._news_status()
+        if self.path == '/weather/status':
+            return self._weather_status()
+        if self.path.startswith('/weather/history'):
+            return self._weather_history()
         if self.path.startswith('/brave/'):
             return self._brave_search()
         if self.path == '/hermes/capability':

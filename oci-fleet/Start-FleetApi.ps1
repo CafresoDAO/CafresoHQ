@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Launch fleet-api.py as a detached background process on ASERVER.
+    Launch workspaces-api.py as a detached background process on ASERVER.
 
 .DESCRIPTION
     Replaces the broken Start-Process -RedirectStandardOutput path that causes
@@ -75,7 +75,7 @@ if ($existing) {
 }
 
 # ── 5. Launch ────────────────────────────────────────────────────────────────
-$script    = Join-Path $FleetDir 'fleet-api.py'
+$script    = Join-Path $FleetDir 'workspaces-api.py'
 $pythonCmd = (Get-Command python -ErrorAction SilentlyContinue)?.Source
 if (-not $pythonCmd) { $pythonCmd = 'python' }
 
