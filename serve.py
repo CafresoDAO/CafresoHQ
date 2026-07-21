@@ -734,9 +734,14 @@ def _sw_call(op, extra_lines):
 
 
 # ── Brave quota ledger ──────────────────────────────────────────────────────
-# Brave's plan allows 1000 queries per MONTH (~33/day). Its 50/s rate limit is
-# irrelevant next to that — volume is what binds, and nothing else in this
-# process was counting it. Note the canister's searchDailyBudget is 500/day
+# Brave Search API moved to pay-as-you-go metered pricing in Feb 2026 (no more
+# fixed free/base tiers): $0.003-$0.005/query, $5/mo credit auto-applied. So
+# this is no longer "Brave's plan allows N queries" — it's a self-imposed
+# SPEND ceiling. 3000/month is ~$15/month at the conservative (high) end of
+# that per-query range, i.e. an intentional "grow the library" budget, not the
+# old default-safe 1000. Its 50/s rate limit is irrelevant next to that —
+# volume (now: dollars) is what binds, and nothing else in this process was
+# counting it. Note the canister's searchDailyBudget is 500/day
 # (main.mo:1823) = ~15,000/month, i.e. 15x this quota: that cap has never bound
 # because volume is low, and it does NOT protect the key. This ledger does.
 #
@@ -752,7 +757,7 @@ def _sw_call(op, extra_lines):
 #            gap questions and neither ever touches human/deep headroom.
 # This is what "weigh human questions more" means in the only place it can be
 # enforced: the budget.
-_BRAVE_CAP = int(os.environ.get('BRAVE_MONTHLY_CAP', '') or 1000)
+_BRAVE_CAP = int(os.environ.get('BRAVE_MONTHLY_CAP', '') or 3000)
 _BRAVE_RESERVE = {'human': 0.0, 'deep': 0.15, 'gap': 0.35, 'news': 0.40}
 _brave_lock = threading.Lock()
 
@@ -1871,7 +1876,11 @@ elif _SW_ENABLED:
 # most GAP_PER_RUN_MAX per run, and refuses outright when the Brave month is
 # tight.
 GAP_ENABLED = os.environ.get('GAP_CRON', '').strip() != '0'
-GAP_PER_RUN_MAX = int(os.environ.get('GAP_PER_RUN_MAX', '') or os.environ.get('GAP_DAILY_MAX', '') or 2)
+# 5/run x 24 runs/day tops out near 3600/month, but the 35% reserve floor
+# against the (now $15/mo-sized) Brave cap is what actually keeps this in
+# check — see _BRAVE_RESERVE. Raised from 2 alongside BRAVE_MONTHLY_CAP
+# specifically to grow the library faster while spend is intentional.
+GAP_PER_RUN_MAX = int(os.environ.get('GAP_PER_RUN_MAX', '') or os.environ.get('GAP_DAILY_MAX', '') or 5)
 GAP_INTERVAL_MIN = int(os.environ.get('GAP_INTERVAL_MIN', '') or 60)
 GAP_TZ = os.environ.get('GAP_TZ', '') or 'America/New_York'   # display/log only now
 MAX_GAP_RUNS_KEPT = 120
@@ -2143,7 +2152,7 @@ if GAP_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
 #     of the quota — a slow month starves it before gap, and starves gap
 #     before ever touching a real user's search.
 NEWS_ENABLED = os.environ.get('NEWS_CRON', '').strip() == '1'   # opt-in: off by default until proven out
-NEWS_PER_RUN_MAX = int(os.environ.get('NEWS_PER_RUN_MAX', '') or 3)
+NEWS_PER_RUN_MAX = int(os.environ.get('NEWS_PER_RUN_MAX', '') or 6)   # raised alongside BRAVE_MONTHLY_CAP — see GAP_PER_RUN_MAX
 NEWS_INTERVAL_MIN = int(os.environ.get('NEWS_INTERVAL_MIN', '') or 60)
 MAX_NEWS_RUNS_KEPT = 120
 _news_lock = threading.Lock()
