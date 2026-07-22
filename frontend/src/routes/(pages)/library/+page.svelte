@@ -520,7 +520,12 @@
       <Icon name="x" size={16} />
     </button>
     {#if drawerEntry}
-      <div class="lib-kicker">Library entry · {drawerEntry.id}</div>
+      <div class="lib-kicker" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <span>Library entry · {drawerEntry.id}</span>
+        <a class="lib-link" href="/library/{drawerEntry.id}" style="flex-shrink: 0;">
+          Open full entry <Icon name="arrow-up-right" size={11} />
+        </a>
+      </div>
       <h2 class="lib-drawer-q">{plain(drawerEntry.query)}</h2>
       <div class="lib-chips" style="margin-bottom: 18px;">
         {#if drawerEntry.mode === 'deep'}
