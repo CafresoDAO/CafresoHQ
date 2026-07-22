@@ -68,30 +68,66 @@ export function libraryEntryGraphUrl(id) {
   return base ? `${base}/library/${id}/graph.json` : '';
 }
 
-/** Fetch + distill an entry's graph blob into drawer-ready enrichment:
-      { byUrl: Map<url,{age,img}>, suggests: [{q, a}] }
-    Returns null on any failure — the drawer just renders its plain sources. */
-export async function libraryEntryEnrichment(id) {
+/** Fetch + parse an entry's graph blob into its raw node list, or [] on any
+    failure. Shared by libraryEntryEnrichment (drawer) and libraryCardVisual
+    (browse-grid cards) so the fetch/parse isn't duplicated. */
+async function fetchEntryGraphNodes(id) {
   const url = libraryEntryGraphUrl(id);
-  if (!url) return null;
+  if (!url) return [];
   try {
     const r = await fetch(url);
-    if (!r.ok) return null;
+    if (!r.ok) return [];
     const j = await r.json();
     let g = j && (j.graph || j);
     if (typeof g === 'string') g = JSON.parse(g);
-    const nodes = (g && g.nodes) || [];
-    const byUrl = new Map();
-    const suggests = [];
+    return (g && g.nodes) || [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+/** Distill an entry's graph blob into drawer-ready enrichment:
+      { byUrl: Map<url,{age,img}>, suggests: [{q, a}], favicons: string[] }
+    Returns null on any failure — the drawer just renders its plain sources. */
+export async function libraryEntryEnrichment(id) {
+  const nodes = await fetchEntryGraphNodes(id);
+  const byUrl = new Map();
+  const suggests = [];
+  const favicons = [];
+  for (const n of nodes) {
+    const a = (n && n.attributes) || {};
+    if (a.suggest) { if (a.label) suggests.push({ q: String(a.label).replace(/^✦\s*/, ''), a: a.snippet || '' }); }
+    else if (a.url && (a.age || a.img)) byUrl.set(a.url, { age: a.age || '', img: a.img || '' });
+    if (a.kind === 'domain' && a.favicon && /^https:\/\//.test(a.favicon)) favicons.push(a.favicon);
+  }
+  return (byUrl.size || suggests.length || favicons.length) ? { byUrl, suggests, favicons } : null;
+}
+
+// Module-level cache: a browse-grid page re-renders (filter/sort changes)
+// without needing to refetch cards already visited this session.
+const _cardVisualCache = new Map();
+
+/** Cheap per-card visual for the browse grid: one hero thumbnail (the first
+    Brave-harvested source image) and up to 3 source favicons, or null if the
+    entry predates enrichment / carries neither. Cached per id — call once
+    per card, not on every re-render. */
+export async function libraryCardVisual(id) {
+  if (_cardVisualCache.has(id)) return _cardVisualCache.get(id);
+  const p = (async () => {
+    const nodes = await fetchEntryGraphNodes(id);
+    let thumb = null;
+    const favicons = [];
     for (const n of nodes) {
       const a = (n && n.attributes) || {};
-      if (a.suggest) { if (a.label) suggests.push({ q: String(a.label).replace(/^✦\s*/, ''), a: a.snippet || '' }); }
-      else if (a.url && (a.age || a.img)) byUrl.set(a.url, { age: a.age || '', img: a.img || '' });
+      if (!thumb && a.img && /^https:\/\//.test(a.img)) thumb = a.img;
+      if (a.kind === 'domain' && a.favicon && /^https:\/\//.test(a.favicon) && favicons.length < 3) {
+        favicons.push(a.favicon);
+      }
     }
-    return (byUrl.size || suggests.length) ? { byUrl, suggests } : null;
-  } catch (_e) {
-    return null;
-  }
+    return (thumb || favicons.length) ? { thumb, favicons } : null;
+  })();
+  _cardVisualCache.set(id, p);
+  return p;
 }
 
 /** The whole library as one neural web — the /library page hero. Runs with

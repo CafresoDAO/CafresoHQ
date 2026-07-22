@@ -12,11 +12,15 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import Icon from '$lib/components/Icon.svelte';
+  import CommentThread from '$lib/components/CommentThread.svelte';
   import { trapFocus } from '$lib/actions/trapFocus.js';
+  import { listComments, postComment } from '$lib/api/devlog.js';
+  import { principalText } from '$lib/stores/auth.js';
+  import { profile } from '$lib/stores/profile.js';
   import {
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, graphViewerOrigin } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, libraryCardVisual, graphViewerOrigin } from '$lib/api/library.js';
   import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
@@ -40,6 +44,23 @@
   function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
   function setMode(m) { modeFilter = m; onFilterChange(); }
 
+  // Ground.news-style cards: a hero thumbnail + favicon row per card, pulled
+  // from each entry's own graph.json. Bounded to what's actually on screen
+  // (the current page of `shown` cards) rather than all ≤500 index entries —
+  // requestedIds guards against re-fetching on every unrelated reactive tick
+  // while a request is still in flight (cardVisuals only gains the key once
+  // the fetch resolves, which would otherwise look identical to "not yet asked").
+  let cardVisuals = {};   // id -> null (no enrichment) | {thumb, favicons}
+  const requestedIds = new Set();
+  $: {
+    for (const e of filteredEntries.slice(0, shown)) {
+      if (!requestedIds.has(e.id)) {
+        requestedIds.add(e.id);
+        libraryCardVisual(e.id).then((v) => { cardVisuals = { ...cardVisuals, [e.id]: v }; });
+      }
+    }
+  }
+
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
   let searchPhase = 'idle';  // idle | checking | queued | rejected | dark
@@ -55,6 +76,11 @@
   let drawerResearch = null; // deep entries: {pages:[…]} note pages, lazily fetched
   let openPageId = null;     // which note page is expanded in the drawer
   let drawerEnrich = null;   // {byUrl, suggests} from the entry graph, lazily fetched
+  let drawerComments = [];   // devlog-backed comment thread, keyed by libCommentSlug(id)
+  let commentErr = null;
+  // Own namespace ('library-' not the forums' 'f-') so a library entry id can
+  // never collide with a blog/forum slug in the shared devlog comment keyspace.
+  const libCommentSlug = (id) => `library-${id}`;
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
   const fullGraphUrl = libraryFullGraphViewerUrl();   // full interactive viewer (topic filter, search, analytics)
@@ -71,6 +97,8 @@
     drawerMissing = false;
     drawerResearch = null;
     drawerEnrich = null;
+    drawerComments = [];
+    commentErr = null;
     openPageId = null;
     if (!id) return;
     const e = await libraryEntry(id);
@@ -82,6 +110,10 @@
       // parallel so the sources list can show dates and the drawer can offer
       // the follow-up questions as one-tap searches.
       libraryEntryEnrichment(id).then((en) => { if (id === drawerId) drawerEnrich = en; });
+      // The library curates like a blog post already (a permanent, sourced
+      // answer) — comments reuse the exact same devlog-backed thread the blog
+      // and forums use, just under their own slug namespace.
+      listComments(libCommentSlug(id)).then((c) => { if (id === drawerId) drawerComments = c || []; });
       // Deep entries carry a browsable set of note pages — load them so the
       // drawer can show the research as pages, not just one synthesized answer.
       if (e.mode === 'deep') {
@@ -89,6 +121,18 @@
         if (id === drawerId && r && r.pages) drawerResearch = r;
       }
     } else drawerMissing = true;
+  }
+  async function postDrawerComment(text) {
+    if (!drawerId) return;
+    commentErr = null;
+    const author = {
+      name: $profile?.name || ($principalText ? `${$principalText.slice(0, 5)}…${$principalText.slice(-3)}` : 'Guest'),
+      role: $profile?.bio ? 'Member' : 'Community',
+      hue: 24
+    };
+    const res = await postComment(libCommentSlug(drawerId), author, text);
+    if (res?.err) { commentErr = res.err; return; }
+    drawerComments = await listComments(libCommentSlug(drawerId));
   }
   // Svelte's legacy-mode dependency scan works per-block: it only picks up a
   // dependency an {#each} block's OWN template expressions reference by name.
@@ -99,6 +143,15 @@
   // the each block (see the sources list below) is what actually fixes it;
   // this derived map only needs to exist, not be read from here.
   $: srcAges = drawerEnrich && drawerEnrich.byUrl ? drawerEnrich.byUrl : new Map();
+  // Oldest dated source — one glance at how far back the evidence reaches,
+  // the Ground.news "Coverage Details" idea adapted to what we actually have.
+  $: oldestSourceAge = (() => {
+    let oldest = null;
+    for (const v of srcAges.values()) {
+      if (v.age && /^\d{4}-\d{2}-\d{2}/.test(v.age) && (!oldest || v.age < oldest)) oldest = v.age;
+    }
+    return oldest;
+  })();
   function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
   function openEntry(id) { goto(`/library?e=${encodeURIComponent(id)}`, { noScroll: true }); }
@@ -408,26 +461,40 @@
     {:else}
       <div class="lib-grid">
         {#each filteredEntries.slice(0, shown) as e (e.id)}
-          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
-            {#if e.mode === 'deep' || e.askedBy === 'ai-gap'}
-              <div class="lib-card-top">
-                {#if e.mode === 'deep'}
-                  <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+          {@const visual = cardVisuals[e.id]}
+          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'}
+                  class:lib-card-visual={visual?.thumb} on:click={() => openEntry(e.id)}>
+            {#if visual?.thumb}
+              <div class="lib-card-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+            {/if}
+            <div class="lib-card-body">
+              {#if e.mode === 'deep' || e.askedBy === 'ai-gap'}
+                <div class="lib-card-top">
+                  {#if e.mode === 'deep'}
+                    <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+                  {/if}
+                  {#if e.askedBy === 'ai-gap'}
+                    <span class="lib-chip lib-chip-ai" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>
+                  {/if}
+                </div>
+              {/if}
+              <h3>{plain(e.query)}</h3>
+              {#if e.snippet}
+                <p class="lib-card-snippet">{plain(e.snippet)}</p>
+              {/if}
+              <div class="lib-card-meta">
+                {#if visual?.favicons?.length}
+                  <span class="lib-card-favs" aria-hidden="true">
+                    {#each visual.favicons as f}
+                      <img src={f} alt="" loading="lazy" on:error={(ev) => { ev.target.style.visibility = 'hidden'; }} />
+                    {/each}
+                  </span>
                 {/if}
-                {#if e.askedBy === 'ai-gap'}
-                  <span class="lib-chip lib-chip-ai" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>
-                {/if}
+                <span>{fmtDate(e.ts)}</span>
+                <span class="lib-meta-dot" aria-hidden="true">·</span>
+                <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+                <Icon name="arrow-right" size={13} class="lib-card-go" />
               </div>
-            {/if}
-            <h3>{plain(e.query)}</h3>
-            {#if e.snippet}
-              <p class="lib-card-snippet">{plain(e.snippet)}</p>
-            {/if}
-            <div class="lib-card-meta">
-              <span>{fmtDate(e.ts)}</span>
-              <span class="lib-meta-dot" aria-hidden="true">·</span>
-              <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-              <Icon name="arrow-right" size={13} class="lib-card-go" />
             </div>
           </button>
         {/each}
@@ -470,6 +537,28 @@
         <span class="lib-chip">📅 {fmtDate(drawerEntry.answeredAt || drawerEntry.ts)}</span>
         {#if drawerEntry.worker}<span class="lib-chip" title={drawerEntry.worker}>⚙ {shortPrincipal(drawerEntry.worker)}</span>{/if}
       </div>
+
+      {#if drawerEntry.sources?.length}
+        <div class="lib-coverage">
+          <div class="lib-coverage-stat">
+            <span class="lib-coverage-n">{drawerEntry.sources.length}</span>
+            <span class="lib-coverage-label">source{drawerEntry.sources.length === 1 ? '' : 's'}</span>
+          </div>
+          {#if oldestSourceAge}
+            <div class="lib-coverage-stat">
+              <span class="lib-coverage-n">{oldestSourceAge}</span>
+              <span class="lib-coverage-label">oldest source</span>
+            </div>
+          {/if}
+          {#if drawerEnrich?.favicons?.length}
+            <div class="lib-coverage-favs" title="Sites cited in this answer">
+              {#each drawerEnrich.favicons.slice(0, 8) as f}
+                <img src={f} alt="" loading="lazy" on:error={(ev) => { ev.target.style.visibility = 'hidden'; }} />
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       {#if drawerEntry.answer}
         <p class="lib-drawer-answer">{plain(drawerEntry.answer)}</p>
@@ -574,6 +663,14 @@
           </button>
         </div>
       {/if}
+
+      <!-- The library curates like a blog: a permanent, sourced answer worth
+           discussing. Same devlog-backed thread as the blog/forums, own slug
+           namespace (library-<id>) so it can never collide with theirs. -->
+      {#if commentErr}
+        <p class="lib-comment-err">{commentErr}</p>
+      {/if}
+      <CommentThread comments={drawerComments} onPost={postDrawerComment} modSlug={libCommentSlug(drawerEntry.id)} />
     {:else if drawerMissing}
       <div class="lib-empty" style="padding: 60px 10px;">
         <h2>Entry not found</h2>
@@ -795,6 +892,19 @@
     border-color: hsl(45 75% 60%);
     box-shadow: 0 12px 28px -12px hsl(24 35% 15% / 0.25);
   }
+  /* Ground.news-style visual card: a hero thumbnail pulled from the entry's
+     own Brave-harvested source images, when one exists. Only entries the
+     enriched worker answered carry this — older entries render exactly as
+     before (plain text card), so the grid is intentionally a visual mix
+     rather than everything re-templated at once. */
+  .lib-card-visual { padding: 0; overflow: hidden; }
+  .lib-card-thumb {
+    width: 100%; aspect-ratio: 16 / 9; flex-shrink: 0;
+    background-size: cover; background-position: center;
+    background-color: hsl(var(--pg-hover));
+  }
+  .lib-card-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .lib-card-visual .lib-card-body { padding: 14px 18px 18px; }
   .lib-card-top { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
   /* The question is now the card's eyebrow/title — smaller and clamped tighter,
      because the answer snippet is what a browser actually reads. */
@@ -820,6 +930,15 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
   }
   .lib-meta-dot { opacity: 0.5; }
+  /* Overlapping favicon strip — Ground.news' "who's covering this" row,
+     built from the same domain favicons the graph viewer draws on nodes. */
+  .lib-card-favs { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .lib-card-favs img {
+    width: 14px; height: 14px; border-radius: 50%; margin-left: -5px;
+    border: 1.5px solid hsl(var(--pg-surface)); background: hsl(var(--pg-hover));
+    object-fit: cover;
+  }
+  .lib-card-favs img:first-child { margin-left: 0; }
   :global(.lib-card-go) {
     margin-left: auto; color: hsl(var(--pg-fg-subtle));
     opacity: 0; transform: translateX(-4px);
@@ -966,6 +1085,24 @@
     font-size: 24px; font-weight: 700; line-height: 1.25;
     color: hsl(var(--pg-fg)); margin: 8px 0 12px;
   }
+  /* "Coverage Details" strip — Ground.news' sidebar stat box, adapted to a
+     single-column drawer: source count, how far back the evidence reaches,
+     and a favicon row of who's cited. Only renders what enrichment provides,
+     so a plain (pre-harvest) entry shows just the source count. */
+  .lib-coverage {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 16px;
+    margin: 4px 0 18px; padding: 12px 14px;
+    background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 12px;
+  }
+  .lib-coverage-stat { display: flex; flex-direction: column; gap: 1px; }
+  .lib-coverage-n { font-size: 15px; font-weight: 700; color: hsl(var(--pg-fg)); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .lib-coverage-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--pg-fg-muted)); }
+  .lib-coverage-favs { display: inline-flex; align-items: center; margin-left: auto; }
+  .lib-coverage-favs img {
+    width: 20px; height: 20px; border-radius: 50%; margin-left: -6px;
+    border: 2px solid hsl(var(--pg-elevated)); background: hsl(var(--pg-hover)); object-fit: cover;
+  }
+  .lib-coverage-favs img:first-child { margin-left: 0; }
   .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(var(--pg-fg)); margin: 0; }
   .lib-muted { color: hsl(var(--pg-fg-muted)); font-style: italic; }
   .lib-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -1005,6 +1142,11 @@
     background: hsl(250 30% 7%); margin-top: 8px;
   }
   .lib-drawer-actions { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+  .lib-comment-err {
+    margin: 24px 0 -8px; padding: 8px 12px; font-size: 12.5px;
+    background: hsl(0 60% 96%); color: hsl(0 55% 38%); border: 1px solid hsl(0 55% 85%); border-radius: 8px;
+  }
+  :global(.dark) .lib-comment-err { background: hsl(0 45% 22% / 0.4); color: hsl(0 70% 82%); border-color: hsl(0 45% 40%); }
   .lib-drawer-actions .lib-link { color: hsl(38 65% 35%); }
 
   /* ── Mobile: drawer becomes a bottom sheet; hero tightens ─────────────── */
