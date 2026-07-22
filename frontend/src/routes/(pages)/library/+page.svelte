@@ -13,6 +13,8 @@
   import { goto } from '$app/navigation';
   import Icon from '$lib/components/Icon.svelte';
   import CommentThread from '$lib/components/CommentThread.svelte';
+  import UpNext from '$lib/components/UpNext.svelte';
+  import { loadUpNext, normQ } from '$lib/stores/upnext.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
   import { principalText } from '$lib/stores/auth.js';
@@ -177,6 +179,7 @@
   }
   onMount(() => {
     refresh();
+    loadUpNext();   // hydrate the personal research shortlist (localStorage)
     const t = setInterval(refresh, 60_000);
     window.addEventListener('message', onGraphMessage);
     // ?ask=<question> — the landing target for the graph viewer's ghost
@@ -234,6 +237,38 @@
       rejectReason = done.status;
       searchPhase = 'rejected';
     }
+  }
+
+  // ── "Up Next" shortlist glue ───────────────────────────────────────────────
+  // Graduation: a queued question that now exists in the library (answered by
+  // anyone) flips to a "read it" row. Loose client-side normalized match — the
+  // authoritative check is findPublic() when the question is actually sent.
+  $: answeredMap = (() => {
+    const m = new Map();
+    if (index && index.entries) for (const e of index.entries) m.set(normQ(plain(e.query)), e.id);
+    return m;
+  })();
+  // Reactive so its identity changes when answeredMap does — the UpNext
+  // template re-evaluates graduation as the index refreshes.
+  $: findAnswered = (q) => answeredMap.get(normQ(q)) || null;
+
+  // Send one shortlisted question through the real network pipeline (same
+  // library-first → queue → await path as the hero search). Returns a status
+  // the UpNext component reflects; on success refresh() lets the item graduate.
+  async function sendQueued(question) {
+    const query = String(question || '').trim();
+    if (!query) return { status: 'idle' };
+    const hit = await findPublic(query);
+    if (hit && hit.id) { refresh(); return { status: 'hit', id: hit.id }; }
+    const h = await networkHealth();
+    if (!h || !h.activeWorkers) return { status: 'dark' };
+    const sub = await submitJob(query);
+    if (!sub) return { status: 'dark' };
+    if (sub.status === 'hit' && sub.entry) { refresh(); return { status: 'hit', id: sub.entry.id }; }
+    if (sub.status === 'rejected') return { status: 'rejected', reason: sub.reason };
+    const done = await awaitJob(sub.jobId);
+    if (done.status === 'done' && done.entry) { refresh(); return { status: 'done', id: done.entry.id }; }
+    return { status: 'rejected', reason: done.status };
   }
 
   function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
@@ -381,6 +416,11 @@
       {/if}
     </div>
   </div>
+
+  <!-- ── Up Next: personal research shortlist ─────────────────────────────── -->
+  {#if index !== null}
+    <UpNext {findAnswered} onOpen={openEntry} onSend={sendQueued} workersOnline={!!(health && health.activeWorkers)} />
+  {/if}
 
   <!-- ── Entry stream ─────────────────────────────────────────────────────── -->
   {#if index === null}
