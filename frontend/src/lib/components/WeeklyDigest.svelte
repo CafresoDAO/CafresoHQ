@@ -78,6 +78,17 @@
       </button>
     {/if}
   </section>
+{:else if entries.length}
+  <!-- Entries exist, just none in the last 7 days — a young or quiet library,
+       not a broken one. The page's own zero-entries empty state covers the
+       "no library at all" case, so this only fires when there's a library but
+       an idle week. -->
+  <section class="wd wd-quiet" aria-label="This week in the library">
+    <div class="wd-title"><span class="wd-glyph" aria-hidden="true">◆</span> This week in the library</div>
+    <p class="wd-quiet-note">
+      Quiet week — nothing answered in the last 7 days. {entries.length.toLocaleString()} question{entries.length === 1 ? '' : 's'} answered so far, browsing below.
+    </p>
+  </section>
 {/if}
 
 <style>
@@ -96,6 +107,8 @@
   }
   .wd-glyph { color: hsl(266 60% 55%); font-size: 15px; }
   .wd-sub { font-size: 12.5px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 4px 0 0; }
+  .wd-quiet { padding-bottom: 18px; }
+  .wd-quiet-note { font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 6px 0 0; }
 
   .wd-stats { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 16px; }
   .wd-stat { display: flex; flex-direction: column; gap: 1px; }

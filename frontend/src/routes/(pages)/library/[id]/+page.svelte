@@ -12,9 +12,13 @@
   import { listComments, postComment } from '$lib/api/devlog.js';
   import { principalText } from '$lib/stores/auth.js';
   import { profile } from '$lib/stores/profile.js';
-  import { libraryEntry, libraryResearch } from '$lib/api/searchNetwork.js';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { libraryEntry, libraryResearch, libraryIndex } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl, libraryEntryEnrichment } from '$lib/api/library.js';
   import { fmtNsDate } from '$lib/utils/time.js';
+  import { relatedEntries } from '$lib/utils/digest.js';
+  import RelatedEntries from '$lib/components/RelatedEntries.svelte';
 
   let id = null;
   let entry = null;      // null while loading
@@ -25,6 +29,14 @@
   let comments = [];
   let commentErr = null;
   const libCommentSlug = (eid) => `library-${eid}`;
+
+  // The one extra fetch this page needs for "Related in the library" — the
+  // drawer already has the index in memory from the grid page, but a direct
+  // /library/<id> visit doesn't. Cheap (one JSON GET) and not on the critical
+  // path: the entry itself renders from libraryEntry() without waiting on it.
+  let libIndex = null;
+  onMount(() => { libraryIndex().then((ix) => { libIndex = ix; }); });
+  $: related = entry && libIndex?.entries ? relatedEntries(entry, libIndex.entries) : [];
 
   $: {
     const p = $page.params.id;
@@ -255,6 +267,12 @@
                 <span aria-hidden="true">✦</span> {plain(sug.q)}
               </a>
             {/each}
+          </div>
+        {/if}
+
+        {#if related.length}
+          <div style="margin-top: 22px;">
+            <RelatedEntries items={related} {plain} onOpen={(rid) => goto(`/library/${rid}`)} />
           </div>
         {/if}
       </aside>

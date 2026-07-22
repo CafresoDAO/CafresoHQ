@@ -27,7 +27,9 @@ const STOPWORDS = new Set([
   'regarding', 'details', 'detail', 'specific', 'specifics', 'against', 'provide', 'provided',
   'according', 'reported', 'reports', 'report', 'said', 'according', 'following', 'since',
   'due', 'amid', 'amidst', 'including', 'involving', 'related', 'affect', 'affects', 'affected',
-  'impact', 'impacts'
+  'impact', 'impacts', 'potential', 'immediate', 'major', 'significant', 'primary', 'overall',
+  'broader', 'broad', 'key', 'main', 'recently', 'ongoing', 'various', 'several', 'current',
+  'latest'
 ]);
 
 function tokenize(query) {
@@ -81,6 +83,33 @@ function dailyCounts(entries, days) {
     if (b) b.count += 1;
   }
   return buckets;
+}
+
+/**
+ * "Related in the library" — other entries whose query shares significant
+ * keywords with `entry`, ranked by overlap size then recency. Same honest
+ * heuristic as themes() (word-overlap, not real embedding/cluster
+ * similarity) — cheap because it's pure JS over an index the caller already
+ * has in memory, no per-entry graph fetch, no new endpoint. Returns [] if
+ * nothing shares a keyword (a real, expected outcome for a novel question,
+ * not an error state).
+ */
+export function relatedEntries(entry, allEntries, { limit = 5 } = {}) {
+  if (!entry || !allEntries?.length) return [];
+  const words = new Set(tokenize(entry.query));
+  if (!words.size) return [];
+  const scored = [];
+  for (const e of allEntries) {
+    if (e.id === entry.id) continue;
+    let overlap = 0;
+    for (const w of tokenize(e.query)) if (words.has(w)) overlap += 1;
+    // A single shared word is too weak a signal on short queries (a generic
+    // adjective slipping past the stopword list can fake a match) — same
+    // "needs at least 2" bar themes() uses for a claimed trend.
+    if (overlap >= 2) scored.push({ entry: e, overlap });
+  }
+  scored.sort((a, b) => b.overlap - a.overlap || (Number(b.entry.ts) - Number(a.entry.ts)));
+  return scored.slice(0, limit).map((s) => s.entry);
 }
 
 /**

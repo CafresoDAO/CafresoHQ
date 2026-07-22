@@ -15,7 +15,9 @@
   import CommentThread from '$lib/components/CommentThread.svelte';
   import UpNext from '$lib/components/UpNext.svelte';
   import WeeklyDigest from '$lib/components/WeeklyDigest.svelte';
-  import { loadUpNext, normQ } from '$lib/stores/upnext.js';
+  import RelatedEntries from '$lib/components/RelatedEntries.svelte';
+  import { loadUpNext, addQuestion, normQ } from '$lib/stores/upnext.js';
+  import { relatedEntries } from '$lib/utils/digest.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
   import { principalText } from '$lib/stores/auth.js';
@@ -80,6 +82,16 @@
   let queueNote = '';
   let rejectReason = '';
   let searchSeq = 0;
+  let queuedForLater = false;   // "added to Up Next" confirmation when the network's asleep
+
+  // A dead network shouldn't be a dead end — the question a visitor typed
+  // still has somewhere useful to go: the personal shortlist, ready to send
+  // the moment a worker's back online.
+  function saveForLater() {
+    if (!q.trim()) return;
+    addQuestion(q);
+    queuedForLater = true;
+  }
 
   // Drawer (URL-addressable: /library?e=<id>)
   let drawerId = null;
@@ -215,6 +227,7 @@
     if (!query || searchPhase === 'checking' || searchPhase === 'queued') return;
     const seq = ++searchSeq;
     searchPhase = 'checking';
+    queuedForLater = false;
     const hit = await findPublic(query);
     if (seq !== searchSeq) return;
     if (hit && hit.id) { searchPhase = 'idle'; openEntry(hit.id); return; }
@@ -261,6 +274,10 @@
   // Reactive so its identity changes when answeredMap does — the UpNext
   // template re-evaluates graduation as the index refreshes.
   $: findAnswered = (q) => answeredMap.get(normQ(q)) || null;
+
+  // "Related in the library" for the drawer — the index is already in memory
+  // here (unlike the standalone /library/[id] page, which fetches it itself).
+  $: drawerRelated = drawerEntry && index?.entries ? relatedEntries(drawerEntry, index.entries) : [];
 
   // Send one shortlisted question through the real network pipeline (same
   // library-first → queue → await path as the hero search). Returns a status
@@ -396,8 +413,17 @@
         </div>
       {:else if searchPhase === 'dark'}
         <div class="lib-search-note lib-warn">
-          The research network is asleep — no workers online. Browse everything already answered below,
-          or <a href="/hq/search" class="lib-link">sign in to search with your own container</a>.
+          {#if queuedForLater}
+            <Icon name="check-circle" size={14} style="flex-shrink: 0;" />
+            Added to your Up Next shortlist below — send it the moment a worker's back online.
+          {:else}
+            The research network is asleep — no workers online.
+            <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                    on:click={saveForLater}>
+              Add "{plain(q).slice(0, 40)}{plain(q).length > 40 ? '…' : ''}" to Up Next
+            </button>
+            instead, or <a href="/hq/search" class="lib-link">sign in to search with your own container</a>.
+          {/if}
         </div>
       {/if}
 
@@ -677,6 +703,12 @@
               <span aria-hidden="true">✦</span> {plain(sug.q)}
             </button>
           {/each}
+        </div>
+      {/if}
+
+      {#if drawerRelated.length}
+        <div style="margin-top: 22px;">
+          <RelatedEntries items={drawerRelated} {plain} onOpen={openEntry} />
         </div>
       {/if}
 
