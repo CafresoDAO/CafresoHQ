@@ -53,8 +53,19 @@
   #analytics {
     display: none; position: fixed; top: 14px; right: 14px; z-index: 5; width: 248px;
     padding: 12px 13px; font-size: 12px; line-height: 1.5;
+    /* Was unbounded height — on a library with several structural-gap rows it
+       grows tall enough to sit on top of the topic pills / clip tooltips near
+       the bottom of the screen. Cap it and let it scroll internally instead. */
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
   }
   #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #gv-analytics-close {
+    position: absolute; top: 8px; right: 8px; width: 20px; height: 20px;
+    border: none; border-radius: 6px; background: transparent; color: var(--gv-muted);
+    cursor: pointer; font-size: 13px; line-height: 1; display: grid; place-items: center;
+  }
+  #gv-analytics-close:hover { background: var(--gv-line); color: var(--gv-text); }
   .gv-gap-row {
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
   }
@@ -289,10 +300,10 @@
 </head>
 <body>
 <div id="graph"></div>
-<div id="tip" class="gv-card"></div>
+<div id="tip" class="gv-card" role="status" aria-live="polite"></div>
 <div id="analytics" class="gv-card"></div>
-<div id="hint">scroll to zoom · drag the canvas or a node · hover for details</div>
-<button id="gv-new" type="button" title="Fly to the next new node"></button>
+<div id="hint" role="status" aria-live="polite">scroll to zoom · drag the canvas or a node · hover for details</div>
+<button id="gv-new" type="button" title="Fly to the next new node" aria-live="polite"></button>
 
 <div id="gv-search">
   <button class="gv-btn" id="gv-search-toggle" aria-label="Search nodes" title="Search nodes">⌕</button>
@@ -307,7 +318,7 @@
   <button class="gv-btn" id="gv-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
   <button class="gv-btn" id="gv-reset" aria-label="Fit view" title="Fit view">⟲</button>
   <button class="gv-btn" id="gv-trail-back" aria-label="Back along your reading trail" title="Back along your reading trail" style="display:none">⟵</button>
-  <button class="gv-btn" id="gv-replay" aria-label="Replay the library's growth" title="Replay the library's growth" style="display:none">▶</button>
+  <button class="gv-btn" id="gv-replay" aria-label="Replay the library's growth" aria-pressed="false" title="Replay the library's growth" style="display:none">▶</button>
   <button class="gv-btn" id="gv-copy-link" aria-label="Copy link to this node" title="Copy link to the focused node" style="display:none">⚲</button>
   <button class="gv-btn" id="gv-settings-toggle" aria-label="Graph settings" title="Graph settings">⚙</button>
 </div>

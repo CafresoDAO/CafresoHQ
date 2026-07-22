@@ -1773,6 +1773,16 @@ async function main() {
     container.style.cursor = 'default';
     hideTip();
   });
+  // Safety net: sigma's leaveNode can miss a fast mouse exit off a small,
+  // still-moving (physics/replay) node — the cursor leaves the canvas
+  // entirely with no leaveNode ever firing, leaving the tip stuck on screen.
+  // A real pointerleave on the container itself always fires, so use it as a
+  // backstop (same pin exception as above — a pinned tip is meant to persist).
+  container.addEventListener('mouseleave', () => {
+    if (dragged || pinned) return;
+    setHovered(null);
+    hideTip();
+  });
 
   /* ── drag ────────────────────────────────────────────────────────────────
      The dragged node pins (fixed) while the sim keeps running, so its
@@ -2064,7 +2074,11 @@ async function main() {
     if (!replayActive) return;
     clearTimeout(replayTimer);
     replayActive = false; replayVisible = null;
-    if (replayBtn) { replayBtn.textContent = '▶'; replayBtn.title = "Replay the library's growth"; }
+    if (replayBtn) {
+      replayBtn.textContent = '▶'; replayBtn.title = "Replay the library's growth";
+      replayBtn.setAttribute('aria-label', "Replay the library's growth");
+      replayBtn.setAttribute('aria-pressed', 'false');
+    }
     if (hint) { hint.textContent = replayHintWas; hint.classList.add('gv-hidden'); }
     renderer.refresh({ skipIndexation: true });
   }
@@ -2085,7 +2099,14 @@ async function main() {
     replayActive = true;
     replayVisible = new Set();
     replayHintWas = hint ? hint.textContent : '';
-    if (replayBtn) { replayBtn.textContent = '■'; replayBtn.title = 'Stop the replay'; }
+    if (replayBtn) {
+      replayBtn.textContent = '■'; replayBtn.title = 'Stop the replay';
+      // Textual title/textContent alone left a screen reader announcing "Replay
+      // the library's growth" throughout playback — aria-label/aria-pressed
+      // need updating alongside the visual swap, same as the topic pills already do.
+      replayBtn.setAttribute('aria-label', 'Stop the replay');
+      replayBtn.setAttribute('aria-pressed', 'true');
+    }
     fitToNodes(0.1, 400);
     const step = clamp(9000 / entries.length, 45, 260);
     let i = 0;
@@ -2502,11 +2523,18 @@ async function main() {
       el.style.display = 'block';
       const top = topList.map((label) => '<div title="' + esc(label) + '">◆ ' + esc(label.length > 34 ? label.slice(0, 32).trimEnd() + '…' : label) + '</div>').join('');
       el.innerHTML =
+        '<button id="gv-analytics-close" type="button" aria-label="Close graph analysis" title="Close">✕</button>' +
         '<div class="gv-panel-title">Graph analysis</div>' +
         '<div class="gv-pill">' + esc(m.structure || '') + '</div>' +
         '<div class="gv-muted" style="line-height:1.5">Notes <b>' + m.nodes + '</b> · Links <b>' + m.edges + '</b><br>Topics <b>' + m.communityCount + '</b> · Modularity <b>' + (m.modularity || 0).toFixed(2) + '</b></div>' +
         '<div class="gv-panel-title" style="margin:10px 0 4px">Most influential</div>' + top +
         '<div id="gv-gaps"></div>';
+      // No way to dismiss it previously — on a library with several gap rows
+      // the (unbounded-height, until the CSS fix above) panel sat on top of
+      // the bottom pill bar and clipped tooltips with no way to get it out
+      // of the way short of reloading without &show_analytics=1.
+      const closeBtn = document.getElementById('gv-analytics-close');
+      if (closeBtn) closeBtn.addEventListener('click', () => { el.style.display = 'none'; });
 
       /* ── structural gaps (the InfraNodus move) ──────────────────────────
          The pairs of big topic clusters with the FEWEST edges between them
