@@ -90,17 +90,15 @@
       }
     } else drawerMissing = true;
   }
-  // Svelte's legacy-mode dependency scan only sees identifiers referenced
-  // directly in the template — a function call like srcAge(s.url) hides
-  // drawerEnrich inside the function body, so the {#each} block never gets a
-  // dirty bit for it and the async fetch's result silently never renders.
-  // Reading drawerEnrich here, at the top level of a $: statement, makes the
-  // dependency explicit.
+  // Svelte's legacy-mode dependency scan works per-block: it only picks up a
+  // dependency an {#each} block's OWN template expressions reference by name.
+  // A wrapper function (srcAge(url) reading srcAges via closure) doesn't
+  // count — the each block never sees "srcAges" in its own markup, so it
+  // never got a dirty bit when the async enrichment fetch resolved and the
+  // dates silently never rendered. Reading srcAges directly via {@const} in
+  // the each block (see the sources list below) is what actually fixes it;
+  // this derived map only needs to exist, not be read from here.
   $: srcAges = drawerEnrich && drawerEnrich.byUrl ? drawerEnrich.byUrl : new Map();
-  function srcAge(url) {
-    const m = srcAges.get(url);
-    return m && m.age ? m.age : '';
-  }
   function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
   function openEntry(id) { goto(`/library?e=${encodeURIComponent(id)}`, { noScroll: true }); }
@@ -483,11 +481,12 @@
         <div class="lib-kicker" style="margin-top: 22px;">Sources</div>
         <ol class="lib-sources">
           {#each drawerEntry.sources as s, i}
+            {@const age = srcAges.get(s.url)?.age}
             <li>
               <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer">
                 <span class="lib-src-n">[{i + 1}]</span>
                 <span class="lib-src-t">{plain(s.title)}</span>
-                {#if srcAge(s.url)}<span class="lib-src-age">{srcAge(s.url)}</span>{/if}
+                {#if age}<span class="lib-src-age">{age}</span>{/if}
                 <span class="lib-src-d">{domain(s.url)}</span>
               </a>
             </li>
