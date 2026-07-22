@@ -261,6 +261,13 @@ async function main() {
         // Recolor sources only; gold stays the question channel.
         if (!a.entryId && m) g.setNodeAttribute(id, 'color', m.color);
       });
+      // Loosen the glue between communities so the layout opens into distinct
+      // islands instead of one hairball: cross-community edges pull at a
+      // fraction of within-community strength (FA2 reads the 'weight' edge
+      // attribute when edgeWeightInfluence is on — unused here otherwise).
+      g.forEachEdge((e, attrs, s, t) => {
+        g.setEdgeAttribute(e, 'weight', commOf[s] === commOf[t] ? 1 : 0.3);
+      });
     } catch (_) { commOf = null; commMeta = null; }
   }
 
@@ -494,7 +501,7 @@ async function main() {
     return 0;
   }
 
-  let fadeStart = parseFloat(P('textfade', '6')) || 6;
+  let fadeStart = parseFloat(P('textfade', '8')) || 8;
 
   const renderer = new Sigma(g, container, {
     allowInvalidContainer: true,
@@ -687,42 +694,60 @@ async function main() {
       const placed = [];   // measured first, collision-relaxed, then drawn
       for (const t of viewTopics) {
         if (!t.set || t.set.size < 2) continue;
-        // Centroid over the nodes this topic OWNS (topicByNode first-match):
-        // curated topic sets overlap heavily, and shared members drag every
-        // centroid to the graph's center of mass — labels end up stacked in
-        // the middle. Exclusive membership spreads them back over their
-        // actual territory. Falls back to the full set for tiny topics.
-        let sx = 0, sy = 0, w = 0, own = 0;
+        // A curated topic's members are scattered across the whole layout
+        // (FA2 places by links, not by topic), so a plain centroid — even over
+        // exclusively-owned nodes — lands every label at the graph's center of
+        // mass and they stack into a column that hides the graph. Anchor each
+        // label where the topic is DENSEST instead: the Louvain community
+        // holding most of its owned nodes is spatially coherent by
+        // construction, so the centroid over that intersection sits on a real
+        // visual cluster.
+        const owned = [];
         for (const id of t.set) {
-          if (!g.hasNode(id) || topicByNode.get(id) !== t) continue;
-          own++;
+          if (g.hasNode(id) && topicByNode.get(id) === t) owned.push(id);
+        }
+        let anchor = owned.length >= 2 ? owned : [...t.set].filter((id) => g.hasNode(id));
+        if (commOf && anchor.length > 3) {
+          const byComm = new Map();
+          for (const id of anchor) {
+            const c = commOf[id];
+            if (c === undefined) continue;
+            (byComm.get(c) || byComm.set(c, []).get(c)).push(id);
+          }
+          let best = null;
+          for (const ids of byComm.values()) if (!best || ids.length > best.length) best = ids;
+          if (best && best.length >= 3) anchor = best;
+        }
+        let sx = 0, sy = 0, w = 0;
+        for (const id of anchor) {
           const s = baseSize.get(id) || 3;
           const p = vp(id);
           sx += p.x * s; sy += p.y * s; w += s;
         }
-        if (own < 2) {
-          sx = 0; sy = 0; w = 0;
-          for (const id of t.set) {
-            if (!g.hasNode(id)) continue;
-            const s = baseSize.get(id) || 3;
-            const p = vp(id);
-            sx += p.x * s; sy += p.y * s; w += s;
-          }
-        }
         if (!w) continue;
         const x = sx / w, y = sy / w;
         if (x < -60 || y < -30 || x > dims.width + 60 || y > dims.height + 30) continue;
-        const fs = clamp(12 + Math.sqrt(t.set.size) * 1.5, 13, 24);
+        const fs = clamp(11 + Math.sqrt(t.set.size) * 1.2, 12, 18);
         const a2 = activeTopic && activeTopic !== t.key ? alpha * 0.22 : alpha;
-        const label = t.label.length > 30 ? t.label.slice(0, 28).trimEnd() + '…' : t.label;
+        const label = t.label.length > 26 ? t.label.slice(0, 24).trimEnd() + '…' : t.label;
         clc.font = '700 ' + fs + "px 'Inter', system-ui, sans-serif";
         const tw = clc.measureText(label).width;
         placed.push({ t, x, y, fs, a2, label, tw, pad: 8, ph: fs + 8 });
       }
-      // Dense curated topics all live near the graph's core, so their labels
-      // land on top of each other. A few greedy passes push overlapping
-      // plates apart vertically — enough separation to read, cheap enough to
-      // run every frame.
+      // Eight readable plates beat twelve fighting ones — and two topics
+      // anchored on the same spot means the layout gave them one territory,
+      // so only the bigger one gets to name it.
+      placed.sort((a, b) => b.t.set.size - a.t.set.size);
+      placed.length = Math.min(placed.length, 8);
+      for (let i = placed.length - 1; i > 0; i--) {
+        for (let j = 0; j < i; j++) {
+          const dx = placed[i].x - placed[j].x, dy = placed[i].y - placed[j].y;
+          if (dx * dx + dy * dy < 70 * 70) { placed.splice(i, 1); break; }
+        }
+      }
+      // A few greedy passes separate overlapping plates along whichever axis
+      // needs the smaller shove — always-vertical pushing turns co-anchored
+      // labels back into the center column this placement exists to avoid.
       for (let pass = 0; pass < 3; pass++) {
         for (let i = 0; i < placed.length; i++) {
           for (let j = i + 1; j < placed.length; j++) {
@@ -730,8 +755,13 @@ async function main() {
             const ox = Math.min(a.x + a.tw / 2 + a.pad, b.x + b.tw / 2 + b.pad) - Math.max(a.x - a.tw / 2 - a.pad, b.x - b.tw / 2 - b.pad);
             const oy = Math.min(a.y + a.ph / 2, b.y + b.ph / 2) - Math.max(a.y - a.ph / 2, b.y - b.ph / 2);
             if (ox <= 0 || oy <= 0) continue;
-            const push = (oy / 2 + 2) * (a.y <= b.y ? 1 : -1);
-            a.y -= push; b.y += push;
+            if (ox < oy) {
+              const push = (ox / 2 + 2) * (a.x <= b.x ? 1 : -1);
+              a.x -= push; b.x += push;
+            } else {
+              const push = (oy / 2 + 2) * (a.y <= b.y ? 1 : -1);
+              a.y -= push; b.y += push;
+            }
           }
         }
       }
@@ -857,7 +887,7 @@ async function main() {
   /* ── physics ─────────────────────────────────────────────────────────────
      One rAF ticker drives both the layout burst and the hover tween, so the
      page settles to zero CPU the moment neither has anything left to do. */
-  const fa2 = { ...forceAtlas2.inferSettings(g), gravity: 0.06, scalingRatio: 24, slowDown: 4, adjustSizes: true };
+  const fa2 = { ...forceAtlas2.inferSettings(g), gravity: 0.04, scalingRatio: 48, slowDown: 4, adjustSizes: true, edgeWeightInfluence: 1 };
   const layoutOff = P('layout', 'fa2') === 'none' || g.order <= 2 || g.order > 600;
   let animateOn = !layoutOff && !reduceMotion;
   // Budget is measured in frames actually rendered, not wall-clock: a graph
@@ -1571,7 +1601,6 @@ async function main() {
       event to whichever it finds first, and a label over a dense cluster
       almost always has a node under the cursor. */
   function hitClusterLabel(event) {
-    try { console.log('[gv-debug] hit?', event && event.x, event && event.y, labelRects.length, JSON.stringify(labelRects.slice(0, 2))); } catch (_) {}
     if (!event || !labelRects.length) return false;
     const { x, y } = event;
     for (const r of labelRects) {

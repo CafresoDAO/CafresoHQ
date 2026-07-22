@@ -64,7 +64,7 @@
     // Read the just-saved values directly rather than the stores (Svelte
     // store updates via .set() are synchronous, but reading raw inputs here
     // avoids any ambiguity about ordering with the reactive $ subscriptions).
-    const base = ((workspacesApiInput || fleetApiInput || '').trim()).replace(/\/+$/, '');
+    const base = normalizeUrl(workspacesApiInput) || normalizeUrl(fleetApiInput);
     if (!base) { wsApiState = 'idle'; wsApiData = null; return; }
     wsApiState = 'probing'; wsApiError = ''; wsApiData = null;
     try {
@@ -83,9 +83,21 @@
     }
   }
 
+  // Mobile keyboards (iOS Safari especially) auto-capitalize the first
+  // character typed into a plain text/url field even with autocapitalize
+  // "off" honored inconsistently across versions — "https://" silently
+  // becomes "Https://", which fails DNS/fetch with no visible sign anything
+  // is wrong (the field LOOKS right at a glance). The scheme is
+  // case-insensitive per spec, so normalizing it here is always safe;
+  // never touch token values, which are case-sensitive secrets.
+  function normalizeUrl(raw) {
+    const v = (raw || '').trim().replace(/\/+$/, '');
+    return v.replace(/^(https?):\/\//i, (_, s) => s.toLowerCase() + '://');
+  }
+
   async function saveAndProbeFleet() {
-    fleetApiUrl.set((fleetApiInput || '').trim().replace(/\/+$/, ''));
-    workspacesApiUrl.set((workspacesApiInput || '').trim().replace(/\/+$/, ''));
+    fleetApiUrl.set(normalizeUrl(fleetApiInput));
+    workspacesApiUrl.set(normalizeUrl(workspacesApiInput));
     const tok = (fleetTokenInput || '').trim();
     fleetApiAuthToken.set(tok);
     // Separate secret — the workspaces host generates its own
@@ -408,6 +420,8 @@
             type="url"
             autocomplete="off"
             spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
             bind:value={fleetApiInput}
             placeholder="http://localhost:8080"
           />
@@ -422,6 +436,8 @@
             type="url"
             autocomplete="off"
             spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
             bind:value={workspacesApiInput}
             placeholder="Defaults to the Fleet API URL"
           />
@@ -435,6 +451,9 @@
             class="input mt-2"
             type="password"
             autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
             bind:value={fleetTokenInput}
             placeholder="X-Fleet-Auth header value"
           />
@@ -448,6 +467,9 @@
             class="input mt-2"
             type="password"
             autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
             bind:value={workspacesTokenInput}
             placeholder="Falls back to the Auth token above if left blank"
           />
