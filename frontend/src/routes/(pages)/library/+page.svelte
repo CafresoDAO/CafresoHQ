@@ -21,7 +21,7 @@
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
   import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, libraryCardVisual, graphViewerOrigin } from '$lib/api/library.js';
-  import { fmtNsDate } from '$lib/utils/time.js';
+  import { fmtNsDate, fmtNsRelative, nsToDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
   let health = null;
@@ -238,6 +238,16 @@
 
   function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
   const fmtDate = (ns) => fmtNsDate(ns, 'short');
+  // News feeds live on recency: "3h ago" reads as a live wire, "Jul 22, 2026"
+  // reads as an archive. Cards use the relative form; the drawer keeps the
+  // absolute date (a permanent record wants an exact stamp).
+  const relTime = (ns) => fmtNsRelative(ns) || fmtNsDate(ns, 'short');
+  // "Just in" — answered in the last 24h. The one editorial signal that turns
+  // a static library into an incoming-news feed you check back on.
+  function isFresh(ns) {
+    const d = nsToDate(ns);
+    return d ? (Date.now() - d.getTime()) < 86_400_000 : false;
+  }
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
@@ -459,17 +469,32 @@
         <p>Try a shorter word, or <button class="lib-filter-reset-link" on:click={() => { filterText = ''; onFilterChange(); }}>clear the filter</button> to browse everything.</p>
       </div>
     {:else}
-      <div class="lib-grid">
-        {#each filteredEntries.slice(0, shown) as e (e.id)}
+      <!-- The feed. On desktop this is the Ground.news-style card grid; on
+           mobile it collapses to a news river — the first card is the lead
+           story (big thumbnail), every card after it becomes a compact
+           headline row (small thumbnail, 2-line headline, one quiet meta
+           line). A giant slab per screen doesn't scan; a river does. The
+           lead only earns its size on the default newest feed — once you
+           filter or sort, every row is equal weight. -->
+      {@const leadMode = sortBy === 'newest' && modeFilter === 'all' && !filterText.trim()}
+      <div class="lib-grid lib-feed">
+        {#each filteredEntries.slice(0, shown) as e, i (e.id)}
           {@const visual = cardVisuals[e.id]}
+          {@const fresh = isFresh(e.ts)}
           <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'}
-                  class:lib-card-visual={visual?.thumb} on:click={() => openEntry(e.id)}>
+                  class:lib-card-visual={visual?.thumb} class:lib-lead={leadMode && i === 0}
+                  on:click={() => openEntry(e.id)}>
             {#if visual?.thumb}
-              <div class="lib-card-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+              <div class="lib-card-thumb" style="background-image:url('{visual.thumb}')" role="presentation">
+                {#if fresh}<span class="lib-fresh-tag">Just in</span>{/if}
+              </div>
             {/if}
             <div class="lib-card-body">
-              {#if e.mode === 'deep' || e.askedBy === 'ai-gap'}
+              {#if e.mode === 'deep' || e.askedBy === 'ai-gap' || (fresh && !visual?.thumb)}
                 <div class="lib-card-top">
+                  {#if fresh && !visual?.thumb}
+                    <span class="lib-chip lib-chip-fresh"><span class="lib-fresh-dot" aria-hidden="true"></span> Just in</span>
+                  {/if}
                   {#if e.mode === 'deep'}
                     <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
                   {/if}
@@ -490,7 +515,7 @@
                     {/each}
                   </span>
                 {/if}
-                <span>{fmtDate(e.ts)}</span>
+                <span>{relTime(e.ts)}</span>
                 <span class="lib-meta-dot" aria-hidden="true">·</span>
                 <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
                 <Icon name="arrow-right" size={13} class="lib-card-go" />
@@ -961,6 +986,32 @@
     display: inline-flex; align-items: center; gap: 4px;
     background: hsl(266 70% 94%); color: hsl(266 60% 42%); border: 1px solid hsl(266 55% 86%);
   }
+  /* "Just in" — the incoming-news signal. On a thumbnail it's an overlay tag;
+     on a plain card it's a chip with a live pulse dot. */
+  .lib-chip-fresh {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: hsl(150 60% 92%); color: hsl(150 70% 26%); border: 1px solid hsl(150 50% 78%);
+  }
+  .lib-fresh-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: hsl(150 70% 40%);
+    box-shadow: 0 0 0 0 hsl(150 70% 40% / 0.6); animation: lib-fresh-pulse 2s infinite;
+  }
+  @keyframes lib-fresh-pulse {
+    0% { box-shadow: 0 0 0 0 hsl(150 70% 40% / 0.5); }
+    70% { box-shadow: 0 0 0 6px hsl(150 70% 40% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(150 70% 40% / 0); }
+  }
+  .lib-fresh-tag {
+    position: absolute; top: 10px; left: 10px; z-index: 1;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+    padding: 3px 9px; border-radius: 999px;
+    background: hsl(150 70% 32%); color: hsl(150 60% 96%);
+    box-shadow: 0 2px 8px -2px hsl(150 40% 15% / 0.5);
+  }
+  .lib-card-thumb { position: relative; }
+  :global(.dark) .lib-chip-fresh {
+    background: hsl(150 55% 22% / 0.5); color: hsl(150 70% 78%); border-color: hsl(150 45% 40%);
+  }
 
   /* Deep Research section toggle — a distinct tab pair above the filter bar. */
   .lib-modebar { display: flex; gap: 8px; margin-bottom: 14px; }
@@ -1154,7 +1205,7 @@
   :global(.dark) .lib-comment-err { background: hsl(0 45% 22% / 0.4); color: hsl(0 70% 82%); border-color: hsl(0 45% 40%); }
   .lib-drawer-actions .lib-link { color: hsl(38 65% 35%); }
 
-  /* ── Mobile: drawer becomes a bottom sheet; hero tightens ─────────────── */
+  /* ── Mobile: the feed becomes a news river ────────────────────────────── */
   @media (max-width: 640px) {
     .lib-hero { min-height: 360px; }
     .lib-hero-content { padding: 130px 18px 22px; }
@@ -1167,6 +1218,55 @@
     }
     @keyframes lib-sheet-in { from { transform: translateY(40px); opacity: 0; } }
     .lib-graph-open { top: 12px; right: 12px; }
+
+    /* The river: no per-card gap, hairline dividers instead — a scannable
+       list, not a stack of full-screen slabs. */
+    .lib-feed { gap: 0; }
+
+    /* Lead story keeps the big treatment: full-width thumbnail, large
+       headline — the one story the editor put above the fold. */
+    .lib-feed .lib-lead h3 { font-size: 21px; -webkit-line-clamp: 3; }
+    .lib-feed .lib-lead .lib-card-thumb { aspect-ratio: 16 / 10; }
+    .lib-feed .lib-lead { margin-bottom: 4px; }
+
+    /* Every card after the lead collapses to a compact headline row:
+       flat (no card chrome), a small square thumbnail on the right, a
+       2–3 line headline and one quiet meta line on the left. */
+    .lib-feed .lib-card:not(.lib-lead) {
+      border: none; border-radius: 0; box-shadow: none; background: transparent;
+      border-bottom: 1px solid hsl(var(--pg-border));
+      padding: 15px 2px;
+    }
+    .lib-feed .lib-card:not(.lib-lead).lib-card-visual {
+      overflow: visible;
+      flex-direction: row-reverse; align-items: flex-start; gap: 13px;
+    }
+    .lib-feed .lib-card:not(.lib-lead) .lib-card-thumb {
+      width: 92px; min-width: 92px; aspect-ratio: 1;
+      border-radius: 12px; align-self: flex-start;
+    }
+    .lib-feed .lib-card:not(.lib-lead).lib-card-visual .lib-card-body { padding: 0; }
+    .lib-feed .lib-card:not(.lib-lead) h3 {
+      font-size: 16px; line-height: 1.32; -webkit-line-clamp: 3; margin-bottom: 7px;
+    }
+    /* One line of context is enough on a row; three would rebuild the slab. */
+    .lib-feed .lib-card:not(.lib-lead) .lib-card-snippet { display: none; }
+    .lib-feed .lib-card:not(.lib-lead) .lib-fresh-tag {
+      top: 5px; left: 5px; font-size: 9px; padding: 2px 6px;
+    }
+    /* Touch has no hover — kill the lift so rows sit flat and calm. */
+    .lib-feed .lib-card:not(.lib-lead):hover {
+      transform: none; box-shadow: none; border-color: transparent;
+      border-bottom-color: hsl(var(--pg-border));
+    }
+    :global(.lib-card-go) { display: none; }
+    .lib-feed .lib-card:not(.lib-lead):active { background: hsl(var(--pg-hover)); }
+
+    /* Section controls stop stacking into a tall wall: the sort dropdown
+       sits inline with a shrinking filter field. */
+    .lib-browse-title { font-size: 19px; }
+    .lib-filterbar { gap: 8px; }
+    .lib-sort-select { font-size: 12px; padding: 8px 10px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
