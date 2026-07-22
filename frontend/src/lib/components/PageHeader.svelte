@@ -152,7 +152,7 @@
       on:mouseleave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <Logo size={32} />
-      <span class="font-semibold text-[15px] tracking-tight" style="color: hsl(var(--pg-fg));">Cafreso</span>
+      <span class="header-wordmark font-semibold text-[15px] tracking-tight" style="color: hsl(var(--pg-fg));">Cafreso</span>
     </a>
 
     <span class="desktop-only w-px h-6 mx-3.5" style="background: hsl(var(--pg-fg) / 0.15);"></span>
@@ -358,7 +358,7 @@
             on:mouseleave={(e) => (e.currentTarget.style.transform = 'none')}
           >
             <Icon name="user-circle" size={16} />
-            <span class="relative z-[1] font-mono">{shortPrincipal($principalText)}</span>
+            <span class="desktop-only relative z-[1] font-mono">{shortPrincipal($principalText)}</span>
           </button>
           {#if menuOpen}
             <div

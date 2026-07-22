@@ -273,6 +273,12 @@
 html,
 body {
   min-height: 100%;
+  /* Safety net against horizontal drift on mobile: `clip` (not `hidden`)
+     stops a stray wide child from forcing a sideways scroll WITHOUT turning
+     the root into a scroll container — so `position: sticky` headers keep
+     working. Any element that legitimately needs to scroll sideways owns its
+     own `overflow-x: auto` container (e.g. .leaderboard-scroll, .site-nav). */
+  overflow-x: clip;
 }
 
 html {
@@ -584,11 +590,19 @@ body {
   .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 20px !important; padding: 24px 20px !important; }
   .footer-legal { grid-column: 1 / -1 !important; flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
 
-  /* Header: reduce padding, shrink login button, show hamburger */
+  /* Header: reduce padding, shrink login button, show hamburger. The action
+     cluster also tightens its gap and lets the account button collapse to an
+     icon (its principal text is .desktop-only) so six controls + the logo fit
+     a phone without forcing a sideways scroll. */
   .site-header-wrap { padding: 8px 10px 0 !important; }
   .site-header { padding: 0 8px 0 8px !important; }
   .site-header-login { padding: 0 10px !important; font-size: 12px !important; }
-  .mobile-hamburger { display: flex !important; }
+  .pg-cluster { gap: 4px !important; }
+  /* Shrink the 38px icon buttons (bell, weather, search, cart, account) to
+     34px so the action cluster stays comfortably inside a phone. */
+  .pg-cluster .w-\[38px\] { width: 34px !important; }
+  .pg-cluster .h-\[38px\] { height: 34px !important; }
+  .mobile-hamburger { display: flex !important; width: 34px; height: 34px; }
 
   /* Make the nanas-balance chip compact so it still fits */
   .nanas-chip-compact { display: inline-flex !important; }
@@ -597,6 +611,12 @@ body {
 @media (min-width: 881px) {
   .mobile-only { display: none !important; }
   .nanas-chip-compact { display: none !important; }
+}
+/* On the tightest phones drop the "Cafreso" wordmark to just the logomark —
+   frees ~75px so the full action cluster (gold chip + 5 icons + account) fits
+   without clipping. The mark alone still reads as the brand. */
+@media (max-width: 374px) {
+  .header-wordmark { display: none !important; }
 }
 
 /* ── Workspace portal styles (ported from pre-merge master 69e4c5e) ──────
