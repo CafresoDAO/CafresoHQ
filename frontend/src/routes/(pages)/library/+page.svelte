@@ -14,6 +14,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import CommentThread from '$lib/components/CommentThread.svelte';
   import UpNext from '$lib/components/UpNext.svelte';
+  import WeeklyDigest from '$lib/components/WeeklyDigest.svelte';
   import { loadUpNext, normQ } from '$lib/stores/upnext.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
@@ -45,6 +46,15 @@
     : [];
   function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
   function setMode(m) { modeFilter = m; onFilterChange(); }
+
+  // A digest theme chip jumps straight into the existing text filter — no new
+  // filtering mechanism, just points the one that already exists at a word.
+  function jumpToTheme(word) {
+    filterText = word;
+    modeFilter = 'all';
+    onFilterChange();
+    document.querySelector('.lib-browse-head')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   // Ground.news-style cards: a hero thumbnail + favicon row per card, pulled
   // from each entry's own graph.json. Bounded to what's actually on screen
@@ -416,6 +426,11 @@
       {/if}
     </div>
   </div>
+
+  <!-- ── This week in the library: what got answered ──────────────────────── -->
+  {#if index && index.entries}
+    <WeeklyDigest entries={index.entries} onOpen={openEntry} onTheme={jumpToTheme} />
+  {/if}
 
   <!-- ── Up Next: personal research shortlist ─────────────────────────────── -->
   {#if index !== null}
