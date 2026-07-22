@@ -60,6 +60,40 @@ export function libraryResearchUrl(id) {
   return base ? `${base}/library/${id}/research.json` : '';
 }
 
+/** Public URL of an entry's own graph blob (the worker-authored graphJson).
+    Carries the Brave-harvest enrichment the flat entry JSON lacks — per-source
+    publish dates + thumbnails, and the "people also ask" suggestion nodes. */
+export function libraryEntryGraphUrl(id) {
+  const base = libraryPublicBase();
+  return base ? `${base}/library/${id}/graph.json` : '';
+}
+
+/** Fetch + distill an entry's graph blob into drawer-ready enrichment:
+      { byUrl: Map<url,{age,img}>, suggests: [{q, a}] }
+    Returns null on any failure — the drawer just renders its plain sources. */
+export async function libraryEntryEnrichment(id) {
+  const url = libraryEntryGraphUrl(id);
+  if (!url) return null;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    let g = j && (j.graph || j);
+    if (typeof g === 'string') g = JSON.parse(g);
+    const nodes = (g && g.nodes) || [];
+    const byUrl = new Map();
+    const suggests = [];
+    for (const n of nodes) {
+      const a = (n && n.attributes) || {};
+      if (a.suggest) { if (a.label) suggests.push({ q: String(a.label).replace(/^✦\s*/, ''), a: a.snippet || '' }); }
+      else if (a.url && (a.age || a.img)) byUrl.set(a.url, { age: a.age || '', img: a.img || '' });
+    }
+    return (byUrl.size || suggests.length) ? { byUrl, suggests } : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 /** The whole library as one neural web — the /library page hero. Runs with
     chrome=none: the hero overlays its own headline and search box, so the
     viewer's controls would only compete with them. */
@@ -84,6 +118,13 @@ export function libraryFullGraphViewerUrl() {
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/graph.json`);
   return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&show_analytics=1`;
+}
+
+/** The full viewer with the growth replay auto-playing on load — the library
+    re-asks itself in chronological order. The hero's "watch it grow" link. */
+export function libraryReplayGraphViewerUrl() {
+  const u = libraryFullGraphViewerUrl();
+  return u ? `${u}&replay=1` : '';
 }
 
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */

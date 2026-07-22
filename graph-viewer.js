@@ -57,13 +57,16 @@ function titleOf(id) { return String(id).split('/').pop().replace(/\.md$/, ''); 
 const THEME = {
   dark: {
     bg: '#14110E',
-    edge: [201, 191, 169, 0.18], edgeDim: [201, 191, 169, 0.03], edgeHot: [245, 210, 93, 0.7],
+    // Resting edges sit just above the visibility floor: at 300 nodes / 577
+    // links the web at 0.18 read as fog behind the dense core. Hover heat and
+    // the hot channel carry the structure when you actually ask for it.
+    edge: [201, 191, 169, 0.10], edgeDim: [201, 191, 169, 0.02], edgeHot: [245, 210, 93, 0.7],
     nodeDim: [38, 33, 25], label: [220, 211, 192], ring: 'rgba(245,210,93,0.9)',
     pulse: [245, 210, 93], spark: [255, 243, 208],
   },
   light: {
     bg: '#F6F1E7',
-    edge: [92, 82, 64, 0.2], edgeDim: [92, 82, 64, 0.04], edgeHot: [158, 112, 20, 0.7],
+    edge: [92, 82, 64, 0.12], edgeDim: [92, 82, 64, 0.03], edgeHot: [158, 112, 20, 0.7],
     nodeDim: [230, 222, 206], label: [58, 52, 43], ring: 'rgba(158,112,20,0.9)',
     pulse: [158, 112, 20], spark: [186, 106, 12],
   },
@@ -237,6 +240,9 @@ async function main() {
     if ((a.label || '').length > LABEL_MAX) {
       g.setNodeAttribute(id, 'label', a.label.slice(0, LABEL_MAX - 2).trimEnd() + '…');
     }
+    // Ghost "people also wonder" questions read as invitations, not answers —
+    // the ✦ marks them apart from real (answered) question nodes.
+    if (a.suggest) g.setNodeAttribute(id, 'label', '✦ ' + g.getNodeAttribute(id, 'label'));
   });
 
   // community -> {color, size, topLabel} — built only when the recolor runs.
@@ -244,7 +250,19 @@ async function main() {
   const COMM_PALETTE = ['#7DC9B0', '#C9B8E0', '#E8A9A9', '#F0C987', '#9BC0E8', '#B8E09A', '#E0A47C', '#D89BE0'];
   if (libMode && g.order > 12) {
     try {
-      commOf = louvain(g);
+      // Seeded rng (mulberry32): louvain's random node walk is the last source
+      // of run-to-run variance in the layout pipeline. With it pinned, the same
+      // snapshot always yields the same communities, the same ring order, and —
+      // via the fixed-iteration bloom — the same settled map, so "News lives
+      // top-right" stays true between loads.
+      let rs = 0x9e3779b9;
+      const rng = () => {
+        rs = (rs + 0x6D2B79F5) | 0;
+        let t = Math.imul(rs ^ (rs >>> 15), 1 | rs);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      commOf = louvain(g, { rng });
       const bySize = new Map();
       g.forEachNode((id) => {
         const c = commOf[id];
@@ -266,7 +284,7 @@ async function main() {
       // fraction of within-community strength (FA2 reads the 'weight' edge
       // attribute when edgeWeightInfluence is on — unused here otherwise).
       g.forEachEdge((e, attrs, s, t) => {
-        g.setEdgeAttribute(e, 'weight', commOf[s] === commOf[t] ? 1 : 0.3);
+        g.setEdgeAttribute(e, 'weight', commOf[s] === commOf[t] ? 1 : 0.15);
       });
     } catch (_) { commOf = null; commMeta = null; }
   }
@@ -335,23 +353,80 @@ async function main() {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         const m = new Map();
-        for (const e of (j && j.entries) || []) if (e.id) m.set(e.id, e.askedBy || 'human');
+        // ts is nanoseconds; kept as Number — the 2^53 precision loss is far
+        // below the ordering granularity replay needs.
+        for (const e of (j && j.entries) || []) {
+          if (e.id) m.set(e.id, { askedBy: e.askedBy || 'human', ts: Number(e.ts) || 0 });
+        }
         return m.size ? m : null;
       })
       .catch(() => null);
     return provReq;
   }
   const ORIGIN_COLORS = { human: '#F5D25D', 'ai-gap': '#C9B8E0', 'ai-news': '#9BC0E8' };
-  let colorMode = 'identity';   // 'identity' | 'topic' | 'origin'
+  let colorMode = 'identity';   // 'identity' | 'topic' | 'origin' | 'fresh'
   let provOf = null;
+
+  /* Freshness ramp: newest → oldest as warm gold → deep slate. Fed by two
+     sources depending on what the graph carries — a question's answer date
+     (prov ts, present in the merged web) and a source's publish date (the
+     Brave-harvested `age` attr, present in enriched per-entry graphs). Nodes
+     with no date get a distinct true-gray (not a ramp endpoint) so "unknown"
+     is never one step from misreading as "oldest".
+     Two ramps: dark-theme stops read fine on the near-black plane, but at
+     light-theme contrast the same values land under 2:1 against parchment
+     (the amber/gold stops especially) — light gets its own darker, more
+     saturated stops so freshest still reads as the boldest color either way. */
+  const FRESH_STOPS = dark
+    ? [[245, 158, 66], [245, 210, 93], [155, 192, 232], [90, 86, 120]]
+    : [[196, 100, 20], [176, 120, 10], [50, 92, 158], [70, 66, 96]];
+  const FRESH_UNDATED = dark ? [110, 108, 112] : [150, 145, 138];
+  function freshColor(t) {                 // t in [0,1]: 0 newest, 1 oldest
+    const s = clamp(t, 0, 1) * (FRESH_STOPS.length - 1);
+    const i = Math.min(FRESH_STOPS.length - 2, Math.floor(s)), f = s - i;
+    const a = FRESH_STOPS[i], b = FRESH_STOPS[i + 1];
+    return [0, 1, 2].map((k) => Math.round(a[k] + (b[k] - a[k]) * f));
+  }
+  function nodeEpochMs(id, a) {
+    if (a.entryId && provOf) { const ts = (provOf.get(a.entryId) || {}).ts; if (ts) return ts / 1e6; }
+    const age = a.age;                     // ISO 'YYYY-MM-DD' or free text ("2 hours ago")
+    if (age && /^\d{4}-\d{2}-\d{2}/.test(age)) { const ms = Date.parse(age); if (!isNaN(ms)) return ms; }
+    return null;
+  }
   async function applyColorMode(mode) {
     colorMode = mode;
-    if (mode === 'origin' && !provOf) provOf = await loadProvenance();
+    if ((mode === 'origin' || mode === 'fresh') && !provOf) provOf = await loadProvenance();
+    if (mode === 'fresh') {
+      // One shared min/max over every datable node so questions and sources
+      // land on the same timeline — a fresh source and a fresh question read
+      // the same warm.
+      let lo = Infinity, hi = -Infinity;
+      g.forEachNode((id, a) => { const t = nodeEpochMs(id, a); if (t != null) { if (t < lo) lo = t; if (t > hi) hi = t; } });
+      const span = hi - lo;
+      g.forEachNode((id, a) => {
+        const t = nodeEpochMs(id, a);
+        const c = t == null ? FRESH_UNDATED : freshColor(span > 0 ? 1 - (t - lo) / span : 0);
+        g.setNodeAttribute(id, 'color', rgbCss(c));
+        baseRgb.set(id, c);
+      });
+      renderer.refresh({ skipIndexation: true });
+      return;
+    }
     g.forEachNode((id, a) => {
-      if (!a.entryId) return;    // rules retint questions; sources keep topic color
+      if (!a.entryId) {
+        // Leaving 'fresh' mode: it's the only mode that retints non-question
+        // nodes, so restore them — otherwise a domain/source node stays
+        // stuck on the freshness ramp forever after the first switch away.
+        const orig = origRgb.get(id);
+        if (orig && baseRgb.get(id) !== orig) {
+          g.setNodeAttribute(id, 'color', rgbCss(orig));
+          baseRgb.set(id, orig);
+        }
+        return;
+      }
       let c = '#F5D25D';
       if (mode === 'topic') { const t = topicByNode.get(id); if (t) c = t.color; }
-      else if (mode === 'origin' && provOf) c = ORIGIN_COLORS[provOf.get(a.entryId)] || '#F5D25D';
+      else if (mode === 'origin' && provOf) c = ORIGIN_COLORS[(provOf.get(a.entryId) || {}).askedBy] || '#F5D25D';
       g.setNodeAttribute(id, 'color', c);
       baseRgb.set(id, parseColor(c));
     });
@@ -360,6 +435,12 @@ async function main() {
 
   const baseRgb = new Map();   // node -> [r,g,b] as authored (dim lerps from this)
   const baseSize = new Map();
+  // Immutable snapshot of each node's ORIGINAL color, taken once here before
+  // any color mode runs. 'fresh' mode recolors every node including
+  // domains/sources (unlike topic/origin, which only ever retint questions),
+  // so switching away from 'fresh' needs something to restore non-question
+  // nodes back to — without this they'd stay stuck on the freshness ramp.
+  const origRgb = new Map();
   const minSize = compact() ? 3 : 2.5;
   g.forEachNode((id, a) => {
     const degSize = 2 + Math.sqrt(g.degree(id)) * 1.6;
@@ -367,7 +448,9 @@ async function main() {
     const size = clamp(0.45 * snapSize + 0.55 * degSize, minSize, 14);
     g.setNodeAttribute(id, 'size', size);
     baseSize.set(id, size);
-    baseRgb.set(id, parseColor(a.color));
+    const rgb = parseColor(a.color);
+    baseRgb.set(id, rgb);
+    origRgb.set(id, rgb);
   });
 
   const drawEdges = P('drawedges', 'true') !== 'false';
@@ -375,6 +458,35 @@ async function main() {
   const proportional = P('labelsize', '') === 'proportional';
   const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } })();
   const coarse = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch (_) { return false; } })();
+
+  /* ── circle-bloom intro (ported from graph-engine.js) ────────────────────
+     Discard the snapshot's pre-baked ball and seed every node onto a clean
+     evenly-spaced ring, grouped so each Louvain community owns a contiguous
+     arc. The intro holds this circle briefly (see the delayed warm() at the
+     bottom), then FA2 blooms it into formation — and because same-community
+     nodes start adjacent and cross-community edges are down-weighted, the
+     bloom settles into separated islands instead of re-forming the hairball.
+     The ring's absolute radius is irrelevant: sim frames re-index, so sigma
+     refits its normalization as the layout expands. Deterministic jitter
+     (same trick as graph-engine) breaks the ring's symmetry for FA2. */
+  let ringSeeded = false;
+  if (commOf && P('layout', 'fa2') !== 'none' && g.order <= 600 && !reduceMotion) {
+    const byComm = new Map();
+    for (const c of commMeta.keys()) byComm.set(c, []);
+    const stray = [];
+    g.forEachNode((id) => {
+      const bucket = byComm.get(commOf[id]);
+      (bucket || stray).push(id);
+    });
+    const order = [...byComm.values()].flat().concat(stray);
+    const R = 10 + Math.sqrt(order.length) * 1.5;
+    order.forEach((id, i) => {
+      const a = (i / Math.max(1, order.length)) * Math.PI * 2;
+      g.setNodeAttribute(id, 'x', Math.cos(a) * R + (((i * 37) % 11) - 5) * 0.15);
+      g.setNodeAttribute(id, 'y', Math.sin(a) * R + (((i * 53) % 13) - 6) * 0.15);
+    });
+    ringSeeded = true;
+  }
 
   /* ── hover / search state ────────────────────────────────────────────────
      `h` is the animated hover intensity (0..1). Everything dim-related reads
@@ -454,6 +566,32 @@ async function main() {
   // The copy-link control (assigned in the controls block); showTip reveals it.
   let copyBtn = null;
   const dimOf = new Map();     // node -> 0..1, written by nodeReducer, read by drawLabel
+  // Placed-label boxes for this frame's greedy collision cull; reset on
+  // beforeRender (below), grown biggest-first as sigma draws each label.
+  const labelBoxes = [];
+  // Cluster-label hit boxes ({x,y,w,h,key} in viewport px), rebuilt each frame
+  // by drawClusterLabels. Declared up here (not in that block) because the
+  // beforeRender handler pre-seeds labelBoxes from it, and resize(true) in the
+  // signal-layer setup can fire a render before that block would run.
+  const labelRects = [];
+  // Reading trail: the question nodes visited this session, oldest first.
+  // Drawn as a golden thread on the clusters layer; the ⟵ control retraces it.
+  const trail = [];
+  // Growth-replay state (the engine lives after the controls block). While a
+  // replay runs, the reducers hide everything not yet revealed — declared here
+  // so the reducer closures never race their own declaration.
+  let replayActive = false, replayVisible = null;
+  function pushTrail(id) {
+    if (!g.hasNode(id) || trail[trail.length - 1] === id) return;
+    trail.push(id);
+    if (trail.length > 40) trail.shift();   // a trail, not a transcript
+    updateTrailUi();
+    renderer.refresh({ skipIndexation: true });
+  }
+  function updateTrailUi() {
+    const b = document.getElementById('gv-trail-back');
+    if (b) b.style.display = trail.length > 1 ? '' : 'none';
+  }
 
   /** BFS out to HOP_MAX. Returns [hops, tree] — tree is the parent→child edge
       list in discovery order, which is exactly the path a pulse should travel. */
@@ -512,6 +650,14 @@ async function main() {
     // The alpha ramp in drawNodeLabel is the real gate; sigma's own threshold
     // would pop labels in and out on top of it.
     labelRenderedSizeThreshold: 0,
+    // Library labels are full question sentences (~200px wide), so sigma's
+    // 100px default grid cell lets two "winners" from adjacent cells overlap
+    // badly. Per-cell count is ceil(density/ratio²) — independent of cellSize —
+    // so a wider cell just coarsens WHERE labels may appear; sizing it to the
+    // label width means roughly one label per label-width of canvas, and the
+    // greedy collision cull in defaultDrawNodeLabel guarantees the rest.
+    labelGridCellSize: libMode ? 170 : 100,
+    labelDensity: libMode ? 0.7 : 1,
     defaultEdgeColor: glRgba(T.edge, T.edge[3]),
     // Default floor is 1.7px, which would swallow the hairline edges entirely.
     minEdgeThickness: 0.5,
@@ -524,9 +670,24 @@ async function main() {
       const t = (data.size - fadeStart) / 4;
       const alpha = clamp(smoothstep(t) * (1 - (dimOf.get(data.key) || 0)), 0, 1);
       if (alpha < 0.02) return;
-      ctx.font = (proportional ? 9 + data.size * 0.35 : 11) + "px 'Inter', system-ui, sans-serif";
+      const fs = proportional ? 9 + data.size * 0.35 : 11;
+      ctx.font = fs + "px 'Inter', system-ui, sans-serif";
+      const x = data.x + data.size + 4, y = data.y + 4;
+      // Greedy declutter: sigma's grid hands us labels biggest-first, so the
+      // first to claim a patch of canvas is the most important one there. Any
+      // later label whose box overlaps a placed one is dropped this frame —
+      // the Obsidian/InfraNodus read where hubs keep their names and the
+      // small fry yield. The hovered node draws through defaultDrawNodeHover,
+      // so it's never subject to this. 3px vertical slack = breathing room.
+      const w = ctx.measureText(data.label).width;
+      const bx = x, by = y - fs, bw = w, bh = fs + 3;
+      for (let i = 0; i < labelBoxes.length; i++) {
+        const b = labelBoxes[i];
+        if (bx < b.x + b.w && bx + bw > b.x && by < b.y + b.h && by + bh > b.y) return;
+      }
+      labelBoxes.push({ x: bx, y: by, w: bw, h: bh });
       ctx.fillStyle = rgbaCss(T.label, alpha.toFixed(3));
-      ctx.fillText(data.label, data.x + data.size + 4, data.y + 4);
+      ctx.fillText(data.label, x, y);
     },
     // Sigma's stock hover draws a white label pill — unreadable on the dark
     // plane and not the look we want. The halo/ring is drawn here instead.
@@ -548,6 +709,12 @@ async function main() {
     },
     nodeReducer: (id, d) => {
       const r = { ...d };
+      // Mid-replay, a node that hasn't been "asked yet" doesn't exist yet.
+      if (replayActive && replayVisible && !replayVisible.has(id)) {
+        r.hidden = true;
+        dimOf.set(id, 1);
+        return r;
+      }
       const dim = dimFactor(id);
       dimOf.set(id, dim);
       if (dim > 0.001) {
@@ -572,6 +739,10 @@ async function main() {
         return r;
       }
       const s = g.source(id), t = g.target(id);
+      if (replayActive && replayVisible && (!replayVisible.has(s) || !replayVisible.has(t))) {
+        r.hidden = true;
+        return r;
+      }
       const sd = dimOf.has(s) ? dimOf.get(s) : dimFactor(s);
       const td = dimOf.has(t) ? dimOf.get(t) : dimFactor(t);
       // An edge is as hot as its furthest end is near: hop-1 edges (touching
@@ -597,6 +768,19 @@ async function main() {
   });
 
   const camera = renderer.getCamera();
+
+  // Clear the greedy label-collision boxes at the start of every render, before
+  // sigma's label pass repopulates them biggest-first. Pre-seed with last
+  // frame's cluster-label plates (labelRects, filled on afterRender) so node
+  // labels yield to the topic names rather than getting stamped over by them —
+  // the orientation cue outranks any single node.
+  renderer.on('beforeRender', () => {
+    labelBoxes.length = 0;
+    for (let i = 0; i < labelRects.length; i++) {
+      const r = labelRects[i];
+      labelBoxes.push({ x: r.x, y: r.y, w: r.w, h: r.h });
+    }
+  });
 
   /* ── signal layer ────────────────────────────────────────────────────────
      Its own Canvas2D layer under sigma's mouse captor. Registering it through
@@ -675,13 +859,100 @@ async function main() {
       if (clc) renderer.resize(true);   // same 300x150-default gotcha as signals
     } catch (_) { clc = null; }
   }
-  const labelRects = [];   // {x, y, w, h, key} in viewport px, rebuilt per draw
+  /* Favicons drawn INSIDE domain nodes — the web suddenly reads as the actual
+     web (you recognize bbc.com or arxiv.org at a glance instead of a colored
+     dot). Enriched entry graphs carry a worker-harvested `favicon` attr; the
+     merged library web derives one from the hostname via DuckDuckGo's public
+     icon endpoint (pure client-side — nothing stored, nothing spent). Images
+     load lazily on first draw and failures are remembered, never retried. */
+  const favNodes = [];
+  g.forEachNode((id, a) => {
+    if (a.kind === 'domain' || String(id).indexOf('d:') === 0) {
+      const dom = a.domain || String(id).slice(2);
+      const src = (a.favicon && /^https:\/\//.test(a.favicon)) ? a.favicon
+        : (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(dom) ? 'https://icons.duckduckgo.com/ip3/' + dom + '.ico' : null);
+      if (src) favNodes.push({ id, src });
+    }
+  });
+  const favCache = new Map();   // src -> {img, ok: null|true|false}
+  function favIcon(src) {
+    let c = favCache.get(src);
+    if (!c) {
+      c = { img: new Image(), ok: null };
+      c.img.onload = () => { c.ok = true; try { renderer.refresh({ skipIndexation: true }); } catch (_) {} };
+      c.img.onerror = () => { c.ok = false; };
+      c.img.src = src;
+      favCache.set(src, c);
+    }
+    return c.ok ? c.img : null;
+  }
+  // Kick the loads at startup (biggest domains first — favNodes follows node
+  // order, fine) so icons appear as soon as the first frame settles instead of
+  // waiting for a hover or zoom to trigger the first draw attempt.
+  if (favNodes.length) setTimeout(() => { for (const f of favNodes.slice(0, 60)) favIcon(f.src); }, 600);
+  function drawFavicons() {
+    // Skip entirely while FA2 is simming (the intro bloom, ~160 frames of
+    // every node moving every frame): icons are illegible on moving nodes
+    // anyway, and save/clip/drawImage across ~130 domains is the single
+    // costliest per-frame addition here — pure waste during the bloom.
+    if (!favNodes.length || (animateOn && (simBudget > 0 || simIters > 0))) return;
+    const dims = renderer.getDimensions();
+    const scale = (typeof renderer.scaleSize === 'function') ? (s) => renderer.scaleSize(s)
+      : (s) => s / Math.sqrt(camera.ratio);
+    for (const f of favNodes) {
+      if (!g.hasNode(f.id)) continue;
+      if (replayActive && replayVisible && !replayVisible.has(f.id)) continue;
+      const r = scale(g.getNodeAttribute(f.id, 'size')) * 0.8;
+      if (r < 3.5) continue;                     // too small to read — keep the dot
+      const p = vp(f.id);
+      if (p.x < -20 || p.y < -20 || p.x > dims.width + 20 || p.y > dims.height + 20) continue;
+      const img = favIcon(f.src);
+      if (!img) continue;
+      const alpha = 0.95 * (1 - (dimOf.get(f.id) || 0));
+      if (alpha < 0.05) continue;
+      clc.save();
+      clc.globalAlpha = alpha;
+      clc.beginPath();
+      clc.arc(p.x, p.y, r, 0, 6.2832);
+      clc.clip();
+      clc.drawImage(img, p.x - r, p.y - r, r * 2, r * 2);
+      clc.restore();
+    }
+  }
   function drawClusterLabels() {
     if (!clc) return;
     try {
       const dims = renderer.getDimensions();
       clc.clearRect(0, 0, dims.width, dims.height);
       labelRects.length = 0;
+      drawFavicons();
+      // The reading trail rides this layer (not the fx layer) because this one
+      // redraws on every render and tracks the camera; fx clears itself the
+      // moment no spark is alive. Drawn before the plates so topic names stay
+      // on top. A dashed gold thread with a dot per stop — where you've been.
+      if (trail.length > 1) {
+        clc.save();
+        clc.strokeStyle = rgbaCss(T.pulse, '0.32');
+        clc.fillStyle = rgbaCss(T.pulse, '0.55');
+        clc.lineWidth = 1.4;
+        clc.lineJoin = 'round';
+        clc.setLineDash([6, 5]);
+        clc.beginPath();
+        let started = false;
+        for (const id of trail) {
+          if (!g.hasNode(id)) continue;
+          const p = vp(id);
+          if (started) clc.lineTo(p.x, p.y); else { clc.moveTo(p.x, p.y); started = true; }
+        }
+        clc.stroke();
+        clc.setLineDash([]);
+        for (const id of trail) {
+          if (!g.hasNode(id)) continue;
+          const p = vp(id);
+          clc.beginPath(); clc.arc(p.x, p.y, 2.4, 0, 6.2832); clc.fill();
+        }
+        clc.restore();
+      }
       if (!viewTopics.length) return;
       // Fade with zoom-in (node labels take over) and duck while a hover
       // neighborhood is hot — the cluster name must never fight the question.
@@ -887,18 +1158,33 @@ async function main() {
   /* ── physics ─────────────────────────────────────────────────────────────
      One rAF ticker drives both the layout burst and the hover tween, so the
      page settles to zero CPU the moment neither has anything left to do. */
-  const fa2 = { ...forceAtlas2.inferSettings(g), gravity: 0.04, scalingRatio: 48, slowDown: 4, adjustSizes: true, edgeWeightInfluence: 1 };
+  // outboundAttractionDistribution keeps the domain hubs from dragging every
+  // question into one dense core — the merged library graph is bipartite and
+  // hub-dominated, so without it the layout is a ball no matter the repulsion.
+  const fa2 = { ...forceAtlas2.inferSettings(g), gravity: 0.04, scalingRatio: 48, slowDown: 4, adjustSizes: true, edgeWeightInfluence: 1, outboundAttractionDistribution: true };
   const layoutOff = P('layout', 'fa2') === 'none' || g.order <= 2 || g.order > 600;
   let animateOn = !layoutOff && !reduceMotion;
   // Budget is measured in frames actually rendered, not wall-clock: a graph
   // opened in a background tab gets no rAF at all, and a deadline would expire
   // unspent and leave it frozen at its seed positions forever. Spending only on
   // real frames also means the browser's own rAF pause IS the battery guard.
-  let simBudget = 0, raf = 0, last = 0, lastFx = 0;
+  let simBudget = 0, simIters = 0, simDone = null, raf = 0, last = 0, lastFx = 0;
 
   function warm(ms) {
     if (!animateOn) return;
     simBudget = Math.max(simBudget, ms);
+    tick();
+  }
+  /** Deterministic burst: exactly n FA2 iterations regardless of frame rate.
+      Wall-clock budgets make the settled layout depend on how many frames the
+      machine happened to render; a fixed count makes it a pure function of the
+      seed. Slower machines take longer to finish the same bloom, never a
+      different one. onDone fires once the count is spent (or immediately when
+      the layout is off). */
+  function warmIters(n, onDone) {
+    if (!animateOn) { if (onDone) onDone(); return; }
+    simIters = Math.max(simIters, n);
+    simDone = onDone || null;
     tick();
   }
   function tick() { if (!raf) raf = requestAnimationFrame(frame); }
@@ -908,15 +1194,23 @@ async function main() {
     const dt = last ? Math.min(ts - last, 64) : 16;
     last = ts;
 
-    const simming = animateOn && simBudget > 0;
-    if (simming) simBudget -= dt;
+    const simming = animateOn && (simBudget > 0 || simIters > 0);
     if (simming) {
+      // The iteration channel (deterministic bloom) spends before the ms
+      // channel (interaction reheats) so a drag mid-intro can't shorten it.
+      // It also runs 4 iterations/frame instead of 2: the total count is what
+      // determinism cares about, and doubling per-frame work keeps the intro
+      // at ~2.7s on a 60Hz display instead of 5.
+      let iters = 2;
+      if (simIters > 0) { iters = Math.min(4, simIters); simIters -= iters; }
+      else simBudget -= dt;
       // Pin before and after: assign() writes every node's position back from
       // its own matrix, so the dragged node has to be re-stated on both sides
       // of the burst to stay exactly under the cursor.
       if (dragged && dragPos) { g.setNodeAttribute(dragged, 'x', dragPos.x); g.setNodeAttribute(dragged, 'y', dragPos.y); }
-      try { forceAtlas2.assign(g, { iterations: 2, settings: fa2 }); } catch (_) { simBudget = 0; }
+      try { forceAtlas2.assign(g, { iterations: iters, settings: fa2 }); } catch (_) { simBudget = 0; simIters = 0; }
       if (dragged && dragPos) { g.setNodeAttribute(dragged, 'x', dragPos.x); g.setNodeAttribute(dragged, 'y', dragPos.y); }
+      if (simIters <= 0 && simDone) { const f = simDone; simDone = null; f(); }
     }
 
     // ~95% of the way in ~210ms — an ease-out that retargets cleanly mid-slide.
@@ -959,15 +1253,17 @@ async function main() {
   function showTip(node) {
     if (!tip || !g.hasNode(node)) return;
     const a = g.getNodeAttributes(node);
-    if (!a.note && !a.url && !a.domain && !a.page && !libMode) { tip.style.display = 'none'; return; }
+    if (!a.note && !a.url && !a.domain && !a.page && !a.snippet && !a.suggest && !libMode) { tip.style.display = 'none'; return; }
     if (tip.dataset.node !== node) {
       tip.dataset.node = node;
       const isPage = a.page && pagesSrc;
-      const hint = isPage
-        ? (coarse ? 'tap again to read the note' : 'click to read the note')
-        : a.entryId
-          ? (coarse ? 'tap again to read the answer' : 'click to read the answer')
-          : (a.url ? (coarse ? 'tap again to open ↗' : 'click to open ↗') : '');
+      const hint = a.suggest
+        ? (coarse ? 'tap again to ask the library ↗' : 'click to ask the library ↗')
+        : isPage
+          ? (coarse ? 'tap again to read the note' : 'click to read the note')
+          : a.entryId
+            ? (coarse ? 'tap again to read the answer' : 'click to read the answer')
+            : (a.url ? (coarse ? 'tap again to open ↗' : 'click to open ↗') : '');
       // Library mode: every node has a story even without note/url attrs — a
       // question knows how many sources answered it, a source knows how many
       // questions cite it. Full (unclamped) label in the title.
@@ -978,11 +1274,18 @@ async function main() {
           ? 'Question · ' + deg + (deg === 1 ? ' source' : ' sources') + ' · answered on-chain'
           : 'Source · cited by ' + deg + (deg === 1 ? ' question' : ' questions');
       }
+      // Enriched entries carry img/age/snippet from the Brave harvest; older
+      // entries simply lack the attrs and render exactly as before.
+      const domLine = [a.domain, a.age].filter(Boolean).join(' · ');
       tip.innerHTML =
-        '<div class="tip-title">' + esc(fullLabel.get(node) || a.label) + '</div>' +
-        (a.domain ? '<div class="tip-domain">' + esc(a.domain) + '</div>' : '') +
+        (a.img && /^https:\/\//.test(a.img)
+          ? '<img class="tip-img" src="' + esc(a.img) + '" alt="" loading="lazy" onerror="this.remove()">' : '') +
+        '<div class="tip-title">' + (a.suggest ? '✦ ' : '') + esc(fullLabel.get(node) || a.label) + '</div>' +
+        (domLine ? '<div class="tip-domain">' + esc(domLine) + '</div>' : '') +
         (meta ? '<div class="tip-domain">' + esc(meta) + '</div>' : '') +
+        (a.suggest ? '<div class="tip-domain">the web says people also ask this</div>' : '') +
         (a.note ? '<div class="tip-note">' + esc(a.note) + '</div>' : '') +
+        (a.snippet && a.snippet !== a.note ? '<div class="tip-snippet">' + esc(a.snippet) + '</div>' : '') +
         (hint ? '<div class="tip-hint">' + hint + '</div>' : '');
     }
     tip.style.display = 'block';
@@ -1176,6 +1479,7 @@ async function main() {
   // fallbackUrl (the entry's public page) is used both as the "Open full page"
   // target and as the graceful fallback if the JSON can't be fetched.
   async function openEntry(entryId, fallbackUrl) {
+    pushTrail(entryId);   // every answer read in this viewer extends the trail
     buildNotePanel();
     const e = await loadEntry(entryId);
     if (!e) {
@@ -1532,8 +1836,20 @@ async function main() {
   // pinned — never '*' — so the message can't leak to a hostile embedder.
   const embedPost = P('embed', '') === 'post';
   const embedOrigin = P('embedorigin', 'https://cafreso.com');
+  // Ghost "people also wonder" questions (worker-baked kind:'suggest' nodes)
+  // click through to the library with the question pre-filled and running —
+  // the graph as an exploration frontier, not just an archive.
+  // Generic trailing-param swap: works whether entrylink ends in ?e= or a
+  // custom &entrylink=…&entry= — a literal ?e=$ match silently fell through
+  // to entryLink unchanged for any non-default entrylink, misrouting the
+  // question text into the wrong param with no visible error.
+  const askLink = /[?&][^=]+=$/.test(entryLink)
+    ? entryLink.replace(/([^=]+)=$/, 'ask=')
+    : entryLink + (entryLink.includes('?') ? '&' : '?') + 'ask=';
   function nodeAction(node) {
-    const url = g.getNodeAttribute(node, 'url');
+    const a = g.getNodeAttributes(node);
+    if (a.suggest) return { kind: 'ask', q: fullLabel.get(node) || a.label };
+    const url = a.url;
     if (url && /^https?:\/\//i.test(url)) return { kind: 'url', url };
     const page = g.getNodeAttribute(node, 'page');
     if (page && pagesSrc) return { kind: 'page', page };
@@ -1543,6 +1859,7 @@ async function main() {
   }
   function doAction(act) {
     if (!act) return;
+    if (act.kind === 'ask') { window.open(askLink + encodeURIComponent(act.q), '_blank', 'noopener,noreferrer'); return; }
     if (act.kind === 'url') window.open(act.url, '_blank', 'noopener,noreferrer');
     else if (act.kind === 'page') openNote(act.page);
     // Standalone, reading the answer is the natural next step — navigate in
@@ -1656,6 +1973,7 @@ async function main() {
   // their own Escape before it reaches here).
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (replayActive) { stopReplay(); return; }
     if (pinned || pathSet || pathA) {
       pinned = null; pathA = null; pathSet = null;
       setHovered(null); hideTip();
@@ -1679,8 +1997,25 @@ async function main() {
   if (zoomIn) zoomIn.addEventListener('click', () => camera.animatedZoom({ duration: 200 }));
   if (zoomOut) zoomOut.addEventListener('click', () => camera.animatedUnzoom({ duration: 200 }));
   if (resetBtn) resetBtn.addEventListener('click', () => {
-    camera.animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration: 250 });
+    // Re-frame the live node cloud rather than snapping to a fixed home: after
+    // dragging/zooming, "reset" should mean "show me everything again."
+    if (libMode) fitToNodes(0.1, 350);
+    else camera.animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration: 250 });
     warm(900);
+  });
+
+  // ⟵ retraces the reading trail: pop the current stop, land on the previous
+  // one with its tip up. The thread on the canvas shortens with it.
+  const trailBack = document.getElementById('gv-trail-back');
+  if (trailBack) trailBack.addEventListener('click', () => {
+    if (trail.length < 2) return;
+    trail.pop();
+    updateTrailUi();
+    const id = trail[trail.length - 1];
+    if (!g.hasNode(id)) return;
+    const d = renderer.getNodeDisplayData(id);
+    if (d) camera.animate({ x: d.x, y: d.y, ratio: Math.min(camera.ratio, 0.35) }, { duration: 350 });
+    pinned = id; setHovered(id); showTip(id);
   });
 
   /* Copy a deep link to the focused node. Reuses the current URL, swaps in a
@@ -1692,6 +2027,10 @@ async function main() {
     if (!node) return;
     const u = new URL(location.href);
     u.searchParams.set('focus', node);
+    // A trail makes the link a guided tour: the recipient gets the thread
+    // drawn and can retrace it with ⟵, landing where the sender was looking.
+    if (trail.length > 1) u.searchParams.set('trail', trail.join('~'));
+    else u.searchParams.delete('trail');
     const link = u.toString();
     try { await navigator.clipboard.writeText(link); }
     catch (_) { try { prompt('Copy link to this node:', link); } catch (__) {} }
@@ -1713,6 +2052,84 @@ async function main() {
     container.addEventListener('touchstart', dismiss, { once: true, passive: true });
   }
 
+  /* ── growth replay ───────────────────────────────────────────────────────
+     "Watch the library think": ▶ hides the web and re-asks it in order — each
+     question ignites (ring + first sparks to its sources), its sources surface
+     with it, and the hint pill becomes a date ticker. The reveal order comes
+     from index.json timestamps (fallback: the zero-padded entry ids, which are
+     append-ordered). ■ or Escape restores the full web instantly. */
+  let replayTimer = 0, replayHintWas = '';
+  const replayBtn = document.getElementById('gv-replay');
+  function stopReplay() {
+    if (!replayActive) return;
+    clearTimeout(replayTimer);
+    replayActive = false; replayVisible = null;
+    if (replayBtn) { replayBtn.textContent = '▶'; replayBtn.title = "Replay the library's growth"; }
+    if (hint) { hint.textContent = replayHintWas; hint.classList.add('gv-hidden'); }
+    renderer.refresh({ skipIndexation: true });
+  }
+  async function startReplay() {
+    const prov = await loadProvenance();
+    const entries = [];
+    g.forEachNode((id, a) => { if (a.entryId) entries.push(id); });
+    entries.sort((x, y) => {
+      const tx = ((prov && prov.get(x)) || {}).ts || 0;
+      const ty = ((prov && prov.get(y)) || {}).ts || 0;
+      return (tx - ty) || (x < y ? -1 : 1);
+    });
+    if (entries.length < 2 || replayActive) return;
+    // A lingering pin/tip from before the replay would ride the reveal with
+    // its hover halo — the replay owns the stage while it runs.
+    pinned = null; pathA = null; pathSet = null;
+    setHovered(null); hideTip();
+    replayActive = true;
+    replayVisible = new Set();
+    replayHintWas = hint ? hint.textContent : '';
+    if (replayBtn) { replayBtn.textContent = '■'; replayBtn.title = 'Stop the replay'; }
+    fitToNodes(0.1, 400);
+    const step = clamp(9000 / entries.length, 45, 260);
+    let i = 0;
+    const reveal = () => {
+      if (!replayActive) return;
+      if (i >= entries.length) {
+        // Hold the completed web for a beat so the ending reads as an arrival.
+        if (hint) hint.textContent = 'the library, ' + entries.length + ' questions later';
+        replayTimer = setTimeout(stopReplay, 1600);
+        return;
+      }
+      const id = entries[i++];
+      replayVisible.add(id);
+      let k = 0;
+      g.forEachNeighbor(id, (nb) => {
+        replayVisible.add(nb);
+        if (k++ < 2) emitForce(id, nb, 140, T.spark, false);
+      });
+      if (fxc) rings.push({ node: id, at: performance.now(), dur: 1000 });
+      if (hint) {
+        const ts = ((prov && prov.get(id)) || {}).ts;
+        const when = ts ? new Date(ts / 1e6) : null;
+        hint.textContent =
+          (when ? when.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' : '') +
+          i + ' / ' + entries.length + ' questions';
+        hint.classList.remove('gv-hidden');
+      }
+      renderer.refresh({ skipIndexation: true });
+      tick();
+      replayTimer = setTimeout(reveal, step);
+    };
+    reveal();
+  }
+  if (replayBtn && libMode && entryBase) {
+    replayBtn.style.display = '';
+    replayBtn.addEventListener('click', () => (replayActive ? stopReplay() : startReplay()));
+    // ?replay=1 — auto-play on load, the target of the library page's "watch it
+    // grow" link. Delayed past the intro bloom (700ms hold + 640-iteration
+    // settle ≈ 3s) so the replay reveals a settled map, not a moving ring.
+    if (P('replay', null) === '1') {
+      setTimeout(() => { if (!replayActive) startReplay(); }, reduceMotion ? 400 : 3600);
+    }
+  }
+
   /* ── search ──────────────────────────────────────────────────────────────
      Dims everything that doesn't match as you type; Enter flies to the best
      hit. Keys are bound to the input only — an embedding page keeps its own. */
@@ -1720,7 +2137,19 @@ async function main() {
   const searchInput = document.getElementById('gv-search-input');
   const searchBtn = document.getElementById('gv-search-toggle');
   if (searchInput && searchWrap) {
-    let debounce = 0;
+    let debounce = 0, flyDebounce = 0;
+    // Prefix hits win, then the biggest node — "icp" should land on the
+    // hub named ICP, not on the first source that mentions it.
+    const bestMatch = (q) => {
+      if (!q || !searchSet || !searchSet.size) return null;
+      let best = null, bestScore = -1;
+      for (const id of searchSet) {
+        const label = String(fullLabel.get(id) || g.getNodeAttribute(id, 'label') || '').toLowerCase();
+        const score = (label.startsWith(q) ? 1000 : 0) + (baseSize.get(id) || 0);
+        if (score > bestScore) { bestScore = score; best = id; }
+      }
+      return best;
+    };
     const apply = () => {
       const q = searchInput.value.trim().toLowerCase();
       if (!q) searchSet = null;
@@ -1732,25 +2161,34 @@ async function main() {
       }
       searchWrap.classList.toggle('gv-has-q', !!q);
       renderer.refresh({ skipIndexation: true });
+      // Live fly-to: once the query is specific enough to mean something
+      // (3+ chars, and it actually narrowed the graph), glide toward the best
+      // hit and ping it — "where's the Pluto question" answers itself while
+      // you're still typing. Slower debounce than the dim so the camera never
+      // chases keystrokes; no hover/pin so nothing fights the input focus.
+      clearTimeout(flyDebounce);
+      if (q.length >= 3 && searchSet && searchSet.size && searchSet.size < g.order) {
+        flyDebounce = setTimeout(() => {
+          const best = bestMatch(q);
+          if (!best) return;
+          const d = renderer.getNodeDisplayData(best);
+          if (!d) return;
+          camera.animate({ x: d.x, y: d.y, ratio: clamp(camera.ratio, 0.18, 0.5) }, { duration: 450 });
+          if (fxc) { rings.push({ node: best, at: performance.now() + 200, dur: 1200 }); tick(); }
+        }, 320);
+      }
     };
     searchInput.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(apply, 80); });
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
+        clearTimeout(flyDebounce);
         searchInput.value = ''; apply(); searchInput.blur();
         if (searchBtn) searchWrap.classList.remove('gv-open');
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const q = searchInput.value.trim().toLowerCase();
-        if (!q || !searchSet || !searchSet.size) return;
-        // Prefix hits win, then the biggest node — "icp" should land on the
-        // hub named ICP, not on the first source that mentions it.
-        let best = null, bestScore = -1;
-        for (const id of searchSet) {
-          const label = String(fullLabel.get(id) || g.getNodeAttribute(id, 'label') || '').toLowerCase();
-          const score = (label.startsWith(q) ? 1000 : 0) + (baseSize.get(id) || 0);
-          if (score > bestScore) { bestScore = score; best = id; }
-        }
+        clearTimeout(flyDebounce);
+        const best = bestMatch(searchInput.value.trim().toLowerCase());
         if (!best) return;
         const d = renderer.getNodeDisplayData(best);
         if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.25 }, { duration: 400 });
@@ -1961,9 +2399,59 @@ async function main() {
       renderTopicLegend();
       onTopicsChanged.push(renderTopicLegend);
       legendToggle.addEventListener('click', () => legend.classList.toggle('gv-open'));
+
+      /* First-glance key: a new user sees gold and tinted dots with no clue
+         which is which. One always-on line answers it; clicking opens the full
+         legend, and after the point is made it calms down rather than leaving. */
+      const key = document.getElementById('gv-key');
+      if (key) {
+        function renderKey() {
+          key.innerHTML =
+            '<span class="legend-swatch" style="background:#F5D25D"></span>questions' +
+            '<span class="gv-key-stack">' +
+            viewTopics.slice(0, 3)
+              .map((t) => '<span class="legend-swatch" style="background:' + esc(t.color) + '"></span>').join('') +
+            '</span>topics';
+        }
+        renderKey();
+        onTopicsChanged.push(renderKey);
+        key.style.display = 'inline-flex';
+        key.addEventListener('click', () => legend.classList.toggle('gv-open'));
+        setTimeout(() => key.classList.add('gv-calm'), 9000);
+      }
     } else {
       legendToggle.style.display = 'none';
     }
+  }
+
+  /* ── topic pills ─────────────────────────────────────────────────────────
+     A tappable chip per topic riding the bottom edge — the graph's primary
+     topic nav on touch (no hover, no on-canvas label precision) and a faster
+     one on desktop. Same setActiveTopic the legend rows and cluster labels
+     drive, so all three stay one filter. */
+  const pillsEl = document.getElementById('gv-pills');
+  if (pillsEl && libMode) {
+    const shortLabel = (s) => (s.length > 22 ? s.slice(0, 20).trimEnd() + '…' : s);
+    function renderPills() {
+      if (!viewTopics.length) { pillsEl.style.display = 'none'; return; }
+      pillsEl.style.display = 'block';
+      pillsEl.innerHTML = viewTopics.map((t) => (
+        '<button type="button" class="gv-pill' + (activeTopic === t.key ? ' gv-on' : '') + '"' +
+        ' data-key="' + esc(t.key) + '" title="' + esc(t.label) + '"' +
+        ' aria-pressed="' + (activeTopic === t.key) + '">' +
+        '<span class="legend-swatch" style="background:' + esc(t.color) + '"></span>' +
+        esc(shortLabel(t.label)) + '</button>'
+      )).join('');
+      // Keep the active pill in view when the row scrolls.
+      const on = pillsEl.querySelector('.gv-on');
+      if (on && on.scrollIntoView) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {} }
+    }
+    pillsEl.addEventListener('click', (ev) => {
+      const b = ev.target.closest('.gv-pill');
+      if (b) setActiveTopic(b.dataset.key);
+    });
+    renderPills();
+    onTopicsChanged.push(renderPills);
   }
 
   const brand = document.getElementById('brand');
@@ -2159,8 +2647,53 @@ async function main() {
     setTimeout(() => newBadge.classList.remove('gv-in'), 9000);
   }
 
+  /** Frame the node cloud to fill the viewport, ignoring the handful of nodes
+      physics flings to the fringe (p2..p98 trim) so the dense body — not one
+      stray outlier — decides the zoom. Works in measured viewport pixels via
+      graphToViewport, so it's independent of sigma's internal normalization,
+      then converts the target center back through viewportToFramedGraph for
+      the camera (whose x/y live in framed-graph space). */
+  function fitToNodes(pad, duration) {
+    try {
+      const dims = renderer.getDimensions();
+      const xs = [], ys = [];
+      g.forEachNode((id) => { const p = vp(id); xs.push(p.x); ys.push(p.y); });
+      if (xs.length < 3) return;
+      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+      const q = (a, t) => a[Math.floor(t * (a.length - 1))];
+      const x0 = q(xs, 0.02), x1 = q(xs, 0.98), y0 = q(ys, 0.02), y1 = q(ys, 0.98);
+      const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+      const scale = Math.max(bw / ((1 - 2 * pad) * dims.width), bh / ((1 - 2 * pad) * dims.height));
+      const targetRatio = camera.getBoundedRatio(camera.ratio * scale);
+      const c = renderer.viewportToFramedGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
+      camera.animate({ x: c.x, y: c.y, ratio: targetRatio, angle: 0 }, { duration: duration || 600 });
+    } catch (_) { /* fit is best-effort; a missed frame just leaves the view as-is */ }
+  }
+
   // Float, then calm: small graphs settle in ~1.5s, the biggest get ~5s.
-  if (!reduceMotion) warm(Math.min(1500 + g.order * 8, 5000));
+  // Ring-seeded graphs hold the clean circle for a beat, then bloom (the
+  // graph-engine intro). The bloom budget is deliberately SHORT of
+  // equilibrium: run to convergence and the attraction folds the ring back
+  // into the ball the ring exists to avoid — the readable state is mid-bloom,
+  // same place graph-engine freezes. The fit afterwards frames wherever the
+  // bloom actually landed so it fills the canvas instead of drifting high-left.
+  if (!reduceMotion) {
+    if (ringSeeded) {
+      // 640 iterations — measured on the live snapshot: radial dispersion
+      // (sd/meanR) reaches ~0.8 there, i.e. the ring has fully opened into a
+      // cloud of islands; half that count freezes visibly annular. Spent in
+      // iterations so every load of the same snapshot settles into the same
+      // map (louvain is rng-pinned, the ring is deterministic, FA2 always was).
+      setTimeout(() => {
+        warmIters(640, () => {
+          try { renderer.refresh(); } catch (_) {}
+          fitToNodes(0.1, 600);
+        });
+      }, 700);
+    } else {
+      warm(Math.min(1500 + g.order * 8, 5000));
+    }
+  }
   // warm() is a no-op when the layout is off, but signals still need the loop.
   if (signalsOn) tick();
 
@@ -2169,6 +2702,16 @@ async function main() {
      button, so a shared link lands where the sharer was looking. Fired once the
      layout has settled (getNodeDisplayData needs indexation, and flying before
      the web calms would leave the node drifting out from under the camera). */
+  // A shared trail rebuilds the thread before the focus fly-in, so the link
+  // opens as the sender's tour: thread drawn, camera on their last stop.
+  const trailParam = P('trail', null);
+  if (trailParam) {
+    for (const id of String(trailParam).split('~')) {
+      if (g.hasNode(id) && trail[trail.length - 1] !== id) trail.push(id);
+    }
+    updateTrailUi();
+  }
+
   const focusId = P('focus', null);
   if (focusId && g.hasNode(focusId)) {
     const settleMs = reduceMotion || layoutOff ? 60 : Math.min(1500 + g.order * 8, 5000) + 120;

@@ -821,9 +821,16 @@ def _brave_refund(kind, n):
             pass
 
 
-def _sw_brave(q, deadline=None, kind='human', vertical='web'):
-    """This worker's own Brave key. Descriptions feed the LLM prompt ONLY —
-    stored sources are title+url (deliberate Brave-ToS posture).
+def _sw_brave(q, deadline=None, kind='human', vertical='web', extras=None):
+    """This worker's own Brave key. Every row now carries the FULL harvest the
+    quota paid for — description, publish date, thumbnail, favicon, extra
+    snippets — and it all flows into the on-chain entry graph (deliberate
+    posture change 2026-07: we pay per query, we keep what it returns; the
+    old title+url-only conservatism kept discarding bought data).
+
+    Pass extras={} to also receive the response's free-riding blocks:
+    extras['faq'] (people-also-ask pairs) and extras['infobox'] (entity card),
+    which cost nothing beyond the web query they ride on.
 
     vertical='news' hits Brave's news endpoint instead — fresh, dated,
     publisher-attributed results for time-sensitive questions. Same key, same
@@ -836,28 +843,82 @@ def _sw_brave(q, deadline=None, kind='human', vertical='web'):
               'priority callers)' % (kind, _brave_usage().get('used', 0), _BRAVE_CAP))
         return None
     endpoint = 'news/search' if vertical == 'news' else 'web/search'
-    url = ('https://api.search.brave.com/res/v1/' + endpoint + '?q='
-           + urllib.parse.quote(q) + '&count=8')
-    req = urllib.request.Request(url, headers={
-        'Accept': 'application/json', 'Accept-Encoding': 'identity',
-        'X-Subscription-Token': key, 'User-Agent': 'CafresoHQ/1.0'})
+    base = ('https://api.search.brave.com/res/v1/' + endpoint + '?q='
+            + urllib.parse.quote(q) + '&count=8')
     timeout = 30 if deadline is None else min(30, _sw_left(deadline))
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read().decode('utf-8'))
+
+    def _fetch(url, t):
+        req = urllib.request.Request(url, headers={
+            'Accept': 'application/json', 'Accept-Encoding': 'identity',
+            'X-Subscription-Token': key, 'User-Agent': 'CafresoHQ/1.0'})
+        with urllib.request.urlopen(req, timeout=t) as r:
+            return json.loads(r.read().decode('utf-8'))
+
+    # extra_snippets is plan-gated; a plan that lacks it may 4xx the param, so
+    # fall back to the bare query rather than losing the search (and the spent
+    # quota) to an optional nicety. The fallback recomputes its own timeout
+    # from what's actually left on the deadline — reusing the original budget
+    # for both calls could let one job's two round-trips together blow well
+    # past the lease it was given.
+    t0 = time.monotonic()
+    try:
+        data = _fetch(base + '&extra_snippets=true', timeout)
+    except urllib.error.HTTPError as e:
+        if 400 <= e.code < 500:
+            t_left = timeout if deadline is None else max(1, _sw_left(deadline))
+            data = _fetch(base, t_left)
+        else:
+            raise
+    untag = lambda s: re.sub(r'<[^>]+>', '', s) if isinstance(s, str) else ''
     # Web nests results under .web.results; news returns them at top level.
     rows = (data.get('results') if vertical == 'news'
             else (data.get('web') or {}).get('results')) or []
     out = []
     for x in rows[:8]:
-        if x.get('url'):
-            desc = re.sub(r'<[^>]+>', '', x.get('description') or '')
+        if not isinstance(x, dict):
+            continue
+        try:
+            if not x.get('url'):
+                continue
+            desc = untag(x.get('description'))
             # News results carry an age ("2 hours ago") — prepend it so the
             # LLM can weigh recency and cite dates in the answer.
             if vertical == 'news' and x.get('age'):
                 desc = '[%s] %s' % (x['age'], desc)
+            # page_age is ISO ("2025-03-08T…") — keep the date; age is the
+            # human string ("2 hours ago"). Either helps; ISO sorts.
+            age = (x.get('page_age') or '')[:10] or (x.get('age') or '')[:40]
             out.append({'title': (x.get('title') or x['url'])[:600],
                         'url': x['url'][:600],
-                        'description': desc})
+                        'description': desc,
+                        'age': age,
+                        'thumbnail': ((x.get('thumbnail') or {}).get('src') or '')[:600],
+                        'favicon': ((x.get('meta_url') or {}).get('favicon') or '')[:600],
+                        'snippets': [untag(s)[:300]
+                                     for s in (x.get('extra_snippets') or [])[:3]]})
+        except Exception as e:
+            # A malformed row (unexpected type from a non-string field) used to
+            # propagate all the way out of a fulfilled Brave spend, leaving the
+            # job claimed with no fail/ok call sent until its lease expired —
+            # skip just this row instead of losing the whole paid query.
+            print('[brave] skipped a malformed result row:', str(e)[:120])
+            continue
+    if extras is not None:
+        try:
+            extras['faq'] = [
+                {'q': untag(f.get('question'))[:200], 'a': untag(f.get('answer'))[:300],
+                 'url': (f.get('url') or '')[:600]}
+                for f in ((data.get('faq') or {}).get('results') or [])[:5]
+                if f.get('question')]
+            ib = ((data.get('infobox') or {}).get('results') or [{}])[0]
+            if ib.get('long_desc') or ib.get('label') or ib.get('title'):
+                extras['infobox'] = {
+                    'label': untag(ib.get('label') or ib.get('title'))[:120],
+                    'desc': untag(ib.get('long_desc'))[:400],
+                    'img': (((ib.get('thumbnail') or {}).get('src')) or '')[:600],
+                    'url': (ib.get('website_url') or ib.get('url') or '')[:600]}
+        except Exception as e:
+            print('[brave] extras parse failed (rows unaffected):', str(e)[:120])
     return out
 
 
@@ -1266,9 +1327,16 @@ def _sw_llm(q, results, deadline=None):
     """(answer, model, notes, tokens) via the local hermes gateway, falling
     back to the night-runner provider config. Empty values when no model is
     reachable — sources + graph are still worth fulfilling."""
-    src = '\n\n'.join('[%d] %s\n%s\n%s' % (i + 1, r['title'], r['url'],
-                                           _sw_focus(r['description'], q))
-                      for i, r in enumerate(results))
+    def _src_block(i, r):
+        # Date + extra snippets when the harvest carried them: dated sources
+        # let the model cite "as of March 2025" instead of hedging, and the
+        # snippets are more page text for the same Brave query.
+        head = '[%d] %s%s' % (i + 1, r['title'],
+                              (' (%s)' % r['age']) if r.get('age') else '')
+        parts = [head, r['url'], _sw_focus(r['description'], q)]
+        parts += (r.get('snippets') or [])[:2]
+        return '\n'.join(p for p in parts if p)
+    src = '\n\n'.join(_src_block(i, r) for i, r in enumerate(results))
     # "summary" MUST come first and the prompt must say so: the salvage parser
     # in _sw_parse_analysis relies on it, so a stream the deadline cuts short
     # still yields a complete summary and merely loses some notes. Field order
@@ -1363,37 +1431,79 @@ def _sw_color(name):
     return _SW_PALETTE[h % len(_SW_PALETTE)]
 
 
-def _sw_graph(q, results, notes=None):
+def _sw_graph(q, results, notes=None, extras=None):
     """Query hub → result ring → domain ring, wrapped exactly as
     graph-viewer.html expects. Result nodes carry url/domain/note attributes
-    so the viewer can render hover cards and click-through — the note is the
-    worker LLM's own one-liner (never Brave's description text)."""
+    so the viewer can render hover cards and click-through — plus the full
+    Brave harvest (age/img/snippet, favicons on domains) since the 2026-07
+    keep-what-we-paid-for posture change. The graphJson blob is the schema-free
+    seam: everything here lands on-chain through the existing library_put.
+
+    extras (from _sw_brave): 'faq' becomes faint kind:'suggest' ghost nodes —
+    questions the web says people also ask, which the viewer renders as an
+    exploration frontier around the answer; 'infobox' becomes one kind:'entity'
+    card node. Both are visual-only: reducers ignore unknown kinds gracefully,
+    so old viewers just show them as plain nodes."""
     import math
     notes = notes or {}
+    extras = extras or {}
     nodes = [{'key': 'q', 'attributes': {'label': q, 'size': 18, 'x': 0, 'y': 0,
                                          'color': '#F5D25D', 'kind': 'query'}}]
     edges = []
     domains = {}
+    domicon = {}
     for i, r in enumerate(results):
         a = (i / max(1, len(results))) * math.pi * 2
         d = _sw_domain(r['url'])
-        nodes.append({'key': 'r%d' % i, 'attributes': {
-            'label': r['title'][:60], 'size': 8,
-            'x': math.cos(a) * 10, 'y': math.sin(a) * 10,
-            'color': _sw_color(d), 'kind': 'source',
-            'url': r['url'][:600], 'domain': d,
-            'note': (notes.get(i) or '')[:200]}})
+        at = {'label': r['title'][:60], 'size': 8,
+              'x': math.cos(a) * 10, 'y': math.sin(a) * 10,
+              'color': _sw_color(d), 'kind': 'source',
+              'url': r['url'][:600], 'domain': d,
+              'note': (notes.get(i) or '')[:200]}
+        if r.get('age'):
+            at['age'] = r['age']
+        if r.get('thumbnail'):
+            at['img'] = r['thumbnail']
+        if r.get('description'):
+            at['snippet'] = r['description'][:240]
+        nodes.append({'key': 'r%d' % i, 'attributes': at})
         edges.append({'key': 'eq%d' % i, 'source': 'q', 'target': 'r%d' % i, 'attributes': {}})
         domains.setdefault(d, []).append(i)
+        if r.get('favicon') and d not in domicon:
+            domicon[d] = r['favicon']
     for di, (d, ixs) in enumerate(domains.items()):
         a = (di / max(1, len(domains))) * math.pi * 2 + 0.35
-        nodes.append({'key': 'd:' + d, 'attributes': {
-            'label': d, 'size': 5 + len(ixs),
-            'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d),
-            'kind': 'domain', 'domain': d}})
+        at = {'label': d, 'size': 5 + len(ixs),
+              'x': math.cos(a) * 17, 'y': math.sin(a) * 17, 'color': _sw_color(d),
+              'kind': 'domain', 'domain': d}
+        if domicon.get(d):
+            at['favicon'] = domicon[d]
+        nodes.append({'key': 'd:' + d, 'attributes': at})
         for i in ixs:
             edges.append({'key': 'ed%d_%d' % (di, i), 'source': 'r%d' % i,
                           'target': 'd:' + d, 'attributes': {}})
+    faqs = (extras.get('faq') or [])[:5]
+    for si, f in enumerate(faqs):
+        a = (si / max(1, len(faqs))) * math.pi * 2 + 0.8
+        at = {'label': f['q'][:90], 'size': 6,
+              'x': math.cos(a) * 25, 'y': math.sin(a) * 25,
+              'color': '#9C8F6E', 'kind': 'suggest', 'suggest': 1}
+        if f.get('a'):
+            at['snippet'] = f['a'][:200]
+        nodes.append({'key': 's%d' % si, 'attributes': at})
+        edges.append({'key': 'es%d' % si, 'source': 'q', 'target': 's%d' % si, 'attributes': {}})
+    ib = extras.get('infobox')
+    if ib and (ib.get('label') or ib.get('desc')):
+        at = {'label': (ib.get('label') or 'About')[:90], 'size': 11,
+              'x': 0, 'y': -14, 'color': '#C9B8E0', 'kind': 'entity'}
+        if ib.get('desc'):
+            at['snippet'] = ib['desc'][:280]
+        if ib.get('img'):
+            at['img'] = ib['img']
+        if ib.get('url'):
+            at['url'] = ib['url']
+        nodes.append({'key': 'ib', 'attributes': at})
+        edges.append({'key': 'eib', 'source': 'q', 'target': 'ib', 'attributes': {}})
     return json.dumps({'graph': {'options': {'type': 'mixed', 'multi': False,
                                              'allowSelfLoops': True},
                                  'attributes': {}, 'nodes': nodes, 'edges': edges},
@@ -1719,11 +1829,13 @@ def _sw_process(job, deadline=None):
                 return
             print('[deep] %s: degrading to single-shot' % jid)
         print('[search-worker] claimed %s: %s%s' % (jid, q[:80], ' [news]' if mode == 'news' else ''))
-        results = _sw_brave(q, deadline, vertical='news' if mode == 'news' else 'web')
+        extras = {}
+        results = _sw_brave(q, deadline, vertical='news' if mode == 'news' else 'web',
+                            extras=extras)
         if mode == 'news' and not results:
             # News vertical came up dry (niche query, no coverage) — a web
             # answer beats a fail; the engine chip below still says how we got it.
-            results = _sw_brave(q, deadline)
+            results = _sw_brave(q, deadline, extras=extras)
         if not results:
             # Three different failures used to share one message. They need
             # different operator responses — top up the plan, set the key, or
@@ -1747,7 +1859,7 @@ def _sw_process(job, deadline=None):
         if len(answer) > _SW_ANSWER_CAP:
             print('[search-worker] answer %d chars — clamping to %d' % (len(answer), _SW_ANSWER_CAP))
             answer = answer[:_SW_ANSWER_CAP]
-        graph = _sw_graph(q, results, notes)
+        graph = _sw_graph(q, results, notes, extras)
         # Provenance: say so when the AI asked this, not a person. It rides two
         # channels — the engine field ('brave · ai-gap', for the chip the UI
         # already renders) AND the on-chain askedBy field (the 12th fulfill line,
@@ -1940,6 +2052,90 @@ def _gap_library():
     return all_qs, human_qs
 
 
+def _gap_structure():
+    """Structural picture of the merged library graph, as prompt text ('' on any
+    failure — the cron then proposes from the flat question list as before).
+
+    The graph is questions linked to the source DOMAINS they cited, so two
+    questions sharing a domain sit in the same evidence neighbourhood. Project
+    questions onto shared domains and report what the flat list can't show:
+    which questions are evidential islands, which little clusters float apart
+    from the main web, and which domains anchor it. Questions that bridge
+    those islands are the highest-value gaps to close."""
+    try:
+        with urllib.request.urlopen(_SW_BASE + '/library/graph.json', timeout=20) as r:
+            j = json.loads(r.read().decode('utf-8'))
+        g = j.get('graph') or j
+        if isinstance(g, str):
+            g = json.loads(g)
+        nodes = g.get('nodes') or []
+        edges = g.get('edges') or g.get('links') or []
+        label = {}          # question node key -> question text
+        for nd in nodes:
+            k = nd.get('key') or nd.get('id')
+            at = nd.get('attributes') or {}
+            if k and at.get('entryId'):
+                label[k] = str(at.get('label') or '').strip()
+        if len(label) < 8:
+            return ''       # too small for structure to mean anything
+        qdoms = {q: set() for q in label}
+        domqs = {}          # domain -> set of question keys citing it
+        for e in edges:
+            s, t = e.get('source'), e.get('target')
+            q, d = (s, t) if s in qdoms else (t, s) if t in qdoms else (None, None)
+            if q is None or d is None or d in qdoms:
+                continue
+            qdoms[q].add(d)
+            domqs.setdefault(d, set()).add(q)
+
+        # Union-find over questions joined by any shared domain.
+        parent = {q: q for q in qdoms}
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        for qs in domqs.values():
+            it = iter(qs)
+            first = next(it, None)
+            for q in it:
+                ra, rb = find(first), find(q)
+                if ra != rb:
+                    parent[rb] = ra
+        comps = {}
+        for q in qdoms:
+            comps.setdefault(find(q), []).append(q)
+        comps = sorted(comps.values(), key=len, reverse=True)
+
+        main_share = len(comps[0]) * 100 // len(qdoms)
+        # Islands: everything outside the main component, singletons last so the
+        # model sees clusters (bridgeable areas) before one-off orphans.
+        islands = [c for c in comps[1:] if len(c) > 1]
+        orphans = [c[0] for c in comps[1:] if len(c) == 1]
+        hubs = sorted(domqs.items(), key=lambda kv: len(kv[1]), reverse=True)[:6]
+
+        lines = ['%d questions; %d%% form one connected web (via shared sources).'
+                 % (len(qdoms), main_share)]
+        if islands:
+            lines.append('Islands disconnected from the main web (each list is one island):')
+            for c in islands[:5]:
+                qs = [label[q] for q in c[:3] if label.get(q)]
+                lines.append('- [%d questions] %s' % (len(c), ' | '.join(qs)))
+        if orphans:
+            lines.append('Isolated questions sharing no sources with anything else:')
+            for q in orphans[:8]:
+                if label.get(q):
+                    lines.append('- ' + label[q])
+        if hubs:
+            lines.append('Best-anchored source domains: '
+                         + ', '.join('%s (%d)' % (d.replace('d:', '', 1), len(qs))
+                                     for d, qs in hubs))
+        return '\n'.join(lines)
+    except Exception as e:
+        print('[gap] structure read failed (proposing from the flat list):', str(e)[:120])
+        return ''
+
+
 def _gap_schema(n):
     return {'type': 'json_schema', 'json_schema': {'name': 'gap_questions', 'strict': True,
             'schema': {'type': 'object', 'additionalProperties': False,
@@ -1949,11 +2145,20 @@ def _gap_schema(n):
                        'required': ['questions']}}}
 
 
-def _gap_propose(all_qs, human_qs, n, deadline):
+def _gap_propose(all_qs, human_qs, n, deadline, structure=''):
     """Ask the model for n gap-closing questions. Returns [] on any failure —
     a quiet no-op day is the correct outcome; there is nothing to salvage and
     a bad question becomes a permanent public entry."""
     recent_human = human_qs[:25]
+    struct_block = ''
+    if structure:
+        struct_block = (
+            '\n\nStructure of the library\'s knowledge graph (questions are '
+            'linked when their answers cite the same sources):\n%s\n'
+            'Prefer questions that would CONNECT an island or isolated question '
+            'back to the main web — a question whose answer plausibly cites '
+            'sources from both sides closes a structural hole, not just a '
+            'topical one.' % structure)
     prompt = (
         'You curate a public Q&A library that grows over time. Below is what it '
         'already covers, and separately the questions REAL PEOPLE recently asked.\n\n'
@@ -1967,10 +2172,11 @@ def _gap_propose(all_qs, human_qs, n, deadline):
         '- One sentence each, under 100 characters, phrased as a real question.\n'
         'Output STRICT JSON only: {"questions": ["...", "..."]}\n\n'
         'Recently asked by people (this is the demand signal — follow it):\n%s\n\n'
-        'Already covered (do not repeat):\n%s'
+        'Already covered (do not repeat):\n%s%s'
         % (n,
            '\n'.join('- ' + q for q in recent_human) or '- (nothing yet)',
-           '\n'.join('- ' + q for q in all_qs[:120]) or '- (empty library)'))
+           '\n'.join('- ' + q for q in all_qs[:120]) or '- (empty library)',
+           struct_block))
     want = _sw_model()
     payload = {'model': want, 'messages': [{'role': 'user', 'content': prompt}],
                'max_tokens': 600, 'response_format': _gap_schema(n)}
@@ -2050,7 +2256,10 @@ def _gap_run():
         _gap_log(run)
         return
 
-    proposed = _gap_propose(all_qs, human_qs, n, time.monotonic() + 90)
+    structure = _gap_structure()
+    if structure:
+        run['structure'] = structure.splitlines()[0]   # headline into the ledger
+    proposed = _gap_propose(all_qs, human_qs, n, time.monotonic() + 90, structure)
     if not proposed:
         _brave_refund('gap', n)
         run['note'] = 'no questions proposed'

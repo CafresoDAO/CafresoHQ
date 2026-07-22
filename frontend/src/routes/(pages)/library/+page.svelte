@@ -16,7 +16,7 @@
   import {
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, graphViewerOrigin } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, graphViewerOrigin } from '$lib/api/library.js';
   import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
@@ -54,9 +54,11 @@
   let drawerMissing = false;
   let drawerResearch = null; // deep entries: {pages:[…]} note pages, lazily fetched
   let openPageId = null;     // which note page is expanded in the drawer
+  let drawerEnrich = null;   // {byUrl, suggests} from the entry graph, lazily fetched
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
   const fullGraphUrl = libraryFullGraphViewerUrl();   // full interactive viewer (topic filter, search, analytics)
+  const replayGraphUrl = libraryReplayGraphViewerUrl();  // same viewer, growth replay auto-playing
   let heroIframe;   // bound to the hero graph iframe; used to gate postMessage
 
   $: {
@@ -68,12 +70,18 @@
     drawerEntry = null;
     drawerMissing = false;
     drawerResearch = null;
+    drawerEnrich = null;
     openPageId = null;
     if (!id) return;
     const e = await libraryEntry(id);
     if (id !== drawerId) return;
     if (e && e.id) {
       drawerEntry = e;
+      // The entry graph carries the Brave-harvest enrichment (source dates,
+      // "people also ask") that the flat entry JSON doesn't — pull it in
+      // parallel so the sources list can show dates and the drawer can offer
+      // the follow-up questions as one-tap searches.
+      libraryEntryEnrichment(id).then((en) => { if (id === drawerId) drawerEnrich = en; });
       // Deep entries carry a browsable set of note pages — load them so the
       // drawer can show the research as pages, not just one synthesized answer.
       if (e.mode === 'deep') {
@@ -81,6 +89,17 @@
         if (id === drawerId && r && r.pages) drawerResearch = r;
       }
     } else drawerMissing = true;
+  }
+  // Svelte's legacy-mode dependency scan only sees identifiers referenced
+  // directly in the template — a function call like srcAge(s.url) hides
+  // drawerEnrich inside the function body, so the {#each} block never gets a
+  // dirty bit for it and the async fetch's result silently never renders.
+  // Reading drawerEnrich here, at the top level of a $: statement, makes the
+  // dependency explicit.
+  $: srcAges = drawerEnrich && drawerEnrich.byUrl ? drawerEnrich.byUrl : new Map();
+  function srcAge(url) {
+    const m = srcAges.get(url);
+    return m && m.age ? m.age : '';
   }
   function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
@@ -109,6 +128,21 @@
     refresh();
     const t = setInterval(refresh, 60_000);
     window.addEventListener('message', onGraphMessage);
+    // ?ask=<question> — the landing target for the graph viewer's ghost
+    // "people also wonder" nodes: arrive with the question PRE-FILLED, not
+    // auto-run. A URL that runs a paid search job on load with no user
+    // action is a CSRF-shaped hole (any page can iframe/link ?ask=... and
+    // spend the network's Brave quota + mint a permanent entry with
+    // attacker-chosen text) — the visitor still has to press Search.
+    // Only the `ask` param is stripped, via URLSearchParams, so any other
+    // param (e.g. a future ?e= alongside it) survives the replace.
+    const ask = $page.url.searchParams.get('ask');
+    if (ask && ask.trim()) {
+      q = ask.trim().slice(0, 400);
+      const u = new URL($page.url);
+      u.searchParams.delete('ask');
+      goto(u.pathname + u.search, { replaceState: true, noScroll: true });
+    }
     return () => { clearInterval(t); window.removeEventListener('message', onGraphMessage); };
   });
 
@@ -160,6 +194,10 @@
   function domain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
   }
+  // Sources are worker-authored (any approved network worker can write this
+  // field) — treat like any other untrusted URL before it becomes an href.
+  // graph-viewer.js already scheme-gates url/img/favicon the same way.
+  function safeHref(url) { return /^https?:\/\//i.test(url || '') ? url : '#'; }
   /* Who asked this question — a person, or the library noticing its own gap?
      The worker marks gap questions by appending 'ai-gap' to the engine field
      (the canister entry has no askedBy; adding one is a canister upgrade).
@@ -217,11 +255,20 @@
       </form>
 
       {#if fullGraphUrl && index && index.count > 0}
-        <a class="lib-explore" href={fullGraphUrl} target="_blank" rel="noopener">
-          <Icon name="graph" size={15} style="flex-shrink:0;" />
-          Explore the full graph — filter by topic, search &amp; trace connections
-          <span class="lib-explore-arrow" aria-hidden="true">→</span>
-        </a>
+        <div class="lib-explore-row">
+          <a class="lib-explore" href={fullGraphUrl} target="_blank" rel="noopener">
+            <Icon name="graph" size={15} style="flex-shrink:0;" />
+            Explore the full graph — filter by topic, search &amp; trace connections
+            <span class="lib-explore-arrow" aria-hidden="true">→</span>
+          </a>
+          {#if replayGraphUrl && index.count >= 10}
+            <a class="lib-explore lib-replay" href={replayGraphUrl} target="_blank" rel="noopener"
+               title="Replay every question in the order it was asked — the web growing in fast-forward">
+              <span aria-hidden="true">▶</span>
+              Watch it grow
+            </a>
+          {/if}
+        </div>
       {/if}
 
       {#if searchPhase === 'queued'}
@@ -437,14 +484,27 @@
         <ol class="lib-sources">
           {#each drawerEntry.sources as s, i}
             <li>
-              <a href={s.url} target="_blank" rel="noopener noreferrer">
+              <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer">
                 <span class="lib-src-n">[{i + 1}]</span>
                 <span class="lib-src-t">{plain(s.title)}</span>
+                {#if srcAge(s.url)}<span class="lib-src-age">{srcAge(s.url)}</span>{/if}
                 <span class="lib-src-d">{domain(s.url)}</span>
               </a>
             </li>
           {/each}
         </ol>
+      {/if}
+
+      {#if drawerEnrich?.suggests?.length}
+        <div class="lib-kicker" style="margin-top: 22px;">People also wonder</div>
+        <p class="lib-ask-lede">Questions the web raised alongside this one — ask any to send it to the research network.</p>
+        <div class="lib-ask-chips">
+          {#each drawerEnrich.suggests.slice(0, 6) as sug}
+            <button class="lib-ask-chip" on:click={() => { closeDrawer(); q = sug.q; runSearch(); }} title={sug.a || sug.q}>
+              <span aria-hidden="true">✦</span> {plain(sug.q)}
+            </button>
+          {/each}
+        </div>
       {/if}
 
       {#if drawerEntry.mode === 'deep' && drawerResearch?.pages?.length}
@@ -479,7 +539,7 @@
                     <ol class="lib-sources" style="margin-top: 12px;">
                       {#each p.sources as s, si}
                         <li>
-                          <a href={s.url} target="_blank" rel="noopener noreferrer">
+                          <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer">
                             <span class="lib-src-n">[{si + 1}]</span>
                             <span class="lib-src-t">{plain(s.title)}</span>
                             <span class="lib-src-d">{domain(s.url)}</span>
@@ -628,6 +688,12 @@
   .lib-search-note.lib-warn { color: hsl(35 80% 72%); }
   .lib-link { color: hsl(45 85% 62%); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
 
+  .lib-explore-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .lib-explore-row .lib-explore { margin-top: 0; }
+  /* "Watch it grow" — same pill family, warmer fill so it reads as the play
+     button it is rather than a second navigation link. */
+  .lib-replay { color: hsl(150 65% 70%); background: hsl(150 40% 12% / 0.55); border-color: hsl(150 50% 40% / 0.4); }
+  .lib-replay:hover { border-color: hsl(150 65% 50% / 0.75); background: hsl(150 45% 14% / 0.7); }
   .lib-explore {
     display: inline-flex; align-items: center; gap: 8px;
     margin-top: 14px; padding: 8px 14px;
@@ -911,6 +977,30 @@
   .lib-src-n { color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0; }
   .lib-src-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lib-src-d { color: hsl(var(--pg-fg-muted)); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  /* Publish date from the Brave harvest (only when the entry graph carried it). */
+  .lib-src-age {
+    color: hsl(45 60% 45%); font-size: 10.5px; font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  :global(.dark) .lib-src-age { color: hsl(45 70% 60%); }
+
+  /* "People also wonder" — follow-up questions the web raised, each a one-tap
+     search. The graph's ghost nodes, surfaced for readers who never open it. */
+  .lib-ask-lede { font-size: 12.5px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 4px 0 10px; }
+  .lib-ask-chips { display: flex; flex-direction: column; gap: 7px; }
+  .lib-ask-chip {
+    display: flex; align-items: flex-start; gap: 7px; text-align: left; width: 100%;
+    border: 1px solid hsl(266 40% 82%); border-radius: 11px; padding: 9px 12px;
+    background: hsl(266 60% 97%); color: hsl(266 45% 38%); cursor: pointer;
+    font: 500 13px Inter, system-ui, sans-serif; line-height: 1.4;
+    transition: border-color .14s, transform .14s, background .14s;
+  }
+  .lib-ask-chip:hover { border-color: hsl(266 55% 62%); background: hsl(266 65% 95%); transform: translateY(-1px); }
+  .lib-ask-chip span { color: hsl(45 75% 50%); }
+  :global(.dark) .lib-ask-chip {
+    background: hsl(266 45% 26% / 0.35); border-color: hsl(266 40% 46%); color: hsl(266 80% 84%);
+  }
+  :global(.dark) .lib-ask-chip:hover { background: hsl(266 45% 30% / 0.5); border-color: hsl(266 55% 60%); }
   .lib-drawer-graph {
     width: 100%; height: 260px; border: 1px solid hsl(var(--pg-border)); border-radius: 14px;
     background: hsl(250 30% 7%); margin-top: 8px;
