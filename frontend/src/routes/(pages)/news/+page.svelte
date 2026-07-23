@@ -35,7 +35,7 @@
   import {
     libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, libraryCardVisual, graphViewerOrigin } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryEntryEnrichment, libraryCardVisual } from '$lib/api/library.js';
   import { fmtNsDate, fmtNsRelative, nsToDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
@@ -126,10 +126,10 @@
   // never collide with a blog/forum slug in the shared devlog comment keyspace.
   const libCommentSlug = (id) => `library-${id}`;
 
-  const mergedGraphUrl = libraryMergedGraphViewerUrl();
-  const fullGraphUrl = libraryFullGraphViewerUrl();   // full interactive viewer (topic filter, search, analytics)
-  const replayGraphUrl = libraryReplayGraphViewerUrl();  // same viewer, growth replay auto-playing
-  let heroIframe;   // bound to the hero graph iframe; used to gate postMessage
+  // The neural-web hero graph is Library's signature visual, not News' — a
+  // force-directed graph of 300+ nodes is the opposite of "skim it fast."
+  // News keeps the per-entry answer graph in the drawer (small, contextual,
+  // opt-in) but drops the marquee full-network view entirely.
 
   $: {
     const e = $page.url.searchParams.get('e');
@@ -208,23 +208,11 @@
     else if (index === null) index = { count: -1, entries: [] };   // unreachable → offline state
     if (h) health = h;
   }
-  // The hero graph iframe (embed=post) posts a message when a question node is
-  // clicked; open the in-page drawer instead of letting it navigate a new tab.
-  // Strict checks: only the viewer origin, only OUR iframe's window, only the
-  // one message shape — never trust postMessage blind.
-  function onGraphMessage(ev) {
-    if (ev.origin !== graphViewerOrigin()) return;
-    if (heroIframe && ev.source !== heroIframe.contentWindow) return;
-    const d = ev.data;
-    if (!d || d.type !== 'cafreso:openEntry' || !d.entryId) return;
-    openEntry(String(d.entryId));
-  }
   onMount(() => {
     todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     refresh();
     loadUpNext();   // hydrate the personal research shortlist (localStorage)
     const t = setInterval(refresh, 60_000);
-    window.addEventListener('message', onGraphMessage);
     // ?ask=<question> — the landing target for the graph viewer's ghost
     // "people also wonder" nodes: arrive with the question PRE-FILLED, not
     // auto-run. A URL that runs a paid search job on load with no user
@@ -240,7 +228,7 @@
       u.searchParams.delete('ask');
       goto(u.pathname + u.search, { replaceState: true, noScroll: true });
     }
-    return () => { clearInterval(t); window.removeEventListener('message', onGraphMessage); };
+    return () => { clearInterval(t); };
   });
 
   async function runSearch({ skipSimilarCheck = false } = {}) {
@@ -341,6 +329,21 @@
     const d = nsToDate(ns);
     return d ? (Date.now() - d.getTime()) < 86_400_000 : false;
   }
+  // Day-bucket headers for the river — "TODAY" / "YESTERDAY" / a weekday —
+  // so an infinite chronological list reads as dated editions instead of
+  // one undifferentiated scroll. Only meaningful on the default newest-first
+  // feed (see leadMode below); sorting by sources or filtering breaks the
+  // chronological assumption a day header implies.
+  function dayBucket(ns) {
+    const d = nsToDate(ns);
+    if (!d) return '';
+    const startOf = (dt) => { const c = new Date(dt); c.setHours(0, 0, 0, 0); return c.getTime(); }
+    const days = Math.round((startOf(new Date()) - startOf(d)) / 86_400_000);
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  }
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
@@ -386,129 +389,103 @@
     <div class="news-masthead-rule"></div>
   </div>
 
-  <!-- ── Hero: the neural web ─────────────────────────────────────────────── -->
-  <div class="lib-hero">
-    {#if mergedGraphUrl && index && index.count > 0}
-      <iframe
-        bind:this={heroIframe}
-        src={mergedGraphUrl}
-        title="The library as a graph — every question and source, one web"
-        class="lib-hero-graph"
-        loading="lazy"
-      ></iframe>
-    {:else}
-      <div class="lib-hero-stars" aria-hidden="true"></div>
-    {/if}
-    <div class="lib-hero-veil" aria-hidden="true"></div>
+  <!-- ── Hero: editorial header + vitals, no graph ───────────────────────────
+       The neural-web hero was Library's signature visual, borrowed wholesale —
+       a 300+ node force graph is the opposite of "skim it fast." Dropped
+       entirely: no iframe, no dark cosmic panel, no "explore the full graph"
+       detour. What replaces it is what a reader actually wants at a glance —
+       a headline, a way to ask something, and three numbers that say whether
+       the network is alive right now. -->
+  <div class="news-hero">
+    <h1 class="news-hero-title">What the network is answering right now<span class="news-hero-dot">.</span></h1>
+    <p class="news-hero-sub">
+      A live feed over the permanent library — every answer here stays forever at
+      <a href="/library" class="news-hero-link">the calm reference view</a>.
+    </p>
 
-    <div class="lib-hero-content">
-      <div class="lib-kicker">The Cafreso Newsroom</div>
-      <h1 class="lib-title">What the network is answering right now<span class="text-brand-400">.</span></h1>
-      <p class="lib-sub">
-        A live feed over the permanent library — every answer here stays forever at
-        <a href="/library" class="lib-link" style="text-decoration: underline;">the calm reference view</a>.
-      </p>
+    <form class="news-search" on:submit|preventDefault={runSearch}>
+      <Icon name="magnifying-glass" size={18} style="color: hsl(var(--pg-fg-subtle)); flex-shrink: 0;" />
+      <input
+        type="search"
+        bind:value={q}
+        placeholder="Ask the library anything…"
+        aria-label="Search the library"
+        disabled={searchPhase === 'checking' || searchPhase === 'queued'}
+      />
+      <button type="submit" disabled={!q.trim() || searchPhase === 'checking' || searchPhase === 'queued'}>
+        {searchPhase === 'checking' ? 'Checking…' : searchPhase === 'queued' ? 'Researching…' : 'Search'}
+      </button>
+    </form>
 
-      <form class="lib-search" on:submit|preventDefault={runSearch}>
-        <Icon name="magnifying-glass" size={18} style="color: hsl(40 30% 65%); flex-shrink: 0;" />
-        <input
-          type="search"
-          bind:value={q}
-          placeholder="Ask the library anything…"
-          aria-label="Search the library"
-          disabled={searchPhase === 'checking' || searchPhase === 'queued'}
-        />
-        <button type="submit" disabled={!q.trim() || searchPhase === 'checking' || searchPhase === 'queued'}>
-          {searchPhase === 'checking' ? 'Checking…' : searchPhase === 'queued' ? 'Researching…' : 'Search'}
+    {#if searchPhase === 'similar' && similarMatch}
+      <div class="news-search-note">
+        <Icon name="magnifying-glass" size={14} style="flex-shrink: 0;" />
+        Looks like this may already be answered:
+        <button class="news-hero-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                on:click={() => { searchPhase = 'idle'; openEntry(similarMatch.id); }}>
+          "{plain(similarMatch.query).slice(0, 70)}{plain(similarMatch.query).length > 70 ? '…' : ''}"
         </button>
-      </form>
-
-      {#if fullGraphUrl && index && index.count > 0}
-        <div class="lib-explore-row">
-          <a class="lib-explore" href={fullGraphUrl} target="_blank" rel="noopener">
-            <Icon name="graph" size={15} style="flex-shrink:0;" />
-            Explore the full graph — filter by topic, search &amp; trace connections
-            <span class="lib-explore-arrow" aria-hidden="true">→</span>
-          </a>
-          {#if replayGraphUrl && index.count >= 10}
-            <a class="lib-explore lib-replay" href={replayGraphUrl} target="_blank" rel="noopener"
-               title="Replay every question in the order it was asked — the web growing in fast-forward">
-              <span aria-hidden="true">▶</span>
-              Watch it grow
-            </a>
-          {/if}
-        </div>
-      {/if}
-
-      {#if searchPhase === 'similar' && similarMatch}
-        <div class="lib-search-note">
-          <Icon name="magnifying-glass" size={14} style="flex-shrink: 0;" />
-          Looks like this may already be answered:
-          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
-                  on:click={() => { searchPhase = 'idle'; openEntry(similarMatch.id); }}>
-            "{plain(similarMatch.query).slice(0, 70)}{plain(similarMatch.query).length > 70 ? '…' : ''}"
-          </button>
-          — view it, or
-          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
-                  on:click={() => runSearch({ skipSimilarCheck: true })}>
-            search anyway
-          </button>.
-        </div>
-      {:else if searchPhase === 'queued'}
-        <div class="lib-search-note">
-          <span class="lib-pulse-dot"></span>
-          {#if queueNote === 'slow'}
-            Still working — this one's a slow one. The answer joins the library either way,
-            so you can leave this page and find it here.
-          {:else}
-            The research network is on it — {queueNote}. Fresh answers usually land in a few seconds and join the web forever.
-          {/if}
-        </div>
-      {:else if searchPhase === 'rejected'}
-        <div class="lib-search-note lib-warn">
-          {rejectReason === 'busy' ? 'The network is at capacity — try again in a minute.'
-            : rejectReason === 'budget' ? "Today's research budget is spent — back tomorrow."
-            : rejectReason === 'timeout' ? 'Still researching — your answer will appear in the stream below when it lands.'
-            : "The network couldn't answer that one — try rephrasing."}
-        </div>
-      {:else if searchPhase === 'dark'}
-        <div class="lib-search-note lib-warn">
-          {#if queuedForLater}
-            <Icon name="check-circle" size={14} style="flex-shrink: 0;" />
-            Added to your Up Next shortlist below — send it the moment a worker's back online.
-          {:else}
-            The research network is asleep — no workers online.
-            <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
-                    on:click={saveForLater}>
-              Add "{plain(q).slice(0, 40)}{plain(q).length > 40 ? '…' : ''}" to Up Next
-            </button>
-            instead, or <a href="/hq/search" class="lib-link">sign in to search with your own container</a>.
-          {/if}
-        </div>
-      {/if}
-
-      <div class="lib-pulse" aria-live="polite">
-        {#if index === null}
-          <span class="lib-skel" style="width: 220px;"></span>
-        {:else if index.count > 0}
-          <span>{index.count.toLocaleString()} question{index.count === 1 ? '' : 's'} answered on-chain</span>
-          {#if health}
-            <span class="lib-dot">·</span>
-            {#if health.activeWorkers > 0}
-              <span class="lib-live"><span class="lib-pulse-dot"></span>{health.activeWorkers} worker{health.activeWorkers === 1 ? '' : 's'} online</span>
-            {:else}
-              <span>network asleep</span>
-            {/if}
-            <span class="lib-dot">·</span>
-            <span>{health.answeredToday} answered today</span>
-          {/if}
+        — view it, or
+        <button class="news-hero-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                on:click={() => runSearch({ skipSimilarCheck: true })}>
+          search anyway
+        </button>.
+      </div>
+    {:else if searchPhase === 'queued'}
+      <div class="news-search-note">
+        <span class="lib-pulse-dot"></span>
+        {#if queueNote === 'slow'}
+          Still working — this one's a slow one. The answer joins the library either way,
+          so you can leave this page and find it here.
+        {:else}
+          The research network is on it — {queueNote}. Fresh answers usually land in a few seconds and join the web forever.
         {/if}
       </div>
+    {:else if searchPhase === 'rejected'}
+      <div class="news-search-note news-warn">
+        {rejectReason === 'busy' ? 'The network is at capacity — try again in a minute.'
+          : rejectReason === 'budget' ? "Today's research budget is spent — back tomorrow."
+          : rejectReason === 'timeout' ? 'Still researching — your answer will appear in the stream below when it lands.'
+          : "The network couldn't answer that one — try rephrasing."}
+      </div>
+    {:else if searchPhase === 'dark'}
+      <div class="news-search-note news-warn">
+        {#if queuedForLater}
+          <Icon name="check-circle" size={14} style="flex-shrink: 0;" />
+          Added to your Up Next shortlist below — send it the moment a worker's back online.
+        {:else}
+          The research network is asleep — no workers online.
+          <button class="news-hero-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={saveForLater}>
+            Add "{plain(q).slice(0, 40)}{plain(q).length > 40 ? '…' : ''}" to Up Next
+          </button>
+          instead, or <a href="/hq/search" class="news-hero-link">sign in to search with your own container</a>.
+        {/if}
+      </div>
+    {/if}
 
-      {#if fullGraphUrl && index && index.count > 0}
-        <a class="lib-graph-open" href={fullGraphUrl} target="_blank" rel="noopener noreferrer">
-          Explore the full web <Icon name="arrow-up-right" size={12} />
-        </a>
+    <!-- Vitals — the three numbers that answer "is this thing alive?" at a
+         glance, replacing the graph as the hero's data payload. -->
+    <div class="news-vitals" aria-live="polite">
+      {#if index === null}
+        <span class="lib-skel" style="width: 260px; height: 34px;"></span>
+      {:else if index.count > 0}
+        <div class="news-vital">
+          <span class="news-vital-n">{index.count.toLocaleString()}</span>
+          <span class="news-vital-label">Answered on-chain</span>
+        </div>
+        {#if health}
+          <div class="news-vital">
+            <span class="news-vital-n" class:news-vital-live={health.activeWorkers > 0}>
+              {#if health.activeWorkers > 0}<span class="lib-pulse-dot" style="margin-right: 6px;"></span>{/if}{health.activeWorkers}
+            </span>
+            <span class="news-vital-label">{health.activeWorkers > 0 ? (health.activeWorkers === 1 ? 'Worker online' : 'Workers online') : 'Network asleep'}</span>
+          </div>
+          <div class="news-vital">
+            <span class="news-vital-n">{health.answeredToday}</span>
+            <span class="news-vital-label">Answered today</span>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -552,16 +529,9 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
-    <!-- The graph hero above is the primary way to explore; this list is the
-         browse/search fallback. Framing it as such keeps the "one growing web"
-         idea front-and-centre rather than letting the flat list read as the
-         whole library. -->
     <div class="lib-browse-head">
-      <h2 class="lib-browse-title">Browse every answer</h2>
-      <p class="lib-browse-sub">
-        The whole web as a list — filter or sort below, or
-        <a href={fullGraphUrl} target="_blank" rel="noopener noreferrer" class="lib-link">explore it visually in the graph ↑</a>
-      </p>
+      <h2 class="lib-browse-title">Full coverage</h2>
+      <p class="lib-browse-sub">Every question the network has answered — filter or sort below.</p>
     </div>
 
     {#if deepCount > 0}
@@ -656,6 +626,11 @@
         {#each rest as e, i (e.id)}
           {@const visual = cardVisuals[e.id]}
           {@const fresh = isFresh(e.ts)}
+          {@const bucket = leadMode ? dayBucket(e.ts) : null}
+          {@const prevBucket = leadMode && i > 0 ? dayBucket(rest[i - 1].ts) : (leadMode ? dayBucket(lead.ts) : null)}
+          {#if bucket && bucket !== prevBucket}
+            <li class="news-day-sep" aria-hidden="true"><span>{bucket}</span></li>
+          {/if}
           <li>
             <button class="news-row" class:news-row-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
               <span class="news-row-n" aria-hidden="true">{String((lead ? i + 2 : i + 1)).padStart(2, '0')}</span>
@@ -908,146 +883,87 @@
     border-bottom: 1px solid hsl(var(--pg-fg));
   }
 
-  /* ── Hero — the one deliberately dark surface on the warm Pages theme ──── */
-  .lib-hero {
-    position: relative;
-    border-radius: 1.75rem;
-    overflow: hidden;
-    background:
-      radial-gradient(ellipse at 30% 20%, hsl(255 45% 16%) 0%, transparent 55%),
-      radial-gradient(ellipse at 75% 75%, hsl(24 55% 12%) 0%, transparent 60%),
-      hsl(250 30% 7%);
-    min-height: 440px;
-    display: flex;
-    align-items: flex-end;
-    box-shadow: 0 30px 80px -30px hsl(250 40% 6% / 0.7);
-  }
-  .lib-hero-graph {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    opacity: 0.85;
-  }
-  /* Zero-entry night sky: pure CSS star field so the launch state still feels alive. */
-  .lib-hero-stars {
-    position: absolute; inset: 0;
-    background-image:
-      radial-gradient(1.5px 1.5px at 12% 30%, hsl(45 90% 80% / 0.9), transparent 100%),
-      radial-gradient(1px 1px at 28% 68%, hsl(0 0% 100% / 0.7), transparent 100%),
-      radial-gradient(2px 2px at 45% 22%, hsl(265 80% 82% / 0.8), transparent 100%),
-      radial-gradient(1px 1px at 58% 55%, hsl(0 0% 100% / 0.6), transparent 100%),
-      radial-gradient(1.5px 1.5px at 71% 33%, hsl(160 70% 78% / 0.8), transparent 100%),
-      radial-gradient(1px 1px at 83% 70%, hsl(0 0% 100% / 0.7), transparent 100%),
-      radial-gradient(2px 2px at 91% 18%, hsl(45 90% 78% / 0.75), transparent 100%),
-      radial-gradient(1px 1px at 8% 82%, hsl(0 0% 100% / 0.55), transparent 100%);
-  }
-  /* Legibility veil: the graph stays explorable up top, text sits on the fade. */
-  .lib-hero-veil {
-    position: absolute; inset: 0;
-    background: linear-gradient(180deg, transparent 0%, hsl(250 30% 7% / 0.35) 45%, hsl(250 30% 7% / 0.92) 78%);
-    pointer-events: none;
-  }
-  .lib-hero-content {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    padding: 200px 28px 30px;
-    pointer-events: none;   /* let the graph receive drag/zoom… */
-  }
-  .lib-hero-content > * { pointer-events: auto; }  /* …but keep controls clickable */
-
+  /* Still used outside the hero — the drawer's section labels and inline links. */
   .lib-kicker {
     font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-    color: hsl(45 85% 62%);
+    color: hsl(355 55% 45%);
   }
-  .lib-title {
-    font-family: 'Playfair Display', serif;
-    font-size: clamp(1.9rem, 4.5vw, 3.1rem);
-    font-weight: 700;
-    color: hsl(40 50% 96%);
-    margin: 10px 0 8px;
-    line-height: 1.08;
-  }
-  .lib-sub { font-size: 14.5px; line-height: 1.6; color: hsl(40 25% 78%); max-width: 46ch; margin: 0 0 18px; }
+  :global(.dark) .lib-kicker { color: hsl(355 75% 68%); }
+  .lib-link { color: hsl(355 60% 45%); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
+  :global(.dark) .lib-link { color: hsl(355 80% 70%); }
 
-  .lib-search {
+  /* ── Hero — plain paper, no graph. The masthead above already carries the
+     "this is a different publication" signal; the hero's whole job now is
+     legibility and three digestible numbers, not a backdrop. ──────────── */
+  .news-hero { padding: 6px 4px 8px; max-width: 680px; margin: 0 auto; text-align: center; }
+  .news-hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.7rem, 4vw, 2.6rem); font-weight: 700; line-height: 1.15;
+    color: hsl(var(--pg-fg)); margin: 0 0 10px;
+  }
+  .news-hero-dot { color: hsl(355 60% 50%); }
+  .news-hero-sub { font-size: 14.5px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 0 auto 22px; max-width: 46ch; }
+  .news-hero-link { color: hsl(355 60% 45%); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  :global(.dark) .news-hero-link { color: hsl(355 80% 70%); }
+
+  .news-search {
     display: flex; align-items: center; gap: 10px;
-    max-width: 620px;
-    background: hsl(250 25% 12% / 0.85);
-    border: 1.5px solid hsl(255 30% 30%);
+    max-width: 560px; margin: 0 auto;
+    background: hsl(var(--pg-surface));
+    border: 1.5px solid hsl(var(--pg-border));
     border-radius: 16px;
     padding: 6px 8px 6px 16px;
-    backdrop-filter: blur(10px);
     transition: border-color 0.15s;
   }
-  .lib-search:focus-within { border-color: hsl(45 85% 55%); }
-  .lib-search input {
+  .news-search:focus-within { border-color: hsl(355 55% 55%); }
+  .news-search input {
     flex: 1; min-width: 0; border: none; background: transparent; outline: none;
-    font: 500 16px/1.4 Inter, system-ui, sans-serif; color: hsl(40 50% 96%); padding: 8px 0;
+    font: 500 16px/1.4 Inter, system-ui, sans-serif; color: hsl(var(--pg-fg)); padding: 8px 0;
   }
-  .lib-search input::placeholder { color: hsl(40 15% 55%); }
-  .lib-search button {
+  .news-search input::placeholder { color: hsl(var(--pg-fg-subtle)); }
+  .news-search button {
     border: none; border-radius: 11px; cursor: pointer;
-    background: hsl(45 90% 58%); color: hsl(24 48% 12%);
+    background: hsl(var(--pg-fg)); color: hsl(var(--pg-surface));
     font: 700 13.5px Inter, system-ui, sans-serif;
     padding: 10px 20px;
     transition: filter 0.15s;
   }
-  .lib-search button:hover:not(:disabled) { filter: brightness(1.08); }
-  .lib-search button:disabled { opacity: 0.55; cursor: default; }
+  .news-search button:hover:not(:disabled) { filter: brightness(1.2); }
+  .news-search button:disabled { opacity: 0.45; cursor: default; }
 
-  .lib-search-note {
-    display: flex; align-items: center; gap: 8px;
-    margin-top: 12px; font-size: 12.5px; color: hsl(40 25% 78%); max-width: 600px; line-height: 1.5;
+  .news-search-note {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin: 12px auto 0; font-size: 12.5px; color: hsl(var(--pg-fg-muted)); max-width: 560px; line-height: 1.5;
   }
-  .lib-search-note.lib-warn { color: hsl(35 80% 72%); }
-  .lib-link { color: hsl(45 85% 62%); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
+  .news-search-note.news-warn { color: hsl(35 70% 42%); }
+  :global(.dark) .news-search-note.news-warn { color: hsl(35 80% 68%); }
 
-  .lib-explore-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
-  .lib-explore-row .lib-explore { margin-top: 0; }
-  /* "Watch it grow" — same pill family, warmer fill so it reads as the play
-     button it is rather than a second navigation link. */
-  .lib-replay { color: hsl(150 65% 70%); background: hsl(150 40% 12% / 0.55); border-color: hsl(150 50% 40% / 0.4); }
-  .lib-replay:hover { border-color: hsl(150 65% 50% / 0.75); background: hsl(150 45% 14% / 0.7); }
-  .lib-explore {
-    display: inline-flex; align-items: center; gap: 8px;
-    margin-top: 14px; padding: 8px 14px;
-    font-size: 12.5px; font-weight: 600; color: hsl(45 85% 66%);
-    background: hsl(45 40% 12% / 0.55); border: 1px solid hsl(45 60% 45% / 0.35);
-    border-radius: 999px; text-decoration: none; line-height: 1;
-    backdrop-filter: blur(6px); transition: border-color .15s, background .15s, transform .15s;
+  /* Vitals — three numbers instead of a graph: is the network alive, right now. */
+  .news-vitals {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 36px; margin-top: 26px; padding-top: 22px;
+    border-top: 1px solid hsl(var(--pg-border));
   }
-  .lib-explore:hover { border-color: hsl(45 85% 55% / 0.7); background: hsl(45 45% 14% / 0.7); transform: translateY(-1px); }
-  .lib-explore-arrow { transition: transform .15s; }
-  .lib-explore:hover .lib-explore-arrow { transform: translateX(3px); }
-  @media (max-width: 560px) { .lib-explore { font-size: 12px; } }
-
-  .lib-pulse {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    margin-top: 16px; font-size: 12px; color: hsl(40 20% 62%);
+  .news-vital { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .news-vital-n {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 22px; font-weight: 700; color: hsl(var(--pg-fg));
+    display: inline-flex; align-items: center;
   }
-  .lib-dot { opacity: 0.5; }
-  .lib-live { display: inline-flex; align-items: center; gap: 6px; color: hsl(150 60% 65%); }
+  .news-vital-n.news-vital-live { color: hsl(150 60% 38%); }
+  :global(.dark) .news-vital-n.news-vital-live { color: hsl(150 65% 62%); }
+  .news-vital-label {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    color: hsl(var(--pg-fg-muted));
+  }
   .lib-pulse-dot {
-    width: 7px; height: 7px; border-radius: 50%; background: hsl(150 70% 55%);
-    box-shadow: 0 0 8px hsl(150 70% 55% / 0.8);
+    width: 7px; height: 7px; border-radius: 50%; background: hsl(150 70% 45%);
+    box-shadow: 0 0 8px hsl(150 70% 45% / 0.7);
     animation: lib-pulse 1.6s ease-in-out infinite;
-    flex-shrink: 0;
+    flex-shrink: 0; display: inline-block;
   }
   @keyframes lib-pulse { 50% { opacity: 0.35; } }
-
-  .lib-graph-open {
-    position: absolute; top: 18px; right: 20px;
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 12px; font-weight: 600; color: hsl(40 30% 80%); text-decoration: none;
-    background: hsl(250 25% 12% / 0.7); border: 1px solid hsl(255 30% 28%);
-    padding: 7px 13px; border-radius: 999px; backdrop-filter: blur(8px);
-    transition: border-color 0.15s;
-  }
-  .lib-graph-open:hover { border-color: hsl(45 85% 55%); }
+  @media (max-width: 560px) { .news-vitals { gap: 24px; } .news-vital-n { font-size: 19px; } }
 
   /* ── Entry stream ──────────────────────────────────────────────────────── */
   .lib-filterbar {
@@ -1152,6 +1068,17 @@
   .news-river { list-style: none; margin: 0; padding: 0; }
   .news-river li { border-bottom: 1px solid hsl(var(--pg-border)); }
   .news-river li:last-child { border-bottom: none; }
+  /* Day-bucket header — turns an endless chronological scroll into dated
+     editions a reader can actually orient inside. No bottom rule of its own;
+     the row below it still gets the normal hairline. */
+  .news-day-sep {
+    border-bottom: none !important; padding: 22px 2px 8px;
+  }
+  .news-day-sep span {
+    font: 800 11px/1 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: hsl(355 60% 50%);
+  }
   .news-row {
     display: flex; align-items: flex-start; gap: 16px; width: 100%;
     text-align: left; cursor: pointer; background: none; border: none;
@@ -1501,8 +1428,6 @@
 
   /* ── Mobile: the feed becomes a news river ────────────────────────────── */
   @media (max-width: 640px) {
-    .lib-hero { min-height: 360px; }
-    .lib-hero-content { padding: 130px 18px 22px; }
     .lib-drawer {
       top: auto; left: 0; right: 0; width: auto;
       max-height: 86dvh;
@@ -1511,7 +1436,6 @@
       animation: lib-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     @keyframes lib-sheet-in { from { transform: translateY(40px); opacity: 0; } }
-    .lib-graph-open { top: 12px; right: 12px; }
 
     /* Section controls stop stacking into a tall wall: the sort dropdown
        sits inline with a shrinking filter field. */
