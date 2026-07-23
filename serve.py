@@ -1883,7 +1883,23 @@ def _sw_process(job, deadline=None):
         # The canister accepts the 11-line envelope too, so appending is safe
         # across the deploy window. 'ai-news' is its own value, never folded
         # into 'ai-gap' or 'human' — see the news-cron block below for why.
-        lines.append(P('ai-gap' if is_gap else 'ai-news' if is_news_cron else 'human'))
+        #
+        # CRITICAL: only send this for a job that was ALWAYS fast. The canister
+        # disambiguates the trailing line by the job's ORIGINALLY-SUBMITTED
+        # mode (jobMode(id), fixed at submit time), not by what actually
+        # happened here — so for a job submitted as 'deep' that degraded to
+        # this single-shot path (planning/Brave failed above), the canister
+        # still treats this slot as pagesJson and would store the literal
+        # string "human"/"ai-gap" as this entry's "research pages", corrupting
+        # research.json for a "Deep Research"-labeled entry that has none.
+        # Confirmed live: two entries' research.json bodies were exactly the
+        # 5-byte string "human" from this exact path. Omitting the line here
+        # keeps lines.size() <= 11+nSrc, so the canister's own
+        # `lines.size() > 11 + nSrc` guard naturally skips pagesJson (stays
+        # "") AND askedBy (deep jobs hardcode askedBy="human" regardless, so
+        # nothing is lost by not sending it).
+        if mode != 'deep':
+            lines.append(P('ai-gap' if is_gap else 'ai-news' if is_news_cron else 'human'))
         # Always attempt fulfill, even past our budget: the budget is soft and
         # sits 40s inside the lease, so the common case still lands. When we're
         # genuinely late the reap fires on the next worker's claim regardless,
