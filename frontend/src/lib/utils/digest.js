@@ -66,6 +66,23 @@ export function themes(entries, { limit = 6 } = {}) {
     .map(([word, count]) => ({ word, count }));
 }
 
+/**
+ * A cheap per-story "section" label — the highest-ranked theme word (from
+ * themes(), above) that actually appears in THIS entry's own query. Reuses
+ * the same vocabulary the weekly digest already computes rather than a
+ * one-off keyword per story, so the same subject always gets the same
+ * rubric across the page instead of near-duplicate labels ("Iran" vs
+ * "Iranian"). Returns null when nothing in the theme list matches — most
+ * stories on a young or eclectic feed won't, and an unlabeled story is a
+ * fine, expected outcome, not a broken one.
+ */
+export function sectionTag(query, themeList) {
+  if (!themeList?.length) return null;
+  const words = new Set(tokenize(query));
+  for (const t of themeList) if (words.has(t.word)) return t.word;
+  return null;
+}
+
 /** Entry counts per day for the last `days` days, oldest first — a 7-bar
     sparkline of research velocity. */
 function dailyCounts(entries, days) {

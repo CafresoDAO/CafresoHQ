@@ -27,7 +27,7 @@
   import WeeklyDigest from '$lib/components/WeeklyDigest.svelte';
   import RelatedEntries from '$lib/components/RelatedEntries.svelte';
   import { loadUpNext, addQuestion, normQ } from '$lib/stores/upnext.js';
-  import { relatedEntries, findSimilarEntry } from '$lib/utils/digest.js';
+  import { relatedEntries, findSimilarEntry, themes, sectionTag } from '$lib/utils/digest.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
   import { principalText } from '$lib/stores/auth.js';
@@ -344,6 +344,43 @@
     if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
     return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
   }
+  // Section rubrics — a per-story topic label reusing the same theme
+  // vocabulary the digest already computes (see sectionTag() in digest.js),
+  // so "Iran" always means the same word across the whole page instead of a
+  // one-off keyword per story. Computed over the whole index, not just the
+  // last 7 days, so older/quieter stories still get a shot at a label.
+  $: pageThemes = index?.entries ? themes(index.entries, { limit: 24 }) : [];
+  function rubric(e) { return sectionTag(plain(e.query), pageThemes); }
+  // Deterministic hue per rubric word (not curated section colors — there's
+  // no fixed taxonomy here) so the same topic always reads the same color
+  // across a session and across reloads, the way a real section front's
+  // colors are consistent even though nobody hand-picked this one's list.
+  function rubricHue(word) {
+    let h = 0;
+    for (let i = 0; i < word.length; i++) h = (h * 31 + word.charCodeAt(i)) >>> 0;
+    return h % 360;
+  }
+  // "Well-sourced" badge — flags stories whose citation count sits above
+  // the pack, a cheap proxy for "this one was actually corroborated"
+  // without pretending to fact-check anything. A percentile threshold
+  // doesn't work here: the worker answers with a near-fixed source count
+  // (338 of 347 current entries sit at exactly 8), so a p85 cutoff still
+  // lands ON the modal value and flags nearly everyone. Threshold is
+  // instead "strictly above the single most common count" — adaptive to
+  // whatever that typical count is, but only the genuine outliers clear it.
+  $: wellSourcedThreshold = (() => {
+    if (!index?.entries?.length) return Infinity;
+    const counts = new Map();
+    let mode = 0, modeFreq = 0;
+    for (const e of index.entries) {
+      const n = e.sources || 0;
+      const c = (counts.get(n) || 0) + 1;
+      counts.set(n, c);
+      if (c > modeFreq) { modeFreq = c; mode = n; }
+    }
+    return Math.max(mode + 1, 3);
+  })();
+  function wellSourced(e) { return (e.sources || 0) >= wellSourcedThreshold; }
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
@@ -594,6 +631,7 @@
 
       {#if lead}
         {@const visual = cardVisuals[lead.id]}
+        {@const leadTag = rubric(lead)}
         <button class="news-lead" on:click={() => openEntry(lead.id)}>
           {#if visual?.thumb}
             <img src={visual.thumb} alt="" class="news-thumb-probe"
@@ -604,8 +642,10 @@
           {/if}
           <div class="news-lead-body">
             <div class="news-row-tags">
+              {#if leadTag}<span class="news-rubric" style="--rh: {rubricHue(leadTag)}">{leadTag}</span>{/if}
               {#if isFresh(lead.ts)}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
               {#if lead.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
+              {#if wellSourced(lead)}<span class="news-tag news-tag-sourced" title="{lead.sources} sources — well above the pack">◆ Well-Sourced</span>{/if}
               {#if lead.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
             </div>
             <h2 class="news-lead-headline">{plain(lead.query)}</h2>
@@ -626,6 +666,7 @@
         {#each rest as e, i (e.id)}
           {@const visual = cardVisuals[e.id]}
           {@const fresh = isFresh(e.ts)}
+          {@const tag = rubric(e)}
           {@const bucket = leadMode ? dayBucket(e.ts) : null}
           {@const prevBucket = leadMode && i > 0 ? dayBucket(rest[i - 1].ts) : (leadMode ? dayBucket(lead.ts) : null)}
           {#if bucket && bucket !== prevBucket}
@@ -636,8 +677,10 @@
               <span class="news-row-n" aria-hidden="true">{String((lead ? i + 2 : i + 1)).padStart(2, '0')}</span>
               <div class="news-row-body">
                 <div class="news-row-tags">
+                  {#if tag}<span class="news-rubric" style="--rh: {rubricHue(tag)}">{tag}</span>{/if}
                   {#if fresh}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
                   {#if e.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
+                  {#if wellSourced(e)}<span class="news-tag news-tag-sourced" title="{e.sources} sources — well above the pack">◆ Well-Sourced</span>{/if}
                   {#if e.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
                 </div>
                 <h3>{plain(e.query)}</h3>
@@ -1015,6 +1058,19 @@
   }
   .news-tag-live { color: hsl(355 65% 48%); }
   :global(.dark) .news-tag-live { color: hsl(355 80% 68%); }
+  /* "Well-sourced" — amber, distinct from the red live-signal and the purple
+     deep-research tag, so a reader can tell these three apart at a glance. */
+  .news-tag-sourced { color: hsl(38 75% 40%); }
+  :global(.dark) .news-tag-sourced { color: hsl(38 80% 68%); }
+  /* Section rubric — a per-story topic label, hue set per-instance via the
+     --rh custom property (see rubricHue() in the script) so the same word
+     always gets the same color without a hand-curated section palette. */
+  .news-rubric {
+    font: 800 10px/1 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: hsl(var(--rh) 60% 36%);
+  }
+  :global(.dark) .news-rubric { color: hsl(var(--rh) 70% 68%); }
   .news-tag-dot {
     width: 6px; height: 6px; border-radius: 50%; background: currentColor;
     box-shadow: 0 0 0 0 hsl(355 70% 50% / 0.6); animation: news-live-pulse 1.8s infinite;
