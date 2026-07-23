@@ -17,7 +17,7 @@
   import WeeklyDigest from '$lib/components/WeeklyDigest.svelte';
   import RelatedEntries from '$lib/components/RelatedEntries.svelte';
   import { loadUpNext, addQuestion, normQ } from '$lib/stores/upnext.js';
-  import { relatedEntries } from '$lib/utils/digest.js';
+  import { relatedEntries, findSimilarEntry } from '$lib/utils/digest.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
   import { principalText } from '$lib/stores/auth.js';
@@ -83,6 +83,7 @@
   let rejectReason = '';
   let searchSeq = 0;
   let queuedForLater = false;   // "added to Up Next" confirmation when the network's asleep
+  let similarMatch = null;      // a likely-duplicate entry found before submitting — see runSearch()
 
   // A dead network shouldn't be a dead end — the question a visitor typed
   // still has somewhere useful to go: the personal shortlist, ready to send
@@ -222,15 +223,25 @@
     return () => { clearInterval(t); window.removeEventListener('message', onGraphMessage); };
   });
 
-  async function runSearch() {
+  async function runSearch({ skipSimilarCheck = false } = {}) {
     const query = q.trim();
     if (!query || searchPhase === 'checking' || searchPhase === 'queued') return;
     const seq = ++searchSeq;
     searchPhase = 'checking';
     queuedForLater = false;
+    similarMatch = null;
     const hit = await findPublic(query);
     if (seq !== searchSeq) return;
     if (hit && hit.id) { searchPhase = 'idle'; openEntry(hit.id); return; }
+    // Catches paraphrases the canister's exact-normalized dedup can't see —
+    // before spending a Brave query on a question that's likely answered
+    // under different wording. Skippable: a real near-miss (rare, by design —
+    // findSimilarEntry favors precision) shouldn't trap someone who really
+    // does mean something new.
+    if (!skipSimilarCheck && index?.entries) {
+      const near = findSimilarEntry(query, index.entries);
+      if (near) { similarMatch = near; searchPhase = 'similar'; return; }
+    }
     const h = await networkHealth();
     if (seq !== searchSeq) return;
     if (!h || !h.activeWorkers) { searchPhase = 'dark'; return; }
@@ -394,7 +405,21 @@
         </div>
       {/if}
 
-      {#if searchPhase === 'queued'}
+      {#if searchPhase === 'similar' && similarMatch}
+        <div class="lib-search-note">
+          <Icon name="magnifying-glass" size={14} style="flex-shrink: 0;" />
+          Looks like this may already be answered:
+          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={() => { searchPhase = 'idle'; openEntry(similarMatch.id); }}>
+            "{plain(similarMatch.query).slice(0, 70)}{plain(similarMatch.query).length > 70 ? '…' : ''}"
+          </button>
+          — view it, or
+          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={() => runSearch({ skipSimilarCheck: true })}>
+            search anyway
+          </button>.
+        </div>
+      {:else if searchPhase === 'queued'}
         <div class="lib-search-note">
           <span class="lib-pulse-dot"></span>
           {#if queueNote === 'slow'}

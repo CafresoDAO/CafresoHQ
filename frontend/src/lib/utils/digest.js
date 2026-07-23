@@ -86,6 +86,36 @@ function dailyCounts(entries, days) {
 }
 
 /**
+ * Best near-duplicate match for a DRAFT query, before it's ever submitted —
+ * catches paraphrases the canister's exact-normalized dedup (libKey) can't
+ * see ("Iran nuclear deal details" vs "what did Iran agree to on nukes"),
+ * without a real embeddings dependency neither the canister (Motoko, no ML
+ * runtime) nor the worker cheaply has. Same honest word-overlap heuristic as
+ * relatedEntries()/themes(), but tuned OPPOSITE: a false positive here blocks
+ * a legitimately new question from ever being asked, so the bar is a RATIO
+ * of the shorter query's significant words, not just a raw overlap count —
+ * short queries need near-total overlap, long ones need a large fraction.
+ * Returns the single best match above the ratio, or null (no match is the
+ * expected, common case — most questions ARE new).
+ */
+export function findSimilarEntry(query, allEntries, { minRatio = 0.72, minOverlap = 3 } = {}) {
+  const words = new Set(tokenize(query));
+  if (words.size < minOverlap || !allEntries?.length) return null;
+  let best = null, bestRatio = 0;
+  for (const e of allEntries) {
+    const eWords = tokenize(e.query);
+    if (!eWords.length) continue;
+    const eSet = new Set(eWords);
+    let overlap = 0;
+    for (const w of words) if (eSet.has(w)) overlap += 1;
+    if (overlap < minOverlap) continue;
+    const ratio = overlap / Math.min(words.size, eSet.size);
+    if (ratio > bestRatio) { bestRatio = ratio; best = e; }
+  }
+  return bestRatio >= minRatio ? best : null;
+}
+
+/**
  * "Related in the library" — other entries whose query shares significant
  * keywords with `entry`, ranked by overlap size then recency. Same honest
  * heuristic as themes() (word-overlap, not real embedding/cluster
