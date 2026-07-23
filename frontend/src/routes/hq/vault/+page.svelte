@@ -66,8 +66,15 @@
     }
   }
 
+  // Bumped on every openFile() call; a slow open's async result is only
+  // applied if it's still the CURRENT open when it resolves. Without this,
+  // clicking file A then file B before A's decrypt finishes lets A's slower
+  // response land after B's and silently overwrite B's editor/preview state.
+  let _openToken = 0;
+
   async function openFile(f) {
     if (editorDirty) await doSave();
+    const token = ++_openToken;
     selected = f;
     opening = true;
     editorDirty = false;
@@ -80,16 +87,20 @@
     try {
       if (f.isBinary) {
         const blob = await downloadFileBlob(f.id);
+        if (token !== _openToken) return;
         previewUrl = URL.createObjectURL(blob);
         previewType = (f.mimeType || '').toLowerCase();
       } else {
-        editorContent = await readFile(f.id);
+        const content = await readFile(f.id);
+        if (token !== _openToken) return;
+        editorContent = content;
       }
     } catch (e) {
+      if (token !== _openToken) return;
       alert('Open failed: ' + (e?.message || e));
       selected = null;
     } finally {
-      opening = false;
+      if (token === _openToken) opening = false;
     }
   }
 

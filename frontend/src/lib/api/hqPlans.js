@@ -154,15 +154,16 @@ export async function subscribeWithCard(planId, { successUrl, cancelUrl }) {
 
 /** Poll the on-chain order ledger until `orderId` is "paid" (the Stripe webhook
  *  oracle flips it) or the timeout elapses. Returns true if paid. */
-export async function waitForOrderPaid(orderId, { pollMs = 3000, timeoutMs = 90000 } = {}) {
+export async function waitForOrderPaid(orderId, { pollMs = 3000, timeoutMs = 90000, signal } = {}) {
   const id = Number(orderId);
   const isPaid = (orders) => (orders || []).some((o) => Number(o.id) === id && o.status === 'paid');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (signal?.aborted) return false;
     if (isPaid(await listMyOrders())) return true;
     await new Promise((r) => setTimeout(r, pollMs));
   }
-  return isPaid(await listMyOrders());
+  return signal?.aborted ? false : isPaid(await listMyOrders());
 }
 
 /** Tell the fleet to apply the user's plan to their container (idle policy +

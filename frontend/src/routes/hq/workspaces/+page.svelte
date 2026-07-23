@@ -84,6 +84,13 @@
     launchProgress = '';
   }
 
+  // launchWorkspace()'s poll loop isn't tied to this component's lifetime —
+  // if the user navigates away mid-launch, the poll keeps running in the
+  // background and, on completion, would still goto() the new session and
+  // still write into launchProgress/launchError for a page nobody's looking
+  // at. Guard every post-await effect on this flag.
+  let destroyed = false;
+
   async function confirmLaunch() {
     if (!launchModal || !$principalText) return;
     const template = launchModal;
@@ -92,13 +99,15 @@
 
     try {
       const session = await launchWorkspace($principalText, template.id, {
-        onUpdate: (s) => { launchProgress = s.status || 'starting...'; },
+        onUpdate: (s) => { if (!destroyed) launchProgress = s.status || 'starting...'; },
       });
+      if (destroyed) return;
       launchProgress = '';
       if (session?.session_id) {
         goto(`/hq/workspaces/${session.session_id}`);
       }
     } catch (err) {
+      if (destroyed) return;
       launchError = err.message || 'Launch failed';
       launchProgress = '';
     }
@@ -128,6 +137,7 @@
     }
     refreshOperatorConfig().finally(() => { entLoading = false; });
     return () => {
+      destroyed = true;
       if (typeof window !== 'undefined') {
         window.removeEventListener('resize', checkMobile);
       }

@@ -46,6 +46,11 @@
     if ($isAuthenticated) {
       await verifyAdmin();
     }
+    // Every visitor hits this route's onMount, admin or not — the server
+    // already 403s the data calls for non-admins, but there's no reason to
+    // fire (and keep re-firing every 15s, forever, for as long as the tab
+    // stays open) 4 requests we know will fail. Gate on the verified result.
+    if (!$isAdmin) return;
     await loadAll();
     // Poll every 15s for live data
     pollInterval = setInterval(loadAll, 15_000);

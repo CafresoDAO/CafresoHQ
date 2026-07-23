@@ -149,7 +149,12 @@
   });
 
   function onKey(e) {
-    if (e.key === 'Escape') goto('/hq/workspaces');
+    // Esc is deliberately left unlocked during Keyboard Lock fullscreen (see
+    // handleFullscreen) so it can exit fullscreen. If we ALSO navigate away
+    // on that same keypress, exiting fullscreen doubles as leaving the
+    // session — let the fullscreenchange handler take it, and only navigate
+    // when Esc is pressed outside of fullscreen.
+    if (e.key === 'Escape' && !document.fullscreenElement) goto('/hq/workspaces');
   }
 </script>
 

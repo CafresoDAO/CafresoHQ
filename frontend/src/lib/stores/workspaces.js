@@ -84,6 +84,19 @@ async function _sessionToken() {
   }
 }
 
+// The cache above is keyed by NOTHING — it's module-global and outlives sign
+// out/sign in. If a second principal logs in on the same tab within the 50min
+// window, every workspace call keeps authorizing (and billing) as the FIRST
+// principal. Clear the cache — and the locally-cached session list, which is
+// equally unscoped — on every principal change. Skip the initial emission
+// (fires on subscribe) so this only reacts to actual identity switches.
+let _seenPrincipal = false;
+principalText.subscribe((_p) => {
+  if (!_seenPrincipal) { _seenPrincipal = true; return; }
+  _tok = null; _tokAt = 0; _tokFailAt = 0;
+  sessions.set([]);
+});
+
 export const templates      = writable([]);
 export const sessions       = writable([]);
 export const activeCategory = writable('all');
@@ -292,8 +305,32 @@ export async function stopSession(sessionId) {
     method: 'POST',
     timeoutMs: 15_000,
   });
-  _upsertSession({ session_id: sessionId, status: 'stopping' });
+  // Most providers (local/canister/OCI) stop synchronously and the response
+  // already says 'stopped' — hardcoding 'stopping' here left the dock/sidebar
+  // showing a permanently-stuck "stopping" entry until the next unrelated
+  // fetchSessions() call happened to refresh it. Use what the server actually
+  // reports.
+  const status = result?.status || 'stopping';
+  _upsertSession({ session_id: sessionId, status });
+  // hyperv IS genuinely async (backing VM shutdown runs in a background
+  // thread) — poll briefly until it lands on a terminal state so the UI
+  // doesn't need an unrelated page load to notice.
+  if (status === 'stopping') _pollUntilStopped(sessionId);
   return result;
+}
+
+async function _pollUntilStopped(sessionId, { pollMs = 3_000, maxWaitMs = 60_000 } = {}) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    try {
+      const session = await getSession(sessionId);
+      _upsertSession(session);
+      if (session.status !== 'stopping') return;
+    } catch (_) {
+      return; // e.g. 403/404 — nothing more to poll for
+    }
+  }
 }
 
 /** Delete/terminate a session. */

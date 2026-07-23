@@ -52,7 +52,12 @@
       iframe.contentWindow?.postMessage({ ...payload, reqId }, origin || '*');
 
     if (!get(vaultUnlocked)) {
-      if (get(isAuthenticated)) await unlockVault();
+      if (get(isAuthenticated)) {
+        // unlockVault() rejecting here (network/canister failure) must not
+        // throw out of this handler uncaught — the iframe caller's in-flight
+        // request (keyed on reqId) would otherwise hang forever with no reply.
+        try { await unlockVault(); } catch (_) { /* fall through to locked reply below */ }
+      }
       if (!get(vaultUnlocked)) {
         reply({ type: 'vault:error', code: 'locked', message: 'Vault locked.' });
         return;

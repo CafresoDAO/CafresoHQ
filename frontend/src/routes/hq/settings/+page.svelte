@@ -213,6 +213,8 @@
         placeholder="http://132.145.133.139:8787"
         bind:value={inputValue}
         autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
         spellcheck="false"
       />
     </label>

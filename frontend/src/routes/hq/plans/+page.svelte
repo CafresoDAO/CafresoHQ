@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { isAuthenticated, principalText, login } from '$lib/stores/auth.js';
   import { prices, startPrices } from '$lib/stores/prices.js';
@@ -71,6 +71,10 @@
   // "paid". We poll until that lands, then apply the plan. NO recordOrder here
   // (that was the old double-record bug) and no auto re-apply on every load.
   let handledReturn = false;
+  // waitForOrderPaid polls for up to 90s — without this, navigating away from
+  // /hq/plans mid-confirmation leaves it polling in the background for the
+  // full timeout for no reason. Aborted on unmount.
+  const stripeReturnAbort = new AbortController();
   async function handleStripeReturn() {
     if (handledReturn) return;
     const params = new URLSearchParams(window.location.search);
@@ -85,7 +89,8 @@
     msg = { kind: 'warn', text: `Confirming your ${PLANS[paidPlan].label} card payment on-chain…` };
     try {
       const { waitForOrderPaid } = await import('$lib/api/hqPlans.js');
-      const paid = await waitForOrderPaid(icOrderId, { pollMs: 3000, timeoutMs: 90000 });
+      const paid = await waitForOrderPaid(icOrderId, { pollMs: 3000, timeoutMs: 90000, signal: stripeReturnAbort.signal });
+      if (stripeReturnAbort.signal.aborted) return;
       if (paid) {
         const applied = await notifyFleet(icOrderId);
         if (applied.ok) {
@@ -100,11 +105,12 @@
         pendingApplyOrderId = icOrderId;
         msg = { kind: 'warn', text: `Payment received — still confirming on-chain. Your ${PLANS[paidPlan].label} plan activates automatically; use “Apply plan” to retry.` };
       }
-      await refresh();
-    } finally { busy = ''; }
+      if (!stripeReturnAbort.signal.aborted) await refresh();
+    } finally { if (!stripeReturnAbort.signal.aborted) busy = ''; }
   }
 
   onMount(() => { startPrices(); refresh(); handleStripeReturn(); });
+  onDestroy(() => stripeReturnAbort.abort());
   $: if ($isAuthenticated) { /* re-check when auth flips */ }
 
   async function payIcp(planId) {

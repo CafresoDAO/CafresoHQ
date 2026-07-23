@@ -39,7 +39,9 @@
   }
 
   function onKey(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // isComposing/keyCode 229 = an IME (CJK/Japanese/Korean) is mid-conversion;
+    // the Enter that confirms the conversion must not also send the message.
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       send();
     }
