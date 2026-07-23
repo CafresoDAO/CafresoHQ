@@ -42,6 +42,10 @@
   let health = null;
   let shown = 24;            // client-side paging over the (≤500) index
 
+  // Masthead date line — computed client-side only (onMount) so SSR and the
+  // browser never disagree on "today" and cause a hydration mismatch.
+  let todayLabel = '';
+
   // Filter/sort the already-fetched index client-side — no extra fetch, the
   // whole (≤500-entry) index is already local by the time this page renders.
   let filterText = '';
@@ -211,6 +215,7 @@
     openEntry(String(d.entryId));
   }
   onMount(() => {
+    todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     refresh();
     loadUpNext();   // hydrate the personal research shortlist (localStorage)
     const t = setInterval(refresh, 60_000);
@@ -362,6 +367,20 @@
 <svelte:window on:keydown={onKeydown} />
 
 <section class="space-y-8">
+  <!-- ── Masthead: the one thing a Library card grid could never look like ──
+       A real newspaper nameplate — edition line, serif wordmark, hairline
+       double rule — so /news reads as a distinct publication the instant it
+       loads, before a single card renders. -->
+  <div class="news-masthead">
+    <div class="news-masthead-top">
+      <span>Live Edition</span>
+      <span class="news-masthead-date">{todayLabel || ' '}</span>
+      <span>{index && index.count > 0 ? `Vol. ${index.count.toLocaleString()}` : ' '}</span>
+    </div>
+    <div class="news-nameplate">The Cafreso Newsroom</div>
+    <div class="news-masthead-rule"></div>
+  </div>
+
   <!-- ── Hero: the neural web ─────────────────────────────────────────────── -->
   <div class="lib-hero">
     {#if mergedGraphUrl && index && index.count > 0}
@@ -586,61 +605,73 @@
         <p>Try a shorter word, or <button class="lib-filter-reset-link" on:click={() => { filterText = ''; onFilterChange(); }}>clear the filter</button> to browse everything.</p>
       </div>
     {:else}
-      <!-- The feed. On desktop this is the Ground.news-style card grid; on
-           mobile it collapses to a news river — the first card is the lead
-           story (big thumbnail), every card after it becomes a compact
-           headline row (small thumbnail, 2-line headline, one quiet meta
-           line). A giant slab per screen doesn't scan; a river does. The
-           lead only earns its size on the default newest feed — once you
-           filter or sort, every row is equal weight. -->
+      <!-- The river. This is the whole point of the redesign: no card grid,
+           no rounded chips — a real front page. One big lead story (headline,
+           dek, byline) earned only on the default newest/unfiltered feed,
+           then every story after it as a numbered briefing row: red running
+           number, serif headline, one quiet byline line, a small thumbnail
+           if the entry has one. Filter or sort and the lead drops out —
+           every row goes back to equal weight, the way a search result
+           should. -->
       {@const leadMode = sortBy === 'newest' && modeFilter === 'all' && !filterText.trim()}
-      <div class="lib-grid lib-feed">
-        {#each filteredEntries.slice(0, shown) as e, i (e.id)}
+      {@const lead = leadMode ? filteredEntries[0] : null}
+      {@const rest = lead ? filteredEntries.slice(1, shown) : filteredEntries.slice(0, shown)}
+
+      {#if lead}
+        {@const visual = cardVisuals[lead.id]}
+        <button class="news-lead" on:click={() => openEntry(lead.id)}>
+          {#if visual?.thumb}
+            <div class="news-lead-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+          {/if}
+          <div class="news-lead-body">
+            <div class="news-row-tags">
+              {#if isFresh(lead.ts)}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
+              {#if lead.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
+              {#if lead.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
+            </div>
+            <h2 class="news-lead-headline">{plain(lead.query)}</h2>
+            {#if lead.snippet}<p class="news-lead-dek">{plain(lead.snippet)}</p>{/if}
+            <div class="news-byline">
+              <span>{relTime(lead.ts)}</span>
+              <span class="news-byline-dot" aria-hidden="true">—</span>
+              <span>{lead.sources} source{lead.sources === 1 ? '' : 's'}</span>
+              <span class="news-byline-dot" aria-hidden="true">—</span>
+              <span>{engineLabel(lead)}</span>
+              <Icon name="arrow-right" size={12} class="news-row-go" />
+            </div>
+          </div>
+        </button>
+      {/if}
+
+      <ol class="news-river">
+        {#each rest as e, i (e.id)}
           {@const visual = cardVisuals[e.id]}
           {@const fresh = isFresh(e.ts)}
-          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'}
-                  class:lib-card-visual={visual?.thumb} class:lib-lead={leadMode && i === 0}
-                  on:click={() => openEntry(e.id)}>
-            {#if visual?.thumb}
-              <div class="lib-card-thumb" style="background-image:url('{visual.thumb}')" role="presentation">
-                {#if fresh}<span class="lib-fresh-tag">Just in</span>{/if}
-              </div>
-            {/if}
-            <div class="lib-card-body">
-              {#if e.mode === 'deep' || e.askedBy === 'ai-gap' || (fresh && !visual?.thumb)}
-                <div class="lib-card-top">
-                  {#if fresh && !visual?.thumb}
-                    <span class="lib-chip lib-chip-fresh"><span class="lib-fresh-dot" aria-hidden="true"></span> Just in</span>
-                  {/if}
-                  {#if e.mode === 'deep'}
-                    <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
-                  {/if}
-                  {#if e.askedBy === 'ai-gap'}
-                    <span class="lib-chip lib-chip-ai" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>
-                  {/if}
+          <li>
+            <button class="news-row" class:news-row-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
+              <span class="news-row-n" aria-hidden="true">{String((lead ? i + 2 : i + 1)).padStart(2, '0')}</span>
+              <div class="news-row-body">
+                <div class="news-row-tags">
+                  {#if fresh}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
+                  {#if e.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
+                  {#if e.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
                 </div>
-              {/if}
-              <h3>{plain(e.query)}</h3>
-              {#if e.snippet}
-                <p class="lib-card-snippet">{plain(e.snippet)}</p>
-              {/if}
-              <div class="lib-card-meta">
-                {#if visual?.favicons?.length}
-                  <span class="lib-card-favs" aria-hidden="true">
-                    {#each visual.favicons as f}
-                      <img src={f} alt="" loading="lazy" on:error={(ev) => { ev.target.style.visibility = 'hidden'; }} />
-                    {/each}
-                  </span>
-                {/if}
-                <span>{relTime(e.ts)}</span>
-                <span class="lib-meta-dot" aria-hidden="true">·</span>
-                <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-                <Icon name="arrow-right" size={13} class="lib-card-go" />
+                <h3>{plain(e.query)}</h3>
+                <div class="news-byline">
+                  <span>{relTime(e.ts)}</span>
+                  <span class="news-byline-dot" aria-hidden="true">—</span>
+                  <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+                  <Icon name="arrow-right" size={12} class="news-row-go" />
+                </div>
               </div>
-            </div>
-          </button>
+              {#if visual?.thumb}
+                <div class="news-row-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+              {/if}
+            </button>
+          </li>
         {/each}
-      </div>
+      </ol>
+
       {#if filteredEntries.length > shown}
         <div style="text-align: center;">
           <button class="lib-more" on:click={() => (shown += 24)}>
@@ -840,6 +871,34 @@
 {/if}
 
 <style>
+  /* ── Masthead — a real nameplate, the fastest way to make this page not
+       look like a re-skinned Library. Red is the one accent Library never
+       uses (its whole palette is warm gold-on-cream/dark) — reserved here
+       for the wire-service signals: live dot, running numbers, dek rule. */
+  .news-masthead { text-align: center; padding: 4px 10px 0; }
+  .news-masthead-top {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    font: 700 10.5px/1 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: hsl(var(--pg-fg-muted));
+    margin-bottom: 10px;
+  }
+  .news-masthead-date { color: hsl(355 65% 48%); }
+  :global(.dark) .news-masthead-date { color: hsl(355 80% 68%); }
+  .news-nameplate {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    font-size: clamp(2rem, 6vw, 3.4rem);
+    letter-spacing: -0.01em;
+    color: hsl(var(--pg-fg));
+    line-height: 1;
+  }
+  .news-masthead-rule {
+    height: 5px; margin: 14px auto 0; max-width: 100%;
+    border-top: 3px solid hsl(var(--pg-fg));
+    border-bottom: 1px solid hsl(var(--pg-fg));
+  }
+
   /* ── Hero — the one deliberately dark surface on the warm Pages theme ──── */
   .lib-hero {
     position: relative;
@@ -1018,6 +1077,108 @@
     color: hsl(var(--pg-fg)); margin: 0 0 4px;
   }
   .lib-browse-sub { font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 0; }
+
+  /* ── The river — flat editorial rows, not rounded cards ─────────────────
+     This (plus the masthead) is the redesign: no lib-card grid, no pill
+     chips, no drop shadows. A lead story, then a numbered list separated by
+     hairlines — a wire feed, not a mood board. */
+  .news-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 700 10px/1 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: hsl(var(--pg-fg-muted));
+  }
+  .news-tag-live { color: hsl(355 65% 48%); }
+  :global(.dark) .news-tag-live { color: hsl(355 80% 68%); }
+  .news-tag-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 0 0 hsl(355 70% 50% / 0.6); animation: news-live-pulse 1.8s infinite;
+  }
+  @keyframes news-live-pulse {
+    0% { box-shadow: 0 0 0 0 hsl(355 70% 50% / 0.5); }
+    70% { box-shadow: 0 0 0 5px hsl(355 70% 50% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(355 70% 50% / 0); }
+  }
+  .news-byline {
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    font: 500 11.5px/1 'JetBrains Mono', ui-monospace, monospace;
+    color: hsl(var(--pg-fg-subtle)); margin-top: 8px;
+  }
+  .news-byline-dot { opacity: 0.5; }
+  :global(.news-row-go) {
+    margin-left: auto; color: hsl(355 60% 50%);
+    opacity: 0; transform: translateX(-4px);
+    transition: opacity .14s, transform .14s;
+  }
+
+  /* Lead story — the one thing above the fold. Flat, full-bleed, no card
+     chrome; a hairline rule underneath is the only border it gets. */
+  .news-lead {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: none; border: none; padding: 0 0 26px;
+    border-bottom: 3px solid hsl(var(--pg-fg));
+    font: inherit; color: inherit;
+  }
+  .news-lead-thumb {
+    width: 100%; aspect-ratio: 21 / 9; max-height: 420px; border-radius: 10px;
+    background-size: cover; background-position: center;
+    background-color: hsl(var(--pg-hover)); border: 1px solid hsl(var(--pg-border));
+    margin-bottom: 18px;
+  }
+  .news-row-tags { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+  .news-lead-headline {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.5rem, 3.4vw, 2.5rem); font-weight: 800; line-height: 1.1;
+    color: hsl(var(--pg-fg)); margin: 0 0 10px;
+  }
+  .news-lead-dek {
+    font-family: 'Playfair Display', serif; font-style: italic;
+    font-size: 16px; line-height: 1.55; color: hsl(var(--pg-fg-muted));
+    max-width: 70ch; margin: 0;
+  }
+  .news-lead:hover .news-lead-headline { text-decoration: underline; text-decoration-color: hsl(355 60% 50% / 0.5); text-underline-offset: 4px; }
+  .news-lead:hover :global(.news-row-go) { opacity: 1; transform: none; }
+
+  .news-river { list-style: none; margin: 0; padding: 0; }
+  .news-river li { border-bottom: 1px solid hsl(var(--pg-border)); }
+  .news-river li:last-child { border-bottom: none; }
+  .news-row {
+    display: flex; align-items: flex-start; gap: 16px; width: 100%;
+    text-align: left; cursor: pointer; background: none; border: none;
+    padding: 18px 2px; font: inherit; color: inherit;
+    transition: background .12s;
+  }
+  .news-row:hover { background: hsl(var(--pg-hover)); }
+  .news-row-n {
+    flex-shrink: 0; width: 28px; padding-top: 2px;
+    font: 700 15px/1 'Playfair Display', serif; font-style: italic;
+    color: hsl(355 60% 50%);
+  }
+  .news-row-body { flex: 1; min-width: 0; }
+  .news-row h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px; font-weight: 700; line-height: 1.32;
+    color: hsl(var(--pg-fg)); margin: 0;
+  }
+  .news-row:hover h3 { text-decoration: underline; text-decoration-color: hsl(355 60% 50% / 0.5); text-underline-offset: 3px; }
+  .news-row:hover :global(.news-row-go) { opacity: 1; transform: none; }
+  .news-row-thumb {
+    flex-shrink: 0; width: 84px; height: 84px; border-radius: 8px;
+    background-size: cover; background-position: center;
+    background-color: hsl(var(--pg-hover));
+  }
+  .news-row-deep .news-row-n { color: hsl(266 55% 55%); }
+
+  @media (max-width: 640px) {
+    .news-lead-headline { font-size: 24px; }
+    .news-lead-dek { font-size: 14px; }
+    .news-row { gap: 12px; padding: 15px 0; }
+    .news-row-thumb { width: 64px; height: 64px; }
+    .news-masthead-top { gap: 8px; font-size: 9.5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .news-tag-dot { animation: none; }
+  }
 
   /* Wider tracks than before — cards now carry an answer snippet, which needs
      room to read. Auto-fill still collapses to 1-up on narrow screens. */
@@ -1341,49 +1502,6 @@
     }
     @keyframes lib-sheet-in { from { transform: translateY(40px); opacity: 0; } }
     .lib-graph-open { top: 12px; right: 12px; }
-
-    /* The river: no per-card gap, hairline dividers instead — a scannable
-       list, not a stack of full-screen slabs. */
-    .lib-feed { gap: 0; }
-
-    /* Lead story keeps the big treatment: full-width thumbnail, large
-       headline — the one story the editor put above the fold. */
-    .lib-feed .lib-lead h3 { font-size: 21px; -webkit-line-clamp: 3; }
-    .lib-feed .lib-lead .lib-card-thumb { aspect-ratio: 16 / 10; }
-    .lib-feed .lib-lead { margin-bottom: 4px; }
-
-    /* Every card after the lead collapses to a compact headline row:
-       flat (no card chrome), a small square thumbnail on the right, a
-       2–3 line headline and one quiet meta line on the left. */
-    .lib-feed .lib-card:not(.lib-lead) {
-      border: none; border-radius: 0; box-shadow: none; background: transparent;
-      border-bottom: 1px solid hsl(var(--pg-border));
-      padding: 15px 2px;
-    }
-    .lib-feed .lib-card:not(.lib-lead).lib-card-visual {
-      overflow: visible;
-      flex-direction: row-reverse; align-items: flex-start; gap: 13px;
-    }
-    .lib-feed .lib-card:not(.lib-lead) .lib-card-thumb {
-      width: 92px; min-width: 92px; aspect-ratio: 1;
-      border-radius: 12px; align-self: flex-start;
-    }
-    .lib-feed .lib-card:not(.lib-lead).lib-card-visual .lib-card-body { padding: 0; }
-    .lib-feed .lib-card:not(.lib-lead) h3 {
-      font-size: 16px; line-height: 1.32; -webkit-line-clamp: 3; margin-bottom: 7px;
-    }
-    /* One line of context is enough on a row; three would rebuild the slab. */
-    .lib-feed .lib-card:not(.lib-lead) .lib-card-snippet { display: none; }
-    .lib-feed .lib-card:not(.lib-lead) .lib-fresh-tag {
-      top: 5px; left: 5px; font-size: 9px; padding: 2px 6px;
-    }
-    /* Touch has no hover — kill the lift so rows sit flat and calm. */
-    .lib-feed .lib-card:not(.lib-lead):hover {
-      transform: none; box-shadow: none; border-color: transparent;
-      border-bottom-color: hsl(var(--pg-border));
-    }
-    :global(.lib-card-go) { display: none; }
-    .lib-feed .lib-card:not(.lib-lead):active { background: hsl(var(--pg-hover)); }
 
     /* Section controls stop stacking into a tall wall: the sort dropdown
        sits inline with a shrinking filter field. */
