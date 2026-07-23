@@ -64,6 +64,7 @@
   // Labels match the mobile tab bar ("DAO", not "Governance") so the site
   // reads as one map on every surface.
   const moreItems = [
+    { href: '/news', key: 'news', icon: 'newspaper', label: 'Newsroom' },
     { href: '/forums', key: 'forums', icon: 'chats-circle', label: 'Forums' },
     { href: '/governance', key: 'governance', icon: 'gavel', label: 'DAO', beta: true },
     { href: '/leaderboard', key: 'leaderboard', icon: 'trophy', label: 'Contest' },
