@@ -115,10 +115,14 @@
     margin-bottom: 22px;
   }
   .un-head { margin-bottom: 12px; }
+  /* Eyebrow, not headline — same demotion as WeeklyDigest's .wd-title:
+     auxiliary modules take the small-caps label so the serif headline voice
+     stays reserved for actual stories. */
   .un-title {
     display: inline-flex; align-items: center; gap: 7px;
-    font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 700;
-    color: hsl(var(--pg-fg));
+    font: 800 11px/1 Inter, system-ui, sans-serif;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: hsl(var(--pg-fg-muted));
   }
   .un-glyph { color: hsl(45 85% 55%); }
   .un-sub { font-size: 12.5px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 4px 0 0; }

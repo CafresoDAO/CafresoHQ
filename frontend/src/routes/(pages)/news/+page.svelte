@@ -46,6 +46,14 @@
   // browser never disagree on "today" and cause a hydration mismatch.
   let todayLabel = '';
 
+  // A local 15s clock, separate from the 60s data poll. Relative timestamps
+  // ("just now" → "1m ago"), the Just In window, and the Today/Yesterday
+  // buckets all read the wall clock — without this they'd sit frozen between
+  // fetches, which reads as "dead page" on a product whose whole premise is
+  // a live network. 15s is finer than the coarsest visible unit (minutes),
+  // so a tick can never skip a visible transition.
+  let nowTick = 0;   // bumped by the interval; 0 until mount (SSR-safe)
+
   // Filter/sort the already-fetched index client-side — no extra fetch, the
   // whole (≤500-entry) index is already local by the time this page renders.
   let filterText = '';
@@ -200,6 +208,17 @@
 
   function openEntry(id) { goto(`/news?e=${encodeURIComponent(id)}`, { noScroll: true }); }
   function closeDrawer() { goto('/news', { noScroll: true }); }
+  // Copy-link with visible confirmation — "Copy link" that gives no feedback
+  // reads as broken. The 2s reset means repeat copies re-confirm.
+  let copiedLink = false;
+  let copiedTimer;
+  function copyDrawerLink() {
+    if (!drawerId) return;
+    try { navigator.clipboard.writeText(location.origin + '/news?e=' + drawerId); } catch { return; }
+    copiedLink = true;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedLink = false), 2000);
+  }
   function onKeydown(e) { if (e.key === 'Escape' && drawerId) closeDrawer(); }
 
   async function refresh() {
@@ -213,6 +232,8 @@
     refresh();
     loadUpNext();   // hydrate the personal research shortlist (localStorage)
     const t = setInterval(refresh, 60_000);
+    nowTick = Date.now();
+    const clock = setInterval(() => (nowTick = Date.now()), 15_000);
     // ?ask=<question> — the landing target for the graph viewer's ghost
     // "people also wonder" nodes: arrive with the question PRE-FILLED, not
     // auto-run. A URL that runs a paid search job on load with no user
@@ -228,7 +249,7 @@
       u.searchParams.delete('ask');
       goto(u.pathname + u.search, { replaceState: true, noScroll: true });
     }
-    return () => { clearInterval(t); };
+    return () => { clearInterval(t); clearInterval(clock); };
   });
 
   async function runSearch({ skipSimilarCheck = false } = {}) {
@@ -276,6 +297,13 @@
       refresh();                      // the web just grew
       openEntry(done.entry.id);
     } else {
+      // A timeout means the answer is still coming, just not while they
+      // watched — shortlist it AUTOMATICALLY. The old flow offered a manual
+      // "add to Up Next" click in the hero, but a reader who waited 60s+ has
+      // almost certainly scrolled or left; a save that needs them to come
+      // back and press a button is a save that never happens. The message
+      // below tells them it's done, not asks.
+      if (done.status === 'timeout') addQuestion(query);
       rejectReason = done.status;
       searchPhase = 'rejected';
     }
@@ -322,19 +350,25 @@
   // News feeds live on recency: "3h ago" reads as a live wire, "Jul 22, 2026"
   // reads as an archive. Cards use the relative form; the drawer keeps the
   // absolute date (a permanent record wants an exact stamp).
-  const relTime = (ns) => fmtNsRelative(ns) || fmtNsDate(ns, 'short');
+  //
+  // relTime/isFresh/dayBucket are reactive declarations (not plain functions)
+  // ON PURPOSE: they read nowTick so Svelte re-renders every timestamp, Just
+  // In tag, and day header when the 15s clock fires — a plain function's
+  // template call sites would never get a dirty bit from the clock and the
+  // page would sit frozen between data polls.
+  $: relTime = (nowTick, (ns) => fmtNsRelative(ns) || fmtNsDate(ns, 'short'));
   // "Just in" — answered in the last 24h. The one editorial signal that turns
   // a static library into an incoming-news feed you check back on.
-  function isFresh(ns) {
+  $: isFresh = (nowTick, (ns) => {
     const d = nsToDate(ns);
     return d ? (Date.now() - d.getTime()) < 86_400_000 : false;
-  }
+  });
   // Day-bucket headers for the river — "TODAY" / "YESTERDAY" / a weekday —
   // so an infinite chronological list reads as dated editions instead of
   // one undifferentiated scroll. Only meaningful on the default newest-first
   // feed (see leadMode below); sorting by sources or filtering breaks the
   // chronological assumption a day header implies.
-  function dayBucket(ns) {
+  $: dayBucket = (nowTick, (ns) => {
     const d = nsToDate(ns);
     if (!d) return '';
     const startOf = (dt) => { const c = new Date(dt); c.setHours(0, 0, 0, 0); return c.getTime(); }
@@ -343,7 +377,7 @@
     if (days === 1) return 'Yesterday';
     if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
     return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
-  }
+  });
   // Section rubrics — a per-story topic label reusing the same theme
   // vocabulary the digest already computes (see sectionTag() in digest.js),
   // so "Iran" always means the same word across the whole page instead of a
@@ -351,14 +385,19 @@
   // last 7 days, so older/quieter stories still get a shot at a label.
   $: pageThemes = index?.entries ? themes(index.entries, { limit: 24 }) : [];
   function rubric(e) { return sectionTag(plain(e.query), pageThemes); }
-  // Deterministic hue per rubric word (not curated section colors — there's
-  // no fixed taxonomy here) so the same topic always reads the same color
-  // across a session and across reloads, the way a real section front's
-  // colors are consistent even though nobody hand-picked this one's list.
+  // Deterministic color per rubric word — same topic, same color, across the
+  // whole page and across reloads. The word HASHES to a palette slot rather
+  // than to a raw 0-360 hue: an unconstrained hue can land on yellows that
+  // fail contrast at the rubric's fixed lightness, or sit close enough to
+  // the page's reserved red (live signals) and amber (well-sourced) to read
+  // as a semantic badge. Eight hues, hand-picked to clear WCAG AA at the
+  // .news-rubric lightness pair (36% light / 68% dark) and to stay out of
+  // the red/amber bands.
+  const RUBRIC_HUES = [210, 160, 265, 190, 230, 95, 310, 130];
   function rubricHue(word) {
     let h = 0;
     for (let i = 0; i < word.length; i++) h = (h * 31 + word.charCodeAt(i)) >>> 0;
-    return h % 360;
+    return RUBRIC_HUES[h % RUBRIC_HUES.length];
   }
   // "Well-sourced" badge — flags stories whose citation count sits above
   // the pack, a cheap proxy for "this one was actually corroborated"
@@ -424,6 +463,12 @@
     </div>
     <div class="news-nameplate">The Cafreso Newsroom</div>
     <div class="news-masthead-rule"></div>
+    <!-- The one honesty line the whole page depends on: the masthead styling
+         deliberately borrows newspaper authority, so the page must say in
+         plain words that no humans reported any of it. -->
+    <p class="news-masthead-note">
+      Every headline is a question answered by the Cafreso AI research network — sources cited, not human-reported.
+    </p>
   </div>
 
   <!-- ── Hero: editorial header + vitals, no graph ───────────────────────────
@@ -454,6 +499,12 @@
       </button>
     </form>
 
+    <!-- The wrapper div is PERSISTENT (always in the DOM) so screen readers
+         treat it as a stable live region — an aria-live attribute on the
+         conditional notes themselves would mount/unmount with each phase and
+         most AT never announces a region born with its content. Same pattern
+         the vitals strip below already uses. -->
+    <div aria-live="polite" aria-atomic="true">
     {#if searchPhase === 'similar' && similarMatch}
       <div class="news-search-note">
         <Icon name="magnifying-glass" size={14} style="flex-shrink: 0;" />
@@ -482,7 +533,7 @@
       <div class="news-search-note news-warn">
         {rejectReason === 'busy' ? 'The network is at capacity — try again in a minute.'
           : rejectReason === 'budget' ? "Today's research budget is spent — back tomorrow."
-          : rejectReason === 'timeout' ? 'Still researching — your answer will appear in the stream below when it lands.'
+          : rejectReason === 'timeout' ? 'Still researching — saved to your Up Next list below, and the answer joins the stream when it lands.'
           : "The network couldn't answer that one — try rephrasing."}
       </div>
     {:else if searchPhase === 'dark'}
@@ -500,6 +551,7 @@
         {/if}
       </div>
     {/if}
+    </div>
 
     <!-- Vitals — the three numbers that answer "is this thing alive?" at a
          glance, replacing the graph as the hero's data payload. -->
@@ -642,10 +694,14 @@
           {/if}
           <div class="news-lead-body">
             <div class="news-row-tags">
-              {#if leadTag}<span class="news-rubric" style="--rh: {rubricHue(leadTag)}">{leadTag}</span>{/if}
+              <!-- Rubric is a span with stopPropagation, not a nested <button>
+                   (invalid inside the row button); keyboard/AT users reach the
+                   same filter through the digest's real theme buttons. -->
+              {#if leadTag}<span class="news-rubric" role="link" title="See all {leadTag} coverage" style="--rh: {rubricHue(leadTag)}"
+                     on:click|stopPropagation={() => jumpToTheme(leadTag)}>{leadTag}</span>{/if}
               {#if isFresh(lead.ts)}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
               {#if lead.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
-              {#if wellSourced(lead)}<span class="news-tag news-tag-sourced" title="{lead.sources} sources — well above the pack">◆ Well-Sourced</span>{/if}
+              {#if wellSourced(lead)}<span class="news-tag news-tag-sourced" title="{lead.sources} sources cited — above the network's typical count. Cited, not cross-verified.">◆ {lead.sources} Sources</span>{/if}
               {#if lead.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
             </div>
             <h2 class="news-lead-headline">{plain(lead.query)}</h2>
@@ -677,10 +733,11 @@
               <span class="news-row-n" aria-hidden="true">{String((lead ? i + 2 : i + 1)).padStart(2, '0')}</span>
               <div class="news-row-body">
                 <div class="news-row-tags">
-                  {#if tag}<span class="news-rubric" style="--rh: {rubricHue(tag)}">{tag}</span>{/if}
+                  {#if tag}<span class="news-rubric" role="link" title="See all {tag} coverage" style="--rh: {rubricHue(tag)}"
+                         on:click|stopPropagation={() => jumpToTheme(tag)}>{tag}</span>{/if}
                   {#if fresh}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
                   {#if e.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
-                  {#if wellSourced(e)}<span class="news-tag news-tag-sourced" title="{e.sources} sources — well above the pack">◆ Well-Sourced</span>{/if}
+                  {#if wellSourced(e)}<span class="news-tag news-tag-sourced" title="{e.sources} sources cited — above the network's typical count. Cited, not cross-verified.">◆ {e.sources} Sources</span>{/if}
                   {#if e.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
                 </div>
                 <h3>{plain(e.query)}</h3>
@@ -738,7 +795,7 @@
           </span>
         {/if}
         {#if drawerEntry.model}<span class="lib-chip">🤖 {drawerEntry.model}</span>{/if}
-        {#if drawerEntry.engine}<span class="lib-chip">🔎 {engineLabel(drawerEntry)}</span>{/if}
+        {#if drawerEntry.engine}<span class="lib-chip" title="Web search engine the worker used to find sources — not a wire service credit">🔎 via {engineLabel(drawerEntry)} search</span>{/if}
         <span class="lib-chip">📅 {fmtDate(drawerEntry.answeredAt || drawerEntry.ts)}</span>
         {#if drawerEntry.worker}<span class="lib-chip" title={drawerEntry.worker}>⚙ {shortPrincipal(drawerEntry.worker)}</span>{/if}
       </div>
@@ -770,6 +827,17 @@
       {:else}
         <p class="lib-drawer-answer lib-muted">Sources were collected for this question, but no summary was written yet.</p>
       {/if}
+
+      <!-- Share row — top-level on purpose. It used to live under the graph
+           block's conditional, which made "copy a link to this answer"
+           silently disappear for any entry that couldn't render a graph. -->
+      <div class="news-share-row">
+        <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                on:click={copyDrawerLink}>
+          <Icon name={copiedLink ? 'check-circle' : 'link'} size={13} />
+          {copiedLink ? 'Link copied' : 'Copy link'}
+        </button>
+      </div>
 
       {#if drawerEntry.sources?.length}
         <div class="lib-kicker" style="margin-top: 22px;">Sources</div>
@@ -868,10 +936,6 @@
           <a class="lib-link" href={gvUrl} target="_blank" rel="noopener noreferrer">
             {deepEntry ? 'Open the research tree' : 'Open graph'} <Icon name="arrow-up-right" size={12} />
           </a>
-          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
-            on:click={() => { try { navigator.clipboard.writeText(location.origin + '/news?e=' + drawerEntry.id); } catch {} }}>
-            Copy link
-          </button>
         </div>
       {/if}
 
@@ -924,6 +988,10 @@
     height: 5px; margin: 14px auto 0; max-width: 100%;
     border-top: 3px solid hsl(var(--pg-fg));
     border-bottom: 1px solid hsl(var(--pg-fg));
+  }
+  .news-masthead-note {
+    margin: 10px auto 0; max-width: 68ch;
+    font-size: 11.5px; line-height: 1.5; color: hsl(var(--pg-fg-muted));
   }
 
   /* Still used outside the hero — the drawer's section labels and inline links. */
@@ -1069,7 +1137,9 @@
     font: 800 10px/1 'JetBrains Mono', ui-monospace, monospace;
     letter-spacing: 0.08em; text-transform: uppercase;
     color: hsl(var(--rh) 60% 36%);
+    cursor: pointer;
   }
+  .news-rubric:hover { text-decoration: underline; text-underline-offset: 2px; }
   :global(.dark) .news-rubric { color: hsl(var(--rh) 70% 68%); }
   .news-tag-dot {
     width: 6px; height: 6px; border-radius: 50%; background: currentColor;
@@ -1475,6 +1545,7 @@
     background: hsl(250 30% 7%); margin-top: 8px;
   }
   .lib-drawer-actions { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+  .news-share-row { display: flex; gap: 16px; margin-top: 14px; font-size: 12.5px; }
   .lib-comment-err {
     margin: 24px 0 -8px; padding: 8px 12px; font-size: 12.5px;
     background: hsl(0 60% 96%); color: hsl(0 55% 38%); border: 1px solid hsl(0 55% 85%); border-radius: 8px;

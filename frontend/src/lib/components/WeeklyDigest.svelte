@@ -100,10 +100,15 @@
     margin-bottom: 22px;
   }
   .wd-head { margin-bottom: 14px; }
+  /* Eyebrow, not headline: this module is auxiliary to the actual stories,
+     and giving it the same serif headline treatment as the news itself made
+     the pre-content stack read as four equal-weight front pages. Playfair is
+     reserved for real headlines; auxiliary modules get the small-caps label. */
   .wd-title {
     display: inline-flex; align-items: center; gap: 7px;
-    font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 700;
-    color: hsl(var(--pg-fg));
+    font: 800 11px/1 Inter, system-ui, sans-serif;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: hsl(var(--pg-fg-muted));
   }
   .wd-glyph { color: hsl(266 60% 55%); font-size: 15px; }
   .wd-sub { font-size: 12.5px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 4px 0 0; }
