@@ -820,6 +820,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             session = sessions.get(sid)
             if not session:
                 return self._send_json(404, {'error': 'session not found'})
+            caller = self._caller_principal()
+            if not (self._is_fleet_admin() or
+                    (caller and caller == session.get('principal'))):
+                return self._send_json(403, {'error': 'not_owner'})
             metrics = {'session_id': sid, 'status': session.get('status')}
             if session.get('provider') == 'hyperv' and session.get('provider_id'):
                 provider = _get_hyperv_provider()
@@ -841,6 +845,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             session = sessions.get(sid)
             if not session:
                 return self._send_json(404, {'error': 'session not found'})
+            caller = self._caller_principal()
+            if not (self._is_fleet_admin() or
+                    (caller and caller == session.get('principal'))):
+                return self._send_json(403, {'error': 'not_owner'})
             return self._send_json(200, session)
 
         # ── Admin endpoints ────────────────────────────────────────────
