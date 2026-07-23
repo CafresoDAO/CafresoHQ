@@ -13,6 +13,13 @@
   export let entries = [];             // index.entries — already fetched by the page
   export let onOpen = (_id) => {};      // open an entry (drawer)
   export let onTheme = (_word) => {};   // jump the browse filter to a theme
+  // Follow toggle on theme chips — News-only (explicit opt-in, default off)
+  // rather than a bare default no-op prop: Library is the calm reference
+  // view with none of News' urgency framing, so a "follow this topic" star
+  // there would be a dead-feeling affordance nobody asked for.
+  export let showFollow = false;
+  export let followed = [];            // array of followed topic words
+  export let onFollow = (_word) => {};
 
   $: d = weeklyDigest(entries);
   $: maxDaily = d ? Math.max(1, ...d.daily.map((x) => x.count)) : 1;
@@ -60,9 +67,19 @@
       <div class="wd-themes">
         <span class="wd-themes-label">Themes:</span>
         {#each d.themes as t}
-          <button class="wd-theme" on:click={() => onTheme(t.word)}>
-            {t.word} <span class="wd-theme-n">{t.count}</span>
-          </button>
+          {@const isFollowed = followed.includes(t.word)}
+          <span class="wd-theme" class:wd-theme-followed={isFollowed}>
+            <button class="wd-theme-word" on:click={() => onTheme(t.word)}>
+              {t.word} <span class="wd-theme-n">{t.count}</span>
+            </button>
+            {#if showFollow}
+              <button class="wd-theme-follow" on:click={() => onFollow(t.word)}
+                      aria-label={isFollowed ? `Unfollow ${t.word}` : `Follow ${t.word}`}
+                      title={isFollowed ? `Unfollow ${t.word} — stop getting a "new in followed topics" callout for it` : `Follow ${t.word} to get a callout when new stories land on your next visit`}>
+                <Icon name="star" size={11} weight={isFollowed ? 'fill' : 'regular'} />
+              </button>
+            {/if}
+          </span>
         {/each}
       </div>
     {/if}
@@ -134,25 +151,46 @@
 
   .wd-themes { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 14px; }
   .wd-themes-label { font-size: 11.5px; font-weight: 600; color: hsl(var(--pg-fg-muted)); margin-right: 2px; }
+  /* Now a wrapper span around two buttons (the theme filter + the optional
+     follow star) instead of one button — the pill chrome moved here so the
+     two inner buttons can sit flush against each other without a visible
+     seam. */
   .wd-theme {
-    display: inline-flex; align-items: center; gap: 5px;
-    border: 1px solid hsl(var(--pg-border)); border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: stretch;
+    border: 1px solid hsl(var(--pg-border)); border-radius: 999px;
     background: hsl(var(--pg-elevated)); color: hsl(var(--pg-fg));
-    font: 600 12px Inter, system-ui, sans-serif; padding: 5px 11px;
-    text-transform: capitalize; transition: border-color .14s, background .14s;
+    transition: border-color .14s, background .14s;
   }
   .wd-theme:hover { border-color: hsl(45 75% 58%); background: hsl(45 60% 95%); }
   :global(.dark) .wd-theme:hover { background: hsl(45 40% 22% / 0.4); }
+  .wd-theme-word {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: none; background: none; cursor: pointer; color: inherit;
+    font: 600 12px Inter, system-ui, sans-serif; padding: 5px 11px;
+    text-transform: capitalize;
+  }
   .wd-theme-n { font-size: 10.5px; color: hsl(var(--pg-fg-muted)); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .wd-theme-follow {
+    display: grid; place-items: center;
+    border: none; background: none; cursor: pointer;
+    padding: 0 10px 0 2px; color: hsl(var(--pg-fg-subtle));
+    border-left: 1px solid hsl(var(--pg-border));
+  }
+  .wd-theme-follow:hover { color: hsl(45 75% 45%); }
+  .wd-theme-followed { border-color: hsl(45 75% 55%); }
+  .wd-theme-followed .wd-theme-follow { color: hsl(45 80% 45%); border-left-color: hsl(45 60% 70%); }
+  :global(.dark) .wd-theme-followed .wd-theme-follow { color: hsl(45 85% 68%); }
 
+  /* Demoted from a bordered gold card to a flat inline row — this module is
+     auxiliary (see .wd-title's own demotion above); a card-chrome callout
+     inside an already-secondary module was competing with the actual news
+     lead story for "this is the important one" weight. */
   .wd-top {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-    border: 1px solid hsl(45 60% 78%); border-radius: 12px; cursor: pointer;
-    background: hsl(45 70% 96%); padding: 11px 13px;
-    transition: border-color .14s, transform .14s;
+    border: none; border-top: 1px solid hsl(var(--pg-border)); cursor: pointer;
+    background: none; padding: 12px 2px 0;
   }
-  .wd-top:hover { border-color: hsl(45 75% 55%); transform: translateY(-1px); }
-  :global(.dark) .wd-top { background: hsl(45 40% 18% / 0.35); border-color: hsl(45 40% 42%); }
+  .wd-top:hover .wd-top-q { text-decoration: underline; text-decoration-color: hsl(45 70% 55%); }
   .wd-top-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .wd-top-kicker { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(38 60% 38%); }
   :global(.dark) .wd-top-kicker { color: hsl(45 75% 68%); }

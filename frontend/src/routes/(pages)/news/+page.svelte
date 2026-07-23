@@ -27,6 +27,7 @@
   import WeeklyDigest from '$lib/components/WeeklyDigest.svelte';
   import RelatedEntries from '$lib/components/RelatedEntries.svelte';
   import { loadUpNext, addQuestion, normQ } from '$lib/stores/upnext.js';
+  import { followedTopics, loadFollowedTopics, toggleFollow, markVisit } from '$lib/stores/newsVisit.js';
   import { relatedEntries, findSimilarEntry, themes, sectionTag } from '$lib/utils/digest.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
   import { listComments, postComment } from '$lib/api/devlog.js';
@@ -68,6 +69,13 @@
         return sortBy === 'sources' ? [...out].sort((a, b) => b.sources - a.sources) : out;
       })()
     : [];
+  // Lifted out of the template (was {@const} inline in the river block) so
+  // script-level code — the unread-since-last-visit boundary below — can
+  // read the same lead/rest split the markup renders, instead of
+  // re-deriving it a second time and risking the two falling out of sync.
+  $: leadMode = sortBy === 'newest' && modeFilter === 'all' && !filterText.trim();
+  $: lead = leadMode ? filteredEntries[0] : null;
+  $: rest = lead ? filteredEntries.slice(1, shown) : filteredEntries.slice(0, shown);
   function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
   function setMode(m) { modeFilter = m; onFilterChange(); }
 
@@ -144,6 +152,15 @@
     if (e !== drawerId) { drawerId = e; loadDrawer(e); }
   }
 
+  // The river's own index row already has everything a reader needs to
+  // recognize the story (query, mode, askedBy, ts, a source COUNT) — the
+  // drawer used to discard all of that on open and show a generic shimmer
+  // until libraryEntry() round-tripped, even though the click that opened it
+  // came from a row rendering that exact data one line above. Painting the
+  // header from this instantly removes the cold-open flash; only the full
+  // answer/source-list/enrichment still waits on the real fetch below.
+  $: drawerPreview = drawerId && index?.entries ? index.entries.find((x) => x.id === drawerId) : null;
+
   async function loadDrawer(id) {
     drawerEntry = null;
     drawerMissing = false;
@@ -208,6 +225,26 @@
 
   function openEntry(id) { goto(`/news?e=${encodeURIComponent(id)}`, { noScroll: true }); }
   function closeDrawer() { goto('/news', { noScroll: true }); }
+  // Swipe-to-dismiss, grabber-only (not the whole sheet) so dragging inside
+  // the answer/sources text still scrolls normally instead of fighting a
+  // pan gesture. Downward-only: dragY clamps at 0 so the sheet can't be
+  // dragged past its resting position.
+  let dragStartY = null;
+  let dragY = 0;
+  let dragging = false;
+  function onGrabStart(e) { dragStartY = e.touches[0].clientY; dragging = true; }
+  function onGrabMove(e) {
+    if (!dragging || dragStartY == null) return;
+    dragY = Math.max(0, e.touches[0].clientY - dragStartY);
+  }
+  function onGrabEnd() {
+    dragging = false;
+    dragStartY = null;
+    // Don't snap dragY back to 0 before closing — the drawer would flash
+    // back to resting position for a frame while goto() unmounts it.
+    if (dragY > 90) { closeDrawer(); return; }
+    dragY = 0;
+  }
   // Copy-link with visible confirmation — "Copy link" that gives no feedback
   // reads as broken. The 2s reset means repeat copies re-confirm.
   let copiedLink = false;
@@ -221,16 +258,46 @@
   }
   function onKeydown(e) { if (e.key === 'Escape' && drawerId) closeDrawer(); }
 
+  // Which ids the reader has already seen — null until the first successful
+  // load, so the very first render never counts its own entries as "new."
+  let seenIds = null;
+  let newSinceRefresh = 0;    // count behind the "N new answers" banner
+  let showNewBanner = false;
+  let vitalsFlash = false;    // brief highlight on the vitals digits, below
+
   async function refresh() {
     const [ix, h] = await Promise.all([libraryIndex(), networkHealth()]);
-    if (ix) index = ix;
-    else if (index === null) index = { count: -1, entries: [] };   // unreachable → offline state
+    if (ix) {
+      // New entries are spliced into the feed the instant they arrive — the
+      // banner isn't gating that (holding back real answers behind a click
+      // would be its own kind of surprise), it's just naming what just
+      // changed so a reflow mid-read doesn't feel like the ground moving
+      // under you for no reason.
+      if (seenIds) {
+        const fresh = ix.entries.filter((e) => !seenIds.has(e.id));
+        if (fresh.length) {
+          newSinceRefresh += fresh.length;
+          showNewBanner = true;
+          vitalsFlash = true;
+          setTimeout(() => (vitalsFlash = false), 1400);
+        }
+      }
+      seenIds = new Set(ix.entries.map((e) => e.id));
+      index = ix;
+    } else if (index === null) index = { count: -1, entries: [] };   // unreachable → offline state
     if (h) health = h;
+  }
+  function clearNewBanner() { showNewBanner = false; newSinceRefresh = 0; }
+  function jumpToNewBanner() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    clearNewBanner();
   }
   onMount(() => {
     todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     refresh();
     loadUpNext();   // hydrate the personal research shortlist (localStorage)
+    lastVisitTs = markVisit();   // returns the PREVIOUS visit, stamps this one
+    loadFollowedTopics();
     const t = setInterval(refresh, 60_000);
     nowTick = Date.now();
     const clock = setInterval(() => (nowTick = Date.now()), 15_000);
@@ -368,6 +435,21 @@
   // one undifferentiated scroll. Only meaningful on the default newest-first
   // feed (see leadMode below); sorting by sources or filtering breaks the
   // chronological assumption a day header implies.
+  // Return-visit marker — null on a brand-new browser (no divider at all,
+  // there's no "before" to compare against) or if the last visit was too
+  // recent to be meaningful (avoids a same-session divider appearing after
+  // a stray reload). Set once in onMount, after markVisit() has already
+  // stamped the new "now" — this holds the OLD value for the rest of the
+  // page's life so the divider's position doesn't drift as time passes.
+  let lastVisitTs = null;
+  $: showUnreadDivider = !!lastVisitTs && (nowTick - lastVisitTs) > 2 * 60_000;
+  // Index (within `rest`) of the first entry at or before lastVisitTs — the
+  // reader has seen everything from here on, so the divider goes just
+  // above it. -1 means every visible entry is newer than the last visit
+  // (no divider needed, the whole page IS "new"); 0 means nothing is new.
+  $: unreadBoundary = showUnreadDivider
+    ? rest.findIndex((e) => { const d = nsToDate(e.ts); return d && d.getTime() <= lastVisitTs; })
+    : -1;
   $: dayBucket = (nowTick, (ns) => {
     const d = nsToDate(ns);
     if (!d) return '';
@@ -385,6 +467,21 @@
   // last 7 days, so older/quieter stories still get a shot at a label.
   $: pageThemes = index?.entries ? themes(index.entries, { limit: 24 }) : [];
   function rubric(e) { return sectionTag(plain(e.query), pageThemes); }
+  // "N new in topics you follow" — the payoff for following a topic at all.
+  // Only counts entries newer than the SAME lastVisitTs the unread divider
+  // uses, so the two return-visit signals always agree with each other.
+  $: followedNew = (() => {
+    if (!showUnreadDivider || !$followedTopics.length || !index?.entries) return { count: 0, words: [] };
+    const words = new Set();
+    let count = 0;
+    for (const e of index.entries) {
+      const d = nsToDate(e.ts);
+      if (!d || d.getTime() <= lastVisitTs) continue;
+      const tag = rubric(e);
+      if (tag && $followedTopics.includes(tag)) { count++; words.add(tag); }
+    }
+    return { count, words: [...words] };
+  })();
   // Deterministic color per rubric word — same topic, same color, across the
   // whole page and across reloads. The word HASHES to a palette slot rather
   // than to a raw 0-360 hue: an unconstrained hue can land on yellows that
@@ -420,6 +517,18 @@
     return Math.max(mode + 1, 3);
   })();
   function wellSourced(e) { return (e.sources || 0) >= wellSourcedThreshold; }
+  // River rows show at most ONE status badge (plus the rubric, which is a
+  // topic label, not a status) — the lead story keeps the full set. A busy
+  // entry (deep + well-sourced + gap-filled + fresh, all true at once) was
+  // stacking up to four pills before a reader even reached the headline;
+  // priority order picks the single most surprising/important signal.
+  function topStatus(e) {
+    if (e.askedBy === 'ai-gap') return 'gap';
+    if (e.mode === 'deep') return 'deep';
+    if (wellSourced(e)) return 'sourced';
+    if (isFresh(e.ts)) return 'fresh';
+    return null;
+  }
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
@@ -449,6 +558,20 @@
 </svelte:head>
 
 <svelte:window on:keydown={onKeydown} />
+
+<!-- New-answers banner — sticky at the very top of the viewport so it's
+     visible regardless of scroll depth when new entries land mid-read. -->
+{#if showNewBanner && newSinceRefresh > 0}
+  <div class="news-new-banner" role="status">
+    <button class="news-new-jump" on:click={jumpToNewBanner}>
+      <span class="lib-pulse-dot"></span>
+      {newSinceRefresh} new answer{newSinceRefresh === 1 ? '' : 's'} just landed — jump to top
+    </button>
+    <button class="news-new-dismiss" on:click={clearNewBanner} aria-label="Dismiss">
+      <Icon name="x" size={13} />
+    </button>
+  </div>
+{/if}
 
 <section class="space-y-8">
   <!-- ── Masthead: the one thing a Library card grid could never look like ──
@@ -560,7 +683,7 @@
         <span class="lib-skel" style="width: 260px; height: 34px;"></span>
       {:else if index.count > 0}
         <div class="news-vital">
-          <span class="news-vital-n">{index.count.toLocaleString()}</span>
+          <span class="news-vital-n" class:news-vital-flash={vitalsFlash}>{index.count.toLocaleString()}</span>
           <span class="news-vital-label">Answered on-chain</span>
         </div>
         {#if health}
@@ -571,7 +694,7 @@
             <span class="news-vital-label">{health.activeWorkers > 0 ? (health.activeWorkers === 1 ? 'Worker online' : 'Workers online') : 'Network asleep'}</span>
           </div>
           <div class="news-vital">
-            <span class="news-vital-n">{health.answeredToday}</span>
+            <span class="news-vital-n" class:news-vital-flash={vitalsFlash}>{health.answeredToday}</span>
             <span class="news-vital-label">Answered today</span>
           </div>
         {/if}
@@ -581,7 +704,18 @@
 
   <!-- ── This week in the library: what got answered ──────────────────────── -->
   {#if index && index.entries}
-    <WeeklyDigest entries={index.entries} onOpen={openEntry} onTheme={jumpToTheme} />
+    {#if followedNew.count > 0}
+      <div class="news-followed-callout">
+        <Icon name="star" size={13} weight="fill" />
+        {followedNew.count} new in topics you follow:
+        {#each followedNew.words as w, i}
+          <button class="news-hero-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={() => jumpToTheme(w)}>{w}</button>{i < followedNew.words.length - 1 ? ',' : ''}
+        {/each}
+      </div>
+    {/if}
+    <WeeklyDigest entries={index.entries} onOpen={openEntry} onTheme={jumpToTheme}
+                  showFollow followed={$followedTopics} onFollow={toggleFollow} />
   {/if}
 
   <!-- ── Up Next: personal research shortlist ─────────────────────────────── -->
@@ -677,10 +811,6 @@
            if the entry has one. Filter or sort and the lead drops out —
            every row goes back to equal weight, the way a search result
            should. -->
-      {@const leadMode = sortBy === 'newest' && modeFilter === 'all' && !filterText.trim()}
-      {@const lead = leadMode ? filteredEntries[0] : null}
-      {@const rest = lead ? filteredEntries.slice(1, shown) : filteredEntries.slice(0, shown)}
-
       {#if lead}
         {@const visual = cardVisuals[lead.id]}
         {@const leadTag = rubric(lead)}
@@ -721,12 +851,19 @@
       <ol class="news-river">
         {#each rest as e, i (e.id)}
           {@const visual = cardVisuals[e.id]}
-          {@const fresh = isFresh(e.ts)}
           {@const tag = rubric(e)}
+          {@const status = topStatus(e)}
           {@const bucket = leadMode ? dayBucket(e.ts) : null}
           {@const prevBucket = leadMode && i > 0 ? dayBucket(rest[i - 1].ts) : (leadMode ? dayBucket(lead.ts) : null)}
+          {#if unreadBoundary > 0 && i === unreadBoundary}
+            <li class="news-day-sep news-unread-sep" role="heading" aria-level="2"><span>Since your last visit</span></li>
+          {/if}
           {#if bucket && bucket !== prevBucket}
-            <li class="news-day-sep" aria-hidden="true"><span>{bucket}</span></li>
+            <!-- Was aria-hidden — sighted readers get "dated editions"
+                 structure from this, screen-reader users got nothing. A
+                 heading role lets AT users jump editions the way sighted
+                 readers scan them, instead of hearing one flat 300-item list. -->
+            <li class="news-day-sep" role="heading" aria-level="2"><span>{bucket}</span></li>
           {/if}
           <li>
             <button class="news-row" class:news-row-deep={e.mode === 'deep'} on:click={() => openEntry(e.id)}>
@@ -735,10 +872,10 @@
                 <div class="news-row-tags">
                   {#if tag}<span class="news-rubric" role="link" title="See all {tag} coverage" style="--rh: {rubricHue(tag)}"
                          on:click|stopPropagation={() => jumpToTheme(tag)}>{tag}</span>{/if}
-                  {#if fresh}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
-                  {#if e.mode === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
-                  {#if wellSourced(e)}<span class="news-tag news-tag-sourced" title="{e.sources} sources cited — above the network's typical count. Cited, not cross-verified.">◆ {e.sources} Sources</span>{/if}
-                  {#if e.askedBy === 'ai-gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
+                  {#if status === 'fresh'}<span class="news-tag news-tag-live"><span class="news-tag-dot" aria-hidden="true"></span> Just In</span>{/if}
+                  {#if status === 'deep'}<span class="news-tag"><Icon name="tree-structure" size={10} /> Deep Research</span>{/if}
+                  {#if status === 'sourced'}<span class="news-tag news-tag-sourced" title="{e.sources} sources cited — above the network's typical count. Cited, not cross-verified.">◆ {e.sources} Sources</span>{/if}
+                  {#if status === 'gap'}<span class="news-tag" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>{/if}
                 </div>
                 <h3>{plain(e.query)}</h3>
                 <div class="news-byline">
@@ -772,7 +909,17 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="lib-drawer-backdrop" on:click={closeDrawer}></div>
-  <aside class="lib-drawer" use:trapFocus role="dialog" aria-modal="true" aria-label="Library entry">
+  <aside class="lib-drawer" use:trapFocus role="dialog" aria-modal="true" aria-label="Library entry"
+         style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)'};">
+    <!-- Grabber + swipe-to-dismiss — mobile only (see .lib-drawer-grabber's
+         display:none default). On desktop the drawer is a right-side panel
+         with no "down" to swipe toward; on a scrolled-down mobile bottom
+         sheet, the 40px close button up top is the ONLY other way out, and
+         it's a long reach from wherever the reader's thumb actually is. -->
+    <div class="lib-drawer-grabber" role="presentation"
+         on:touchstart={onGrabStart} on:touchmove={onGrabMove} on:touchend={onGrabEnd}>
+      <span aria-hidden="true"></span>
+    </div>
     <button class="lib-drawer-close" on:click={closeDrawer} aria-label="Close entry">
       <Icon name="x" size={16} />
     </button>
@@ -951,6 +1098,27 @@
         <h2>Entry not found</h2>
         <p>It may have been withdrawn by its author.</p>
       </div>
+    {:else if drawerPreview}
+      <!-- Instant paint: real headline/tags/byline from the index row the
+           reader just clicked, while the full answer round-trips below. -->
+      <div class="lib-kicker">Library entry · {drawerPreview.id}</div>
+      <h2 class="lib-drawer-q">{plain(drawerPreview.query)}</h2>
+      <div class="lib-chips" style="margin-bottom: 18px;">
+        {#if drawerPreview.mode === 'deep'}
+          <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+        {/if}
+        {#if drawerPreview.askedBy === 'ai-gap'}
+          <span class="lib-chip lib-chip-ai"
+                title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">
+            ✦ Asked by Cafreso to fill a gap
+          </span>
+        {/if}
+        <span class="lib-chip">📅 {fmtDate(drawerPreview.ts)}</span>
+        <span class="lib-chip">{drawerPreview.sources} source{drawerPreview.sources === 1 ? '' : 's'}</span>
+      </div>
+      <div class="lib-skel" style="width: 100%; height: 12px; margin-bottom: 8px;"></div>
+      <div class="lib-skel" style="width: 95%; height: 12px; margin-bottom: 8px;"></div>
+      <div class="lib-skel" style="width: 70%; height: 12px;"></div>
     {:else}
       <div class="lib-skel" style="width: 40%; height: 12px; margin: 8px 0 16px;"></div>
       <div class="lib-skel" style="width: 90%; height: 26px; margin-bottom: 18px;"></div>
@@ -962,6 +1130,41 @@
 {/if}
 
 <style>
+  /* ── New-answers banner ───────────────────────────────────────────────
+     Sticky, not fixed: it scrolls into place at the top of the viewport
+     rather than overlaying content permanently, so it can't cover the
+     masthead/nav or linger once scrolled past its own natural position. */
+  .news-new-banner {
+    position: sticky; top: 8px; z-index: 5;
+    display: flex; align-items: center; gap: 4px;
+    max-width: 620px; margin: 0 auto 14px;
+    background: hsl(var(--pg-fg)); border-radius: 999px;
+    box-shadow: 0 10px 30px -12px hsl(0 0% 0% / 0.35);
+  }
+  .news-new-jump {
+    flex: 1; display: flex; align-items: center; gap: 8px; justify-content: center;
+    border: none; background: none; cursor: pointer; padding: 10px 8px 10px 16px;
+    font: 700 12.5px Inter, system-ui, sans-serif; color: hsl(var(--pg-surface));
+  }
+  .news-new-dismiss {
+    flex-shrink: 0; display: grid; place-items: center;
+    width: 30px; height: 30px; margin-right: 6px; border-radius: 50%;
+    border: none; background: transparent; color: hsl(var(--pg-surface));
+    opacity: 0.7; cursor: pointer;
+  }
+  .news-new-dismiss:hover { opacity: 1; background: hsl(0 0% 100% / 0.15); }
+
+  /* "N new in topics you follow" — the payoff for the star toggle on
+     WeeklyDigest's theme chips, sitting right above it so the cause (you
+     followed something) and effect (here's what's new) are adjacent. */
+  .news-followed-callout {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    margin-bottom: 14px; padding: 10px 16px; border-radius: 12px;
+    background: hsl(45 70% 96%); color: hsl(38 60% 32%);
+    font-size: 13px; font-weight: 600;
+  }
+  :global(.dark) .news-followed-callout { background: hsl(45 40% 18% / 0.35); color: hsl(45 80% 78%); }
+
   /* ── Masthead — a real nameplate, the fastest way to make this page not
        look like a re-skinned Library. Red is the one accent Library never
        uses (its whole palette is warm gold-on-cream/dark) — reserved here
@@ -1063,6 +1266,19 @@
   }
   .news-vital-n.news-vital-live { color: hsl(150 60% 38%); }
   :global(.dark) .news-vital-n.news-vital-live { color: hsl(150 65% 62%); }
+  /* Brief highlight when refresh() detects new entries — the one visible
+     "something just happened" cue on numbers that otherwise only change
+     silently every 60s. */
+  .news-vital-n.news-vital-flash { animation: news-vital-flash 1.4s ease-out; }
+  @keyframes news-vital-flash {
+    0% { color: hsl(355 65% 48%); transform: scale(1.12); }
+    100% { color: inherit; transform: scale(1); }
+  }
+  :global(.dark) .news-vital-n.news-vital-flash { animation-name: news-vital-flash-dark; }
+  @keyframes news-vital-flash-dark {
+    0% { color: hsl(355 80% 68%); transform: scale(1.12); }
+    100% { color: inherit; transform: scale(1); }
+  }
   .news-vital-label {
     font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
     color: hsl(var(--pg-fg-muted));
@@ -1204,6 +1420,20 @@
     font: 800 11px/1 'JetBrains Mono', ui-monospace, monospace;
     letter-spacing: 0.1em; text-transform: uppercase;
     color: hsl(355 60% 50%);
+  }
+  /* Personal, not editorial — a different color from the day headers (red)
+     so "since YOU were last here" doesn't read as another dated edition. */
+  .news-unread-sep {
+    display: flex; align-items: center; gap: 10px;
+    padding-top: 26px !important;
+  }
+  .news-unread-sep span {
+    color: hsl(215 60% 48%);
+  }
+  :global(.dark) .news-unread-sep span { color: hsl(215 80% 70%); }
+  .news-unread-sep::after {
+    content: ''; flex: 1; height: 1px; background: hsl(var(--pg-border));
+    margin-top: 22px;
   }
   .news-row {
     display: flex; align-items: flex-start; gap: 16px; width: 100%;
@@ -1483,6 +1713,11 @@
   @media (pointer: coarse) {
     .lib-drawer-close { width: 40px; height: 40px; }
   }
+  /* Grabber — desktop gets nothing (a right-side panel has no "down" to
+     swipe toward); the bottom-sheet media query below gives it real size
+     and a visible pill once the drawer becomes a sheet. touch-action: none
+     stops the browser's own scroll/refresh gestures from fighting the drag. */
+  .lib-drawer-grabber { display: none; }
   .lib-drawer-q {
     font-family: 'Playfair Display', serif;
     font-size: 24px; font-weight: 700; line-height: 1.25;
@@ -1561,14 +1796,32 @@
       border-left: none; border-top: 1px solid hsl(var(--pg-border));
       border-radius: 22px 22px 0 0;
       animation: lib-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+      padding-top: 30px;   /* room for the grabber above the close button */
     }
     @keyframes lib-sheet-in { from { transform: translateY(40px); opacity: 0; } }
+    .lib-drawer-grabber {
+      display: flex; justify-content: center;
+      position: absolute; top: 0; left: 0; right: 0; height: 26px;
+      touch-action: none; cursor: grab;
+    }
+    .lib-drawer-grabber span {
+      margin-top: 9px; width: 38px; height: 4px; border-radius: 999px;
+      background: hsl(var(--pg-border));
+    }
 
     /* Section controls stop stacking into a tall wall: the sort dropdown
        sits inline with a shrinking filter field. */
     .lib-browse-title { font-size: 19px; }
     .lib-filterbar { gap: 8px; }
     .lib-sort-select { font-size: 12px; padding: 8px 10px; }
+  }
+  /* Sub-40px touch targets — the filter-clear button and sort dropdown were
+     sized for a mouse cursor, not a fingertip. pointer:coarse (not the
+     640px breakpoint above) since a touch tablet at desktop width has the
+     same problem a phone does. */
+  @media (pointer: coarse) {
+    .lib-filter-clear { width: 40px; height: 40px; }
+    .lib-sort-select { min-height: 40px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
