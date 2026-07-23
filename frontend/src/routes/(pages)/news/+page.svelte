@@ -79,6 +79,11 @@
   // while a request is still in flight (cardVisuals only gains the key once
   // the fetch resolves, which would otherwise look identical to "not yet asked").
   let cardVisuals = {};   // id -> null (no enrichment) | {thumb, favicons}
+  // The lead story's thumbnail is the biggest single image on the page
+  // (a 21:9 hero, not a small card square) — a broken/hotlink-blocked Brave
+  // thumbnail there would reserve a huge blank void instead of a subtle gap.
+  // Only commit the space once the image has actually confirmed it loads.
+  let leadThumbLoaded = {};   // entry id -> true once its image has loaded
   const requestedIds = new Set();
   $: {
     for (const e of filteredEntries.slice(0, shown)) {
@@ -621,7 +626,11 @@
         {@const visual = cardVisuals[lead.id]}
         <button class="news-lead" on:click={() => openEntry(lead.id)}>
           {#if visual?.thumb}
-            <div class="news-lead-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+            <img src={visual.thumb} alt="" class="news-thumb-probe"
+                 on:load={() => (leadThumbLoaded = { ...leadThumbLoaded, [lead.id]: true })} />
+            {#if leadThumbLoaded[lead.id]}
+              <div class="news-lead-thumb" style="background-image:url('{visual.thumb}')" role="presentation"></div>
+            {/if}
           {/if}
           <div class="news-lead-body">
             <div class="news-row-tags">
@@ -1119,6 +1128,7 @@
     border-bottom: 3px solid hsl(var(--pg-fg));
     font: inherit; color: inherit;
   }
+  .news-thumb-probe { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .news-lead-thumb {
     width: 100%; aspect-ratio: 21 / 9; max-height: 420px; border-radius: 10px;
     background-size: cover; background-position: center;
