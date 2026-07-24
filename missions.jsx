@@ -251,11 +251,13 @@ async function runMissionIteration(ctx) {
       onHint: flush.note,
       onTool: ev => {
         if (ev.phase === 'done') {
+          /* Only actual writes. FILE_READ used to land in here too, which
+             (a) inflated the "writes" stat shown in the missions modal and
+             (b) grew the persisted blob by one record per read for the whole
+             mission — hours of iterations bloated every localStorage +
+             server PUT. */
           if (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND') {
             writesThisIter.push({ name: ev.name, path: String(ev.arg || '').trim(), at: Date.now() });
-          }
-          if (ev.name === 'FILE_READ') {
-            writesThisIter.push({ name: 'FILE_READ', path: String(ev.arg || '').trim(), at: Date.now() });
           }
           pulseGraph && pulseGraph(ev);
         } else if (ev.phase === 'start') {
@@ -325,7 +327,8 @@ async function runMissionIteration(ctx) {
     iterations: x.iterations + 1,
     lastIterationAt: startedThisRun,
     lastAction: cleaned.slice(0, 160),
-    notesWritten: [...(x.notesWritten || []), ...writesThisIter],
+    // Keep the recent tail only — this array persists on every iteration.
+    notesWritten: [...(x.notesWritten || []), ...writesThisIter].slice(-200),
     tokensUsed: (x.tokensUsed || 0) + usedTokens,
     errors: 0, // streak reset on success
     status: completed ? 'done' : x.status,
@@ -341,10 +344,44 @@ async function runMissionIteration(ctx) {
    user can stop cleanly via clearTimeout. We hold the timer id in a ref
    keyed by mission id.
    ========================================================================== */
+/* Single-runner lease: mission state persists to localStorage AND the server
+   file, so two open tabs both saw status:'running' and BOTH fired iterations
+   — duplicate vault notes, double token burn, and racing PUTs. A cheap
+   localStorage heartbeat elects one runner tab; the others idle until the
+   lease goes stale (leader closed) and then take over within LEASE_TTL. */
+const MISSION_LEASE_KEY = 'cafresohq_mission_leader_v1';
+const MISSION_LEASE_TTL = 15000;
+const _missionTabId = 't' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+function _haveMissionLease() {
+  try {
+    let cur = null;
+    try { cur = JSON.parse(localStorage.getItem(MISSION_LEASE_KEY) || 'null'); } catch (_e) {}
+    const now = Date.now();
+    if (!cur || !cur.ts || (now - cur.ts) > MISSION_LEASE_TTL || cur.tab === _missionTabId) {
+      localStorage.setItem(MISSION_LEASE_KEY, JSON.stringify({ tab: _missionTabId, ts: now }));
+      return true;
+    }
+    return false;
+  } catch (_e) { return true; }   // no localStorage → can't have a second tab racing us anyway
+}
+function _releaseMissionLease() {
+  try {
+    const cur = JSON.parse(localStorage.getItem(MISSION_LEASE_KEY) || 'null');
+    if (cur && cur.tab === _missionTabId) localStorage.removeItem(MISSION_LEASE_KEY);
+  } catch (_e) {}
+}
+
 function useMissionRunner(missions, setMissions, ctx) {
   const timersRef = useRMission({});    // { missionId: timeoutId }
   const runningRef = useRMission({});   // { missionId: true } guards against double-fires
   const abortersRef = useRMission({});  // { missionId: AbortController } — lets stop/pause kill in-flight fetches
+  /* Ticks the scheduling effect periodically so a follower tab notices a
+     stale lease (leader tab closed) and takes over the running missions. */
+  const [leaseTick, setLeaseTick] = useSM(0);
+  useEMission(() => {
+    const iv = setInterval(() => setLeaseTick(t => t + 1), MISSION_LEASE_TTL);
+    return () => clearInterval(iv);
+  }, []);
 
   /* Inject setMissions into the ctx so runMissionIteration (and the runner's
      own status updates) can see it. Earlier this wasn't threaded through and
@@ -373,10 +410,11 @@ function useMissionRunner(missions, setMissions, ctx) {
     }
 
     /* Schedule each running mission. Don't reschedule if a timer is
-       already pending for it. */
+       already pending for it. Only the lease-holding tab schedules at all. */
     for (const m of missions) {
       if (m.status !== 'running') continue;
       if (timersRef.current[m.id]) continue;
+      if (!_haveMissionLease()) continue;
 
       /* Time-budget check: stop if we've blown past the duration. */
       const deadline = m.startedAt + m.durationMs;
@@ -396,9 +434,17 @@ function useMissionRunner(missions, setMissions, ctx) {
          and the user sees activity. Subsequent iterations honor interval. */
       const fireIn = m.iterations === 0 ? 1000 : m.intervalMs;
 
-      timersRef.current[m.id] = setTimeout(async () => {
+      /* Named so it can re-arm itself: the old anonymous callback RETURNED
+         when it fired while the previous iteration was still unwinding —
+         and since a stalled mission never touches `missions` state, the
+         scheduling effect never re-ran and the mission sat 'running'
+         forever with no timer. Now it retries shortly instead of dropping. */
+      const fire = async () => {
         delete timersRef.current[m.id];
-        if (runningRef.current[m.id]) return;
+        if (runningRef.current[m.id]) {
+          timersRef.current[m.id] = setTimeout(fire, 1500);
+          return;
+        }
         runningRef.current[m.id] = true;
         const controller = new AbortController();
         abortersRef.current[m.id] = controller;
@@ -409,6 +455,13 @@ function useMissionRunner(missions, setMissions, ctx) {
             ? ctxWithSetters.missionsRef.current
             : missions).find(x => x.id === m.id);
           if (!latest || latest.status !== 'running') return;
+          /* Deadline re-check at FIRE time — the timer scheduled just before
+             the budget ran out used to run one full extra iteration. */
+          if (Date.now() >= (latest.startedAt + latest.durationMs)) {
+            setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+            return;
+          }
+          _haveMissionLease();   // renew the heartbeat while we work
           const agent = ctxWithSetters.agentsRef.current.find(a => a.id === latest.agentId);
           if (!agent) {
             setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'error', lastError: 'agent removed' } : x));
@@ -431,9 +484,10 @@ function useMissionRunner(missions, setMissions, ctx) {
           runningRef.current[m.id] = false;
           if (abortersRef.current[m.id] === controller) delete abortersRef.current[m.id];
         }
-      }, fireIn);
+      };
+      timersRef.current[m.id] = setTimeout(fire, fireIn);
     }
-  }, [missions]);
+  }, [missions, leaseTick]);
 
   /* Unmount: clear all timers + abort all in-flight fetches so a tab
      navigation doesn't leak streams that keep draining the API quota. */
@@ -444,6 +498,7 @@ function useMissionRunner(missions, setMissions, ctx) {
     }
     timersRef.current = {};
     abortersRef.current = {};
+    _releaseMissionLease();   // let another open tab take over promptly
   }, []);
 }
 

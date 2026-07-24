@@ -31,16 +31,47 @@ const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, Com
    `transform` callback lets callers drop runtime-only fields before saving.
    Save failures (quota, private mode, corruption) dispatch a window event so
    the App can surface a toast instead of vanishing silently. */
+/* JSON.parse succeeding is NOT the same as the value being usable: a stored
+   literal "null" or a schema-drifted scalar parses fine and then explodes at
+   the first `.map`/spread — a white-screen boot with nothing in the console
+   pointing at the key. Type-check the parsed value against the default's
+   shape and fall back when they disagree. */
+function _shapeMatches(parsed, base) {
+  if (base == null) return true;                    // no opinion to enforce
+  if (Array.isArray(base)) return Array.isArray(parsed);
+  const t = typeof base;
+  if (t === 'object') return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
+  return typeof parsed === t;
+}
 function useStored(key, initial, transform) {
   const [v, set] = useStateA(() => {
+    const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
       const raw = localStorage.getItem(key);
-      if (raw == null) return typeof initial === 'function' ? initial() : initial;
-      return JSON.parse(raw);
+      if (raw == null) return fallback();
+      const parsed = JSON.parse(raw);
+      const base = fallback();
+      return _shapeMatches(parsed, base) ? parsed : base;
     } catch (_e) {
-      return typeof initial === 'function' ? initial() : initial;
+      return fallback();
     }
   });
+  /* Cross-tab: absorb another tab's write instead of clobbering it later
+     with our stale copy (the `storage` event only fires in OTHER tabs, so
+     there's no loop). Only while unfocused — the tab the user is actively
+     typing/streaming in keeps its own state authoritative. */
+  useEffectA(() => {
+    const onStorage = (e) => {
+      if (e.key !== key || e.newValue == null) return;
+      if (typeof document !== 'undefined' && document.hasFocus && document.hasFocus()) return;
+      try {
+        const parsed = JSON.parse(e.newValue);
+        set(prev => _shapeMatches(parsed, prev) ? parsed : prev);
+      } catch (_e) {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [key]);
   const timer = useRefA(null);
   useEffectA(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -65,17 +96,26 @@ function useStored(key, initial, transform) {
    Pass sensitive:true to skip file persistence (API keys etc). */
 function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false } = {}) {
   const [val, setVal] = useStateA(() => {
+    const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
       const raw = localStorage.getItem(lsKey);
-      const parsed = raw ? JSON.parse(raw) : (typeof initial === 'function' ? initial() : initial);
+      if (raw == null) { const b = fallback(); return transform ? transform(b) : b; }
+      let parsed = JSON.parse(raw);
+      if (!_shapeMatches(parsed, fallback())) parsed = fallback();
       return transform ? transform(parsed) : parsed;
-    } catch (_e) { return typeof initial === 'function' ? initial() : initial; }
+    } catch (_e) { return fallback(); }
   });
 
   const writeRef = useRefA(null);
 
   const persist = React.useCallback((v) => {
-    try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (_e) {}
+    try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (err) {
+      /* Sensitive keys (API keys) have NO file fallback — if this write
+         fails (quota, private mode) the key silently doesn't survive a
+         reload. Surface it like useStored does instead of swallowing. */
+      console.warn('[cafresohq] localStorage save failed for', lsKey, err);
+      try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err } })); } catch (_e) {}
+    }
     if (sensitive) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
@@ -1702,7 +1742,14 @@ function App() {
   const [standupOpen, setStandupOpen] = useStateA(false);
   const [lastStandup, setLastStandup] = useStored(k('lastStandup'), 0); // ms timestamp of last opened
   const [pins, setPins] = useFileStored(k('pins'), 'state', 'pins', []);
-  const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', []);
+  /* Load-scrub: a mission persisted as 'running' must NOT auto-resume on
+     reload — that silently restarted iterations (and token spend) the user
+     never re-authorized, with a time budget already eaten by wall-clock
+     downtime. Reload lands it in 'paused'; resuming is an explicit click,
+     which is what the missions header always claimed happened. */
+  const missionsOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
+    .map(m => m && m.status === 'running' ? { ...m, status: 'paused', pauseNote: 'paused on reload — resume to continue' } : m), []);
+  const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', [], missionsOnLoad);
   const [missionsOpen, setMissionsOpen] = useStateA(false);
   const [workflows, setWorkflows] = useFileStored(k('workflows'), 'state', 'workflows', []);
   const [projects, setProjects] = useFileStored(k('projects'), 'state', 'projects', []);
@@ -2033,6 +2080,14 @@ ${d.text}` : d.text,
   const abortAgentRun = (agentId) => {
     const c = agentAbortersRef.current.get(agentId);
     if (c) { try { c.abort(); } catch (_e) {} agentAbortersRef.current.delete(agentId); }
+  };
+  /* The chat Stop button's reach. Room / @-mention / brainstorm / handoff
+     sends run through dispatchToAgent's per-agent controllers, which the
+     panel's own abortRef never saw — so "■ Stop" was a no-op for exactly
+     the multi-agent phases most likely to run long. */
+  const abortAllAgentRuns = () => {
+    for (const c of agentAbortersRef.current.values()) { try { c.abort(); } catch (_e) {} }
+    agentAbortersRef.current.clear();
   };
   // Abort everything in flight when the App unmounts (e.g. tab nav, HMR).
   useEffectA(() => () => {
@@ -3992,6 +4047,7 @@ ${d.text}` : d.text,
   // same props without duplication.
   const sharedChatPanel = (
     <ChatPanel agents={agents} chat={chat} setChat={setChat}
+      backendDown={backendDown} onStopAll={abortAllAgentRuns}
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
@@ -4662,7 +4718,7 @@ ${d.text}` : d.text,
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
-        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity}/>
+        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
       <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>

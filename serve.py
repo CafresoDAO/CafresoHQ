@@ -4994,6 +4994,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # container (and vice-versa) instead of hard-failing. See API_VERSION.
             'apiVersion':       API_VERSION,
             'mode':             _fleet_mode,
+            # managed: True when Cafreso provisioned this container (fleet
+            # mode set by fleet-manager). The premium UI reads this to show
+            # plan/container status; 'local' self-hosts report False.
+            'managed':          _fleet_mode not in ('', 'local'),
             'vault_backend':    _vault_backend,
             'uptime_seconds':   int(time.time() - _server_start_time),
             'platform':         platform.system(),

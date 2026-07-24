@@ -2703,7 +2703,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
   );
 }
 
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -2884,9 +2884,18 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   /* Stick-to-bottom scrolling. Follow the stream only while the user is
      already at (or near) the bottom; scrolling up to read scrollback pauses
      auto-scroll instead of fighting it, and scrolling back down (or switching
-     threads) re-engages. Runs after every render so streaming tokens are
-     followed too — a single scrollIntoView no-op when not stuck. */
+     threads) re-engages.
+
+     Pinning writes screenRef.scrollTop directly rather than
+     bottomRef.scrollIntoView() — scrollIntoView walks up the ancestor chain
+     and can also nudge the window/parent, which is what made the older
+     version drift off the newest message. A direct scrollTop write stays
+     contained to the chat viewport. */
   const stickRef = useRef(true);
+  const pinToBottom = React.useCallback(() => {
+    const el = screenRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
   useEffect(() => {
     const el = screenRef.current;
     if (!el) return;
@@ -2896,15 +2905,37 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
-  useLayoutEffect(() => { stickRef.current = true; }, [activeThread]);
-  useLayoutEffect(() => {
-    if (stickRef.current && bottomRef.current)
-      bottomRef.current.scrollIntoView({ block: 'end' });
-  });
+  /* Switching threads always re-engages stick and jumps to the newest
+     message — you never land mid-scrollback in a thread you just opened. */
+  useLayoutEffect(() => { stickRef.current = true; pinToBottom(); }, [activeThread]);
+  /* Follow content growth via a MutationObserver instead of a render-only
+     effect. New messages, streamed tokens, AND late layout shifts (markdown
+     or images resolving height after first paint) all mutate the scroll
+     subtree — a render-only effect misses the async ones and leaves the view
+     stranded a few lines above the true bottom. rAF-coalesced so a burst of
+     streamed tokens collapses into one scroll. */
+  useEffect(() => {
+    const el = screenRef.current;
+    if (!el || typeof MutationObserver === 'undefined') return;
+    let raf = 0;
+    const follow = () => { raf = 0; if (stickRef.current) el.scrollTop = el.scrollHeight; };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(follow); };
+    const mo = new MutationObserver(schedule);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, []);
 
   const send = async () => {
     const text = input.trim();
     if (!text || streaming) return;
+    /* Hard gate, not just the banner: with no live container every path
+       below silently no-ops (the POST hits a dead origin and streams zero
+       tokens), so the user watched an empty bubble appear. Refuse loudly
+       and keep their draft in the composer. */
+    if (backendDown) {
+      if (window.cafresohqToast) window.cafresohqToast.error('Not connected to your HQ container — reconnecting…');
+      return;
+    }
 
     /* If the boss is composing inside a project or meeting room, the default
        behavior is "send to everyone in the room" — fan out in parallel,
@@ -3089,12 +3120,19 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       return;
     }
 
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text };
-    const pendingChat = [...chat, userMsg];
-    setChat(pendingChat);
+    /* Thread-stamp BOTH sides of the CEO exchange. Without it they defaulted
+       to 'direct', so a user typing in an empty project/meeting room (zero
+       participants falls through to this path) watched their message vanish
+       from the room they were looking at.
+       Functional update + capture: the old `[...chat, userMsg]` snapshot
+       replaced the whole array from a stale closure, erasing anything that
+       landed in state since the last render (agent DMs, research lines). */
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: activeThread };
+    let pendingChat = [];
+    setChat(prev => { pendingChat = [...prev, userMsg]; return pendingChat; });
     setStreaming(true);
     const ceoId = HQ.uid('m');
-    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true }]);
+    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = HQ.throttleTokens(setChat, ceoId);
@@ -3114,12 +3152,19 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
            onHint: flush.note });
       flush.flushNow();
     } catch (err) {
+      /* Kill any rAF flush scheduled just before the abort — it would fire
+         AFTER this rewrite and overwrite the "(stopped)" marker with the
+         raw truncated text. */
+      flush.cancel();
       const stopped = err.name === 'AbortError';
       setChat(prev => prev.map(m => m.id === ceoId
         ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped}
         : m));
     }
-    abortRef.current = null;
+    /* Deliberately NOT clearing abortRef here — the DM fan-out and synthesis
+       below reuse this controller's signal, and nulling it early made the
+       Stop button dead for exactly the phases that run longest. It's cleared
+       at the end of the CEO turn. */
     let finalText = '';
     setChat(prev => {
       const next = prev.map(m => m.id === ceoId ? {...m, streaming: false} : m);
@@ -3242,9 +3287,16 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
       }
     }
+    if (abortRef.current === controller) abortRef.current = null;
   };
 
-  const stop = () => { if (abortRef.current) abortRef.current.abort(); };
+  /* Stop reaches BOTH abort surfaces: the panel's own CEO controller and the
+     per-agent controllers that dispatchToAgent registers in the host (room /
+     @-mention / brainstorm / handoff sends run through those). */
+  const stop = () => {
+    if (abortRef.current) abortRef.current.abort();
+    if (onStopAll) onStopAll();
+  };
 
   /* When the user types @, scan backwards from the caret to see if we're
      inside a fresh mention token (preceded by start-of-input or whitespace).
@@ -3509,7 +3561,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}`}>
               <div className="who" title={_whoLabel}>
                 <span className="who-name">{_whoLabel}</span>
-                {m.target ? <span className="who-target">→ @{m.target}</span> : null}
+                {/* m.target already carries its own @ prefix(es) — prefixing
+                    again rendered "→ @@kip". */}
+                {m.target ? <span className="who-target">→ {String(m.target).startsWith('@') ? m.target : '@' + m.target}</span> : null}
                 {m.pinned ? <span className="msg-pinned-badge" title="pinned">📌</span> : null}
               </div>
               <div className="bubble">
@@ -3532,9 +3586,13 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       {m.from !== 'user' ? (
                         <>
                           <button title="Re-run this prompt" onClick={() => {
+                            /* Scan only THIS message's thread — the chat array
+                               interleaves all threads, so an unscoped walk could
+                               grab a user prompt from a different room. */
+                            const mThread = m.thread || 'direct';
                             const idx = chat.findIndex(x => x.id === m.id);
                             for (let i = idx - 1; i >= 0; i--) {
-                              if (chat[i].from === 'user') {
+                              if (chat[i].from === 'user' && (chat[i].thread || 'direct') === mThread) {
                                 setInput(chat[i].text);
                                 break;
                               }
@@ -3575,9 +3633,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           <button className="composer-mini composer-mini--ghost" onClick={()=>setShowDelegate(s=>!s)} title="Hand off to a sub-agent">
             <Ico kind="delegate" size={11}/> Delegate
           </button>
+          {backendDown && !streaming && (
+            <span className="composer-offline" title="Chat needs your live HQ container — reconnecting automatically">
+              ⚠ offline — reconnecting…
+            </span>
+          )}
           {streaming
             ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Stop streaming">■ Stop</button>
-            : <button className="composer-mini composer-mini--primary" onClick={send} title="Send (Enter)">Send ↵</button>}
+            : <button className="composer-mini composer-mini--primary" onClick={send} disabled={backendDown}
+                title={backendDown ? 'Not connected to your HQ container' : 'Send (Enter)'}>Send ↵</button>}
         </div>
         <textarea
           ref={composerRef}

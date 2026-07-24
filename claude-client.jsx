@@ -327,11 +327,21 @@ function normalizeMessages(msgs) {
   return out;
 }
 
-async function parseSSE(stream, onLine) {
+/* Takes the whole Response (not just the body) so it can refuse non-stream
+   answers instead of treating them as a successful empty stream. A 2xx HTML
+   page (SPA fallback, gateway login page) used to produce zero onLine calls
+   and no error — the chat bubble just stayed empty with no explanation. */
+async function parseSSE(res, onLine) {
+  const stream = res && res.body ? res.body : res;   // tolerate a raw stream for old callers
+  const ctype = (res && res.headers && res.headers.get) ? (res.headers.get('content-type') || '') : '';
+  if (/text\/html/i.test(ctype)) {
+    throw new Error('backend answered with a web page instead of a stream — wrong server, or your session expired');
+  }
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
   let event = 'message';
+  let sawData = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -342,9 +352,36 @@ async function parseSSE(stream, onLine) {
       buf = buf.slice(idx + 1);
       if (line === '') { event = 'message'; continue; }
       if (line.startsWith('event:')) { event = line.slice(6).trim(); }
-      else if (line.startsWith('data:')) { onLine(event, line.slice(5).trim()); }
+      else if (line.startsWith('data:')) { sawData = true; onLine(event, line.slice(5).trim()); }
     }
   }
+  if (!sawData) {
+    throw new Error('backend closed the stream without sending anything'
+      + (ctype && !/event-stream/i.test(ctype) ? ` (got content-type: ${ctype.split(';')[0]})` : ''));
+  }
+}
+
+/* Bounded wait for a stream's RESPONSE HEADERS only. The global 45s wrapper
+   deliberately exempts streaming endpoints (aborting kills the body read),
+   which meant a gateway that accepted the socket but never answered left the
+   chat spinner up forever. This aborts if headers don't arrive in `headMs`,
+   then hands the (still user-abortable) body back unbounded. */
+async function fetchStreamHead(url, init = {}, headMs = 20000) {
+  if (typeof AbortController === 'undefined') return fetch(url, init);
+  const ctl = new AbortController();
+  const outer = init.signal;
+  const propagate = () => { try { ctl.abort(outer.reason); } catch (_e) { try { ctl.abort(); } catch (_e2) {} } };
+  if (outer) {
+    if (outer.aborted) propagate();
+    else outer.addEventListener('abort', propagate, { once: true });
+  }
+  const t = setTimeout(() => {
+    try { ctl.abort(new DOMException(`backend did not start responding within ${Math.round(headMs / 1000)}s`, 'TimeoutError')); }
+    catch (_e) { try { ctl.abort(); } catch (_e2) {} }
+  }, headMs);
+  try {
+    return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
+  } finally { clearTimeout(t); }
 }
 
 async function streamAnthropic({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
@@ -358,7 +395,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   };
   if (system) body.system = system;
   if (typeof temperature === 'number') body.temperature = temperature;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchStreamHead('https://api.anthropic.com/v1/messages', {
     method: 'POST', signal,
     headers: {
       'content-type': 'application/json',
@@ -374,7 +411,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   }
   let inputTokens = 0;
   let outputTokens = 0;
-  await parseSSE(res.body, (event, data) => {
+  await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
       if (event === 'content_block_delta' && j.delta && j.delta.type === 'text_delta' && j.delta.text) {
@@ -416,7 +453,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   const headers = { 'content-type': 'application/json' };
   if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
   if (extraHeaders) Object.assign(headers, extraHeaders);
-  const res = await fetch(root + '/chat/completions', {
+  const res = await fetchStreamHead(root + '/chat/completions', {
     method: 'POST', signal,
     headers,
     body: JSON.stringify(body),
@@ -429,7 +466,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
      `delta.reasoning_content` and final answer into `delta.content`.
      Surface both so the user sees something while the model thinks. */
   let inReasoning = false;
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -766,7 +803,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     temperature, // honored if the CLI passes it through; harmless otherwise
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/claudecode/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/claudecode/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -775,7 +812,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     const t = await res.text();
     throw new Error(`Claude Code ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -814,7 +851,7 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/cafresohq/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/cafresohq/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -823,7 +860,7 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     const t = await res.text();
     throw new Error(`CafresoHQ ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -863,7 +900,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/codex/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/codex/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -872,7 +909,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     const t = await res.text();
     throw new Error(`Codex ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -942,7 +979,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
   if (typeof temperature === 'number') generationConfig.temperature = temperature;
   body.generationConfig = generationConfig;
 
-  const res = await fetch(
+  const res = await fetchStreamHead(
     'https://generativelanguage.googleapis.com/v1beta/models/' + mdl + ':streamGenerateContent?alt=sse',
     {
       method: 'POST', signal,
@@ -961,7 +998,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
 
   let inputTokens = 0;
   let outputTokens = 0;
-  await parseSSE(res.body, (event, data) => {
+  await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
       if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
@@ -1582,7 +1619,7 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     if (agentKey) payload[keyField] = agentKey;
   }
 
-  const res = await fetch(_API_BASE + '/terminal/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/terminal/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1591,7 +1628,7 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     const t = await res.text();
     throw new Error(`Terminal ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -2189,8 +2226,22 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
    it's running backend-less (no vault/graph/chat/terminal). */
 async function backendHealth() {
   try {
-    const r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include' });
-    return r.ok;
+    /* Short dedicated timeout: the global fetch wrapper allows 45s, which
+       against a wedged-but-accepting gateway delayed the offline banner by
+       ~2 minutes (3 probes × 45s). A health probe that hasn't answered in
+       3s IS the answer. */
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3000);
+    let r;
+    try {
+      r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include', signal: ctl.signal });
+    } finally { clearTimeout(t); }
+    if (!r.ok) return false;
+    /* r.ok alone false-positives on any origin that answers /health with a
+       stray 200 (SPA asset fallback, gateway captive page). Require a JSON
+       body like probeManagedBrain/SystemTab do, so all health surfaces agree. */
+    const j = await r.json().catch(() => null);
+    return !!j && typeof j === 'object';
   } catch (_e) { return false; }
 }
 /** The resolved backend base URL (gateway when cross-origin, '' when same-origin). */

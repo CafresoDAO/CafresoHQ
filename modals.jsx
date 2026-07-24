@@ -521,35 +521,32 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
    Single source of truth for the settings nav: id, icon, label, one-line
    description. Order = display order; first entry is the default tab (the
    most-actioned one — Connections). Legacy deep-link ids map via ALIAS. */
+/* Managed premium: Cafreso provisions the container, brain, keys and CLIs on
+   OCI — so the self-host setup surface (CONNECTIONS / CODE AGENTS / SYSTEM /
+   MEDIA provider pickers) is gone from Settings entirely. The tab components
+   still exist below (ApiTab etc.) for a future self-host build flag, they're
+   just not reachable from the UI. ACCOUNT replaces SYSTEM as the "is my HQ
+   healthy" surface, in plan-and-usage language instead of gateway jargon. */
 const SETTINGS_TABS = [
-  { id: 'keys',        ico: '🔌', label: 'CONNECTIONS', desc: 'brain · keys · search' },
-  { id: 'agentcli',    ico: '🤖', label: 'CODE AGENTS', desc: 'CLIs in your container' },
-  { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
+  { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · container · usage' },
   { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
-  { id: 'media',       ico: '🎨', label: 'MEDIA',       desc: 'image & video gen' },
+  { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
   { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
-  { id: 'system',      ico: '🛰', label: 'SYSTEM',      desc: 'health & runtime' },
 ];
-const SETTINGS_TAB_ALIAS = { global: 'appearance', modules: 'icp-services' }; // old/new id → canonical id
+// old/removed id → canonical id, so deep-links (openSettings('keys') from the
+// old "add a key" chip, saved last-tab values, tour buttons) never dead-end.
+const SETTINGS_TAB_ALIAS = {
+  global: 'appearance', modules: 'icp-services',
+  keys: 'account', system: 'account', agentcli: 'account', media: 'appearance',
+};
 
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
-  { tab:'keys', label:'Backend provider', hint:'which brain powers CafresoHQ & crew', kw:'provider brain hermes anthropic google lmstudio ollama claudecode codex' },
-  { tab:'keys', label:'Hermes model', hint:'free open-weights model presets', kw:'model preset gpt-oss nemotron llama' },
-  { tab:'keys', label:'Backend service', hint:'OpenRouter · Gemini · Groq (free keys)', kw:'openrouter gemini groq free reliable service' },
-  { tab:'keys', label:'Service API key', hint:'your personal free key for the backend service', kw:'key api sk-or aiza gsk openrouter gemini groq' },
-  { tab:'keys', label:'Agent capability', hint:'Lite (free-tier safe) vs Full prompt', kw:'capability lite full prompt 413' },
-  { tab:'keys', label:'Max tokens per reply', hint:'caps response length', kw:'tokens length limit' },
-  { tab:'keys', label:'Connection test', hint:'verifies keys/URL work', kw:'test probe verify' },
-  { tab:'keys', label:'Sub-agent model', hint:'pin or inherit the spawner model', kw:'subagent pin inherit spawn' },
-  { tab:'keys', label:'Anthropic key & model', hint:'BYOK Claude via API credits', kw:'anthropic claude key' },
-  { tab:'keys', label:'Google key & model', hint:'BYOK Gemini via API credits', kw:'google gemini key' },
-  { tab:'keys', label:'LM Studio / Ollama URL', hint:'local OpenAI-compatible servers', kw:'lmstudio ollama local url base' },
-  { tab:'keys', label:'Claude Code / Codex CLI', hint:'CLI path override + model', kw:'claudecode codex cli path' },
-  { tab:'keys', label:'Brave web search', hint:'web search tool + API key', kw:'brave search web key' },
-  { tab:'keys', label:'Vault backend', hint:'markdown vault storage + browser', kw:'vault notes markdown obsidian rest' },
-  { tab:'agentcli', label:'Install code agents', hint:'add Claude Code / Codex / Gemini CLI on demand', kw:'install npm cli agents claude codex gemini version' },
+  { tab:'account', label:'Plan & container', hint:'your managed HQ on Cafreso cloud', kw:'plan premium account subscription container backend health status gateway api runtime connected' },
+  { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
+  { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
+  { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
   { tab:'icp-services', label:'Modules', hint:'optional add-ons — the OS works the same with all of them off', kw:'modules add-ons addons optional capabilities icp internet computer dfinity service catalog install marketplace on-chain blockchain' },
   { tab:'icp-services', label:'Money & payments (optional)', hint:'master switch for wallets, payroll, tips — off by default', kw:'money payments wallet payroll tips icrc icp ckusdt ckuni token balance fund send cap spend agent crypto enable disable optional' },
   { tab:'icp-services', label:'Agent wallet', hint:'per-agent on-chain wallet + spend cap', kw:'wallet icp ckusdt ckuni token balance fund send cap spend agent money crypto' },
@@ -559,19 +556,11 @@ const SETTINGS_INDEX = [
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
   { tab:'agents', label:'Elevated · computer access', hint:'file/shell access per agent', kw:'elevated computer shell files access security' },
   { tab:'agents', label:'Dismiss an agent', hint:'remove a hire from the roster', kw:'dismiss fire let go remove' },
-  { tab:'media', label:'Image generation', hint:'provider + model for Pixel', kw:'image generation openai fal a1111 comfyui pixel' },
-  { tab:'media', label:'Video generation', hint:'provider + model for Reel', kw:'video generation fal reel' },
   { tab:'appearance', label:'Theme & vocabulary', hint:'reskin the whole OS — office, coffee shop, trading floor…', kw:'theme skin vocabulary preset sepia solarized dracula high contrast coffeeshop wallstreet barista broker customize personalize' },
   { tab:'appearance', label:'Density', hint:'compact · comfortable · spacious', kw:'density compact comfortable spacious spacing size' },
   { tab:'appearance', label:'Scanline overlay', hint:'soft CRT shimmer', kw:'scanlines crt overlay' },
   { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
   { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
-  { tab:'system', label:'Backend health', hint:'live gateway + container status', kw:'health status backend gateway api runtime' },
-  { tab:'system', label:'Hermes provider status', hint:'active service + key state', kw:'provider configured status hermes' },
-  { tab:'system', label:'Export agent setup', hint:'download your Hermes config (no keys)', kw:'export config backup portability hermes yaml' },
-  { tab:'system', label:'Import agent setup', hint:'apply an exported or existing Hermes config', kw:'import config restore migrate hermes yaml' },
-  { tab:'system', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy' },
-  { tab:'system', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
 ];
 
 /* ── Modules catalog ───────────────────────────────────────────────────────
@@ -1096,7 +1085,7 @@ const DENSITY_PRESETS = [
   { id: 'spacious',    name: 'Spacious' },
 ];
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab }) {
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab, usageTokens = 0 }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
   const [tab, _setTab] = useStateM(() => {
     try {
@@ -1122,21 +1111,10 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
     let live = true;
     const C = window.CafresoHQClient;
     (async () => {
+      // Managed premium: the only live status the nav needs is "is my
+      // container up" — provider keys and CLI installs are Cafreso's job now.
       const stat = {};
       try { stat.backend = !!(await C.backendHealth()); } catch (_e) { stat.backend = false; }
-      try {
-        if (C.hermesGetProvider) {
-          const p = await C.hermesGetProvider();
-          stat.provider = !!(p && p.configured);
-        }
-      } catch (_e) {}
-      try {
-        if (C.agentsStatus) {
-          const a = await C.agentsStatus();
-          const list = (a && a.agents) || [];
-          if (list.length) stat.clis = `${list.filter(x => x.installed).length}/${list.length}`;
-        }
-      } catch (_e) {}
       if (live) setNavStat(stat);
     })();
     return () => { live = false; };
@@ -1167,12 +1145,8 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
     : [];
 
   const navDot = (t) => {
-    if (t.id === 'keys' && navStat.provider !== undefined)
-      return <span className={`sn-dot ${navStat.provider ? 'ok' : 'warn'}`} title={navStat.provider ? 'provider key set' : 'no provider key'}/>;
-    if (t.id === 'system' && navStat.backend !== undefined)
-      return <span className={`sn-dot ${navStat.backend ? 'ok' : 'err'}`} title={navStat.backend ? 'backend reachable' : 'backend unreachable'}/>;
-    if (t.id === 'agentcli' && navStat.clis)
-      return <span className="sn-badge" title="installed CLIs">{navStat.clis}</span>;
+    if (t.id === 'account' && navStat.backend !== undefined)
+      return <span className={`sn-dot ${navStat.backend ? 'ok' : 'err'}`} title={navStat.backend ? 'container online' : 'container unreachable'}/>;
     return null;
   };
 
@@ -1180,8 +1154,8 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
     <Modal
       open={open}
       onClose={onClose}
-      title="SETTINGS · CONTROL BOARD"
-      subtitle="pull the drawers · flip the switches"
+      title="SETTINGS"
+      subtitle="preferences · connections · runtime"
       size="xl"
       footer={
         <>
@@ -1368,10 +1342,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
-          {!terms.length && tab === 'agentcli' && <AgentClisTab />}
-          {!terms.length && tab === 'media' && <MediaTab />}
-          {!terms.length && tab === 'keys' && <ApiTab />}
-          {!terms.length && tab === 'system' && <SystemTab />}
+          {!terms.length && tab === 'account' && <AccountTab usageTokens={usageTokens} />}
         </div>
       </div>
     </Modal>
@@ -1381,6 +1352,108 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
 /* System tab — live backend/runtime visibility so "is it the key, the
    container, or the gateway?" is answerable from inside the app instead of
    the browser devtools. Read-only except the two action buttons. */
+/* ACCOUNT — the managed-premium replacement for SYSTEM. Same /health probe,
+   but speaks in plan/container/usage language instead of gateway internals.
+   Everything a premium user might need when something feels off: is my HQ
+   up, what brain am I on, what have I spent this session, and a one-click
+   diagnostics copy for support. */
+function AccountTab({ usageTokens = 0 }) {
+  const [health, setHealth] = useStateM(null);   // null=loading · false=down · object=ok
+  const [note, setNote] = useStateM('');
+  const apiBase = (window._API_BASE || '');
+
+  const load = async () => {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 3000);
+      let r;
+      try { r = await fetch(apiBase + '/health', { cache: 'no-store', credentials: 'include', signal: ctl.signal }); }
+      finally { clearTimeout(t); }
+      const j = r.ok ? await r.json().catch(() => null) : null;
+      setHealth(j && typeof j === 'object' ? j : false);
+    } catch (_e) { setHealth(false); }
+  };
+  useEffectM(() => { load(); }, []);
+
+  const copyDiag = async () => {
+    const diag = {
+      when: new Date().toISOString(),
+      apiBase: apiBase || '(same origin)',
+      health: health || 'unreachable',
+      usageTokensThisSession: usageTokens,
+      ua: navigator.userAgent,
+      url: location.href.split('?')[0],
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+      setNote('✓ diagnostics copied — paste into a support chat');
+    } catch (_e) { setNote('copy failed — clipboard blocked'); }
+  };
+
+  const resetOnboarding = () => {
+    if (!window.confirm('Replay the new-user guide on next reload?')) return;
+    try {
+      const kill = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && /tourseen|gettingstarted|gsdismissed/i.test(k)) kill.push(k);
+      }
+      kill.forEach(k => localStorage.removeItem(k));
+      setNote(`✓ onboarding reset (${kill.length} flag${kill.length === 1 ? '' : 's'} cleared) — reload to replay`);
+    } catch (_e) { setNote('reset failed'); }
+  };
+
+  const dot = (on) => <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>;
+  const uptime = health && health.uptime_seconds
+    ? (health.uptime_seconds >= 3600
+        ? `${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
+        : `${Math.floor(health.uptime_seconds / 60)}m`)
+    : null;
+  const fmtTokens = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>YOUR PLAN</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Cafreso HQ Premium</div><div className="sub">managed cloud — container, brain & updates included</div></div>
+          <span className="tiny">{dot(true)}active</span>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">AI brain</div><div className="sub">included — no keys to manage</div></div>
+          <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'Gemma (Cafreso)'}</span>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Usage this session</div><div className="sub">tokens your crew has spent since this tab loaded</div></div>
+          <span className="tiny">{fmtTokens(usageTokens || 0)} tokens</span>
+        </div>
+      </div>
+      <div className="cb-panel">
+        <h4>YOUR HQ CONTAINER</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Status</div><div className="sub">{health === null ? 'checking…' : health ? 'online' : 'unreachable — we auto-reconnect'}</div></div>
+          <span>{health === null ? '…' : dot(!!health)}</span>
+        </div>
+        {health && uptime && (
+          <div className="row-knob">
+            <div><div className="lbl">Up for</div><div className="sub">since last container start</div></div>
+            <span className="tiny">{uptime}</span>
+          </div>
+        )}
+        <div className="row-knob">
+          <div><div className="lbl">Diagnostics</div><div className="sub">snapshot for support — no keys included</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={copyDiag}>COPY</button>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">New-user guide</div><div className="sub">replay the onboarding tour</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={resetOnboarding}>RESET</button>
+        </div>
+        {note && <div className="hint" style={{marginTop:8}}>{note}</div>}
+      </div>
+    </div>
+  );
+}
+
 function SystemTab() {
   const [health, setHealth] = useStateM(null);   // null=loading · false=down · object=ok
   const [prov, setProv] = useStateM(null);
