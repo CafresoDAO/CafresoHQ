@@ -15,7 +15,8 @@
   } from '$lib/stores/auth.js';
   import { profile, ACCENTS } from '$lib/stores/profile.js';
   import { TOKENS, getAllBalances, formatBalance } from '$lib/api/icrc1.js';
-  import { listMyOrders } from '$lib/api/store.js';
+  import { listMyOrders, orderStatusStyle } from '$lib/api/store.js';
+  import { theme } from '$lib/stores/theme.js';
   import { bbLinks, bankingBraveOrigin } from '$lib/links.js';
   import SendTokenModal from '$lib/components/SendTokenModal.svelte';
   import { refreshNanasBalance } from '$lib/stores/blog.js';
@@ -27,7 +28,7 @@
   // transfer so the balance UI doesn't lie for the window until the user
   // manually clicks Refresh.
   let sendOpen = $state(false);
-  let sendTokenKey = $state('nanas');
+  let sendTokenKey = $state('sGLDT');
 
   function openSend(tokenKey) {
     sendTokenKey = tokenKey;
@@ -92,15 +93,6 @@
     }
   }
 
-  const ORDER_COLOR = {
-    pending: 'hsl(42 80% 92%)',
-    paid: 'hsl(142 50% 94%)',
-    shipped: 'hsl(215 40% 96%)',
-    delivered: 'hsl(112 45% 92%)',
-    refunded: 'hsl(26 30% 92%)',
-    cancelled: 'hsl(0 70% 96%)'
-  };
-
   async function copyPrincipal() {
     if (!$principalText) return;
     try {
@@ -139,7 +131,9 @@
     return a?.hue ?? 45;
   }
 
-  const tokenOrder = ['ICP', 'ckUSDT', 'ckUNI', 'sGLDT', 'nanas'];
+  // Gold first — it's the ecosystem's real economy token now; $nanas stays
+  // listed so legacy test balances remain visible/sendable.
+  const tokenOrder = ['sGLDT', 'ICP', 'ckUSDT', 'ckUNI', 'nanas'];
 
   // Seed audit events — replaced by canister fetch once audit log is live.
   const NOW_SEED = 1746662400000; // 2026-05-08 00:00 UTC
@@ -195,26 +189,26 @@
 </svelte:head>
 
 <section class="mx-auto px-4 sm:px-[18px] pt-6 sm:pt-8 pb-24" style="max-width: 840px;">
-  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(24 48% 28%);">
+  <div class="flex items-center gap-2 text-[13px] font-medium mb-3" style="color: hsl(var(--pg-eyebrow));">
     <Icon name="user-circle" size={16} /> Your account
   </div>
-  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(222 47% 11%);">
+  <h1 class="font-bold leading-tight mb-2" style="font-size: clamp(26px, 5vw, 36px); color: hsl(var(--pg-fg));">
     Profile
   </h1>
-  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[560px]" style="color: hsl(215 16% 47%);">
+  <p class="text-[14.5px] leading-[1.55] mb-6 sm:mb-8 max-w-[560px]" style="color: hsl(var(--pg-fg-muted));">
     Your Internet Identity principal, customized look, and live ICRC-1 wallet balances on the Internet Computer.
   </p>
 
   {#if !$isAuthenticated}
     <div
       class="rounded-[14px] p-6 sm:p-8 text-center"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <Icon name="fingerprint" size={32} style="color: hsl(32 56% 35%);" />
-      <h2 class="text-[20px] font-bold mt-3 mb-2" style="color: hsl(222 47% 11%);">
+      <h2 class="text-[20px] font-bold mt-3 mb-2" style="color: hsl(var(--pg-fg));">
         Sign in to see your wallet
       </h2>
-      <p class="text-[13.5px] mb-5 max-w-[380px] mx-auto" style="color: hsl(215 16% 47%);">
+      <p class="text-[13.5px] mb-5 max-w-[380px] mx-auto" style="color: hsl(var(--pg-fg-muted));">
         Your principal and balances are derived from your Internet Identity. Nothing is stored on a server — it's all on-chain.
       </p>
       <Button onclick={login} disabled={$authStatus === 'logging-in'}>
@@ -323,13 +317,13 @@
     <!-- Session controls -->
     <div
       class="rounded-[14px] p-4 sm:p-5 mb-5"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       <div class="flex items-center gap-2 mb-1">
-        <Icon name="shield-check" size={15} style="color: hsl(24 48% 28%);" />
-        <h2 class="text-[13.5px] font-semibold" style="color: hsl(222 47% 11%);">Account</h2>
+        <Icon name="shield-check" size={15} style="color: hsl(var(--pg-eyebrow));" />
+        <h2 class="text-[13.5px] font-semibold" style="color: hsl(var(--pg-fg));">Account</h2>
       </div>
-      <p class="text-[12.5px] leading-[1.55] mb-3" style="color: hsl(215 16% 47%);">
+      <p class="text-[12.5px] leading-[1.55] mb-3" style="color: hsl(var(--pg-fg-muted));">
         Signed in via Internet Identity. The same principal is derived on
         Banking.Brave thanks to the shared derivation origin — sign in there
         with the same II anchor to confirm the unified account.
@@ -347,13 +341,13 @@
           data-sveltekit-reload="on"
           rel="noopener"
           class="inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] text-[12.5px] font-medium no-underline"
-          style="background: hsl(222 47% 11%); color: white;"
+          style="background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg));"
         >
           <Icon name="coin" size={13} /> Test same principal on Banking.Brave
           <Icon name="arrow-up-right" size={11} style="opacity: 0.7;" />
         </a>
       </div>
-      <p class="text-[11.5px] mt-2.5 leading-[1.45]" style="color: hsl(215 16% 55%);">
+      <p class="text-[11.5px] mt-2.5 leading-[1.45]" style="color: hsl(var(--pg-fg-muted));">
         Tip: to verify, sign out here, sign back in with any II anchor, then
         open <a href={bbLinks.mine} data-sveltekit-reload="on" rel="noopener" style="color: hsl(38 85% 30%); text-decoration: underline;">Banking.Brave</a>
         and sign in with the same anchor. The principal on both pages should match.
@@ -363,15 +357,15 @@
     <!-- Wallet -->
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
-        <Icon name="wallet" size={16} style="color: hsl(24 48% 28%);" />
-        <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(222 47% 11%);">Wallet</h2>
+        <Icon name="wallet" size={16} style="color: hsl(var(--pg-eyebrow));" />
+        <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Wallet</h2>
       </div>
       <button
         type="button"
         onclick={() => refresh()}
         disabled={loadingBalances}
         class="h-8 px-2.5 rounded-[8px] text-[12px] font-medium cursor-pointer inline-flex items-center gap-1.5"
-        style="background: transparent; border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%);"
+        style="background: transparent; border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
       >
         <Icon name={loadingBalances ? 'spinner-gap' : 'arrows-clockwise'} size={13} />
         <span class="hidden sm:inline">{loadingBalances ? 'Refreshing' : 'Refresh'}</span>
@@ -418,7 +412,7 @@
     <!-- Token rows -->
     <div
       class="rounded-[16px] overflow-hidden"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       {#each tokenOrder as key, idx}
         {@const t = TOKENS[key]}
@@ -428,14 +422,14 @@
         {@const rowUsd = usdByKey[key] || 0}
         <div
           class="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3.5 sm:py-4"
-          style="{idx > 0 ? 'border-top: 1px solid hsl(26 30% 92%);' : ''}"
+          style="{idx > 0 ? 'border-top: 1px solid hsl(var(--pg-border));' : ''}"
         >
           <div
             class="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden"
             style="background: hsl(42 80% 92%); border: 1px solid hsl(42 70% 78%);"
           >
             {#if t.logo}
-              <img src={t.logo} alt="" class="w-[22px] h-[22px] object-contain" />
+              <img src={t.logo} alt="" class="w-[22px] h-[22px] object-contain" loading="lazy" decoding="async" />
             {:else}
               <span class="text-[10.5px] font-bold" style="color: hsl(32 56% 25%);">
                 {t.symbol.replace('$', '').slice(0, 3).toUpperCase()}
@@ -445,24 +439,24 @@
 
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-semibold text-[14.5px]" style="color: hsl(222 47% 11%);">{t.symbol}</span>
-              <span class="text-[11px] tabular-nums" style="color: hsl(215 16% 52%);">
+              <span class="font-semibold text-[14.5px]" style="color: hsl(var(--pg-fg));">{t.symbol}</span>
+              <span class="text-[11px] tabular-nums" style="color: hsl(var(--pg-fg-muted));">
                 {formatUsd(unitPrice)}
               </span>
             </div>
-            <div class="font-mono text-[10.5px] truncate" style="color: hsl(215 16% 55%);">
+            <div class="font-mono text-[10.5px] truncate" style="color: hsl(var(--pg-fg-muted));">
               {t.canister}
             </div>
           </div>
 
           <div class="text-right shrink-0">
             {#if loadingBalances && raw === undefined}
-              <Icon name="spinner-gap" size={14} style="color: hsl(215 16% 47%);" />
+              <Icon name="spinner-gap" size={14} style="color: hsl(var(--pg-fg-muted));" />
             {:else}
-              <div class="font-bold tabular-nums text-[15px] sm:text-[16px]" style="color: hsl(222 47% 11%);">
+              <div class="font-bold tabular-nums text-[15px] sm:text-[16px]" style="color: hsl(var(--pg-fg));">
                 {formatBalance(raw, t.decimals, t.decimals >= 8 ? 4 : 2)}
               </div>
-              <div class="text-[11px] tabular-nums" style="color: hsl(215 16% 47%);">
+              <div class="text-[11px] tabular-nums" style="color: hsl(var(--pg-fg-muted));">
                 {raw === null ? 'lookup failed' : formatUsd(rowUsd)}
               </div>
             {/if}
@@ -475,7 +469,7 @@
             aria-label={`Send ${t.symbol}`}
             title={!raw || raw === 0n ? 'No balance to send' : `Send ${t.symbol}`}
             class="h-10 w-10 shrink-0 rounded-[10px] cursor-pointer inline-flex items-center justify-center transition-opacity"
-            style="background: hsl(222 47% 11%); color: white; border: none; opacity: {!raw || raw === 0n ? 0.35 : 1};"
+            style="background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); border: none; opacity: {!raw || raw === 0n ? 0.35 : 1};"
           >
             <Icon name="paper-plane-tilt" size={14} />
           </button>
@@ -483,7 +477,7 @@
       {/each}
     </div>
 
-    <p class="text-[11.5px] text-center mt-3" style="color: hsl(215 16% 47%);">
+    <p class="text-[11.5px] text-center mt-3" style="color: hsl(var(--pg-fg-muted));">
       Balances queried directly from each ICRC-1 ledger canister. USD values refreshed every 60s.
       {#if refreshedAt}
         Wallet last refresh: {new Date(refreshedAt).toLocaleTimeString()}
@@ -492,30 +486,30 @@
 
     <!-- Orders -->
     <div class="mt-7 flex items-center gap-2 mb-3">
-      <Icon name="receipt" size={16} style="color: hsl(24 48% 28%);" />
-      <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(222 47% 11%);">Orders</h2>
+      <Icon name="receipt" size={16} style="color: hsl(var(--pg-eyebrow));" />
+      <h2 class="text-[15px] sm:text-[16px] font-bold" style="color: hsl(var(--pg-fg));">Orders</h2>
     </div>
     <div
       class="rounded-[14px] overflow-hidden"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));"
     >
       {#if loadingOrders}
-        <div class="px-4 py-5 text-center text-[13px]" style="color: hsl(215 16% 47%);">
+        <div class="px-4 py-5 text-center text-[13px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="spinner-gap" size={14} /> Loading orders…
         </div>
       {:else if orders.length === 0}
-        <div class="px-4 py-5 text-center text-[13px]" style="color: hsl(215 16% 47%);">
+        <div class="px-4 py-5 text-center text-[13px]" style="color: hsl(var(--pg-fg-muted));">
           No orders yet. <a href="/shop" style="color: hsl(38 85% 30%);">Shop</a> when you're ready.
         </div>
       {:else}
         {#each orders as o, i (o.id)}
-          <div class="px-4 sm:px-5 py-3.5 text-[13px]" style="{i > 0 ? 'border-top: 1px solid hsl(26 30% 92%);' : ''}">
+          <div class="px-4 sm:px-5 py-3.5 text-[13px]" style="{i > 0 ? 'border-top: 1px solid hsl(var(--pg-border));' : ''}">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div class="min-w-0">
-                <div class="font-semibold" style="color: hsl(222 47% 11%);">
+                <div class="font-semibold" style="color: hsl(var(--pg-fg));">
                   Order #{o.id} · {o.totalNanas.toLocaleString()} $nanas
                 </div>
-                <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">
+                <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
                   {new Date(o.createdAt).toLocaleString()}
                   {#if o.paidBlock != null}
                     · <span class="font-mono">block #{o.paidBlock}</span>
@@ -524,12 +518,12 @@
               </div>
               <span
                 class="inline-flex items-center text-[10.5px] font-semibold uppercase px-2 py-0.5 rounded-full"
-                style="background: {ORDER_COLOR[o.status] || 'hsl(26 30% 92%)'}; color: hsl(222 47% 11%);"
+                style={orderStatusStyle(o.status, $theme === 'dark')}
               >
                 {o.status}
               </span>
             </div>
-            <div class="mt-1 text-[11.5px]" style="color: hsl(215 25% 25%);">
+            <div class="mt-1 text-[11.5px]" style="color: hsl(var(--pg-fg));">
               {o.items.map((it) => `${it.qty}× ${it.slug}`).join(' · ')}
             </div>
           </div>
@@ -539,7 +533,7 @@
 
     <!-- On-Chain Audit Trail -->
     <div id="audit" class="mt-8 rounded-[16px] p-5 sm:p-6"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
       <AuditTrail
         principalId={$principalText ? `${$principalText.slice(0, 12)}…${$principalText.slice(-5)}` : ''}
         events={auditEvents}
@@ -553,7 +547,7 @@
         data-sveltekit-reload="on"
         rel="noopener"
         class="rounded-[12px] p-4 flex items-center gap-3 no-underline"
-        style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(222 47% 11%);"
+        style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
       >
         <div
           class="w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0"
@@ -563,14 +557,14 @@
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-[13.5px]">Mine on Banking.Brave</div>
-          <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">Refine UNI into sGLDT</div>
+          <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">Refine UNI into sGLDT</div>
         </div>
-        <Icon name="arrow-up-right" size={14} style="color: hsl(215 16% 47%);" />
+        <Icon name="arrow-up-right" size={14} style="color: hsl(var(--pg-fg-muted));" />
       </a>
       <a
         href="/leaderboard"
         class="rounded-[12px] p-4 flex items-center gap-3 no-underline"
-        style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); color: hsl(222 47% 11%);"
+        style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
       >
         <div
           class="w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0"
@@ -580,9 +574,9 @@
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-[13.5px]">See the leaderboard</div>
-          <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">Burn $nanas to climb</div>
+          <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">Tip gold to climb</div>
         </div>
-        <Icon name="arrow-right" size={14} style="color: hsl(215 16% 47%);" />
+        <Icon name="arrow-right" size={14} style="color: hsl(var(--pg-fg-muted));" />
       </a>
     </div>
   {/if}

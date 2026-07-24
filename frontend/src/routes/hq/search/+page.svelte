@@ -16,6 +16,17 @@
   import { ensureHqSession, hqSessionReady, endpointNeedsSession } from '$lib/api/hqSession.js';
   import { getKeychain } from '$lib/api/keychain.js';
   import { findInLibrary, publishToLibrary, libraryGraphViewerUrl, pendingCount } from '$lib/api/library.js';
+  import { aiSearchOpen, aiSearchPrefill } from '$lib/stores/blog.js';
+
+  // Signed-out lane: hand the query to the shared anonymous search modal
+  // (public library + community worker network — no account, no container).
+  let publicQuery = '';
+  function openPublicSearch() {
+    const q = publicQuery.trim();
+    if (q) aiSearchPrefill.set(q);
+    aiSearchOpen.set(true);
+    publicQuery = '';
+  }
 
   let query = '';
   let loading = false;
@@ -79,13 +90,21 @@
   }
   let snapshot = null;
 
+  // Bumped on every runSearch() call. quickAnswer()/publishInlineGraph() are
+  // fired without awaiting (so a second search isn't blocked on the first's
+  // answer/graph calls) — without this guard, re-searching before the first
+  // call resolves lets its stale response land AFTER the second search's
+  // results are already showing, silently overwriting them with mismatched
+  // content.
+  let _searchGen = 0;
+
   /* ── Quick answer (BYOK Anthropic key from the on-chain keychain) ────────── */
-  async function quickAnswer(q, res) {
+  async function quickAnswer(q, res, gen) {
     answerState = 'working';
     try {
       const { keys } = await getKeychain();
       const key = keys && keys.anthropic;
-      if (!key) { answerState = 'nokey'; return; }
+      if (!key) { if (gen === _searchGen) answerState = 'nokey'; return; }
       const src = res.slice(0, 8).map((r, i) =>
         `[${i + 1}] ${r.title}\n${r.url}\n${r.description || ''}`).join('\n\n');
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -105,15 +124,16 @@
       });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
+      if (gen !== _searchGen) return; // a newer search superseded this one
       answer = (data.content && data.content[0] && data.content[0].text || '').trim();
       answerState = answer ? 'done' : 'failed';
     } catch (_e) {
-      answerState = 'failed';
+      if (gen === _searchGen) answerState = 'failed';
     }
   }
 
   /* ── Inline graph via the container's existing publish/viewer plumbing ──── */
-  async function publishInlineGraph(snap) {
+  async function publishInlineGraph(snap, gen) {
     try {
       const r = await fetch(`${$endpointUrl}/graph/publish`, {
         method: 'POST', credentials: 'include',
@@ -121,6 +141,7 @@
         body: JSON.stringify(snap)
       });
       const j = await r.json();
+      if (gen !== _searchGen) return; // a newer search superseded this one
       if (j && j.viewerUrl) graphViewer = `${$endpointUrl}${j.viewerUrl}`;
     } catch (_e) { /* graph pane just stays hidden */ }
   }
@@ -128,6 +149,7 @@
   async function runSearch() {
     const q = query.trim();
     if (!q || loading) return;
+    const gen = ++_searchGen;
     loading = true; searched = true; error = '';
     results = []; answer = ''; answerState = 'idle';
     libraryHit = null; graphViewer = ''; snapshot = null;
@@ -136,6 +158,7 @@
     try {
       // 1. Library first — instant, free, public.
       const hit = await findInLibrary(q);
+      if (gen !== _searchGen) return; // a newer search superseded this one
       if (hit) {
         libraryHit = hit;
         results = (hit.sources || []).map((s) => ({ title: s.title, url: s.url, description: '' }));
@@ -153,18 +176,19 @@
         throw new Error(b.error || `Search failed (HTTP ${r.status})`);
       }
       const data = await r.json();
+      if (gen !== _searchGen) return; // a newer search superseded this one
       results = ((data.web && data.web.results) || []).map((x) => ({
         title: x.title || x.url, url: x.url, description: x.description || ''
       }));
       if (!results.length) return;
       // 3 + 4 in parallel: answer and graph don't wait on each other.
       snapshot = buildGraphSnapshot(q, results);
-      quickAnswer(q, results);
-      publishInlineGraph(snapshot);
+      quickAnswer(q, results, gen);
+      publishInlineGraph(snapshot, gen);
     } catch (e) {
-      error = e.message || String(e);
+      if (gen === _searchGen) error = e.message || String(e);
     } finally {
-      loading = false;
+      if (gen === _searchGen) loading = false;
     }
   }
 
@@ -192,7 +216,11 @@
     }
   }
 
-  function handleKeydown(e) { if (e.key === 'Enter') runSearch(); }
+  function handleKeydown(e) {
+    // isComposing/keyCode 229 = an IME (CJK/Japanese/Korean) is mid-conversion;
+    // the Enter that confirms the conversion must not also fire a search.
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) runSearch();
+  }
 </script>
 
 <svelte:head>
@@ -211,9 +239,31 @@
   </header>
 
   {#if !$isAuthenticated}
-    <div class="card space-y-3 p-5 text-sm leading-6 text-ink-300">
-      <p>Sign in to search — queries run through your own private container and your own keys.</p>
-      <button class="btn-primary" on:click={login}>Sign in with Internet Identity</button>
+    <!-- No sign-in wall: the public lane works for everyone. Signing in adds
+         the private lane (your container, your keys), it doesn't gate search. -->
+    <div class="card p-4">
+      <form class="flex flex-col gap-2 sm:flex-row" on:submit|preventDefault={openPublicSearch}>
+        <input
+          class="input flex-1"
+          type="text"
+          placeholder="Ask the on-chain library anything…"
+          bind:value={publicQuery}
+        />
+        <button class="btn-primary px-6" type="submit">Search</button>
+      </form>
+      <p class="mt-3 text-xs leading-5 text-ink-400">
+        Public search — answered from the on-chain library or by community workers, with
+        sources. No account needed, and Deep Research is one toggle away.
+      </p>
+    </div>
+
+    <div class="card flex flex-wrap items-center gap-3 p-5 text-sm leading-6 text-ink-300">
+      <p class="min-w-0 flex-1">
+        <span class="font-semibold text-ink-100">Want a private lane?</span>
+        Sign in and searches can also run through your own container and your own
+        keys — results stay yours unless you choose to share them.
+      </p>
+      <button class="btn-ghost btn-sm" on:click={login}>Sign in with Internet Identity</button>
     </div>
   {:else}
     <div class="card p-4">

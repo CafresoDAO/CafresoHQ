@@ -12,7 +12,7 @@ function createCart() {
           nx[ex] = { ...nx[ex], qty: nx[ex].qty + qty };
           return nx;
         }
-        return [...items, { slug: p.slug, name: p.name, price: p.price, qty, img: p.img }];
+        return [...items, { slug: p.slug, name: p.name, price: p.price, cents: p.priceCentsUSD, qty, img: p.img }];
       });
     },
     remove(ix) {
@@ -30,6 +30,11 @@ export const toast = writable(null);
 
 export const cartCount = derived(cart, ($cart) => $cart.reduce((s, i) => s + i.qty, 0));
 export const cartTotal = derived(cart, ($cart) => $cart.reduce((s, i) => s + i.price * i.qty, 0));
+// USD cents — the pricing anchor since the gold (sGLDT) switch. Falls back to
+// the legacy fixed nanas→cents rate (price × 0.15) for items added pre-switch.
+export const cartTotalCents = derived(cart, ($cart) =>
+  $cart.reduce((s, i) => s + (i.cents ?? Math.round(i.price * 0.15)) * i.qty, 0)
+);
 
 export function showToast(msg, ms = 2000) {
   toast.set(msg);

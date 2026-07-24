@@ -102,6 +102,63 @@
      mint variant lives in the .dark override below. */
   --brand-link-green: 134 45% 30%;
   --brand-link-green-hover: 142 55% 24%;
+
+  /* ── Consumer-surface (Cafreso Pages) chrome tokens ──
+     The (pages) header/footer/nav/cards were hand-authored with literal
+     hsl() light values. These tokens carry those EXACT light values so light
+     mode is pixel-identical, and the .dark block below gives each a warm
+     coffee equivalent so the consumer surface flips cleanly. Convert inline
+     literals to `hsl(var(--pg-*))` as pages are migrated.
+       --pg-fg          hsl(222 47% 11%)   primary text + icons
+       --pg-fg-muted    hsl(215 16% 47%)   secondary text
+       --pg-fg-subtle   hsl(215 16% 56%)   tertiary text / placeholders
+       --pg-surface     hsl(26 45% 98%)    menus, drawers, popovers
+       --pg-elevated    hsl(0 0% 100%)     raised cards (library/product)
+       --pg-border      hsl(26 30% 88%)    hairlines / dividers
+       --pg-hover       hsl(26 40% 96%)    subtle hover wash
+       --pg-header      hsl(26 30% 82%)    header glass tint (used w/ alpha)
+       --pg-header-edge hsl(26 35% 95%)    header inner top highlight
+       --pg-solid       hsl(222 47% 11%)   solid control bg (login / active)
+       --pg-solid-fg    hsl(0 0% 100%)     text on --pg-solid   */
+  --pg-fg: 222 47% 11%;
+  --pg-fg-muted: 215 16% 47%;
+  --pg-fg-subtle: 215 16% 56%;
+  --pg-surface: 26 45% 98%;
+  --pg-elevated: 0 0% 100%;
+  --pg-border: 26 30% 88%;
+  --pg-hover: 26 40% 96%;
+  --pg-header: 26 30% 82%;
+  --pg-header-edge: 26 35% 95%;
+  --pg-solid: 222 47% 11%;
+  --pg-solid-fg: 0 0% 100%;
+  --pg-eyebrow: 24 48% 28%;   /* warm coffee section labels/icons */
+
+  /* ── Semantic status tokens (Cafreso Pages) ──
+     Fill/foreground/border triads for the recurring success/warn/danger/link
+     pills, banners, and inline conditionals scattered across (pages) as raw
+     hsl() literals (checkout payment state, success page banners, category
+     tags, form errors). Same hues used everywhere already — this just gives
+     them one home so they participate in the .dark flip below. */
+  --pg-success-bg: 112 43% 92%;
+  --pg-success-fg: 112 43% 28%;
+  --pg-success-border: 112 40% 78%;
+  --pg-warn-bg: 38 85% 92%;
+  --pg-warn-fg: 32 72% 32%;
+  --pg-warn-border: 38 70% 78%;
+  /* Exactly the literals the 8 copy-pasted error banners already use
+     (forums, forums/new, forums/[slug], blog/new ×2, admin/store ×2,
+     SendTokenModal), so light mode stays pixel-identical. */
+  --pg-danger-bg: 0 70% 96%;
+  --pg-danger-fg: 0 70% 30%;
+  --pg-danger-border: 0 70% 85%;
+  --pg-link: 38 65% 35%;
+
+  /* One shared purple for the AI/DAO/deep-research family — collapses the
+     266/260/280-hue near-duplicates found scattered across AISearchModal,
+     the library vault, and governance into a single token. */
+  --pg-accent-purple: 266 60% 46%;
+  --pg-accent-purple-bg: 266 70% 96%;
+  --pg-accent-purple-border: 266 55% 84%;
 }
 
 .dark {
@@ -109,6 +166,41 @@
 
   --brand-link-green: 134 61% 70%;
   --brand-link-green-hover: 142 71% 78%;
+
+  /* Warm-coffee equivalents of the consumer-surface chrome tokens. Text stays
+     high-contrast for WCAG AA on the dark cards; the solid control inverts to
+     warm paper + coffee text (mirrors the /hq header's ink-50/ink-900 pill). */
+  /* "Lighter roast": the whole dark base sits ~3 lightness points above the
+     original espresso values — same hues, same hierarchy, warmer read. */
+  --pg-fg: 38 46% 91%;
+  --pg-fg-muted: 33 13% 64%;
+  --pg-fg-subtle: 30 12% 54%;
+  --pg-surface: 24 40% 16%;
+  --pg-elevated: 25 33% 19%;
+  --pg-border: 30 16% 29%;
+  --pg-hover: 32 26% 23%;
+  --pg-header: 24 44% 13%;
+  --pg-header-edge: 34 24% 29%;
+  --pg-solid: 38 58% 90%;
+  --pg-solid-fg: 24 48% 11%;
+  --pg-eyebrow: 34 46% 62%;   /* warm tan — readable coffee label on dark */
+
+  /* Semantic status tokens — translucent fills + light-on-dark foreground,
+     same pattern as the other .dark pill overrides in this file. */
+  --pg-success-bg: 112 45% 32% / 0.22;
+  --pg-success-fg: 112 55% 70%;
+  --pg-success-border: 112 45% 42% / 0.5;
+  --pg-warn-bg: 38 70% 40% / 0.22;
+  --pg-warn-fg: 38 88% 72%;
+  --pg-warn-border: 38 60% 45% / 0.5;
+  --pg-danger-bg: 0 60% 32% / 0.22;
+  --pg-danger-fg: 0 85% 78%;
+  --pg-danger-border: 0 55% 42% / 0.5;
+  --pg-link: 45 85% 66%;
+
+  --pg-accent-purple: 266 85% 80%;
+  --pg-accent-purple-bg: 266 55% 32% / 0.35;
+  --pg-accent-purple-border: 266 45% 48%;
 
   /* Dark mode keeps the banana scale but anchors against deeper coffee */
   --brand-50:  47 100% 94%;
@@ -128,49 +220,51 @@
   --ink-300: 28 22% 68%;
   --ink-400: 26 18% 52%;
   --ink-500: 26 18% 38%;
-  --ink-600: 24 24% 24%;
-  --ink-700: 24 30% 16%;
-  --ink-800: 24 38% 11%;
-  --ink-900: 24 48% 9%;
+  --ink-600: 24 24% 27%;
+  --ink-700: 24 30% 19%;
+  --ink-800: 24 38% 14%;
+  --ink-900: 24 48% 12%;
 
-  --surface-card: hsl(24 38% 14% / 0.86);
-  --surface-card-strong: hsl(24 48% 11% / 0.9);
-  --surface-muted: hsl(24 30% 18% / 0.78);
-  --surface-wash: hsl(32 60% 24% / 0.22);
-  --surface-border: 24 22% 26%;
+  --surface-card: hsl(24 38% 17% / 0.86);
+  --surface-card-strong: hsl(24 48% 14% / 0.9);
+  --surface-muted: hsl(24 30% 21% / 0.78);
+  --surface-wash: hsl(32 60% 27% / 0.22);
+  --surface-border: 24 22% 29%;
   --surface-border-strong: 45 95% 56%;
-  --code-bg: hsl(24 48% 9% / 0.85);
-  --code-panel: hsl(24 48% 9%);
+  --code-bg: hsl(24 48% 11% / 0.85);
+  --code-panel: hsl(24 48% 11%);
   --code-fg: hsl(38 70% 98%);
   --brand-glow: hsl(var(--brand-500) / 0.46);
-  --grid-line: hsl(28 20% 22% / 0.45);
-  --header-bg: hsl(24 38% 10% / 0.85);
-  --header-border: hsl(24 22% 24% / 0.9);
+  --grid-line: hsl(28 20% 25% / 0.45);
+  --header-bg: hsl(24 38% 13% / 0.85);
+  --header-border: hsl(24 22% 27% / 0.9);
   --card-shadow:
     inset 0 1px 0 hsl(45 95% 62% / 0.06),
     0 24px 70px -42px hsl(45 95% 58% / 0.4);
   --shell-bg:
-    radial-gradient(circle at 8% 0%, hsl(32 60% 30% / 0.22), transparent 28rem),
-    radial-gradient(circle at 84% 14%, hsl(280 38% 22% / 0.22), transparent 30rem),
-    linear-gradient(135deg, hsl(24 48% 8%), hsl(24 38% 10%) 50%, hsl(24 30% 12%));
+    radial-gradient(circle at 8% 0%, hsl(32 60% 33% / 0.22), transparent 28rem),
+    radial-gradient(circle at 84% 14%, hsl(280 38% 25% / 0.22), transparent 30rem),
+    linear-gradient(135deg, hsl(24 48% 11%), hsl(24 38% 13%) 50%, hsl(24 30% 15%));
 
-  /* ── Cafreso Pages dark semantic tokens ── */
-  --background: 24 48% 9%;
-  --foreground: 210 40% 98%;
-  --muted: 0 0% 25%;
-  --muted-foreground: 0 0% 80%;
-  --popover: 24 48% 12%;
-  --popover-foreground: 210 40% 98%;
-  --card: 24 48% 12%;
-  --card-foreground: 210 40% 98%;
-  --border: 0 0% 50%;
-  --input: 0 0% 50%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217 33% 18%;
-  --secondary-foreground: 210 40% 98%;
-  --accent: 0 0% 25%;
-  --accent-foreground: 210 40% 98%;
+  /* ── Cafreso Pages dark semantic tokens ──
+     Warm-coffee tuned (were flat 0% grays, which clashed with the brand and
+     read as a loud blue-gray). Foreground/muted keep AA contrast. */
+  --background: 24 48% 12%;
+  --foreground: 38 46% 95%;
+  --muted: 26 22% 23%;
+  --muted-foreground: 33 14% 68%;
+  --popover: 24 40% 16%;
+  --popover-foreground: 38 46% 95%;
+  --card: 25 33% 18%;
+  --card-foreground: 38 46% 95%;
+  --border: 30 16% 29%;
+  --input: 30 16% 31%;
+  --primary: 38 58% 90%;
+  --primary-foreground: 24 48% 11%;
+  --secondary: 26 24% 25%;
+  --secondary-foreground: 38 46% 95%;
+  --accent: 32 30% 27%;
+  --accent-foreground: 38 46% 95%;
   --destructive: 0 63% 31%;
   --destructive-foreground: 210 40% 98%;
   --ring: 213 27% 84%;
@@ -179,6 +273,12 @@
 html,
 body {
   min-height: 100%;
+  /* Safety net against horizontal drift on mobile: `clip` (not `hidden`)
+     stops a stray wide child from forcing a sideways scroll WITHOUT turning
+     the root into a scroll container — so `position: sticky` headers keep
+     working. Any element that legitimately needs to scroll sideways owns its
+     own `overflow-x: auto` container (e.g. .leaderboard-scroll, .site-nav). */
+  overflow-x: clip;
 }
 
 html {
@@ -318,6 +418,17 @@ body {
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }
+  /* ~28px tall, which is under the ~44px touch guideline — but .btn-sm is used
+     34× across the /hq control plane, a dense desktop admin surface where a
+     blanket bump would just add bloat for a precise mouse. Enlarge only where
+     the pointer is actually coarse (touch), so density survives on desktop and
+     fingers get a real target on phones/tablets. */
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-height: 40px;
+      @apply px-3.5 py-2;
+    }
+  }
 
   .input {
     @apply w-full rounded-lg px-3 py-2 text-sm font-mono
@@ -394,6 +505,19 @@ body {
   }
   .fade-up { animation: fade-up .5s cubic-bezier(.2,.8,.2,1) both; }
 
+  /* Modal panel entrance. Lives here (global) rather than in a component's
+     scoped <style> because it's applied to the shared <Modal> panel — and
+     because a component-scoped @keyframes gets renamed to
+     `svelte-<hash>-modal-up`, which an inline `animation:` string can't
+     reference. AISearchModal hit exactly that: its scoped `modalUp` was
+     renamed, the inline style still said `modalUp`, and the entrance silently
+     never ran. */
+  @keyframes modal-up {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-up { animation: modal-up .22s cubic-bezier(.2,.8,.2,1); }
+
   @keyframes pulse-ring {
     0% { box-shadow: 0 0 0 0 hsl(112 60% 45% / 0.4); }
     70% { box-shadow: 0 0 0 14px hsl(112 60% 45% / 0); }
@@ -466,11 +590,19 @@ body {
   .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 20px !important; padding: 24px 20px !important; }
   .footer-legal { grid-column: 1 / -1 !important; flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
 
-  /* Header: reduce padding, shrink login button, show hamburger */
+  /* Header: reduce padding, shrink login button, show hamburger. The action
+     cluster also tightens its gap and lets the account button collapse to an
+     icon (its principal text is .desktop-only) so six controls + the logo fit
+     a phone without forcing a sideways scroll. */
   .site-header-wrap { padding: 8px 10px 0 !important; }
   .site-header { padding: 0 8px 0 8px !important; }
   .site-header-login { padding: 0 10px !important; font-size: 12px !important; }
-  .mobile-hamburger { display: flex !important; }
+  .pg-cluster { gap: 4px !important; }
+  /* Shrink the 38px icon buttons (bell, weather, search, cart, account) to
+     34px so the action cluster stays comfortably inside a phone. */
+  .pg-cluster .w-\[38px\] { width: 34px !important; }
+  .pg-cluster .h-\[38px\] { height: 34px !important; }
+  .mobile-hamburger { display: flex !important; width: 34px; height: 34px; }
 
   /* Make the nanas-balance chip compact so it still fits */
   .nanas-chip-compact { display: inline-flex !important; }
@@ -479,4 +611,132 @@ body {
 @media (min-width: 881px) {
   .mobile-only { display: none !important; }
   .nanas-chip-compact { display: none !important; }
+}
+/* On the tightest phones drop the "Cafreso" wordmark to just the logomark —
+   frees ~75px so the full action cluster (gold chip + 5 icons + account) fits
+   without clipping. The mark alone still reads as the brand. */
+@media (max-width: 374px) {
+  .header-wordmark { display: none !important; }
+}
+
+/* ── Workspace portal styles (ported from pre-merge master 69e4c5e) ──────
+   These @layer components classes style WorkspaceCard/SessionDock/
+   SessionToolbar/AppIcon. CRITICAL: .workspace-card is position:relative —
+   without it, disabled cards' "Coming soon" `absolute inset-0` overlays
+   anchor to the page instead of their own card, stretching an INVISIBLE
+   CLICK SHIELD across the whole gallery grid (every Launch button dead,
+   "Coming soon" chips floating in wrong places — confirmed live 2026-07-21
+   and reproduced in a sandboxed browser). Dropped in the unification merge
+   because we took the trunk's app.css wholesale. ── */
+/* ── Workspace gallery ──────────────────────────────────────────────────── */
+
+@layer components {
+  .workspace-card {
+    @apply relative flex flex-col rounded-xl p-4 transition-all duration-200;
+    background: linear-gradient(135deg, var(--surface-card), var(--surface-card-strong));
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: var(--card-shadow);
+  }
+  .workspace-card:hover {
+    border-color: hsl(var(--brand-500) / 0.4);
+    box-shadow: var(--card-shadow), 0 0 0 1px hsl(var(--brand-500) / 0.12);
+  }
+  .workspace-card-disabled {
+    @apply opacity-50 pointer-events-none select-none;
+  }
+
+  .category-pill {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1.5
+           text-xs font-semibold cursor-pointer transition-colors duration-150;
+  }
+  .category-pill-active {
+    @apply category-pill text-white;
+    background: linear-gradient(135deg, hsl(var(--brand-400)), hsl(var(--brand-600)));
+  }
+  .category-pill-inactive {
+    @apply category-pill text-ink-300;
+    background: hsl(var(--ink-800) / 0.55);
+    border: 1px solid hsl(var(--surface-border));
+  }
+  .category-pill-inactive:hover {
+    background: hsl(var(--ink-800) / 0.8);
+    color: hsl(var(--ink-100));
+  }
+
+  .provider-badge-hyperv {
+    @apply bg-blue-500/20 text-blue-300 border border-blue-500/30;
+  }
+  .provider-badge-oci {
+    @apply bg-brand-500/20 text-brand-300 border border-brand-500/30;
+  }
+  .provider-badge-canister {
+    @apply bg-purple-500/20 text-purple-300 border border-purple-500/30;
+  }
+  .provider-badge-custom {
+    @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30;
+  }
+
+  /* ── Session dock ──────────────────────────────────────────────────────── */
+
+  .session-dock-item {
+    @apply relative h-10 w-10 rounded-xl border border-ink-600/50
+           bg-ink-800/60 cursor-pointer transition-all duration-150
+           hover:border-brand-500/40;
+  }
+  .session-dock-item-active {
+    @apply session-dock-item border-l-brand-500 border-l-[3px];
+    box-shadow: -4px 0 12px -4px hsl(var(--brand-500) / 0.3);
+  }
+
+  /* ── Floating toolbar ──────────────────────────────────────────────────── */
+
+  .floating-toolbar {
+    @apply flex items-center gap-1 rounded-full px-2 py-1.5 backdrop-blur-xl;
+    background: hsl(var(--ink-900) / 0.82);
+    border: 1px solid hsl(var(--surface-border));
+    box-shadow: 0 8px 32px -8px hsl(0 0% 0% / 0.5);
+  }
+
+  .toolbar-btn {
+    @apply grid h-9 w-9 place-items-center rounded-full
+           text-ink-300 transition-colors duration-150
+           hover:bg-ink-800/80 hover:text-ink-50;
+  }
+  .toolbar-btn-danger:hover {
+    @apply bg-rose-500/20 text-rose-300;
+  }
+
+  /* ── Mobile app launcher (iOS-style) ───────────────────────────────────── */
+
+  .app-launcher {
+    @apply fixed inset-0 z-30 bg-cover bg-center;
+    background-color: hsl(var(--ink-900));
+  }
+  .app-launcher-overlay {
+    @apply absolute inset-0 flex flex-col;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+  }
+
+  .app-icon {
+    @apply grid h-[60px] w-[60px] place-items-center rounded-[16px] shadow-lg;
+  }
+
+  .app-icon-label {
+    @apply text-center text-[11px] font-medium text-white truncate max-w-[68px];
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  }
+
+  .app-icon-badge {
+    @apply absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full bg-red-500
+           border-2 border-black/30 text-[8px] font-bold text-white
+           grid place-items-center;
+  }
+
+  .app-dock {
+    @apply rounded-[22px] shadow-2xl;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
 }

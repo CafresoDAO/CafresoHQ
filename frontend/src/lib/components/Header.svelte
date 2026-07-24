@@ -8,22 +8,40 @@
     logout
   } from '$lib/stores/auth.js';
   import { theme, toggleTheme } from '$lib/stores/theme.js';
+  import { navMode } from '$lib/stores/navMode.js';
   import EndpointStatus from './EndpointStatus.svelte';
   import EcosystemNav from './EcosystemNav.svelte';
 
   const navLinks = [
-    { href: '/hq', label: 'Dashboard' },
-    { href: '/hq/app', label: 'HQ' },
-    { href: '/hq/chat', label: 'Chat' },
-    { href: '/hq/search', label: 'Search' },
-    { href: '/hq/vault', label: 'Vault' },
-    { href: '/hq/plans', label: 'Plans' },
-    { href: '/hq/settings', label: 'Settings' }
+    { href: '/hq', label: 'Dashboard', slug: 'dashboard' },
+    { href: '/hq/app', label: 'HQ', slug: 'app' },
+    { href: '/hq/chat', label: 'Chat', slug: 'chat' },
+    { href: '/hq/search', label: 'Search', slug: 'search' },
+    { href: '/library', label: 'Library', slug: 'library' },
+    { href: '/hq/workspaces', label: 'Workspaces', slug: 'workspaces' },
+    { href: '/hq/vault', label: 'Vault', slug: 'vault' },
+    { href: '/hq/plans', label: 'Plans', slug: 'plans' },
+    { href: '/hq/settings', label: 'Settings', slug: 'settings' }
   ];
 
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 20 ? p.slice(0, 6) + '...' + p.slice(-4) : p;
+  }
+
+  // 'windows' mode: a plain left-click opens/refocuses a dedicated OS window
+  // per surface instead of navigating this one. Modified clicks (Cmd/Ctrl,
+  // Shift, middle-click) are left alone so "open in new tab" still works
+  // exactly like any other link, in either mode. The window NAME is stable
+  // per surface (`hq-<slug>`), which is what makes a second click on the same
+  // link refocus the existing window instead of spawning a duplicate — that's
+  // ordinary window.open(url, name) behavior at a fixed name + origin, no
+  // extra bookkeeping needed.
+  function onNavClick(e, href, slug) {
+    if ($navMode !== 'windows') return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    window.open(href, `hq-${slug}`);
   }
 </script>
 
@@ -31,12 +49,16 @@
   <div class="shell-panel mx-auto flex max-w-7xl items-center gap-3 rounded-[1.75rem] px-3 py-2">
     <EcosystemNav active="ai" />
 
-    <nav class="ml-2 hidden min-w-0 flex-1 items-center justify-center gap-1 md:flex">
+    <!-- overflow-x-auto + safe center: when the seven links don't fit (md–lg
+         widths) the row scrolls inside its own box instead of bleeding under
+         the brand on the left and the status chip on the right. -->
+    <nav class="ml-2 hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [justify-content:safe_center] [scrollbar-width:none] md:flex">
       {#each navLinks as l}
         <a
           href={l.href}
+          on:click={(e) => onNavClick(e, l.href, l.slug)}
           aria-current={$page.url.pathname === l.href ? 'page' : undefined}
-          class="rounded-full px-3 py-2 text-sm font-semibold transition-colors
+          class="shrink-0 rounded-full px-3 py-2 text-sm font-semibold transition-colors
                  {$page.url.pathname === l.href
                    ? 'bg-ink-50 text-ink-900 shadow-sm'
                    : 'text-ink-200 hover:bg-ink-800/55 hover:text-ink-50'}"
@@ -47,7 +69,11 @@
     </nav>
 
     <div class="ml-auto flex items-center gap-2">
-      <EndpointStatus compact />
+      <!-- Container status is signed-in plumbing — an anonymous visitor has no
+           container, so a "CONTAINER LIVE · localhost" chip only confuses. -->
+      {#if $isAuthenticated}
+        <EndpointStatus compact />
+      {/if}
 
       <button
         class="btn-ghost btn-sm hidden sm:inline-flex"
@@ -80,4 +106,24 @@
       {/if}
     </div>
   </div>
+
+  <!-- Mobile nav: below md the pill row above is hidden and the Apps dropdown
+       only holds ecosystem links — which left phones with NO route to
+       Workspaces/Chat/Vault/Settings at all (confirmed live 2026-07-21).
+       Same swipeable-pills pattern the (pages) PageHeader uses. -->
+  <nav class="mx-auto mt-2 flex max-w-7xl items-center gap-1 overflow-x-auto whitespace-nowrap rounded-full px-1 py-1 [scrollbar-width:none] md:hidden shell-panel">
+    {#each navLinks as l}
+      <a
+        href={l.href}
+        on:click={(e) => onNavClick(e, l.href, l.slug)}
+        aria-current={$page.url.pathname === l.href ? 'page' : undefined}
+        class="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors
+               {$page.url.pathname === l.href
+                 ? 'bg-ink-50 text-ink-900 shadow-sm'
+                 : 'text-ink-200 hover:bg-ink-800/55 hover:text-ink-50'}"
+      >
+        {l.label}
+      </a>
+    {/each}
+  </nav>
 </header>

@@ -1398,7 +1398,9 @@ function OnboardingKeyStep() {
 function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAddKey, onHire, onChat, onTasks, onProjects, onWatch, onDismiss }) {
   const [collapsed, setCollapsed] = useState(false);
   const steps = [
-    { k: 'key',   done: !!hasKey,   n: 1, label: 'Add your AI key',          hint: 'Free OpenRouter key — powers every agent.',         act: onAddKey, cta: 'Add key' },
+    // Managed containers include Cafreso's Gemma 4 brain — this step self-
+    // completes on those, and stays actionable only for standalone setups.
+    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Gemma 4 by Cafreso is included — bring your own key anytime.', act: onAddKey, cta: 'Brain settings' },
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
@@ -1884,6 +1886,29 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   }, []);
   const anyLive = Object.keys(liveTools).length > 0;
 
+  /* ── Desk screens — each monitor shows the tail of its agent's REAL output
+     stream (cafresohq:agentScreen from the app-level run paths, throttled at
+     the source). phase 'stream' scrolls; 'done' freezes the last line ~8s
+     then fades. Kept in local state (never on the agents array) so token
+     traffic can't trigger app-wide re-renders. */
+  const [screens, setScreens] = React.useState({});   // agentId -> {tail, phase}
+  React.useEffect(() => {
+    const timers = new Map();
+    const onScreen = (e) => {
+      const d = e.detail || {};
+      if (!d.agentId || !d.tail) return;
+      setScreens(prev => ({ ...prev, [d.agentId]: { tail: d.tail, phase: d.phase } }));
+      const t = timers.get(d.agentId); if (t) clearTimeout(t);
+      // Streams that die mid-run (error/abort) never send 'done' — a 60s
+      // safety clear keeps monitors from showing stale text forever.
+      timers.set(d.agentId, setTimeout(() => {
+        setScreens(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
+      }, d.phase === 'done' ? 8000 : 60000));
+    };
+    window.addEventListener('cafresohq:agentScreen', onScreen);
+    return () => { window.removeEventListener('cafresohq:agentScreen', onScreen); timers.forEach(clearTimeout); };
+  }, []);
+
   /* ── Tip Rain — money events land as coins on the earning agent's desk.
      Fed by the app-level tip watcher via cafresohq:moneyEvent. Reduced-motion
      users get a static "+X TOKEN" chip instead (CSS side). */
@@ -1892,7 +1917,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     const timers = new Map();
     const onMoney = (e) => {
       const d = e.detail || {};
-      if (!d.agentId || (d.kind !== 'tip' && d.kind !== 'payday')) return;
+      if (!d.agentId || (d.kind !== 'tip' && d.kind !== 'payday' && d.kind !== 'furnish')) return;
       setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token, kind: d.kind } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
       timers.set(d.agentId, setTimeout(() => {
@@ -1957,7 +1982,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     window.addEventListener('cafresohq:moneyEvent', onMoney);
     return () => { dead = true; window.removeEventListener('cafresohq:moneyEvent', onMoney); };
   }, [walletServiceOn]);
-  const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+  const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8, BANK: 8 };
   const plFmt = (raw, token) => {
     try {
       const dec = PL_DECIMALS[token] != null ? PL_DECIMALS[token] : 8;
@@ -1965,6 +1990,89 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       return n >= 100 ? n.toFixed(0) : n >= 1 ? n.toFixed(2) : n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
     } catch (_e) { return '0'; }
   };
+
+  /* ── Situation Wall — real ops telemetry as wall furniture ────────────
+     Everything here reads data that already exists behind Settings:
+       · backendHealth() → container lamp (poll 30s, cheap /health)
+       · braveProbe()    → Search Network bars. Runs a REAL Brave search, so
+                           it fires ONCE on mount + manual click only.
+       · agentsStatus()  → crew dial (installed CLI runtimes)
+       · Σ agents.tokens → office fuel bar (same math as TokenHUD)
+       · Σ sGLDT wallets → treasury tile (exposed as goldTreasury for the
+                           Vault Room to reuse — fetch once, cache 60s) */
+  const [wallHealth, setWallHealth] = React.useState(null);   // null checking | true | false
+  const [wallSearch, setWallSearch] = React.useState(null);   // null unknown | {ok}
+  const [wallCrew, setWallCrew] = React.useState(null);       // {installed, total} | null
+  const [goldTreasury, setGoldTreasury] = React.useState(null); // BigInt raw e8s | null
+  React.useEffect(() => {
+    if (isMobileOffice) return;
+    const client = window.CafresoHQClient;
+    if (!client) return;
+    let dead = false;
+    const checkHealth = async () => {
+      try { const ok = await client.backendHealth(); if (!dead) setWallHealth(!!ok); }
+      catch (_e) { if (!dead) setWallHealth(false); }
+    };
+    checkHealth();
+    const t = setInterval(() => { if (!document.hidden) checkHealth(); }, 30000);
+    (async () => {
+      try { const p = await client.braveProbe(); if (!dead) setWallSearch(p); }
+      catch (_e) { if (!dead) setWallSearch({ ok: false }); }
+    })();
+    (async () => {
+      try {
+        const s = await client.agentsStatus();
+        const list = (s && s.agents) || [];
+        if (!dead) setWallCrew({ installed: list.filter(x => x.installed).length, total: list.length });
+      } catch (_e) {}
+    })();
+    return () => { dead = true; clearInterval(t); };
+  }, [isMobileOffice]);
+  React.useEffect(() => {
+    if (!walletServiceOn || isMobileOffice || !plWallets || !plWallets.length) return;
+    let dead = false;
+    (async () => {
+      try {
+        const chain = window.CafresoHQChain;
+        const per = await Promise.all(plWallets.map(w =>
+          chain.wallet.balances(w.agentId, ['sGLDT']).catch(() => ({}))));
+        if (dead) return;
+        let sum = BigInt(0);
+        for (const b of per) { try { sum += BigInt((b && b.sGLDT) || 0); } catch (_e) {} }
+        setGoldTreasury(sum);
+      } catch (_e) {}
+    })();
+    return () => { dead = true; };
+  }, [walletServiceOn, isMobileOffice, plWallets]);
+  const officeTokens = agents.reduce((s, a) => s + (a.tokens || 0), 0);
+  const busyCount = agents.filter(a => a.status === 'busy').length;
+
+  /* ── Vault Room data — BANK prestige balance (read-only, feature-detected:
+     older shells don't know chain:bank:balance and the case just stays
+     empty). Gold bars reuse goldTreasury from the Situation Wall fetch. */
+  const [bankBalance, setBankBalance] = React.useState(null);   // BigInt | null
+  React.useEffect(() => {
+    if (!walletServiceOn || isMobileOffice) return;
+    let dead = false;
+    (async () => {
+      try {
+        const chain = window.CafresoHQChain;
+        if (!chain || !chain.bank) return;
+        const raw = await chain.bank.balance();
+        if (!dead && raw !== null) setBankBalance(raw);
+      } catch (_e) { /* old shell / no BANK — case stays empty */ }
+    })();
+    return () => { dead = true; };
+  }, [walletServiceOn, isMobileOffice]);
+  // Prestige tier from real BANK holdings (display-only, never gameable).
+  const bankTier = bankBalance === null ? null
+    : bankBalance >= BigInt(100e8) ? 'gold'
+    : bankBalance >= BigInt(10e8) ? 'silver'
+    : bankBalance > BigInt(0) ? 'bronze' : null;
+  // 1-8 gold bars: log-ish scale so early treasuries still show something.
+  const goldBars = goldTreasury === null ? 0
+    : goldTreasury <= BigInt(0) ? 0
+    : Math.min(8, 1 + Math.floor(Math.log10(Number(goldTreasury) / 1e8 + 1) * 3));
 
   return (
     <div className="office">
@@ -2137,6 +2245,42 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 })}
               </div>
             )}
+            {/* Situation Wall — the office's ops board. Live data only;
+                tiles that can't know their answer (standalone mode, no
+                wallet service) simply don't render. */}
+            <div className="sit-wall" title="Situation Wall — live office telemetry">
+              <div className="sw-title">◉ SITUATION</div>
+              <div className="sw-row" title={wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
+                <span className={`sw-lamp ${wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
+              </div>
+              {wallSearch !== null && (
+                <div className="sw-row" title={`Search network: ${wallSearch.ok ? (wallSearch.detail || 'up') : 'unavailable'} — click to re-check`}
+                     style={{cursor:'pointer'}}
+                     onClick={async (e) => {
+                       e.stopPropagation();
+                       setWallSearch(null);
+                       try { setWallSearch(await window.CafresoHQClient.braveProbe()); }
+                       catch (_e) { setWallSearch({ ok: false }); }
+                     }}>
+                  <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
+                </div>
+              )}
+              {wallCrew && wallCrew.total > 0 && (
+                <div className="sw-row" title={`${wallCrew.installed}/${wallCrew.total} agent runtimes installed · ${busyCount} working now`}>
+                  ⚒ {wallCrew.installed}/{wallCrew.total}{busyCount > 0 ? ` · ${busyCount} busy` : ''}
+                </div>
+              )}
+              {officeTokens > 0 && (
+                <div className="sw-row" title={`≈ ${(officeTokens/1000).toFixed(0)}k tokens spent this session (~$${(officeTokens*0.0000015).toFixed(2)})`}>
+                  <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
+                </div>
+              )}
+              {goldTreasury !== null && goldTreasury > BigInt(0) && (
+                <div className="sw-row" title={`Office treasury — ${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+                  ◈ {plFmt(goldTreasury, 'sGLDT')} GOLD
+                </div>
+              )}
+            </div>
           </>
         )}
         {/* CEO office */}
@@ -2251,6 +2395,39 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           </div>
         </div>
 
+        {/* Vault Room — the office's treasury, mirroring REAL on-chain
+            balances. Display-only by design: no transfer UI in this room.
+            Gold bars scale with aggregate sGLDT across agent wallets; the
+            glass case shows the boss's BANK holdings (prestige, not spend).
+            The capped pipe is minegold.brave — plumbed, not yet flowing. */}
+        {!isMobileOffice && walletServiceOn && (goldTreasury !== null || bankBalance !== null) && (
+          <div className="room vault" title="Vault Room — real balances, display only">
+            <div className="nameplate">
+              <span>VAULT · TREASURY</span>
+              <span className="pip idle" />
+            </div>
+            <div className="interior">
+              <div className="vault-door" aria-hidden="true"/>
+              {goldTreasury !== null && (
+                <div className="gold-stack" title={`${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+                  {Array.from({ length: goldBars }).map((_, gi) => (
+                    <span key={gi} className="gold-bar" style={{ left: (gi % 4) * 14, bottom: Math.floor(gi / 4) * 8 }}/>
+                  ))}
+                  <div className="gold-label">{plFmt(goldTreasury, 'sGLDT')} sGLDT</div>
+                </div>
+              )}
+              {bankBalance !== null && (
+                <div className={`bank-case ${bankTier || 'empty'}`}
+                     title={`BANK — Banking Brave · ${plFmt(bankBalance, 'BANK') } held${bankTier ? ` · ${bankTier} tier` : ''}`}>
+                  <div className="bank-coin">◈</div>
+                  <div className="bank-label">{plFmt(bankBalance, 'BANK')} BANK</div>
+                </div>
+              )}
+              <div className="gold-pipe" title="minegold.brave — coming soon" aria-hidden="true"/>
+            </div>
+          </div>
+        )}
+
         {/* Senior agent desks (drop-targetable for tasks).
             Assistants + transient sub-agents render NESTED inside their
             senior's interior, not as separate top-level desks. */}
@@ -2259,6 +2436,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const awayMeeting = ambientOk && meetingIdSet.has(a.id);
           const awayCooler = ambientOk && coolerVisitor === a.id;
           const liveTool = liveTools[a.id];
+          const screen = screens[a.id];
+          const paperCount = Math.min((a.journal || []).length, 5);
           return (
           <div key={a.id}
                className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${liveTool ? ' tool-live' : ''}`}
@@ -2282,15 +2461,34 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <span className={`pip ${a.status}`} />
             </div>
             <div className="interior">
-              {/* Per-desk decor — deterministic by index so each office looks
-                  distinct but stable across renders. One rotating wall piece +
-                  a colored rug, desk lamp, and keyboard. Decorative only. */}
-              {(() => { const W = ['mini-window','poster','wall-shelf','pin-note','poster p1','mini-window']; const w = W[i % W.length]; return <div className={w} aria-hidden="true">{w.startsWith('mini-window') ? <span className="sun"/> : null}</div>; })()}
-              <div className="room-rug" data-variant={i % 3} aria-hidden="true"/>
+              {/* Per-desk decor — the agent's OWN furnishings when bought in
+                  the Furnish Shop (a.decor, persisted on the agent record);
+                  falls back to the original index-deterministic pick so
+                  unfurnished offices look exactly like they always did. */}
+              {(() => { const W = ['mini-window','poster','wall-shelf','pin-note','poster p1','mini-window']; const w = (a.decor && a.decor.wall) || W[i % W.length]; return <div className={w} aria-hidden="true">{w.startsWith('mini-window') ? <span className="sun"/> : null}</div>; })()}
+              <div className="room-rug" data-variant={(a.decor && a.decor.rug != null) ? a.decor.rug : i % 3} aria-hidden="true"/>
               <div className="plant" style={{left: 6}}/>
               <div className="coffee" title={`Refresh ${a.name}'s context`}
                 onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
               <div className="desk" />
+              {/* Live monitor: the tail of this agent's REAL output stream.
+                  Dark when idle (no element), scrolling text while running,
+                  frozen last line briefly after 'done'. */}
+              {screen && !awayMeeting && !awayCooler && (
+                <div className={`desk-screen ${screen.phase === 'done' ? 'is-done' : 'is-live'}`} aria-hidden="true">
+                  {screen.tail}
+                </div>
+              )}
+              {/* Filed reports pile up as papers; click opens the journal. */}
+              {paperCount > 0 && (
+                <div className="desk-papers"
+                     title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
+                     onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}>
+                  {Array.from({ length: paperCount }).map((_, pi) => (
+                    <span key={pi} className="desk-paper" style={{ bottom: pi * 3, left: pi % 2 ? 1 : 0 }}/>
+                  ))}
+                </div>
+              )}
               <div className="mini-keys" aria-hidden="true"/>
               <div className="desk-lamp" aria-hidden="true"/>
               {liveTool && !awayMeeting && !awayCooler && (
@@ -2313,7 +2511,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   ? <div className="away-placard">{awayMeeting ? 'in the meeting room' : 'stretching legs'}</div>
                   : (a.task ? <div className="bubble t-body">{a.task}</div> : null)}
                 <div style={{position:'relative'}}>
-                  <Sprite data={a.color} scale={2} className={`bob ${i%2?'slow':'fast'}`}/>
+                  {/* Bob speed tracks real effort — fast only while the agent
+                      is actually running, not by desk-index parity. */}
+                  <Sprite data={a.color} scale={2} className={`bob ${a.status === 'busy' ? 'fast' : 'slow'}`}/>
                   <div className={`mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood||'idle']}</div>
                 </div>
               </div>
@@ -2503,7 +2703,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
   );
 }
 
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -2684,9 +2884,18 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   /* Stick-to-bottom scrolling. Follow the stream only while the user is
      already at (or near) the bottom; scrolling up to read scrollback pauses
      auto-scroll instead of fighting it, and scrolling back down (or switching
-     threads) re-engages. Runs after every render so streaming tokens are
-     followed too — a single scrollIntoView no-op when not stuck. */
+     threads) re-engages.
+
+     Pinning writes screenRef.scrollTop directly rather than
+     bottomRef.scrollIntoView() — scrollIntoView walks up the ancestor chain
+     and can also nudge the window/parent, which is what made the older
+     version drift off the newest message. A direct scrollTop write stays
+     contained to the chat viewport. */
   const stickRef = useRef(true);
+  const pinToBottom = React.useCallback(() => {
+    const el = screenRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
   useEffect(() => {
     const el = screenRef.current;
     if (!el) return;
@@ -2696,15 +2905,37 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
-  useLayoutEffect(() => { stickRef.current = true; }, [activeThread]);
-  useLayoutEffect(() => {
-    if (stickRef.current && bottomRef.current)
-      bottomRef.current.scrollIntoView({ block: 'end' });
-  });
+  /* Switching threads always re-engages stick and jumps to the newest
+     message — you never land mid-scrollback in a thread you just opened. */
+  useLayoutEffect(() => { stickRef.current = true; pinToBottom(); }, [activeThread]);
+  /* Follow content growth via a MutationObserver instead of a render-only
+     effect. New messages, streamed tokens, AND late layout shifts (markdown
+     or images resolving height after first paint) all mutate the scroll
+     subtree — a render-only effect misses the async ones and leaves the view
+     stranded a few lines above the true bottom. rAF-coalesced so a burst of
+     streamed tokens collapses into one scroll. */
+  useEffect(() => {
+    const el = screenRef.current;
+    if (!el || typeof MutationObserver === 'undefined') return;
+    let raf = 0;
+    const follow = () => { raf = 0; if (stickRef.current) el.scrollTop = el.scrollHeight; };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(follow); };
+    const mo = new MutationObserver(schedule);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, []);
 
   const send = async () => {
     const text = input.trim();
     if (!text || streaming) return;
+    /* Hard gate, not just the banner: with no live container every path
+       below silently no-ops (the POST hits a dead origin and streams zero
+       tokens), so the user watched an empty bubble appear. Refuse loudly
+       and keep their draft in the composer. */
+    if (backendDown) {
+      if (window.cafresohqToast) window.cafresohqToast.error('Not connected to your HQ container — reconnecting…');
+      return;
+    }
 
     /* If the boss is composing inside a project or meeting room, the default
        behavior is "send to everyone in the room" — fan out in parallel,
@@ -2889,12 +3120,19 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       return;
     }
 
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text };
-    const pendingChat = [...chat, userMsg];
-    setChat(pendingChat);
+    /* Thread-stamp BOTH sides of the CEO exchange. Without it they defaulted
+       to 'direct', so a user typing in an empty project/meeting room (zero
+       participants falls through to this path) watched their message vanish
+       from the room they were looking at.
+       Functional update + capture: the old `[...chat, userMsg]` snapshot
+       replaced the whole array from a stale closure, erasing anything that
+       landed in state since the last render (agent DMs, research lines). */
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: activeThread };
+    let pendingChat = [];
+    setChat(prev => { pendingChat = [...prev, userMsg]; return pendingChat; });
     setStreaming(true);
     const ceoId = HQ.uid('m');
-    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true }]);
+    setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = HQ.throttleTokens(setChat, ceoId);
@@ -2914,12 +3152,19 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
            onHint: flush.note });
       flush.flushNow();
     } catch (err) {
+      /* Kill any rAF flush scheduled just before the abort — it would fire
+         AFTER this rewrite and overwrite the "(stopped)" marker with the
+         raw truncated text. */
+      flush.cancel();
       const stopped = err.name === 'AbortError';
       setChat(prev => prev.map(m => m.id === ceoId
         ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped}
         : m));
     }
-    abortRef.current = null;
+    /* Deliberately NOT clearing abortRef here — the DM fan-out and synthesis
+       below reuse this controller's signal, and nulling it early made the
+       Stop button dead for exactly the phases that run longest. It's cleared
+       at the end of the CEO turn. */
     let finalText = '';
     setChat(prev => {
       const next = prev.map(m => m.id === ceoId ? {...m, streaming: false} : m);
@@ -3042,9 +3287,16 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
       }
     }
+    if (abortRef.current === controller) abortRef.current = null;
   };
 
-  const stop = () => { if (abortRef.current) abortRef.current.abort(); };
+  /* Stop reaches BOTH abort surfaces: the panel's own CEO controller and the
+     per-agent controllers that dispatchToAgent registers in the host (room /
+     @-mention / brainstorm / handoff sends run through those). */
+  const stop = () => {
+    if (abortRef.current) abortRef.current.abort();
+    if (onStopAll) onStopAll();
+  };
 
   /* When the user types @, scan backwards from the caret to see if we're
      inside a fresh mention token (preceded by start-of-input or whitespace).
@@ -3309,7 +3561,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}`}>
               <div className="who" title={_whoLabel}>
                 <span className="who-name">{_whoLabel}</span>
-                {m.target ? <span className="who-target">→ @{m.target}</span> : null}
+                {/* m.target already carries its own @ prefix(es) — prefixing
+                    again rendered "→ @@kip". */}
+                {m.target ? <span className="who-target">→ {String(m.target).startsWith('@') ? m.target : '@' + m.target}</span> : null}
                 {m.pinned ? <span className="msg-pinned-badge" title="pinned">📌</span> : null}
               </div>
               <div className="bubble">
@@ -3332,9 +3586,13 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       {m.from !== 'user' ? (
                         <>
                           <button title="Re-run this prompt" onClick={() => {
+                            /* Scan only THIS message's thread — the chat array
+                               interleaves all threads, so an unscoped walk could
+                               grab a user prompt from a different room. */
+                            const mThread = m.thread || 'direct';
                             const idx = chat.findIndex(x => x.id === m.id);
                             for (let i = idx - 1; i >= 0; i--) {
-                              if (chat[i].from === 'user') {
+                              if (chat[i].from === 'user' && (chat[i].thread || 'direct') === mThread) {
                                 setInput(chat[i].text);
                                 break;
                               }
@@ -3375,9 +3633,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           <button className="composer-mini composer-mini--ghost" onClick={()=>setShowDelegate(s=>!s)} title="Hand off to a sub-agent">
             <Ico kind="delegate" size={11}/> Delegate
           </button>
+          {backendDown && !streaming && (
+            <span className="composer-offline" title="Chat needs your live HQ container — reconnecting automatically">
+              ⚠ offline — reconnecting…
+            </span>
+          )}
           {streaming
             ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Stop streaming">■ Stop</button>
-            : <button className="composer-mini composer-mini--primary" onClick={send} title="Send (Enter)">Send ↵</button>}
+            : <button className="composer-mini composer-mini--primary" onClick={send} disabled={backendDown}
+                title={backendDown ? 'Not connected to your HQ container' : 'Send (Enter)'}>Send ↵</button>}
         </div>
         <textarea
           ref={composerRef}
@@ -3735,7 +3999,7 @@ const INSPECT_ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
 };
-function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMessage }) {
+function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMessage, onFurnish }) {
   if (!agent) return null;
   /* Live activity for THIS agent, straight from the canonical log — replaces
      the old static `agent.recent` string with what the agent actually did. */
@@ -3772,6 +4036,13 @@ function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMe
             🛡 <b>ELEVATED</b> — backed by a CafresoHQ / Codex session with computer access. Every tool call is logged to Receipts.
             <ElevatedToolkit />
           </div>
+        )}
+        {onFurnish && !agent.transient && (
+          <button className="px-btn" style={{width:'100%',fontSize:9}}
+            onClick={() => onFurnish(agent)}
+            title="Buy desk decor with gold (sGLDT) — cosmetic only, always asks before spending">
+            🛋 FURNISH DESK · pay in gold
+          </button>
         )}
         <div className="stat"><span className="lbl">Tokens (session)</span><span>{agent.tokens?.toLocaleString() || '0'}</span></div>
         <div className="stat"><span className="lbl">Cost</span><span>${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>

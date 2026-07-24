@@ -51,6 +51,16 @@ export async function getStateActor() {
     throw new Error('cafresohq_state canister id is not configured yet (deploy it first)');
   }
   const identity = get(authIdentity);
+  // Belt-and-suspenders: `isAuthenticated` is derived from authStatus, which
+  // can occasionally desync from the actual identity object (an II session
+  // that expired between page loads, or a delegation-refresh race in
+  // AuthClient). Calling the canister with an anonymous identity anyway
+  // doesn't fail cleanly — the replica rejects it with a raw candid dump
+  // (`sender: {"__principal__":"2vxsx-fae"}`) that looks like a crash. Catch
+  // it here with an actionable message instead.
+  if (!identity || identity.getPrincipal().isAnonymous()) {
+    throw new Error('Your sign-in session looks stale — please sign out and sign in again.');
+  }
   const principal = identity.getPrincipal().toText();
   if (_actor && _actorPrincipal === principal) return _actor;
 

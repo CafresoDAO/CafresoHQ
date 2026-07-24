@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import Icon from './Icon.svelte';
   import { aiSearchOpen } from '$lib/stores/blog.js';
+  import { mobileOverlay, toggleMobileOverlay, closeMobileOverlay } from '$lib/stores/mobileOverlay.js';
   import { bankingBraveOrigin, aiCafresoOrigin } from '$lib/links.js';
 
   // Mobile bottom tab bar — 6 core destinations.
@@ -16,7 +17,8 @@
     { href: '/profile',    key: 'profile',    icon: 'user-circle',      label: 'Me'      },
   ];
 
-  let explorePopoverOpen = false;
+  // Mutually exclusive with PageHeader's hamburger drawer — see mobileOverlay.js.
+  $: explorePopoverOpen = $mobileOverlay === 'explore';
 
   $: path = $page.url.pathname;
   $: activeKey = path === '/'
@@ -39,11 +41,11 @@
     : path.startsWith('/library') ? 'library' : path.startsWith('/projects') ? 'projects' : null;
 
   function toggleExplorePopover() {
-    explorePopoverOpen = !explorePopoverOpen;
+    toggleMobileOverlay('explore');
   }
 
   function closeExplorePopover() {
-    explorePopoverOpen = false;
+    closeMobileOverlay();
   }
 
   function openAiSearch() {
@@ -68,12 +70,12 @@
     left: calc(10px + env(safe-area-inset-left, 0px));
     right: calc(10px + env(safe-area-inset-right, 0px));
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    background: hsl(26 45% 98% / 0.92);
+    background: hsl(var(--pg-surface) / 0.92);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid hsl(26 30% 85%);
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 18px; padding: 5px 4px;
-    box-shadow: 0 14px 30px -10px hsl(24 35% 15% / 0.28), 0 2px 0 hsl(26 40% 98% / 0.5) inset;
+    box-shadow: 0 14px 30px -10px hsl(24 35% 15% / 0.28), 0 2px 0 hsl(var(--pg-header-edge) / 0.5) inset;
   "
 >
   {#each items as it}
@@ -87,8 +89,8 @@
         class="flex flex-col items-center gap-[2px] py-1.5 px-0.5 font-semibold cursor-pointer transition-colors"
         style="
           flex: 1; min-width: 0; border: none;
-          background: {active ? 'hsl(260 70% 50%)' : 'transparent'};
-          color: {active ? 'white' : 'hsl(222 47% 11% / 0.6)'};
+          background: {active ? 'hsl(var(--pg-accent-purple))' : 'transparent'};
+          color: {active ? 'white' : 'hsl(var(--pg-fg) / 0.6)'};
           border-radius: 11px;
           font-size: 8.5px; letter-spacing: 0em;
           overflow: hidden;
@@ -102,8 +104,8 @@
             <span style="
               position: absolute; top: -2px; right: -4px;
               width: 6px; height: 6px; border-radius: 50%;
-              background: hsl(260 70% 55%);
-              border: 1.5px solid hsl(26 45% 98%);
+              background: hsl(var(--pg-accent-purple));
+              border: 1.5px solid hsl(var(--pg-surface));
             "></span>
           {/if}
         </span>
@@ -119,8 +121,8 @@
           class="flex flex-col items-center gap-[2px] py-1.5 px-0.5 font-semibold cursor-pointer transition-colors relative"
           style="
             width: 100%; border: none;
-            background: {active ? 'hsl(222 47% 11%)' : 'transparent'};
-            color: {active ? 'white' : 'hsl(222 47% 11% / 0.6)'};
+            background: {active ? 'hsl(var(--pg-solid))' : 'transparent'};
+            color: {active ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg) / 0.6)'};
             border-radius: 11px;
             font-size: 8.5px; letter-spacing: 0em;
             overflow: hidden;
@@ -140,12 +142,12 @@
               position: absolute; bottom: calc(100% + 10px); left: 50%;
               transform: translateX(-50%);
               min-width: 195px;
-              background: hsl(26 45% 98% / 0.96);
+              background: hsl(var(--pg-surface) / 0.98);
               backdrop-filter: blur(18px) saturate(150%);
               -webkit-backdrop-filter: blur(18px) saturate(150%);
-              border: 1px solid hsl(26 30% 82%);
+              border: 1px solid hsl(var(--pg-border));
               border-radius: 14px; padding: 5px;
-              box-shadow: 0 12px 32px -8px hsl(24 35% 15% / 0.3), 0 1px 0 hsl(26 40% 98% / 0.5) inset;
+              box-shadow: 0 12px 32px -8px hsl(24 35% 15% / 0.3), 0 1px 0 hsl(var(--pg-header-edge) / 0.5) inset;
               z-index: 25;
               animation: popUp .18s cubic-bezier(.2,.8,.2,1);
             "
@@ -154,9 +156,9 @@
             <div style="
               position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%) rotate(45deg);
               width: 11px; height: 11px;
-              background: hsl(26 45% 98% / 0.96);
-              border-right: 1px solid hsl(26 30% 82%);
-              border-bottom: 1px solid hsl(26 30% 82%);
+              background: hsl(var(--pg-surface) / 0.98);
+              border-right: 1px solid hsl(var(--pg-border));
+              border-bottom: 1px solid hsl(var(--pg-border));
             "></div>
 
             <!-- Projects -->
@@ -168,8 +170,8 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                background: {exploreSub === 'projects' ? 'hsl(222 47% 11%)' : 'transparent'};
-                color: {exploreSub === 'projects' ? 'white' : 'hsl(222 47% 11%)'};
+                background: {exploreSub === 'projects' ? 'hsl(var(--pg-solid))' : 'transparent'};
+                color: {exploreSub === 'projects' ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg))'};
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
               "
@@ -177,7 +179,7 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: {exploreSub === 'projects' ? 'hsl(222 30% 22%)' : 'hsl(262 60% 92%)'};
+                background: {exploreSub === 'projects' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(var(--pg-accent-purple) / 0.2)'};
                 flex-shrink: 0;
               ">
                 <Icon name="stack" size={15} />
@@ -197,8 +199,8 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                background: {exploreSub === 'library' ? 'hsl(222 47% 11%)' : 'transparent'};
-                color: {exploreSub === 'library' ? 'white' : 'hsl(222 47% 11%)'};
+                background: {exploreSub === 'library' ? 'hsl(var(--pg-solid))' : 'transparent'};
+                color: {exploreSub === 'library' ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg))'};
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
               "
@@ -206,7 +208,7 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: {exploreSub === 'library' ? 'hsl(222 30% 22%)' : 'hsl(45 70% 90%)'};
+                background: {exploreSub === 'library' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(45 80% 55% / 0.22)'};
                 flex-shrink: 0;
               ">
                 <Icon name="books" size={15} />
@@ -226,8 +228,8 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                background: {exploreSub === 'devlog' ? 'hsl(222 47% 11%)' : 'transparent'};
-                color: {exploreSub === 'devlog' ? 'white' : 'hsl(222 47% 11%)'};
+                background: {exploreSub === 'devlog' ? 'hsl(var(--pg-solid))' : 'transparent'};
+                color: {exploreSub === 'devlog' ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg))'};
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
               "
@@ -235,7 +237,7 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: {exploreSub === 'devlog' ? 'hsl(222 30% 22%)' : 'hsl(26 40% 92%)'};
+                background: {exploreSub === 'devlog' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(var(--pg-hover))'};
                 flex-shrink: 0;
               ">
                 <Icon name="article" size={15} />
@@ -255,8 +257,8 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                background: {exploreSub === 'forums' ? 'hsl(222 47% 11%)' : 'transparent'};
-                color: {exploreSub === 'forums' ? 'white' : 'hsl(222 47% 11%)'};
+                background: {exploreSub === 'forums' ? 'hsl(var(--pg-solid))' : 'transparent'};
+                color: {exploreSub === 'forums' ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg))'};
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
                 margin-top: 2px;
@@ -265,7 +267,7 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: {exploreSub === 'forums' ? 'hsl(222 30% 22%)' : 'hsl(26 40% 92%)'};
+                background: {exploreSub === 'forums' ? 'hsl(var(--pg-solid-fg) / 0.15)' : 'hsl(var(--pg-hover))'};
                 flex-shrink: 0;
               ">
                 <Icon name="chats-circle" size={15} />
@@ -277,7 +279,7 @@
             </a>
 
             <!-- Divider -->
-            <div style="height: 1px; background: hsl(26 30% 88%); margin: 4px 2px;"></div>
+            <div style="height: 1px; background: hsl(var(--pg-border)); margin: 4px 2px;"></div>
 
             <!-- Banking (external) -->
             <a
@@ -290,7 +292,7 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                color: hsl(222 47% 11%);
+                color: hsl(var(--pg-fg));
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
                 margin-top: 2px;
@@ -299,10 +301,10 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: hsl(220 78% 92%);
+                background: hsl(220 78% 55% / 0.2);
                 flex-shrink: 0;
               ">
-                <Icon name="bank" size={15} style="color: hsl(220 78% 44%);" />
+                <Icon name="bank" size={15} style="color: hsl(220 78% 55%);" />
               </span>
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 4px;">
@@ -324,7 +326,7 @@
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 12px; border-radius: 10px;
                 text-decoration: none;
-                color: hsl(222 47% 11%);
+                color: hsl(var(--pg-fg));
                 font-size: 13px; font-weight: 600;
                 transition: background .12s;
                 margin-top: 2px;
@@ -333,10 +335,10 @@
               <span style="
                 width: 30px; height: 30px; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
-                background: hsl(260 70% 93%);
+                background: hsl(var(--pg-accent-purple) / 0.2);
                 flex-shrink: 0;
               ">
-                <Icon name="brain" size={15} style="color: hsl(260 70% 50%);" />
+                <Icon name="brain" size={15} style="color: hsl(var(--pg-accent-purple));" />
               </span>
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 4px;">
@@ -358,8 +360,8 @@
         class="flex flex-col items-center gap-[2px] py-1.5 px-0.5 font-semibold cursor-pointer transition-colors no-underline relative"
         style="
           flex: 1; min-width: 0; border: none;
-          background: {active ? 'hsl(222 47% 11%)' : 'transparent'};
-          color: {active ? 'white' : 'hsl(222 47% 11% / 0.6)'};
+          background: {active ? 'hsl(var(--pg-solid))' : 'transparent'};
+          color: {active ? 'hsl(var(--pg-solid-fg))' : 'hsl(var(--pg-fg) / 0.6)'};
           border-radius: 11px;
           font-size: 8.5px; letter-spacing: 0em;
           overflow: hidden;
@@ -371,8 +373,8 @@
             <span style="
               position: absolute; top: -3px; right: -5px;
               width: 7px; height: 7px; border-radius: 50%;
-              background: hsl(260 70% 62%);
-              border: 1.5px solid hsl(26 45% 98%);
+              background: hsl(var(--pg-accent-purple));
+              border: 1.5px solid hsl(var(--pg-surface));
             "></span>
           {/if}
         </span>

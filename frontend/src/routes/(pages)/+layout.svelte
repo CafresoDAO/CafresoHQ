@@ -7,6 +7,7 @@
   import BurnTipModal from '$lib/components/BurnTipModal.svelte';
   import BBWaitlistModal from '$lib/components/BBWaitlistModal.svelte';
   import AISearchModal from '$lib/components/AISearchModal.svelte';
+  import WeatherModal from '$lib/components/WeatherModal.svelte';
   import { initAuth } from '$lib/stores/auth.js';
   import { startPrices } from '$lib/stores/prices.js';
   import { onMount } from 'svelte';
@@ -34,6 +35,7 @@
 <BurnTipModal />
 <BBWaitlistModal />
 <AISearchModal />
+<WeatherModal />
 
 <style>
   /* Visually hidden until keyboard focus — lets keyboard/screen-reader

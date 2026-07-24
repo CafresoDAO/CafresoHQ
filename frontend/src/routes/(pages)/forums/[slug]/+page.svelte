@@ -1,6 +1,7 @@
 <svelte:options runes={true} />
 
 <script>
+  import { goldFromRaw, fmtGold } from '$lib/gold.js';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import Icon from '$lib/components/Icon.svelte';
@@ -9,7 +10,8 @@
   import CommentThread from '$lib/components/CommentThread.svelte';
   import { fmtDate } from '$lib/data/blog.js';
   import { burnTarget, userBurns } from '$lib/stores/blog.js';
-  import { getForumPost, listComments, postComment, forumSlug } from '$lib/api/devlog.js';
+  import { getForumPost, listComments, postComment, forumSlug, getModeration, setCommentHidden, deleteForumPost } from '$lib/api/devlog.js';
+  import { goto } from '$app/navigation';
   import { isAuthenticated, login, principalText } from '$lib/stores/auth.js';
   import { isDevlogAdmin } from '$lib/data/admins.js';
   import { profile } from '$lib/stores/profile.js';
@@ -47,6 +49,37 @@
       (post.authorPrincipal === $principalText || isDevlogAdmin($principalText))
   );
   const authorHandle = $derived(post?.author?.name || 'Guest');
+  const isAdmin = $derived(isDevlogAdmin($principalText));
+
+  // Moderation overlay: hidden-comment keys, loaded once per thread view.
+  // Non-admins never see hidden comments; admins see them dimmed + can toggle.
+  let hiddenKeys = $state(new Set());
+  let deleting = $state(false);
+  let deleteErr = $state(null);
+
+  async function refreshModeration() {
+    try {
+      const mod = await getModeration();
+      hiddenKeys = new Set(mod.hiddenComments);
+    } catch (_) {}
+  }
+
+  async function onToggleHidden(c, nowHidden) {
+    const res = await setCommentHidden(forumSlug(viewSlug), c.id, nowHidden);
+    if (res?.err) { commentErr = res.err; return; }
+    hiddenKeys = new Set(res.ok);
+  }
+
+  async function deleteThread() {
+    if (deleting) return;
+    if (!confirm(`Delete this thread permanently?\n\n"${post?.title}"\n\nThis removes it on-chain for everyone and cannot be undone.`)) return;
+    deleting = true;
+    deleteErr = null;
+    const res = await deleteForumPost(viewSlug);
+    deleting = false;
+    if (res?.err) { deleteErr = res.err; return; }
+    goto('/forums');
+  }
 
   const draftKey = (s) => `cafresohq.forum_draft:${s}`;
   $effect(() => {
@@ -72,7 +105,7 @@
     try {
       const fromCanister = await getForumPost(v);
       if (loadedSlug === v) post = fromCanister;
-      await refreshComments();
+      await Promise.all([refreshComments(), refreshModeration()]);
     } finally {
       if (loadedSlug === v) loading = false;
     }
@@ -131,23 +164,39 @@
 <div class="mx-auto" style="max-width: 820px; padding: 24px 18px 64px;">
   <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
     <a href="/forums" class="inline-flex items-center gap-1.5 text-[12.5px] no-underline"
-      style="color: hsl(215 16% 47%);"
+      style="color: hsl(var(--pg-fg-muted));"
     >
       <Icon name="caret-left" size={13} /> Back to Forums
     </a>
-    {#if canEdit}
-      <a
-        href="/forums/new?edit={viewSlug}"
-        class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5 no-underline"
-        style="background: hsl(26 40% 96%); border: 1px solid hsl(26 30% 82%); color: hsl(222 47% 11%);"
-      >
-        <Icon name="pencil-simple" size={12} /> Edit
-      </a>
-    {/if}
+    <div class="flex items-center gap-2">
+      {#if canEdit}
+        <a
+          href="/forums/new?edit={viewSlug}"
+          class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5 no-underline"
+          style="background: hsl(var(--pg-hover)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
+        >
+          <Icon name="pencil-simple" size={12} /> Edit
+        </a>
+      {/if}
+      {#if isAdmin}
+        <button
+          class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5"
+          style="background: hsl(0 60% 96%); border: 1px solid hsl(0 55% 82%); color: hsl(0 55% 40%); font-family: inherit; cursor: pointer;"
+          disabled={deleting}
+          title="Admin: permanently delete this thread on-chain"
+          on:click={deleteThread}
+        >
+          <Icon name="trash" size={12} /> {deleting ? 'Deleting…' : 'Delete'}
+        </button>
+      {/if}
+    </div>
   </div>
+  {#if deleteErr}
+    <p class="text-[12.5px] mb-3" style="color: hsl(0 55% 45%);">⚠ {deleteErr}</p>
+  {/if}
 
   {#if loading}
-    <div class="text-center py-10" style="color: hsl(215 16% 47%);">
+    <div class="text-center py-10" style="color: hsl(var(--pg-fg-muted));">
       <Icon name="spinner-gap" size={18} /> Loading thread…
     </div>
   {:else if !post}
@@ -158,21 +207,21 @@
   {:else}
     <article>
       <div class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase mb-3"
-        style="background: hsl(26 40% 94%); color: hsl(24 48% 28%); letter-spacing: 0.05em;"
+        style="background: hsl(var(--pg-hover)); color: hsl(var(--pg-eyebrow)); letter-spacing: 0.05em;"
       >
         <Icon name="chats-circle" size={11} /> Forum thread
       </div>
-      <h1 class="font-extrabold leading-[1.05] mb-3" style="font-size: clamp(26px, 6vw, 40px); letter-spacing: -0.025em; color: hsl(222 47% 11%); text-wrap: pretty;">
+      <h1 class="font-extrabold leading-[1.05] mb-3" style="font-size: clamp(26px, 6vw, 40px); letter-spacing: -0.025em; color: hsl(var(--pg-fg)); text-wrap: pretty;">
         {post.title}
       </h1>
-      <p class="text-[15px] sm:text-[17px] leading-[1.55] mb-5" style="color: hsl(215 16% 35%); max-width: 62ch;">
+      <p class="text-[15px] sm:text-[17px] leading-[1.55] mb-5" style="color: hsl(var(--pg-fg-muted)); max-width: 62ch;">
         {post.excerpt}
       </p>
 
-      <div class="flex items-center gap-3 flex-wrap mb-6 text-[12.5px]" style="color: hsl(215 16% 47%);">
+      <div class="flex items-center gap-3 flex-wrap mb-6 text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">
         <div class="inline-flex items-center gap-2">
           <Avatar name={authorHandle} hue={post.author?.hue || 24} size={28} />
-          <span class="font-semibold" style="color: hsl(222 47% 11%);">{authorHandle}</span>
+          <span class="font-semibold" style="color: hsl(var(--pg-fg));">{authorHandle}</span>
         </div>
         <span>· {fmtDate(post.date)}</span>
         <span>· ~{post.readMin || 1} min</span>
@@ -180,13 +229,13 @@
 
       <PostRenderer blocks={body} theme={forumTheme} />
 
-      <div class="rounded-[14px] px-4 sm:px-5 py-4" style="border: 1px solid hsl(26 30% 85%); margin-top: -1px;">
+      <div class="rounded-[14px] px-4 sm:px-5 py-4" style="border: 1px solid hsl(var(--pg-border)); margin-top: -1px;">
         <div class="flex justify-between items-center flex-wrap gap-3 pt-2"
-          style="border-top: 1px dashed hsl(26 25% 80%);"
+          style="border-top: 1px dashed hsl(var(--pg-border));"
         >
-          <div class="text-[12.5px] inline-flex items-center gap-3 flex-wrap" style="color: hsl(215 16% 47%);">
+          <div class="text-[12.5px] inline-flex items-center gap-3 flex-wrap" style="color: hsl(var(--pg-fg-muted));">
             <span class="inline-flex items-center gap-1 tabular-nums">
-              <Icon name="fire" size={13} /> {post.burned.toLocaleString()} $nanas
+              <Icon name="fire" size={13} /> {fmtGold(goldFromRaw(post.burned))} sGLDT
             </span>
             {#if userBurned > 0}
               <span class="inline-flex items-center gap-1 text-[11.5px] font-semibold"
@@ -199,7 +248,7 @@
           <Button on:click={onTip} size="sm"
             class="!bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]"
           >
-            <Icon name="fire" size={13} /> Tip in $nanas
+            <Icon name="fire" size={13} /> Tip gold
           </Button>
         </div>
       </div>
@@ -207,8 +256,8 @@
       <!-- Comments -->
       <div class="mt-8">
         <div class="flex items-center gap-2 mb-3">
-          <Icon name="chat-circle" size={16} style="color: hsl(24 48% 28%);" />
-          <h2 class="font-bold text-[15.5px]" style="color: hsl(222 47% 11%);">
+          <Icon name="chat-circle" size={16} style="color: hsl(var(--pg-eyebrow));" />
+          <h2 class="font-bold text-[15.5px]" style="color: hsl(var(--pg-fg));">
             Comments ({comments.length})
           </h2>
         </div>
@@ -220,18 +269,18 @@
               placeholder="Add to the conversation… type @ to mention someone"
               rows={3}
               maxlength={600}
-              className="w-full rounded-[12px] bg-white px-3 py-2.5 text-[14px] outline-none resize-none"
-              style="border: 1px solid hsl(26 30% 85%); color: hsl(222 47% 11%); line-height: 1.55; display: block;"
+              className="w-full rounded-[12px] px-3 py-2.5 text-[14px] outline-none resize-none"
+              style="background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg)); line-height: 1.55; display: block;"
             />
             {#if commentErr}
               <div class="rounded-[10px] px-3 py-2 text-[12.5px] mt-2"
-                style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);"
+                style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));"
               >
                 {commentErr}
               </div>
             {/if}
             <div class="flex justify-between items-center mt-2 flex-wrap gap-2">
-              <span class="text-[11px]" style="color: hsl(215 16% 47%);">
+              <span class="text-[11px]" style="color: hsl(var(--pg-fg-muted));">
                 Posting as <b>{$profile.name || ($principalText ? `${$principalText.slice(0, 5)}…${$principalText.slice(-3)}` : 'Guest')}</b>
               </span>
               <Button type="submit" size="sm" disabled={posting}>
@@ -255,15 +304,21 @@
         {/if}
 
         {#if loadingComments}
-          <div class="text-[13px] py-3 text-center" style="color: hsl(215 16% 47%);">
+          <div class="text-[13px] py-3 text-center" style="color: hsl(var(--pg-fg-muted));">
             <Icon name="spinner-gap" size={13} /> Loading comments…
           </div>
         {:else if comments.length === 0}
-          <div class="text-[13px] py-6 text-center" style="color: hsl(215 16% 47%);">
+          <div class="text-[13px] py-6 text-center" style="color: hsl(var(--pg-fg-muted));">
             No comments yet. Be the first.
           </div>
         {:else}
-          <CommentThread {comments} />
+          <CommentThread
+            {comments}
+            {hiddenKeys}
+            {isAdmin}
+            {onToggleHidden}
+            modSlug={forumSlug(viewSlug)}
+          />
         {/if}
       </div>
     </article>

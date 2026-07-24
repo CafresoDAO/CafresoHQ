@@ -12,11 +12,11 @@ anonymous visitor (cafreso.com /library page or the AI Search modal)
   GET  <state>.icp0.io/library/find.json?q=…      library cache hit → instant
   GET  <state>.icp0.io/search/health.json         workers online?
   POST <state>.icp0.io/search/submit              queue a job
-  GET  <state>.icp0.io/search/job/<id>.json       poll (~3s, ≤90s)
+  GET  <state>.icp0.io/search/job/<id>.json       poll (~3s, ≤200s)
 
 worker container (serve.py, SEARCH_WORKER=1)      HMAC-signed HTTPS POSTs
   /worker/heartbeat · /worker/claim · /worker/fulfill · /worker/fail
-  per job: Brave (own key) → local LLM (hermes first) → graph → fulfill
+  per job: Brave (own key) → local LLM (operator's backend, direct) → graph → fulfill
 
 canister (cafresohq_state)
   worker registry (admin-approved) · job queue · public library with
@@ -37,8 +37,21 @@ canister (cafresohq_state)
    WORKER_SECRET=<the 64-hex secret>
    BRAVE_API_KEY=<free key from brave.com/search/api>
    ```
-   Optional: `WORKER_MODEL` (model hint for the local hermes gateway),
-   `SEARCH_STATE_URL` (local-replica override for development).
+   Optional: `WORKER_MODEL` (**override only** — by default search follows your
+   HQ brain picker, so switching brains moves search too; set this only to run
+   search on a different model than your agents, and only on one your backend
+   has **loaded**), `SEARCH_STATE_URL` (local-replica override for development),
+   `WORKER_JOB_BUDGET` (seconds for the whole claim→fulfill window, default
+   `200`), `WORKER_IDLE_TIMEOUT` (seconds of LLM silence before the worker
+   gives up on a generation, default `25`).
+
+   **Don't raise `WORKER_JOB_BUDGET` above ~210.** The canister's claim lease is
+   240s and is not renewable — heartbeats don't extend it and there's no renew
+   op. Overrun it and your fulfill is rejected with `not-your-claim`: the GPU
+   time is wasted, the job's attempt counter still ticks, and three strikes
+   fail it permanently. The default leaves 40s of headroom for the graph build
+   and the upload. If your box is too slow to answer inside that, the worker
+   salvages a partial summary rather than nothing — see below.
 3. Wait for the plan admin to **approve** your worker (Settings shows
    "awaiting approval" → "approved"; your container heartbeats meanwhile, so
    the admin can see it's connected).
@@ -71,6 +84,12 @@ Header `x-worker-signature: hex(HMAC-SHA256(secret, raw-body-bytes))`.
   and rejects anything ≤ it. Serialize your calls (one at a time).
 - **Skew:** `|now - ts| ≤ 5 minutes`.
 - `claim` → `{"job":{"id","q"}}` or `{"job":null}`. Claims lease for 4 minutes.
+  The lease is **not renewable** — `heartbeat` does not touch `claimedAt` and
+  there is no renew op — and fulfill is **one-shot**: there's no way to post a
+  partial or "still working" update. Budget your whole pipeline (search + model
+  + upload) under 240s from the claim, or your fulfill returns `not-your-claim`
+  after the job has already been handed to someone else with `attempts`
+  incremented. serve.py targets 200s (`WORKER_JOB_BUDGET`).
 - `fulfill` lines: `jobId`, `model`(pct), `engine`(pct), `answer`(pct),
   `N` source count, then N lines of `"<title-pct> <url-pct>"` (single space),
   finally `graphJson`(pct) — a graph-viewer snapshot
@@ -83,11 +102,220 @@ Header `x-worker-signature: hex(HMAC-SHA256(secret, raw-body-bytes))`.
 
 ## Queue rules (anonymous submit)
 
-Dedup by ASCII-normalized query (repeat submissions join the existing job or
-hit the library). Global cap 25 pending; **daily answer budget** (default 500,
-admin-set); jobs expire unclaimed after 15 min; submit is rejected with
-`dark` when no approved worker has heartbeated within 10 min — the UI then
-degrades honestly ("network is asleep") instead of spinning.
+Dedup by normalized query — ASCII-lowercased, punctuation stripped, whitespace
+collapsed (`libKey`), so "What is ICP?" and "what is icp" are one cache entry
+rather than two jobs. Repeat submissions join the existing job or hit the
+library. Normalization is deliberately conservative: no stopword removal and no
+word reordering, since "cat eats mouse" ≠ "mouse eats cat".
+
+Global cap 25 pending; **daily answer budget** (default 500, admin-set); jobs
+expire unclaimed after 15 min; submit is rejected with `dark` when no approved
+worker has heartbeated within 10 min — the UI then degrades honestly ("network
+is asleep") instead of spinning.
+
+> `libKey` is separate from `libNorm` on purpose. `libNorm` also normalizes HTTP
+> header names and the hex signature in `verifyWorker`; teaching *it* to strip
+> punctuation would turn `x-worker-signature` into `xworkersignature`, no header
+> would ever match, and every worker call would fail auth. Change `libKey` only,
+> and remember `postupgrade` rebuilds `libraryByQuery` — re-keying without that
+> rebuild strands every existing entry.
+
+## Deep Research — the multi-hop HQ research pass
+
+A normal job is one search → one answer. A **deep** job runs the same research
+loop HQ's agent does: decompose → search each angle → write a note page per
+angle → synthesize. It's opt-in and deliberate, with its own activation in the
+UI (the "Deep Research" toggle in the search sheet and the library hero).
+
+**Submit.** `POST /search/submit?mode=deep` (same body). The canister records the
+mode in a `jobModes` side-table and hands `mode:"deep"` back to the worker on
+claim. Deep jobs draw on a **separate daily budget** (`deepDailyBudget`, default
+20) and get a **longer claim lease** (`DEEP_LEASE_NS` ≈ 6.3 min vs 240 s) so the
+worker has room for several searches. A spent deep budget rejects with
+`budget` — distinct from the fast lane, which is untouched.
+
+**Worker loop** (`serve.py` `_sw_deep`): `_sw_deep_plan` breaks the question into
+≤`WORKER_DEEP_TOPICS` (5) angles; each angle runs a Brave search on the **`deep`
+reserve lane** (see the quota table below) and `_sw_deep_note` writes a 100–160
+word note page citing its sources; `_sw_deep_synth` writes the top-level answer
+(with a stitched-takeaways fallback). `_sw_deep_graph` wraps it as a research
+tree: a query hub → one **topic node per angle carrying a `page` id** → source
+nodes. Every step runs against the claim-lease deadline and **degrades to a
+single-shot answer** (returns `None`) if planning fails, no angle yields sources,
+or the budget runs low — a deep job never fails outright when a fast answer is
+still possible.
+
+**Fulfill + storage.** A deep fulfill is a normal fulfill plus one trailing
+field: the note pages as JSON. The flat source list is capped at
+`LIB_MAX_SOURCES` (10) for the entry; the **full per-angle source set lives in
+the graph + note pages** (bounded by `LIB_MAX_GRAPH`). The canister stores the
+pages in a `researchPages` stable side-table keyed by library id — a new empty
+`stable var`, so the upgrade is record-compatible (same pattern as `jobModes` /
+`libraryAskedBy`; no stored record changes shape). Entry + summary JSON gain
+`"mode"`, and deep entries also expose `"researchUrl"` →
+`GET /library/<id>/research.json` (`{q, answer, pages:[{id,title,question,body,
+sources}]}`).
+
+**Explore.** The graph-viewer reads `&pages=<research.json>`: clicking a topic
+node opens that note page **in the viewer** (title, angle, body, sources, with
+prev/next to walk the tree) instead of linking out — source nodes still open
+their URL. The library gives deep queries their **own section** (a "Deep
+Research" tab, gated on `deepCount > 0`), a violet card chip, and a drawer that
+lists the note pages as a browsable accordion above the explorable tree.
+
+Tunables: `WORKER_DEEP_BUDGET` (worker wall-clock, default 350 s),
+`WORKER_DEEP_TOPICS` (angles, default 5). Canister: `deepDailyBudget`.
+
+## Brave quota is the real ceiling — not the daily budget
+
+**The canister's `searchDailyBudget` (500/day) is not what limits this network.**
+Brave's plan allows **1000 queries per month** (~33/day). 500/day is 15,000/month
+— 15x the quota. That cap has never bound because volume is low, and it does not
+protect the key at all. Brave's 50/s rate limit is irrelevant next to the monthly
+volume; nobody is going to hit 50/s.
+
+`serve.py` keeps the real ledger (`hq-state/brave-usage.json`, calendar month
+UTC, cap via `BRAVE_MONTHLY_CAP`). Every Brave call spends against it *before*
+going to the wire, and each spender has a **reserve floor it may not dip below**,
+so scarcity degrades in a fixed order rather than first-come-first-served:
+
+| Spender | Reserve | Yields when |
+|---|---|---|
+| `human` | 0% | never — a person is waiting; it gets the last query in the month |
+| `deep` | 15% | month has <15% left |
+| `gap` | 35% | month has <35% left — **always starves first** |
+
+That table *is* the "human questions weigh more" policy. It's enforced in the
+budget because a prompt can't enforce it.
+
+A worker with a spent month **stops claiming** rather than claiming and failing:
+claim hands out the oldest pending job, so a dry key would otherwise chew through
+the queue burning one of each job's three attempts, and fail jobs that a second
+operator with quota could have answered. Leaving them pending costs nothing.
+
+`GET /gap/status` reports the ledger, per-spender headroom, and recent runs.
+
+## The gap cron — the library asks its own questions
+
+Daily at **10:00 America/New_York** (`GAP_HOUR_ET`/`GAP_TZ`), the worker reads
+the public library, works out what it doesn't cover, and submits up to
+`GAP_DAILY_MAX` (10) questions through the ordinary anonymous
+`POST /search/submit`. Human questions outrank machine ones twice over: the
+proposal prompt is anchored on what **people** recently asked (a previously
+AI-asked question is never counted as demand — that's how a feedback loop
+starts), and `gap` holds the largest Brave reserve.
+
+> **Do not schedule this through `_night_scan`.** That scheduler rolls a daily
+> job with `nextRunAt += 86_400_000`, which holds *UTC* constant — so a job
+> pinned to 10:00 New York silently becomes 11:00 for half the year, and is
+> wrong every day after a DST boundary until someone re-saves it. `_gap_next_run_ms`
+> recomputes from the zone each time. `scripts/test_gap_cron.py` pins both
+> transitions.
+
+The batch is **reserved up front and refunded on every exit path** — dedup and
+validation drop most proposals on a mature library, so a day that reserves 10 and
+submits 2 must give 8 back or it leaks ~240 queries/month and starves the cron
+against its own reserve having done no work.
+
+Answers become **permanent, append-only public entries**, so the worker marks
+them: `engine` reads `brave · ai-gap` and the library drawer shows *"Asked by
+Cafreso to fill a gap"*. This rides the engine field because the entry has no
+`askedBy` — same trick the token count uses on `model`. **Limit:** only the node
+that submitted the question knows it was a gap question, so another operator's
+worker fulfilling it writes plain `brave`. And `LibrarySummary` carries no
+provenance at all, so the list cards can't show the badge. Both want a real
+`askedBy` on the job + summary, which is a canister upgrade.
+
+## Which model answers, and why not through the gateway
+
+**Agent tasks → Hermes. Plain model calls → direct.** Search is a single-shot
+summarisation, not an agent turn, so it calls the operator's backend directly
+(`night_runner.resolve_backend` reads the same `model:` block the HQ brain picker
+writes). Pick a brain in HQ and search follows it — per job, no restart.
+`WORKER_MODEL` overrides that for operators who want search on a different model
+than their agents.
+
+This is not a preference. The hermes gateway is an **agent runtime** and, verified
+against hermes-agent 0.15.1:
+
+- it layers a **~13k-token agent system prompt** onto every call (a 3-source
+  answer cost 15–27k tokens and 37–66s; the same answer direct is ~430 tokens
+  and ~3.5s),
+- it **silently drops `max_tokens` and `response_format`** — they never reach the
+  model,
+- it **ignores `model`** entirely (the real one comes from `config.yaml`) while
+  **echoing your requested name back in the response**. Ask it for
+  `totally/made-up-model-xyz` and it answers, calling itself that.
+
+That last one is why the gateway path reads the model from `config.yaml` rather
+than from the response: library entries are permanent and public, and an echo
+would let a chip claim a model that never ran.
+
+The gateway remains the **fallback** for operators we can't resolve directly —
+`anthropic` has no `_PROVIDER_ENDPOINTS` entry, so the gateway is its only path.
+Don't delete that branch.
+
+### Picking a search model: watch the tail, not the median
+
+Search has a hard 240s lease and pays per token, so a model's **worst** run
+matters more than its typical one. **Reasoning models are a poor fit**: their
+reasoning channel occasionally runs away, and `max_tokens` may not bound it
+(LM Studio does not count gpt-oss-20b's reasoning against the cap, so a 700 cap
+cannot stop a 14k-token think).
+
+Measured on one operator's box, 6 back-to-back runs of the same 5-source job:
+
+| model | median | max | tokens |
+|---|---|---|---|
+| gemma-4-e4b, sole model (non-reasoning) | 1.32s | **1.58s** | ~530 every run |
+| gemma-4-e4b, sharing VRAM | 1.20s | 8.50s | ~520 every run |
+| gpt-oss-20b (reasoning) | 2.90s | **78.3s** | ~500 ×5, then **14,210** |
+
+All produced 5/5 notes and correct citations, so the reasoning bought nothing
+here — a search answer is a short structured extraction, not a chain of thought.
+Reasoning still earns its keep for *agents*, which is exactly what
+`WORKER_MODEL` is for: point search at a fast non-reasoning model and leave the
+brain picker on whatever your agents want.
+
+Two second-order notes from those runs. **Sharing the GPU costs you the tail,
+not the median** (1.2s median either way, but the worst run went 1.58s → 8.5s) —
+and even the shared-VRAM tail is ~28x inside the lease, so co-loading an agent
+model is fine. And **LM Studio JIT-loads a model on first request**, so an
+unloaded agent model self-heals at the cost of one slow call; a model that fails
+to JIT (we saw `nvidia/nemotron-3-nano` do this) is broken rather than merely
+cold, and `/hermes/local-models` will show it as `not-loaded`.
+
+## Answer quality on a slow box
+
+The worker streams the model's reply and asks for `{"summary", "notes"}` with
+**summary first, deliberately**. If the deadline cuts the stream short, the
+summary is usually complete and only some per-source notes are lost, so the
+entry still gets a real answer instead of degrading to sources-only.
+
+Library entries are permanent and public, so salvage has a floor: a truncated
+summary is published only if at least one whole sentence survived. A fragment
+like "ICP i" is discarded and the entry lands sources-only, which is the honest
+outcome. An LLM failure never fails the job — sources and the graph are still
+worth fulfilling.
+
+**Entries consistently landing without summaries?** Check these in order — the
+worker prints the reason, so read its log first:
+
+1. **Is the model loaded?** By far the most common cause. Asking a local
+   backend for a model it hasn't loaded fails every job, and the entry falls
+   back to sources-only. `curl <backend>/api/v0/models` (LM Studio) shows
+   `state: loaded` vs `not-loaded`. Either load it or pick one that is.
+2. **Can the worker reach a backend at all?** `direct backend failed` names the
+   provider, url and model it tried. `no direct backend and no gateway key`
+   means it never got to try: check the brain picker, or `API_SERVER_KEY` /
+   `$HERMES_HOME/.env` for the gateway fallback.
+3. **Only then, is it too slow?** Pick a faster model, or accept sources-only.
+   Raising `WORKER_JOB_BUDGET` past ~210 makes things *worse*, not better —
+   see the lease warning above.
+
+If the chip reads ~15k+ tokens for a 3-source answer, search fell back to the
+gateway and is paying the agent system-prompt tax — check the log for why the
+direct path failed.
 
 ## Payouts
 

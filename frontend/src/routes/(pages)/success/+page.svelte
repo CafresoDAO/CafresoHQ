@@ -51,17 +51,17 @@
 <svelte:head><title>Order submitted · Cafreso</title></svelte:head>
 
 <div class="mx-auto text-center px-6 py-16 sm:py-20" style="max-width: 620px;">
-  <img src="/assets/cafreso-roaster.png" alt="" class="mx-auto" style="width: 160px; opacity: 0.9;" />
+  <img src="/assets/cafreso-roaster.webp" alt="" class="mx-auto" style="width: 160px; opacity: 0.9;" />
 
   <h1 class="mt-4 mb-2 font-extrabold" style="font-size: clamp(26px, 6vw, 36px);">
     {method === 'card' ? 'Payment confirmed' : 'Order submitted'}
   </h1>
 
-  <p class="m-0 mb-6 text-[14.5px]" style="color: hsl(215 16% 47%);">
+  <p class="m-0 mb-6 text-[14.5px]" style="color: hsl(var(--pg-fg-muted));">
     {#if method === 'card'}
       Your card was charged. The farm team takes it from here — expect a shipping email within two business days.
     {:else}
-      Your $nanas are in the treasury. The farm team takes it from here — expect a shipping email within two business days.
+      Your gold is in the DAO treasury. The farm team takes it from here — expect a shipping email within two business days.
     {/if}
   </p>
 
@@ -70,9 +70,9 @@
     <div
       class="rounded-[12px] px-4 py-3 mb-5 text-[13px] inline-flex items-center gap-2"
       style="
-        background: {cardRecording === 'error' ? 'hsl(0 70% 96%)' : 'hsl(112 50% 95%)'};
-        border: 1px solid {cardRecording === 'error' ? 'hsl(0 70% 82%)' : 'hsl(112 43% 75%)'};
-        color: {cardRecording === 'error' ? 'hsl(0 70% 30%)' : 'hsl(112 43% 22%)'};
+        background: hsl(var({cardRecording === 'error' ? '--pg-danger-bg' : '--pg-success-bg'}));
+        border: 1px solid hsl(var({cardRecording === 'error' ? '--pg-danger-border' : '--pg-success-border'}));
+        color: hsl(var({cardRecording === 'error' ? '--pg-danger-fg' : '--pg-success-fg'}));
       "
     >
       {#if cardRecording === 'recording'}
@@ -89,24 +89,24 @@
   {#if orderId || block}
     <div
       class="rounded-[14px] p-4 sm:p-5 mb-6 text-left inline-block mx-auto"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%); min-width: min(100%, 360px);"
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border)); min-width: min(100%, 360px);"
     >
       {#if orderId}
-        <div class="flex items-center gap-2 mb-2 text-[12.5px]" style="color: hsl(215 16% 47%);">
+        <div class="flex items-center gap-2 mb-2 text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="receipt" size={13} />
           <span>Order</span>
-          <span class="font-mono" style="color: hsl(222 47% 11%);">#{orderId}</span>
+          <span class="font-mono" style="color: hsl(var(--pg-fg));">#{orderId}</span>
         </div>
       {/if}
       {#if block && method !== 'card'}
-        <div class="flex items-center gap-2 text-[12.5px]" style="color: hsl(215 16% 47%);">
+        <div class="flex items-center gap-2 text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="link" size={13} />
-          <span>$nanas ledger block</span>
-          <span class="font-mono" style="color: hsl(222 47% 11%);">#{block}</span>
+          <span>Ledger block</span>
+          <span class="font-mono" style="color: hsl(var(--pg-fg));">#{block}</span>
         </div>
       {/if}
       {#if method === 'card'}
-        <div class="flex items-center gap-2 text-[12.5px]" style="color: hsl(215 16% 47%);">
+        <div class="flex items-center gap-2 text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">
           <Icon name="credit-card" size={13} />
           <span>Paid via Stripe</span>
         </div>

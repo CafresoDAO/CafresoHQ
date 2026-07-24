@@ -1,19 +1,34 @@
 <script>
-  import { burnTarget, nanasBalance, tweaks, confirmBurn } from '$lib/stores/blog.js';
+  import { burnTarget, goldBalance, tweaks, confirmGoldTip, refreshGoldBalance } from '$lib/stores/blog.js';
+  import { isAuthenticated, login } from '$lib/stores/auth.js';
   import { burnTip } from '$lib/api/devlog.js';
+  import { transfer } from '$lib/api/icrc1.js';
+  import { getTreasury } from '$lib/api/store.js';
+  import { goldToRaw, fmtGold } from '$lib/gold.js';
+  import { prices } from '$lib/stores/prices.js';
   import Icon from './Icon.svelte';
-  import NanasCoin from './NanasCoin.svelte';
+  import Modal from './Modal.svelte';
+  import GoldCoin from './GoldCoin.svelte';
   import Button from './Button.svelte';
-  import { trapFocus } from '$lib/actions/trapFocus.js';
 
-  let amount = 500;
-  let phase = 'choose'; // 'choose' | 'burning' | 'done'
+  // Real gold: tips move sGLDT on the ledger (buyer → DAO treasury), then the
+  // devlog canister records the RAW e8s amount for counters + leaderboard.
+  const PRESETS = [0.01, 0.1, 1, 5, 25];
+  const TIP_MAX = 25;
+
+  let amount = 0.1;
+  let phase = 'choose'; // 'choose' | 'burning' | 'done' | 'error'
+  let errorMsg = '';
   let holdProgress = 0;
   let holdTimer = null;
 
+  $: usdApprox = $prices?.sGLDT > 0 ? amount * $prices.sGLDT : null;
+  $: balance = $goldBalance ?? 0;
+
   $: if ($burnTarget) {
     phase = 'choose';
-    amount = 500;
+    errorMsg = '';
+    amount = 0.1;
     holdProgress = 0;
   }
 
@@ -29,17 +44,36 @@
   let lastBlock = null;
 
   async function doConfirm() {
-    phase = 'burning';
     const slug = $burnTarget;
-    // Fire the canister call in parallel with the minimum-visible spin duration.
+    if (!$isAuthenticated) { errorMsg = 'Sign in with Internet Identity to tip gold.'; phase = 'error'; return; }
+    if (!(amount > 0)) return;
+    if (amount > balance) { errorMsg = `That's more sGLDT than you hold (${fmtGold(balance)}).`; phase = 'error'; return; }
+    phase = 'burning';
+
+    const treasury = await getTreasury();
+    if (!treasury) { errorMsg = 'DAO treasury is not configured yet — ask an admin to set it on /admin/store.'; phase = 'error'; return; }
+
+    // 1) Move real sGLDT on the ledger.
+    const raw = goldToRaw(amount);
+    const t = await transfer({
+      tokenKey: 'sGLDT',
+      toPrincipalText: treasury,
+      amount: raw,
+      memoText: `cafreso-tip-${slug}`.slice(0, 32)
+    });
+    if (t.err) { errorMsg = t.err; phase = 'error'; return; }
+    lastBlock = t.ok;
+
+    // 2) Record it on the devlog canister (raw e8s) with the ledger block as proof.
     const [res] = await Promise.all([
-      burnTip(slug, amount),
-      new Promise((r) => setTimeout(r, 1400))
+      burnTip(slug, raw, t.ok),
+      new Promise((r) => setTimeout(r, 900))
     ]);
-    if (res?.ok?.block) lastBlock = res.ok.block;
+    if (res?.err) console.warn('[tip] ledger transfer ok but recordBurn failed:', res.err);
     phase = 'done';
-    confirmBurn(slug, amount);
-    await new Promise((r) => setTimeout(r, 1100));
+    confirmGoldTip(slug, amount);
+    refreshGoldBalance();
+    await new Promise((r) => setTimeout(r, 1200));
     close();
   }
 
@@ -66,33 +100,25 @@
   const C = 2 * Math.PI * 58;
 </script>
 
-{#if $burnTarget}
-  <div
-    on:click={close}
-    on:keydown={(e) => e.key === 'Escape' && close()}
-    role="presentation"
-    class="fade-up fixed inset-0 z-[50] flex items-center justify-center"
-    style="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); padding: 16px;"
-  >
-    <div
-      on:click|stopPropagation
-      use:trapFocus
-      role="dialog"
-      aria-modal="true"
-      aria-label="Burn $nanas to tip"
-      class="relative overflow-hidden bg-white rounded-2xl"
-      style="
-        max-width: 440px; width: 100%; padding: 28px;
-        background: hsl(26 45% 98%);
-        border: 1px solid hsl(26 30% 85%);
-        box-shadow: 0 28px 60px -20px hsl(24 40% 8% / 0.55);
-      "
-    >
+<Modal
+  open={!!$burnTarget}
+  on:close={close}
+  ariaLabel="Tip gold (sGLDT)"
+  backdropClass="fade-up flex items-center justify-center"
+  backdropStyle="background: hsl(24 48% 8% / 0.55); backdrop-filter: blur(6px); padding: 16px;"
+  panelClass="relative overflow-hidden rounded-2xl"
+  panelStyle="
+    max-width: 440px; width: 100%; padding: 28px;
+    background: hsl(var(--pg-surface));
+    border: 1px solid hsl(var(--pg-border));
+    box-shadow: 0 28px 60px -20px hsl(24 40% 8% / 0.55);
+  "
+>
       <button
         on:click={close}
         aria-label="Close"
         class="absolute bg-transparent border-none cursor-pointer"
-        style="top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 8px; color: hsl(215 16% 47%);"
+        style="top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 8px; color: hsl(var(--pg-fg-muted));"
       >
         <Icon name="x" size={18} />
       </button>
@@ -102,29 +128,30 @@
           <div
             class="uppercase font-bold mb-2"
             style="font-size: 11px; letter-spacing: 0.12em; color: hsl(32 72% 50%);"
-          >Burn to tip</div>
+          >Tip gold</div>
           <h2 style="font-size: 28px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.02em;">
-            Burning $nanas
+            Tipping sGLDT
           </h2>
-          <p class="m-0 mx-auto" style="font-size: 13.5px; color: hsl(215 16% 40%); line-height: 1.5; max-width: 40ch;">
-            Your burn is atomic — it writes the post's tip counter and your leaderboard rank in the same on-chain call.
+          <p class="m-0 mx-auto" style="font-size: 13.5px; color: hsl(var(--pg-fg-muted)); line-height: 1.5; max-width: 40ch;">
+            Real gold-backed sGLDT moves to the DAO treasury on the ledger, then the
+            post's tip counter and your leaderboard rank update on-chain.
           </p>
         </div>
 
         {#if $tweaks.burnModel === 'quick'}
-          <div class="grid mb-4" style="grid-template-columns: repeat(4, 1fr); gap: 8px;">
-            {#each [100, 500, 1000, 5000] as n}
+          <div class="grid mb-4" style="grid-template-columns: repeat(5, 1fr); gap: 8px;">
+            {#each PRESETS as n}
               <button
                 on:click={() => (amount = n)}
                 class="flex flex-col items-center gap-0.5 cursor-pointer"
                 style="
                   padding: 12px 0; border-radius: 10px;
-                  background: {amount === n ? 'hsl(45 95% 62%)' : 'white'};
-                  border: 1px solid {amount === n ? 'hsl(32 72% 50%)' : 'hsl(26 30% 85%)'};
-                  font-family: inherit; font-size: 14px; font-weight: 600;
+                  background: {amount === n ? 'hsl(45 95% 62%)' : 'hsl(var(--pg-elevated))'};
+                  border: 1px solid {amount === n ? 'hsl(32 72% 50%)' : 'hsl(var(--pg-border))'};
+                  font-family: inherit; font-size: 13px; font-weight: 600;
                 "
               >
-                <NanasCoin size={18} /> {n}
+                <GoldCoin size={18} /> {fmtGold(n)}
               </button>
             {/each}
           </div>
@@ -137,49 +164,49 @@
                 class="inline-flex items-center gap-2"
                 style="font-size: 42px; font-weight: 800; letter-spacing: -0.03em;"
               >
-                {amount.toLocaleString()} <NanasCoin size={32} />
+                {fmtGold(amount)} <GoldCoin size={32} />
               </div>
-              <div style="font-size: 12px; color: hsl(215 16% 47%);">
-                ≈ ${(amount * 0.0015).toFixed(2)} USD · {Math.round((amount / $nanasBalance) * 100)}% of your balance
+              <div style="font-size: 12px; color: hsl(var(--pg-fg-muted));">
+                {#if usdApprox !== null}≈ ${usdApprox.toFixed(2)} USD · {/if}{balance > 0 ? Math.round((amount / balance) * 100) : 0}% of your balance
               </div>
             </div>
             <input
               type="range"
-              min={50}
-              max={Math.min(10000, $nanasBalance)}
-              step={50}
+              min={0.01}
+              max={Math.max(0.01, Math.min(TIP_MAX, balance || TIP_MAX))}
+              step={0.01}
               bind:value={amount}
-              aria-label="Amount of $nanas to burn"
-              aria-valuetext="{amount.toLocaleString()} $nanas"
+              aria-label="Amount of sGLDT to tip"
+              aria-valuetext="{fmtGold(amount)} sGLDT"
               style="width: 100%; accent-color: hsl(32 72% 50%);"
             />
-            <div class="flex justify-between text-[11px] mt-1" style="color: hsl(215 16% 47%);">
-              <span>50</span><span>10,000</span>
+            <div class="flex justify-between text-[11px] mt-1" style="color: hsl(var(--pg-fg-muted));">
+              <span>0.01</span><span>{fmtGold(Math.min(TIP_MAX, balance || TIP_MAX))}</span>
             </div>
           </div>
         {/if}
 
         {#if $tweaks.burnModel === 'hold'}
           <div class="text-center mb-3.5">
-            <div class="text-[13px] mb-3.5" style="color: hsl(215 16% 47%);">Amount to burn</div>
+            <div class="text-[13px] mb-3.5" style="color: hsl(var(--pg-fg-muted));">Amount to tip (sGLDT)</div>
             <div class="flex gap-2 justify-center mb-5">
-              {#each [100, 500, 1000, 5000] as n}
+              {#each PRESETS as n}
                 <button
                   on:click={() => (amount = n)}
                   class="cursor-pointer"
                   style="
                     padding: 8px 16px; border-radius: 999px;
-                    background: {amount === n ? 'hsl(24 48% 12%)' : 'white'};
-                    color: {amount === n ? 'white' : 'hsl(222 47% 11%)'};
-                    border: 1px solid {amount === n ? 'hsl(24 48% 12%)' : 'hsl(26 30% 85%)'};
+                    background: {amount === n ? 'hsl(24 48% 12%)' : 'hsl(var(--pg-elevated))'};
+                    color: {amount === n ? 'white' : 'hsl(var(--pg-fg))'};
+                    border: 1px solid {amount === n ? 'hsl(24 48% 12%)' : 'hsl(var(--pg-border))'};
                     font-family: inherit; font-size: 13px; font-weight: 600;
                   "
-                >{n.toLocaleString()}</button>
+                >{fmtGold(n)}</button>
               {/each}
             </div>
             <div class="relative mx-auto mb-3.5" style="width: 150px; height: 150px;">
               <svg viewBox="0 0 130 130" width="150" height="150">
-                <circle cx="65" cy="65" r="58" fill="none" stroke="hsl(26 30% 85%)" stroke-width="5" />
+                <circle cx="65" cy="65" r="58" fill="none" stroke="hsl(var(--pg-border))" stroke-width="5" />
                 <circle
                   cx="65" cy="65" r="58" fill="none"
                   stroke="hsl(32 72% 50%)" stroke-width="5" stroke-linecap="round"
@@ -208,11 +235,11 @@
               >
                 <div style="line-height: 1.15;">
                   <Icon name="fire" size={26} weight="fill" /><br />
-                  <span class="uppercase" style="font-size: 11px; letter-spacing: 0.08em;">Hold to burn</span>
+                  <span class="uppercase" style="font-size: 11px; letter-spacing: 0.08em;">Hold to tip</span>
                 </div>
               </button>
             </div>
-            <div style="font-size: 12.5px; color: hsl(215 16% 47%);">
+            <div style="font-size: 12.5px; color: hsl(var(--pg-fg-muted));">
               Hold the button until the ring fills.
             </div>
           </div>
@@ -225,17 +252,17 @@
             class="!w-full !bg-[hsl(45_95%_62%)] !text-[hsl(24_48%_12%)] !border !border-[hsl(32_72%_50%)]"
             on:click={doConfirm}
           >
-            <Icon name="fire" size={16} /> Burn {amount.toLocaleString()} $nanas
+            <Icon name="fire" size={16} /> Tip {fmtGold(amount)} sGLDT
           </Button>
         {/if}
 
         <div
           class="flex justify-between items-center mt-3.5 pt-3.5 text-xs"
-          style="border-top: 1px dashed hsl(26 25% 80%); color: hsl(215 16% 47%);"
+          style="border-top: 1px dashed hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted));"
         >
           <span>Your balance</span>
           <span class="inline-flex items-center gap-1 font-semibold text-primary">
-            <NanasCoin size={13} /> {$nanasBalance.toLocaleString()} $nanas
+            <GoldCoin size={13} /> {$goldBalance === null ? 'sign in' : `${fmtGold($goldBalance)} sGLDT`}
           </span>
         </div>
       {/if}
@@ -245,16 +272,36 @@
           <div class="relative mx-auto mb-4" style="width: 110px; height: 110px;">
             <div
               class="spin"
-              style="width: 100%; height: 100%; border: 4px solid hsl(26 30% 85%); border-top-color: hsl(32 72% 50%); border-radius: 50%;"
+              style="width: 100%; height: 100%; border: 4px solid hsl(var(--pg-border)); border-top-color: hsl(32 72% 50%); border-radius: 50%;"
             ></div>
-            <NanasCoin size={56} style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+            <GoldCoin size={56} style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
           </div>
           <h3 style="font-size: 22px; font-weight: 800; margin: 0 0 6px;">
-            Burning {amount.toLocaleString()} $nanas
+            Sending {fmtGold(amount)} sGLDT
           </h3>
-          <p class="m-0 text-[13px]" style="color: hsl(215 16% 47%);">
-            Writing to canister <code style="font-size: 12px;">chkoj-v…cai</code>
+          <p class="m-0 text-[13px]" style="color: hsl(var(--pg-fg-muted));">
+            Moving gold on the ledger, then recording your tip on-chain…
           </p>
+        </div>
+      {/if}
+
+      {#if phase === 'error'}
+        <div class="text-center" style="padding: 20px 0;">
+          <div
+            class="mx-auto mb-3.5 flex items-center justify-center rounded-full"
+            style="width: 72px; height: 72px; background: hsl(4 72% 92%);"
+          >
+            <Icon name="x" size={36} style="color: hsl(4 72% 45%);" />
+          </div>
+          <h3 style="font-size: 20px; font-weight: 800; margin: 0 0 6px;">Tip didn't go through</h3>
+          <p class="m-0 mb-4 text-[13px]" style="color: hsl(var(--pg-fg-muted)); max-width: 42ch; margin-inline: auto;">
+            {errorMsg} No gold left your wallet unless a ledger block is shown.
+          </p>
+          {#if !$isAuthenticated}
+            <Button variant="default" size="sm" on:click={login}>Sign in with Internet Identity</Button>
+          {:else}
+            <Button variant="default" size="sm" on:click={() => (phase = 'choose')}>Try again</Button>
+          {/if}
         </div>
       {/if}
 
@@ -262,16 +309,14 @@
         <div class="text-center" style="padding: 20px 0;">
           <div
             class="animate-pop mx-auto mb-3.5 flex items-center justify-center rounded-full"
-            style="width: 88px; height: 88px; background: hsl(112 43% 45%);"
+            style="width: 88px; height: 88px; background: hsl(var(--brand-leaf));"
           >
             <Icon name="check" size={44} weight="fill" style="color: white;" />
           </div>
-          <h3 style="font-size: 22px; font-weight: 800; margin: 0 0 6px;">Burned</h3>
-          <p class="m-0 mb-2.5 text-[13.5px]" style="color: hsl(215 16% 40%);">
-            Block <code>#{(lastBlock ?? 4821971).toLocaleString()}</code> · the leaderboard just updated.
+          <h3 style="font-size: 22px; font-weight: 800; margin: 0 0 6px;">Gold tipped</h3>
+          <p class="m-0 mb-2.5 text-[13.5px]" style="color: hsl(var(--pg-fg-muted));">
+            {#if lastBlock !== null}Ledger block <code>#{lastBlock.toLocaleString()}</code> · {/if}the leaderboard just updated.
           </p>
         </div>
       {/if}
-    </div>
-  </div>
-{/if}
+</Modal>

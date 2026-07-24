@@ -1,40 +1,93 @@
 <script>
   /* THE LIBRARY — the public face of Ai Cafreso Search.
      Anonymous-first: every question ever answered on-chain, explorable as one
-     growing neural web. Hero = the merged graph (graph-viewer iframe over
-     /library/graph.json) with a live search box wired to the same
-     library-first → network-queue pipeline as the search modal. Below: the
-     entry stream (newest first) with provenance chips; clicking opens a
-     URL-addressable drawer (?e=<id>) with the full answer, sources, and the
-     entry's own micro-graph. Must render beautifully at 0 entries — that is
-     its launch state. */
+     growing neural web. This page is the calm, evergreen REFERENCE view —
+     plain uniform rows, no urgency framing, no thumbnails, no "Just in."
+     The skimmable Ground.news-style river over this exact same data lives
+     at /news (a near-full duplicate of this file, kept separate on purpose
+     — see its own header comment). Hero = the merged graph (graph-viewer
+     iframe over /library/graph.json) with a live search box wired to the
+     same library-first → network-queue pipeline as the search modal.
+     Below: the entry stream (newest first) with provenance chips; clicking
+     opens a URL-addressable drawer (?e=<id>) with the full answer, sources,
+     and the entry's own micro-graph. Must render beautifully at 0 entries
+     — that is its launch state. */
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import Icon from '$lib/components/Icon.svelte';
+  import CommentThread from '$lib/components/CommentThread.svelte';
+  import UpNext from '$lib/components/UpNext.svelte';
+  import RelatedEntries from '$lib/components/RelatedEntries.svelte';
+  import { loadUpNext, addQuestion, normQ } from '$lib/stores/upnext.js';
+  import { relatedEntries, findSimilarEntry } from '$lib/utils/digest.js';
   import { trapFocus } from '$lib/actions/trapFocus.js';
+  import { listComments, postComment } from '$lib/api/devlog.js';
+  import { principalText } from '$lib/stores/auth.js';
+  import { profile } from '$lib/stores/profile.js';
   import {
-    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob
+    libraryIndex, libraryEntry, networkHealth, findPublic, submitJob, awaitJob, libraryResearch
   } from '$lib/api/searchNetwork.js';
-  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl } from '$lib/api/library.js';
+  import { libraryGraphViewerUrl, libraryMergedGraphViewerUrl, libraryFullGraphViewerUrl, libraryReplayGraphViewerUrl, libraryEntryEnrichment, graphViewerOrigin } from '$lib/api/library.js';
+  import { fmtNsDate } from '$lib/utils/time.js';
 
   let index = null;          // null = loading, {count, entries} after
   let health = null;
   let shown = 24;            // client-side paging over the (≤500) index
 
+  // Filter/sort the already-fetched index client-side — no extra fetch, the
+  // whole (≤500-entry) index is already local by the time this page renders.
+  let filterText = '';
+  let sortBy = 'newest';     // 'newest' | 'sources' — index arrives newest-first
+  let modeFilter = 'all';    // 'all' | 'deep' — Deep Research has its own section
+  $: deepCount = index && index.entries ? index.entries.filter((e) => e.mode === 'deep').length : 0;
+  $: filteredEntries = index && index.entries
+    ? (() => {
+        const needle = filterText.trim().toLowerCase();
+        let out = modeFilter === 'deep' ? index.entries.filter((e) => e.mode === 'deep') : index.entries;
+        if (needle) out = out.filter((e) => plain(e.query).toLowerCase().includes(needle));
+        return sortBy === 'sources' ? [...out].sort((a, b) => b.sources - a.sources) : out;
+      })()
+    : [];
+  function onFilterChange() { shown = 24; }   // fresh "Show more" once the set changes
+  function setMode(m) { modeFilter = m; onFilterChange(); }
+
   // Hero search — same pipeline as the modal, rendered inline.
   let q = '';
   let searchPhase = 'idle';  // idle | checking | queued | rejected | dark
+  const SLOW_AFTER_MS = 45_000;   // past this, name the slowness instead of just spinning
   let queueNote = '';
   let rejectReason = '';
   let searchSeq = 0;
+  let queuedForLater = false;   // "added to Up Next" confirmation when the network's asleep
+  let similarMatch = null;      // a likely-duplicate entry found before submitting — see runSearch()
+
+  // A dead network shouldn't be a dead end — the question a visitor typed
+  // still has somewhere useful to go: the personal shortlist, ready to send
+  // the moment a worker's back online.
+  function saveForLater() {
+    if (!q.trim()) return;
+    addQuestion(q);
+    queuedForLater = true;
+  }
 
   // Drawer (URL-addressable: /library?e=<id>)
   let drawerId = null;
   let drawerEntry = null;    // null while loading
   let drawerMissing = false;
+  let drawerResearch = null; // deep entries: {pages:[…]} note pages, lazily fetched
+  let openPageId = null;     // which note page is expanded in the drawer
+  let drawerEnrich = null;   // {byUrl, suggests} from the entry graph, lazily fetched
+  let drawerComments = [];   // devlog-backed comment thread, keyed by libCommentSlug(id)
+  let commentErr = null;
+  // Own namespace ('library-' not the forums' 'f-') so a library entry id can
+  // never collide with a blog/forum slug in the shared devlog comment keyspace.
+  const libCommentSlug = (id) => `library-${id}`;
 
   const mergedGraphUrl = libraryMergedGraphViewerUrl();
+  const fullGraphUrl = libraryFullGraphViewerUrl();   // full interactive viewer (topic filter, search, analytics)
+  const replayGraphUrl = libraryReplayGraphViewerUrl();  // same viewer, growth replay auto-playing
+  let heroIframe;   // bound to the hero graph iframe; used to gate postMessage
 
   $: {
     const e = $page.url.searchParams.get('e');
@@ -44,11 +97,64 @@
   async function loadDrawer(id) {
     drawerEntry = null;
     drawerMissing = false;
+    drawerResearch = null;
+    drawerEnrich = null;
+    drawerComments = [];
+    commentErr = null;
+    openPageId = null;
     if (!id) return;
     const e = await libraryEntry(id);
     if (id !== drawerId) return;
-    if (e && e.id) drawerEntry = e; else drawerMissing = true;
+    if (e && e.id) {
+      drawerEntry = e;
+      // The entry graph carries the Brave-harvest enrichment (source dates,
+      // "people also ask") that the flat entry JSON doesn't — pull it in
+      // parallel so the sources list can show dates and the drawer can offer
+      // the follow-up questions as one-tap searches.
+      libraryEntryEnrichment(id).then((en) => { if (id === drawerId) drawerEnrich = en; });
+      // The library curates like a blog post already (a permanent, sourced
+      // answer) — comments reuse the exact same devlog-backed thread the blog
+      // and forums use, just under their own slug namespace.
+      listComments(libCommentSlug(id)).then((c) => { if (id === drawerId) drawerComments = c || []; });
+      // Deep entries carry a browsable set of note pages — load them so the
+      // drawer can show the research as pages, not just one synthesized answer.
+      if (e.mode === 'deep') {
+        const r = await libraryResearch(id);
+        if (id === drawerId && r && r.pages) drawerResearch = r;
+      }
+    } else drawerMissing = true;
   }
+  async function postDrawerComment(text) {
+    if (!drawerId) return;
+    commentErr = null;
+    const author = {
+      name: $profile?.name || ($principalText ? `${$principalText.slice(0, 5)}…${$principalText.slice(-3)}` : 'Guest'),
+      role: $profile?.bio ? 'Member' : 'Community',
+      hue: 24
+    };
+    const res = await postComment(libCommentSlug(drawerId), author, text);
+    if (res?.err) { commentErr = res.err; return; }
+    drawerComments = await listComments(libCommentSlug(drawerId));
+  }
+  // Svelte's legacy-mode dependency scan works per-block: it only picks up a
+  // dependency an {#each} block's OWN template expressions reference by name.
+  // A wrapper function (srcAge(url) reading srcAges via closure) doesn't
+  // count — the each block never sees "srcAges" in its own markup, so it
+  // never got a dirty bit when the async enrichment fetch resolved and the
+  // dates silently never rendered. Reading srcAges directly via {@const} in
+  // the each block (see the sources list below) is what actually fixes it;
+  // this derived map only needs to exist, not be read from here.
+  $: srcAges = drawerEnrich && drawerEnrich.byUrl ? drawerEnrich.byUrl : new Map();
+  // Oldest dated source — one glance at how far back the evidence reaches,
+  // the Ground.news "Coverage Details" idea adapted to what we actually have.
+  $: oldestSourceAge = (() => {
+    let oldest = null;
+    for (const v of srcAges.values()) {
+      if (v.age && /^\d{4}-\d{2}-\d{2}/.test(v.age) && (!oldest || v.age < oldest)) oldest = v.age;
+    }
+    return oldest;
+  })();
+  function togglePage(pid) { openPageId = openPageId === pid ? null : pid; }
 
   function openEntry(id) { goto(`/library?e=${encodeURIComponent(id)}`, { noScroll: true }); }
   function closeDrawer() { goto('/library', { noScroll: true }); }
@@ -60,20 +166,59 @@
     else if (index === null) index = { count: -1, entries: [] };   // unreachable → offline state
     if (h) health = h;
   }
+  // The hero graph iframe (embed=post) posts a message when a question node is
+  // clicked; open the in-page drawer instead of letting it navigate a new tab.
+  // Strict checks: only the viewer origin, only OUR iframe's window, only the
+  // one message shape — never trust postMessage blind.
+  function onGraphMessage(ev) {
+    if (ev.origin !== graphViewerOrigin()) return;
+    if (heroIframe && ev.source !== heroIframe.contentWindow) return;
+    const d = ev.data;
+    if (!d || d.type !== 'cafreso:openEntry' || !d.entryId) return;
+    openEntry(String(d.entryId));
+  }
   onMount(() => {
     refresh();
+    loadUpNext();   // hydrate the personal research shortlist (localStorage)
     const t = setInterval(refresh, 60_000);
-    return () => clearInterval(t);
+    window.addEventListener('message', onGraphMessage);
+    // ?ask=<question> — the landing target for the graph viewer's ghost
+    // "people also wonder" nodes: arrive with the question PRE-FILLED, not
+    // auto-run. A URL that runs a paid search job on load with no user
+    // action is a CSRF-shaped hole (any page can iframe/link ?ask=... and
+    // spend the network's Brave quota + mint a permanent entry with
+    // attacker-chosen text) — the visitor still has to press Search.
+    // Only the `ask` param is stripped, via URLSearchParams, so any other
+    // param (e.g. a future ?e= alongside it) survives the replace.
+    const ask = $page.url.searchParams.get('ask');
+    if (ask && ask.trim()) {
+      q = ask.trim().slice(0, 400);
+      const u = new URL($page.url);
+      u.searchParams.delete('ask');
+      goto(u.pathname + u.search, { replaceState: true, noScroll: true });
+    }
+    return () => { clearInterval(t); window.removeEventListener('message', onGraphMessage); };
   });
 
-  async function runSearch() {
+  async function runSearch({ skipSimilarCheck = false } = {}) {
     const query = q.trim();
     if (!query || searchPhase === 'checking' || searchPhase === 'queued') return;
     const seq = ++searchSeq;
     searchPhase = 'checking';
+    queuedForLater = false;
+    similarMatch = null;
     const hit = await findPublic(query);
     if (seq !== searchSeq) return;
     if (hit && hit.id) { searchPhase = 'idle'; openEntry(hit.id); return; }
+    // Catches paraphrases the canister's exact-normalized dedup can't see —
+    // before spending a Brave query on a question that's likely answered
+    // under different wording. Skippable: a real near-miss (rare, by design —
+    // findSimilarEntry favors precision) shouldn't trap someone who really
+    // does mean something new.
+    if (!skipSimilarCheck && index?.entries) {
+      const near = findSimilarEntry(query, index.entries);
+      if (near) { similarMatch = near; searchPhase = 'similar'; return; }
+    }
     const h = await networkHealth();
     if (seq !== searchSeq) return;
     if (!h || !h.activeWorkers) { searchPhase = 'dark'; return; }
@@ -85,7 +230,14 @@
     searchPhase = 'queued';
     queueNote = h.activeWorkers === 1 ? '1 worker researching' : `${h.activeWorkers} workers online`;
     const done = await awaitJob(sub.jobId, {
-      onTick: (st) => { if (seq === searchSeq && st === 'claimed') queueNote = 'a worker picked it up…'; }
+      onTick: (st, elapsedMs) => {
+        if (seq !== searchSeq) return;
+        // Past ~45s a slow box is still healthy — say so rather than spin.
+        // 'slow' is a sentinel: the template swaps the whole sentence, since the
+        // default one promises "~10–30s" and would contradict itself here.
+        if (elapsedMs > SLOW_AFTER_MS) queueNote = 'slow';
+        else if (st === 'claimed') queueNote = 'a worker picked it up…';
+      }
     });
     if (seq !== searchSeq) return;
     if (done.status === 'done' && done.entry) {
@@ -98,17 +250,64 @@
     }
   }
 
-  function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
-  function fmtDate(ns) {
-    try { return new Date(Number(ns) / 1e6).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch { return ''; }
+  // ── "Up Next" shortlist glue ───────────────────────────────────────────────
+  // Graduation: a queued question that now exists in the library (answered by
+  // anyone) flips to a "read it" row. Loose client-side normalized match — the
+  // authoritative check is findPublic() when the question is actually sent.
+  $: answeredMap = (() => {
+    const m = new Map();
+    if (index && index.entries) for (const e of index.entries) m.set(normQ(plain(e.query)), e.id);
+    return m;
+  })();
+  // Reactive so its identity changes when answeredMap does — the UpNext
+  // template re-evaluates graduation as the index refreshes.
+  $: findAnswered = (q) => answeredMap.get(normQ(q)) || null;
+
+  // "Related in the library" for the drawer — the index is already in memory
+  // here (unlike the standalone /library/[id] page, which fetches it itself).
+  $: drawerRelated = drawerEntry && index?.entries ? relatedEntries(drawerEntry, index.entries) : [];
+
+  // Send one shortlisted question through the real network pipeline (same
+  // library-first → queue → await path as the hero search). Returns a status
+  // the UpNext component reflects; on success refresh() lets the item graduate.
+  async function sendQueued(question) {
+    const query = String(question || '').trim();
+    if (!query) return { status: 'idle' };
+    const hit = await findPublic(query);
+    if (hit && hit.id) { refresh(); return { status: 'hit', id: hit.id }; }
+    const h = await networkHealth();
+    if (!h || !h.activeWorkers) return { status: 'dark' };
+    const sub = await submitJob(query);
+    if (!sub) return { status: 'dark' };
+    if (sub.status === 'hit' && sub.entry) { refresh(); return { status: 'hit', id: sub.entry.id }; }
+    if (sub.status === 'rejected') return { status: 'rejected', reason: sub.reason };
+    const done = await awaitJob(sub.jobId);
+    if (done.status === 'done' && done.entry) { refresh(); return { status: 'done', id: done.entry.id }; }
+    return { status: 'rejected', reason: done.status };
   }
+
+  function plain(t) { return String(t || '').replace(/<[^>]+>/g, ''); }
+  const fmtDate = (ns) => fmtNsDate(ns, 'short');
   function shortPrincipal(p) {
     if (!p) return '';
     return p.length > 12 ? p.slice(0, 5) + '…' + p.slice(-3) : p;
   }
   function domain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+  }
+  // Sources are worker-authored (any approved network worker can write this
+  // field) — treat like any other untrusted URL before it becomes an href.
+  // graph-viewer.js already scheme-gates url/img/favicon the same way.
+  function safeHref(url) { return /^https?:\/\//i.test(url || '') ? url : '#'; }
+  /* Who asked this question — a person, or the library noticing its own gap?
+     The worker marks gap questions by appending 'ai-gap' to the engine field
+     (the canister entry has no askedBy; adding one is a canister upgrade).
+     Read it here rather than rendering the raw marker at the user. */
+  function askedByAi(entry) {
+    return /\bai-gap\b/.test(String(entry?.engine || ''));
+  }
+  function engineLabel(entry) {
+    return String(entry?.engine || '').replace(/\s*·?\s*\bai-gap\b/, '').trim() || 'brave';
   }
 </script>
 
@@ -124,6 +323,7 @@
   <div class="lib-hero">
     {#if mergedGraphUrl && index && index.count > 0}
       <iframe
+        bind:this={heroIframe}
         src={mergedGraphUrl}
         title="The library as a graph — every question and source, one web"
         class="lib-hero-graph"
@@ -139,6 +339,7 @@
       <h1 class="lib-title">Every answer, one growing web<span class="text-brand-400">.</span></h1>
       <p class="lib-sub">
         Questions answered on-chain live here forever — searched once, free for everyone after.
+        Want what's new first? <a href="/news" class="lib-link" style="text-decoration: underline;">Check the newsroom</a>.
       </p>
 
       <form class="lib-search" on:submit|preventDefault={runSearch}>
@@ -155,10 +356,46 @@
         </button>
       </form>
 
-      {#if searchPhase === 'queued'}
+      {#if fullGraphUrl && index && index.count > 0}
+        <div class="lib-explore-row">
+          <a class="lib-explore" href={fullGraphUrl} target="_blank" rel="noopener">
+            <Icon name="graph" size={15} style="flex-shrink:0;" />
+            Explore the full graph — filter by topic, search &amp; trace connections
+            <span class="lib-explore-arrow" aria-hidden="true">→</span>
+          </a>
+          {#if replayGraphUrl && index.count >= 10}
+            <a class="lib-explore lib-replay" href={replayGraphUrl} target="_blank" rel="noopener"
+               title="Replay every question in the order it was asked — the web growing in fast-forward">
+              <span aria-hidden="true">▶</span>
+              Watch it grow
+            </a>
+          {/if}
+        </div>
+      {/if}
+
+      {#if searchPhase === 'similar' && similarMatch}
+        <div class="lib-search-note">
+          <Icon name="magnifying-glass" size={14} style="flex-shrink: 0;" />
+          Looks like this may already be answered:
+          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={() => { searchPhase = 'idle'; openEntry(similarMatch.id); }}>
+            "{plain(similarMatch.query).slice(0, 70)}{plain(similarMatch.query).length > 70 ? '…' : ''}"
+          </button>
+          — view it, or
+          <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                  on:click={() => runSearch({ skipSimilarCheck: true })}>
+            search anyway
+          </button>.
+        </div>
+      {:else if searchPhase === 'queued'}
         <div class="lib-search-note">
           <span class="lib-pulse-dot"></span>
-          The research network is on it — {queueNote}. Fresh answers take ~10–30s and join the web forever.
+          {#if queueNote === 'slow'}
+            Still working — this one's a slow one. The answer joins the library either way,
+            so you can leave this page and find it here.
+          {:else}
+            The research network is on it — {queueNote}. Fresh answers usually land in a few seconds and join the web forever.
+          {/if}
         </div>
       {:else if searchPhase === 'rejected'}
         <div class="lib-search-note lib-warn">
@@ -169,8 +406,17 @@
         </div>
       {:else if searchPhase === 'dark'}
         <div class="lib-search-note lib-warn">
-          The research network is asleep — no workers online. Browse everything already answered below,
-          or <a href="/hq/search" class="lib-link">sign in to search with your own container</a>.
+          {#if queuedForLater}
+            <Icon name="check-circle" size={14} style="flex-shrink: 0;" />
+            Added to your Up Next shortlist below — send it the moment a worker's back online.
+          {:else}
+            The research network is asleep — no workers online.
+            <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
+                    on:click={saveForLater}>
+              Add "{plain(q).slice(0, 40)}{plain(q).length > 40 ? '…' : ''}" to Up Next
+            </button>
+            instead, or <a href="/hq/search" class="lib-link">sign in to search with your own container</a>.
+          {/if}
         </div>
       {/if}
 
@@ -192,22 +438,29 @@
         {/if}
       </div>
 
-      {#if mergedGraphUrl && index && index.count > 0}
-        <a class="lib-graph-open" href={mergedGraphUrl} target="_blank" rel="noopener noreferrer">
+      {#if fullGraphUrl && index && index.count > 0}
+        <a class="lib-graph-open" href={fullGraphUrl} target="_blank" rel="noopener noreferrer">
           Explore the full web <Icon name="arrow-up-right" size={12} />
         </a>
       {/if}
     </div>
   </div>
 
+  <!-- ── Up Next: personal research shortlist ─────────────────────────────── -->
+  {#if index !== null}
+    <UpNext {findAnswered} onOpen={openEntry} onSend={sendQueued} workersOnline={!!(health && health.activeWorkers)} />
+  {/if}
+
   <!-- ── Entry stream ─────────────────────────────────────────────────────── -->
   {#if index === null}
     <div class="lib-grid">
       {#each Array(6) as _}
         <div class="lib-card">
-          <div class="lib-skel" style="width: 85%; height: 20px; margin-bottom: 10px;"></div>
-          <div class="lib-skel" style="width: 55%; height: 12px; margin-bottom: 16px;"></div>
-          <div class="lib-skel" style="width: 40%; height: 12px;"></div>
+          <div class="lib-skel" style="width: 80%; height: 16px; margin-bottom: 12px;"></div>
+          <div class="lib-skel" style="width: 100%; height: 11px; margin-bottom: 7px;"></div>
+          <div class="lib-skel" style="width: 92%; height: 11px; margin-bottom: 7px;"></div>
+          <div class="lib-skel" style="width: 60%; height: 11px; margin-bottom: 16px;"></div>
+          <div class="lib-skel" style="width: 40%; height: 11px;"></div>
         </div>
       {/each}
     </div>
@@ -227,24 +480,102 @@
       <p>The on-chain library didn't answer — it may not be deployed on this network yet. Try again shortly.</p>
     </div>
   {:else}
-    <div class="lib-grid">
-      {#each index.entries.slice(0, shown) as e (e.id)}
-        <button class="lib-card lib-card-btn" on:click={() => openEntry(e.id)}>
-          <h3>{plain(e.query)}</h3>
-          <div class="lib-chips">
-            <span class="lib-chip">{fmtDate(e.ts)}</span>
-            <span class="lib-chip">{e.sources} source{e.sources === 1 ? '' : 's'}</span>
-            <span class="lib-chip lib-chip-chain">on-chain</span>
-          </div>
-        </button>
-      {/each}
+    <!-- The graph hero above is the primary way to explore; this list is the
+         browse/search fallback. Framing it as such keeps the "one growing web"
+         idea front-and-centre rather than letting the flat list read as the
+         whole library. -->
+    <div class="lib-browse-head">
+      <h2 class="lib-browse-title">Browse every answer</h2>
+      <p class="lib-browse-sub">
+        The whole web as a list — filter or sort below, or
+        <a href={fullGraphUrl} target="_blank" rel="noopener noreferrer" class="lib-link">explore it visually in the graph ↑</a>
+      </p>
     </div>
-    {#if index.entries.length > shown}
-      <div style="text-align: center;">
-        <button class="lib-more" on:click={() => (shown += 24)}>
-          Show more ({index.entries.length - shown} remaining)
+
+    {#if deepCount > 0}
+      <div class="lib-modebar" role="group" aria-label="Filter by research depth">
+        <button class="lib-modetab" class:on={modeFilter === 'all'} on:click={() => setMode('all')}>
+          All questions
+        </button>
+        <button class="lib-modetab lib-modetab-deep" class:on={modeFilter === 'deep'} on:click={() => setMode('deep')}>
+          <Icon name="tree-structure" size={14} /> Deep Research
+          <span class="lib-modecount">{deepCount}</span>
         </button>
       </div>
+      {#if modeFilter === 'deep'}
+        <p class="lib-modehint">
+          Multi-angle research queries — each broke a question into several searches and note pages you can walk as a tree.
+        </p>
+      {/if}
+    {/if}
+
+    <div class="lib-filterbar">
+      <div class="lib-filter-input">
+        <Icon name="funnel" size={14} style="color: hsl(var(--pg-fg-muted)); flex-shrink: 0;" />
+        <input
+          type="text"
+          placeholder="Filter {index.entries.length} entries…"
+          bind:value={filterText}
+          on:input={onFilterChange}
+          aria-label="Filter library entries"
+        />
+        {#if filterText}
+          <button class="lib-filter-clear" on:click={() => { filterText = ''; onFilterChange(); }} aria-label="Clear filter">
+            <Icon name="x" size={12} />
+          </button>
+        {/if}
+      </div>
+      <select class="lib-sort-select" bind:value={sortBy} on:change={onFilterChange} aria-label="Sort entries">
+        <option value="newest">Newest first</option>
+        <option value="sources">Most sources</option>
+      </select>
+    </div>
+
+    {#if filteredEntries.length === 0}
+      <div class="lib-empty">
+        <div class="lib-empty-glyph" aria-hidden="true">◌</div>
+        <h2>No entries match "{filterText}"</h2>
+        <p>Try a shorter word, or <button class="lib-filter-reset-link" on:click={() => { filterText = ''; onFilterChange(); }}>clear the filter</button> to browse everything.</p>
+      </div>
+    {:else}
+      <!-- The reference list — plain, uniform rows, no urgency framing. The
+           Ground.news-style skim feed (thumbnails, "Just in", lead story)
+           lives at /news over this same data; this page stays the calm,
+           evergreen archive view. -->
+      <div class="lib-grid">
+        {#each filteredEntries.slice(0, shown) as e (e.id)}
+          <button class="lib-card lib-card-btn" class:lib-card-deep={e.mode === 'deep'}
+                  on:click={() => openEntry(e.id)}>
+            {#if e.mode === 'deep' || e.askedBy === 'ai-gap'}
+              <div class="lib-card-top">
+                {#if e.mode === 'deep'}
+                  <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+                {/if}
+                {#if e.askedBy === 'ai-gap'}
+                  <span class="lib-chip lib-chip-ai" title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">✦ Asked by Cafreso</span>
+                {/if}
+              </div>
+            {/if}
+            <h3>{plain(e.query)}</h3>
+            {#if e.snippet}
+              <p class="lib-card-snippet">{plain(e.snippet)}</p>
+            {/if}
+            <div class="lib-card-meta">
+              <span>{fmtDate(e.ts)}</span>
+              <span class="lib-meta-dot" aria-hidden="true">·</span>
+              <span>{e.sources} source{e.sources === 1 ? '' : 's'}</span>
+              <Icon name="arrow-right" size={13} class="lib-card-go" />
+            </div>
+          </button>
+        {/each}
+      </div>
+      {#if filteredEntries.length > shown}
+        <div style="text-align: center;">
+          <button class="lib-more" on:click={() => (shown += 24)}>
+            Show more ({filteredEntries.length - shown} remaining)
+          </button>
+        </div>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -259,14 +590,50 @@
       <Icon name="x" size={16} />
     </button>
     {#if drawerEntry}
-      <div class="lib-kicker">Library entry · {drawerEntry.id}</div>
+      <div class="lib-kicker" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <span>Library entry · {drawerEntry.id}</span>
+        <a class="lib-link" href="/library/{drawerEntry.id}" style="flex-shrink: 0;">
+          Open full entry <Icon name="arrow-up-right" size={11} />
+        </a>
+      </div>
       <h2 class="lib-drawer-q">{plain(drawerEntry.query)}</h2>
       <div class="lib-chips" style="margin-bottom: 18px;">
+        {#if drawerEntry.mode === 'deep'}
+          <span class="lib-chip lib-chip-deep"><Icon name="tree-structure" size={11} /> Deep research</span>
+        {/if}
+        {#if askedByAi(drawerEntry)}
+          <span class="lib-chip lib-chip-ai"
+                title="Nobody asked this one. Cafreso read the library, found a gap in what it covers, and asked to fill it.">
+            ✦ Asked by Cafreso to fill a gap
+          </span>
+        {/if}
         {#if drawerEntry.model}<span class="lib-chip">🤖 {drawerEntry.model}</span>{/if}
-        {#if drawerEntry.engine}<span class="lib-chip">🔎 {drawerEntry.engine}</span>{/if}
+        {#if drawerEntry.engine}<span class="lib-chip">🔎 {engineLabel(drawerEntry)}</span>{/if}
         <span class="lib-chip">📅 {fmtDate(drawerEntry.answeredAt || drawerEntry.ts)}</span>
         {#if drawerEntry.worker}<span class="lib-chip" title={drawerEntry.worker}>⚙ {shortPrincipal(drawerEntry.worker)}</span>{/if}
       </div>
+
+      {#if drawerEntry.sources?.length}
+        <div class="lib-coverage">
+          <div class="lib-coverage-stat">
+            <span class="lib-coverage-n">{drawerEntry.sources.length}</span>
+            <span class="lib-coverage-label">source{drawerEntry.sources.length === 1 ? '' : 's'}</span>
+          </div>
+          {#if oldestSourceAge}
+            <div class="lib-coverage-stat">
+              <span class="lib-coverage-n">{oldestSourceAge}</span>
+              <span class="lib-coverage-label">oldest source</span>
+            </div>
+          {/if}
+          {#if drawerEnrich?.favicons?.length}
+            <div class="lib-coverage-favs" title="Sites cited in this answer">
+              {#each drawerEnrich.favicons.slice(0, 8) as f}
+                <img src={f} alt="" loading="lazy" on:error={(ev) => { ev.target.style.visibility = 'hidden'; }} />
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       {#if drawerEntry.answer}
         <p class="lib-drawer-answer">{plain(drawerEntry.answer)}</p>
@@ -278,10 +645,12 @@
         <div class="lib-kicker" style="margin-top: 22px;">Sources</div>
         <ol class="lib-sources">
           {#each drawerEntry.sources as s, i}
+            {@const age = srcAges.get(s.url)?.age}
             <li>
-              <a href={s.url} target="_blank" rel="noopener noreferrer">
+              <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer">
                 <span class="lib-src-n">[{i + 1}]</span>
                 <span class="lib-src-t">{plain(s.title)}</span>
+                {#if age}<span class="lib-src-age">{age}</span>{/if}
                 <span class="lib-src-d">{domain(s.url)}</span>
               </a>
             </li>
@@ -289,17 +658,85 @@
         </ol>
       {/if}
 
+      {#if drawerEnrich?.suggests?.length}
+        <div class="lib-kicker" style="margin-top: 22px;">People also wonder</div>
+        <p class="lib-ask-lede">Questions the web raised alongside this one — ask any to send it to the research network.</p>
+        <div class="lib-ask-chips">
+          {#each drawerEnrich.suggests.slice(0, 6) as sug}
+            <button class="lib-ask-chip" on:click={() => { closeDrawer(); q = sug.q; runSearch(); }} title={sug.a || sug.q}>
+              <span aria-hidden="true">✦</span> {plain(sug.q)}
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if drawerRelated.length}
+        <div style="margin-top: 22px;">
+          <RelatedEntries items={drawerRelated} {plain} onOpen={openEntry} />
+        </div>
+      {/if}
+
+      {#if drawerEntry.mode === 'deep' && drawerResearch?.pages?.length}
+        <div class="lib-kicker" style="margin-top: 24px;">The research tree · {drawerResearch.pages.length} note pages</div>
+        <p class="lib-deep-lede">
+          This question was researched from several angles. Open a page to read the note, browse the whole
+          thing as a vault of linked markdown files, or explore the tree in the graph below.
+        </p>
+        <a class="lib-vault-btn" href="/library/vault?e={drawerEntry.id}">
+          <Icon name="vault" size={15} />
+          <span class="lib-vault-btn-t">
+            <strong>Browse Research</strong>
+            <small>File tree · wikilinks · download as .md for Obsidian</small>
+          </span>
+          <Icon name="arrow-right" size={14} />
+        </a>
+        <div class="lib-pages">
+          {#each drawerResearch.pages as p, i}
+            <div class="lib-page" class:open={openPageId === p.id}>
+              <button class="lib-page-head" on:click={() => togglePage(p.id)} aria-expanded={openPageId === p.id}>
+                <span class="lib-page-n">{i + 1}</span>
+                <span class="lib-page-title">
+                  <span class="lib-page-t">{plain(p.title)}</span>
+                  {#if p.question}<span class="lib-page-q">{plain(p.question)}</span>{/if}
+                </span>
+                <Icon name={openPageId === p.id ? 'caret-up' : 'caret-down'} size={14} style="flex-shrink: 0; color: hsl(var(--pg-fg-muted));" />
+              </button>
+              {#if openPageId === p.id}
+                <div class="lib-page-body">
+                  <p class="lib-page-note">{plain(p.body)}</p>
+                  {#if p.sources?.length}
+                    <ol class="lib-sources" style="margin-top: 12px;">
+                      {#each p.sources as s, si}
+                        <li>
+                          <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer">
+                            <span class="lib-src-n">[{si + 1}]</span>
+                            <span class="lib-src-t">{plain(s.title)}</span>
+                            <span class="lib-src-d">{domain(s.url)}</span>
+                          </a>
+                        </li>
+                      {/each}
+                    </ol>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       {#if libraryGraphViewerUrl(drawerEntry.id)}
-        <div class="lib-kicker" style="margin-top: 22px;">This answer as a graph</div>
+        {@const deepEntry = drawerEntry.mode === 'deep'}
+        {@const gvUrl = libraryGraphViewerUrl(drawerEntry.id, { deep: deepEntry })}
+        <div class="lib-kicker" style="margin-top: 22px;">{deepEntry ? 'The research tree, explorable' : 'This answer as a graph'}</div>
         <iframe
-          src={libraryGraphViewerUrl(drawerEntry.id)}
-          title="Graph of this answer"
+          src={gvUrl}
+          title={deepEntry ? 'The research tree — click a topic to read its note' : 'Graph of this answer'}
           class="lib-drawer-graph"
           loading="lazy"
         ></iframe>
         <div class="lib-drawer-actions">
-          <a class="lib-link" href={libraryGraphViewerUrl(drawerEntry.id)} target="_blank" rel="noopener noreferrer">
-            Open graph <Icon name="arrow-up-right" size={12} />
+          <a class="lib-link" href={gvUrl} target="_blank" rel="noopener noreferrer">
+            {deepEntry ? 'Open the research tree' : 'Open graph'} <Icon name="arrow-up-right" size={12} />
           </a>
           <button class="lib-link" style="border: none; background: transparent; cursor: pointer; font: inherit; padding: 0;"
             on:click={() => { try { navigator.clipboard.writeText(location.origin + '/library?e=' + drawerEntry.id); } catch {} }}>
@@ -307,6 +744,14 @@
           </button>
         </div>
       {/if}
+
+      <!-- The library curates like a blog: a permanent, sourced answer worth
+           discussing. Same devlog-backed thread as the blog/forums, own slug
+           namespace (library-<id>) so it can never collide with theirs. -->
+      {#if commentErr}
+        <p class="lib-comment-err">{commentErr}</p>
+      {/if}
+      <CommentThread comments={drawerComments} onPost={postDrawerComment} modSlug={libCommentSlug(drawerEntry.id)} />
     {:else if drawerMissing}
       <div class="lib-empty" style="padding: 60px 10px;">
         <h2>Entry not found</h2>
@@ -420,6 +865,25 @@
   .lib-search-note.lib-warn { color: hsl(35 80% 72%); }
   .lib-link { color: hsl(45 85% 62%); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
 
+  .lib-explore-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .lib-explore-row .lib-explore { margin-top: 0; }
+  /* "Watch it grow" — same pill family, warmer fill so it reads as the play
+     button it is rather than a second navigation link. */
+  .lib-replay { color: hsl(150 65% 70%); background: hsl(150 40% 12% / 0.55); border-color: hsl(150 50% 40% / 0.4); }
+  .lib-replay:hover { border-color: hsl(150 65% 50% / 0.75); background: hsl(150 45% 14% / 0.7); }
+  .lib-explore {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding: 8px 14px;
+    font-size: 12.5px; font-weight: 600; color: hsl(45 85% 66%);
+    background: hsl(45 40% 12% / 0.55); border: 1px solid hsl(45 60% 45% / 0.35);
+    border-radius: 999px; text-decoration: none; line-height: 1;
+    backdrop-filter: blur(6px); transition: border-color .15s, background .15s, transform .15s;
+  }
+  .lib-explore:hover { border-color: hsl(45 85% 55% / 0.7); background: hsl(45 45% 14% / 0.7); transform: translateY(-1px); }
+  .lib-explore-arrow { transition: transform .15s; }
+  .lib-explore:hover .lib-explore-arrow { transform: translateX(3px); }
+  @media (max-width: 560px) { .lib-explore { font-size: 12px; } }
+
   .lib-pulse {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     margin-top: 16px; font-size: 12px; color: hsl(40 20% 62%);
@@ -446,19 +910,61 @@
   .lib-graph-open:hover { border-color: hsl(45 85% 55%); }
 
   /* ── Entry stream ──────────────────────────────────────────────────────── */
+  .lib-filterbar {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  }
+  .lib-filter-input {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+    background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 999px;
+    padding: 8px 14px; transition: border-color 0.14s;
+  }
+  .lib-filter-input:focus-within { border-color: hsl(45 75% 60%); }
+  .lib-filter-input input {
+    flex: 1; min-width: 0; border: none; outline: none; background: none;
+    font: 14px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg));
+  }
+  .lib-filter-input input::placeholder { color: hsl(40 15% 60%); }
+  .lib-filter-clear {
+    display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+    background: hsl(var(--pg-border)); color: hsl(var(--pg-fg-muted)); flex-shrink: 0; padding: 0;
+  }
+  .lib-filter-clear:hover { background: hsl(var(--pg-border)); }
+  .lib-sort-select {
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
+    padding: 8px 14px; font: 600 12.5px Inter, system-ui, sans-serif;
+    color: hsl(var(--pg-fg)); cursor: pointer; flex-shrink: 0;
+  }
+  .lib-filter-reset-link {
+    background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    font: inherit; color: hsl(45 70% 40%); text-decoration: underline;
+  }
+  /* Section header framing the list as the secondary browse surface. */
+  .lib-browse-head { margin-bottom: 16px; }
+  .lib-browse-title {
+    font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700;
+    color: hsl(var(--pg-fg)); margin: 0 0 4px;
+  }
+  .lib-browse-sub { font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 0; }
+
+  /* Wider tracks than before — cards now carry an answer snippet, which needs
+     room to read. Auto-fill still collapses to 1-up on narrow screens. */
   .lib-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 14px;
   }
   .lib-card {
-    background: hsl(26 45% 98%);
-    border: 1px solid hsl(26 30% 87%);
+    background: hsl(var(--pg-surface));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 18px;
-    padding: 20px;
+    padding: 18px 20px;
     box-shadow: 0 4px 18px -10px hsl(24 35% 15% / 0.15);
   }
+  /* Flex column so the meta line pins to the bottom and cards in a row stay the
+     same height regardless of question/snippet length — kills the ragged grid. */
   .lib-card-btn {
+    display: flex; flex-direction: column; height: 100%;
     text-align: left; cursor: pointer; font: inherit;
     transition: transform 0.14s, border-color 0.14s, box-shadow 0.14s;
   }
@@ -467,37 +973,138 @@
     border-color: hsl(45 75% 60%);
     box-shadow: 0 12px 28px -12px hsl(24 35% 15% / 0.25);
   }
+  .lib-card-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .lib-card-top { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  /* The question is now the card's eyebrow/title — smaller and clamped tighter,
+     because the answer snippet is what a browser actually reads. */
   .lib-card h3 {
     font-family: 'Playfair Display', serif;
-    font-size: 17.5px; font-weight: 600; line-height: 1.35;
-    color: hsl(222 47% 11%);
-    margin: 0 0 12px;
+    font-size: 16px; font-weight: 600; line-height: 1.3;
+    color: hsl(var(--pg-fg));
+    margin: 0 0 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .lib-card-snippet {
+    font-size: 13px; line-height: 1.55; color: hsl(var(--pg-fg-muted));
+    margin: 0 0 14px;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* Meta pinned to the bottom (margin-top:auto), one quiet line instead of the
+     old row of four pills. The universal "on-chain" chip is gone — everything
+     here is on-chain, so it discriminated nothing; on-chain provenance now
+     lives once, in the drawer. */
+  .lib-card-meta {
+    margin-top: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 11.5px; color: hsl(var(--pg-fg-subtle));
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .lib-meta-dot { opacity: 0.5; }
+  :global(.lib-card-go) {
+    margin-left: auto; color: hsl(var(--pg-fg-subtle));
+    opacity: 0; transform: translateX(-4px);
+    transition: opacity .14s, transform .14s;
+  }
+  .lib-card-btn:hover :global(.lib-card-go) { opacity: 1; transform: none; }
+
   .lib-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .lib-chip {
-    font-size: 10.5px; font-weight: 600; color: hsl(215 16% 40%);
-    background: hsl(26 35% 93%); border-radius: 999px; padding: 3px 9px;
+    font-size: 10.5px; font-weight: 600; color: hsl(var(--pg-fg-muted));
+    background: hsl(var(--pg-hover)); border-radius: 999px; padding: 3px 9px;
   }
   .lib-chip-chain { background: hsl(45 80% 88%); color: hsl(38 65% 30%); }
+  .lib-chip-deep {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: hsl(266 70% 94%); color: hsl(266 60% 42%); border: 1px solid hsl(266 55% 86%);
+  }
+  /* Deep Research section toggle — a distinct tab pair above the filter bar. */
+  .lib-modebar { display: flex; gap: 8px; margin-bottom: 14px; }
+  .lib-modetab {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));
+    border-radius: 999px; padding: 8px 16px; cursor: pointer;
+    font: 600 13px Inter, system-ui, sans-serif; color: hsl(var(--pg-fg-muted));
+    transition: border-color .14s, color .14s, background .14s;
+  }
+  .lib-modetab.on { color: hsl(var(--pg-fg)); border-color: hsl(45 75% 60%); background: hsl(var(--pg-surface)); }
+  .lib-modetab-deep.on {
+    color: hsl(266 60% 42%); border-color: hsl(266 60% 70%);
+    background: hsl(266 70% 96%);
+  }
+  .lib-modecount {
+    font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: hsl(266 60% 88%); color: hsl(266 55% 38%);
+  }
+  .lib-modehint { font-size: 12.5px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: -4px 0 16px; max-width: 60ch; }
+
+  /* Deep card accent — a soft violet edge so a deep entry reads as richer. */
+  .lib-card-deep { border-color: hsl(266 55% 84%); }
+  .lib-card-deep:hover { border-color: hsl(266 60% 66%); }
+
+  /* Vault CTA — the flagship way into a deep entry. */
+  .lib-vault-btn {
+    display: flex; align-items: center; gap: 12px; text-decoration: none;
+    border: 1px solid hsl(266 55% 78%); border-radius: 13px; padding: 12px 14px;
+    background: linear-gradient(120deg, hsl(266 70% 96%), hsl(266 60% 98%));
+    color: hsl(266 60% 40%); margin: 0 0 14px;
+    transition: border-color .14s, transform .14s;
+  }
+  .lib-vault-btn:hover { border-color: hsl(266 60% 58%); transform: translateY(-1px); }
+  .lib-vault-btn-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .lib-vault-btn-t strong { font-size: 13.5px; }
+  .lib-vault-btn-t small { font-size: 11px; color: hsl(266 30% 52%); }
+  :global(.dark) .lib-vault-btn {
+    background: linear-gradient(120deg, hsl(266 55% 30% / 0.35), hsl(266 55% 24% / 0.2));
+    border-color: hsl(266 45% 48%); color: hsl(266 85% 85%);
+  }
+  :global(.dark) .lib-vault-btn-t small { color: hsl(266 40% 70%); }
+
+  /* Drawer note pages — the research as a small notebook. */
+  .lib-deep-lede { font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted)); margin: 6px 0 12px; }
+  .lib-pages { display: flex; flex-direction: column; gap: 8px; }
+  .lib-page { border: 1px solid hsl(var(--pg-border)); border-radius: 12px; overflow: hidden; background: hsl(var(--pg-surface)); }
+  .lib-page.open { border-color: hsl(266 55% 72%); }
+  .lib-page-head {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 12px 14px; border: none; background: transparent; cursor: pointer; font: inherit;
+  }
+  .lib-page-n {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 7px;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    background: hsl(266 60% 92%); color: hsl(266 55% 42%);
+  }
+  .lib-page-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .lib-page-t { font-size: 13.5px; font-weight: 600; color: hsl(var(--pg-fg)); }
+  .lib-page-q {
+    font-size: 11.5px; color: hsl(var(--pg-fg-muted)); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lib-page-body { padding: 0 14px 14px 47px; }
+  .lib-page-note { font-size: 13.5px; line-height: 1.68; color: hsl(var(--pg-fg)); margin: 0; white-space: pre-wrap; }
+  /* Louder than the other chips on purpose: "a machine chose to ask this" is
+     the one thing on this card a reader would want to know unprompted, and it
+     should never be mistaken for a neutral metadata pill. */
+  .lib-chip-ai {
+    background: hsl(266 70% 95%); color: hsl(266 55% 40%);
+    border: 1px solid hsl(266 55% 85%); cursor: help;
+  }
 
   .lib-more {
-    border: 1px solid hsl(26 30% 82%); background: white; border-radius: 999px;
+    border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated)); border-radius: 999px;
     padding: 10px 22px; font: 600 13px Inter, system-ui, sans-serif;
-    color: hsl(222 47% 11%); cursor: pointer;
+    color: hsl(var(--pg-fg)); cursor: pointer;
   }
 
   .lib-empty {
     text-align: center; padding: 70px 20px;
-    background: hsl(26 45% 98%); border: 1px dashed hsl(26 30% 82%); border-radius: 1.75rem;
+    background: hsl(var(--pg-surface)); border: 1px dashed hsl(var(--pg-border)); border-radius: 1.75rem;
   }
   .lib-empty-glyph { font-size: 40px; color: hsl(45 80% 55%); margin-bottom: 12px; }
-  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(222 47% 11%); }
-  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(215 16% 45%); max-width: 48ch; margin: 0 auto; }
+  .lib-empty h2 { font-family: 'Playfair Display', serif; font-size: 24px; margin: 0 0 8px; color: hsl(var(--pg-fg)); }
+  .lib-empty p { font-size: 14px; line-height: 1.65; color: hsl(var(--pg-fg-muted)); max-width: 48ch; margin: 0 auto; }
 
   .lib-skel {
     display: inline-block; height: 14px; border-radius: 6px;
-    background: linear-gradient(90deg, hsl(26 30% 90%) 25%, hsl(26 35% 95%) 50%, hsl(26 30% 90%) 75%);
+    background: linear-gradient(90deg, hsl(var(--pg-hover)) 25%, hsl(var(--pg-border)) 50%, hsl(var(--pg-hover)) 75%);
     background-size: 200% 100%;
     animation: lib-shimmer 1.4s ease-in-out infinite;
   }
@@ -513,8 +1120,8 @@
     position: fixed; z-index: 61;
     top: 0; right: 0; bottom: 0;
     width: min(520px, 94vw);
-    background: hsl(26 45% 98%);
-    border-left: 1px solid hsl(26 30% 85%);
+    background: hsl(var(--pg-surface));
+    border-left: 1px solid hsl(var(--pg-border));
     box-shadow: -24px 0 60px -20px hsl(24 40% 8% / 0.4);
     padding: 26px 26px calc(26px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
@@ -524,44 +1131,103 @@
   .lib-drawer-close {
     position: absolute; top: 16px; right: 16px;
     width: 32px; height: 32px; border: none; border-radius: 9px;
-    background: hsl(26 35% 93%); color: hsl(215 16% 40%);
+    background: hsl(var(--pg-hover)); color: hsl(var(--pg-fg-muted));
     cursor: pointer; display: grid; place-items: center;
+  }
+  /* The drawer becomes a bottom sheet on touch, where 32px is too small to
+     hit reliably — and dismissing is the one thing that must always work. */
+  @media (pointer: coarse) {
+    .lib-drawer-close { width: 40px; height: 40px; }
   }
   .lib-drawer-q {
     font-family: 'Playfair Display', serif;
     font-size: 24px; font-weight: 700; line-height: 1.25;
-    color: hsl(222 47% 11%); margin: 8px 0 12px;
+    color: hsl(var(--pg-fg)); margin: 8px 0 12px;
   }
-  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(222 30% 18%); margin: 0; }
-  .lib-muted { color: hsl(215 16% 50%); font-style: italic; }
+  /* "Coverage Details" strip — Ground.news' sidebar stat box, adapted to a
+     single-column drawer: source count, how far back the evidence reaches,
+     and a favicon row of who's cited. Only renders what enrichment provides,
+     so a plain (pre-harvest) entry shows just the source count. */
+  .lib-coverage {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 16px;
+    margin: 4px 0 18px; padding: 12px 14px;
+    background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border)); border-radius: 12px;
+  }
+  .lib-coverage-stat { display: flex; flex-direction: column; gap: 1px; }
+  .lib-coverage-n { font-size: 15px; font-weight: 700; color: hsl(var(--pg-fg)); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .lib-coverage-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--pg-fg-muted)); }
+  .lib-coverage-favs { display: inline-flex; align-items: center; margin-left: auto; }
+  .lib-coverage-favs img {
+    width: 20px; height: 20px; border-radius: 50%; margin-left: -6px;
+    border: 2px solid hsl(var(--pg-elevated)); background: hsl(var(--pg-hover)); object-fit: cover;
+  }
+  .lib-coverage-favs img:first-child { margin-left: 0; }
+  .lib-drawer-answer { font-size: 14.5px; line-height: 1.7; color: hsl(var(--pg-fg)); margin: 0; }
+  .lib-muted { color: hsl(var(--pg-fg-muted)); font-style: italic; }
   .lib-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .lib-sources a {
     display: flex; align-items: baseline; gap: 8px; text-decoration: none;
-    font-size: 13px; color: hsl(222 47% 11%);
+    font-size: 13px; color: hsl(var(--pg-fg));
   }
-  .lib-src-n { color: hsl(215 16% 55%); font-size: 11px; flex-shrink: 0; }
+  .lib-src-n { color: hsl(var(--pg-fg-muted)); font-size: 11px; flex-shrink: 0; }
   .lib-src-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lib-src-d { color: hsl(215 16% 55%); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  .lib-src-d { color: hsl(var(--pg-fg-muted)); font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  /* Publish date from the Brave harvest (only when the entry graph carried it). */
+  .lib-src-age {
+    color: hsl(45 60% 45%); font-size: 10.5px; font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  :global(.dark) .lib-src-age { color: hsl(45 70% 60%); }
+
+  /* "People also wonder" — follow-up questions the web raised, each a one-tap
+     search. The graph's ghost nodes, surfaced for readers who never open it. */
+  .lib-ask-lede { font-size: 12.5px; line-height: 1.55; color: hsl(var(--pg-fg-muted)); margin: 4px 0 10px; }
+  .lib-ask-chips { display: flex; flex-direction: column; gap: 7px; }
+  .lib-ask-chip {
+    display: flex; align-items: flex-start; gap: 7px; text-align: left; width: 100%;
+    border: 1px solid hsl(266 40% 82%); border-radius: 11px; padding: 9px 12px;
+    background: hsl(266 60% 97%); color: hsl(266 45% 38%); cursor: pointer;
+    font: 500 13px Inter, system-ui, sans-serif; line-height: 1.4;
+    transition: border-color .14s, transform .14s, background .14s;
+  }
+  .lib-ask-chip:hover { border-color: hsl(266 55% 62%); background: hsl(266 65% 95%); transform: translateY(-1px); }
+  .lib-ask-chip span { color: hsl(45 75% 50%); }
+  :global(.dark) .lib-ask-chip {
+    background: hsl(266 45% 26% / 0.35); border-color: hsl(266 40% 46%); color: hsl(266 80% 84%);
+  }
+  :global(.dark) .lib-ask-chip:hover { background: hsl(266 45% 30% / 0.5); border-color: hsl(266 55% 60%); }
   .lib-drawer-graph {
-    width: 100%; height: 260px; border: 1px solid hsl(26 30% 85%); border-radius: 14px;
+    width: 100%; height: 260px; border: 1px solid hsl(var(--pg-border)); border-radius: 14px;
     background: hsl(250 30% 7%); margin-top: 8px;
   }
   .lib-drawer-actions { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+  .lib-comment-err {
+    margin: 24px 0 -8px; padding: 8px 12px; font-size: 12.5px;
+    background: hsl(0 60% 96%); color: hsl(0 55% 38%); border: 1px solid hsl(0 55% 85%); border-radius: 8px;
+  }
+  :global(.dark) .lib-comment-err { background: hsl(0 45% 22% / 0.4); color: hsl(0 70% 82%); border-color: hsl(0 45% 40%); }
   .lib-drawer-actions .lib-link { color: hsl(38 65% 35%); }
 
-  /* ── Mobile: drawer becomes a bottom sheet; hero tightens ─────────────── */
+  /* ── Mobile ────────────────────────────────────────────────────────────── */
   @media (max-width: 640px) {
     .lib-hero { min-height: 360px; }
     .lib-hero-content { padding: 130px 18px 22px; }
     .lib-drawer {
       top: auto; left: 0; right: 0; width: auto;
       max-height: 86dvh;
-      border-left: none; border-top: 1px solid hsl(26 30% 85%);
+      border-left: none; border-top: 1px solid hsl(var(--pg-border));
       border-radius: 22px 22px 0 0;
       animation: lib-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     @keyframes lib-sheet-in { from { transform: translateY(40px); opacity: 0; } }
     .lib-graph-open { top: 12px; right: 12px; }
+    :global(.lib-card-go) { display: none; }
+
+    /* Section controls stop stacking into a tall wall: the sort dropdown
+       sits inline with a shrinking filter field. */
+    .lib-browse-title { font-size: 19px; }
+    .lib-filterbar { gap: 8px; }
+    .lib-sort-select { font-size: 12px; padding: 8px 10px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -569,4 +1235,31 @@
     .lib-drawer { animation: none; }
     .lib-card-btn { transition: none; }
   }
+
+  /* Dark-mode text/fills for the branded pills + gold links. Their light
+     values (pale-gold / pale-purple washes with dark ink) would read as loud
+     bright chips on the dark cards, so flip to translucent fills + light ink.
+     Everything else flips automatically via the --pg-* tokens above. */
+  :global(.dark) .lib-chip-chain {
+    background: hsl(45 85% 55% / 0.16);
+    color: hsl(45 88% 72%);
+  }
+  :global(.dark) .lib-chip-ai {
+    background: hsl(266 55% 32% / 0.4);
+    color: hsl(266 85% 85%);
+    border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-filter-reset-link { color: hsl(45 85% 64%); }
+  :global(.dark) .lib-drawer-actions .lib-link { color: hsl(45 85% 66%); }
+  :global(.dark) .lib-chip-deep {
+    background: hsl(266 55% 32% / 0.4); color: hsl(266 85% 85%); border-color: hsl(266 45% 48%);
+  }
+  :global(.dark) .lib-modetab-deep.on {
+    background: hsl(266 55% 30% / 0.35); color: hsl(266 85% 84%); border-color: hsl(266 50% 52%);
+  }
+  :global(.dark) .lib-modecount { background: hsl(266 55% 40% / 0.5); color: hsl(266 85% 86%); }
+  :global(.dark) .lib-card-deep { border-color: hsl(266 45% 40% / 0.6); }
+  :global(.dark) .lib-card-deep:hover { border-color: hsl(266 55% 58%); }
+  :global(.dark) .lib-page.open { border-color: hsl(266 50% 52%); }
+  :global(.dark) .lib-page-n { background: hsl(266 55% 38% / 0.5); color: hsl(266 85% 85%); }
 </style>

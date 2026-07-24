@@ -2,15 +2,17 @@
 
 <script>
   import { goto } from '$app/navigation';
-  import { cart, cartTotal, showToast } from '$lib/stores/cart.js';
+  import { cart, cartTotal, cartTotalCents, showToast } from '$lib/stores/cart.js';
   import { productImage, usd } from '$lib/data/products.js';
-  import { refreshNanasBalance } from '$lib/stores/blog.js';
+  import { refreshGoldBalance, goldBalance } from '$lib/stores/blog.js';
   import { transfer } from '$lib/api/icrc1.js';
   import { recordOrder, getTreasury } from '$lib/api/store.js';
   import { createStripeSession, savePendingStripeOrder } from '$lib/api/stripe.js';
   import { isAuthenticated, authStatus, login, principalText } from '$lib/stores/auth.js';
-  import { nanasBalance } from '$lib/stores/blog.js';
-  import NanasCoin from '$lib/components/NanasCoin.svelte';
+  import { prices } from '$lib/stores/prices.js';
+  import { usdCentsToGold, fmtGold } from '$lib/gold.js';
+  import GoldCoin from '$lib/components/GoldCoin.svelte';
+  import GoldPrice from '$lib/components/GoldPrice.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/Button.svelte';
   import Input from '$lib/components/Input.svelte';
@@ -19,8 +21,8 @@
   let form = $state({ name: '', email: '', street: '', city: '', postal: '' });
 
   // ── Payment method ────────────────────────────────────────────────────────
-  /** 'nanas' | 'card' */
-  let payMethod = $state('nanas');
+  /** 'gold' | 'card' */
+  let payMethod = $state('gold');
 
   // ── Transaction state ─────────────────────────────────────────────────────
   let phase = $state('idle'); // idle | transferring | recording | redirecting | done | error
@@ -45,13 +47,19 @@
     return null;
   }
 
-  // ── $nanas payment ────────────────────────────────────────────────────────
-  async function payWithNanas(e) {
+  // ── Gold (sGLDT) payment ──────────────────────────────────────────────────
+  // USD is the anchor; the gold amount due is computed at pay time from the
+  // live sGLDT price so the buyer pays gold worth exactly the USD total.
+  async function payWithGold(e) {
     e.preventDefault();
     error = null;
-    if (!$isAuthenticated) { error = 'Sign in with Internet Identity to pay with $nanas.'; return; }
+    if (!$isAuthenticated) { error = 'Sign in with Internet Identity to pay with gold.'; return; }
     const bad = validateShipping();
     if (bad) { error = bad; return; }
+    if (!(goldDue > 0)) {
+      error = 'Gold price feed unavailable right now — try again in a minute, or pay by card.';
+      return;
+    }
 
     const treasuryPrincipal = await ensureTreasury();
     if (!treasuryPrincipal) {
@@ -59,12 +67,12 @@
       return;
     }
 
-    // 1) Move $nanas from buyer → treasury via ICRC-1
+    // 1) Move sGLDT from buyer → treasury via ICRC-1
     phase = 'transferring';
     const transferRes = await transfer({
-      tokenKey: 'nanas',
+      tokenKey: 'sGLDT',
       toPrincipalText: treasuryPrincipal,
-      amount: $cartTotal,
+      amount: goldDue,
       memoText: `cafreso-order-${Date.now().toString(16)}`
     });
     if (transferRes.err) { phase = 'error'; error = transferRes.err; return; }
@@ -89,7 +97,7 @@
     orderId = orderRes.ok.id;
     phase = 'done';
     cart.clear();
-    refreshNanasBalance();
+    refreshGoldBalance();
     showToast(`Order #${orderId} submitted · block #${blockIndex}`);
     setTimeout(() => goto(`/success?order=${orderId}&block=${blockIndex}`), 900);
   }
@@ -134,14 +142,15 @@
   }
 
   const busy = $derived(phase === 'transferring' || phase === 'recording' || phase === 'redirecting');
-  const hasSufficientNanas = $derived($nanasBalance >= $cartTotal);
+  const goldDue = $derived(usdCentsToGold($cartTotalCents, $prices?.sGLDT));
+  const hasSufficientGold = $derived(($goldBalance ?? 0) >= goldDue && goldDue > 0);
 </script>
 
 <svelte:head><title>Checkout · Cafreso</title></svelte:head>
 
 <div class="mx-auto px-4 py-8" style="max-width: 720px;">
   <div class="text-center">
-    <div class="inline-flex items-center gap-2 text-[13px] font-medium mb-2" style="color: hsl(24 48% 28%);">
+    <div class="inline-flex items-center gap-2 text-[13px] font-medium mb-2" style="color: hsl(var(--pg-eyebrow));">
       <Icon name="shopping-cart" size={14} /> Checkout
     </div>
     <h1 class="text-[28px] sm:text-[32px] font-bold">Your order</h1>
@@ -150,9 +159,9 @@
   <!-- ── Empty cart ─────────────────────────────────────────────────────── -->
   {#if $cart.length === 0 && phase !== 'done'}
     <div class="rounded-[14px] p-6 sm:p-8 mt-6 text-center"
-      style="background: hsl(26 40% 98%); border: 1px solid hsl(26 30% 88%);">
-      <Icon name="shopping-cart-simple" size={24} style="color: hsl(215 16% 47%);" />
-      <p class="mt-3 text-[14px]" style="color: hsl(215 16% 47%);">Your cart is empty.</p>
+      style="background: hsl(var(--pg-surface)); border: 1px solid hsl(var(--pg-border));">
+      <Icon name="shopping-cart-simple" size={24} style="color: hsl(var(--pg-fg-muted));" />
+      <p class="mt-3 text-[14px]" style="color: hsl(var(--pg-fg-muted));">Your cart is empty.</p>
       <div class="mt-4"><Button on:click={() => goto('/shop')}>Back to shop</Button></div>
     </div>
 
@@ -160,16 +169,15 @@
     <!-- ── Cart summary ──────────────────────────────────────────────────── -->
     <div class="flex flex-col gap-2 mt-6 mb-5">
       {#each $cart as it}
-        <div class="flex gap-3 p-3 items-center rounded-[12px] bg-white"
-          style="border: 1px solid hsl(26 30% 90%);">
-          <img src={productImage(it.img)} alt={it.name || 'Product image'} class="w-12 h-12 object-contain" />
+        <div class="flex gap-3 p-3 items-center rounded-[12px]"
+          style="border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));">
+          <img src={productImage(it.img)} alt={it.name || 'Product image'} class="w-12 h-12 object-contain" loading="lazy" decoding="async" />
           <div class="flex-1 min-w-0">
             <div class="font-medium truncate">{it.name}</div>
-            <div class="text-[12.5px]" style="color: hsl(215 16% 47%);">Qty {it.qty}</div>
+            <div class="text-[12.5px]" style="color: hsl(var(--pg-fg-muted));">Qty {it.qty}</div>
           </div>
           <div class="inline-flex items-center gap-1.5 tabular-nums">
-            {(it.price * it.qty).toLocaleString()}
-            <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
+            <GoldPrice cents={(it.cents ?? Math.round(it.price * 0.15)) * it.qty} size="sm" />
           </div>
         </div>
       {/each}
@@ -177,28 +185,28 @@
 
     <!-- ── Payment method picker ─────────────────────────────────────────── -->
     <div class="mb-4">
-      <div class="text-[11.5px] font-semibold uppercase mb-2" style="letter-spacing: 0.1em; color: hsl(215 16% 47%);">
+      <div class="text-[11.5px] font-semibold uppercase mb-2" style="letter-spacing: 0.1em; color: hsl(var(--pg-fg-muted));">
         Payment method
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <!-- $nanas option -->
+        <!-- Gold (sGLDT) option -->
         <button
           type="button"
-          on:click={() => (payMethod = 'nanas')}
+          on:click={() => (payMethod = 'gold')}
           class="flex items-center gap-2.5 p-3.5 rounded-[12px] cursor-pointer border-none text-left"
           style="
-            background: {payMethod === 'nanas' ? 'hsl(45 80% 94%)' : 'white'};
-            border: 2px solid {payMethod === 'nanas' ? 'hsl(45 75% 65%)' : 'hsl(26 30% 88%)'};
+            background: {payMethod === 'gold' ? 'hsl(45 80% 94%)' : 'hsl(var(--pg-elevated))'};
+            border: 2px solid {payMethod === 'gold' ? 'hsl(45 75% 65%)' : 'hsl(var(--pg-border))'};
             transition: all .2s;
           "
         >
-          <NanasCoin size={20} />
+          <GoldCoin size={20} />
           <div>
-            <div class="font-semibold text-[13.5px]">Pay with $nanas</div>
-            <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">On-chain · ICRC-1</div>
+            <div class="font-semibold text-[13.5px]">Pay with gold</div>
+            <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">sGLDT · on-chain, gold-backed</div>
           </div>
-          {#if payMethod === 'nanas'}
-            <Icon name="check-circle" size={16} style="color: hsl(112 43% 45%); margin-left: auto;" weight="fill" />
+          {#if payMethod === 'gold'}
+            <Icon name="check-circle" size={16} style="color: hsl(var(--brand-leaf)); margin-left: auto;" weight="fill" />
           {/if}
         </button>
 
@@ -208,18 +216,18 @@
           on:click={() => (payMethod = 'card')}
           class="flex items-center gap-2.5 p-3.5 rounded-[12px] cursor-pointer border-none text-left"
           style="
-            background: {payMethod === 'card' ? 'hsl(222 47% 96%)' : 'white'};
-            border: 2px solid {payMethod === 'card' ? 'hsl(222 47% 60%)' : 'hsl(26 30% 88%)'};
+            background: {payMethod === 'card' ? 'hsl(222 47% 96%)' : 'hsl(var(--pg-elevated))'};
+            border: 2px solid {payMethod === 'card' ? 'hsl(222 47% 60%)' : 'hsl(var(--pg-border))'};
             transition: all .2s;
           "
         >
           <div class="inline-flex items-center justify-center rounded-[8px]"
-            style="width: 32px; height: 32px; background: hsl(222 47% 11%); flex-shrink: 0;">
-            <Icon name="credit-card" size={17} style="color: white;" />
+            style="width: 32px; height: 32px; background: hsl(var(--pg-solid)); flex-shrink: 0;">
+            <Icon name="credit-card" size={17} style="color: hsl(var(--pg-solid-fg));" />
           </div>
           <div>
             <div class="font-semibold text-[13.5px]">Pay with card</div>
-            <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">Stripe · USD</div>
+            <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">Stripe · USD</div>
           </div>
           {#if payMethod === 'card'}
             <Icon name="check-circle" size={16} style="color: hsl(222 47% 50%); margin-left: auto;" weight="fill" />
@@ -230,9 +238,9 @@
 
     <!-- ── Shipping form ──────────────────────────────────────────────────── -->
     <form
-      on:submit={payMethod === 'nanas' ? payWithNanas : payWithCard}
-      class="flex flex-col gap-3 p-5 rounded-[14px] bg-white"
-      style="border: 1px solid hsl(26 30% 90%);"
+      on:submit={payMethod === 'gold' ? payWithGold : payWithCard}
+      class="flex flex-col gap-3 p-5 rounded-[14px]"
+      style="border: 1px solid hsl(var(--pg-border)); background: hsl(var(--pg-elevated));"
     >
       <div class="text-center mb-1">
         <span class="text-[20px] sm:text-[22px] font-bold">Shipping address</span>
@@ -246,14 +254,14 @@
         <Input label="Postal code" bind:value={form.postal} />
       </div>
 
-      <!-- ── $nanas payment summary ──────────────────────────────────────── -->
-      {#if payMethod === 'nanas'}
+      <!-- ── Gold payment summary ────────────────────────────────────────── -->
+      {#if payMethod === 'gold'}
         {#if !$isAuthenticated}
           <div class="rounded-[12px] p-4 mt-1 text-center"
             style="background: hsl(45 80% 94%); border: 1px solid hsl(45 75% 75%);">
             <Icon name="fingerprint" size={22} style="color: hsl(32 56% 25%);" />
             <p class="text-[13px] mt-1.5 mb-2.5" style="color: hsl(32 40% 28%);">
-              Sign in with Internet Identity to pay with $nanas
+              Sign in with Internet Identity to pay with gold
             </p>
             <Button type="button" on:click={login} disabled={$authStatus === 'logging-in'}>
               <Icon name="fingerprint" size={15} /> Sign in
@@ -262,20 +270,20 @@
         {:else}
           <div class="flex items-center gap-2.5 p-3.5 rounded-[12px] text-[13.5px] mt-1"
             style="background: hsl(45 95% 62% / 0.15); border: 1px solid hsl(45 75% 75%);">
-            <NanasCoin size={26} />
+            <GoldCoin size={26} />
             <div class="flex-1 min-w-0">
-              <div>Pay <b class="tabular-nums">{$cartTotal.toLocaleString()} $nanas</b></div>
-              <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">
-                ≈ ${usd($cartTotal)} USD · settles on the ICRC-1 ledger
-                {#if !hasSufficientNanas}
-                  <span style="color: hsl(0 70% 40%);"> · Insufficient balance</span>
+              <div>Pay <b class="tabular-nums">{goldDue > 0 ? fmtGold(goldDue) : '—'} sGLDT</b></div>
+              <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
+                = ${($cartTotalCents / 100).toFixed(2)} USD in gold, at the live sGLDT price
+                {#if !hasSufficientGold}
+                  <span style="color: hsl(var(--pg-danger-fg));"> · Insufficient balance</span>
                 {/if}
               </div>
             </div>
-            {#if hasSufficientNanas}
-              <Icon name="check-circle" size={18} style="color: hsl(112 43% 45%);" weight="fill" />
+            {#if hasSufficientGold}
+              <Icon name="check-circle" size={18} style="color: hsl(var(--pg-success-fg));" weight="fill" />
             {:else}
-              <Icon name="warning" size={18} style="color: hsl(0 70% 50%);" weight="fill" />
+              <Icon name="warning" size={18} style="color: hsl(var(--pg-danger-fg));" weight="fill" />
             {/if}
           </div>
         {/if}
@@ -288,7 +296,7 @@
           <Icon name="credit-card" size={22} style="color: hsl(222 47% 40%);" />
           <div class="flex-1 min-w-0">
             <div>Pay <b>${usd($cartTotal)} USD</b> via Stripe</div>
-            <div class="text-[11.5px]" style="color: hsl(215 16% 47%);">
+            <div class="text-[11.5px]" style="color: hsl(var(--pg-fg-muted));">
               Secure card checkout · you'll be redirected to Stripe
             </div>
           </div>
@@ -297,7 +305,7 @@
             <path d="M27.5 8.2c0-1.3 1-1.8 2.7-1.8 2.4 0 5.5.7 7.9 2V2.5C35.7.9 32.8 0 29.2 0 22.5 0 18 3.4 18 9c0 8.7 12 7.3 12 11.1 0 1.5-1.3 2-3.1 2-2.7 0-6.1-.9-8.8-2.5v5.9c3 1.3 6 1.8 8.8 1.8 6.9 0 11.6-3.2 11.6-8.9-.1-9.5-12-7.8-12-10.2zM0 24.6h6.5V.4H0v24.2zm49.3-16.4c0-1.3.9-1.8 2.4-1.8 2.1 0 4.9.7 7 2V3.2c-2-.8-4-.9-7-.9-6 0-10 3.1-10 8.6 0 8.3 11.4 7 11.4 10.7 0 1.5-1.1 2-2.9 2-2.5 0-5.5-.9-7.9-2.3v5.4c2.7 1.2 5.5 1.7 7.9 1.7 6.2 0 10.5-3 10.5-8.5-.1-9-11.4-7.4-11.4-9.7z" fill="hsl(222 47% 35%)"/>
           </svg>
         </div>
-        <p class="text-[11.5px] text-center" style="color: hsl(215 16% 47%);">
+        <p class="text-[11.5px] text-center" style="color: hsl(var(--pg-fg-muted));">
           No account required. Visa, Mastercard, Amex accepted. Order is recorded on-chain after payment.
         </p>
       {/if}
@@ -305,7 +313,7 @@
       <!-- ── Error ──────────────────────────────────────────────────────── -->
       {#if error}
         <div class="rounded-[10px] px-3 py-2 text-[13px] flex items-start gap-2"
-          style="background: hsl(0 70% 96%); color: hsl(0 70% 30%); border: 1px solid hsl(0 70% 85%);">
+          style="background: hsl(var(--pg-danger-bg)); color: hsl(var(--pg-danger-fg)); border: 1px solid hsl(var(--pg-danger-border));">
           <Icon name="warning" size={14} />
           <span>{error}</span>
         </div>
@@ -317,19 +325,19 @@
           Cancel
         </Button>
 
-        {#if payMethod === 'nanas'}
+        {#if payMethod === 'gold'}
           <Button
             type="submit"
-            disabled={busy || !$isAuthenticated || !hasSufficientNanas}
+            disabled={busy || !$isAuthenticated || !hasSufficientGold}
           >
             {#if phase === 'transferring'}
-              <Icon name="spinner-gap" size={15} class="spin" /> Transferring $nanas…
+              <Icon name="spinner-gap" size={15} class="spin" /> Sending gold…
             {:else if phase === 'recording'}
               <Icon name="spinner-gap" size={15} class="spin" /> Recording order…
             {:else if phase === 'done'}
               <Icon name="check" size={15} /> Confirmed
             {:else}
-              <NanasCoin size={15} /> Pay {$cartTotal.toLocaleString()} $nanas
+              <GoldCoin size={15} /> Pay {goldDue > 0 ? fmtGold(goldDue) : '—'} sGLDT
             {/if}
           </Button>
         {:else}
@@ -343,9 +351,9 @@
         {/if}
       </div>
 
-      <p class="text-[11.5px] mt-1 text-center" style="color: hsl(215 16% 47%);">
-        {#if payMethod === 'nanas'}
-          Funds move directly to the treasury principal — this dapp never custodies them.
+      <p class="text-[11.5px] mt-1 text-center" style="color: hsl(var(--pg-fg-muted));">
+        {#if payMethod === 'gold'}
+          Gold moves directly to the DAO treasury principal — this dapp never custodies it.
         {:else}
           Card payment processed by Stripe. Order is recorded on the ICP store canister after confirmation.
         {/if}

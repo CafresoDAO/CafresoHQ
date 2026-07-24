@@ -1,0 +1,45 @@
+# ── coturn — TURN relay for WebRTC NAT traversal ─────────────────────────────
+# Required when clients can't establish direct UDP connections to VMs
+# (corporate firewalls, symmetric NAT, mobile networks).
+#
+# Usage:
+#   cd streaming && docker compose -f docker-compose.coturn.yml up -d
+#
+# NOTE: On Linux production hosts, switch to `network_mode: host` for best
+# UDP relay performance (avoids Docker NAT overhead). On Docker Desktop
+# (Windows/macOS), use port mapping as host networking goes to the Linux VM.
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: cafresoai-coturn
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # TURN/STUN
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "3479:3479/tcp"
+      - "3479:3479/udp"
+      # TLS TURN
+      - "5349:5349/tcp"
+      - "5349:5349/udp"
+      - "5350:5350/tcp"
+      - "5350:5350/udp"
+      # Media relay range — expose a subset for Docker Desktop
+      # (production with host networking doesn't need this)
+      - "49152-49252:49152-49252/udp"
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    command: ["-c", "/etc/turnserver.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 || ss -tlnp | grep -q ':3478'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

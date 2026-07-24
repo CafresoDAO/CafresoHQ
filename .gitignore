@@ -28,7 +28,11 @@ desktop.ini
 # ── OCI Fleet ─────────────────────────────────────────────
 oci-fleet/fleet.json
 oci-fleet/.env
+oci-fleet/.env.host
 oci-fleet/data/
+
+# ── Streaming infrastructure secrets ─────────────────────
+streaming/.env
 
 # ── ICP canister build output ─────────────────────────────
 .dfx/
@@ -64,3 +68,9 @@ oci-fleet/_or.json
 # Machine-local Claude Code settings (per-developer paths/permissions)
 .claude/settings.local.json
 worker.env
+
+# Workspace portal / streaming (local state + secrets)
+oci-fleet/.env.host
+oci-fleet/sessions.db*
+streaming/.env
+worker-standalone.env

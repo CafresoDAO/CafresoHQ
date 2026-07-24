@@ -8,7 +8,7 @@
 
 <div class="error-page">
   <img
-    src="/assets/cafreso-wordmark.png"
+    src="/assets/cafreso-wordmark-alpha.png"
     alt="Cafreso"
     class="error-logo"
   />
@@ -27,17 +27,20 @@
 
   <div class="error-links">
     <a href="/" class="error-btn primary">Back home</a>
-    <a href="/shop" class="error-btn outline">Shop</a>
-    <a href="/blog" class="error-btn outline">Blog</a>
+    <a href="/library" class="error-btn outline">Search the Library</a>
+    <a href="/blog" class="error-btn outline">Dev Log</a>
   </div>
 </div>
 
 <style>
+  /* Was hand-authored light-only (literal hsl), so a 404 in dark mode painted
+     a full-bleed white page. The --pg-* tokens carry these exact light values,
+     so light stays pixel-identical and dark finally flips. */
   .error-page {
-    --ink: hsl(222 47% 11%);
-    --ink-soft: hsl(222 47% 11% / 0.6);
-    --border: hsl(0 0% 88%);
-    background: hsl(0 0% 99%);
+    --ink: hsl(var(--pg-fg));
+    --ink-soft: hsl(var(--pg-fg) / 0.6);
+    --border: hsl(var(--pg-border));
+    background: hsl(var(--pg-surface));
     min-height: 70vh;
     display: flex;
     flex-direction: column;
@@ -46,15 +49,21 @@
     text-align: center;
     padding: 56px 24px;
   }
+  /* The -alpha asset is transparent (the flat .png carries a baked-in white
+     box that showed as a card once this page gained a dark mode). Same
+     invert-to-warm-ivory recipe the homepage wordmark uses. */
   .error-logo {
     width: min(280px, 70vw);
     height: auto;
     margin-bottom: 32px;
   }
+  :global(.dark) .error-logo {
+    filter: invert(1) sepia(0.34) saturate(1.45) hue-rotate(-8deg) brightness(1.03);
+  }
   .error-status {
     font-size: clamp(48px, 12vw, 72px);
     font-weight: 800;
-    color: hsl(260 70% 50%);
+    color: hsl(32 72% 50%);
     line-height: 1;
     letter-spacing: -0.03em;
     margin-bottom: 12px;
@@ -90,13 +99,15 @@
     transition: all 0.2s;
   }
   .error-btn.primary {
-    background: hsl(260 70% 50%);
+    /* Brand ochre — same accent the tip/burn surfaces use; the old purple
+       was Minegold's voice, not Cafreso's. */
+    background: hsl(32 72% 50%);
     color: #fff;
-    border: 1.5px solid hsl(260 70% 50%);
+    border: 1.5px solid hsl(32 72% 45%);
   }
+  :global(.dark) .error-btn.primary { color: hsl(24 48% 10%); }
   .error-btn.primary:hover {
-    background: hsl(260 70% 44%);
-    border-color: hsl(260 70% 44%);
+    filter: brightness(0.92);
   }
   .error-btn.outline {
     background: transparent;
@@ -104,7 +115,7 @@
     border: 1.5px solid var(--border);
   }
   .error-btn.outline:hover {
-    border-color: hsl(0 0% 72%);
-    background: hsl(0 0% 96%);
+    border-color: hsl(var(--pg-fg) / 0.35);
+    background: hsl(var(--pg-hover));
   }
 </style>

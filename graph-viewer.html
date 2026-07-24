@@ -8,37 +8,369 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; height: 100%; min-height: 100vh; background: #171310; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+  /* The graph plane sits a step darker than the chrome: that gap is what makes
+     small dots and near-invisible edges read as floating rather than painted on. */
+  :root {
+    --gv-plane: #14110E;
+    --gv-card: rgba(18,15,11,.85);
+    --gv-line: rgba(245,210,93,.16);
+    --gv-text: #e9e2d4;
+    --gv-muted: #8f8574;
+    --gv-accent: #F5D25D;
+  }
+  body.gv-light {
+    --gv-plane: #F6F1E7;
+    --gv-card: rgba(251,247,239,.9);
+    --gv-line: rgba(138,98,16,.25);
+    --gv-text: #3A342B;
+    --gv-muted: #6f6858;
+    --gv-accent: #8A6210;
+  }
+
+  html, body { margin: 0; height: 100%; min-height: 100vh; background: var(--gv-plane); font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
   #graph { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+
+  .gv-muted { color: var(--gv-muted); }
+  .gv-panel-title { font-weight: 600; color: var(--gv-accent); margin-bottom: 6px; }
+  .gv-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 20px; margin-bottom: 8px;
+    background: color-mix(in srgb, var(--gv-accent) 16%, transparent);
+    color: var(--gv-accent); text-transform: capitalize;
+  }
+  .gv-card {
+    background: var(--gv-card); backdrop-filter: blur(8px);
+    border: 1px solid var(--gv-line); border-radius: 10px; color: var(--gv-text);
+  }
+
   #brand {
     position: fixed; left: 14px; bottom: 12px; z-index: 5;
-    color: #cabfa9; font-size: 12px; letter-spacing: .02em; opacity: .8;
-    background: rgba(20,18,12,.5); padding: 4px 10px; border-radius: 14px;
+    color: var(--gv-muted); font-size: 12px; letter-spacing: .02em; opacity: .6;
+    background: var(--gv-card); padding: 4px 10px; border-radius: 14px;
+    transition: opacity .2s ease;
   }
+  #brand:hover { opacity: 1; }
+
   #analytics {
-    display: none; position: fixed; top: 14px; right: 14px; z-index: 5; width: 230px;
-    background: rgba(20,18,12,.82); backdrop-filter: blur(6px);
-    border: 1px solid rgba(245,210,93,.22); border-radius: 10px;
-    padding: 12px 13px; color: #e9e2d4; font-size: 12px; line-height: 1.5;
+    display: none; position: fixed; top: 14px; right: 14px; z-index: 5; width: 248px;
+    padding: 12px 13px; font-size: 12px; line-height: 1.5;
+    /* Was unbounded height — on a library with several structural-gap rows it
+       grows tall enough to sit on top of the topic pills / clip tooltips near
+       the bottom of the screen. Cap it and let it scroll internally instead. */
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
   }
   #analytics div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #gv-analytics-close {
+    position: absolute; top: 8px; right: 8px; width: 20px; height: 20px;
+    border: none; border-radius: 6px; background: transparent; color: var(--gv-muted);
+    cursor: pointer; font-size: 13px; line-height: 1; display: grid; place-items: center;
+  }
+  #gv-analytics-close:hover { background: var(--gv-line); color: var(--gv-text); }
+  .gv-gap-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .gv-gap-row > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .gv-gap-row .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .gv-gap-bridge {
+    flex-shrink: 0; border: 1px solid var(--gv-line); background: transparent; color: var(--gv-accent);
+    border-radius: 7px; padding: 1px 7px; cursor: pointer; font-size: 12px; line-height: 1.5;
+  }
+  .gv-gap-bridge:hover { border-color: var(--gv-accent); }
+  #gv-colormode {
+    width: 100%; margin-top: 4px; padding: 4px 6px; font-size: 12px;
+    background: var(--gv-card); color: var(--gv-text);
+    border: 1px solid var(--gv-line); border-radius: 7px;
+  }
+
   #tip {
     display: none; position: fixed; z-index: 6; max-width: 280px; pointer-events: none;
-    background: rgba(24,21,16,.94); backdrop-filter: blur(8px);
-    border: 1px solid rgba(245,210,93,.28); border-radius: 12px;
-    padding: 11px 13px; color: #e9e2d4; font-size: 12.5px; line-height: 1.5;
+    padding: 11px 13px; font-size: 12.5px; line-height: 1.5;
     box-shadow: 0 12px 32px -8px rgba(0,0,0,.6);
   }
   #tip .tip-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-  #tip .tip-domain { color: #F5D25D; font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
-  #tip .tip-note { color: #cabfa9; }
-  #tip .tip-hint { color: #8f8574; font-size: 10.5px; margin-top: 7px; }
+  #tip .tip-domain { color: var(--gv-accent); font-size: 11px; letter-spacing: .03em; margin-bottom: 6px; }
+  #tip .tip-note { color: var(--gv-muted); }
+  #tip .tip-hint { color: var(--gv-muted); font-size: 10.5px; margin-top: 7px; opacity: .8; }
+  /* Brave-harvest enrichment: a page thumbnail atop the card, and the source's
+     own snippet quoted under the worker's note. Both render only when the
+     entry graph carries the attrs — old entries are untouched. */
+  #tip .tip-img {
+    display: block; width: calc(100% + 26px); margin: -11px -13px 9px;
+    max-height: 110px; object-fit: cover; border-radius: 10px 10px 0 0;
+  }
+  #tip .tip-snippet {
+    color: var(--gv-muted); font-size: 11.5px; font-style: italic; opacity: .85;
+    margin-top: 5px; padding-left: 8px; border-left: 2px solid var(--gv-accent);
+  }
+  /* Touch: a cursor-tracked card has no cursor to track and lands under the
+     thumb. Pin it as a full-width bottom sheet instead; JS adds .gv-sheet and
+     stops overriding left/top on coarse pointers. env(safe-area-*) clears the
+     home indicator. */
+  #tip.gv-sheet {
+    left: 0 !important; right: 0 !important; top: auto !important;
+    bottom: 0; max-width: none; border-radius: 14px 14px 0 0;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -12px 32px -8px rgba(0,0,0,.6);
+  }
+
+  #controls {
+    position: fixed; right: 14px; bottom: 14px; z-index: 5;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .gv-btn {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 8px;
+    color: var(--gv-muted); font-size: 16px; line-height: 1; cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif; padding: 0; user-select: none;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .gv-btn:hover {
+    background: color-mix(in srgb, var(--gv-accent) 14%, var(--gv-card));
+    color: var(--gv-accent);
+    border-color: color-mix(in srgb, var(--gv-accent) 40%, transparent);
+  }
+  .gv-btn:active { background: color-mix(in srgb, var(--gv-accent) 22%, var(--gv-card)); }
+  #gv-reset, #gv-settings-toggle { font-size: 14px; }
+
+  /* Search — top-left is the only free corner (hint is top-center, analytics
+     top-right, legend/brand bottom-left, controls bottom-right). */
+  #gv-search { position: fixed; left: 14px; top: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; }
+  #gv-search-toggle { display: none; }
+  #gv-search-input {
+    width: 190px; padding: 7px 11px; font-size: 12px; font-family: inherit;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 8px; color: var(--gv-text);
+    outline: none; transition: border-color .12s, width .18s ease;
+  }
+  #gv-search-input::placeholder { color: var(--gv-muted); }
+  #gv-search-input:focus, #gv-search.gv-has-q #gv-search-input {
+    border-color: color-mix(in srgb, var(--gv-accent) 45%, transparent);
+  }
+  #gv-search-go, #gv-search-news { flex-shrink: 0; font-size: 13px; }
+  #gv-search-news.gv-on { border-color: var(--gv-accent); color: var(--gv-accent); box-shadow: 0 0 0 1px var(--gv-accent) inset; }
+  #gv-search-status {
+    position: absolute; left: 0; top: calc(100% + 6px); max-width: 320px;
+    padding: 5px 10px; border-radius: 8px; font-size: 12px; line-height: 1.35;
+    background: var(--gv-panel); border: 1px solid var(--gv-border); color: var(--gv-fg);
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  #gv-search-status.gv-show { opacity: 1; }
+  #gv-search-go:disabled { opacity: .6; cursor: default; }
+  #gv-search-go.gv-spin { animation: gv-go-spin .8s linear infinite; }
+  @keyframes gv-go-spin { to { transform: rotate(360deg); } }
+
+  #gv-settings {
+    display: none; position: fixed; right: 54px; bottom: 14px; z-index: 6; width: 200px;
+    padding: 12px 13px; font-size: 11px;
+    max-height: calc(100vh - 28px); overflow-y: auto;
+  }
+  #gv-settings.gv-open { display: block; }
+  #gv-settings .gv-row { margin-bottom: 10px; }
+  #gv-settings .gv-row:last-child { margin-bottom: 0; }
+  #gv-settings label { display: block; color: var(--gv-muted); margin-bottom: 4px; font-size: 10.5px; letter-spacing: .02em; }
+  #gv-settings input[type=range] { width: 100%; accent-color: var(--gv-accent); margin: 0; }
+  #gv-settings .gv-check { display: flex; align-items: center; gap: 7px; color: var(--gv-text); font-size: 11.5px; cursor: pointer; }
+  #gv-settings .gv-check input { accent-color: var(--gv-accent); margin: 0; cursor: pointer; }
+  #gv-settings.gv-no-physics .gv-physics { display: none; }
+
+  #legend-toggle { position: fixed; left: 14px; bottom: 44px; z-index: 5; }
+  /* First-glance color key: the one-line answer to "what am I looking at",
+     sitting beside the ? button so new users never have to ask. Clicking it
+     opens the full legend; it calms to low opacity once the point is made. */
+  #gv-key {
+    display: none; position: fixed; left: 52px; bottom: 44px; z-index: 5;
+    align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 999px;
+    color: var(--gv-muted); font-size: 10.5px; font-family: inherit;
+    letter-spacing: .01em; white-space: nowrap; cursor: pointer;
+    transition: opacity .6s ease; opacity: .92;
+  }
+  #gv-key.gv-calm { opacity: .55; }
+  #gv-key:hover { opacity: 1; color: var(--gv-text); }
+  #gv-key .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  #gv-key .gv-key-stack { display: inline-flex; }
+  #gv-key .gv-key-stack .legend-swatch + .legend-swatch { margin-left: -3px; }
+  @media (max-width: 780px) { #gv-key { display: none !important; } }
+
+  /* Topic quick-jump pills: tap to fly-and-filter, tap again to clear. The
+     graph's primary topic nav on touch, where hover and the ? key don't exist. */
+  #gv-pills {
+    display: none; position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
+    z-index: 6; max-width: min(60vw, 780px); overflow-x: auto; white-space: nowrap;
+    padding: 3px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  #gv-pills::-webkit-scrollbar { display: none; }
+  .gv-pill {
+    display: inline-flex; align-items: center; gap: 6px; margin: 0 3px; padding: 6px 12px;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 999px;
+    color: var(--gv-text); font-size: 11.5px; font-family: inherit; letter-spacing: .01em;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .gv-pill .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .gv-pill:hover { border-color: var(--gv-accent); }
+  .gv-pill.gv-on {
+    border-color: var(--gv-accent); color: var(--gv-accent);
+    background: color-mix(in srgb, var(--gv-accent) 14%, var(--gv-card));
+  }
+  /* On phones the row goes full-bleed; the key chip is already hidden there. */
+  @media (max-width: 780px) { #gv-pills { max-width: calc(100vw - 24px); } }
+  #legend {
+    display: none; position: fixed; left: 14px; bottom: 84px; z-index: 5; max-width: 220px;
+    padding: 10px 12px; font-size: 11.5px; line-height: 1.7;
+  }
+  #legend.gv-open { display: block; }
+  #legend .legend-title { font-weight: 600; color: var(--gv-accent); margin-bottom: 4px; font-size: 11px; letter-spacing: .02em; }
+  #legend .legend-row { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #legend .legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  /* Topic rows are filters: hover invites the click, .gv-on marks the active
+     filter (dimming everything outside that topic on the canvas). */
+  #legend .legend-topic { cursor: pointer; padding: 1px 4px; margin: 0 -4px; border-radius: 5px; transition: background .12s; }
+  #legend .legend-topic:hover { background: color-mix(in srgb, var(--gv-accent) 12%, transparent); }
+  #legend .legend-topic.gv-on { background: color-mix(in srgb, var(--gv-accent) 22%, transparent); color: var(--gv-accent); }
+  #legend .legend-export { cursor: pointer; margin-top: 6px; padding: 3px 4px; border-top: 1px solid var(--gv-border); color: var(--gv-accent); border-radius: 0 0 5px 5px; }
+  #legend .legend-export:hover { background: color-mix(in srgb, var(--gv-accent) 12%, transparent); }
+  #legend .legend-export[data-busy] { opacity: .6; cursor: default; }
+
+  #hint {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid var(--gv-line); border-radius: 999px;
+    padding: 6px 14px; color: var(--gv-muted); font-size: 11px; letter-spacing: .01em;
+    opacity: .8; transition: opacity .5s ease; pointer-events: none; white-space: nowrap;
+  }
+  #hint.gv-hidden { opacity: 0; }
+  /* Centred hint vs. a 190px search box pinned left: below ~780px the two
+     collide and the hint loses its first few words. It's the least important
+     thing on screen — drop it rather than let it render as garbage. */
+  @media (max-width: 780px) { #hint { display: none; } }
+
+  /* "+N new since your last visit" — the growth report. Sits under the hint,
+     brighter than the rest of the chrome because it's the one thing here that
+     is news. Click walks the new nodes. */
+  #gv-new {
+    display: none; position: fixed; top: 46px; left: 50%; z-index: 6;
+    transform: translateX(-50%) translateY(-6px);
+    background: var(--gv-card); backdrop-filter: blur(6px);
+    border: 1px solid color-mix(in srgb, var(--gv-accent) 40%, transparent);
+    border-radius: 999px; padding: 6px 14px; color: var(--gv-accent);
+    font-size: 11px; font-family: inherit; letter-spacing: .01em; white-space: nowrap;
+    cursor: pointer; opacity: 0; transition: opacity .5s ease, transform .5s ease;
+  }
+  #gv-new.gv-in { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #gv-new:hover { background: color-mix(in srgb, var(--gv-accent) 16%, var(--gv-card)); }
+
+  /* Backdrop mode (?chrome=none): the embedding page supplies its own headline
+     and controls over the top, so ours would only compete. The graph and its
+     hover tip stay. */
+  body.gv-nochrome #hint,
+  body.gv-nochrome #controls,
+  body.gv-nochrome #gv-search,
+  body.gv-nochrome #gv-settings,
+  body.gv-nochrome #legend-toggle,
+  body.gv-nochrome #legend,
+  body.gv-nochrome #analytics,
+  body.gv-nochrome #gv-new,
+  body.gv-nochrome #brand { display: none !important; }
+
+  /* Embedded (the library page frames this ~260-440px tall): the chrome has to
+     get out of the way of a canvas that small. */
+  body.gv-compact #hint,
+  body.gv-compact #legend-toggle,
+  body.gv-compact #legend,
+  body.gv-compact #analytics { display: none !important; }
+  body.gv-compact #controls { right: 8px; bottom: 8px; gap: 4px; }
+  body.gv-compact .gv-btn { width: 26px; height: 26px; font-size: 13px; }
+  body.gv-compact #gv-reset, body.gv-compact #gv-settings-toggle { font-size: 12px; }
+  body.gv-compact #brand { font-size: 10px; padding: 2px 8px; left: 8px; bottom: 8px; opacity: .65; }
+  body.gv-compact #tip { max-width: 200px; font-size: 11.5px; padding: 9px 11px; }
+  /* The hint is hidden at this size, so the badge takes the top line itself. */
+  body.gv-compact #gv-new { top: 8px; font-size: 10px; padding: 4px 10px; }
+  body.gv-compact #gv-search { left: 8px; top: 8px; }
+  body.gv-compact #gv-settings { right: 40px; bottom: 8px; width: 170px; }
+  /* Collapse search to a magnifier until asked for — a 190px input would eat a
+     third of an embedded canvas. */
+  body.gv-compact #gv-search-toggle { display: flex; }
+  body.gv-compact #gv-search-input { display: none; width: 150px; }
+  body.gv-compact #gv-search.gv-open #gv-search-input { display: block; }
 </style>
 </head>
 <body>
 <div id="graph"></div>
-<div id="tip"></div>
-<div id="analytics"></div>
+<div id="tip" class="gv-card" role="status" aria-live="polite"></div>
+<div id="analytics" class="gv-card"></div>
+<div id="hint" role="status" aria-live="polite">scroll to zoom · drag the canvas or a node · hover for details</div>
+<button id="gv-new" type="button" title="Fly to the next new node" aria-live="polite"></button>
+
+<div id="gv-search">
+  <button class="gv-btn" id="gv-search-toggle" aria-label="Search nodes" title="Search nodes">⌕</button>
+  <input id="gv-search-input" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off" spellcheck="false"/>
+  <button class="gv-btn" id="gv-search-go" aria-label="Run a new library search" title="Search the library — runs a new answer if it's not here yet">🔍</button>
+  <button class="gv-btn" id="gv-search-news" aria-label="News mode" aria-pressed="false" title="News mode — answers favor fresh, dated, publisher-attributed coverage">🗞</button>
+  <div id="gv-search-status" role="status" aria-live="polite"></div>
+</div>
+
+<div id="controls">
+  <button class="gv-btn" id="gv-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+  <button class="gv-btn" id="gv-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+  <button class="gv-btn" id="gv-reset" aria-label="Fit view" title="Fit view">⟲</button>
+  <button class="gv-btn" id="gv-trail-back" aria-label="Back along your reading trail" title="Back along your reading trail" style="display:none">⟵</button>
+  <button class="gv-btn" id="gv-replay" aria-label="Replay the library's growth" aria-pressed="false" title="Replay the library's growth" style="display:none">▶</button>
+  <button class="gv-btn" id="gv-copy-link" aria-label="Copy link to this node" title="Copy link to the focused node" style="display:none">⚲</button>
+  <button class="gv-btn" id="gv-settings-toggle" aria-label="Graph settings" title="Graph settings">⚙</button>
+</div>
+
+<div id="gv-settings" class="gv-card">
+  <div class="gv-row gv-physics">
+    <label for="gv-gravity">Center force</label>
+    <input type="range" id="gv-gravity" min="0" max="100" value="54" aria-label="Center force"/>
+  </div>
+  <div class="gv-row gv-physics">
+    <label for="gv-repel">Repel force</label>
+    <input type="range" id="gv-repel" min="0" max="100" value="61" aria-label="Repel force"/>
+  </div>
+  <div class="gv-row">
+    <label for="gv-fade">Text fade threshold</label>
+    <input type="range" id="gv-fade" min="0" max="12" step="0.5" value="6" aria-label="Text fade threshold"/>
+  </div>
+  <div class="gv-row gv-physics">
+    <label class="gv-check" for="gv-animate">
+      <input type="checkbox" id="gv-animate" checked/> Animate
+    </label>
+  </div>
+  <div class="gv-row">
+    <label class="gv-check" for="gv-signals">
+      <input type="checkbox" id="gv-signals" checked/> Signals
+    </label>
+  </div>
+  <div class="gv-row" id="gv-related-row" style="display:none">
+    <label class="gv-check" for="gv-related" title="Draw a link between two questions that lean on the same source">
+      <input type="checkbox" id="gv-related"/> Related links
+    </label>
+  </div>
+  <div class="gv-row" id="gv-clusterlabels-row" style="display:none">
+    <label class="gv-check" for="gv-clusterlabels" title="Name each topic cluster on the canvas">
+      <input type="checkbox" id="gv-clusterlabels" checked/> Cluster labels
+    </label>
+  </div>
+  <div class="gv-row" id="gv-colormode-row" style="display:none">
+    <label for="gv-colormode">Question colors</label>
+    <select id="gv-colormode" aria-label="Question color rule">
+      <option value="identity" selected>Gold (identity)</option>
+      <option value="topic">By topic</option>
+      <option value="origin">By origin (who asked)</option>
+      <option value="fresh">By freshness (source age)</option>
+    </select>
+  </div>
+</div>
+
+<button class="gv-btn" id="legend-toggle" aria-label="Toggle legend" title="What do the colors mean?">?</button>
+<button id="gv-key" type="button" aria-label="Open the color legend" title="What do the colors mean?"></button>
+<div id="gv-pills" role="toolbar" aria-label="Jump to a topic"></div>
+<div id="legend" class="gv-card"></div>
 <div id="brand">CafresoHQ</div>
 <script src="graph-viewer.js"></script>
 </body>

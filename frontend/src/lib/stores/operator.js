@@ -50,3 +50,23 @@ export function publishDisabled(cfg) {
   const p = (cfg || get(operatorConfig)).publish || {};
   return p.enabled === false;
 }
+
+// ── Workspaces (premium VM streaming) ────────────────────────────────────────
+// Grant list lives here so the entitlement is on-chain, admin-written
+// (operator_set_config is planAdmin-gated) and publicly verifiable. The
+// fleet-api reads the same JSON server-side — this client copy is UX only.
+//   workspaces: { enabled, allowedPrincipals: [principal...], message }
+export function workspacesEnabled(cfg) {
+  const w = (cfg || get(operatorConfig)).workspaces || {};
+  return w.enabled !== false;
+}
+export function workspaceAllowed(cfg, principal) {
+  if (!principal) return false;
+  const w = (cfg || get(operatorConfig)).workspaces || {};
+  if (w.enabled === false) return false;
+  return Array.isArray(w.allowedPrincipals) && w.allowedPrincipals.includes(principal);
+}
+export function workspacesMessage(cfg) {
+  const w = (cfg || get(operatorConfig)).workspaces || {};
+  return w.message || 'Workspaces are in private preview — ask the operator for access.';
+}

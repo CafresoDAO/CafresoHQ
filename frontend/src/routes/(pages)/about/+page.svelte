@@ -66,7 +66,7 @@
           <li><Icon name="storefront" size={13} /> Farm-to-cup coffee marketplace</li>
           <li><Icon name="gavel" size={13} /> On-chain governance (SNS proposals)</li>
           <li><Icon name="article" size={13} /> Developer log and community forums</li>
-          <li><Icon name="coin" size={13} /> $nanas token rewards on every purchase</li>
+          <li><Icon name="coin" size={13} /> sGLDT gold rewards on every purchase</li>
         </ul>
       </div>
 
@@ -174,7 +174,7 @@
           funds the farm. Every harvest is recorded on-chain. Vertical farming maximises
           yield with less water, and CO₂ offsets are published as upgradeable canister state.
         </p>
-        <p style="font-weight: 600; color: hsl(222 47% 11%);">
+        <p style="font-weight: 600; color: hsl(var(--pg-fg));">
           Blockchain literacy and sustainable agriculture, together.
         </p>
         <a href="mailto:anthony@cafreso.com" class="about-link">
@@ -183,8 +183,10 @@
       </div>
       <div style="display: flex; align-items: center; justify-content: center;">
         <img
-          src="/assets/cafreso-roaster.png"
+          src="/assets/cafreso-roaster.webp"
           alt="Cafreso roaster"
+          loading="lazy"
+          decoding="async"
           style="width: min(260px, 100%); border-radius: 14px;"
         />
       </div>
@@ -203,8 +205,8 @@
       ] as card}
         <div class="about-icp-card">
           <Icon name={card.icon} size={20} style="color: hsl(32 72% 50%); margin-bottom: 10px; display: block;" />
-          <div style="font-size: 14px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 6px;">{card.title}</div>
-          <div style="font-size: 13px; line-height: 1.6; color: hsl(215 16% 47%);">{card.desc}</div>
+          <div style="font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 6px;">{card.title}</div>
+          <div style="font-size: 13px; line-height: 1.6; color: hsl(var(--pg-fg-muted));">{card.desc}</div>
         </div>
       {/each}
     </div>
@@ -233,10 +235,10 @@
   }
   .about-hero-title {
     font-size: clamp(28px, 6vw, 44px); font-weight: 700; line-height: 1.15;
-    color: hsl(222 47% 11%); margin: 0 0 18px; letter-spacing: -0.02em;
+    color: hsl(var(--pg-fg)); margin: 0 0 18px; letter-spacing: -0.02em;
   }
   .about-hero-sub {
-    font-size: 16px; line-height: 1.7; color: hsl(215 16% 40%);
+    font-size: 16px; line-height: 1.7; color: hsl(var(--pg-fg-muted));
     max-width: 580px; margin: 0 auto 32px;
   }
   .about-property-row {
@@ -254,21 +256,21 @@
   .about-property--pages  { background: hsl(32 60% 93%);  color: hsl(32 60% 34%);  border-color: hsl(32 50% 82%); }
   .about-property--ai     { background: hsl(260 60% 93%); color: hsl(260 60% 36%); border-color: hsl(260 50% 82%); }
   .about-property--banking { background: hsl(220 60% 93%); color: hsl(220 65% 34%); border-color: hsl(220 50% 82%); }
-  .about-property-sep { font-size: 18px; font-weight: 300; color: hsl(215 16% 60%); }
+  .about-property-sep { font-size: 18px; font-weight: 300; color: hsl(var(--pg-fg-subtle)); }
 
   /* Sections */
   .about-section {
     padding: 48px 24px;
-    border-top: 1px solid hsl(26 30% 88%);
+    border-top: 1px solid hsl(var(--pg-border));
   }
   .about-section--dark {
-    background: hsl(26 30% 97%);
+    background: hsl(var(--pg-surface));
     border-radius: 16px;
     margin: 0 12px;
   }
   .about-h2 {
     font-size: clamp(18px, 4vw, 24px); font-weight: 700;
-    color: hsl(222 47% 11%); margin: 0 0 28px;
+    color: hsl(var(--pg-fg)); margin: 0 0 28px;
   }
 
   /* Property cards */
@@ -278,8 +280,8 @@
     gap: 18px;
   }
   .apc {
-    background: white; border-radius: 14px; padding: 24px 20px;
-    border: 1px solid hsl(26 30% 88%);
+    background: hsl(var(--pg-elevated)); border-radius: 14px; padding: 24px 20px;
+    border: 1px solid hsl(var(--pg-border));
     display: flex; flex-direction: column; gap: 12px;
   }
   .apc--pages  { border-top: 3px solid hsl(32 72% 50%); }
@@ -295,10 +297,10 @@
   .apc--ai .apc-icon      { background: hsl(260 60% 93%); color: hsl(260 65% 46%); }
   .apc--banking .apc-icon { background: hsl(220 60% 92%); color: hsl(220 70% 40%); }
 
-  .apc-name   { font-size: 14px; font-weight: 700; color: hsl(222 47% 11%); }
-  .apc-domain { font-size: 11px; color: hsl(215 16% 50%); margin-top: 1px; }
+  .apc-name   { font-size: 14px; font-weight: 700; color: hsl(var(--pg-fg)); }
+  .apc-domain { font-size: 11px; color: hsl(var(--pg-fg-muted)); margin-top: 1px; }
 
-  .apc p { font-size: 13.5px; line-height: 1.65; color: hsl(215 16% 40%); margin: 0; flex: 1; }
+  .apc p { font-size: 13.5px; line-height: 1.65; color: hsl(var(--pg-fg-muted)); margin: 0; flex: 1; }
 
   .apc-list {
     list-style: none; padding: 0; margin: 0;
@@ -306,7 +308,7 @@
   }
   .apc-list li {
     display: flex; align-items: center; gap: 7px;
-    font-size: 12.5px; color: hsl(215 16% 38%);
+    font-size: 12.5px; color: hsl(var(--pg-fg-muted));
   }
 
   .apc-cta {
@@ -325,7 +327,7 @@
     display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start;
   }
   .about-two-col p {
-    font-size: 14.5px; line-height: 1.7; color: hsl(215 16% 38%); margin: 0 0 14px;
+    font-size: 14.5px; line-height: 1.7; color: hsl(var(--pg-fg-muted)); margin: 0 0 14px;
   }
   .about-link {
     display: inline-flex; align-items: center; gap: 5px;
@@ -335,16 +337,16 @@
 
   /* Tokenomics */
   .about-tokenomics {
-    background: white; border-radius: 12px; padding: 20px;
-    border: 1px solid hsl(26 30% 88%);
+    background: hsl(var(--pg-elevated)); border-radius: 12px; padding: 20px;
+    border: 1px solid hsl(var(--pg-border));
   }
   .about-tok-title {
     font-size: 12px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.07em; color: hsl(215 16% 50%); margin-bottom: 14px;
+    letter-spacing: 0.07em; color: hsl(var(--pg-fg-muted)); margin-bottom: 14px;
   }
   .about-tok-row { margin-bottom: 12px; }
   .about-tok-bar-wrap {
-    height: 6px; background: hsl(26 30% 90%); border-radius: 3px;
+    height: 6px; background: hsl(var(--pg-border)); border-radius: 3px;
     overflow: hidden; margin-bottom: 4px;
   }
   .about-tok-bar { height: 100%; border-radius: 3px; transition: width .6s; }
@@ -352,10 +354,10 @@
     display: flex; gap: 6px; align-items: baseline;
     font-size: 12px;
   }
-  .about-tok-meta span:last-child { color: hsl(215 16% 44%); }
+  .about-tok-meta span:last-child { color: hsl(var(--pg-fg-muted)); }
   .about-tok-supply {
-    font-size: 11.5px; color: hsl(215 16% 50%); margin-top: 10px;
-    padding-top: 10px; border-top: 1px solid hsl(26 30% 90%);
+    font-size: 11.5px; color: hsl(var(--pg-fg-muted)); margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid hsl(var(--pg-border));
   }
 
   /* ICP grid */
@@ -363,8 +365,8 @@
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
   }
   .about-icp-card {
-    background: white; border-radius: 12px; padding: 20px 16px;
-    border: 1px solid hsl(26 30% 88%);
+    background: hsl(var(--pg-elevated)); border-radius: 12px; padding: 20px 16px;
+    border: 1px solid hsl(var(--pg-border));
   }
 
   /* Responsive */
@@ -376,5 +378,43 @@
   }
   @media (max-width: 480px) {
     .about-icp-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Dark-mode overrides for branded pale chips ──
+     Base rules keep their exact light values so light mode is unchanged;
+     these translucent-brand versions only apply under .dark so the pale
+     wash + dark-ink chips don't read as loud bright blocks on dark cards. */
+  :global(.dark) .about-hero-badge {
+    background: hsl(32 45% 26%); color: hsl(38 80% 76%);
+  }
+  :global(.dark) .about-property--pages {
+    background: hsl(32 55% 30% / 0.4); color: hsl(32 85% 76%); border-color: hsl(32 55% 50% / 0.5);
+  }
+  :global(.dark) .about-property--ai {
+    background: hsl(260 55% 34% / 0.4); color: hsl(260 85% 84%); border-color: hsl(260 55% 58% / 0.5);
+  }
+  :global(.dark) .about-property--banking {
+    background: hsl(220 55% 34% / 0.4); color: hsl(220 85% 82%); border-color: hsl(220 55% 58% / 0.5);
+  }
+  :global(.dark) .apc--pages .apc-icon {
+    background: hsl(32 55% 30% / 0.4); color: hsl(32 85% 72%);
+  }
+  :global(.dark) .apc--ai .apc-icon {
+    background: hsl(260 55% 34% / 0.4); color: hsl(260 85% 80%);
+  }
+  :global(.dark) .apc--banking .apc-icon {
+    background: hsl(220 55% 34% / 0.4); color: hsl(220 85% 78%);
+  }
+  :global(.dark) .apc--ai .apc-cta {
+    background: hsl(260 55% 34% / 0.4); color: hsl(260 85% 82%);
+  }
+  :global(.dark) .apc--ai .apc-cta:hover {
+    background: hsl(260 55% 40% / 0.5);
+  }
+  :global(.dark) .apc--banking .apc-cta {
+    background: hsl(220 55% 34% / 0.4); color: hsl(220 85% 80%);
+  }
+  :global(.dark) .apc--banking .apc-cta:hover {
+    background: hsl(220 55% 42% / 0.5);
   }
 </style>

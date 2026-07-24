@@ -135,15 +135,35 @@ def _write_env():
 def _model_block():
     """Return YAML for the model block based on key precedence.
 
-    DEFAULT for new HQ containers is **OpenRouter** (Hermes' native default) on a
-    free open-weights model — its free tier has no per-request size cap, so
-    Hermes' large system prompt fits (Groq free does not). New users get a capable
-    model out of the box at no per-token cost. Users can later bring their own
-    Claude / Gemini / other key via HQ settings, which writes a higher-precedence
-    backend into this same config — proprietary providers are NEVER the out-of-box
-    default; they apply only when the operator/user explicitly supplies that key.
+    DEFAULT for Cafreso-managed HQ containers is **self-hosted Gemma** (LM Studio,
+    reached via the gateway's private Twingate proxy): provisioning injects
+    LMSTUDIO_BASE_URL + LMSTUDIO_MODEL and branch 0 below selects it, keylessly and
+    at no per-token cost. If that isn't set, we fall back to OpenRouter's free
+    open-weights model (branch 1) — its free tier has no per-request size cap, so
+    Hermes' ~17k-token system prompt fits (Groq free does not). Users can later
+    bring their own Claude / Gemini / other key via HQ settings, which writes a
+    higher-precedence backend into this same config — proprietary providers are
+    NEVER the out-of-box default; they apply only when explicitly supplied.
     """
-    # ── 1. OpenRouter (DEFAULT for new users) ───────────────────────────────
+    # ── 0. Self-hosted Gemma / OpenAI-compatible endpoint (MANAGED DEFAULT) ──
+    # When Cafreso provisions the HQ we inject LMSTUDIO_BASE_URL pointing at the
+    # shared Gemma (reached via the gateway's private Twingate proxy). It wins
+    # over every cloud branch below so a stray/stale OPENROUTER_API_KEY can never
+    # silently divert the operator's prompts to a third-party cloud (see
+    # night_runner.resolve_backend's warning). BYOK keys still override via a
+    # later config rewrite from HQ settings.
+    lm = os.environ.get('LMSTUDIO_BASE_URL', '').strip()
+    if lm:
+        mdl = os.environ.get('LMSTUDIO_MODEL', '').strip() or 'local-model'
+        _log(f'backend: LM Studio / OpenAI-compatible at {lm} (model={mdl}) [managed default]')
+        return (
+            'model:\n'
+            f'  default: {mdl}\n'
+            '  provider: lmstudio\n'
+            f'  base_url: {lm}\n'
+        )
+
+    # ── 1. OpenRouter (fallback when no managed Gemma and no user key) ───────
     # OpenRouter is Hermes' NATIVE default provider (no custom_providers needed).
     # Why it's the default over Groq: Groq's FREE tier caps request size at
     # ~5-6k tokens, but Hermes injects a ~17k-token agent system prompt → every
@@ -183,20 +203,7 @@ def _model_block():
             '    api_mode: chat_completions\n'
         )
 
-    # ── 2. Explicit OpenAI-compatible endpoint (LM Studio / Ollama / vLLM) ──
-    # Set LMSTUDIO_BASE_URL (e.g. http://host:1234/v1) + optional LMSTUDIO_MODEL.
-    lm = os.environ.get('LMSTUDIO_BASE_URL', '').strip()
-    if lm:
-        mdl = os.environ.get('LMSTUDIO_MODEL', '').strip() or 'local-model'
-        _log(f'backend: LM Studio / OpenAI-compatible at {lm} (model={mdl})')
-        return (
-            'model:\n'
-            f'  default: {mdl}\n'
-            '  provider: lmstudio\n'
-            f'  base_url: {lm}\n'
-        )
-
-    # ── 3. User-supplied proprietary keys (BYOK) — never the default ─────────
+    # ── 2. User-supplied proprietary keys (BYOK) — never the default ─────────
     # These only apply when the user/operator has explicitly attached the key
     # (e.g. via HQ app settings after first provisioning). Order is preference,
     # not out-of-box behavior.

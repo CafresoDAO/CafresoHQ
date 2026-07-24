@@ -1,4 +1,5 @@
 <script>
+  import GoldPrice from './GoldPrice.svelte';
   import Icon from './Icon.svelte';
   import { productImage, usd, TAG_LABEL } from '$lib/data/products.js';
   export let p;
@@ -33,13 +34,14 @@
   role={p.unavailable ? 'presentation' : undefined}
   href={p.unavailable ? undefined : `/product/${p.slug}`}
   aria-disabled={p.unavailable ? 'true' : undefined}
+  aria-label={p.unavailable ? `${p.name} — coming soon` : undefined}
   bind:this={cardEl}
   on:mouseenter={enter}
   on:mouseleave={leave}
   class="relative flex flex-col overflow-hidden no-underline text-primary"
   style="cursor: {p.unavailable ? 'not-allowed' : 'pointer'};
-    background: linear-gradient(180deg, hsl(26 45% 98% / 0.9), hsl(26 40% 94% / 0.75));
-    border: 1px solid hsl(26 35% 88%);
+    background: linear-gradient(180deg, hsl(var(--pg-surface) / 0.9), hsl(var(--pg-hover) / 0.75));
+    border: 1px solid hsl(var(--pg-border));
     border-radius: 16px;
     padding: 18px;
     box-shadow: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 10px 24px -14px hsl(24 30% 20% / 0.3);
@@ -47,10 +49,8 @@
 >
   <div class="flex justify-between items-start mb-1.5">
     <span
-      class="text-[11px] font-semibold uppercase"
+      class="cat-chip text-[11px] font-semibold uppercase"
       style="letter-spacing: 0.08em;
-        background: hsl(26 30% 74% / 0.5);
-        color: hsl(24 40% 22%);
         padding: 4px 10px;
         border-radius: 999px;"
     >{TAG_LABEL[p.tag] || p.tag}</span>
@@ -58,16 +58,16 @@
       <span
         class="text-[10px] font-semibold uppercase"
         style="letter-spacing: 0.06em;
-          color: hsl(0 60% 45%);
-          background: hsl(0 80% 96%);
+          color: hsl(var(--pg-danger-fg));
+          background: hsl(var(--pg-danger-bg));
           padding: 3px 8px;
           border-radius: 999px;"
       >Soon</span>
     {:else}
       <span
         bind:this={arrEl}
-        class="w-7 h-7 rounded-full text-white inline-flex items-center justify-center"
-        style="background: hsl(222 47% 11%);
+        class="w-7 h-7 rounded-full text-white inline-flex items-center justify-center bg-primary"
+        style="
           opacity: 0;
           transform: translate(6px, -6px);
           transition: opacity .25s ease, transform .35s cubic-bezier(.2,.8,.2,1);"
@@ -80,6 +80,8 @@
       bind:this={imgEl}
       src={productImage(p.img)}
       alt={p.name}
+      loading="lazy"
+      decoding="async"
       style="max-width: 100%; max-height: 100%; object-fit: contain;
         filter: {p.unavailable ? 'grayscale(1) opacity(0.55)' : 'none'};
         transition: transform .5s cubic-bezier(.2,.8,.2,1);"
@@ -96,12 +98,20 @@
 
   <div
     class="flex items-center justify-between mt-3.5 pt-3.5"
-    style="border-top: 1px dashed hsl(26 25% 75%);"
+    style="border-top: 1px dashed hsl(var(--pg-border));"
   >
-    <span class="inline-flex items-center gap-1.5 text-[15px] font-semibold">
-      {p.price.toLocaleString()}
-      <img src="/assets/nanas-coin.png" alt="" aria-hidden="true" class="w-[18px]" />
-    </span>
-    <span class="text-xs text-muted-foreground">${usd(p.price)} USD</span>
+    <GoldPrice cents={p.priceCentsUSD ?? Math.round(p.price * 0.15)} />
   </div>
 </svelte:element>
+
+<style>
+  /* Category chip: keep light values exact, flip to a warm chip in dark. */
+  .cat-chip {
+    background: hsl(26 30% 74% / 0.5);
+    color: hsl(24 40% 22%);
+  }
+  :global(.dark) .cat-chip {
+    background: hsl(30 25% 55% / 0.35);
+    color: hsl(30 35% 85%);
+  }
+</style>

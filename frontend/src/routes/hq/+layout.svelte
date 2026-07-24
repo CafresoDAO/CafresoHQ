@@ -13,6 +13,7 @@
     ensureHqSession, endpointNeedsSession, hqSessionReady
   } from '$lib/api/hqSession.js';
   import Header from '$lib/components/Header.svelte';
+  import AISearchModal from '$lib/components/AISearchModal.svelte';
 
   let { children } = $props();
 
@@ -47,8 +48,12 @@
     <footer class="mx-auto max-w-7xl px-4 py-8 text-xs text-ink-400 sm:px-6 lg:px-8">
       <div class="flex flex-wrap items-center justify-between gap-2 border-t border-ink-600/60 pt-4">
         <span>© 2026 Cafreso — CafresoHQ is part of the Cafreso ecosystem</span>
-        <span class="font-mono">Ecosystem principal: Banking.Brave anchor</span>
+        <span>One Internet Identity across Cafreso, AI, HQ &amp; Mine</span>
       </div>
     </footer>
   </div>
 </div>
+
+<!-- Same anonymous, on-chain search the homepage box opens — mounted here so
+     the signed-out Dashboard and Search pages can launch it via aiSearchOpen. -->
+<AISearchModal />

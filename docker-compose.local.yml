@@ -32,6 +32,13 @@ services:
       # Line-buffered stdout so [search-worker] logs show up in `docker logs`
       # immediately instead of sitting in Python's block buffer.
       PYTHONUNBUFFERED: "1"
+      # Gap cron now runs hourly (was once/day @10am ET) — GAP_PER_RUN_MAX is
+      # a per-run cap, not a daily one; defaults (2/run, 60min) apply if unset.
+      # News + weather are new crons, opt-in via *_CRON=1 in serve.py — turned
+      # on here per-container rather than by default in code, so a stale image
+      # pulled elsewhere doesn't silently start hitting Brave/NWS unasked.
+      NEWS_CRON: "1"
+      WEATHER_CRON: "1"
     volumes:
       - cafresohq-data:/data
     restart: unless-stopped

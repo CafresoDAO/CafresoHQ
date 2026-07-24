@@ -99,11 +99,11 @@
     ">
       <Icon name="note-pencil" size={18} style="color: hsl(32 72% 44%);" />
     </div>
-    <h1 style="font-size: 26px; font-weight: 800; color: hsl(222 47% 11%); letter-spacing: -0.02em; margin: 0;">
+    <h1 style="font-size: 26px; font-weight: 800; color: hsl(var(--pg-fg)); letter-spacing: -0.02em; margin: 0;">
       My Drafts
     </h1>
   </div>
-  <p style="font-size: 14px; color: hsl(215 16% 47%); margin: 0 0 28px; padding-left: 46px;">
+  <p style="font-size: 14px; color: hsl(var(--pg-fg-muted)); margin: 0 0 28px; padding-left: 46px;">
     Auto-saved locally · content is stored in your browser until you publish
   </p>
 
@@ -112,7 +112,7 @@
     <a href="/blog/new" style="
       display: inline-flex; align-items: center; gap: 6px;
       padding: 8px 16px; border-radius: 10px; text-decoration: none;
-      background: hsl(222 47% 11%); color: white; font-size: 13px; font-weight: 600;
+      background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); font-size: 13px; font-weight: 600;
     ">
       <Icon name="article" size={14} /> New Dev Log post
     </a>
@@ -127,30 +127,30 @@
   </div>
 
   {#if !loaded}
-    <div style="text-align: center; padding: 48px; color: hsl(215 16% 47%); font-size: 14px;">
+    <div style="text-align: center; padding: 48px; color: hsl(var(--pg-fg-muted)); font-size: 14px;">
       <Icon name="spinner-gap" size={20} style="display: block; margin: 0 auto 8px;" /> Loading drafts…
     </div>
   {:else if drafts.length === 0}
     <div style="
       text-align: center; padding: 56px 24px;
-      border-radius: 16px; border: 1.5px dashed hsl(26 30% 82%);
-      background: hsl(26 40% 98%);
+      border-radius: 16px; border: 1.5px dashed hsl(var(--pg-border));
+      background: hsl(var(--pg-surface));
     ">
-      <Icon name="note-pencil" size={32} style="opacity: 0.25; display: block; margin: 0 auto 12px; color: hsl(222 47% 11%);" />
-      <div style="font-size: 16px; font-weight: 600; color: hsl(222 47% 11%); margin-bottom: 6px;">No drafts saved yet</div>
-      <div style="font-size: 13px; color: hsl(215 16% 47%); margin-bottom: 20px;">
+      <Icon name="note-pencil" size={32} style="opacity: 0.25; display: block; margin: 0 auto 12px; color: hsl(var(--pg-fg));" />
+      <div style="font-size: 16px; font-weight: 600; color: hsl(var(--pg-fg)); margin-bottom: 6px;">No drafts saved yet</div>
+      <div style="font-size: 13px; color: hsl(var(--pg-fg-muted)); margin-bottom: 20px;">
         Start writing a post or forum thread — it'll auto-save here every 600ms.
       </div>
       <a href="/blog/new" style="
         display: inline-flex; align-items: center; gap: 6px;
         padding: 9px 18px; border-radius: 10px; text-decoration: none;
-        background: hsl(222 47% 11%); color: white; font-size: 13px; font-weight: 600;
+        background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); font-size: 13px; font-weight: 600;
       ">
         <Icon name="pencil-simple" size={14} /> Start writing
       </a>
     </div>
   {:else}
-    <div style="font-size: 12px; color: hsl(215 16% 47%); margin-bottom: 12px; text-align: right;">
+    <div style="font-size: 12px; color: hsl(var(--pg-fg-muted)); margin-bottom: 12px; text-align: right;">
       {drafts.length} draft{drafts.length !== 1 ? 's' : ''} saved locally
     </div>
     <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -158,8 +158,8 @@
         {@const tm = TYPE_META[d.type]}
         {@const words = wordCount(d.bodySrc)}
         <div style="
-          border-radius: 14px; border: 1px solid hsl(26 30% 88%);
-          background: white; padding: 18px 20px;
+          border-radius: 14px; border: 1px solid hsl(var(--pg-border));
+          background: hsl(var(--pg-surface)); padding: 18px 20px;
           display: flex; align-items: flex-start; gap: 14px;
         ">
           <!-- Type icon -->
@@ -178,24 +178,24 @@
                 color: {tm.color}; background: {tm.bg}; border-radius: 5px; padding: 2px 7px;
               ">{tm.label}</span>
               {#if d.theme && d.theme !== 'standard'}
-                <span style="font-size: 10px; color: hsl(215 16% 56%); background: hsl(26 20% 94%); border-radius: 4px; padding: 2px 6px;">
+                <span style="font-size: 10px; color: hsl(var(--pg-fg-subtle)); background: hsl(var(--pg-hover)); border-radius: 4px; padding: 2px 6px;">
                   Theme: {d.theme}
                 </span>
               {/if}
               {#if d.category}
-                <span style="font-size: 10px; color: hsl(215 16% 56%);">· {d.category}</span>
+                <span style="font-size: 10px; color: hsl(var(--pg-fg-subtle));">· {d.category}</span>
               {/if}
             </div>
-            <div style="font-size: 16px; font-weight: 700; color: hsl(222 47% 11%); margin-bottom: 4px; letter-spacing: -0.01em;">
+            <div style="font-size: 16px; font-weight: 700; color: hsl(var(--pg-fg)); margin-bottom: 4px; letter-spacing: -0.01em;">
               {d.title}
             </div>
             {#if d.excerpt}
               <div style="
-                font-size: 12.5px; color: hsl(215 16% 47%); margin-bottom: 6px;
+                font-size: 12.5px; color: hsl(var(--pg-fg-muted)); margin-bottom: 6px;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
               ">{d.excerpt}</div>
             {/if}
-            <div style="font-size: 11px; color: hsl(215 16% 56%); display: flex; gap: 10px; flex-wrap: wrap;">
+            <div style="font-size: 11px; color: hsl(var(--pg-fg-subtle)); display: flex; gap: 10px; flex-wrap: wrap;">
               <span>Saved {fmtAge(d.savedAt)}</span>
               {#if words > 0}
                 <span>· ~{words} words</span>
@@ -208,7 +208,7 @@
             <a href={editUrl(d)} style="
               display: inline-flex; align-items: center; gap: 5px;
               padding: 7px 12px; border-radius: 8px; text-decoration: none;
-              background: hsl(222 47% 11%); color: white; font-size: 12px; font-weight: 600;
+              background: hsl(var(--pg-solid)); color: hsl(var(--pg-solid-fg)); font-size: 12px; font-weight: 600;
             ">
               <Icon name="pencil-simple" size={12} /> Continue
             </a>

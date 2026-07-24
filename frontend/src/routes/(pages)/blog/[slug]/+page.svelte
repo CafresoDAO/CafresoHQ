@@ -93,7 +93,7 @@
 </svelte:head>
 
 {#if loading}
-  <div class="mx-auto p-10 text-center" style="color: hsl(215 16% 47%);">
+  <div class="mx-auto p-10 text-center" style="color: hsl(var(--pg-fg-muted));">
     <Icon name="spinner-gap" size={18} /> Loading post…
   </div>
 {:else if !post}
@@ -116,7 +116,7 @@
         <a
           href="/blog/new?edit={slug}"
           class="inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-full px-3 py-1.5 no-underline"
-          style="background: hsl(26 40% 96%); border: 1px solid hsl(26 30% 82%); color: hsl(222 47% 11%);"
+          style="background: hsl(var(--pg-hover)); border: 1px solid hsl(var(--pg-border)); color: hsl(var(--pg-fg));"
         >
           <Icon name="pencil-simple" size={12} /> Edit post
         </a>
@@ -131,14 +131,14 @@
         <header class="mb-6">
           <div class="flex gap-2.5 items-center mb-3.5 flex-wrap">
             <CategoryTag cat={post.cat} />
-            <span class="text-xs" style="color: hsl(215 16% 47%);">{fmtDate(post.date)}</span>
-            <span class="text-xs" style="color: hsl(215 16% 47%);">· {post.readMin} min read</span>
+            <span class="text-xs" style="color: hsl(var(--pg-fg-muted));">{fmtDate(post.date)}</span>
+            <span class="text-xs" style="color: hsl(var(--pg-fg-muted));">· {post.readMin} min read</span>
           </div>
           <h1
             class="post-hero-title"
             style="font-size: 46px; font-weight: 800; line-height: 1.05; margin: 0 0 16px; letter-spacing: -0.025em; text-wrap: pretty;"
           >{post.title}</h1>
-          <p style="font-size: 18px; line-height: 1.5; color: hsl(215 16% 35%); margin: 0 0 5px; max-width: 62ch; text-wrap: pretty;">
+          <p style="font-size: 18px; line-height: 1.5; color: hsl(var(--pg-fg-muted)); margin: 0 0 5px; max-width: 62ch; text-wrap: pretty;">
             {post.excerpt}
           </p>
 
@@ -147,20 +147,21 @@
               <Avatar name={post.author.name} hue={post.author.hue} size={40} />
               <div class="text-[13px]">
                 <div class="font-semibold">{post.author.name}</div>
-                <div style="color: hsl(215 16% 47%); font-size: 11.5px;">{post.author.role}</div>
+                <div style="color: hsl(var(--pg-fg-muted)); font-size: 11.5px;">{post.author.role}</div>
               </div>
             </div>
-            <span class="w-px" style="height: 28px; background: hsl(26 25% 80%);"></span>
+            <span class="w-px" style="height: 28px; background: hsl(var(--pg-border));"></span>
             <OnChainBadge canister={post.canister} block={post.block} />
             <button
-              class="inline-flex items-center gap-1.5 bg-white cursor-pointer whitespace-nowrap"
+              class="inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               style="
-                border: 1px solid hsl(26 30% 85%);
+                background: hsl(var(--pg-elevated));
+                border: 1px solid hsl(var(--pg-border));
                 padding: 5px 10px; border-radius: 999px; font-size: 12px;
                 font-family: inherit;
               "
             >
-              <Icon name="seal-check" size={14} style="color: hsl(112 43% 45%);" /> Verify signature
+              <Icon name="seal-check" size={14} style="color: hsl(var(--brand-leaf));" /> Verify signature
             </button>
           </div>
         </header>
@@ -222,11 +223,11 @@
             >
               <div
                 style="
-                  background: hsl(26 45% 98% / 0.7); border: 1px solid hsl(26 30% 85%);
+                  background: hsl(var(--pg-surface) / 0.7); border: 1px solid hsl(var(--pg-border));
                   border-radius: 12px; padding: 16px;
                 "
               >
-                <div class="mb-1.5" style="font-size: 11px; color: hsl(215 16% 47%);">Next up</div>
+                <div class="mb-1.5" style="font-size: 11px; color: hsl(var(--pg-fg-muted));">Next up</div>
                 <div style="font-size: 15px; font-weight: 600; line-height: 1.3;">{p.title}</div>
               </div>
             </a>

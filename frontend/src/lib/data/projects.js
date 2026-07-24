@@ -111,7 +111,7 @@ export const PROJECTS = [
       'The mining game at the heart of Banking.Brave — earn sGLDT, back a real farm in El Salvador, and turn burns into perks at the café.',
     what: [
       'Mine sGLDT from your browser',
-      'Burn $nanas to climb the contest leaderboard',
+      'Tip gold (sGLDT) to climb the contest leaderboard',
       'On-chain rewards tied to real-world café perks'
     ],
     roadmap: [
@@ -132,7 +132,7 @@ export const PROJECTS = [
     summary:
       'This site. A shop, a dev log, forums, and governance — all on-chain, all owned by the community, all reachable from one identity.',
     what: [
-      'Buy coffee and merch with $nanas, $CF, or card',
+      'Buy coffee and merch with gold (sGLDT) or card',
       'Read and tip signed dev-log posts',
       'Post in on-chain forums',
       'Weigh in on DAO governance'
@@ -141,6 +141,44 @@ export const PROJECTS = [
       { when: 'Live', title: 'Shop · Dev Log · Forums', done: true },
       { when: 'Now', title: 'Google-simple homepage + Projects hub', done: false },
       { when: 'Next', title: 'On-chain governance canister (currently seed-backed)', done: false }
+    ]
+  }
+];
+
+// ── The ecosystem arc — where all of this is going ───────────────────────────
+// Per-project roadmaps live on each PROJECTS entry above; this is the
+// cross-project story the /projects page tells at the bottom: from today's
+// cafreso.com surfaces to the .brave-domain future where minegold.brave lets
+// Brave's ~100M monthly users convert their BAT ad earnings into on-chain gold.
+export const ECOSYSTEM_ROADMAP = [
+  {
+    era: 'Now',
+    title: 'A real economy on cafreso.com',
+    tone: 152,
+    items: [
+      { text: 'Tips, shop, and contest run on gold — sGLDT, 1:1 gold-backed, on the ledger', done: true },
+      { text: 'Deep Research: multi-angle, cited answers written forever to the public Library', done: true },
+      { text: 'CafresoHQ agents with private containers and a managed default brain', done: true }
+    ]
+  },
+  {
+    era: 'Next',
+    title: 'Traction you can verify on-chain',
+    tone: 45,
+    items: [
+      { text: 'Public growth metrics — library entries, searches, tips, orders', done: false },
+      { text: 'Design the BAT → gold conversion flow with the community', done: false },
+      { text: 'SNS decentralization — the capstone, once usage and unit economics prove out', done: false }
+    ]
+  },
+  {
+    era: 'Horizon',
+    title: 'The .brave era',
+    tone: 262,
+    items: [
+      { text: '.brave resolves in browsers — minegold.brave and banking.brave go live on our own domains', done: false },
+      { text: 'minegold.brave: convert monthly BAT ad earnings into gold — mining gold through Brave', done: false },
+      { text: 'banking.brave: the self-custody DeFi surface for the whole ecosystem', done: false }
     ]
   }
 ];

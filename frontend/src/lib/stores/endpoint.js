@@ -61,7 +61,10 @@ export function normalizeUrl(raw) {
   // Auto-prepend http:// if missing scheme
   if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
   // Strip trailing slash
-  return s.replace(/\/+$/, '');
+  s = s.replace(/\/+$/, '');
+  // Mobile keyboards (iOS autocapitalize) can title-case the scheme
+  // ("Http://...") — normalize it back down so host comparisons don't break.
+  return s.replace(/^(https?):\/\//i, (_, scheme) => scheme.toLowerCase() + '://');
 }
 
 /** Set + persist the endpoint URL. Returns the normalized form.

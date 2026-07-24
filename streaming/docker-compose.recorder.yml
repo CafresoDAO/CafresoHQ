@@ -1,0 +1,44 @@
+# ── CafresoAI Session Recorder ───────────────────────────────────────────
+# Optional ffmpeg sidecar that captures a WebRTC session to MP4.
+#
+# Usage (launched by HyperVProvider.start_recording):
+#   docker compose -f docker-compose.recorder.yml run -d \
+#     -e STREAM_URL=rtsp://host:port/stream \
+#     -e SESSION_ID=ses_abc123 \
+#     recorder
+#
+# Recordings saved to /recordings/<session_id>/<timestamp>.mp4
+# Mount a volume at /recordings to persist them.
+
+services:
+  recorder:
+    image: linuxserver/ffmpeg:latest
+    container_name: "cafresoai-recorder-${SESSION_ID:-unknown}"
+    restart: "no"
+    environment:
+      - SESSION_ID=${SESSION_ID:-unknown}
+      - STREAM_URL=${STREAM_URL:-}
+      - DISPLAY_URL=${DISPLAY_URL:-}
+      - RECORDING_DURATION=${RECORDING_DURATION:-0}
+      - VIDEO_CODEC=${VIDEO_CODEC:-libx264}
+      - VIDEO_QUALITY=${VIDEO_QUALITY:-23}
+      - RESOLUTION=${RESOLUTION:-1920x1080}
+      - FRAMERATE=${FRAMERATE:-30}
+    volumes:
+      - recordings:/recordings
+      - ./scripts/record-session.sh:/record-session.sh:ro
+    entrypoint: ["/bin/bash", "/record-session.sh"]
+    networks:
+      - cafresoai-streaming
+
+volumes:
+  recordings:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${RECORDINGS_PATH:-/var/lib/cafresoai/recordings}
+
+networks:
+  cafresoai-streaming:
+    external: true

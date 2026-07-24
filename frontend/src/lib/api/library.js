@@ -39,20 +39,128 @@ export function graphViewerOrigin() {
   return HQ_UI_CANISTER_ORIGIN;
 }
 
-/** Fully public graph-viewer link for a library entry — canister-hosted end to end. */
-export function libraryGraphViewerUrl(id) {
+/** Fully public graph-viewer link for a library entry — canister-hosted end to end.
+
+    For a deep-research entry, pass `{ deep:true }` to also hand the viewer the
+    entry's note pages (`&pages=<research.json>`): the research tree then opens
+    the note page IN the viewer when a topic node is clicked, instead of only
+    linking sources out — the "explorable research" experience. */
+export function libraryGraphViewerUrl(id, { deep = false } = {}) {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/${id}/graph.json`);
-  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+  let url = `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=150&selected=highlight`;
+  if (deep) url += `&pages=${encodeURIComponent(`${base}/library/${id}/research.json`)}`;
+  return url;
 }
 
-/** The whole library as one neural web — the /library page hero. */
+/** Public URL of a deep entry's note pages (research.json), or '' if unconfigured. */
+export function libraryResearchUrl(id) {
+  const base = libraryPublicBase();
+  return base ? `${base}/library/${id}/research.json` : '';
+}
+
+/** Public URL of an entry's own graph blob (the worker-authored graphJson).
+    Carries the Brave-harvest enrichment the flat entry JSON lacks — per-source
+    publish dates + thumbnails, and the "people also ask" suggestion nodes. */
+export function libraryEntryGraphUrl(id) {
+  const base = libraryPublicBase();
+  return base ? `${base}/library/${id}/graph.json` : '';
+}
+
+/** Fetch + parse an entry's graph blob into its raw node list, or [] on any
+    failure. Shared by libraryEntryEnrichment (drawer) and libraryCardVisual
+    (browse-grid cards) so the fetch/parse isn't duplicated. */
+async function fetchEntryGraphNodes(id) {
+  const url = libraryEntryGraphUrl(id);
+  if (!url) return [];
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    let g = j && (j.graph || j);
+    if (typeof g === 'string') g = JSON.parse(g);
+    return (g && g.nodes) || [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+/** Distill an entry's graph blob into drawer-ready enrichment:
+      { byUrl: Map<url,{age,img}>, suggests: [{q, a}], favicons: string[] }
+    Returns null on any failure — the drawer just renders its plain sources. */
+export async function libraryEntryEnrichment(id) {
+  const nodes = await fetchEntryGraphNodes(id);
+  const byUrl = new Map();
+  const suggests = [];
+  const favicons = [];
+  for (const n of nodes) {
+    const a = (n && n.attributes) || {};
+    if (a.suggest) { if (a.label) suggests.push({ q: String(a.label).replace(/^✦\s*/, ''), a: a.snippet || '' }); }
+    else if (a.url && (a.age || a.img)) byUrl.set(a.url, { age: a.age || '', img: a.img || '' });
+    if (a.kind === 'domain' && a.favicon && /^https:\/\//.test(a.favicon)) favicons.push(a.favicon);
+  }
+  return (byUrl.size || suggests.length || favicons.length) ? { byUrl, suggests, favicons } : null;
+}
+
+// Module-level cache: a browse-grid page re-renders (filter/sort changes)
+// without needing to refetch cards already visited this session.
+const _cardVisualCache = new Map();
+
+/** Cheap per-card visual for the browse grid: one hero thumbnail (the first
+    Brave-harvested source image) and up to 3 source favicons, or null if the
+    entry predates enrichment / carries neither. Cached per id — call once
+    per card, not on every re-render. */
+export async function libraryCardVisual(id) {
+  if (_cardVisualCache.has(id)) return _cardVisualCache.get(id);
+  const p = (async () => {
+    const nodes = await fetchEntryGraphNodes(id);
+    let thumb = null;
+    const favicons = [];
+    for (const n of nodes) {
+      const a = (n && n.attributes) || {};
+      if (!thumb && a.img && /^https:\/\//.test(a.img)) thumb = a.img;
+      if (a.kind === 'domain' && a.favicon && /^https:\/\//.test(a.favicon) && favicons.length < 3) {
+        favicons.push(a.favicon);
+      }
+    }
+    return (thumb || favicons.length) ? { thumb, favicons } : null;
+  })();
+  _cardVisualCache.set(id, p);
+  return p;
+}
+
+/** The whole library as one neural web — the /library page hero. Runs with
+    chrome=none: the hero overlays its own headline and search box, so the
+    viewer's controls would only compete with them. */
 export function libraryMergedGraphViewerUrl() {
   const base = libraryPublicBase();
   if (!base) return '';
   const g = encodeURIComponent(`${base}/library/graph.json`);
-  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight`;
+  // embed=post: clicking a question node posts to this page (opens the in-page
+  // drawer) instead of a new tab. embedorigin pins postMessage's target so the
+  // message can't leak to a hostile framer.
+  const origin = (typeof location !== 'undefined' && location.origin) || 'https://cafreso.com';
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&chrome=none`
+    + `&embed=post&embedorigin=${encodeURIComponent(origin)}`;
+}
+
+/** The same merged web, but the FULL interactive viewer — every control on
+    (topic filter legend, node search, analytics, shortest-path). No chrome=none
+    and no embed bridge: this opens standalone in a new tab, so the hero can stay
+    a clean backdrop while "Explore the full graph" gives visitors the real tool. */
+export function libraryFullGraphViewerUrl() {
+  const base = libraryPublicBase();
+  if (!base) return '';
+  const g = encodeURIComponent(`${base}/library/graph.json`);
+  return `${graphViewerOrigin()}/graph-viewer.html?g=${g}&background=dark&maxnodes=300&selected=highlight&show_analytics=1`;
+}
+
+/** The full viewer with the growth replay auto-playing on load — the library
+    re-asks itself in chronological order. The hero's "watch it grow" link. */
+export function libraryReplayGraphViewerUrl() {
+  const u = libraryFullGraphViewerUrl();
+  return u ? `${u}&replay=1` : '';
 }
 
 /** Library-first lookup: exact normalized-query hit or null. Never throws. */

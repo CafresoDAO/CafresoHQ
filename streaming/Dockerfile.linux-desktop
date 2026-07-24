@@ -1,0 +1,157 @@
+# ── CafresoAI Linux Desktop — Ubuntu 24.04 + XFCE + Selkies-GStreamer ────────
+# Streams a full Linux desktop to the browser via WebRTC.
+#
+# Build:
+#   docker build -f Dockerfile.linux-desktop -t cafresoai-linux-desktop:latest .
+#
+# Run:
+#   docker run -d --name linux-desktop \
+#     -p 8080:8080 \
+#     -e SELKIES_ENCODER=x264enc \
+#     -e SELKIES_RESOLUTION=1920x1080 \
+#     -e SELKIES_FRAMERATE=30 \
+#     cafresoai-linux-desktop:latest
+#
+# The container exposes:
+#   - Port 8080: Selkies-GStreamer WebRTC signaling + HTTP
+#   - WebSocket at ws://host:8080/ws for signaling
+#   - STUN/TURN configured via environment variables
+
+FROM ghcr.io/selkies-project/nvidia-glx-desktop:24.04
+
+LABEL maintainer="anthony@cafreso.com"
+LABEL org.opencontainers.image.title="CafresoAI Linux Desktop"
+LABEL org.opencontainers.image.description="Ubuntu 24.04 XFCE desktop streamed via Selkies-GStreamer WebRTC"
+
+# ── Environment defaults ─────────────────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive \
+    # Selkies configuration
+    SELKIES_ENCODER=x264enc \
+    SELKIES_RESOLUTION=1920x1080 \
+    SELKIES_FRAMERATE=30 \
+    SELKIES_BASIC_AUTH=false \
+    SELKIES_ENABLE_RESIZE=true \
+    SELKIES_ENABLE_CLIPBOARD=true \
+    SELKIES_ENABLE_AUDIO=true \
+    # Display
+    DISPLAY=:0 \
+    DISPLAY_SIZEW=1920 \
+    DISPLAY_SIZEH=1080 \
+    DISPLAY_DPI=96 \
+    DISPLAY_REFRESH=60 \
+    # TURN relay (set at runtime by fleet-api)
+    SELKIES_TURN_HOST="" \
+    SELKIES_TURN_PORT=3478 \
+    SELKIES_TURN_USERNAME="" \
+    SELKIES_TURN_PASSWORD="" \
+    # Locale
+    TZ=America/Denver \
+    LANG=en_US.UTF-8
+
+# ── System packages ──────────────────────────────────────────────────────────
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Desktop environment
+    xfce4 \
+    xfce4-terminal \
+    xfce4-whiskermenu-plugin \
+    thunar \
+    mousepad \
+    # Browsers & tools
+    firefox \
+    git \
+    curl \
+    wget \
+    htop \
+    nano \
+    vim-tiny \
+    unzip \
+    # Fonts
+    fonts-dejavu-core \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    # Audio
+    pulseaudio \
+    # Locales
+    locales \
+    && locale-gen en_US.UTF-8 \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
+
+# ── Development tools (optional layer) ───────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    nodejs \
+    npm \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
+
+# ── Desktop configuration ───────────────────────────────────────────────────
+# Create workspace user
+RUN useradd -m -s /bin/bash -G sudo,video,audio cafreso \
+    && echo "cafreso:cafreso" | chpasswd \
+    && echo "cafreso ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/cafreso
+
+# Set default desktop session
+RUN mkdir -p /home/cafreso/.config/xfce4/xfconf/xfce-perchannel-xml
+
+# XFCE panel configuration — clean, minimal panel
+COPY <<'EOF' /home/cafreso/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.15"/>
+            <value type="double" value="0.13"/>
+            <value type="double" value="0.11"/>
+            <value type="double" value="1.0"/>
+          </property>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+
+# Terminal configuration — dark theme, larger font
+COPY <<'EOF' /home/cafreso/.config/xfce4/terminal/terminalrc
+[Configuration]
+FontName=DejaVu Sans Mono 12
+MiscAlwaysShowTabs=FALSE
+MiscBell=FALSE
+MiscBordersDefault=TRUE
+MiscCursorBlinks=FALSE
+MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK
+MiscDefaultGeometry=120x36
+MiscInheritGeometry=FALSE
+MiscMenubarDefault=FALSE
+MiscMouseAutohide=FALSE
+MiscMouseWheelZoom=TRUE
+MiscToolbarDefault=FALSE
+ScrollingBar=TERMINAL_SCROLLBAR_NONE
+ColorForeground=#d4d4d4
+ColorBackground=#1e1e1e
+ColorPalette=#1e1e1e;#f44747;#6a9955;#d7ba7d;#569cd6;#c586c0;#4ec9b0;#d4d4d4;#808080;#f44747;#6a9955;#d7ba7d;#569cd6;#c586c0;#4ec9b0;#ffffff
+EOF
+
+# Fix ownership
+RUN chown -R cafreso:cafreso /home/cafreso
+
+# ── Entrypoint ───────────────────────────────────────────────────────────────
+USER cafreso
+WORKDIR /home/cafreso
+
+EXPOSE 8080
+
+# The base image (selkies-project/nvidia-glx-desktop) provides the entrypoint
+# that starts Xvfb + XFCE + Selkies-GStreamer. We just configure via ENV.

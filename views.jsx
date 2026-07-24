@@ -8,21 +8,31 @@ const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 /* Persistent React state — backed by localStorage with debounced writes.
    Used by TerminalSession to keep msgs/model/authMethod alive across
    project switches and reloads so the orchestrator context survives. */
-function useStoredV(key, initial) {
+function useStoredV(key, initial, persistTransform) {
   const [v, set] = React.useState(() => {
-    if (!key) return typeof initial === 'function' ? initial() : initial;
+    const fallback = () => (typeof initial === 'function' ? initial() : initial);
+    if (!key) return fallback();
     try {
       const raw = localStorage.getItem(key);
-      if (raw == null) return typeof initial === 'function' ? initial() : initial;
-      return JSON.parse(raw);
-    } catch (_e) { return typeof initial === 'function' ? initial() : initial; }
+      if (raw == null) return fallback();
+      const parsed = JSON.parse(raw);
+      /* Same shape guard as app.jsx's useStored: "null"/schema-drifted
+         values parse fine and then crash the first .map — fall back. */
+      const base = fallback();
+      if (base != null) {
+        if (Array.isArray(base) ? !Array.isArray(parsed)
+          : typeof base === 'object' ? (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed))
+          : typeof parsed !== typeof base) return base;
+      }
+      return parsed;
+    } catch (_e) { return fallback(); }
   });
   const timer = React.useRef(null);
   React.useEffect(() => {
     if (!key) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      try { localStorage.setItem(key, JSON.stringify(v)); }
+      try { localStorage.setItem(key, JSON.stringify(persistTransform ? persistTransform(v) : v)); }
       catch (_e) { /* quota exceeded, etc */ }
     }, 250);
     return () => { if (timer.current) clearTimeout(timer.current); };
@@ -5548,7 +5558,10 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
      tab); Chat is one click away via the Chat/PTY toggle. */
   const [termModeRaw, setTermMode] = useStoredV(sKey('mode'), 'spawn');  // 'chat' | 'spawn'
   const termMode = termModeRaw;
-  const [msgs,      setMsgs]      = useStoredV(sKey('msgs'),  []);
+  // Cap persisted history like the main chat's 80-cap — an unbounded
+  // orchestrator conversation eventually hits quota and then silently
+  // stops persisting anything new.
+  const [msgs,      setMsgs]      = useStoredV(sKey('msgs'),  [], xs => xs.slice(-120));
   const [input,     setInput]     = useSV('');
   const [busy,      setBusy]      = useSV(false);
   const [err,       setErr]       = useSV(null);
@@ -6043,7 +6056,18 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   );
 }
 
-let _sessionCounter = 0;
+/* Tab ids must be minted against the RESTORED session list, not a module
+   counter — the counter reset to 0 on reload while ids like "s3" were
+   persisted, so the next new tab minted a duplicate "s1" and two tabs
+   started acting in lockstep (same React key, same activeId match). */
+const _nextSessionId = (existing) => {
+  let n = 0;
+  for (const s of (existing || [])) {
+    const m = /^s(\d+)$/.exec(String((s && s.id) || ''));
+    if (m) n = Math.max(n, parseInt(m[1], 10));
+  }
+  return `s${n + 1}`;
+};
 /* _uuid() requires a secure context (HTTPS / localhost).
    On plain HTTP over LAN IP it's undefined, so we polyfill. */
 const _uuid = () =>
@@ -6366,8 +6390,7 @@ function ProjectTerminal({ project, visible }) {
   const activeKey = pid ? `cafresohq_terminal:active:${pid}` : null;
 
   const [sessions, setSessions] = useStoredV(sessKey, () => {
-    const id = `s${++_sessionCounter}`;
-    return [{ id, cli: 'hermes', sessionId: _uuid() }];
+    return [{ id: 's1', cli: 'hermes', sessionId: _uuid() }];
   });
   const [activeId, setActiveId] = useStoredV(activeKey, () => sessions[0]?.id);
 
@@ -6375,8 +6398,7 @@ function ProjectTerminal({ project, visible }) {
      snap to the first available session. */
   React.useEffect(() => {
     if (sessions.length === 0) {
-      const id = `s${++_sessionCounter}`;
-      const fresh = [{ id, cli: 'hermes', sessionId: _uuid() }];
+      const fresh = [{ id: 's1', cli: 'hermes', sessionId: _uuid() }];
       setSessions(fresh);
       setActiveId(id);
       return;
@@ -6425,7 +6447,7 @@ function ProjectTerminal({ project, visible }) {
   }, [addMenuOpen]);
 
   const addSession = (cli) => {
-    const id = `s${++_sessionCounter}`;
+    const id = _nextSessionId(sessions);
     setSessions(prev => {
       // Stable per-CLI ordinal, assigned once at creation. Deriving the label
       // from the array index made "Claude #3" silently become "Claude #2" when
@@ -7980,7 +8002,13 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     }
   };
 
-  return (
+  /* Portaled to <body>: this modal is opened from INSIDE the floating
+     Workspace .hq-window (position:fixed, z-index:300), which forms a
+     stacking context — so however high the backdrop's own z-index, it was
+     capped at the window's 300 and rendered BENEATH any body-level modal
+     (z 400). Concretely: the onboarding's Job Postings book covered the
+     Add-Project dialog completely, so "+ ADD" looked like it did nothing. */
+  return ReactDOM.createPortal(
     <div className="backdrop" onClick={onClose}>
       <div className="modal addproj-modal" onClick={e => e.stopPropagation()} style={{width:'min(560px, 100%)', gridTemplateRows: 'auto auto 1fr'}}>
         <div className="modal-head">
@@ -8044,7 +8072,8 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
           onClose={() => setShowBrowser(false)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 

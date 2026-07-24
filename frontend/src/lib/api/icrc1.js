@@ -44,13 +44,22 @@ export const TOKENS = {
     decimals: 8,
     logo: '/assets/nanas-coin.png'
   },
+  // BANK — Banking Brave, Anthony's scarce "luxury" token (~100k supply).
+  // Display-only in the office Vault Room (prestige case); decimals verified
+  // on-chain 2026-07-18 via icrc1_decimals → 8.
+  BANK: {
+    symbol: 'BANK',
+    canister: 'felsj-5qaaa-aaaam-aenia-cai',
+    decimals: 8,
+    logo: null
+  },
   // ckUSDT — the chain-key Tether stablecoin. NOTE: 6 decimals (not 8).
   // Mainnet ledger: https://dashboard.internetcomputer.org/canister/cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae
   // logo: null → renders the text-avatar fallback (like ckUNI/sGLDT); drop a
   // /assets/ckusdt.png later for a real mark.
   ckUSDT: {
     symbol: 'ckUSDT',
-    canister: 'cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae',
+    canister: 'cngnf-vqaaa-aaaar-qag4q-cai',
     decimals: 6,
     logo: null
   }

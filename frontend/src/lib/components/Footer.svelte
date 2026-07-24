@@ -47,6 +47,8 @@
           src="/assets/cf-gold.png"
           alt=""
           class="w-7 h-7"
+          loading="lazy"
+          decoding="async"
           style="filter: drop-shadow(0 1px 2px hsl(0 0% 0% / 0.4));"
         />
         <span

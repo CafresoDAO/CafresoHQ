@@ -261,10 +261,13 @@
       height: 14px;
       font-size: 9px;
     }
+    /* This breakpoint IS the touch case, so the apps button gets a real
+       target — 30px was well under the ~44px guideline on the one surface
+       where it's always a finger. */
     .cf-apps-btn {
-      padding: 5px 10px;
+      padding: 8px 12px;
       font-size: 11px;
-      min-height: 30px;
+      min-height: 40px;
     }
     .cf-apps-menu {
       min-width: 180px;

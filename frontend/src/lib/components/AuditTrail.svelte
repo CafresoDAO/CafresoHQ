@@ -26,15 +26,15 @@
 
   const KIND_META = {
     post:    { icon: 'pencil-simple',  color: 'hsl(210 80% 48%)', label: 'Post authored'    },
-    comment: { icon: 'chat-circle',    color: 'hsl(112 43% 45%)', label: 'Comment posted'   },
+    comment: { icon: 'chat-circle',    color: 'hsl(var(--brand-leaf))', label: 'Comment posted'   },
     burn:    { icon: 'fire',           color: 'hsl(32 72% 50%)',  label: 'Burn / Tip'       },
     vote:    { icon: 'gavel',          color: 'hsl(260 70% 62%)', label: 'Governance vote'  },
-    login:   { icon: 'fingerprint',    color: 'hsl(215 16% 47%)', label: 'Identity login'   },
+    login:   { icon: 'fingerprint',    color: 'hsl(var(--pg-fg-muted))', label: 'Identity login'   },
     tip:     { icon: 'hand-coins',     color: 'hsl(43 74% 54%)',  label: 'Tip received'     },
   };
 
   function meta(kind) {
-    return KIND_META[kind] ?? { icon: 'circle', color: 'hsl(215 16% 47%)', label: kind };
+    return KIND_META[kind] ?? { icon: 'circle', color: 'hsl(var(--pg-fg-muted))', label: kind };
   }
 
   function fmtDate(ts) {
@@ -59,9 +59,9 @@
         <Icon name="link-simple" size={18} style="color: white;" />
       </div>
       <div>
-        <div style="font-size: 15px; font-weight: 700; color: hsl(222 47% 11%);">On-Chain Audit Trail</div>
+        <div style="font-size: 15px; font-weight: 700; color: hsl(var(--pg-fg));">On-Chain Audit Trail</div>
         {#if principalId}
-          <div style="font-size: 11px; font-family: ui-monospace, monospace; color: hsl(215 16% 47%);">{principalId}</div>
+          <div style="font-size: 11px; font-family: ui-monospace, monospace; color: hsl(var(--pg-fg-muted));">{principalId}</div>
         {/if}
       </div>
       <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
@@ -72,7 +72,7 @@
           border: 1px solid hsl(112 40% 78%);
           padding: 3px 8px; border-radius: 999px;
         ">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: hsl(112 43% 45%); display: inline-block;"></span>
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--brand-leaf)); display: inline-block;"></span>
           Verified on-chain
         </span>
       </div>
@@ -83,7 +83,7 @@
   {#if visible.length === 0}
     <div style="
       padding: 32px; text-align: center; border-radius: 12px;
-      border: 1px dashed hsl(26 30% 82%); color: hsl(215 16% 56%); font-size: 13px;
+      border: 1px dashed hsl(var(--pg-border)); color: hsl(var(--pg-fg-subtle)); font-size: 13px;
     ">
       <Icon name="hourglass" size={24} style="opacity: 0.35; display: block; margin: 0 auto 8px;" />
       No on-chain activity recorded yet
@@ -93,7 +93,7 @@
       <!-- Vertical track line -->
       <div style="
         position: absolute; left: 17px; top: 8px; bottom: 8px;
-        width: 1px; background: linear-gradient(180deg, hsl(26 30% 82%), transparent);
+        width: 1px; background: linear-gradient(180deg, hsl(var(--pg-border)), transparent);
         pointer-events: none;
       "></div>
 
@@ -124,17 +124,17 @@
                     href={ev.url}
                     style="
                       font-size: {compact ? 13 : 14}px; font-weight: 600;
-                      color: hsl(222 47% 11%); text-decoration: none;
+                      color: hsl(var(--pg-fg)); text-decoration: none;
                     "
                   >{ev.title}</a>
                 {:else}
-                  <span style="font-size: {compact ? 13 : 14}px; font-weight: 600; color: hsl(222 47% 11%);">{ev.title}</span>
+                  <span style="font-size: {compact ? 13 : 14}px; font-weight: 600; color: hsl(var(--pg-fg));">{ev.title}</span>
                 {/if}
-                <span style="font-size: 10.5px; color: hsl(215 16% 56%); white-space: nowrap; flex-shrink: 0;">{fmtDate(ev.ts)}</span>
+                <span style="font-size: 10.5px; color: hsl(var(--pg-fg-subtle)); white-space: nowrap; flex-shrink: 0;">{fmtDate(ev.ts)}</span>
               </div>
 
               {#if !compact && ev.sub}
-                <div style="font-size: 12px; color: hsl(215 16% 47%); margin-top: 2px;">{ev.sub}</div>
+                <div style="font-size: 12px; color: hsl(var(--pg-fg-muted)); margin-top: 2px;">{ev.sub}</div>
               {/if}
 
               <!-- Tags row -->
@@ -146,7 +146,7 @@
                 {#if ev.block}
                   <span style="
                     font-size: 10px; font-family: ui-monospace, monospace;
-                    color: hsl(215 16% 56%); background: hsl(26 20% 94%);
+                    color: hsl(var(--pg-fg-subtle)); background: hsl(var(--pg-hover));
                     border-radius: 4px; padding: 2px 6px;
                   ">block #{ev.block.toLocaleString()}</span>
                 {/if}

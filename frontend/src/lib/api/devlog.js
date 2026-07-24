@@ -134,13 +134,19 @@ export function isForumSlug(s) {
 
 // ---------- Public API: Posts ----------
 
+// Internal bookkeeping posts (e.g. the moderation overlay) must never appear
+// in any public listing. Filter by category client-side regardless of how the
+// canister's list endpoints slice categories.
+const INTERNAL_CATS = new Set(['moderation']);
+const isPublicPost = (p) => !INTERNAL_CATS.has(p.cat);
+
 export async function listPosts() {
   const a = actor();
   if (!a) return SEED_POSTS;
   try {
     const out = await a.listDevLogPosts();
     if (!out || out.length === 0) return SEED_POSTS;
-    return out.map(canisterToPost);
+    return out.map(canisterToPost).filter(isPublicPost);
   } catch (e) {
     console.warn('[devlog] listPosts failed, using seed', e);
     return SEED_POSTS;
@@ -154,7 +160,10 @@ export async function getPost(slug) {
   try {
     const out = await a.getPost(slug);
     if (!out || out.length === 0) return fallback();
-    return canisterToPost(out[0]);
+    const post = canisterToPost(out[0]);
+    // Internal bookkeeping posts (moderation overlay) are not viewable pages.
+    if (!isPublicPost(post)) return fallback();
+    return post;
   } catch (e) {
     console.warn('[devlog] getPost failed, using seed', e);
     return fallback();
@@ -166,7 +175,7 @@ export async function listForumPosts() {
   if (!a) return [];
   try {
     const out = await a.listForumPosts();
-    return out.map(canisterToPost);
+    return out.map(canisterToPost).filter(isPublicPost);
   } catch (e) {
     console.warn('[devlog] listForumPosts failed', e);
     return [];
@@ -214,6 +223,104 @@ export async function upsertPost(post) {
   } catch (e) {
     console.warn('[devlog] upsertPost failed', e);
     return { err: String(e?.message || e) };
+  }
+}
+
+// Admin-only — permanently remove a curated dev-log post.
+export async function deletePost(slug) {
+  const a = actor({ authed: true });
+  if (!a) return { err: 'Sign in as admin.' };
+  try {
+    const res = await a.deletePost(slug);
+    if ('ok' in res) return { ok: true };
+    return { err: res.err };
+  } catch (e) {
+    return { err: String(e?.message || e) };
+  }
+}
+
+// ---------- Moderation overlay ----------
+// Comments on the index canister are append-only — there is no edit/delete/
+// hide method. Moderation therefore lives in an ADMIN-OWNED overlay post
+// (slug MOD_SLUG, category 'moderation', filtered from every listing above):
+// its body holds the list of hidden comment keys, and pages apply it at
+// render time. Writing the overlay goes through `upsertPost`, which the
+// canister admin-gates — so only real admins can hide/unhide, and each change
+// is an on-chain, signed update.
+
+const MOD_SLUG = 'mod-overlay';
+export const modKey = (slug, commentId) => `${slug}#${commentId}`;
+
+export async function getModeration() {
+  const a = actor();
+  const empty = { hiddenComments: [] };
+  if (!a) return empty;
+  try {
+    const out = await a.getPost(MOD_SLUG);
+    if (!out || out.length === 0) return empty;
+    let body = [];
+    try { body = JSON.parse(out[0].body || '[]'); } catch { body = []; }
+    const mod = Array.isArray(body) ? body.find((b) => b && b.kind === 'mod') : null;
+    return { hiddenComments: Array.isArray(mod?.hiddenComments) ? mod.hiddenComments : [] };
+  } catch (e) {
+    console.warn('[devlog] getModeration failed', e);
+    return empty;
+  }
+}
+
+export async function saveModeration({ hiddenComments = [] } = {}) {
+  return upsertPost({
+    slug: MOD_SLUG,
+    title: 'Moderation overlay (internal)',
+    cat: 'moderation',
+    author: { name: 'moderation', role: 'system', hue: 0 },
+    readMin: 1,
+    excerpt: 'Internal moderation state — not a public post.',
+    hero: 'roaster',
+    pinned: false,
+    body: [{ kind: 'mod', hiddenComments }],
+  });
+}
+
+// Convenience: toggle one comment's hidden state and persist.
+export async function setCommentHidden(slug, commentId, hidden) {
+  const cur = await getModeration();
+  const key = modKey(slug, commentId);
+  const set = new Set(cur.hiddenComments);
+  if (hidden) set.add(key); else set.delete(key);
+  const res = await saveModeration({ hiddenComments: [...set] });
+  if (res.err) return { err: res.err };
+  return { ok: [...set] };
+}
+
+// ---------- Public API: Stats (admin analytics) ----------
+
+export async function appStats() {
+  const a = actor();
+  if (!a) return null;
+  try {
+    const s = await a.appStats();
+    return {
+      posts: Number(s.posts),
+      comments: Number(s.comments),
+      burns: Number(s.burns),
+      orders: Number(s.orders),
+      products: Number(s.products),
+    };
+  } catch (e) {
+    console.warn('[devlog] appStats failed', e);
+    return null;
+  }
+}
+
+export async function totalBurnedAll() {
+  const a = actor();
+  if (!a) return null;
+  try {
+    return Number(await a.totalBurned());
+  } catch (e) {
+    console.warn('[devlog] totalBurned failed', e);
+    return null;
   }
 }
 

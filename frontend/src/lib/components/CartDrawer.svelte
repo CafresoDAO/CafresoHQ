@@ -1,9 +1,11 @@
 <script>
+  import GoldPrice from './GoldPrice.svelte';
   import { goto } from '$app/navigation';
-  import { cart, cartOpen, cartTotal } from '$lib/stores/cart.js';
+  import { cart, cartOpen, cartTotal, cartTotalCents } from '$lib/stores/cart.js';
   import { productImage, usd } from '$lib/data/products.js';
   import Icon from './Icon.svelte';
   import Button from './Button.svelte';
+  import Modal from './Modal.svelte';
 
   function close() {
     cartOpen.set(false);
@@ -14,19 +16,17 @@
   }
 </script>
 
-{#if $cartOpen}
-  <div
-    on:click={close}
-    class="fixed inset-0 z-[15]"
-    style="background: rgba(0,0,0,0.4);"
-    role="presentation"
-  ></div>
-  <div
-    class="fixed right-0 top-0 bottom-0 w-full z-[20] flex flex-col"
-    style="max-width: 520px; background: hsl(26 30% 74%);"
-  >
+<Modal
+  open={$cartOpen}
+  on:close={close}
+  placement="drawer-right"
+  z="drawer"
+  labelledby="cart-drawer-title"
+  panelClass="cart-drawer w-full"
+  panelStyle="max-width: 520px;"
+>
     <div class="flex justify-between items-center px-5 py-4">
-      <h1 class="text-xl font-bold m-0">
+      <h1 id="cart-drawer-title" class="text-xl font-bold m-0">
         {$cart.length}
         {$cart.length === 1 ? 'item' : 'items'}
       </h1>
@@ -54,12 +54,11 @@
             class="flex gap-4 py-4 items-center"
             style="border-bottom: 1px solid hsl(26 30% 60%);"
           >
-            <img src={productImage(it.img)} alt="" class="w-16 h-16 object-contain" />
+            <img src={productImage(it.img)} alt="" class="w-16 h-16 object-contain" loading="lazy" decoding="async" />
             <div class="flex-1">
               <div class="font-medium text-sm">{it.name}</div>
               <div class="text-[13px] mt-1 inline-flex items-center gap-1">
-                {it.qty} × {it.price.toLocaleString()}
-                <img src="/assets/nanas-coin.png" alt="" class="w-[14px]" />
+                {it.qty} × <GoldPrice cents={it.cents ?? Math.round(it.price * 0.15)} size="sm" />
               </div>
             </div>
             <button
@@ -79,12 +78,20 @@
         >
           <span class="font-bold text-white">Checkout</span>
           <span class="text-[13px] font-normal inline-flex items-center gap-1.5">
-            {$cartTotal.toLocaleString()} Nanas
-            <img src="/assets/nanas-coin.png" alt="" class="w-[18px]" />
-            <span class="text-[11px] ml-1 opacity-80">${usd($cartTotal)} USD</span>
+            <GoldPrice cents={$cartTotalCents} size="sm" />
           </span>
         </Button>
       </div>
     {/if}
-  </div>
-{/if}
+</Modal>
+
+<style>
+  /* Warm tan drawer panel: keep light value exact, flip to a themed surface in dark.
+     :global because the element now lives inside <Modal>'s slot. */
+  :global(.cart-drawer) {
+    background: hsl(26 30% 74%);
+  }
+  :global(.dark) :global(.cart-drawer) {
+    background: hsl(var(--pg-surface));
+  }
+</style>

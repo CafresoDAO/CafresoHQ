@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { endpointUrl, endpointHealth, endpointReady, probeHealth } from '$lib/stores/endpoint.js';
-  import { isAuthenticated, authIdentity } from '$lib/stores/auth.js';
+  import { isAuthenticated, authIdentity, authStatus } from '$lib/stores/auth.js';
   import {
     ensureHqSession, hqSessionReady, hqSessionError, endpointNeedsSession
   } from '$lib/api/hqSession.js';
@@ -32,15 +32,19 @@
     deleteFile
   } from '$lib/stores/vault.js';
   import ProvisionPanel from '$lib/components/ProvisionPanel.svelte';
+  import OpeningDay from '$lib/components/hq/OpeningDay.svelte';
   import ApprovalSheet from '$lib/components/ApprovalSheet.svelte';
   import { requestApproval } from '$lib/stores/approvalSheet.js';
   import { login } from '$lib/stores/auth.js';
   import { operatorConfig, refreshOperatorConfig, moneyDisabled, publishDisabled } from '$lib/stores/operator.js';
+  import { getBalance, transfer } from '$lib/api/icrc1.js';
+  import { getTreasury } from '$lib/api/store.js';
   import { HQ_UI_CANISTER_ORIGIN } from '$lib/config.js';
 
   // Money-moving chain ops the operator can kill network-wide (money module off).
   const MONEY_OPS = new Set(['chain:wallet:fund', 'chain:wallet:send',
-                             'chain:payroll:approve', 'chain:payroll:run']);
+                             'chain:payroll:approve', 'chain:payroll:run',
+                             'chain:shop:furnish']);
 
   $: if ($endpointUrl && $endpointHealth.state === 'idle') {
     probeHealth().catch(() => {});
@@ -266,6 +270,43 @@
             balances: await agentBalances(p, d.agentId, d.tokens)
           });
           break;
+        case 'chain:bank:balance': {
+          // Read-only: the user's main-account BANK balance for the office
+          // Vault Room's prestige case. Never in MONEY_OPS — nothing moves.
+          const raw = await getBalance('BANK', p);
+          reply({ type: 'chain:bank:balance:response', raw: raw === null ? null : String(raw) });
+          break;
+        }
+        case 'chain:shop:furnish': {
+          /* Furnish Shop: cosmetic desk decor paid in REAL sGLDT. Unlike
+             under-cap agent sends, this ALWAYS asks — it's the user's own
+             main wallet, so every sale is an explicit signature. Declining
+             replies 'declined' and nothing moves. */
+          const price = Number(d.priceGold);
+          if (!Number.isFinite(price) || price <= 0 || price > 5) return fail('Bad furnish price.');
+          const treasury = await getTreasury();
+          if (!treasury) return fail('DAO treasury is not configured yet.');
+          const ok = await requestApproval({
+            title: 'Buy desk decor with gold',
+            rows: [
+              { label: 'Item', value: `${d.label || d.itemId} · for agent ${d.agentId}` },
+              { label: 'Price', value: `${price} sGLDT` },
+              { label: 'To', value: `DAO treasury · ${treasury}`, mono: true }
+            ],
+            warning: 'This sends real gold-backed sGLDT from your wallet to the Cafreso DAO treasury.',
+            note: 'Declining costs nothing — the item simply isn\'t bought.',
+            confirmLabel: `Sign · pay ${price} sGLDT`,
+            danger: false
+          });
+          if (!ok) { reply({ type: 'chain:shop:furnish:response', status: 'declined' }); break; }
+          const res = await transfer({
+            tokenKey: 'sGLDT', toPrincipalText: treasury, amount: price,
+            memoText: `hq-furnish-${String(d.itemId || '').slice(0, 14)}`
+          });
+          if (res.err) return fail(res.err);
+          reply({ type: 'chain:shop:furnish:response', status: 'paid', block: res.ok });
+          break;
+        }
         case 'chain:wallet:fund': {
           const res = await fundAgent({ principalText: p, agentId: d.agentId, tokenKey: d.token, amount: d.amount });
           reply({ type: 'chain:wallet:fund:response', ...res });
@@ -522,7 +563,10 @@
   $: launchSteps = [
     {
       id: 'signin', label: 'Sign in with Internet Identity',
-      state: $isAuthenticated ? 'done' : 'active'
+      // 'active' (with its "in progress…" suffix) only while the II window is
+      // actually open — before the user clicks anything, the step is theirs
+      // to take, not something happening on its own.
+      state: $isAuthenticated ? 'done' : $authStatus === 'logging-in' ? 'active' : 'pending'
     },
     {
       id: 'container', label: 'Wake your container',
@@ -544,6 +588,10 @@
     }
   ];
 </script>
+
+<svelte:head>
+  <title>HQ · CafresoHQ</title>
+</svelte:head>
 
 {#if fullscreenIframe}
   <div class="fixed inset-0 z-40 bg-ink-900">
@@ -573,9 +621,10 @@
       <button
         class="absolute right-3 top-3 z-50 grid h-9 w-9 place-items-center rounded-full border border-ink-600/60 bg-ink-900/80 text-ink-200 backdrop-blur-md transition-colors hover:bg-ink-800/80 hover:text-ink-50"
         title="Show controls (Esc)"
+        aria-label="Show controls"
         on:click={() => controlsCollapsed = false}
       >
-        ...
+        <span aria-hidden="true">...</span>
       </button>
     {:else}
       <div class="absolute right-3 top-3 z-50 flex items-center gap-1 rounded-full border border-ink-600/60 bg-ink-900/80 p-1 shadow-lg backdrop-blur-md">
@@ -607,29 +656,10 @@
       <p class="mt-4 max-w-2xl text-sm leading-6 text-ink-300">
         Your agent command center runs in your own private container — here's where it's at:
       </p>
-      <ol class="mt-6 space-y-3">
-        {#each launchSteps as s, i}
-          <li class="flex items-center gap-3 text-sm">
-            {#if s.state === 'done'}
-              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-500/15 text-xs font-bold text-brand-600 dark:text-brand-300">✓</span>
-            {:else if s.state === 'active'}
-              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-brand-400/70">
-                <span class="glow-dot text-brand-400 animate-pulse"></span>
-              </span>
-            {:else if s.state === 'error'}
-              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-500/15 text-xs font-bold text-red-500">!</span>
-            {:else}
-              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-ink-600/50 text-xs text-ink-400">{i + 1}</span>
-            {/if}
-            <span class={s.state === 'pending' ? 'text-ink-400' : s.state === 'error' ? 'font-medium text-red-500' : 'text-ink-200'}>
-              {s.label}
-            </span>
-            {#if s.state === 'active'}
-              <span class="text-xs text-ink-400">— in progress…</span>
-            {/if}
-          </li>
-        {/each}
-      </ol>
+      <!-- Opening Day: the same four launchSteps, rendered as the office
+           waking up floor-by-floor instead of a text checklist. Everything
+           is included — no keys to add, the Cafreso brain comes with it. -->
+      <OpeningDay steps={launchSteps} />
     </header>
 
     {#if !$isAuthenticated}

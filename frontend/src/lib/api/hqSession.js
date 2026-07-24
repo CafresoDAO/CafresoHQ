@@ -17,6 +17,7 @@ import { writable, get } from 'svelte/store';
 import { getKeysActor } from '$lib/api/keysActor.js';
 import { isAuthenticated } from '$lib/stores/auth.js';
 import { fleetApiUrl } from '$lib/api/fleetClient.js';
+import { endpointUrl } from '$lib/stores/endpoint.js';
 
 export const hqSessionReady = writable(false);
 export const hqSessionError = writable(null);
@@ -107,6 +108,22 @@ export function stopHqSession() {
   if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
   hqSessionReady.set(false);
 }
+
+// A ready session cookie is only valid for the gateway/endpoint it was minted
+// against. Changing either in Settings (re-provision, switch container, typo
+// fix) must invalidate it — otherwise `/health` (open) keeps probing green
+// while every /u/<slug>/* call 401s, because the reactive `!$hqSessionReady`
+// guards elsewhere never re-fire ensureHqSession() for the new target.
+// Skip each store's initial emission (fires on subscribe) so this only reacts
+// to actual CHANGES, not the app's startup hydration.
+let _seenFleetUrl = false;
+fleetApiUrl.subscribe((v) => {
+  if (_seenFleetUrl) stopHqSession(); else _seenFleetUrl = true;
+});
+let _seenEndpointUrl = false;
+endpointUrl.subscribe((v) => {
+  if (_seenEndpointUrl) stopHqSession(); else _seenEndpointUrl = true;
+});
 
 /** Mint a fresh principal-bound session token on-chain and return it (string).
  *  Used as the self-service credential for destructive fleet calls

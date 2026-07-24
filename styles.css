@@ -2388,6 +2388,54 @@ body.night .office-task-rail .otr-more { color: var(--brand-banana); border-colo
   box-shadow: inset 0 2px 0 0 rgba(255,255,255,0.3);
 }
 
+/* ── Live desk terminal ─────────────────────────────────────────────────
+   While an agent streams, its monitor "leans toward" the viewer: a slightly
+   larger dark screen over the desk showing the tail of the REAL output.
+   .is-live scrolls (content pinned to bottom); .is-done freezes the last
+   line until OfficeView clears it (~8s). No element at all when idle, so
+   the tiny decorative monitor stays the resting state. */
+.desk-screen {
+  position: absolute;
+  left: 50%; bottom: 34px; transform: translateX(-50%);
+  width: 72%; max-width: 160px; height: 30px;
+  padding: 3px 4px;
+  background: #0d0d1e;
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px rgba(120, 220, 160, 0.15), inset 0 1px 0 rgba(255,255,255,0.08);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 6.5px; line-height: 1.35;
+  color: #7ddc9f;
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  white-space: pre-wrap; word-break: break-word;
+  pointer-events: none;
+  z-index: 3;
+}
+.desk-screen.is-live { animation: desk-screen-flicker 1.6s steps(2) infinite; }
+.desk-screen.is-done { color: #b9e8c9; animation: none; opacity: 0.92; }
+@keyframes desk-screen-flicker {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(120, 220, 160, 0.15), inset 0 1px 0 rgba(255,255,255,0.08); }
+  50%      { box-shadow: 0 0 6px 1px rgba(120, 220, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.08); }
+}
+
+/* Filed reports — a small paper stack on the desk corner; grows with the
+   agent's journal (capped at 5 sheets). Clickable → inspector journal. */
+.desk-papers {
+  position: absolute;
+  right: 12%; bottom: 36px;
+  width: 14px; height: 20px;
+  cursor: pointer;
+  z-index: 4;
+}
+.desk-paper {
+  position: absolute;
+  width: 14px; height: 9px;
+  background: #f3ead8;
+  border: 1.5px solid var(--ink);
+  box-shadow: inset 0 2px 0 rgba(0,0,0,0.06);
+}
+.desk-papers:hover .desk-paper { background: #fff7e2; }
+
 /* Window */
 .window {
   position: absolute;
@@ -3085,6 +3133,15 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   background: hsl(0 78% 55%);
   color: #fffaf0;
 }
+.composer-offline {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px; font-weight: 600;
+  color: hsl(0 60% 42%);
+  align-self: center;
+}
+.composer-mini--primary:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
 
 /* Agent status cards */
 .agents-bar {
@@ -3473,6 +3530,145 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   -webkit-appearance: none; appearance: none;
   width: 14px; height: 18px; margin-top: -7px;
   background: var(--accent-sun); border: 2px solid var(--ink); cursor: pointer;
+}
+
+/* ============================================================
+   Modern settings skin. Scoped under .settings-shell so ONLY the
+   Settings modal gets the sleeker look — the rest of the app keeps
+   its pixel-art chrome (.cb-panel/.pxswitch also live in features.jsx
+   and must stay retro there). The extra .settings-shell specificity
+   is what lets these win over the retro rules above. Everything uses
+   palette tokens (--paper/--rule-2/--ink…) which body.night + the
+   other dark theme already remap, so this adapts to dark for free.
+   ============================================================ */
+.settings-shell { gap: 20px; }
+.settings-shell .settings-nav { flex-basis: 210px; gap: 3px; }
+
+.settings-shell .settings-search {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  padding: 9px 14px;
+  margin-bottom: 10px;
+  transition: border-color .14s, box-shadow .14s;
+}
+.settings-shell .settings-search:focus {
+  outline: none;
+  border-color: var(--accent-sun);
+  box-shadow: 0 0 0 3px var(--accent-sun-10);
+}
+
+.settings-shell .sn-item {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 11px;
+  transition: background .14s, border-color .14s;
+}
+.settings-shell .sn-item:hover { background: var(--paper-2); }
+.settings-shell .sn-item.active {
+  background: var(--accent-sun-10);
+  border-color: var(--accent-sun);
+  box-shadow: none;
+}
+.settings-shell .sn-ico { font-size: 16px; }
+.settings-shell .sn-label {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em;
+  text-transform: none;
+}
+.settings-shell .sn-desc {
+  font-size: 10.5px; letter-spacing: 0; text-transform: none;
+  color: var(--ink-3);
+}
+
+.settings-shell .cb-panel {
+  border: 1px solid var(--rule-2);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 18px rgb(0 0 0 / 0.05);
+  padding: 18px 20px;
+}
+.settings-shell .cb-panel h4 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-2);
+  padding-bottom: 10px; margin-bottom: 14px;
+}
+
+.settings-shell .row-knob {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13.5px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule-2);
+}
+.settings-shell .row-knob .lbl { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.settings-shell .row-knob .sub {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px; text-transform: none; letter-spacing: 0;
+  color: var(--ink-3); font-weight: 400;
+}
+.settings-shell .row-knob select,
+.settings-shell .row-knob input[type="text"],
+.settings-shell .row-knob input[type="number"],
+.settings-shell .row-knob input[type="password"] {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  border: 1px solid var(--rule-2);
+  border-radius: 8px;
+  background: var(--paper-2);
+  padding: 7px 10px;
+  color: var(--ink);
+}
+.settings-shell .row-knob select:focus,
+.settings-shell .row-knob input:focus {
+  outline: none; border-color: var(--accent-sun);
+  box-shadow: 0 0 0 3px var(--accent-sun-10);
+}
+
+/* iOS-style pill toggle (replaces the pixel nub inside settings only) */
+.settings-shell .pxswitch {
+  width: 42px; height: 24px; border-radius: 999px;
+  border: 1px solid var(--rule-2); background: var(--bg-2);
+  transition: background .18s, border-color .18s;
+}
+.settings-shell .pxswitch .nub {
+  top: 2px; left: 2px; width: 18px; height: 18px;
+  border: none; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  transition: transform .18s;
+}
+.settings-shell .pxswitch.on { background: var(--accent-leaf); border-color: var(--accent-leaf); }
+.settings-shell .pxswitch.on .nub { transform: translateX(18px); background: #fff; }
+
+/* Slim track slider */
+.settings-shell .pxslider::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 999px; border: none; background: var(--bg-2);
+}
+.settings-shell .pxslider::-webkit-slider-thumb {
+  width: 16px; height: 16px; margin-top: -6px;
+  border-radius: 50%; border: none;
+  background: var(--accent-sun); box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+/* Tool chips */
+.settings-shell .tool-chk {
+  font-family: 'Inter', system-ui, sans-serif; font-size: 12.5px;
+  border: 1px solid var(--rule-2); border-radius: 9px;
+  background: var(--paper-2); padding: 8px 10px;
+  transition: background .14s, border-color .14s;
+}
+.settings-shell .tool-chk.on { background: var(--accent-sun-10); border-color: var(--accent-sun); }
+.settings-shell .tool-chk .box { border-radius: 4px; border-width: 1px; }
+.settings-shell .tool-chk.on .box::after { font-family: 'Inter', system-ui, sans-serif; font-size: 11px; }
+
+/* Dark: deepen the card shadow so panels still read as lifted, and
+   neutralize the old purple .cb-panel night fill (this rule outweighs it). */
+body.night .settings-shell .cb-panel {
+  background: var(--paper); border-color: var(--rule);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 8px 22px rgb(0 0 0 / 0.4);
 }
 
 /* Door icon (settings button) */
@@ -8484,7 +8680,8 @@ body.night .poster { filter: brightness(0.7) saturate(0.85); }
 @media (prefers-reduced-motion: reduce) {
   .pet, .hire-sign, .bob, .water-cooler .wc-bubble,
   .room.status-busy .desk::after, .room.status-active .desk::after,
-  .window .cloud, .coffee::before, .cm-steam, .ticker-track .line {
+  .window .cloud, .coffee::before, .cm-steam, .ticker-track .line,
+  .desk-screen {
     animation: none !important;
   }
 }
@@ -8492,7 +8689,8 @@ body.night .poster { filter: brightness(0.7) saturate(0.85); }
 /* — Mobile: the avatar strip replaces the scene; hide scene-only decor — */
 @media (max-width: 768px) {
   .floor-decor, .room-rug, .desk-lamp, .mini-keys,
-  .mini-window, .poster, .wall-shelf, .pin-note, .hire-sign {
+  .mini-window, .poster, .wall-shelf, .pin-note, .hire-sign,
+  .desk-screen, .desk-papers {
     display: none !important;
   }
 }
@@ -8810,6 +9008,114 @@ body.night .att-badge { border-color: var(--ink); }
   color: var(--paper);
   white-space: nowrap;
 }
+
+/* ── Situation Wall — the office ops board (sibling of .pl-frame). ── */
+.sit-wall {
+  position: absolute; top: 3px; left: 8px;
+  background: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+  padding: 3px 6px 4px;
+  z-index: 4;
+  min-width: 84px;
+}
+.sit-wall .sw-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px; letter-spacing: 0.12em;
+  color: var(--accent-sun);
+  margin-bottom: 2px;
+}
+.sit-wall .sw-row {
+  font-family: 'VT323', monospace;
+  font-size: 11px; line-height: 1.35;
+  color: var(--paper);
+  white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+}
+.sw-lamp {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block; flex: 0 0 auto;
+}
+.sw-lamp.green { background: #6fe08a; box-shadow: 0 0 4px 1px rgba(111, 224, 138, 0.7); }
+.sw-lamp.amber { background: #f0c13f; box-shadow: 0 0 4px 1px rgba(240, 193, 63, 0.6); }
+.sw-lamp.red   { background: #e86a5e; box-shadow: 0 0 4px 1px rgba(232, 106, 94, 0.7); }
+.sw-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 9px; flex: 0 0 auto; }
+.sw-bars i { width: 3px; background: #6fe08a; display: block; }
+.sw-bars i:nth-child(1) { height: 3px; }
+.sw-bars i:nth-child(2) { height: 6px; }
+.sw-bars i:nth-child(3) { height: 9px; }
+.sw-bars.down i { background: #7a6a60; }
+.sw-bars.down i:nth-child(2), .sw-bars.down i:nth-child(3) { opacity: 0.35; }
+.sw-fuel {
+  display: inline-block; width: 34px; height: 6px;
+  border: 1px solid var(--paper); flex: 0 0 auto;
+  background: rgba(255,255,255,0.08);
+}
+.sw-fuel i { display: block; height: 100%; background: var(--accent-sun); }
+
+/* ── Vault Room — treasury display (no transfer UI by design) ─────────── */
+.room.vault .interior { background: linear-gradient(180deg, rgba(30,26,20,0.16), rgba(30,26,20,0.05)); }
+.vault-door {
+  position: absolute; left: 8px; top: 8px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #b9b2a4, #6f685c 68%);
+  border: 3px solid var(--ink);
+  box-shadow: inset 0 0 0 3px rgba(0,0,0,0.25);
+}
+.vault-door::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 14px; height: 14px; transform: translate(-50%, -50%);
+  background:
+    linear-gradient(0deg, transparent 45%, var(--ink) 45% 55%, transparent 55%),
+    linear-gradient(90deg, transparent 45%, var(--ink) 45% 55%, transparent 55%);
+}
+.gold-stack {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-56%);
+  width: 62px; height: 34px;
+}
+.gold-bar {
+  position: absolute;
+  width: 16px; height: 7px;
+  background: linear-gradient(180deg, #fce9a8, #d8a52a);
+  border: 1.5px solid var(--ink);
+  border-radius: 1px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.gold-label {
+  position: absolute; left: 50%; bottom: -12px; transform: translateX(-50%);
+  font-family: 'VT323', monospace; font-size: 10px; line-height: 1;
+  color: var(--ink); white-space: nowrap; opacity: 0.8;
+}
+.bank-case {
+  position: absolute; right: 8px; bottom: 16px;
+  width: 34px; height: 40px;
+  background: linear-gradient(180deg, rgba(210,230,255,0.35), rgba(210,230,255,0.12));
+  border: 2px solid var(--ink);
+  border-radius: 3px 3px 0 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.bank-case .bank-coin { font-size: 13px; line-height: 1; color: #7a6a60; }
+.bank-case.bronze .bank-coin { color: #b0763a; text-shadow: 0 0 4px rgba(176,118,58,0.5); }
+.bank-case.silver .bank-coin { color: #9fa8b5; text-shadow: 0 0 5px rgba(159,168,181,0.7); }
+.bank-case.gold .bank-coin   { color: #e8b53a; text-shadow: 0 0 6px rgba(232,181,58,0.8); }
+.bank-case .bank-label {
+  font-family: 'VT323', monospace; font-size: 8.5px; line-height: 1;
+  color: var(--ink); opacity: 0.75; white-space: nowrap;
+}
+/* minegold.brave feed — plumbed but capped. Dormant on purpose. */
+.gold-pipe {
+  position: absolute; right: 2px; top: 6px;
+  width: 8px; height: 26px;
+  background: linear-gradient(90deg, #8a7f6c, #b3a68e 45%, #8a7f6c);
+  border: 2px solid var(--ink);
+  border-radius: 0 0 3px 3px;
+  opacity: 0.65;
+}
+.gold-pipe::after {
+  content: ''; position: absolute; left: -4px; bottom: -6px;
+  width: 14px; height: 6px;
+  background: #6f685c; border: 2px solid var(--ink); border-radius: 2px;
+}
 /* Live tool execution — the desk monitor lights up + a work chip appears */
 .room.tool-live .desk::after {
   background: linear-gradient(180deg, #fff6d0 0%, var(--office-screen-bot) 100%);
@@ -8893,7 +9199,7 @@ body.night .meeting-table { filter: brightness(0.75); }
   }
   .room.ceo::after { display: none; }
   .room.empty::after { display: none; }
-  .wall-zone, .wall-live, .pl-frame, .meeting-table, .floor-zone, .tool-chip { display: none; }
+  .wall-zone, .wall-live, .pl-frame, .sit-wall, .meeting-table, .floor-zone, .tool-chip { display: none; }
   /* night+mobile: body.night .room{border:none} outranks the bare .room rule
      above, so restore the night card look explicitly */
   body.night .rooms { border: none; background: none; }

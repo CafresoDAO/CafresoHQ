@@ -31,10 +31,19 @@ const browser_     = () => typeof window !== 'undefined';
 
 function _initialEcoFlag() {
   if (!browser_()) return true;
-  const v = localStorage.getItem(ECO_FLAG_KEY);
-  // default ON — ecosystem principal is the whole point. Users can opt out
-  // during testing if Banking.Brave hasn't whitelisted this URL yet.
-  return v === null ? true : v === 'true';
+  // The ecosystem alt-origins whitelist is LIVE at ECOSYSTEM.banking and lists
+  // every production domain (cafreso.com, ai.cafreso.com, the raw canister
+  // URLs), so the shared principal must ALWAYS be used in prod. The old
+  // per-origin localStorage opt-out was a pre-whitelist testing crutch that
+  // became a footgun: because localStorage is per-origin, a stale `false` on
+  // ONE domain silently forks the principal — the exact "different principal on
+  // cafreso.com vs ai.cafreso.com" bug. Ignore any persisted value and clear
+  // it; opt out only per-load via ?noeco for dev on a non-whitelisted host.
+  try {
+    localStorage.removeItem(ECO_FLAG_KEY);   // purge any legacy sticky value
+    if (new URLSearchParams(window.location.search).has('noeco')) return false;
+  } catch (_) { /* private mode */ }
+  return true;
 }
 
 // ── Stores ───────────────────────────────────────────────────────────────────
@@ -51,11 +60,10 @@ export const principalText  = writable('');    // string form, persistable
  * this dapp's URL. Toggle off to test on a non-whitelisted host.
  */
 export const useEcosystemPrincipal = writable(_initialEcoFlag());
-if (browser_()) {
-  useEcosystemPrincipal.subscribe((v) => {
-    try { localStorage.setItem(ECO_FLAG_KEY, String(!!v)); } catch (_) { /* private mode */ }
-  });
-}
+// Deliberately NOT persisted. Persisting it per-origin is what forked the
+// principal across cafreso.com / ai.cafreso.com; the value is derived fresh
+// each load from _initialEcoFlag() (always true in prod, false only with
+// ?noeco). No UI toggles this store, so nothing depends on it sticking.
 
 export const isAuthenticated = derived(authStatus, ($s) => $s === 'success');
 export const isReady         = derived(authStatus, ($s) => $s !== 'initializing');
@@ -104,6 +112,22 @@ function _adopt(identity) {
 export async function initAuth() {
   if (!browser()) return;
   authStatus.set('initializing');
+
+  // ── Dev bypass: auto-authenticate on localhost ────────────────────────
+  // When running locally (dev server), skip II and use a synthetic principal
+  // so pages render without needing the Internet Identity popup.
+  // Set ?nodev in the URL to force real II even on localhost.
+  const loc = window.location;
+  const isLocal = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1';
+  const noDev   = new URLSearchParams(loc.search).has('nodev');
+  if (isLocal && !noDev) {
+    const devPrincipal = 'dev-local-test-principal';
+    console.info('[auth] Dev mode: auto-authenticated as', devPrincipal);
+    principalText.set(devPrincipal);
+    authStatus.set('success');
+    return;
+  }
+
   try {
     const c = await _ensureClient();
     if (await c.isAuthenticated()) {

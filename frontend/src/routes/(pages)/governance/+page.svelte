@@ -116,7 +116,7 @@
   <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 24px;">
     <!-- Search -->
     <div style="position: relative; flex: 1; min-width: 200px; max-width: 320px;">
-      <Icon name="magnifying-glass" size={14} style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: hsl(215 16% 47%);" />
+      <Icon name="magnifying-glass" size={14} style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: hsl(var(--pg-fg-muted));" />
       <input
         type="search"
         bind:value={searchQuery}
@@ -124,8 +124,8 @@
         aria-label="Search proposals"
         style="
           width: 100%; padding: 8px 12px 8px 32px; border-radius: 10px;
-          border: 1px solid hsl(26 30% 85%); font-size: 13px; font-family: inherit;
-          background: white; color: hsl(222 47% 11%); outline: none;
+          border: 1px solid hsl(var(--pg-border)); font-size: 13px; font-family: inherit;
+          background: hsl(var(--pg-elevated)); color: hsl(var(--pg-fg)); outline: none;
           box-sizing: border-box;
         "
       />
@@ -141,9 +141,9 @@
           style="
             padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
             font-family: inherit; cursor: pointer;
-            background: {filterStatus === s ? (st?.bg || 'hsl(262 55% 14%)') : 'white'};
-            color: {filterStatus === s ? (st?.color || 'hsl(260 40% 96%)') : 'hsl(215 16% 47%)'};
-            border: 1px solid {filterStatus === s ? (st?.color || 'hsl(260 60% 30%)') : 'hsl(26 30% 85%)'};
+            background: {filterStatus === s ? (st?.bg || 'hsl(262 55% 14%)') : 'hsl(var(--pg-elevated))'};
+            color: {filterStatus === s ? (st?.color || 'hsl(260 40% 96%)') : 'hsl(var(--pg-fg-muted))'};
+            border: 1px solid {filterStatus === s ? (st?.color || 'hsl(260 60% 30%)') : 'hsl(var(--pg-border))'};
           "
         >{s === 'all' ? 'All' : PROPOSAL_STATUSES[s]?.label}</button>
       {/each}
@@ -152,7 +152,7 @@
 
   <!-- Proposal cards -->
   {#if filtered.length === 0}
-    <div style="text-align: center; padding: 60px 20px; color: hsl(215 16% 47%); font-size: 14px;">
+    <div style="text-align: center; padding: 60px 20px; color: hsl(var(--pg-fg-muted)); font-size: 14px;">
       <Icon name="funnel" size={28} style="opacity: 0.35; display: block; margin: 0 auto 12px;" />
       No proposals match your filters.
     </div>
@@ -167,7 +167,7 @@
           href="/governance/{p.id}"
           style="
             display: block; border-radius: 14px; text-decoration: none;
-            background: white; border: 1px solid hsl(26 30% 88%);
+            background: hsl(var(--pg-elevated)); border: 1px solid hsl(var(--pg-border));
             padding: 20px 24px;
             transition: box-shadow 0.15s, border-color 0.15s;
           "
@@ -177,7 +177,7 @@
           }}
           onmouseleave={(e) => {
             e.currentTarget.style.boxShadow = 'none';
-            e.currentTarget.style.borderColor = 'hsl(26 30% 88%)';
+            e.currentTarget.style.borderColor = 'hsl(var(--pg-border))';
           }}
         >
           <div style="display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;">
@@ -203,13 +203,13 @@
                   font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
                   color: {ps.color}; background: {ps.bg}; border-radius: 5px; padding: 2px 7px;
                 ">{ps.label}</span>
-                <span style="font-size: 10.5px; font-family: ui-monospace, monospace; color: hsl(215 16% 56%);">{p.id}</span>
+                <span style="font-size: 10.5px; font-family: ui-monospace, monospace; color: hsl(var(--pg-fg-subtle));">{p.id}</span>
               </div>
 
-              <h2 style="font-size: 17px; font-weight: 700; color: hsl(222 47% 11%); margin: 0 0 5px; letter-spacing: -0.01em; line-height: 1.25; text-wrap: pretty;">
+              <h2 style="font-size: 17px; font-weight: 700; color: hsl(var(--pg-fg)); margin: 0 0 5px; letter-spacing: -0.01em; line-height: 1.25; text-wrap: pretty;">
                 {p.title}
               </h2>
-              <p style="font-size: 13px; color: hsl(215 16% 40%); margin: 0 0 12px; line-height: 1.5; max-width: 65ch;">
+              <p style="font-size: 13px; color: hsl(var(--pg-fg-muted)); margin: 0 0 12px; line-height: 1.5; max-width: 65ch;">
                 {p.summary}
               </p>
 
@@ -221,9 +221,9 @@
                     background: hsl(0 62% 92%);
                     display: flex; gap: 1px;
                   ">
-                    <div style="width: {yp}%; background: hsl(112 43% 45%); border-radius: 999px; transition: width 0.4s;"></div>
+                    <div style="width: {yp}%; background: hsl(var(--brand-leaf)); border-radius: 999px; transition: width 0.4s;"></div>
                   </div>
-                  <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10.5px; color: hsl(215 16% 47%);">
+                  <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10.5px; color: hsl(var(--pg-fg-muted));">
                     <span><span style="color: hsl(112 43% 40%); font-weight: 600;">{yp}% YES</span> · {vp}% participation</span>
                     <span>{p.votes.yes.toLocaleString()} / {p.votes.total.toLocaleString()} $CF</span>
                   </div>
@@ -240,10 +240,10 @@
               {/if}
               <div style="display: flex; align-items: center; gap: 5px; justify-content: flex-end;">
                 <Avatar name={p.proposedBy.name} hue={p.proposedBy.hue} size={20} />
-                <span style="font-size: 11px; color: hsl(215 16% 47%);">{p.proposedBy.name}</span>
+                <span style="font-size: 11px; color: hsl(var(--pg-fg-muted));">{p.proposedBy.name}</span>
               </div>
               {#if p.block}
-                <div style="font-size: 10px; font-family: ui-monospace, monospace; color: hsl(215 16% 56%); margin-top: 3px;">
+                <div style="font-size: 10px; font-family: ui-monospace, monospace; color: hsl(var(--pg-fg-subtle)); margin-top: 3px;">
                   block #{p.block.toLocaleString()}
                 </div>
               {/if}
