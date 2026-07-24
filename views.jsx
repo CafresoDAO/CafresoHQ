@@ -8002,7 +8002,13 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     }
   };
 
-  return (
+  /* Portaled to <body>: this modal is opened from INSIDE the floating
+     Workspace .hq-window (position:fixed, z-index:300), which forms a
+     stacking context — so however high the backdrop's own z-index, it was
+     capped at the window's 300 and rendered BENEATH any body-level modal
+     (z 400). Concretely: the onboarding's Job Postings book covered the
+     Add-Project dialog completely, so "+ ADD" looked like it did nothing. */
+  return ReactDOM.createPortal(
     <div className="backdrop" onClick={onClose}>
       <div className="modal addproj-modal" onClick={e => e.stopPropagation()} style={{width:'min(560px, 100%)', gridTemplateRows: 'auto auto 1fr'}}>
         <div className="modal-head">
@@ -8066,7 +8072,8 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
           onClose={() => setShowBrowser(false)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 
