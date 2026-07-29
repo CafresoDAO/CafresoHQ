@@ -6,7 +6,11 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["serve.py"],
       "port": 8787,
-      "autoPort": true
+      "autoPort": true,
+      "env": {
+        "OPENCLAW_TLS_AUTO": "0",
+        "OPENCLAW_FLEET_MODE": "local"
+      }
     }
   ]
 }
