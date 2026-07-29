@@ -1,7 +1,6 @@
 {
   "version": 1,
   "canisters": {
-    "//": "The cafreso.com / ai.cafreso.com frontend canisters (cafresohq_frontend v4tdv, cafreso_pages dqcmv) moved to the cafreso-pages repo on 2026-07-29 — deploy them from there with scripts/deploy.sh.",
     "cafresohq_ui": {
       "//": "The HQ app UI (hq.html + jsx + css + assets), served from ICP so UI updates are a ~1-min dfx deploy instead of a container rebuild. serve.py becomes API-only; this UI calls it cross-origin (?api=<base>). build_hq_ui.py assembles hq-ui/ from the repo-root UI files.",
       "type": "assets",
