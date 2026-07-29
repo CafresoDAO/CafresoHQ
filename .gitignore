@@ -74,3 +74,4 @@ oci-fleet/.env.host
 oci-fleet/sessions.db*
 streaming/.env
 worker-standalone.env
+frontend/
