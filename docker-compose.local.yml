@@ -37,7 +37,7 @@ services:
       # News + weather are new crons, opt-in via *_CRON=1 in serve.py — turned
       # on here per-container rather than by default in code, so a stale image
       # pulled elsewhere doesn't silently start hitting Brave/NWS unasked.
-      NEWS_CRON: "1"
+      NEWS_CRON: "0"
       WEATHER_CRON: "1"
     volumes:
       - cafresohq-data:/data
