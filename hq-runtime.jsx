@@ -320,9 +320,17 @@ function extractAllMentions(text) {
   const targetNames = [];
   const nameRe = /@([A-Za-z][A-Za-z0-9_-]*)/g;
   let nm;
+  /* Dedup case-insensitively but KEEP the first-seen original casing —
+     the old check compared lowercase against a mixed-case array, so
+     "@Plato @plato" produced two targets and a double dispatch. */
+  const seen = new Set();
   while ((nm = nameRe.exec(namesBlob)) !== null) {
     const n = nm[1].trim();
-    if (n && !targetNames.includes(n.toLowerCase())) targetNames.push(n);
+    if (!n) continue;
+    const lc = n.toLowerCase();
+    if (seen.has(lc)) continue;
+    seen.add(lc);
+    targetNames.push(n);
   }
   return targetNames.length ? { targetNames, body } : null;
 }

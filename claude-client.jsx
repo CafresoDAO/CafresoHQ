@@ -264,6 +264,37 @@ if (typeof window !== 'undefined') window.hqMoneyOn = moneyEnabled;
 /* Is the active provider actually usable (does the user have what it needs)?
    Drives the onboarding "no API key" nudge. Provider-aware so local/CLI backends
    (which need no browser key) don't trigger a false warning. */
+
+/* Managed-brain flag: fleet containers ship with Cafreso's own Gemma 4
+   (LM Studio behind the OCI gateway) wired into hermes server-side — no
+   browser key needed at all. /health advertises it via the `brain` field;
+   probeManagedBrain() caches the answer so hasUsableKey stays sync. */
+let _managedBrain = null;   // null unknown | {model, provider} | false
+async function probeManagedBrain() {
+  try {
+    const r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include' });
+    if (!r.ok) { _managedBrain = false; return _managedBrain; }
+    const j = await r.json().catch(() => ({}));
+    _managedBrain = (j && j.brain && j.brain.model) ? j.brain : false;
+    if (!_managedBrain) {
+      // Older container images don't emit `brain` on /health yet — fall back to
+      // the trial-status endpoint, which reports the shared managed brain
+      // directly ({active, provider}). Keeps zero-config detection working
+      // across image-rollout skew.
+      try {
+        const r2 = await fetch(_API_BASE + '/hermes/trial-status', { cache: 'no-store', credentials: 'include' });
+        if (r2.ok) {
+          const t = await r2.json().catch(() => ({}));
+          if (t && t.active) _managedBrain = { model: t.provider || 'shared', provider: 'cafreso' };
+        }
+      } catch (_e2) {}
+    }
+  } catch (_e) { _managedBrain = false; }
+  try { window.dispatchEvent(new CustomEvent('cafresohq:managedBrain', { detail: _managedBrain || null })); } catch (_e) {}
+  return _managedBrain;
+}
+function managedBrain() { return _managedBrain; }
+
 function hasUsableKey(s) {
   s = s || _settings;
   switch (s.provider || 'hermes') {
@@ -273,9 +304,11 @@ function hasUsableKey(s) {
     case 'ollama':     return !!s.ollamaModel;
     case 'claudecode':                              // CLI-backed, no key entered in the UI
     case 'codex':      return true;
-    case 'hermes':                                  // default — needs the user's OpenRouter key
+    case 'hermes':                                  // default — Cafreso's managed Gemma 4
+                                                    // makes hermes usable with zero keys;
+                                                    // an OpenRouter key stays an upgrade.
     case 'openrouter':
-    default:           return !!s.openrouterKey;
+    default:           return !!s.openrouterKey || !!_managedBrain;
   }
 }
 
@@ -294,11 +327,21 @@ function normalizeMessages(msgs) {
   return out;
 }
 
-async function parseSSE(stream, onLine) {
+/* Takes the whole Response (not just the body) so it can refuse non-stream
+   answers instead of treating them as a successful empty stream. A 2xx HTML
+   page (SPA fallback, gateway login page) used to produce zero onLine calls
+   and no error — the chat bubble just stayed empty with no explanation. */
+async function parseSSE(res, onLine) {
+  const stream = res && res.body ? res.body : res;   // tolerate a raw stream for old callers
+  const ctype = (res && res.headers && res.headers.get) ? (res.headers.get('content-type') || '') : '';
+  if (/text\/html/i.test(ctype)) {
+    throw new Error('backend answered with a web page instead of a stream — wrong server, or your session expired');
+  }
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
   let event = 'message';
+  let sawData = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -309,9 +352,36 @@ async function parseSSE(stream, onLine) {
       buf = buf.slice(idx + 1);
       if (line === '') { event = 'message'; continue; }
       if (line.startsWith('event:')) { event = line.slice(6).trim(); }
-      else if (line.startsWith('data:')) { onLine(event, line.slice(5).trim()); }
+      else if (line.startsWith('data:')) { sawData = true; onLine(event, line.slice(5).trim()); }
     }
   }
+  if (!sawData) {
+    throw new Error('backend closed the stream without sending anything'
+      + (ctype && !/event-stream/i.test(ctype) ? ` (got content-type: ${ctype.split(';')[0]})` : ''));
+  }
+}
+
+/* Bounded wait for a stream's RESPONSE HEADERS only. The global 45s wrapper
+   deliberately exempts streaming endpoints (aborting kills the body read),
+   which meant a gateway that accepted the socket but never answered left the
+   chat spinner up forever. This aborts if headers don't arrive in `headMs`,
+   then hands the (still user-abortable) body back unbounded. */
+async function fetchStreamHead(url, init = {}, headMs = 20000) {
+  if (typeof AbortController === 'undefined') return fetch(url, init);
+  const ctl = new AbortController();
+  const outer = init.signal;
+  const propagate = () => { try { ctl.abort(outer.reason); } catch (_e) { try { ctl.abort(); } catch (_e2) {} } };
+  if (outer) {
+    if (outer.aborted) propagate();
+    else outer.addEventListener('abort', propagate, { once: true });
+  }
+  const t = setTimeout(() => {
+    try { ctl.abort(new DOMException(`backend did not start responding within ${Math.round(headMs / 1000)}s`, 'TimeoutError')); }
+    catch (_e) { try { ctl.abort(); } catch (_e2) {} }
+  }, headMs);
+  try {
+    return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
+  } finally { clearTimeout(t); }
 }
 
 async function streamAnthropic({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
@@ -325,7 +395,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   };
   if (system) body.system = system;
   if (typeof temperature === 'number') body.temperature = temperature;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchStreamHead('https://api.anthropic.com/v1/messages', {
     method: 'POST', signal,
     headers: {
       'content-type': 'application/json',
@@ -341,7 +411,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   }
   let inputTokens = 0;
   let outputTokens = 0;
-  await parseSSE(res.body, (event, data) => {
+  await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
       if (event === 'content_block_delta' && j.delta && j.delta.type === 'text_delta' && j.delta.text) {
@@ -383,7 +453,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   const headers = { 'content-type': 'application/json' };
   if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
   if (extraHeaders) Object.assign(headers, extraHeaders);
-  const res = await fetch(root + '/chat/completions', {
+  const res = await fetchStreamHead(root + '/chat/completions', {
     method: 'POST', signal,
     headers,
     body: JSON.stringify(body),
@@ -396,7 +466,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
      `delta.reasoning_content` and final answer into `delta.content`.
      Surface both so the user sees something while the model thinks. */
   let inReasoning = false;
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -539,24 +609,38 @@ const HERMES_PROVIDER_KEY_FIELD = {
   gemini: 'geminiKey',
   groq: 'groqKey',
 };
+/* Local backends are identified by a URL rather than a key — this is what
+   hermesEnsureProvider re-pushes after a container recreate wipes ~/.hermes. */
+const HERMES_PROVIDER_URL_FIELD = {
+  lmstudio: 'hermesLmUrl',
+  ollama: 'hermesOlUrl',
+};
 
 /* Set the Hermes backend provider + its free key. Persists locally (per-provider
    field + active backend) AND pushes to the container, which rewrites config.yaml
    to that provider and restarts the gateway. Reliability path from the research:
    the user can move off OpenRouter :free (20 RPM / 50 RPD) to Gemini direct
    (≈15 RPM / 1500 RPD) or Groq with their own free key. */
-async function hermesSetProvider(provider, key, model) {
+/* Local backends are the operator's own hardware: keyless, addressed by a URL.
+   Mirrors serve.py _HERMES_PROVIDERS' `local` flag. */
+const HERMES_LOCAL_PROVIDERS = ['lmstudio', 'ollama'];
+
+async function hermesSetProvider(provider, key, model, baseUrl) {
   const prov = (provider || 'openrouter').toLowerCase();
+  const local = HERMES_LOCAL_PROVIDERS.includes(prov);
   const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
   const trimmed = String(key || '').trim();
   // persist locally so it survives reload AND container recreate (re-push)
-  setSettings({ hermesBackend: prov, [field]: trimmed });
-  if (!trimmed) return { ok: true, serverStored: false, detail: 'cleared' };
+  setSettings(local ? { hermesBackend: prov } : { hermesBackend: prov, [field]: trimmed });
+  // An empty key means "cleared" — but a local backend never has one, so that
+  // guard must not swallow it.
+  if (!trimmed && !local) return { ok: true, serverStored: false, detail: 'cleared' };
   try {
     const r = await fetch(_API_BASE + '/hermes/provider', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ provider: prov, key: trimmed, model: model || '' }),
+      body: JSON.stringify({ provider: prov, key: trimmed, model: model || '',
+                             base_url: baseUrl || '' }),
     });
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
@@ -581,6 +665,21 @@ async function hermesSetProvider(provider, key, model) {
   }
 }
 
+/* Which models a LOCAL backend has, and which are LOADED. Proxied through
+   serve.py because the browser can't reach an arbitrary picked URL (and because
+   serve.py validates it against the same allowlist as the write path).
+   Always resolves — an unreachable box must not block configuring it. */
+async function hermesLocalModels(baseUrl) {
+  try {
+    const r = await fetch(_API_BASE + '/hermes/local-models?base_url='
+                          + encodeURIComponent(baseUrl || ''));
+    if (!r.ok) return { models: [], detail: 'server ' + r.status };
+    return await r.json();
+  } catch (e) {
+    return { models: [], detail: 'offline' };
+  }
+}
+
 /* Read the container's CURRENT backend + whether it has a key. Used on load to
    decide whether to re-push the saved key after a recreate. */
 async function hermesGetProvider() {
@@ -600,6 +699,15 @@ async function hermesEnsureProvider() {
     if (cur && cur.configured) return { restored: false, configured: true };
     const s = getSettings();
     const prov = (s.hermesBackend || 'openrouter').toLowerCase();
+    if (HERMES_LOCAL_PROVIDERS.includes(prov)) {
+      // Local backends have no key to restore — their config IS the URL, and a
+      // recreate wipes ~/.hermes, so re-push it or the container silently
+      // reverts to whatever bootstrap picks.
+      const url = (s[HERMES_PROVIDER_URL_FIELD[prov]] || '').trim();
+      if (!url) return { restored: false, configured: false };
+      await hermesSetProvider(prov, '', '', url);
+      return { restored: true, provider: prov };
+    }
     const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
     const key = (s[field] || '').trim();
     if (!key) return { restored: false, configured: false };
@@ -695,7 +803,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     temperature, // honored if the CLI passes it through; harmless otherwise
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/claudecode/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/claudecode/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -704,7 +812,7 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     const t = await res.text();
     throw new Error(`Claude Code ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -743,7 +851,7 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/cafresohq/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/cafresohq/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -752,7 +860,7 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     const t = await res.text();
     throw new Error(`CafresoHQ ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -792,7 +900,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     agentName: agentName || 'elevated-agent',
   };
   if (cwd) body.cwd = cwd;
-  const res = await fetch(_API_BASE + '/codex/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/codex/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -801,7 +909,7 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     const t = await res.text();
     throw new Error(`Codex ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -871,7 +979,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
   if (typeof temperature === 'number') generationConfig.temperature = temperature;
   body.generationConfig = generationConfig;
 
-  const res = await fetch(
+  const res = await fetchStreamHead(
     'https://generativelanguage.googleapis.com/v1beta/models/' + mdl + ':streamGenerateContent?alt=sse',
     {
       method: 'POST', signal,
@@ -890,7 +998,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
 
   let inputTokens = 0;
   let outputTokens = 0;
-  await parseSSE(res.body, (event, data) => {
+  await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
       if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
@@ -1511,7 +1619,7 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     if (agentKey) payload[keyField] = agentKey;
   }
 
-  const res = await fetch(_API_BASE + '/terminal/stream', {
+  const res = await fetchStreamHead(_API_BASE + '/terminal/stream', {
     method: 'POST', signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1520,7 +1628,7 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     const t = await res.text();
     throw new Error(`Terminal ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res.body, (_event, data) => {
+  await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -2059,6 +2167,17 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       allowance(token) { return _req('chain:payroll:allowance', { token }).then(r => r.allowance); },
       approve(token, amount, expiresDays) { return _req('chain:payroll:approve', { token, amount, expiresDays }, 180000); },
     },
+    /* BANK (Banking Brave) — read-only prestige balance for the Vault Room.
+       Older shells don't know this op; callers must catch and degrade. */
+    bank: {
+      balance() { return _req('chain:bank:balance', {}).then(r => (r.raw === null || r.raw === undefined) ? null : BigInt(r.raw)); },
+    },
+    /* Furnish Shop — buys desk decor with the USER's sGLDT via a shell-side
+       approval sheet + user-signed ICRC-1 transfer. NEVER auto-spends: the
+       shell always asks, declining is free. Older shells: catch + disable. */
+    shop: {
+      furnish(item) { return _req('chain:shop:furnish', item, 240000); },
+    },
     /* Publish a collected site to the HQ public sites canister. Returns
        { mode:'canister', url, files, skipped } or { mode:'unconfigured' }. */
     publish(project, files) { return _req('chain:publish', { project, files }, 180000); },
@@ -2107,8 +2226,22 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
    it's running backend-less (no vault/graph/chat/terminal). */
 async function backendHealth() {
   try {
-    const r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include' });
-    return r.ok;
+    /* Short dedicated timeout: the global fetch wrapper allows 45s, which
+       against a wedged-but-accepting gateway delayed the offline banner by
+       ~2 minutes (3 probes × 45s). A health probe that hasn't answered in
+       3s IS the answer. */
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3000);
+    let r;
+    try {
+      r = await fetch(_API_BASE + '/health', { cache: 'no-store', credentials: 'include', signal: ctl.signal });
+    } finally { clearTimeout(t); }
+    if (!r.ok) return false;
+    /* r.ok alone false-positives on any origin that answers /health with a
+       stray 200 (SPA asset fallback, gateway captive page). Require a JSON
+       body like probeManagedBrain/SystemTab do, so all health surfaces agree. */
+    const j = await r.json().catch(() => null);
+    return !!j && typeof j === 'object';
   } catch (_e) { return false; }
 }
 /** The resolved backend base URL (gateway when cross-origin, '' when same-origin). */
@@ -2116,6 +2249,7 @@ function backendBase() { return _API_BASE || ''; }
 
 window.CafresoHQClient = {
   getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
+  probeManagedBrain, managedBrain,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
@@ -2130,6 +2264,7 @@ window.CafresoHQClient = {
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
+  hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall,
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,

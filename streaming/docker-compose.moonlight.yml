@@ -1,0 +1,46 @@
+# ── moonlight-web-stream — WebRTC bridge for Sunshine VMs ────────────────────
+# Connects to Sunshine running inside Hyper-V VMs and exposes a WebRTC
+# signaling + media endpoint that the browser-side WebRTCStream.svelte
+# component connects to.
+#
+# Usage:
+#   docker compose -f docker-compose.moonlight.yml up -d
+#
+# Each active VM session gets its own moonlight-web-stream instance via
+# fleet-api.py's session launch worker (Phase 2). This compose file defines
+# the template; fleet-api spawns instances with session-specific env vars.
+
+services:
+  moonlight-web:
+    image: ghcr.io/games-on-whales/moonlight-web:latest
+    container_name: cafresoai-moonlight-${SESSION_ID:-default}
+    restart: unless-stopped
+    environment:
+      # Sunshine host (inside Hyper-V VM)
+      - SUNSHINE_HOST=${SUNSHINE_HOST:-10.0.0.50}
+      - SUNSHINE_PORT=${SUNSHINE_PORT:-47989}
+      # WebRTC signaling port (Caddy will reverse-proxy this)
+      - PORT=${SIGNALING_PORT:-8443}
+      # Enable WebSocket fallback for restrictive networks
+      - MOONLIGHT_WS_FALLBACK=true
+      # STUN/TURN for NAT traversal
+      - STUN_SERVER=stun:stun.l.google.com:19302
+      - TURN_SERVER=${TURN_URL:-}
+      - TURN_USERNAME=${TURN_USER:-}
+      - TURN_CREDENTIAL=${TURN_CRED:-}
+    ports:
+      - "${SIGNALING_PORT:-8443}:${SIGNALING_PORT:-8443}"
+    networks:
+      - streaming
+    # Health check: signaling endpoint responds
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:${SIGNALING_PORT:-8443}/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  streaming:
+    name: cafresoai-streaming
+    driver: bridge

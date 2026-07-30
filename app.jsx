@@ -4,7 +4,7 @@
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.CafresoHQUI;
-const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal } = window.CafresoHQModals;
+const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal } = window.CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
 const { MissionsModal, useMissionRunner } = window.CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
@@ -31,16 +31,47 @@ const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, Com
    `transform` callback lets callers drop runtime-only fields before saving.
    Save failures (quota, private mode, corruption) dispatch a window event so
    the App can surface a toast instead of vanishing silently. */
+/* JSON.parse succeeding is NOT the same as the value being usable: a stored
+   literal "null" or a schema-drifted scalar parses fine and then explodes at
+   the first `.map`/spread — a white-screen boot with nothing in the console
+   pointing at the key. Type-check the parsed value against the default's
+   shape and fall back when they disagree. */
+function _shapeMatches(parsed, base) {
+  if (base == null) return true;                    // no opinion to enforce
+  if (Array.isArray(base)) return Array.isArray(parsed);
+  const t = typeof base;
+  if (t === 'object') return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
+  return typeof parsed === t;
+}
 function useStored(key, initial, transform) {
   const [v, set] = useStateA(() => {
+    const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
       const raw = localStorage.getItem(key);
-      if (raw == null) return typeof initial === 'function' ? initial() : initial;
-      return JSON.parse(raw);
+      if (raw == null) return fallback();
+      const parsed = JSON.parse(raw);
+      const base = fallback();
+      return _shapeMatches(parsed, base) ? parsed : base;
     } catch (_e) {
-      return typeof initial === 'function' ? initial() : initial;
+      return fallback();
     }
   });
+  /* Cross-tab: absorb another tab's write instead of clobbering it later
+     with our stale copy (the `storage` event only fires in OTHER tabs, so
+     there's no loop). Only while unfocused — the tab the user is actively
+     typing/streaming in keeps its own state authoritative. */
+  useEffectA(() => {
+    const onStorage = (e) => {
+      if (e.key !== key || e.newValue == null) return;
+      if (typeof document !== 'undefined' && document.hasFocus && document.hasFocus()) return;
+      try {
+        const parsed = JSON.parse(e.newValue);
+        set(prev => _shapeMatches(parsed, prev) ? parsed : prev);
+      } catch (_e) {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [key]);
   const timer = useRefA(null);
   useEffectA(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -65,17 +96,26 @@ function useStored(key, initial, transform) {
    Pass sensitive:true to skip file persistence (API keys etc). */
 function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false } = {}) {
   const [val, setVal] = useStateA(() => {
+    const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
       const raw = localStorage.getItem(lsKey);
-      const parsed = raw ? JSON.parse(raw) : (typeof initial === 'function' ? initial() : initial);
+      if (raw == null) { const b = fallback(); return transform ? transform(b) : b; }
+      let parsed = JSON.parse(raw);
+      if (!_shapeMatches(parsed, fallback())) parsed = fallback();
       return transform ? transform(parsed) : parsed;
-    } catch (_e) { return typeof initial === 'function' ? initial() : initial; }
+    } catch (_e) { return fallback(); }
   });
 
   const writeRef = useRefA(null);
 
   const persist = React.useCallback((v) => {
-    try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (_e) {}
+    try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (err) {
+      /* Sensitive keys (API keys) have NO file fallback — if this write
+         fails (quota, private mode) the key silently doesn't survive a
+         reload. Surface it like useStored does instead of swallowing. */
+      console.warn('[cafresohq] localStorage save failed for', lsKey, err);
+      try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err } })); } catch (_e) {}
+    }
     if (sensitive) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
@@ -151,6 +191,56 @@ const mergeByIdCap = (inMem, fetched, cap = 200) => {
 };
 // Cap chat history at 80 entries so localStorage doesn't bloat.
 const persistableChat = (xs) => xs.slice(-80).map(({ streaming, error, ...rest }) => rest);
+
+/* Desk-screen feed: streams an agent's live output tail onto its office
+   monitor (OfficeView listens for 'cafresohq:agentScreen'). Throttled to one
+   event per 150ms per agent — token callbacks can fire per-chunk and the
+   office must never re-render at token rate. Screen state stays OUT of the
+   agents array on purpose; it's ephemeral scenery, not agent state. */
+const makeScreenEmitter = (agentId) => {
+  let last = 0, trailing = null;
+  const send = (tail, phase) => {
+    try {
+      window.dispatchEvent(new CustomEvent('cafresohq:agentScreen', {
+        detail: { agentId, tail: String(tail || '').slice(-240), phase },
+      }));
+    } catch (_) {}
+  };
+  return {
+    stream(buf) {
+      const now = Date.now();
+      if (now - last >= 150) {
+        last = now;
+        if (trailing) { clearTimeout(trailing); trailing = null; }
+        send(buf, 'stream');
+      } else if (!trailing) {
+        trailing = setTimeout(() => { trailing = null; last = Date.now(); send(buf, 'stream'); }, 160);
+      }
+    },
+    done(buf) {
+      if (trailing) { clearTimeout(trailing); trailing = null; }
+      send(buf, 'done');
+    },
+  };
+};
+
+// Friendlier chat-bubble text for run failures. Zero-config users run on the
+// shared Cafreso brain with no key of their own — when that path fails, a raw
+// upstream error reads like THEY misconfigured something. Detect the
+// no-key-and-no-managed-brain case and explain what actually happened + the
+// two ways out (wait, or BYOK in Settings). Everyone else gets the raw error.
+const chatErrorText = (err) => {
+  const raw = (err && err.message) || String(err);
+  try {
+    const C = window.CafresoHQClient;
+    if (C && C.hasUsableKey && !C.hasUsableKey()) {
+      return '⚠ The shared Cafreso brain isn’t responding right now — it may be waking up or briefly down. ' +
+             'Try again in a minute, or add your own AI key in Settings → Keys to run independently. ' +
+             '(' + raw.slice(0, 120) + ')';
+    }
+  } catch (_) {}
+  return `⚠ ${raw}`;
+};
 
 // Cap messages registry at 500 entries (rolling) and strip any runtime-only
 // fields before persisting. Messages are durable records of agent ↔ agent
@@ -1407,15 +1497,25 @@ function App() {
     if (tourSeen) return;
     const t = setTimeout(() => {
       if (firstRunAgentsRef.current.length > 0) return; // hydrated roster → returning user
-      setTourOpen(true);
+      /* CEO-led first win: no passive slideshow tour up front. The CEO
+         greets, then the candidates deck opens — the new user's first two
+         minutes produce a real hire and a real task instead of ten
+         spotlight steps. (The full tour stays available via the palette's
+         replay command; coach marks cover the rest just-in-time.) */
+      setTourSeen(true);
       /* Genuinely new office: the CEO opens the DIRECT thread with a real
-         welcome message (a normal chat entry, not fabricated history). */
+         welcome message (a normal chat entry, not fabricated history).
+         The office thinks out of the box — Cafreso's Gemma 4 brain is
+         already wired in, so the first hire can start working immediately. */
       if ((firstRunChatRef.current || []).length === 0) {
         setChat([{
           id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
-          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Press H (or click a vacant desk) and I'll introduce you to a few candidates — or just tell me what you need done and we'll work out who to hire.",
+          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. I'm already running on Cafreso's Gemma 4 brain — no keys to add, though you can bring your own model later in Settings. Let's make your first hire: I'm opening the candidate book now.",
         }]);
       }
+      /* Beat 2: the candidates deck opens itself a moment after the CEO's
+         line lands — the user's first decision is a real hire. */
+      setTimeout(() => { try { setHireOpen(true); } catch (_e) {} }, 1600);
     }, 800);
     return () => clearTimeout(t);
   }, []);
@@ -1462,6 +1562,10 @@ function App() {
     const C = window.CafresoHQClient;
     const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
     recompute();
+    /* Zero-config default: managed containers ship Cafreso's Gemma 4 brain
+       server-side — once /health confirms it, hermes is usable with no key
+       and the "add your AI key" nudges disappear. */
+    try { if (C.probeManagedBrain) C.probeManagedBrain().then(recompute); } catch (_e) {}
     return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
   }, []);
   const openSettings = React.useCallback((tab) => { setSettingsTab(tab || null); setSettingsOpen(true); }, []);
@@ -1558,6 +1662,7 @@ function App() {
   // Stickies are now a `kind='sticky'` pin — kept under this name and shape
   // for back-compat with the existing sticky-stack UI on the CEO desk.
   const [inspect, setInspect] = useStateA(null);
+  const [furnishFor, setFurnishFor] = useStateA(null);   // agent being furnished (gold shop)
   // CEOPanel — opens when the user clicks the Rail brand card (CafresoHQ
   // identity card). Mirrors how InspectPanel handles sub-agents, but the
   // CEO gets a richer view (mini office diorama + arcade + quick links).
@@ -1576,6 +1681,29 @@ function App() {
   const [ceoTokens, setCeoTokens] = useStateA(0);
   const onCeoUsage = (u) => setCeoTokens(t => t + (u.total || 0));
   const [activeView, setActiveView] = useStored(k('activeView'), 'visual');
+
+  /* Just-in-time coach marks (CEO-led first win): one contextual nudge at
+     the moment the NEXT first-run step becomes relevant. Each key fires
+     once, persisted — so a returning user is never re-toured. */
+  const [coachSeen, setCoachSeen] = useStored(ks('coachSeen'), {});
+  const dismissCoach = React.useCallback((k2) =>
+    setCoachSeen(prev => ({ ...(prev || {}), [k2]: true })), [setCoachSeen]);
+  const coachMark = React.useMemo(() => {
+    if (gsDismissed) return null;
+    const seen = coachSeen || {};
+    const hired = agents.length > 0;
+    const chatted = (chat || []).some(m => m.from === 'user');
+    const assigned = tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned');
+    const sawWork = activity.some(e => e.action === 'done');
+    if (hired && !chatted && !seen.chat)
+      return { k: 'chat', text: 'Your first hire is at their desk — say hi and brief them.', cta: 'Open chat', act: () => setActiveView('chat') };
+    if (chatted && !assigned && !seen.task)
+      return { k: 'task', text: 'Give them something real: drop a task on their desk.', cta: 'Open tasks', act: () => setActiveView('tasks') };
+    if (assigned && !sawWork && !seen.watch)
+      return { k: 'watch', text: 'Work is in flight — watch the desk light up.', cta: 'Open office', act: () => setActiveView('visual') };
+    return null;
+  }, [gsDismissed, coachSeen, agents, chat, tasks, activity]);
+
   // On mobile, chat is the primary view. If the stored value is the desktop
   // default ('visual'), redirect to 'chat' on first mount so the user lands
   // in the conversation rather than the office floor.
@@ -1614,7 +1742,14 @@ function App() {
   const [standupOpen, setStandupOpen] = useStateA(false);
   const [lastStandup, setLastStandup] = useStored(k('lastStandup'), 0); // ms timestamp of last opened
   const [pins, setPins] = useFileStored(k('pins'), 'state', 'pins', []);
-  const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', []);
+  /* Load-scrub: a mission persisted as 'running' must NOT auto-resume on
+     reload — that silently restarted iterations (and token spend) the user
+     never re-authorized, with a time budget already eaten by wall-clock
+     downtime. Reload lands it in 'paused'; resuming is an explicit click,
+     which is what the missions header always claimed happened. */
+  const missionsOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
+    .map(m => m && m.status === 'running' ? { ...m, status: 'paused', pauseNote: 'paused on reload — resume to continue' } : m), []);
+  const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', [], missionsOnLoad);
   const [missionsOpen, setMissionsOpen] = useStateA(false);
   const [workflows, setWorkflows] = useFileStored(k('workflows'), 'state', 'workflows', []);
   const [projects, setProjects] = useFileStored(k('projects'), 'state', 'projects', []);
@@ -1945,6 +2080,14 @@ ${d.text}` : d.text,
   const abortAgentRun = (agentId) => {
     const c = agentAbortersRef.current.get(agentId);
     if (c) { try { c.abort(); } catch (_e) {} agentAbortersRef.current.delete(agentId); }
+  };
+  /* The chat Stop button's reach. Room / @-mention / brainstorm / handoff
+     sends run through dispatchToAgent's per-agent controllers, which the
+     panel's own abortRef never saw — so "■ Stop" was a no-op for exactly
+     the multi-agent phases most likely to run long. */
+  const abortAllAgentRuns = () => {
+    for (const c of agentAbortersRef.current.values()) { try { c.abort(); } catch (_e) {} }
+    agentAbortersRef.current.clear();
   };
   // Abort everything in flight when the App unmounts (e.g. tab nav, HMR).
   useEffectA(() => () => {
@@ -2386,10 +2529,12 @@ ${d.text}` : d.text,
        with past unrelated threads. The agent's persistent journal already
        holds longer-term memory. */
     const recentChat = chat.slice(-6);
+    const screen = makeScreenEmitter(agent.id);
     try {
       await HQ.agentStream(agent, framedPrompt, tok => {
         buf += tok;
         flush(tok);
+        screen.stream(buf);
         scanForNewAcks();
       }, {
         onUsage: u => { usedTokens = u.total; },
@@ -2535,6 +2680,7 @@ ${d.text}` : d.text,
         buf = stripped;
       }
       const cleanBuf = HQ.cleanHarmony(buf);
+      screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
         recent: cleanBuf.slice(0, 140) || prompt.slice(0, 80),
@@ -2588,7 +2734,7 @@ ${d.text}` : d.text,
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : `⚠ ${err.message}`, error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
       onUpdateAgent(agent.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
       // Structured failure cause — Plato's "no silent failures" ask.
@@ -3253,10 +3399,12 @@ ${d.text}` : d.text,
     const flush = HQ.throttleTokens(setChat, agentId);
     const controller = beginAgentRun(a.id);
     const recentChat = chat.slice(-6);
+    const screen = makeScreenEmitter(a.id);
     try {
       await HQ.agentStream(a, brief, tok => {
         buf += tok;
         flush(tok);
+        screen.stream(buf);
       }, {
         onUsage: u => { usedTokens = u.total; },
         onHint: flush.note,
@@ -3278,6 +3426,7 @@ ${d.text}` : d.text,
       });
       flush.flushNow();
       const cleanBuf = HQ.cleanHarmony(buf);
+      screen.done(cleanBuf);
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
         recent: brief.slice(0, 80),
@@ -3291,7 +3440,7 @@ ${d.text}` : d.text,
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
       setChat(prev => prev.map(m => m.id === agentId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : `⚠ ${err.message}`, error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
       onUpdateAgent(a.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
       logActivity(aborted
@@ -3454,10 +3603,12 @@ ${d.text}` : d.text,
     const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     const recentChat = chat.slice(-6);
+    const screen = makeScreenEmitter(agent.id);
     try {
       await HQ.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence), then deliver the result. Keep it tight.`, tok => {
         buf += tok;
         flush(tok);
+        screen.stream(buf);
       }, {
         onUsage: u => { usedTokens = u.total; },
         onHint: flush.note,
@@ -3479,6 +3630,7 @@ ${d.text}` : d.text,
       });
       flush.flushNow();
       const cleanBuf = HQ.cleanHarmony(buf);
+      screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
         recent: cleanBuf.slice(0, 140) || task.title,
@@ -3521,7 +3673,7 @@ ${d.text}` : d.text,
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : `⚠ ${err.message}`, error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
       onUpdateAgent(agent.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
       // Aborted task should go back to inbox so the user can re-drop it; failed tasks too.
@@ -3895,6 +4047,7 @@ ${d.text}` : d.text,
   // same props without duplication.
   const sharedChatPanel = (
     <ChatPanel agents={agents} chat={chat} setChat={setChat}
+      backendDown={backendDown} onStopAll={abortAllAgentRuns}
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
@@ -4565,9 +4718,15 @@ ${d.text}` : d.text,
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
-        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity}/>
+        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
       <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+        onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
+      <FurnishModal
+        agent={furnishFor ? (agents.find(x => x.id === furnishFor.id) || furnishFor) : null}
+        onClose={() => setFurnishFor(null)}
+        onUpdate={onUpdateAgent}
+      />
       <CEOPanel
         open={ceoShown}
         onClose={() => setCeoShown(false)}
@@ -4609,6 +4768,29 @@ ${d.text}` : d.text,
           onWatch={() => setActiveView('visual')}
           onDismiss={() => setGsDismissed(true)}
         />
+      )}
+      {/* Just-in-time coach marks — one nudge at the moment the next step
+          becomes relevant, instead of a 10-step upfront slideshow. Each
+          fires once (persisted); the full tour stays on the palette. */}
+      {!tourOpen && coachMark && (
+        <div style={{
+          position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 45,
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: 'rgba(24,20,14,0.96)', border: '1px solid rgba(245,210,93,0.35)',
+          borderRadius: 999, padding: '9px 10px 9px 16px', color: '#e9e2d4',
+          font: '12.5px Inter, system-ui, sans-serif', boxShadow: '0 14px 44px rgba(0,0,0,0.45)',
+        }}>
+          <span>{coachMark.text}</span>
+          <button onClick={() => { coachMark.act(); dismissCoach(coachMark.k); }}
+            style={{ cursor: 'pointer', border: 0, borderRadius: 999, padding: '6px 12px',
+                     background: '#F5D25D', color: '#241c10', font: '600 12px Inter, sans-serif' }}>
+            {coachMark.cta}
+          </button>
+          <button onClick={() => dismissCoach(coachMark.k)} aria-label="Dismiss tip"
+            style={{ cursor: 'pointer', border: 0, background: 'transparent', color: '#9a8f7c', fontSize: 14 }}>
+            ✕
+          </button>
+        </div>
       )}
       <OnboardingTour
         open={tourOpen}

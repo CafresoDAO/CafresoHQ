@@ -1,0 +1,52 @@
+# ── CafresoHQ — standalone search-network worker ────────────────────────────
+# The extracted, minimal search-worker service (search_worker_service/) —
+# NOT the full HQ monolith (see docker-compose.local.yml for that). Runs
+# independently: its own image, port, and data volume, so it can coexist
+# safely alongside an existing docker-compose.local.yml instance during
+# validation.
+#
+#   docker compose -f docker-compose.worker.yml up -d --build
+#   docker compose -f docker-compose.worker.yml logs -f
+#   docker compose -f docker-compose.worker.yml down
+#
+# Credentials live in `worker-standalone.env` — gitignored, chmod 600, a
+# DIFFERENT file from docker-compose.local.yml's `worker.env`. Use a fresh,
+# second WORKER_PRINCIPAL/WORKER_SECRET identity here rather than reusing the
+# monolith's, at least for the initial validation soak — see the extraction
+# plan's Stage A cutover sequence for why (clean attribution of which
+# instance claimed/fulfilled which job while both run side by side).
+#
+# GAP_CRON/NEWS_CRON/TOPICS_CRON default OFF here on purpose: only ONE
+# instance across your whole deployment should have crons on at a time (see
+# worker.py's module docstring). Flip them on here — and off on the old
+# instance, in the same maintenance window — only at the actual cutover step.
+
+services:
+  search-worker:
+    build:
+      context: .
+      dockerfile: search_worker_service/Dockerfile
+    image: cafreso-search-worker:local
+    container_name: cafreso-search-worker
+    ports:
+      - "8788:8788"
+    env_file:
+      - worker-standalone.env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      GAP_CRON: "0"
+      NEWS_CRON: "0"
+      TOPICS_CRON: "0"
+    volumes:
+      - cafreso-search-worker-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8788/health',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  cafreso-search-worker-data:
+    external: false   # NEW, separate volume — never share with cafresohq-data

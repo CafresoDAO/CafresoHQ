@@ -34,6 +34,29 @@ __PRIMARY_HOST__ {
         reverse_proxy localhost:8080
     }
 
+    # Workspace portal API — template catalog + session lifecycle
+    # Guacamole desktop streaming proxy - RDP to HTML5 for Hyper-V workspaces
+    handle /guacamole/* {
+        reverse_proxy localhost:8080
+    }
+
+    handle /workspaces/* {
+        reverse_proxy localhost:8080
+    }
+    handle /sessions/* {
+        reverse_proxy localhost:8080
+    }
+    handle /admin/* {
+        reverse_proxy localhost:8080
+    }
+
+    # Streaming session proxy — WebRTC signaling + media
+    handle /stream/* {
+        reverse_proxy localhost:8080
+    }
+
+__SESSION_ROUTES__
+
 __USER_ROUTES__
 
     # Unmatched paths: redirect browsers to the app shell, 404 for clients.
@@ -55,6 +78,22 @@ __USER_ROUTES__
 
     # Fleet API — self-service provisioning
     handle /fleet/* {
+        reverse_proxy localhost:8080
+    }
+
+    # Workspace portal API (HTTP fallback for dev/pre-DNS)
+    # Guacamole desktop streaming proxy - RDP to HTML5 for Hyper-V workspaces
+    handle /guacamole/* {
+        reverse_proxy localhost:8080
+    }
+
+    handle /workspaces/* {
+        reverse_proxy localhost:8080
+    }
+    handle /sessions/* {
+        reverse_proxy localhost:8080
+    }
+    handle /admin/* {
         reverse_proxy localhost:8080
     }
 

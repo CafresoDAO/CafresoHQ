@@ -1,0 +1,5 @@
+# worker.py is 100% Python standard library — no third-party dependencies.
+# This file exists to document that constraint, not to install anything.
+# If a future change needs a package, that's a signal to reconsider whether
+# it belongs in this service at all (see worker.py's module docstring on why
+# it's minimal by design).

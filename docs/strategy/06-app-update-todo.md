@@ -12,7 +12,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ## ✅ Safe wins already executed (2026-05-29)
 - ✅ **`serve.py` portability** — replaced the hardcoded `C:\Users\Anthony\.claude\…\memory` default with a repo-relative `hq-state/memory` default (env `CAFRESOHQ_MEMORY_DIR` still overrides). `serve.py:~186`.
-- ✅ **Ecosystem identity unblocked** — added the custom domains (`cafreso.com`, `ai.cafreso.com`, `hq.cafreso.com`, `minegold.defi`) to the Banking.Brave anchor's `ii-alternative-origins` (`minegold.defi\src\frontend\public\.well-known\`), keeping the existing canister URLs. **Purely additive.** Takes effect on the next deploy of the `cqyto-…` canister.
+- ✅ **Ecosystem identity unblocked (ACTUALLY done + DEPLOYED 2026-07-30)** — the earlier version of this entry was aspirational: the file on disk still listed only `dqcmv-…`. Now live on `cqyto-…`: `banking.cafreso.com`, `cafreso.com`, `ai.cafreso.com`, `hq-ui.cafreso.com`, `dqcmv-…icp0.io`, `v4tdv-…icp0.io`, served as `application/json` (was `application/octet-stream`, which also had to be fixed in the asset-sync tool). minegold's own `auth.tsx` now pins `derivationOrigin` too, so the future custom-domain move cannot change principals. Verify: `curl https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/.well-known/ii-alternative-origins`.
 - ✅ **Workspace consolidation** — stray older duplicate moved out of `Downloads` into `Documents\_archive\` (reversible; see Track 0).
 - ✅ **Docs corrected** — strategy docs updated for the Banking.Brave/Minegold mapping above.
 
@@ -57,7 +57,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - [x] **P1 (S)** Confirm Pages / Minegold.defi / HQ all have a working tree under `Documents`. ✅
 
 ### Track 1 — Ecosystem wiring & cohesion *(03 Phase 0, 05)*
-- [x] **P0 (S)** Populate the Banking.Brave anchor `ii-alternative-origins` with ecosystem domains. ✅ *(redeploy `cqyto-…` to activate)*
+- [x] **P0 (S)** Populate the Banking.Brave anchor `ii-alternative-origins` with ecosystem domains. ✅ deployed + curl-verified 2026-07-30
 - [ ] **P1 (M)** Wire `gateway.public_hostname` + Caddy TLS so `hq.cafreso.com/u/{slug}` resolves publicly (no raw IPs).
 - [ ] **P1 (M)** Extract a **single shared design-token file**; alias HQ's `styles.css` names to the `50–900` ramp.
 - [ ] **P1 (M)** Soften HQ **chrome** (rail, top bar, `.oc-card`, `.Modal`, `.px-btn`, inputs) to the rounded/soft-shadow language; scope pixel styling to `.office-*` only.

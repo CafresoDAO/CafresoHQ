@@ -388,7 +388,14 @@ def cmd_provision(args, fleet: dict):
     # backend by forwarding whichever key the operator has in their env
     # (precedence handled by hermes-bootstrap.py). Without one, the API server
     # still starts but calls error until a key/BYOK is supplied.
-    for _bk in ('OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'GROQ_API_KEY', 'GROQ_MODEL', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
+    #
+    # LMSTUDIO_BASE_URL/LMSTUDIO_MODEL forward the shared managed-Gemma endpoint
+    # (self-hosted LM Studio, reached via the gateway's private Twingate proxy —
+    # e.g. http://<twingate-proxy-host>:1234/v1) so hermes-bootstrap.py's branch 0
+    # picks it as every new container's zero-config default. Without these two in
+    # this list, containers fall through to OpenRouter regardless of what the
+    # operator has running on their own hardware — this was the actual gap.
+    for _bk in ('LMSTUDIO_BASE_URL', 'LMSTUDIO_MODEL', 'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'GROQ_API_KEY', 'GROQ_MODEL', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY'):
         _bv = os.environ.get(_bk, '').strip()
         if _bv:
             env_vars[_bk] = _bv

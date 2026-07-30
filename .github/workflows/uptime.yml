@@ -1,0 +1,35 @@
+name: uptime
+# Scheduled production watchdog. Checks, every 30 minutes:
+#   1. both frontend domains are up AND serve identical entry bundles
+#      (drift between cafreso.com / ai.cafreso.com once shipped a missing
+#      feature — this catches it within half an hour)
+#   2. the fleet API on the OCI gateway is alive (/fleet/health)
+# A failing run triggers GitHub's default workflow-failure email to the repo
+# owner. No secrets required. Manual runs via workflow_dispatch.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: frontend domains up + bundle parity
+        run: |
+          set -euo pipefail
+          entries() { grep -oE '_app/immutable/entry/[a-zA-Z0-9._-]+\.js' | sort -u; }
+          A="$(curl -fsS --max-time 20 "https://cafreso.com/index.html?cb=$(date +%s)" | entries)"
+          B="$(curl -fsS --max-time 20 "https://ai.cafreso.com/index.html?cb=$(date +%s)" | entries)"
+          echo "cafreso.com:";    echo "$A"
+          echo "ai.cafreso.com:"; echo "$B"
+          [ -n "$A" ] && [ -n "$B" ] || { echo "::error::a domain served no entry bundles"; exit 1; }
+          [ "$A" = "$B" ] || { echo "::error::BUNDLE DRIFT between cafreso.com and ai.cafreso.com — run scripts/deploy_frontend.sh"; exit 1; }
+
+      - name: fleet gateway alive
+        run: |
+          set -euo pipefail
+          J="$(curl -fsS --max-time 20 https://hq.cafreso.com/fleet/health)"
+          echo "$J"
+          echo "$J" | grep -q '"status": *"ok"' || { echo "::error::fleet API unhealthy"; exit 1; }
