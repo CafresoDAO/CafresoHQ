@@ -5,14 +5,20 @@
 #   docker compose -f docker-compose.local.yml logs -f    # watch logs
 #   docker compose -f docker-compose.local.yml down       # stop
 #
-# Worker credentials (SEARCH_WORKER / WORKER_* / BRAVE_API_KEY) live in
-# `worker.env` — gitignored, chmod 600. Edit that file, then re-run `up -d`;
-# compose recreates the container with the new env automatically.
+# ⚠ SEARCH WORKER MOVED (2026-08): serve.py no longer contains the search-
+# network worker or the gap/news/topics crons. The SEARCH_WORKER / WORKER_* /
+# GAP_CRON / NEWS_CRON / TOPICS_CRON entries in `worker.env` are now ignored
+# by this container. Run the worker as its own service instead:
+#
+#   docker compose -f docker-compose.worker.yml up -d --build
+#
+# cafreso.com shows "network asleep" whenever no worker has heartbeated for
+# 10 minutes — so keep the worker compose running, not just this one.
+# serve.py proxies /gap/status and /news/status to it (WORKER_STATUS_URL,
+# default http://127.0.0.1:8788).
 #
 # `restart: unless-stopped` = auto-restart after crashes and Mac reboots
-# (as long as Docker Desktop launches at login). This matters for the search
-# worker: cafreso.com shows "network asleep" whenever no worker has
-# heartbeated for 10 minutes.
+# (as long as Docker Desktop launches at login).
 
 services:
   cafresohq:
@@ -29,9 +35,13 @@ services:
     env_file:
       - worker.env
     environment:
-      # Line-buffered stdout so [search-worker] logs show up in `docker logs`
-      # immediately instead of sitting in Python's block buffer.
+      # Line-buffered stdout so logs show up in `docker logs` immediately
+      # instead of sitting in Python's block buffer.
       PYTHONUNBUFFERED: "1"
+      # /gap/status and /news/status proxy the standalone worker container.
+      # host.docker.internal because the worker publishes 8788 on the Mac,
+      # not inside this container's netns.
+      WORKER_STATUS_URL: "http://host.docker.internal:8788"
       # Gap cron now runs hourly (was once/day @10am ET) — GAP_PER_RUN_MAX is
       # a per-run cap, not a daily one; defaults (2/run, 60min) apply if unset.
       # News + weather are new crons, opt-in via *_CRON=1 in serve.py — turned

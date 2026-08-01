@@ -96,7 +96,9 @@ def _night_save(name, data):
     tmp = _night_path(name + '.tmp')
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f)
-    os.replace(tmp, _night_path(name))
+        f.flush()
+        os.fsync(f.fileno())   # os.replace is atomic, but only w.r.t. data
+    os.replace(tmp, _night_path(name))          # already on disk
 
 
 _OPERATOR_BASE = os.environ.get(
@@ -1395,6 +1397,9 @@ def _sw_process(job, deadline=None):
         _sw_call('fail', [jid, P(str(e)[:180])])
 
 
+_last_loop_ok_ms = 0   # last successful canister round-trip — /health reads it
+
+
 def _sw_loop():
     print('[search-worker] joining the search network as %s -> %s'
           % (_SW_PRINCIPAL[:12] + '…', _SW_BASE))
@@ -1438,6 +1443,9 @@ def _sw_loop():
             # blow (or extend) the budget.
             t0 = time.monotonic()
             status, resp = _sw_call('claim', [])
+            if status:
+                global _last_loop_ok_ms
+                _last_loop_ok_ms = int(time.time() * 1000)
             if status == 403:
                 # Not approved yet (or suspended): heartbeat keeps the
                 # registration's lastSeen fresh so the operator sees "connected".
@@ -2134,15 +2142,12 @@ if TOPICS_ENABLED and _SW_ENABLED and _SW_PRINCIPAL:
     threading.Thread(target=_topics_loop, daemon=True, name='topics-cron').start()
 
 # ── Status HTTP listener ─────────────────────────────────────────────────────
-# Standalone-service design: this replaces the /gap/status and /news/status
-# routes that used to live on serve.py's main Handler (serve.py ~5334-5372,
-# reproduced here byte-for-byte in JSON shape). serve.py's admin analytics
-# dashboard (frontend/src/routes/(pages)/admin/analytics/+page.svelte) is the
-# confirmed consumer of those two routes; repointing it at this service's own
-# endpoint is tracked as a small, separate follow-up — see the extraction
-# plan this file came from. /brave/* (a separate, general-purpose Brave
-# search proxy, unrelated to this worker's own quota-metered _sw_brave())
-# intentionally stays behind in serve.py and has no equivalent here.
+# This IS the status surface now: the in-process worker copy was deleted from
+# serve.py (2026-08), and serve.py's /gap/status and /news/status are thin
+# proxies to this listener (WORKER_STATUS_URL), so the admin analytics
+# dashboard and the operator's curl habits keep working unchanged. /brave/*
+# (a separate, general-purpose Brave search proxy, unrelated to this worker's
+# own quota-metered _sw_brave()) stays in serve.py and has no equivalent here.
 class _StatusHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass   # the loop threads already print their own progress lines
@@ -2152,14 +2157,23 @@ class _StatusHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        allow = os.environ.get('STATUS_ALLOW_ORIGIN', '').strip()
+        if allow:   # opt-in only — serve.py proxies this listener, and curl
+            self.send_header('Access-Control-Allow-Origin', allow)
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
         path = self.path.split('?')[0]
         if path == '/health':
-            return self._send_json(200, {'ok': True, 'ts': int(time.time() * 1000)})
+            now = int(time.time() * 1000)
+            stale = bool(_SW_ENABLED and _SW_PRINCIPAL and
+                         now - _last_loop_ok_ms > 10 * 60_000)
+            return self._send_json(200, {
+                'ok': not stale, 'ts': now,
+                'enabled': bool(_SW_ENABLED and _SW_PRINCIPAL),
+                'lastLoopOkAt': _last_loop_ok_ms or None,
+            })
         if path == '/gap/status':
             u = _brave_usage()
             used = int(u.get('used', 0) or 0)

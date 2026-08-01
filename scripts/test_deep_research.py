@@ -18,9 +18,16 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('SEARCH_WORKER', '')      # never start the worker loop
-import serve  # noqa: E402
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The worker code moved out of serve.py into the standalone service — these
+# tests now run against the copy that actually ships.
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, 'search_worker_service'))
+import worker as serve  # noqa: E402
+
+serve._operator_config = lambda: {}   # never reach for the on-chain config
+
 
 FAILS = []
 

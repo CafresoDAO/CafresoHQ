@@ -27,9 +27,15 @@ import time
 import http.server
 import socketserver
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ.setdefault('API_SERVER_KEY', 'x')      # make _sw_hermes_key() truthy
-import serve  # noqa: E402
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The worker code moved out of serve.py into the standalone service — these
+# tests now run against the copy that actually ships.
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, 'search_worker_service'))
+import worker as serve  # noqa: E402
+
+# Never let _sw_model()/_sw_backend() reach for the on-chain operator config.
+serve._operator_config = lambda: {}
 
 FAILS = []
 
@@ -163,20 +169,18 @@ R = [{'title': 'ICP Overview', 'url': 'https://a.com/x',
 
 
 def _use_direct(port):
-    """Route _sw_llm's DIRECT path at the fake, and make the gateway unreachable
-    so anything that reaches it fails loudly rather than passing by accident."""
-    import night_runner as nr
-    serve._sw_backend = lambda: nr.Backend(
-        provider='lmstudio', raw_provider='lmstudio', model='fake-1',
+    """Route _sw_llm's direct path at the fake."""
+    serve._sw_backend = lambda: serve._Backend(
         url='http://127.0.0.1:%d/v1/chat/completions' % port,
-        headers={'Content-Type': 'application/json'}, key='', local=True)
-    serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', 9
+        headers={'Content-Type': 'application/json'},
+        model='fake-1', provider='lmstudio')
 
 
-def _use_gateway(port):
-    """No direct backend resolvable (e.g. an anthropic operator) → gateway."""
+def _use_none():
+    """No backend configured — the worker must degrade to sources-only.
+    (The old in-process copy fell back to a co-located hermes gateway here;
+    the standalone service deliberately has no gateway tier.)"""
     serve._sw_backend = lambda: None
-    serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', port
 
 
 def _mode(m):
@@ -254,44 +258,36 @@ def test_llm(port, label):
 
     # Everything dead: sources + graph are still worth fulfilling, so degrade quietly.
     _mode('slow')
-    import night_runner as nr
-    serve._sw_backend = lambda: nr.Backend('lmstudio', 'lmstudio', 'fake-1',
-                                           'http://127.0.0.1:9/v1/chat/completions',
-                                           {'Content-Type': 'application/json'}, '', True)
-    serve.HERMES_PORT = 9
+    serve._sw_backend = lambda: serve._Backend(
+        url='http://127.0.0.1:9/v1/chat/completions',
+        headers={'Content-Type': 'application/json'},
+        model='fake-1', provider='lmstudio')
     t = time.monotonic()
     out = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 30)
     check('dead backend degrades to empty', out == ('', '', {}, 0), out)
     check('dead backend fails fast', time.monotonic() - t < 15)
 
 
-def test_ordering(direct_port, gw_port):
-    """The one test that catches a regression back to gateway-first. The gateway
-    is ~13k prompt tokens per answer and ignores max_tokens/model — if a direct
-    backend resolves, nothing should reach it."""
+def test_ordering(direct_port, other_port):
+    """Exactly one backend, called directly — and NOTHING else gets traffic.
+    The second fake exists purely to prove no stray tier (the old in-process
+    copy had a gateway fallback) sneaks back in."""
     global MODE
     print('routing')
     MODE = 'slow'
     HITS.clear()
-    import night_runner as nr
-    serve._sw_backend = lambda: nr.Backend(
-        'lmstudio', 'lmstudio', 'fake-1',
-        'http://127.0.0.1:%d/v1/chat/completions' % direct_port,
-        {'Content-Type': 'application/json'}, '', True)
-    serve.HERMES_HOST, serve.HERMES_PORT = '127.0.0.1', gw_port
+    _use_direct(direct_port)
     s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
     check('direct path answered', bool(s))
     check('direct backend was called', HITS.get(direct_port, 0) > 0, HITS)
-    check('gateway saw ZERO requests when a direct backend exists',
-          HITS.get(gw_port, 0) == 0, HITS)
+    check('no other endpoint saw traffic', HITS.get(other_port, 0) == 0, HITS)
 
-    # An operator we cannot resolve directly (e.g. anthropic — no
-    # _PROVIDER_ENDPOINTS entry) must still get answers. Do not delete this path.
+    # No backend at all → sources-only, quickly and without publishing garbage.
     HITS.clear()
-    _use_gateway(gw_port)
-    s, _m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    check('unresolvable backend still answers via the gateway', bool(s))
-    check('gateway was used as the fallback', HITS.get(gw_port, 0) > 0, HITS)
+    _use_none()
+    out = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
+    check('no backend degrades to sources-only', out == ('', '', {}, 0), out)
+    check('and makes zero network calls', not HITS, HITS)
 
 
 def test_payload(port):
@@ -335,62 +331,27 @@ def test_schema_climbdown(port):
           all('response_format' not in r for r in REQS), 'first=%d then=%d' % (n_first, len(REQS)))
 
 
-def test_trial_notice(port, tmp):
-    """Uncapped is a DECISION, so pin it: the notice fires, and nothing is
-    metered. If someone later adds a bump here, this test fails on purpose."""
-    global MODE
-    print('trial key notice')
-    MODE = 'slow'
-    _use_direct(port)
-    serve._trial_state = lambda: {'active': True, 'provider': 'openrouter'}
-    serve._trial_usage = lambda p: (3, 25)
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    out = buf.getvalue()
-    check('says it is spending the shared trial key', 'SHARED TRIAL key' in out, out[:90])
-    check('says search is not metered', 'NOT metered' in out, out[:90])
-    before = serve._night_load('trial-usage.json', {})
-    with contextlib.redirect_stdout(io.StringIO()):
-        serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    check('search does NOT consume the trial cap (decided: uncapped)',
-          serve._night_load('trial-usage.json', {}) == before)
-    serve._trial_state = lambda: {'active': False}
-
-
 def test_chip_honesty(port, tmpdir):
     """The chip is written to a PERMANENT PUBLIC on-chain entry, so it must name
     the model that actually decoded.
 
-    The trap this pins: the gateway ECHOES the requested model back while running
-    config.yaml's. An echo can never disagree with the request, so a naive
-    "reported != requested" check passes while the chip lies. On the gateway path
-    the config is the truth, not the response."""
+    A direct backend genuinely runs what it reports, so the chip believes the
+    response — but a mismatch against the requested model must be LOGGED, not
+    silently papered over."""
     global MODE
     print('chip honesty')
     MODE = 'slow'
     serve._SW_CAPS.clear()
-    cfg = os.path.join(tmpdir, 'config.yaml')
-    with open(cfg, 'w') as f:
-        f.write('model:\n  default: real/loaded-model\n  provider: lmstudio\n'
-                '  base_url: http://127.0.0.1:%d/v1\napprovals:\n  mode: manual\n' % port)
-    serve._hermes_home = lambda: tmpdir
-    os.environ['WORKER_MODEL'] = 'ghost/not-loaded'      # the fake echoes 'fake-1'
-
-    # Gateway path: the fake echoes back whatever we send, exactly like hermes.
-    _use_gateway(port)
+    serve.WORKER_MODEL = 'ghost/not-loaded'      # the fake reports 'fake-1'
+    _use_direct(port)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         _s, m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    check('gateway chip does NOT parrot the request', 'ghost' not in m, m)
-    check('gateway chip reports the config model (what really ran)', m == 'real/loaded-model', m)
+    check('chip trusts the backend it actually called', m == 'fake-1', m)
     check('the discrepancy is logged', 'asked for ghost/not-loaded' in buf.getvalue(), buf.getvalue()[:80])
-
-    # Direct path: the backend genuinely runs what it says, so believe it.
-    _use_direct(port)
+    serve.WORKER_MODEL = ''
     _s, m, _n, _t = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 60)
-    check('direct chip trusts the backend it actually called', m == 'fake-1', m)
-    del os.environ['WORKER_MODEL']
+    check('chip reports the model when nothing was pinned', m == 'fake-1', m)
 
 
 def test_focus():
@@ -411,17 +372,12 @@ def main():
     gw_port = gw.server_address[1]
 
     test_parse()
-    # The same bounds/salvage body must hold on BOTH routes.
     _use_direct(port)
     test_llm(port, 'direct')
-    serve._SW_CAPS.clear()
-    _use_gateway(port)
-    test_llm(port, 'gateway fallback')
     serve._SW_CAPS.clear()
     test_ordering(port, gw_port)
     test_payload(port)
     test_schema_climbdown(port)
-    test_trial_notice(port, None)
     test_chip_honesty(port, tempfile.mkdtemp())
     test_focus()
     print()

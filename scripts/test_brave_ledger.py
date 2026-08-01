@@ -35,7 +35,11 @@ def main():
     tmp = tempfile.mkdtemp(prefix='brave-ledger-')
     os.environ['CAFRESOHQ_HQ_STATE_DIR'] = tmp
 
-    import serve
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'search_worker_service'))
+    # The worker code moved out of serve.py into the standalone service —
+    # this suite now tests the copy that actually ships.
+    import worker as serve
+    serve._operator_config = lambda: {}
 
     # Belt and braces: the env var above is read at import time (serve.py:292),
     # but pin the module attribute too so this never writes to a real HQ state
