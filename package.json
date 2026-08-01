@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build_ui_bundle.mjs",
     "watch": "node scripts/build_ui_bundle.mjs --watch",
-    "lint": "eslint *.jsx views/*.jsx ui/*.jsx modals/*.jsx"
+    "lint": "eslint *.jsx views/*.jsx ui/*.jsx modals/*.jsx app/*.jsx"
   },
   "devDependencies": {
     "esbuild": "0.24.2",
