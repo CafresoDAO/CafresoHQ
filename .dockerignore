@@ -1,5 +1,5 @@
 # CafresoHQ fleet image build context — keep it tiny.
-# The Dockerfile COPYs only specific root files + oci-fleet/{entrypoint.sh,
+# The Dockerfile COPYs only specific root files + docker/{entrypoint.sh,
 # hermes-bootstrap.py, requirements-serve.txt}. Everything below is irrelevant
 # to the image and would otherwise bloat the build context (slow over the WSL
 # 9p /mnt/c mount).

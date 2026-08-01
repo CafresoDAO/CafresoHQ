@@ -15,7 +15,7 @@ A unified **SvelteKit** dapp + **Motoko** canisters + an **OCI** compute fleet:
   - `(hq)` → **ai.cafreso.com** "CafresoHQ": the per-user AI agent SaaS.
 - `src/cafresohq_keys/` — vetKeys (BLS12-381 threshold) vault key derivation (Motoko).
 - `src/cafresohq_state/` — **new**, Phase 2 on-chain per-user state (HQ docs + vault ciphertext). Scaffolded, **not yet deployed** (PR #6).
-- `oci-fleet/` — per-user container fleet, Caddy TLS gateway, Stripe oracle. The only load-bearing off-chain compute (LLM inference, PTY/terminal, agent runtime).
+- `docker/` — the serve.py container image. Fleet provisioning (container fleet, Caddy TLS gateway, Stripe oracle) moved to the separate cafreso-fleet repo.
 - `serve.py` / `scripts/` — container API + HQ-UI asset build.
 
 **Identity:** one Internet Identity principal across the ecosystem via a shared
@@ -93,9 +93,9 @@ should *prepare* it (exact DNS records, verification steps) but a human runs the
 
 ## 6. Highest-leverage upgrade threads (prioritized)
 
-1. **Idle auto-stop + start-on-login** 🔑 — biggest cost lever (per `docs/SCALING_STRATEGY.md`). Depends on the stateless container from Phase 2 (PR #6) being lossless. Wire `reap-idle` (`docs/LAUNCH_TODO.md` #4).
+1. **Idle auto-stop + start-on-login** 🔑 — biggest cost lever (per `SCALING_STRATEGY.md` in the cafreso-fleet repo). Depends on the stateless container from Phase 2 (PR #6) being lossless. Wire `reap-idle` (`docs/LAUNCH_TODO.md` #4).
 2. **Finish Phase 2 state migration** — deploy `cafresohq_state`, flip `PUBLIC_STATE_CANISTER=mirror`, backfill, then cut reads over. Makes the container truly stateless. See `docs/PHASE2_STATE_CANISTER.md`.
-3. **Fleet-registry canister** — replace the race-prone flat `oci-fleet/fleet.json` (`LAUNCH_TODO` #5).
+3. **Fleet-registry canister** — replace the race-prone flat `fleet.json` (cafreso-fleet repo) (`LAUNCH_TODO` #5).
 4. **Usage/metering canister** — `_record_hermes_usage` must use the *authenticated* principal, not a header → enables on-chain plan enforcement.
 5. **Real governance / SNS** — `lib/data/governance.js` is "simulated votes"; the site positions as a DAO. At minimum fetch live proposals; ideally an on-chain governance canister.
 6. **Gate `/fleet/provision`** — largest open surface (`LAUNCH_TODO` #1): session token + rate-limit.
@@ -107,7 +107,7 @@ should *prepare* it (exact DNS records, verification steps) but a human runs the
 - **Rotate leaked keys** — OpenRouter `sk-or-v1-…`, Groq `gsk_…` (`LAUNCH_TODO` #6). Do before public launch.
 - **Top up the cycles wallet** to deploy `cafresohq_state` (PR #6).
 - **cafreso.com → v4tdv DNS cutover** (§5).
-- **Gateway VM access** — the Caddy gateway VM is currently locked out (key on an inaccessible build VM); Phase 3 gateway work depends on regaining access (serial console or rebuild from `oci-fleet/caddy-cloud-init.yaml`).
+- **Gateway VM access** — the Caddy gateway VM is currently locked out (key on an inaccessible build VM); Phase 3 gateway work depends on regaining access (serial console or rebuild from `caddy-cloud-init.yaml` in the cafreso-fleet repo).
 - **Replace the 9 placeholder images** with final artwork (`docs/ASSETS_NEEDED.md`).
 
 ## 8. Guardrails for agents
@@ -125,5 +125,5 @@ should *prepare* it (exact DNS records, verification steps) but a human runs the
 ## 9. Where to read more
 
 `docs/strategy/` (roadmap + merge plan), `docs/PHASE2_STATE_CANISTER.md`,
-`docs/SCALING_STRATEGY.md`, `docs/LAUNCH_TODO.md`, `docs/SAAS_MVP_PLAN.md`,
+`docs/LAUNCH_TODO.md`, plus `SCALING_STRATEGY.md` / `SAAS_MVP_PLAN.md` in the cafreso-fleet repo,
 `docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md`, `docs/ASSETS_NEEDED.md`.

@@ -16,11 +16,13 @@ State that *must* be trustless lives on Internet Computer canisters (identity, v
 | **SvelteKit control plane** | `frontend/` | Modern ICP-hosted app (asset canister `cafresohq_frontend`). `(pages)` routes = the consumer site; `(hq)` routes = the SaaS dashboard. Talks to the `cafresohq_keys` canister for vetKeys zero-knowledge vault encryption. |
 | **HQ browser app** | `hq.html` + `*.jsx` (`app.jsx`, `views.jsx`, `ui.jsx`, `modals.jsx`, `missions.jsx`, …) | The agent command center. Bundled by esbuild (`scripts/build_ui_bundle.mjs`); also servable from the `cafresohq_ui` asset canister. |
 | **Backend / proxy** | `serve.py` | Stdlib HTTP server: LLM proxy, vault, PTY/terminal, approvals. Listens on `PORT` (default **8787**). |
-| **Fleet** | `oci-fleet/` | Per-user OCI container provisioning + the Caddy TLS gateway + Stripe oracle. `fleet-api.py` bridges the shell to containers. |
 | **Canisters** | `src/` + `dfx.json` | `cafresohq_keys` (vetKeys, Motoko); Phase-2 `cafresohq_state` (on-chain per-user state) on a feature branch. |
-| **Desktop / streaming** | `electron/`, `streaming/` | Electron wrapper + WebRTC streaming. |
+| **Desktop** | `electron/` | Electron wrapper. |
+| **Container image** | `docker/` | The serve.py container image (Dockerfile, entrypoint, Hermes bootstrap) used by `docker-compose.local.yml` and the fleet. |
 
-> Architecture deep-dives: [`docs/AGENT_BRIEF.md`](docs/AGENT_BRIEF.md), [`docs/strategy/`](docs/strategy), [`docs/PHASE2_STATE_CANISTER.md`](docs/PHASE2_STATE_CANISTER.md), [`docs/SCALING_STRATEGY.md`](docs/SCALING_STRATEGY.md), [`docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md`](docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md).
+> Fleet provisioning, the Caddy gateway, Stripe oracle, and WebRTC streaming live in the separate **cafreso-fleet** repo.
+
+> Architecture deep-dives: [`docs/AGENT_BRIEF.md`](docs/AGENT_BRIEF.md), [`docs/strategy/`](docs/strategy), [`docs/PHASE2_STATE_CANISTER.md`](docs/PHASE2_STATE_CANISTER.md), [`docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md`](docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md).
 
 ## A note on naming
 
@@ -82,4 +84,4 @@ dfx deploy cafresohq_ui --network ic --identity default
 
 - Frontend deploys use the **`default`** dfx identity (a controller), not `ic_admin`.
 - PRs target the active integration branch (**`merge/pages-cafresohq`**), not `master`.
-- Secrets and machine-specific config go in `.env` / `oci-fleet/.env` (gitignored), never committed.
+- Secrets and machine-specific config go in `.env` (gitignored), never committed.

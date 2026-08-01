@@ -8,7 +8,7 @@ asset canister instead (1-min `dfx deploy`, fleet-wide, no image rebuild).
 The UI is no longer raw JSX transpiled in-browser. This script first runs the Node
 build (scripts/build_ui_bundle.mjs) to produce dist-ui/ (vendor globals + content-
 hashed, pre-transformed JSX), then copies ONLY the UI files into `hq-ui/` (so
-serve.py, oci-fleet, node_modules, etc. never ship to the canister), bakes the
+serve.py, docker, node_modules, etc. never ship to the canister), bakes the
 <!--HQ_SCRIPTS--> placeholder in hq.html from the build manifest, and writes the
 canister's `.ic-assets.json5` (cache + CSP). It is the `build` step of the
 `cafresohq_ui` canister in dfx.json.

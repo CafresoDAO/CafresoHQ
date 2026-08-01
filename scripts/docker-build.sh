@@ -50,7 +50,7 @@ run docker buildx build \
   --platform "$PLATFORMS" \
   $TAGS \
   --push \
-  -f oci-fleet/Dockerfile \
+  -f docker/Dockerfile \
   .
 
 echo ""

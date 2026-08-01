@@ -3,7 +3,7 @@
 //
 // Vendored because this repo has no mops/vessel setup. Used by the keys
 // canister to mint HMAC-signed HQ session tokens that the OCI gateway verifier
-// (oci-fleet/hq_token.py, Python stdlib hmac/hashlib) re-checks byte-for-byte.
+// (cafreso-fleet/oci-fleet/hq_token.py, Python stdlib hmac/hashlib) re-checks byte-for-byte.
 //
 // Reference: FIPS 180-4 (SHA-256) and RFC 2104 (HMAC). Operates on [Nat8].
 // ──────────────────────────────────────────────────────────────────────────

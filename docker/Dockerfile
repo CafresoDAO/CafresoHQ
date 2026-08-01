@@ -8,12 +8,12 @@
 #     --platform linux/amd64,linux/arm64 \
 #     --tag docker.io/anthonycf1/cafresoai-serve:latest \
 #     --push \
-#     -f oci-fleet/Dockerfile .
+#     -f docker/Dockerfile .
 #
 # Or use the helper script (PowerShell): .\scripts\docker-build.ps1
 #
 # Single-platform (quick local test only — do NOT push this):
-#   docker build -t cafresoai-serve:latest -f oci-fleet/Dockerfile .
+#   docker build -t cafresoai-serve:latest -f docker/Dockerfile .
 #
 # Push to OCI Registry (OCIR):
 #   docker tag cafresoai-serve:latest iad.ocir.io/idwv6126novh/cafresoai-serve:latest
@@ -68,7 +68,7 @@ RUN npm config set prefix /usr/local \
 # image small + provisioning fast; Hermes is the always-present default runtime.
 
 # ── Python deps for serve.py OCI vault backend ───────────────────────────────
-COPY oci-fleet/requirements-serve.txt /tmp/requirements-serve.txt
+COPY docker/requirements-serve.txt /tmp/requirements-serve.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-serve.txt
 
 # ── Hermes Agent (Nous Research) — the DEFAULT agent runtime ─────────────────
@@ -112,8 +112,8 @@ COPY assets/                  ./assets/
 COPY --from=ui-build /ui/dist-ui ./dist-ui
 
 # ── Container entrypoint + Hermes bootstrap ──────────────────────────────────
-COPY oci-fleet/entrypoint.sh      ./entrypoint.sh
-COPY oci-fleet/hermes-bootstrap.py ./hermes-bootstrap.py
+COPY docker/entrypoint.sh      ./entrypoint.sh
+COPY docker/hermes-bootstrap.py ./hermes-bootstrap.py
 RUN chmod +x entrypoint.sh
 
 # ── Runtime data dirs (override with OCI Block Volume or Object Storage) ─────

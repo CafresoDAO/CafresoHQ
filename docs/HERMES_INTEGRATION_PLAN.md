@@ -1,5 +1,7 @@
 # Hermes Agent Integration Plan — CafresoHQ Revamp
 
+> **Note (2026-08):** fleet provisioning files referenced below (`fleet-manager.py`, `oci-fleet/*`) now live in the separate **cafreso-fleet** repo; the container image files live under `docker/` here.
+
 > Goal: make **Nous Research's Hermes Agent (v0.15.1, released 2026-05-29)** the
 > **default** agent runtime for CafresoHQ (codename *CafresoHQ*), while keeping
 > Claude Code, Gemini CLI, CafresoHQ, and Codex CLI as user-selectable providers.
@@ -123,9 +125,9 @@ themed transcript/terminal renderer, surfaced in the new **Hermes Console** view
 container, one init), rather than a separate s6-overlay sidecar — simpler on 1 vCPU/6GB
 and avoids two PID-1 init systems fighting.
 
-- `oci-fleet/Dockerfile`: add Hermes install (`uv`-based, Python 3.11 already present;
+- `docker/Dockerfile`: add Hermes install (`uv`-based, Python 3.11 already present;
   Node 22 for browser tooling if used). Keep `serve.py` as the front door on 8787.
-- `oci-fleet/entrypoint.sh`: start **one** `hermes gateway` (backgrounded/supervised)
+- `docker/entrypoint.sh`: start **one** `hermes gateway` (backgrounded/supervised)
   **and** `serve.py`. Ensure single-gateway invariant (no systemd unit, no stale lock).
 - **Volume:** mount a per-principal volume at the container user's `~/.hermes` — this is
   the entire persistence boundary (`config.yaml`, `memories/`, `cron/`, `.env`). Map
@@ -187,7 +189,7 @@ and avoids two PID-1 init systems fighting.
 
 ## 8. Migration / rollout plan (phased)
 
-**Phase 0 — Container plumbing.** Add Hermes to `oci-fleet/Dockerfile`; update
+**Phase 0 — Container plumbing.** Add Hermes to `docker/Dockerfile`; update
 `entrypoint.sh` (one gateway + serve.py, single-gateway invariant); per-principal
 `~/.hermes` volume + UID/GID; `fleet-manager.py` seeds `.env` + `config.yaml`.
 
@@ -214,8 +216,8 @@ the old default path once Hermes is stable.
 ### File touch-list
 | File | Change |
 |---|---|
-| `oci-fleet/Dockerfile` | Install Hermes into the serve image |
-| `oci-fleet/entrypoint.sh` | Start one `hermes gateway` + `serve.py`; single-gateway invariant |
+| `docker/Dockerfile` | Install Hermes into the serve image |
+| `docker/entrypoint.sh` | Start one `hermes gateway` + `serve.py`; single-gateway invariant |
 | `oci-fleet/fleet-manager.py` | Seed per-principal `~/.hermes/.env` + `config.yaml`; inject `API_SERVER_KEY` |
 | `serve.py` | `/hermes/v1/*` proxy (Bearer inject, SSE passthrough, `usage`/`tool.progress` parse), `/hermes/health` |
 | `claude-client.jsx` | Register `hermes` provider as default; keep others selectable; map tool-progress events |

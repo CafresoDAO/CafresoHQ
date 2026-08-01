@@ -210,7 +210,7 @@ auto-pause, graph-view worker. (Tracked in §5 roadmap.)
 ## 4. Security must-fixes (gate to public launch)
 
 These are pulled forward because the app is currently open. Detail in
-`docs/CONTAINER_AUTH_DESIGN.md`.
+`CONTAINER_AUTH_DESIGN.md` (cafreso-fleet repo).
 
 1. **Container auth** — JWT minted at II login, `HttpOnly` cookie, Caddy
    `forward_auth` verifier; slug stops being a credential.

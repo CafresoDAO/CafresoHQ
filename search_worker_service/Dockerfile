@@ -1,6 +1,6 @@
 # CafresoHQ search-network worker — standalone, minimal image.
 #
-# Deliberately NOT oci-fleet/Dockerfile: no Node, no build-essential, no
+# Deliberately NOT docker/Dockerfile: no Node, no build-essential, no
 # ripgrep, no hermes-agent, no UI build stage. This service is worker.py and
 # nothing else — see worker.py's module docstring for why.
 FROM python:3.11-slim-bookworm

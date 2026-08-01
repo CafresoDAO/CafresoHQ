@@ -32,7 +32,7 @@
 │  CADDY GATEWAY  (OCI VM · hq.cafreso.com · TLS/Let's Encrypt)                  │
 │    /u/<slug>/*  → reverse_proxy  container:8787   (per-user routes)            │
 │    /fleet/*     → fleet-api.py :8080  (provision/lookup)                       │
-│    ⚠ no per-request auth yet  (see CONTAINER_AUTH_DESIGN.md — beta gap)         │
+│    ⚠ no per-request auth yet  (see CONTAINER_AUTH_DESIGN.md in cafreso-fleet — beta gap)         │
 └──────────────────────────────────┬────────────────────────────────────────────┘
                                     │  HTTP  (also reachable via container public IP — beta)
                                     ▼

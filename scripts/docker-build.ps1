@@ -48,7 +48,7 @@ Run-Cmd (@(
     "--platform",$PLATFORMS
 ) + $tagArgs + @(
     "--push",
-    "-f","oci-fleet/Dockerfile",
+    "-f","docker/Dockerfile",
     "."
 ))
 

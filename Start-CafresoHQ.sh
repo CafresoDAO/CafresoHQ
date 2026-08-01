@@ -1,6 +1,6 @@
 #!/bin/sh
 # ── CafresoHQ local launcher (unix / WSL) ───────────────────────────────────
-# Mirrors oci-fleet/entrypoint.sh for local development: seed Hermes, make sure
+# Mirrors docker/entrypoint.sh for local development: seed Hermes, make sure
 # the gateway (OpenAI-compatible API server) is up, then run serve.py in the
 # foreground. Because this runs on a unix host (WSL on Windows, or native
 # Linux/macOS), every agent CLI — hermes, claude, codex, gemini — is native and
@@ -34,7 +34,7 @@ if command -v hermes >/dev/null 2>&1; then
     echo "[start] hermes gateway already up on :${HERMES_API_PORT}"
   else
     echo "[start] hermes gateway not responding — starting it…"
-    [ -f oci-fleet/hermes-bootstrap.py ] && python3 oci-fleet/hermes-bootstrap.py || true
+    [ -f docker/hermes-bootstrap.py ] && python3 docker/hermes-bootstrap.py || true
     nohup hermes gateway run >"${HERMES_HOME}/gateway.log" 2>&1 &
     i=0
     while [ "$i" -lt 30 ]; do

@@ -3043,7 +3043,7 @@ def _oci_object_client():
                 except ImportError:
                     raise RuntimeError(
                         'OCI SDK not installed — run: pip install oci  '
-                        '(or pip install -r oci-fleet/requirements-serve.txt)')
+                        '(or pip install -r docker/requirements-serve.txt)')
     return _oci_client_obj
 
 def _oci_obj_key(rel: str) -> str:
@@ -5012,7 +5012,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         )
         # brain: advertises the managed default model when Cafreso provisioned
         # this HQ with a shared endpoint (LMSTUDIO_BASE_URL injected at fleet
-        # provision time — see oci-fleet/hermes-bootstrap.py branch 0). The UI's
+        # provision time — see docker/hermes-bootstrap.py branch 0). The UI's
         # probeManagedBrain() reads {model, provider} to suppress the "add a
         # key" nag for zero-config users. null when no managed brain is wired.
         _lm_base = os.environ.get('LMSTUDIO_BASE_URL', '').strip()
@@ -9699,7 +9699,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _hermes_model_block(provider, model, base_url=None):
         """Return the config.yaml model block (+ custom_providers) for a provider."""
         if provider in ('lmstudio', 'ollama'):
-            # Mirrors oci-fleet/hermes-bootstrap.py's lmstudio block exactly:
+            # Mirrors docker/hermes-bootstrap.py's lmstudio block exactly:
             # no key_env, no custom_providers. Both UI labels write `lmstudio`.
             return (f'model:\n  default: {model}\n  provider: lmstudio\n'
                     f'  base_url: {base_url}\n')

@@ -34,8 +34,8 @@ jobs:
       # but be explicit so a future .gitattributes change can't reintroduce CRLF.
       - name: Enforce LF on shell entrypoints
         run: |
-          file oci-fleet/*.sh || true
-          ! grep -rlIP '\r$' oci-fleet/*.sh oci-fleet/*.py 2>/dev/null || \
+          file docker/*.sh || true
+          ! grep -rlIP '\r$' docker/*.sh docker/*.py 2>/dev/null || \
             (echo "::error::CRLF detected in container entrypoints" && exit 1)
 
       - name: Set up QEMU (arm64 emulation)
@@ -65,7 +65,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: oci-fleet/Dockerfile
+          file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
