@@ -351,7 +351,28 @@ async function runMissionIteration(ctx) {
    lease goes stale (leader closed) and then take over within LEASE_TTL. */
 const MISSION_LEASE_KEY = 'cafresohq_mission_leader_v1';
 const MISSION_LEASE_TTL = 15000;
+/* The lease must be renewed on a timer, NOT only when an iteration is
+   scheduled or fired. A single iteration streams for a minute or more, which
+   is far longer than the TTL — so with only fire-time renewal the leader's
+   stamp goes stale mid-run, a follower tab decides the leader is gone, and
+   both tabs run the same mission. That is precisely the duplicate this lease
+   exists to prevent. Beat at a third of the TTL so two dropped beats still
+   don't trigger a spurious takeover. */
+const MISSION_LEASE_HEARTBEAT = 5000;
 const _missionTabId = 't' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+/* Refresh our stamp only if we still hold the lease. Never steals: if another
+   tab took over (we were suspended, throttled in a background tab, …) this is
+   a no-op and we stay a follower. */
+function _renewMissionLease() {
+  try {
+    const cur = JSON.parse(localStorage.getItem(MISSION_LEASE_KEY) || 'null');
+    if (cur && cur.tab === _missionTabId) {
+      localStorage.setItem(MISSION_LEASE_KEY, JSON.stringify({ tab: _missionTabId, ts: Date.now() }));
+      return true;
+    }
+    return false;
+  } catch (_e) { return false; }
+}
 function _haveMissionLease() {
   try {
     let cur = null;
@@ -381,6 +402,18 @@ function useMissionRunner(missions, setMissions, ctx) {
   useEMission(() => {
     const iv = setInterval(() => setLeaseTick(t => t + 1), MISSION_LEASE_TTL);
     return () => clearInterval(iv);
+  }, []);
+  /* Keep the leader's stamp fresh for the whole length of an iteration, and
+     release it on unload so a closed tab hands over immediately instead of
+     making the next tab wait out the TTL. */
+  useEMission(() => {
+    const hb = setInterval(_renewMissionLease, MISSION_LEASE_HEARTBEAT);
+    window.addEventListener('pagehide', _releaseMissionLease);
+    return () => {
+      clearInterval(hb);
+      window.removeEventListener('pagehide', _releaseMissionLease);
+      _releaseMissionLease();
+    };
   }, []);
 
   /* Inject setMissions into the ctx so runMissionIteration (and the runner's

@@ -184,7 +184,13 @@ function TweaksPanel({ title = 'Tweaks', children }) {
   }, [open, clampToViewport]);
 
   React.useEffect(() => {
+    // Only the framing host drives this panel. Without the source check any
+    // page that frames the app could pop the edit-mode UI open. The target
+    // origin below stays '*' on purpose: unlike the vault/chain bridges, the
+    // host here is a local dev harness on an unknown origin, and the payloads
+    // are tweak values rather than secrets.
     const onMsg = (e) => {
+      if (e.source !== window.parent) return;
       const t = e?.data?.type;
       if (t === '__activate_edit_mode') setOpen(true);
       else if (t === '__deactivate_edit_mode') setOpen(false);

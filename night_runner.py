@@ -24,6 +24,7 @@ applies unchanged.
 import collections
 import json
 import os
+import random
 import re
 import ssl
 import time
@@ -230,6 +231,49 @@ def read_provider_config(hermes_home):
     return b.raw_provider, b.model, b.key
 
 
+_LLM_RETRY_MAX = 3            # total attempts
+_LLM_RETRY_BASE_S = 1.5
+_LLM_RETRY_CAP_S = 20.0
+
+
+def _llm_post_with_retry(req, timeout=180):
+    """POST a chat completion, retrying transient upstream failures.
+
+    The night shift runs unattended for hours against free provider tiers, so a
+    single 429 used to end an iteration and three in a row ended the run. Only
+    429 and 5xx retry: a 401 (bad key) or 400 (bad request) fails identically
+    on a second attempt. Mirrors fetchStreamHead's policy in claude-client.jsx —
+    keep the two in step.
+    """
+    last_err = None
+    for attempt in range(_LLM_RETRY_MAX):
+        wait = None
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode('utf-8', 'replace'))
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if not (e.code == 429 or 500 <= e.code <= 599):
+                raise
+            retry_after = e.headers.get('Retry-After') if e.headers else None
+            if retry_after:
+                try:
+                    wait = min(float(retry_after), 30.0)
+                except (TypeError, ValueError):
+                    wait = None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_err = e
+        if attempt == _LLM_RETRY_MAX - 1:
+            break
+        if wait is None:
+            exp = min(_LLM_RETRY_BASE_S * (2 ** attempt), _LLM_RETRY_CAP_S)
+            wait = exp / 2 + random.random() * (exp / 2)
+        print('[night] %s — retrying in %.1fs (%d/%d)'
+              % (str(last_err)[:120], wait, attempt + 2, _LLM_RETRY_MAX), flush=True)
+        time.sleep(wait)
+    raise last_err if last_err else RuntimeError('llm_call failed after retries')
+
+
 def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
     """Non-streaming OpenAI-compatible chat completion. Returns (text, tokens)."""
     provider, model, key = read_provider_config(ctx.hermes_home)
@@ -246,8 +290,7 @@ def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + key,
     })
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read().decode('utf-8', 'replace'))
+    data = _llm_post_with_retry(req)
     text = ''
     try:
         text = data['choices'][0]['message']['content'] or ''

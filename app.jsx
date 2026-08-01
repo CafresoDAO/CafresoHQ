@@ -107,6 +107,13 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   });
 
   const writeRef = useRefA(null);
+  // Set as soon as anything in this session mutates the value. The mount fetch
+  // below resolves ~100-300ms after first render, so without this flag it
+  // overwrites whatever the user typed (or an agent wrote) in that window, and
+  // the debounced PUT then pushes the server's stale copy back — losing the
+  // edit in both places. Local changes win; the server copy is only adopted
+  // when the session hasn't touched it yet.
+  const dirtyRef = useRefA(false);
 
   const persist = React.useCallback((v) => {
     try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (err) {
@@ -133,6 +140,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data == null) return;
+        if (dirtyRef.current) return;   // the user got there first — keep theirs
         const merged = transform ? transform(data) : data;
         setVal(merged);
         try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
@@ -141,6 +149,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   }, []);  // intentionally runs once on mount
 
   const setter = React.useCallback((updater) => {
+    dirtyRef.current = true;
     setVal(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       persist(next);

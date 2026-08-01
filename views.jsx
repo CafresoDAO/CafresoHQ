@@ -663,6 +663,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!_bridge) return;
     const handler = (e) => {
       if (e.source !== window.parent) return;
+      // Same origin pin as the bridges in claude-client.jsx — otherwise any
+      // framing page could inject a fake vault file list into this view.
+      if (e.origin !== window.__hqShellOrigin) return;
       if (e.data?.type === 'vault:files:update') {
         setFiles(_adaptBridgeFiles(e.data.files || []));
         if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });

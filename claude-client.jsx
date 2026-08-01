@@ -53,6 +53,55 @@
 })();
 const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
 
+// ── Shell origin (postMessage target for VaultBridge / CafresoHQChain) ───────
+// The HQ app runs iframed inside the SvelteKit shell, which holds the Internet
+// Identity delegation and the vetKeys master key. Vault plaintext and wallet
+// operations cross that boundary, so the bridges must name the shell's exact
+// origin instead of posting to '*' and must verify e.origin on the way back —
+// otherwise any page that can frame this app reads decrypted vault content and
+// can spoof chain/wallet replies. (CSP frame-ancestors limits *who* can frame
+// us; it does nothing about where an outbound '*' message is delivered.)
+//
+// Resolution order, each validated against the same allowlist as ?api= above:
+//   1. ?shell=<origin>, when the shell injects it explicitly.
+//   2. location.ancestorOrigins[0] — purpose-built for this, Chromium/WebKit.
+//   3. document.referrer — the framing page, unless Referrer-Policy strips it.
+// If none resolves we return null and the bridges refuse to send. Failing
+// closed is correct here: the fallback is the local API path, whereas a
+// wildcard post leaks the vault.
+window.__hqShellOrigin = (function () {
+  function trusted(origin) {
+    try {
+      var u = new URL(origin);
+      var host = u.hostname.toLowerCase();
+      return (u.protocol === 'https:' &&
+                (host === 'cafreso.com' || host.endsWith('.cafreso.com'))) ||
+             host === 'localhost' || host === '127.0.0.1' ||
+             u.origin === window.location.origin;
+    } catch (_e) { return false; }
+  }
+  var candidates = [];
+  try {
+    var qp = new URLSearchParams(window.location.search).get('shell');
+    if (qp) candidates.push(new URL(qp).origin);
+  } catch (_e) {}
+  try {
+    var anc = window.location.ancestorOrigins;
+    if (anc && anc.length) candidates.push(anc[0]);
+  } catch (_e) {}
+  try {
+    if (document.referrer) candidates.push(new URL(document.referrer).origin);
+  } catch (_e) {}
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i] && trusted(candidates[i])) return candidates[i];
+  }
+  if (candidates.length) {
+    try { console.warn('[hq] untrusted framing origin, bridges disabled:', candidates[0]); } catch (_e) {}
+  }
+  return null;
+})();
+const _SHELL_ORIGIN = window.__hqShellOrigin;
+
 // ── Credentialed fetch for cross-origin (canister UI → container API) ─────────
 // When the UI is on a different origin than the API, the browser won't send the
 // hq_session cookie unless the request opts in with credentials:'include'. We
@@ -105,8 +154,8 @@ const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
     _expiredFired = true;
     try { window.dispatchEvent(new CustomEvent('hq:session-expired')); } catch (_e) {}
     try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'hq:session-expired' }, '*');
+      if (window.parent && window.parent !== window && window.__hqShellOrigin) {
+        window.parent.postMessage({ type: 'hq:session-expired' }, window.__hqShellOrigin);
       }
     } catch (_e) {}
     return resp;
@@ -366,22 +415,81 @@ async function parseSSE(res, onLine) {
    which meant a gateway that accepted the socket but never answered left the
    chat spinner up forever. This aborts if headers don't arrive in `headMs`,
    then hands the (still user-abortable) body back unbounded. */
+/* Transient-failure policy for every LLM stream (all providers funnel through
+   fetchStreamHead). Without this a single 429 — routine on the free tiers this
+   ships with — kills a mission iteration, and three in a row auto-pause the
+   whole mission. Retrying is safe here specifically because this helper returns
+   the response BEFORE any of the body is read, so no tokens have reached the
+   caller and nothing is delivered twice. */
+const _STREAM_RETRY_MAX = 3;          // total attempts, not extra ones
+const _STREAM_RETRY_BASE_MS = 700;
+const _STREAM_RETRY_CAP_MS = 8000;
+
+function _retryableStatus(status) {
+  // 429 = rate limited; 5xx = upstream trouble. Everything else (401 bad key,
+  // 400 bad request) will fail identically on retry, so fail fast instead.
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+function _retryDelayMs(attempt, res) {
+  // Honour Retry-After when the server sends one — it knows better than we do.
+  if (res) {
+    const ra = res.headers && res.headers.get && res.headers.get('retry-after');
+    if (ra) {
+      const secs = Number(ra);
+      if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 30000);
+      const when = Date.parse(ra);
+      if (!Number.isNaN(when)) return Math.max(0, Math.min(when - Date.now(), 30000));
+    }
+  }
+  const exp = Math.min(_STREAM_RETRY_BASE_MS * Math.pow(2, attempt), _STREAM_RETRY_CAP_MS);
+  return exp / 2 + Math.random() * (exp / 2);   // full-ish jitter, avoids lockstep retries
+}
+
 async function fetchStreamHead(url, init = {}, headMs = 20000) {
   if (typeof AbortController === 'undefined') return fetch(url, init);
-  const ctl = new AbortController();
   const outer = init.signal;
-  const propagate = () => { try { ctl.abort(outer.reason); } catch (_e) { try { ctl.abort(); } catch (_e2) {} } };
-  if (outer) {
-    if (outer.aborted) propagate();
-    else outer.addEventListener('abort', propagate, { once: true });
+
+  const attemptOnce = async () => {
+    const ctl = new AbortController();
+    const propagate = () => { try { ctl.abort(outer.reason); } catch (_e) { try { ctl.abort(); } catch (_e2) {} } };
+    if (outer) {
+      if (outer.aborted) propagate();
+      else outer.addEventListener('abort', propagate, { once: true });
+    }
+    const t = setTimeout(() => {
+      try { ctl.abort(new DOMException(`backend did not start responding within ${Math.round(headMs / 1000)}s`, 'TimeoutError')); }
+      catch (_e) { try { ctl.abort(); } catch (_e2) {} }
+    }, headMs);
+    try {
+      return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
+    } finally {
+      clearTimeout(t);
+      if (outer) { try { outer.removeEventListener('abort', propagate); } catch (_e) {} }
+    }
+  };
+
+  let lastErr = null;
+  for (let attempt = 0; attempt < _STREAM_RETRY_MAX; attempt++) {
+    if (outer && outer.aborted) break;          // user cancelled — stop trying
+    let res = null;
+    try {
+      res = await attemptOnce();
+    } catch (err) {
+      // A user/timeout abort is deliberate; only genuine network faults retry.
+      if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) throw err;
+      lastErr = err;
+    }
+    if (res && !_retryableStatus(res.status)) return res;      // success or hard failure
+    const last = attempt === _STREAM_RETRY_MAX - 1;
+    if (res && last) return res;                               // let the caller report it
+    const wait = _retryDelayMs(attempt, res);
+    if (res) { try { await res.text(); } catch (_e) {} }        // drain so the socket is reusable
+    if (last) break;
+    try { console.warn(`[hq] ${res ? 'HTTP ' + res.status : 'network error'} — retrying in ${Math.round(wait)}ms (${attempt + 2}/${_STREAM_RETRY_MAX})`); } catch (_e) {}
+    await new Promise(r => setTimeout(r, wait));
   }
-  const t = setTimeout(() => {
-    try { ctl.abort(new DOMException(`backend did not start responding within ${Math.round(headMs / 1000)}s`, 'TimeoutError')); }
-    catch (_e) { try { ctl.abort(); } catch (_e2) {} }
-  }, headMs);
-  try {
-    return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
-  } finally { clearTimeout(t); }
+  throw lastErr || new Error('request failed after retries');
 }
 
 async function streamAnthropic({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
@@ -2062,18 +2170,22 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
 
   function _req(type, data) {
     return new Promise((resolve, reject) => {
+      // Vault payloads are PLAINTEXT (that is the point of the bridge — the
+      // shell decrypts). Never broadcast them to a wildcard target.
+      if (!_SHELL_ORIGIN) { reject(new Error('vault bridge: shell origin unknown')); return; }
       const reqId = Math.random().toString(36).slice(2, 10);
       const timer = setTimeout(() => {
         _pending.delete(reqId);
         reject(new Error('VaultBridge timeout: ' + type));
       }, 20000);
       _pending.set(reqId, { resolve, reject, timer });
-      window.parent.postMessage({ type, reqId, ...data }, '*');
+      window.parent.postMessage({ type, reqId, ...data }, _SHELL_ORIGIN);
     });
   }
 
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent) return;
+    if (e.origin !== _SHELL_ORIGIN) return;
     const { type, reqId } = e.data || {};
     if (!reqId || !_pending.has(reqId)) return;
     const { resolve, reject, timer } = _pending.get(reqId);
@@ -2089,9 +2201,11 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   });
 
   window.VaultBridge = {
-    /** True when running inside the SvelteKit shell iframe. */
+    /** True when framed by a TRUSTED shell — not merely "am I in an iframe".
+        A hostile framer makes window.parent !== window just as well, so the
+        resolved shell origin is the real precondition. */
     isAvailable() {
-      try { return window.parent !== window; } catch { return false; }
+      try { return window.parent !== window && !!_SHELL_ORIGIN; } catch { return false; }
     },
     /** Returns the decrypted file index: [{id, name, size, mimeType, isBinary, updatedAt}] */
     list() { return _req('vault:list', {}).then(r => r.files || []); },
@@ -2117,14 +2231,19 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   function _req(type, data, timeoutMs) {
     return new Promise((resolve, reject) => {
       if (window.parent === window) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
+      // These messages request signatures over real value (ICRC transfers,
+      // payroll, spend policy). A wildcard target would hand a hostile framer
+      // both the request stream and the ability to forge replies.
+      if (!_SHELL_ORIGIN) { reject(new Error('ICP Services: shell origin unknown')); return; }
       const reqId = 'c_' + Math.random().toString(36).slice(2, 10);
       const timer = setTimeout(() => { _pending.delete(reqId); reject(new Error('CafresoHQChain timeout: ' + type)); }, timeoutMs || 30000);
       _pending.set(reqId, { resolve, reject, timer });
-      window.parent.postMessage({ type, reqId, ...data }, '*');
+      window.parent.postMessage({ type, reqId, ...data }, _SHELL_ORIGIN);
     });
   }
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent) return;
+    if (e.origin !== _SHELL_ORIGIN) return;
     const { type, reqId } = e.data || {};
     if (!reqId || !_pending.has(reqId)) return;
     const { resolve, reject, timer } = _pending.get(reqId);
@@ -2135,8 +2254,9 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   });
 
   window.CafresoHQChain = {
-    /** True when running inside the SvelteKit shell (on-chain ops available). */
-    isAvailable() { try { return window.parent !== window; } catch { return false; } },
+    /** True when framed by a TRUSTED shell (on-chain ops available). Being in
+        *an* iframe is not enough — see VaultBridge.isAvailable. */
+    isAvailable() { try { return window.parent !== window && !!_SHELL_ORIGIN; } catch { return false; } },
     services: {
       list() { return _req('chain:services:list', {}).then(r => r.services || []); },
       set(serviceId, enabled, configJson) { return _req('chain:services:set', { serviceId, enabled, configJson }); },

@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # simulate 75s-blocking gateways and 90s stalls, so they need real wall clock.
 SUITES: list[tuple[str, int, bool]] = [
     ('scripts/test_security_boundaries.py',          60,  False),
+    ('scripts/test_durability_retry.py',             60,  False),
     ('scripts/test_night_grammar.py',                60,  False),
     ('scripts/test_backend_resolve.py',              60,  False),
     ('scripts/test_brave_ledger.py',                 60,  False),

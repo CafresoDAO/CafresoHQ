@@ -339,7 +339,9 @@ def _night_save(name, data):
     tmp = _night_path(name + '.tmp')
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f)
-    os.replace(tmp, _night_path(name))
+        f.flush()
+        os.fsync(f.fileno())   # os.replace is atomic, but only w.r.t. data
+    os.replace(tmp, _night_path(name))          # already on disk
 
 
 # ── Shared "trial brain" metering ──────────────────────────────────────────
@@ -8792,7 +8794,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 body = self.rfile.read(length)
                 # Validate it's JSON
                 json.loads(body.decode('utf-8'))
-                filepath.write_bytes(body)
+                # Write atomically. A bare write_bytes truncates the file first,
+                # so a crash, container kill or full disk mid-write leaves
+                # invalid JSON on disk; the next GET then fails the client's
+                # shape check and the whole collection silently resets to seed
+                # data. tmp + fsync + os.replace makes the swap all-or-nothing,
+                # matching _night_save above.
+                tmp = filepath.with_suffix('.json.tmp')
+                with open(tmp, 'wb') as fh:
+                    fh.write(body)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, filepath)
                 # For agent roster, also write a human-readable markdown summary
                 if scope == 'memory' and name == 'agents':
                     self._write_agents_md(base, json.loads(body.decode('utf-8')))
