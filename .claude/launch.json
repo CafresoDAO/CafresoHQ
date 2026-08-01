@@ -2,6 +2,19 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "cafresohq",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["serve.py"],
+      "port": 8799,
+      "url": "http://localhost:8799",
+      "env": {
+        "PORT": "8799",
+        "GAP_CRON": "0",
+        "NEWS_CRON": "0",
+        "TOPICS_CRON": "0"
+      }
+    },
+    {
       "name": "hq-ui-static",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
@@ -12,20 +25,6 @@
         "hq-ui"
       ],
       "port": 8934
-    },
-    {
-      "name": "frontend-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "--prefix",
-        "frontend",
-        "run",
-        "dev",
-        "--",
-        "--port",
-        "5199"
-      ],
-      "port": 5199
     }
   ]
 }

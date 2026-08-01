@@ -104,6 +104,11 @@ _extra_app_origins = {o.strip() for o in
                       os.environ.get('CAFRESOHQ_ALLOWED_WS_ORIGINS', '').split(',')
                       if o.strip()}
 
+# Hostnames a client-supplied Host header may name and still be treated as
+# same-origin (see _app_origins). Loopback literals only: a DNS-rebinding attack
+# always arrives carrying the attacker's own hostname, never one of these.
+_LOOPBACK_HOSTS = {'localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'}
+
 # API contract version between the (canister-served) UI and this backend. Bump
 # only on a BREAKING change to an endpoint the UI depends on; the UI reads it
 # from /health and degrades gracefully rather than hard-failing across a
@@ -175,15 +180,19 @@ def _within_allowed_dirs(p):
     return False
 _cafresohq_allowed_tools = [t.strip() for t in
                            os.environ.get('CAFRESOHQ_ALLOWED_TOOLS',
-                               # Default expanded set — gives elevated agents
-                               # a real workshop instead of read-only browsing.
-                               # Bash + Edit + Write enable code edits; Glob +
-                               # Grep cover discovery; WebFetch + WebSearch
-                               # cover external research; the ROOT TodoWrite
-                               # / Notebook* tools are deliberately excluded
+                               # Default set — discovery, reading and editing,
+                               # plus external research. The ROOT TodoWrite /
+                               # Notebook* tools are deliberately excluded
                                # because they're meta-tools that confuse the
                                # sub-agent's own task list.
-                               'Read,Glob,Grep,Bash,Edit,Write,WebFetch,WebSearch'
+                               #
+                               # Bash is NOT in the default set: /tools/exec runs
+                               # it through a shell, so enabling it by default
+                               # makes every unconfigured deployment one request
+                               # away from arbitrary command execution. Opt in
+                               # explicitly with CAFRESOHQ_ALLOWED_TOOLS when the
+                               # deployment is authenticated and trusted.
+                               'Read,Glob,Grep,Edit,Write,WebFetch,WebSearch'
                            ).split(',')
                            if t.strip()]
 
@@ -4540,17 +4549,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None, None
 
     def _api_key_ok(self):
-        """Bearer-key gate (see CAFRESOHQ_API_KEY). No key configured → open.
-        Otherwise a request to a protected prefix must present the key via the
-        X-API-Key header or a ?k= query param (for WebSocket handshakes). Public
-        paths (static UI, /health, /idle) are exempt."""
-        if not CAFRESOHQ_API_KEY:
-            return True
+        """Bearer-key gate (see CAFRESOHQ_API_KEY). A request to a protected
+        prefix must present the key via the X-API-Key header or a ?k= query param
+        (for WebSocket handshakes). Public paths (static UI, /health, /idle) are
+        exempt.
+
+        With no key configured the protected prefixes are restricted to LOOPBACK
+        callers rather than opened to everyone. These routes are RCE- and
+        write-equivalent (/tools/exec runs a shell, /terminal spawns a PTY), so
+        an unset key must not mean "anyone on the network may run commands" — the
+        common case of binding 0.0.0.0 on a shared or café LAN would otherwise
+        hand the host to any peer. Loopback stays open so local development needs
+        no configuration."""
         path = self.path.split('?', 1)[0]
         if not path.startswith(_KEY_PROTECTED_PREFIXES):
             return True
+        if not CAFRESOHQ_API_KEY:
+            try:
+                peer = (self.client_address[0] or '').strip()
+            except Exception:
+                return False
+            return peer in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
         supplied = self.headers.get('X-API-Key', '') or ''
-        if not supplied:
+        if not supplied and 'websocket' in (
+                self.headers.get('Upgrade', '') or '').lower():
+            # Only a WebSocket handshake may pass the key in the query string —
+            # the browser API can't set headers there. Everywhere else a ?k= is
+            # refused, because query strings leak into access logs, proxy logs
+            # and the Referer of any resource the page loads.
             try:
                 supplied = urllib.parse.parse_qs(
                     urllib.parse.urlparse(self.path).query).get('k', [''])[0]
@@ -4558,6 +4584,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 supplied = ''
         import hmac as _hmac
         return bool(supplied) and _hmac.compare_digest(str(supplied), CAFRESOHQ_API_KEY)
+
+    def _site_sandbox_ok(self):
+        """True when the keyless /fs/site preview may use the relaxed local-mode
+        path rules: the caller is on loopback, so no remote party can reach it."""
+        try:
+            peer = (self.client_address[0] or '').strip()
+        except Exception:
+            return False
+        return peer in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
 
     def do_GET(self):
         if not self._api_key_ok():
@@ -5221,15 +5256,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     'content': f"\n\n⚠ Claude Code exited {proc.returncode}: {err_text}"}}]})
 
     # ---- Tool execution proxy (bracket-format tools for any provider) ------
-    def _validate_path(self, path):
+    def _validate_path(self, path, strict=False):
         """Resolve path and verify it falls within CAFRESOHQ_ALLOWED_DIRS.
         In local mode with no explicit CAFRESOHQ_ALLOWED_DIRS env var the check
         is skipped — the user is developing locally and can access their own files.
         In container mode or when the admin explicitly set CAFRESOHQ_ALLOWED_DIRS
         the strict whitelist is enforced.
+
+        strict=True refuses that local-mode skip for callers that are reachable
+        WITHOUT the API key (currently /fs/site, which the preview iframe fetches
+        keyless). For those the skip would be an unauthenticated arbitrary-read
+        hole, so an explicit sandbox is required — see _site_sandbox_ok.
         """
         p = pathlib.Path(_client_path(path)).resolve()
-        if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
+        if not strict and not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
             return p  # local default: no restriction, user accesses own files
         for d in _cafresohq_allowed_dirs:
             try:
@@ -6915,11 +6955,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         src=assets/x.png>) resolve — the preview pane points an iframe at
         index.html here and the browser fetches every sibling/sub-asset back
         through the same /fs/site/<b64root>/ prefix. <b64root> is urlsafe
-        base64 of the absolute site root; <relpath> is resolved under it. Both
-        the root and the final file are re-checked against CAFRESOHQ_ALLOWED_DIRS
-        via _validate_path, so it can't escape the sandbox. Read-only, embeddable
-        (no X-Frame-Options), 50 MiB/file cap. An empty relpath or a directory
-        falls back to index.html.
+        base64 of the absolute site root; <relpath> is resolved under it.
+
+        This route is NOT behind CAFRESOHQ_API_KEY, so its own boundary is the
+        only one: off-loopback callers get strict _validate_path, which requires
+        an explicit CAFRESOHQ_ALLOWED_DIRS sandbox and refuses the local-mode
+        skip. Loopback callers keep the relaxed local rules so previewing a site
+        outside the sandbox still works while developing.
+
+        Read-only, embeddable (no X-Frame-Options), 50 MiB/file cap. An empty
+        relpath or a directory falls back to index.html.
         """
         import base64, mimetypes
         rest = self.path[len('/fs/site/'):]
@@ -6930,6 +6975,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             b64root, relpath = rest, ''
         if not b64root:
             return self._send_json(400, {'error': 'site root required'})
+        # This route is deliberately NOT behind CAFRESOHQ_API_KEY (the preview
+        # iframe fetches assets keyless), so it must carry its own boundary:
+        # an explicit allowed-dirs sandbox, or a loopback caller.
+        _strict = not self._site_sandbox_ok()
+        if _strict and not _cafresohq_allowed_dirs:
+            return self._send_json(403, {'error':
+                'site preview requires CAFRESOHQ_ALLOWED_DIRS when served off-loopback'})
         try:
             pad = '=' * (-len(b64root) % 4)
             root = base64.urlsafe_b64decode(b64root + pad).decode('utf-8')
@@ -6939,20 +6991,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not rel:
             rel = 'index.html'
         try:
-            root_p = self._validate_path(root)
+            root_p = self._validate_path(root, strict=_strict)
         except PermissionError as e:
             return self._send_json(403, {'error': str(e)})
         except Exception as e:
             return self._send_json(400, {'error': f'invalid root: {e}'})
         try:
-            target = self._validate_path(str(root_p / rel))
+            target = self._validate_path(str(root_p / rel), strict=_strict)
         except PermissionError as e:
             return self._send_json(403, {'error': str(e)})
         except Exception as e:
             return self._send_json(400, {'error': f'invalid path: {e}'})
         if target.is_dir():
             try:
-                target = self._validate_path(str(target / 'index.html'))
+                target = self._validate_path(str(target / 'index.html'), strict=_strict)
             except Exception:
                 return self._send_json(404, {'error': 'no index.html in directory'})
         if not target.is_file():
@@ -7233,11 +7285,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _app_origins(self):
         """Browser origins permitted to open the terminal WebSocket and fetch the
-        PTY nonce: same-origin, the production gateway, localhost dev, plus any
-        canister origins configured via CAFRESOHQ_ALLOWED_WS_ORIGINS (cross-origin
-        frontend/backend split)."""
-        host   = self.headers.get('Host', '').strip()
-        scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+        PTY nonce: the production gateway, localhost dev, plus any canister
+        origins configured via CAFRESOHQ_ALLOWED_WS_ORIGINS (cross-origin
+        frontend/backend split).
+
+        The Host header is client-supplied and is NOT trusted to name an allowed
+        origin. Echoing it back would defeat this allowlist via DNS rebinding: an
+        attacker-controlled name resolving to 127.0.0.1 arrives with
+        Host: evil.example.com, which would then authorise itself for the PTY
+        nonce and the terminal WebSocket — i.e. RCE from a visited web page.
+        Host is only honoured when it names a loopback literal (which no rebinding
+        attack can forge, since the browser sends the attacker's own hostname) or
+        a host explicitly configured via CAFRESOHQ_ALLOWED_WS_ORIGINS."""
         origins = {
             'https://hq.cafreso.com',        # production Caddy gateway
             'https://hq-ui.cafreso.com',     # canister UI shell (cross-origin split)
@@ -7246,9 +7305,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'http://127.0.0.1:8787',         # local dev (alt)
             'http://localhost:5173',         # vite dev server
             'http://localhost:5174',         # vite dev server (alt)
-            f'{scheme}://{host}',            # same-origin (any host the client used)
-        }
-        return origins | _extra_app_origins
+        } | _extra_app_origins
+        host = self.headers.get('Host', '').strip()
+        if host:
+            scheme   = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+            hostname = host.rsplit(':', 1)[0] if not host.startswith('[') \
+                       else host.split(']', 1)[0] + ']'
+            if hostname.lower() in _LOOPBACK_HOSTS or f'{scheme}://{host}' in origins:
+                origins.add(f'{scheme}://{host}')
+        return origins
 
     def _terminal_nonce(self):
         """GET /terminal/nonce → {"nonce": "<hex>"}
@@ -10357,7 +10422,8 @@ if __name__ == '__main__':
     if _is_local_run and _bind_host not in ('127.0.0.1', 'localhost') \
             and not CAFRESOHQ_API_KEY:
         print('  ⚠  bound to a non-loopback interface with NO CAFRESOHQ_API_KEY — '
-              'the terminal PTY is exposed. Set CAFRESOHQ_API_KEY to lock it down.')
+              'the terminal, agent, vault and /tools routes are refused for '
+              'non-loopback callers. Set CAFRESOHQ_API_KEY to use them from the LAN.')
     with ThreadedServer((_bind_host, PORT), Handler) as httpd:
         if _tls_on:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

@@ -4743,21 +4743,14 @@ body.night .focus-overlay { background: linear-gradient(180deg, #2a2340 0%, #1e1
 /* ==============================
    New: Day/Night mode
    ============================== */
+/* Night tokens that the canonical palette does NOT set.
+   The core night palette (--bg/--paper/--ink/--rule/--carpet/--wood/--tile and
+   the page background-image) lives in the "body.night" block further down, and
+   that one wins on cascade order. This block used to redeclare all of them in a
+   purple scheme; the navy scheme below silently overrode every one, so editing
+   the colours here changed nothing. Only the tokens below are actually live —
+   keep it that way, and change palette colours in the canonical block. */
 body.night {
-  --bg:       #2e2840;
-  --bg-2:     #3a334f;
-  --paper:    #3f3752;
-  --paper-2:  #4a416a;
-  --ink:      #f3e8ff;
-  --ink-2:    #d0c4e4;
-  --ink-3:    #a898be;
-  --rule:     #5a4d72;
-  --rule-2:   #6b5c85;
-  --carpet:   #3e5a5e;
-  --tile:     #473e5e;
-  --wood:     #6a4f38;
-  --wood-dk:  #4a3624;
-
   /* Vault-graph tag colors — slightly more vivid against the dark paper. */
   --tag-project: #7DD3D3;
   --tag-person:  #D4C2F5;
@@ -4772,10 +4765,6 @@ body.night {
   --shadow-2: 0 4px 12px rgba(0,0,0,0.55);
   --shadow-3: 0 8px 22px rgba(0,0,0,0.60);
   --shadow-4: 0 12px 36px rgba(0,0,0,0.65);
-
-  background-image:
-    radial-gradient(circle at 20% 80%, rgba(201,184,224,0.18), transparent 40%),
-    radial-gradient(circle at 80% 10%, rgba(240,198,116,0.08), transparent 50%);
 }
 body.night {
   --office-wall-top:    #3a3250;

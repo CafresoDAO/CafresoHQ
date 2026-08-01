@@ -45,30 +45,35 @@ def main():
     def et(ms):
         return datetime.datetime.fromtimestamp(ms / 1000.0, ET)
 
-    print('=== the schedule always lands on 10:00 ET ===')
-    nxt = et(serve._gap_next_run_ms(at(2026, 7, 15, 9, 0)))
-    check('9am → same-day 10am', nxt.hour == 10 and nxt.day == 15)
-    nxt = et(serve._gap_next_run_ms(at(2026, 7, 15, 10, 30)))
-    check('after 10am → next day 10am', nxt.hour == 10 and nxt.day == 16)
-    nxt = et(serve._gap_next_run_ms(at(2026, 7, 15, 10, 0)))
-    check('exactly 10:00 → next day (never double-fires)', nxt.day == 16)
-    nxt = et(serve._gap_next_run_ms(at(2026, 12, 31, 23, 0)))
-    check('crosses a year boundary', nxt.year == 2027 and nxt.month == 1 and nxt.hour == 10)
+    # The scheduler used to fire once a day at a fixed ET hour, which is why the
+    # checks below used to be about 10:00 local and DST drift. It is now an
+    # interval tick (_hourly_next_run_ms), deliberately timezone-invariant —
+    # "on the hour" needs a clock, not a calendar, which removes the DST trap
+    # rather than compensating for it. GAP_TZ survives for display/logging only.
+    # These checks assert the interval contract.
+    INT_MS = serve.GAP_INTERVAL_MIN * 60_000
 
-    print('=== DST — what the +86_400_000 roll gets wrong ===')
-    # US DST 2026: starts Sun Mar 8, ends Sun Nov 1.
-    before = serve._gap_next_run_ms(at(2026, 3, 7, 11, 0))    # → Mar 8, EDT begins
-    check('spring forward: still 10:00 local', et(before).hour == 10)
-    check('spring forward: the UTC instant SHIFTS (a fixed +24h roll would not)',
-          (before - at(2026, 3, 7, 10, 0)) != 86_400_000)
-    after = serve._gap_next_run_ms(at(2026, 10, 31, 11, 0))   # → Nov 1, EST returns
-    check('fall back: still 10:00 local', et(after).hour == 10)
-    check('fall back: the UTC instant shifts the other way',
-          (after - at(2026, 10, 31, 10, 0)) != 86_400_000)
-    # A whole ordinary day IS 24h — proves the above isn't just always-true.
-    mid = serve._gap_next_run_ms(at(2026, 7, 15, 11, 0))
-    check('an ordinary day is exactly 24h apart',
-          (mid - at(2026, 7, 15, 10, 0)) == 86_400_000)
+    print('=== the schedule is a strictly-future, interval-aligned tick ===')
+    for label, base in (('mid-interval', at(2026, 7, 15, 9, 17)),
+                        ('year boundary', at(2026, 12, 31, 23, 30))):
+        nxt = serve._gap_next_run_ms(base)
+        check(f'{label}: lands in the future', nxt > base)
+        check(f'{label}: is interval-aligned', nxt % INT_MS == 0)
+        check(f'{label}: within one interval', (nxt - base) <= INT_MS)
+
+    exact = (at(2026, 7, 15, 9, 0) // INT_MS) * INT_MS
+    check('exactly on a tick → the NEXT one (never double-fires)',
+          serve._gap_next_run_ms(exact) == exact + INT_MS)
+
+    print('=== DST cannot drift an interval tick ===')
+    # US DST 2026: starts Sun Mar 8, ends Sun Nov 1. A wall-clock scheduler had
+    # to special-case these; an interval one must be completely unaffected.
+    for label, base in (('spring forward', at(2026, 3, 8, 1, 30)),
+                        ('fall back',      at(2026, 11, 1, 1, 30)),
+                        ('ordinary day',   at(2026, 7, 15, 11, 0))):
+        nxt = serve._gap_next_run_ms(base)
+        check(f'{label}: still interval-aligned', nxt % INT_MS == 0)
+        check(f'{label}: gap is at most one interval', 0 < (nxt - base) <= INT_MS)
 
     print('=== human vs AI questions are told apart ===')
     serve._night_save('gap-asked.json', ['what is a canister?'])

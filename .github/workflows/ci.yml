@@ -1,10 +1,22 @@
 name: tests
 
-# Day/night tool-grammar drift guard: night_runner.py re-implements the
-# bracket-marker grammar from hq-runtime.jsx TOOL_REGISTRY in Python, and the
-# two MUST stay byte-identical (see scripts/test_night_grammar.py). This runs
-# on every PR so a grammar edit on either side fails fast instead of letting
-# day and night agents silently diverge.
+# Two guards run on every PR:
+#
+#  1. build — the UI is ~30k lines of hand-written JSX with no types and no
+#     linting, bundled by esbuild. A syntax error in a 300 KB file is otherwise
+#     only discovered when a browser fails to boot, so the bundle and the Python
+#     entrypoints are compiled here first.
+#
+#  2. tests — every Python suite, via scripts/run_tests.py. That runner exists
+#     because the suites are hand-rolled and several print "N FAILED" while
+#     still exiting 0; it treats a printed failure summary as a failure and
+#     aggregates the exit codes. Previously only test_night_grammar.py ran, so
+#     six working suites were green-by-absence.
+#
+# The night-grammar suite specifically guards day/night parity: night_runner.py
+# re-implements the bracket-marker grammar from hq-runtime.jsx TOOL_REGISTRY in
+# Python and the two MUST stay byte-identical, or day and night agents silently
+# diverge.
 
 on:
   pull_request: {}
@@ -14,11 +26,38 @@ on:
       - master
 
 jobs:
-  night-grammar-parity:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Grammar parity + fixtures
-        run: python3 scripts/test_night_grammar.py
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build UI bundle
+        run: npm run build
+
+      - name: Verify the manifest lists every expected chunk
+        run: python3 scripts/check_bundle.py
+
+      - name: Byte-compile the Python entrypoints
+        run: python3 -m compileall -q serve.py night_runner.py claude_approval_hook.py
+
+  tests:
+    runs-on: ubuntu-latest
+    # The deadline-salvage suites deliberately simulate 75s-blocking gateways
+    # and 90s stalls, so this job is minutes, not seconds, by design.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python suites
+        run: python3 scripts/run_tests.py

@@ -32,6 +32,4 @@ hq-state
 canister_ids.json
 .DS_Store
 build-win.bat
-build_exe.bat
-launch.bat
 start-elevated.sh
