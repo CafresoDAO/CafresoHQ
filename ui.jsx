@@ -1,3 +1,6 @@
+import { Sprite, SPRITES } from './sprites.jsx';
+import { HQ } from './hq-runtime.jsx';
+import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 /* ==========================================================================
    CafresoHQ — main app components (chat, office, cards, modals)
    ========================================================================== */
@@ -1281,12 +1284,12 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
    <OnboardingKeyStep>
    The "Get your free AI key" body used inside a tour step. Walks the user
    through creating a free OpenRouter key and pasting it in. Persists via
-   window.CafresoHQClient.hermesSetOpenRouterKey() (server-side container env
+   CafresoHQClient.hermesSetOpenRouterKey() (server-side container env
    when the endpoint exists; otherwise local settings — see client helper).
    Styled with the same tokens as the rest of the tour card.
    ───────────────────────────────────────────────────────────────────── */
 function OnboardingKeyStep() {
-  const C = window.CafresoHQClient;
+  const C = CafresoHQClient;
   const existing = (C && C.getSettings && C.getSettings().openrouterKey) || '';
   const [key, setKey] = useState(existing);
   const [saving, setSaving] = useState(false);
@@ -1934,9 +1937,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   const walletServiceOn = (() => {
     try {
       if (!(window.hqMoneyOn && window.hqMoneyOn())) return false; // money module off → no P&L board
-      const s = window.CafresoHQClient.getSettings();
+      const s = CafresoHQClient.getSettings();
       return !!(s.icpServices && s.icpServices.wallet) &&
-             !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());
+             !!(CafresoHQChain && CafresoHQChain.isAvailable());
     } catch (_e) { return false; }
   })();
   const [plWallets, setPlWallets] = React.useState(null);
@@ -1949,7 +1952,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     let dead = false;
     (async () => {
       try {
-        const chain = window.CafresoHQChain;
+        const chain = CafresoHQChain;
         const [ws, totals, payouts] = await Promise.all([
           chain.wallet.list(),
           chain.wallet.totals ? chain.wallet.totals().catch(() => ({})) : {},
@@ -2006,7 +2009,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   const [goldTreasury, setGoldTreasury] = React.useState(null); // BigInt raw e8s | null
   React.useEffect(() => {
     if (isMobileOffice) return;
-    const client = window.CafresoHQClient;
+    const client = CafresoHQClient;
     if (!client) return;
     let dead = false;
     const checkHealth = async () => {
@@ -2033,7 +2036,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     let dead = false;
     (async () => {
       try {
-        const chain = window.CafresoHQChain;
+        const chain = CafresoHQChain;
         const per = await Promise.all(plWallets.map(w =>
           chain.wallet.balances(w.agentId, ['sGLDT']).catch(() => ({}))));
         if (dead) return;
@@ -2056,7 +2059,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     let dead = false;
     (async () => {
       try {
-        const chain = window.CafresoHQChain;
+        const chain = CafresoHQChain;
         if (!chain || !chain.bank) return;
         const raw = await chain.bank.balance();
         if (!dead && raw !== null) setBankBalance(raw);
@@ -2259,7 +2262,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                      onClick={async (e) => {
                        e.stopPropagation();
                        setWallSearch(null);
-                       try { setWallSearch(await window.CafresoHQClient.braveProbe()); }
+                       try { setWallSearch(await CafresoHQClient.braveProbe()); }
                        catch (_e) { setWallSearch({ ok: false }); }
                      }}>
                   <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
@@ -3930,7 +3933,7 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
   );
 }
 
-window.CafresoHQUI = {
+const CafresoHQUI = {
   Rail, MobileTabBar, OfficeView, Ticker, ChatPanel, AgentCards, Ico, NAV_ITEMS,
   Btn, Card,
   Field, TextField, TextArea, Select, Checkbox, Toggle, SearchField,
@@ -4273,8 +4276,10 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
   );
 }
 
-window.CafresoHQUI.CEOPanel = CEOPanel;
-window.CafresoHQUI.InspectPanel = InspectPanel;
-window.CafresoHQUI.TokenHUD = TokenHUD;
-window.CafresoHQUI.ShortcutHud = ShortcutHud;
-window.CafresoHQUI.Toast = Toast;
+CafresoHQUI.CEOPanel = CEOPanel;
+CafresoHQUI.InspectPanel = InspectPanel;
+CafresoHQUI.TokenHUD = TokenHUD;
+CafresoHQUI.ShortcutHud = ShortcutHud;
+CafresoHQUI.Toast = Toast;
+
+export { CafresoHQUI };

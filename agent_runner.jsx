@@ -1,9 +1,10 @@
+import { CafresoHQClient } from './claude-client.jsx';
 /* ==========================================================================
    CafresoHQ — Agent Runner Shim
    --------------------------------------------------------------------------
    Bridges UI-fired graph actions (right-click, multi-select, ghost-edge
    confirmations, cluster labeling) into actual LLM work via the existing
-   window.CafresoHQClient.stream() API.
+   CafresoHQClient.stream() API.
 
    Listens for:
      - 'cafresohq:agentAction' { kind, nodeId|nodeIds, agentId?, ...extra }
@@ -18,6 +19,8 @@
    it falls back to the CafresoHQClient's currently configured provider/model.
    ========================================================================== */
 
+let CafresoHQAgentRunner;
+
 (function () {
   if (typeof window === 'undefined') return;
   if (window.__cafresohqAgentRunnerInstalled) return; // idempotent
@@ -28,7 +31,7 @@
      pick the right model. */
   let _agents = [];
   let _addMemoryFn = null; // optional hook to push runner notes to the agent's memory
-  window.CafresoHQAgentRunner = {
+  CafresoHQAgentRunner = {
     setAgents(list) { _agents = Array.isArray(list) ? list : []; },
     getAgents()    { return _agents.slice(); },
     setAddMemoryFn(fn) { _addMemoryFn = typeof fn === 'function' ? fn : null; },
@@ -69,7 +72,7 @@
   /* Read with activity overlay. */
   async function readWithBeacon(path, agent) {
     emitActivity(path, agent, 'read');
-    try { return await window.CafresoHQClient.vaultRead(path); }
+    try { return await CafresoHQClient.vaultRead(path); }
     catch (_) { return ''; }
   }
 
@@ -86,7 +89,7 @@
     if (agent && agent.model)    opts.model    = agent.model;
     if (agent && agent.elevated) opts.elevated = true;
     if (agent && agent.name)     opts.agentName = agent.name;
-    await window.CafresoHQClient.stream(opts);
+    await CafresoHQClient.stream(opts);
     return text.trim();
   }
 
@@ -146,7 +149,7 @@
         ? `\n## Linked context\n${neighborBodies.map(n => `- [[${n.id}]]`).join('\n')}\n`
         : '');
     emitActivity(path, agent, 'write');
-    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    await CafresoHQClient.vaultWrite(path, out, 'write');
     if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
@@ -170,7 +173,7 @@
       tags.map(t => `- ${t}`).join('\n') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
     emitActivity(path, agent, 'write');
-    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    await CafresoHQClient.vaultWrite(path, out, 'write');
     if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
@@ -202,7 +205,7 @@
       (suggestions.length ? suggestions.map(t => `- [[${t}]]`).join('\n') : '_No suggestions._') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
     emitActivity(path, agent, 'write');
-    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    await CafresoHQClient.vaultWrite(path, out, 'write');
     if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
@@ -220,13 +223,13 @@
     const folder = nodeId.split('/').slice(0, -1).join('/') || 'Inbox';
     const path = `${folder}/${slug(title)}.md`;
     emitActivity(path, agent, 'write');
-    await window.CafresoHQClient.vaultWrite(path, `# ${title}\n\nParent: [[${nodeId}]]\n\n${body}\n`, 'write');
+    await CafresoHQClient.vaultWrite(path, `# ${title}\n\nParent: [[${nodeId}]]\n\n${body}\n`, 'write');
     // Also link from the parent.
     try {
-      const parentBody = await window.CafresoHQClient.vaultRead(nodeId);
+      const parentBody = await CafresoHQClient.vaultRead(nodeId);
       const linkText = `[[${title}]]`;
       if (!parentBody.includes(linkText)) {
-        await window.CafresoHQClient.vaultWrite(nodeId, parentBody.replace(/\s*$/, '\n\n') + linkText + '\n', 'write');
+        await CafresoHQClient.vaultWrite(nodeId, parentBody.replace(/\s*$/, '\n\n') + linkText + '\n', 'write');
       }
     } catch (_) {}
     if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
@@ -258,7 +261,7 @@
       `---\nsource: "[[${nodeId}]]"\ngenerated: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n---\n\n` +
       `# How [[${nodeId}]] connects\n\n${explanation}\n`;
     emitActivity(path, agent, 'write');
-    await window.CafresoHQClient.vaultWrite(path, out, 'write');
+    await CafresoHQClient.vaultWrite(path, out, 'write');
     if (window.CafresoHQGraph && window.CafresoHQGraph.refresh) await window.CafresoHQGraph.refresh();
   }
 
@@ -325,25 +328,12 @@
     dispatch(detail);
   });
 
-  /* Cache the most recent graph on the side so action handlers can read it. */
-  (function patchCafresoHQGraph() {
-    const tryHook = () => {
-      const gApi = window.CafresoHQGraph;
-      if (!gApi) { setTimeout(tryHook, 200); return; }
-      const origRefresh = gApi.refresh;
-      gApi.refresh = async function (...args) {
-        const r = origRefresh ? await origRefresh.apply(this, args) : null;
-        try {
-          const g = await window.CafresoHQClient.vaultGraph();
-          gApi._lastGraph = g;
-        } catch (_) {}
-        return r;
-      };
-      // Prime once.
-      window.CafresoHQClient.vaultGraph().then(g => { gApi._lastGraph = g; }).catch(() => {});
-    };
-    tryHook();
-  })();
+  /* No monkey-patching here anymore: GraphView maintains
+     window.CafresoHQGraph._lastGraph itself (set on mount and on every
+     refresh), so the 200ms-forever polling wrapper this file used to install
+     was redundant — action handlers read the registry lazily below. */
 
   console.info('[agent_runner] installed — listening for cafresohq:agentAction');
 })();
+
+export { CafresoHQAgentRunner };

@@ -1,3 +1,6 @@
+import { Sprite } from './sprites.jsx';
+import { CafresoHQChain, CafresoHQClient, VaultBridge } from './claude-client.jsx';
+import { CafresoHQV2 } from './features.jsx';
 ﻿/* ==========================================================================
    CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
@@ -49,7 +52,7 @@ function hexToRgb(hex) {
     b: parseInt(result[3], 16),
   };
 }
-const { TaskBoard } = window.CafresoHQV2;
+const { TaskBoard } = CafresoHQV2;
 
 const VIEW_LABELS = {
   visual:    'AGENT OFFICE',
@@ -608,10 +611,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const [vaultTab, setVaultTab] = useSV(_isMobileV ? 'graph' : null); // 'tree' | 'graph' | 'editor'
 
   // ── Bridge mode: when running inside the SvelteKit shell iframe, all vault
-  // reads/writes go through window.VaultBridge (postMessage → parent decrypts).
+  // reads/writes go through VaultBridge (postMessage → parent decrypts).
   // Falls back to the local serve.py API when opened standalone.
-  const _bridge = typeof window !== 'undefined' && window.VaultBridge?.isAvailable()
-    ? window.VaultBridge : null;
+  const _bridge = typeof window !== 'undefined' && VaultBridge?.isAvailable()
+    ? VaultBridge : null;
   // Map display path → blob id (only populated in bridge mode)
   const _pathToId = useRV({});
 
@@ -640,11 +643,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       return;
     }
     try {
-      const s = await window.CafresoHQClient.vaultStatus();
+      const s = await CafresoHQClient.vaultStatus();
       setStatus(s);
       if (!s.configured) { setFiles([]); return; }
       try {
-        setFiles(await window.CafresoHQClient.vaultList());
+        setFiles(await CafresoHQClient.vaultList());
       } catch (e) {
         setFiles([]);
         setErr(e.message || 'Could not list vault notes.');
@@ -697,7 +700,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const search = async () => {
     if (!q.trim()) { setHits(null); return; }
-    try { setHits(await window.CafresoHQClient.vaultSearch(q.trim())); }
+    try { setHits(await CafresoHQClient.vaultSearch(q.trim())); }
     catch (e) { setErr(e.message); setHits([]); }
   };
 
@@ -721,7 +724,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         if (!id) throw new Error('File not found in vault index: ' + path);
         text = await _bridge.read(id);
       } else {
-        text = await window.CafresoHQClient.vaultRead(path);
+        text = await CafresoHQClient.vaultRead(path);
       }
       setOpenNote({ path, id: _pathToId.current[path] || null, content: text, dirty: false });
       if (_isMobileV) setVaultTab('editor');
@@ -754,7 +757,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           setOpenNote(n => (n && n.path === note.path ? { ...n, id: meta.id } : n));
         }
       } else {
-        await window.CafresoHQClient.vaultWrite(note.path, note.content, 'write');
+        await CafresoHQClient.vaultWrite(note.path, note.content, 'write');
       }
       // Clear dirty only if nothing was typed while the save was in flight.
       setOpenNote(n => (n && n.path === note.path && n.content === note.content)
@@ -800,7 +803,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!list.length) return;
     setBusy(true);
     try {
-      const r = await window.CafresoHQClient.vaultUpload(list);
+      const r = await CafresoHQClient.vaultUpload(list);
       await refresh();
       if (r && r.failed && r.failed.length) {
         alert(`Uploaded ${r.count}, failed ${r.failed.length}:\n` +
@@ -816,7 +819,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!to || to.trim() === n.path) return;
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
-      await window.CafresoHQClient.vaultRename(n.path, to.trim());
+      await CafresoHQClient.vaultRename(n.path, to.trim());
       setOpenNote(o => o ? { ...o, path: to.trim() } : o);
       await refresh();
     } catch (e) { alert('Rename failed: ' + e.message); }
@@ -826,7 +829,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!n) return;
     if (!window.confirm(`Delete "${n.path}"? This cannot be undone.`)) return;
     try {
-      await window.CafresoHQClient.vaultDelete(n.path);
+      await CafresoHQClient.vaultDelete(n.path);
       setSaveState('');
       setOpenNote(null);
       await refresh();
@@ -843,7 +846,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openInObsidian = async () => {
     if (!openNote) return;
-    try { await window.CafresoHQClient.vaultOpenInObsidian(openNote.path); }
+    try { await CafresoHQClient.vaultOpenInObsidian(openNote.path); }
     catch (e) { alert('Could not open in Obsidian: ' + e.message); }
   };
 
@@ -1221,7 +1224,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
   // Pull note bodies for the concept map (scoped + capped to bound the fetches).
   const loadConceptDocs = async () => {
-    const all = await window.CafresoHQClient.vaultList();
+    const all = await CafresoHQClient.vaultList();
     let files = (all || []).filter((f) => /\.md$/i.test(f.path || ''));
     const sc = scopeRef.current;
     if (sc && sc !== '__all__') files = files.filter((f) => f.path === sc || f.path.startsWith(sc.replace(/\/$/, '') + '/'));
@@ -1230,7 +1233,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     const CONC = 6;
     for (let i = 0; i < files.length; i += CONC) {
       const got = await Promise.all(files.slice(i, i + CONC).map(async (f) => {
-        try { return { id: f.path, title: f.title || titleFor(f.path), text: await window.CafresoHQClient.vaultRead(f.path) }; }
+        try { return { id: f.path, title: f.title || titleFor(f.path), text: await CafresoHQClient.vaultRead(f.path) }; }
         catch (_) { return null; }
       }));
       for (const d of got) if (d) docs.push(d);
@@ -1248,7 +1251,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       return built;
     }
     setConceptMeta(null);
-    return await window.CafresoHQClient.vaultGraph();
+    return await CafresoHQClient.vaultGraph();
   };
 
   // (Re)mount the engine on fresh data, re-applying controls a remount drops.
@@ -1303,7 +1306,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     let cancelled = false;
     (async () => {
       try {
-        const all = await window.CafresoHQClient.vaultList();
+        const all = await CafresoHQClient.vaultList();
         if (cancelled) return;
         const set = new Set();
         for (const f of all || []) { const i = (f.path || '').indexOf('/'); if (i > 0) set.add(f.path.slice(0, i)); }
@@ -2940,14 +2943,14 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     if (!path) return;
     setLoading(true);
     setErr(null);
-    window.CafresoHQClient.toolExec('DIR_LIST', path)
+    CafresoHQClient.toolExec('DIR_LIST', path)
       .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
       .catch(e => { setErr(e.message || String(e)); setLoading(false); });
   }, [path, refreshNonce]);
 
   const loadSub = (subPath) => {
     if (subEntries[subPath]) return;
-    window.CafresoHQClient.toolExec('DIR_LIST', subPath)
+    CafresoHQClient.toolExec('DIR_LIST', subPath)
       .then(text => { setSubEntries(prev => ({ ...prev, [subPath]: parseDirEntries(text, subPath) })); })
       .catch(() => { setSubEntries(prev => ({ ...prev, [subPath]: [] })); });
   };
@@ -3315,7 +3318,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       // The server waits up to 2 s for this frame before spawning the PTY;
       // sending it right away eliminates the 2-second blank-screen delay.
       ws.onopen = async () => {
-        const oc = window.CafresoHQClient;
+        const oc = CafresoHQClient;
         let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
           ak = await oc.getAgentKey('anthropic').catch(() => '');
@@ -3499,7 +3502,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const ctrlRef   = React.useRef(null);
 
   React.useEffect(() => {
-    const oc = window.CafresoHQClient;
+    const oc = CafresoHQClient;
     if (!oc || !oc.hasAgentKey) return;
     setKeyStored({
       anthropic: oc.hasAgentKey('anthropic'),
@@ -3566,7 +3569,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         // Hermes Chat streams through its always-on OpenAI-compatible gateway
         // (/hermes/v1/chat/completions). Model is server-configured; passing the
         // 'hermes:' prefix forces the provider without overriding the model.
-        await window.CafresoHQClient.stream({
+        await CafresoHQClient.stream({
           model: model.trim() ? 'hermes:' + model.trim() : 'hermes:',
           messages: wireMessages,
           signal: ctrl.signal,
@@ -3575,7 +3578,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
       } else {
         // claude / codex / gemini → the CLI's non-interactive mode, scoped to
         // the project dir, using the CLI's own login (subscription) or BYOK.
-        await window.CafresoHQClient.terminalStream({
+        await CafresoHQClient.terminalStream({
           messages: wireMessages,
           cli,
           cwd: project.path,
@@ -3603,7 +3606,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const clear = () => { setMsgs([]); setErr(null); };
 
   const launchTerminal = async () => {
-    const oc = window.CafresoHQClient;
+    const oc = CafresoHQClient;
     if (!oc || !oc.spawnTerminal) return;
     setSpawnMsg(''); setErr(null);
     try {
@@ -3615,7 +3618,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   };
 
   const saveKey = async () => {
-    const oc = window.CafresoHQClient;
+    const oc = CafresoHQClient;
     if (!oc || !oc.setAgentKey) return;
     await oc.setAgentKey(provider, keyInput.trim());
     setKeyStored(prev => ({ ...prev, [provider]: !!keyInput.trim() }));
@@ -3624,7 +3627,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   };
 
   const clearKey = async () => {
-    const oc = window.CafresoHQClient;
+    const oc = CafresoHQClient;
     if (!oc || !oc.setAgentKey) return;
     await oc.setAgentKey(provider, '');
     setKeyStored(prev => ({ ...prev, [provider]: false }));
@@ -4141,13 +4144,13 @@ const HQSH_COMMANDS = {
   night: {
     help: 'night [list | schedule <agentId> <topic…> | cancel <id> | runs | chain] — container night shift',
     run: async (_chain, args) => {
-      const base = (window.CafresoHQClient && window.CafresoHQClient.backendBase()) || '';
+      const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
       const j = (p, o) => fetch(base + p, { credentials: 'include', ...(o || {}) }).then(r => r.json());
       const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
       if (args[0] === 'chain') {
         // MVP-2 wake mirror — the state canister's copy, used only to wake
         // STOPPED containers (dark until the admin sets wake config on-chain).
-        const chain = window.CafresoHQChain;
+        const chain = CafresoHQChain;
         if (!chain || !chain.isAvailable()) return 'chain bridge unavailable (open HQ through the shell)';
         const [st, rows] = await Promise.all([chain.missions.wakeStatus(), chain.missions.list()]);
         const head = `wake: ${st.enabled ? 'ENABLED' : 'dark (disabled)'} · gateway ${st.urlSet ? 'set' : '—'} · secret ${st.secretSet ? 'set' : '—'}`;
@@ -4167,7 +4170,7 @@ const HQSH_COMMANDS = {
         if (!args[1]) return 'usage: hq night cancel <scheduleId>';
         const res = await j(`/missions/scheduled/${args[1]}`, { method: 'DELETE' });
         if (res.existed) {
-          const c = window.CafresoHQChain;
+          const c = CafresoHQChain;
           if (c && c.isAvailable()) c.missions.remove(args[1]).catch(() => {});
         }
         return res.existed ? `cancelled ${args[1]}` : `no schedule ${args[1]}`;
@@ -4252,7 +4255,7 @@ function HqShell({ sessionId, visible }) {
     if (name === 'clear') { setLines([]); return; }
     const cmd = HQSH_COMMANDS[name];
     if (!cmd) { print('err', `unknown command: ${name || '(empty)'} — try "hq help"`); return; }
-    const chain = window.CafresoHQChain;
+    const chain = CafresoHQChain;
     // 'night' talks to the container backend, not the chain — allow it standalone.
     if (name !== 'help' && name !== 'night' && !(chain && chain.isAvailable && chain.isAvailable())) {
       print('err', 'Not inside the shell — open the HQ at ai.cafreso.com and sign in with Internet Identity to reach the chain.');
@@ -4321,7 +4324,7 @@ function ProjectTerminal({ project, visible }) {
     if (sessions.length === 0) {
       const fresh = [{ id: 's1', cli: 'hermes', sessionId: _uuid() }];
       setSessions(fresh);
-      setActiveId(id);
+      setActiveId(fresh[0].id);   // was a bare `id` — ReferenceError when this path ran
       return;
     }
     if (!sessions.find(s => s.id === activeId)) {
@@ -4679,7 +4682,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const joinPath = (dir, name) => { const d = String(dir || ''); const sep = (d.includes('\\') && !d.includes('/')) ? '\\' : '/'; return d.replace(/[\/\\]+$/, '') + sep + name; };
   const isUnder = (p, base) => p === base || p.startsWith(base + '/') || p.startsWith(base + '\\');
   const toast = (k, m) => { if (window.cafresohqToast && window.cafresohqToast[k]) window.cafresohqToast[k](m); };
-  const C = window.CafresoHQClient;
+  const C = CafresoHQClient;
 
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
   /* Same never-silently-drop-edits contract as openPath: flipping to Classic
@@ -4858,13 +4861,13 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   );
   const [pubMsg, setPubMsg] = useSV(null);
   const canPublish = () => {
-    try { return !!window.CafresoHQClient.getSettings().icpServices?.publish; } catch (_e) { return false; }
+    try { return !!CafresoHQClient.getSettings().icpServices?.publish; } catch (_e) { return false; }
   };
   const publishOpen = async () => {
     if (!openFile) return;
     setPubMsg('Publishing…');
     try {
-      const r = await window.CafresoHQClient.publishSite(openFile.path);
+      const r = await CafresoHQClient.publishSite(openFile.path);
       setPubMsg(r.url);
       try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
     } catch (e) { setPubMsg('Publish failed: ' + (e.message || e)); }
@@ -5128,7 +5131,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
       return;
     }
     try {
-      const text = await window.CafresoHQClient.toolExec('FILE_READ', path);
+      const text = await CafresoHQClient.toolExec('FILE_READ', path);
       setOpenFile({
         path,
         content: typeof text === 'string' ? text : String(text || ''),
@@ -5142,7 +5145,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (!openFile) return;
     setBusy(true); setErr(null);
     try {
-      await window.CafresoHQClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
+      await CafresoHQClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
       setOpenFile({ ...openFile, dirty: false });
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
@@ -5172,7 +5175,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     }
     const files = Array.from(fileList || []).filter(Boolean);
     if (!files.length) return;
-    if (!window.CafresoHQClient || !window.CafresoHQClient.fsUpload) {
+    if (!CafresoHQClient || !CafresoHQClient.fsUpload) {
       setErr('Upload needs the updated container (ships /fs/upload) — rebuild the image.');
       toast('error', 'Upload unavailable — container needs a rebuild.');
       return;
@@ -5180,7 +5183,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     const dir = targetDir || project.path;
     setBusy(true); setErr(null);
     try {
-      const res = await window.CafresoHQClient.fsUpload(dir, files);
+      const res = await CafresoHQClient.fsUpload(dir, files);
       setTreeNonce(n => n + 1);
       const n = (res && res.count) || files.length;
       const where = dir === project.path ? project.name : ('…/' + dir.split(/[\/\\]/).pop());
@@ -5196,7 +5199,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
 
   /* ── File-manager actions over the working tree (new folder / rename /
      delete / upload-into-subfolder). Each refreshes the tree on success. ── */
-  const fsClient = () => (window.CafresoHQClient && window.CafresoHQClient.fsMkdir) ? window.CafresoHQClient : null;
+  const fsClient = () => (CafresoHQClient && CafresoHQClient.fsMkdir) ? CafresoHQClient : null;
 
   const newFolder = async () => {
     if (!project || !project.path) return;
@@ -5911,7 +5914,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     if (!url) return setErr('repo URL or owner/repo required');
     setBusy(true);
     try {
-      const r = await window.CafresoHQClient.cloneRepo({
+      const r = await CafresoHQClient.cloneRepo({
         url,
         name: name.trim() || undefined,
         depth: shallow ? 1 : 0,
@@ -6059,7 +6062,7 @@ function TerminalView() {
 /* ================================================================
    Export all views for app.jsx
    ================================================================ */
-window.CafresoHQViews = {
+const CafresoHQViews = {
   TasksView,
   MemoryPage,
   TeamView,
@@ -6072,3 +6075,5 @@ window.CafresoHQViews = {
   TerminalView,
   VIEW_LABELS,
 };
+
+export { CafresoHQViews };

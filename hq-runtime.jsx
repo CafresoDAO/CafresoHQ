@@ -1,3 +1,4 @@
+import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -32,7 +33,7 @@ const TOOLS_CATALOG = [
 ];
 
 /* Legacy unprefixed IDs — kept for any callers still reading HQ.MODELS.
-   The live ModelPicker (window.CafresoHQClient.localModelOptions) is the
+   The live ModelPicker (CafresoHQClient.localModelOptions) is the
    source of truth for new code; agents store provider-prefixed ids. */
 const MODELS = [
   'anthropic:claude-opus-4-7',
@@ -351,7 +352,7 @@ async function isVaultReady() {
   const now = Date.now();
   if (now - _vaultConfiguredCache.at < 5000) return _vaultConfiguredCache.ok;
   try {
-    const s = await window.CafresoHQClient.vaultStatus();
+    const s = await CafresoHQClient.vaultStatus();
     _vaultConfiguredCache = { at: now, ok: !!(s.configured && s.exists) };
   } catch (_e) { _vaultConfiguredCache = { at: now, ok: false }; }
   return _vaultConfiguredCache.ok;
@@ -367,9 +368,9 @@ function icpWalletEnabled() {
     // Master money-module gate first — when the user has money OFF, agents
     // must not even see the WALLET_* tools, regardless of install state.
     if (!(window.hqMoneyOn && window.hqMoneyOn())) return false;
-    const s = window.CafresoHQClient.getSettings();
+    const s = CafresoHQClient.getSettings();
     const installed = !!(s && s.icpServices && s.icpServices.wallet);
-    const bridge = !!(window.CafresoHQChain && window.CafresoHQChain.isAvailable());
+    const bridge = !!(CafresoHQChain && CafresoHQChain.isAvailable());
     return installed && bridge;
   } catch (_e) { return false; }
 }
@@ -378,7 +379,7 @@ function icpWalletEnabled() {
    /fs endpoints, so (unlike the wallet) it works without the shell bridge. */
 function icpPublishEnabled() {
   try {
-    const s = window.CafresoHQClient.getSettings();
+    const s = CafresoHQClient.getSettings();
     return !!(s && s.icpServices && s.icpServices.publish);
   } catch (_e) { return false; }
 }
@@ -387,11 +388,11 @@ const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
     re: /\[\s*SEARCH\s*:\s*([^\]\n]+)\]/i,
-    requires: () => window.CafresoHQClient.getSettings().braveEnabled && window.CafresoHQClient.getSettings().braveKey,
+    requires: () => CafresoHQClient.getSettings().braveEnabled && CafresoHQClient.getSettings().braveKey,
     doc: '- [SEARCH: <query>] — Brave web search. Use for facts, news, current state. Stop after the line; results will be appended.',
     docShort: 'Web search via Brave. Use for facts, news, current state.',
     run: async (query, { signal }) => {
-      const results = await window.CafresoHQClient.braveSearch(query.trim(), { count: 6, signal });
+      const results = await CafresoHQClient.braveSearch(query.trim(), { count: 6, signal });
       if (!results.length) return 'No results.';
       return results.map((r, i) =>
         `${i+1}. ${r.title}\n   ${r.url}\n   ${r.description}`
@@ -405,7 +406,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_SEARCH: <query>] — search the boss\'s Obsidian vault for notes mentioning the query. Returns top matches with snippets.',
     docShort: 'Search the Obsidian vault for notes matching a query. Returns paths and snippets.',
     run: async (query) => {
-      const hits = await window.CafresoHQClient.vaultSearch(query.trim(), { limit: 8 });
+      const hits = await CafresoHQClient.vaultSearch(query.trim(), { limit: 8 });
       if (!hits.length) return 'No matches in vault.';
       return hits.map(h => `• ${h.path}\n  ${h.snippet}`).join('\n\n');
     },
@@ -417,7 +418,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_READ: <path>] — read full contents of a vault note (e.g. "Daily/2026-04-25.md"). Use after VAULT_SEARCH narrows the right file.',
     docShort: 'Read the full contents of a vault note by path. Use after VAULT_SEARCH.',
     run: async (path) => {
-      const text = await window.CafresoHQClient.vaultRead(path.trim());
+      const text = await CafresoHQClient.vaultRead(path.trim());
       // Cap to keep context costs sane.
       return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
     },
@@ -430,7 +431,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_APPEND: <path>]\n<content>\n[/VAULT_APPEND] — append content to an existing note (creates if missing). Body can be multi-line markdown.',
     docShort: 'Append multi-line markdown content to an existing vault note (creates if missing).',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.vaultWrite(path.trim(), body || '', 'append');
+      const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'append');
       return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
     },
   },
@@ -441,7 +442,7 @@ const TOOL_REGISTRY = {
     doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts.',
     docShort: 'Create or overwrite a vault note at the given path with provided content.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
+      const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
       return `Wrote ${(body||'').length} chars → ${r.path}`;
     },
   },
@@ -459,7 +460,7 @@ const TOOL_REGISTRY = {
       '  Returns the saved vault path. Use this for any deck deliverable — do NOT save as plain .md.',
     docShort: 'Render markdown into a real .pptx PowerPoint deck and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.exportPptx(path.trim(), body || '');
+      const r = await CafresoHQClient.exportPptx(path.trim(), body || '');
       return `Saved PowerPoint (${r.slides || '?'} slide${r.slides === 1 ? '' : 's'}) → ${r.path}`;
     },
   },
@@ -472,7 +473,7 @@ const TOOL_REGISTRY = {
       '  Use headings (`#` / `##` / `###`), bullets (`-` / `*`), and numbered lists (`1.`). Returns the saved vault path.',
     docShort: 'Render markdown into a real .docx Word document and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.exportDocx(path.trim(), body || '');
+      const r = await CafresoHQClient.exportDocx(path.trim(), body || '');
       return `Saved Word doc → ${r.path}`;
     },
   },
@@ -485,7 +486,7 @@ const TOOL_REGISTRY = {
       '  Renderer: weasyprint if available (better typography), reportlab fallback. Returns the saved vault path.',
     docShort: 'Render markdown into a real .pdf and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.exportPdf(path.trim(), body || '');
+      const r = await CafresoHQClient.exportPdf(path.trim(), body || '');
       return `Saved PDF (${r.renderer || '?'}) → ${r.path}`;
     },
   },
@@ -502,7 +503,7 @@ const TOOL_REGISTRY = {
       '  Uses the provider/model from Settings → Media. Returns the saved vault path.',
     docShort: 'Generate a real image using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.generateImage(path.trim(), (body || '').trim());
+      const r = await CafresoHQClient.generateImage(path.trim(), (body || '').trim());
       return `Generated image (${r.provider}) → ${r.path}`;
     },
   },
@@ -515,7 +516,7 @@ const TOOL_REGISTRY = {
       '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved vault path.',
     docShort: 'Generate a real video using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {
-      const r = await window.CafresoHQClient.generateVideo(path.trim(), (body || '').trim());
+      const r = await CafresoHQClient.generateVideo(path.trim(), (body || '').trim());
       return `Generated video (${r.provider}) → ${r.path}`;
     },
   },
@@ -528,7 +529,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [FILE_READ: <path>] — read a local file. Path must be within the configured allowed directories.',
     docShort: 'Read a local file by absolute path within the allowed directories.',
-    run: async (path, { signal, cwd }) => window.CafresoHQClient.toolExec('FILE_READ', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd }) => CafresoHQClient.toolExec('FILE_READ', path.trim(), { signal, cwd }),
   },
   dir_list: {
     name: 'DIR_LIST',
@@ -536,7 +537,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [DIR_LIST: <path>] — list files and subdirectories at a path. Use to explore project structure before reading files.',
     docShort: 'List files and subdirectories at a path. Use to explore structure before reading.',
-    run: async (path, { signal, cwd }) => window.CafresoHQClient.toolExec('DIR_LIST', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd }) => CafresoHQClient.toolExec('DIR_LIST', path.trim(), { signal, cwd }),
   },
   file_write: {
     name: 'FILE_WRITE',
@@ -544,7 +545,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [FILE_WRITE: <path>]\n<content>\n[/FILE_WRITE] — write (create or overwrite) a local file. Path must be within allowed directories.',
     docShort: 'Write (create or overwrite) a local file; body goes in the "body" field.',
-    run: async (path, { cwd }, body) => window.CafresoHQClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd }),
+    run: async (path, { cwd }, body) => CafresoHQClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd }),
   },
   bash: {
     name: 'BASH',
@@ -552,7 +553,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [BASH: <command>] — run a shell command on the proxy machine (cwd = project dir or first allowed dir). Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
     docShort: 'Run a shell command on the proxy machine. Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
-    run: async (cmd, { signal, cwd }) => window.CafresoHQClient.toolExec('BASH', cmd.trim(), { signal, cwd }),
+    run: async (cmd, { signal, cwd }) => CafresoHQClient.toolExec('BASH', cmd.trim(), { signal, cwd }),
   },
   /* Per-agent memory — each agent gets a private vault folder at
      `Agents/<Name>/`. Provides persistent notes that survive across
@@ -681,7 +682,7 @@ const TOOL_REGISTRY = {
       '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
     docShort: 'Publish a built site (with your wallet\'s tip jar) and write a clickable .url deliverable.',
     run: async (arg) => {
-      const r = await window.CafresoHQClient.publishSite(String(arg || '').trim());
+      const r = await CafresoHQClient.publishSite(String(arg || '').trim());
       const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
       const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
       return `Published — ${where}:\n${r.url}\nWrote clickable link: ${r.file}${skips}`;
@@ -839,7 +840,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   // in settings (Settings → Media). Otherwise agents would happily emit the
   // marker and the call would 400 with "provider required".
   try {
-    const s = (window.CafresoHQClient && window.CafresoHQClient.getSettings) ? window.CafresoHQClient.getSettings() : {};
+    const s = (CafresoHQClient && CafresoHQClient.getSettings) ? CafresoHQClient.getSettings() : {};
     if (s && s.imageProvider) out.push(TOOL_REGISTRY.generate_image);
     if (s && s.videoProvider) out.push(TOOL_REGISTRY.generate_video);
   } catch (_e) { /* settings store may not be ready during init */ }
@@ -872,7 +873,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     out.push({
       ...TOOL_REGISTRY.memory_list,
       run: async () => {
-        const all = await window.CafresoHQClient.vaultList();
+        const all = await CafresoHQClient.vaultList();
         const mine = (all || []).filter(p => p.startsWith(root + '/'));
         if (!mine.length) return `(your memory is empty — write your first note with [MEMORY_WRITE: notes/foo.md]…[/MEMORY_WRITE])`;
         return mine.map(p => '• ' + p.slice(root.length + 1)).join('\n');
@@ -882,7 +883,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       ...TOOL_REGISTRY.memory_read,
       run: async (rel) => {
         try {
-          const text = await window.CafresoHQClient.vaultRead(scope(rel));
+          const text = await CafresoHQClient.vaultRead(scope(rel));
           return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
         } catch (e) {
           if (String(e.message || '').includes('404') || String(e.message || '').toLowerCase().includes('not found')) {
@@ -896,7 +897,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       ...TOOL_REGISTRY.memory_write,
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
-        const r = await window.CafresoHQClient.vaultWrite(target, body || '', 'write');
+        const r = await CafresoHQClient.vaultWrite(target, body || '', 'write');
         return `Wrote ${(body||'').length} chars → ${r.path}`;
       },
     });
@@ -905,7 +906,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
         const stamped = `\n\n## ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\n${body || ''}\n`;
-        const r = await window.CafresoHQClient.vaultWrite(target, stamped, 'append');
+        const r = await CafresoHQClient.vaultWrite(target, stamped, 'append');
         return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
       },
     });
@@ -921,7 +922,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       run: async (arg) => {
         const filter = (arg || '').trim();
         const tokens = filter && filter.toLowerCase() !== 'all' ? [filter] : WALLET_TOKENS;
-        const bals = await window.CafresoHQChain.wallet.balances(walletAgentId, tokens);
+        const bals = await CafresoHQChain.wallet.balances(walletAgentId, tokens);
         const lines = Object.entries(bals).map(([k, v]) => `• ${k}: ${v == null ? '—' : v}`);
         return lines.length ? `Your HQ wallet (raw base units):\n${lines.join('\n')}` : '(no balances yet)';
       },
@@ -935,7 +936,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         const bits = mainPart.trim().split(/\s+/).filter(Boolean);
         if (bits.length < 3) return 'Bad format. Use [WALLET_SEND: <token> <amount> <to-principal> : <memo>].';
         const [token, amount, to] = bits;
-        const res = await window.CafresoHQChain.wallet.send(walletAgentId, token, amount, to, memo);
+        const res = await CafresoHQChain.wallet.send(walletAgentId, token, amount, to, memo);
         switch (res.status) {
           case 'ok': return `Sent ${amount} ${token} → ${to} (block ${res.block}).`;
           case 'needsApproval': return `Awaiting the boss's approval to send ${amount} ${token} → ${to} (${res.reason || 'over cap'}). Nothing sent yet.`;
@@ -964,7 +965,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         let tip = icpWalletEnabled();
         const flag = /\s*:\s*tip\s*=\s*(on|off)\s*$/i.exec(raw);
         if (flag) { tip = flag[1].toLowerCase() === 'on' && icpWalletEnabled(); raw = raw.slice(0, flag.index).trim(); }
-        const r = await window.CafresoHQClient.publishSite(raw,
+        const r = await CafresoHQClient.publishSite(raw,
           tip ? { tipJar: { agentId: pubAgentId, agentName: pubAgentName } } : {});
         const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
         const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
@@ -1135,7 +1136,7 @@ function detectToolCall(text, tools) {
    models get JSON; everything else falls back to bracket format. */
 function supportsJsonToolFormat(model) {
   if (!model) return false;
-  const { provider } = window.CafresoHQClient.parseModelId(model);
+  const { provider } = CafresoHQClient.parseModelId(model);
   if (['anthropic', 'cafresohq', 'claudecode', 'codex', 'google'].includes(provider)) return true;
   const capableLocal = ['qwen3', 'mistral-nemo', 'llama-3.3', 'deepseek'];
   return capableLocal.some(n => (model || '').toLowerCase().includes(n));
@@ -1326,7 +1327,7 @@ function journalSummary(agent) {
 
 function buildCeoSystem(agents, extra) {
   const parts = [CEO_SYSTEM, rosterSummary(agents)];
-  const mem = memorySummary(window.HQ && window.HQ._memory);
+  const mem = memorySummary(HQ && HQ._memory);
   if (mem) parts.push(mem);
   if (extra) parts.push(extra);
   return parts.join('\n\n');
@@ -1337,8 +1338,8 @@ function buildCeoSystem(agents, extra) {
    Invalidated whenever settings change (provider/URL swaps, etc.). */
 const REGISTRY_TTL_MS = 10_000;
 let _registryCache = { at: 0, value: '', inflight: null };
-if (window.CafresoHQClient && window.CafresoHQClient.onSettingsChange) {
-  window.CafresoHQClient.onSettingsChange(() => {
+if (CafresoHQClient && CafresoHQClient.onSettingsChange) {
+  CafresoHQClient.onSettingsChange(() => {
     _registryCache = { at: 0, value: '', inflight: null };
   });
 }
@@ -1348,8 +1349,8 @@ async function registrySnippet() {
   if (_registryCache.inflight) return _registryCache.inflight;
   _registryCache.inflight = (async () => {
     try {
-      const reg = await window.CafresoHQClient.localRegistry();
-      const value = window.CafresoHQClient.formatRegistry(reg);
+      const reg = await CafresoHQClient.localRegistry();
+      const value = CafresoHQClient.formatRegistry(reg);
       _registryCache = { at: Date.now(), value, inflight: null };
       return value;
     } catch (_e) {
@@ -1384,7 +1385,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let buf = '';
-    await window.CafresoHQClient.stream({
+    await CafresoHQClient.stream({
       system: sys,
       messages,
       model: resolveModel(model),
@@ -1465,7 +1466,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     ? `\n\nELEVATED SESSION: You have native computer access through Claude Code on the proxy machine. Use your built-in agentic capabilities to work with files and run commands directly — do not claim you lack access.`
     : '';
   const journalNote = journalSummary(agent);
-  const mem = memorySummary(window.HQ && window.HQ._memory);
+  const mem = memorySummary(HQ && HQ._memory);
   /* Per-agent persistent memory listing — head-of-prompt so the agent
      knows what's in their private notes folder before they start. We
      fetch the actual file list from the vault (best effort; non-fatal
@@ -1475,7 +1476,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   try {
     const safeName = String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
     const root = `Agents/${safeName}/`;
-    const all = await window.CafresoHQClient.vaultList();
+    const all = await CafresoHQClient.vaultList();
     const mine = (all || []).filter(p => p.startsWith(root)).map(p => p.slice(root.length));
     if (mine.length) {
       const shown = mine.slice(0, 12).map(p => '• ' + p).join('\n');
@@ -1501,7 +1502,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   let toolsExecuted = 0;
   for (let hop = 0; hop < maxToolHops; hop++) {
     let buf = '';
-    await window.CafresoHQClient.stream({
+    await CafresoHQClient.stream({
       system: sys,
       messages,
       model: resolveModel(agent.model),
@@ -1617,11 +1618,13 @@ function resolveModel(m) {
   return m;
 }
 
-window.HQ = {
+const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
-window.HQ.mockStream = (prompt, onToken, opts) => ceoStream(prompt, onToken, opts);
+HQ.mockStream = (prompt, onToken, opts) => ceoStream(prompt, onToken, opts);
+
+export { HQ };

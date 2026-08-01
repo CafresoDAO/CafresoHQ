@@ -1,13 +1,21 @@
+import { CafresoHQAgentRunner } from './agent_runner.jsx';
+import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
+import { CafresoHQV2 } from './features.jsx';
+import { HQ } from './hq-runtime.jsx';
+import { CafresoHQMissions } from './missions.jsx';
+import { CafresoHQModals } from './modals.jsx';
+import { CafresoHQUI } from './ui.jsx';
+import { CafresoHQViews } from './views.jsx';
 /* ==========================================================================
    CafresoHQ — root app
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = window.CafresoHQUI;
-const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal } = window.CafresoHQModals;
-const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = window.CafresoHQV2;
-const { MissionsModal, useMissionRunner } = window.CafresoHQMissions;
-const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = window.CafresoHQViews;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
+const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal } = CafresoHQModals;
+const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
+const { MissionsModal, useMissionRunner } = CafresoHQMissions;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 
 /* One-time storage-key migration: legacy openclaw_* / cafresoai. keys -> cafresohq.*
    Copies (never deletes) so existing sessions keep working. Idempotent. */
@@ -241,7 +249,7 @@ const makeScreenEmitter = (agentId) => {
 const chatErrorText = (err) => {
   const raw = (err && err.message) || String(err);
   try {
-    const C = window.CafresoHQClient;
+    const C = CafresoHQClient;
     if (C && C.hasUsableKey && !C.hasUsableKey()) {
       return '⚠ The shared Cafreso brain isn’t responding right now — it may be waking up or briefly down. ' +
              'Try again in a minute, or add your own AI key in Settings → Keys to run independently. ' +
@@ -1121,8 +1129,8 @@ function App() {
   // Keep the agent_runner shim aware of the current hired agents so it can
   // pick the right model when graph actions are dispatched.
   React.useEffect(() => {
-    if (window.CafresoHQAgentRunner && window.CafresoHQAgentRunner.setAgents) {
-      window.CafresoHQAgentRunner.setAgents(agents);
+    if (CafresoHQAgentRunner && CafresoHQAgentRunner.setAgents) {
+      CafresoHQAgentRunner.setAgents(agents);
     }
   }, [agents]);
 
@@ -1148,7 +1156,7 @@ function App() {
     };
     let cancelled = false;
     const sync = async () => {
-      const oc = window.CafresoHQClient;
+      const oc = CafresoHQClient;
       if (cancelled || !oc || !oc.agentsStatus) return;
       let detected;
       try { detected = (await oc.agentsStatus()).agents || []; } catch (_e) { return; }
@@ -1566,9 +1574,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
   // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
-  const [hasKey, setHasKey] = useStateA(() => { try { return window.CafresoHQClient.hasUsableKey(); } catch (_e) { return true; } });
+  const [hasKey, setHasKey] = useStateA(() => { try { return CafresoHQClient.hasUsableKey(); } catch (_e) { return true; } });
   React.useEffect(() => {
-    const C = window.CafresoHQClient;
+    const C = CafresoHQClient;
     const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
     recompute();
     /* Zero-config default: managed containers ship Cafreso's Gemma 4 brain
@@ -1606,7 +1614,7 @@ function App() {
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const C = window.CafresoHQClient;
+      const C = CafresoHQClient;
       setBackendProbing(true);
       for (let i = 0; i < 3; i++) {
         let ok = false;
@@ -1639,11 +1647,11 @@ function App() {
     const tick = async () => {
       if (stopped) return;
       let ok = false;
-      try { ok = await window.CafresoHQClient.backendHealth(); } catch (_e) {}
+      try { ok = await CafresoHQClient.backendHealth(); } catch (_e) {}
       if (stopped) return;
       if (ok) {
         setBackendDown(false);
-        try { if (window.CafresoHQClient.hermesEnsureProvider) window.CafresoHQClient.hermesEnsureProvider(); } catch (_e) {}
+        try { if (CafresoHQClient.hermesEnsureProvider) CafresoHQClient.hermesEnsureProvider(); } catch (_e) {}
         return;   // effect cleanup will fire on backendDown→false
       }
       delay = Math.min(30000, Math.round(delay * 1.5));
@@ -1901,7 +1909,7 @@ ${d.text}` : d.text,
     if (theme && theme !== 'default') cl.add('theme-' + theme);
   }, [theme]);
   // Expose memory to HQ so streams can fold it into the system prompt.
-  useEffectA(() => { window.HQ._memory = memory; }, [memory]);
+  useEffectA(() => { HQ._memory = memory; }, [memory]);
   // Hard ceiling on in-memory chat. Streaming setChat calls do prev.map(),
   // which is O(N) per token — keep the array small so that stays cheap.
   // 100 still gives plenty of scrollback (persistableChat caps saves at 80).
@@ -2147,7 +2155,7 @@ ${d.text}` : d.text,
   };
   const anchorWorkReceipt = async (agent, ev, rcId, title) => {
     try {
-      const chain = window.CafresoHQChain;
+      const chain = CafresoHQChain;
       if (!(chain && chain.isAvailable && chain.isAvailable() && chain.receipt)) return;
       const arg = String(ev.arg || '');
       let content = String(ev.result || '') || arg;
@@ -2155,7 +2163,7 @@ ${d.text}` : d.text,
         try {
           const m = String(ev.result || '').match(/[\w\-./ ]+\.(pptx|docx|pdf|png|jpg|jpeg|gif|mp4|webm)\b/i);
           if (m) {
-            const r = await fetch((window.CafresoHQClient.backendBase() || '') + '/fs/file?path=' +
+            const r = await fetch((CafresoHQClient.backendBase() || '') + '/fs/file?path=' +
               encodeURIComponent(m[0].trim()), { credentials: 'include' });
             if (r.ok) content = new Uint8Array(await r.arrayBuffer());
           }
@@ -2889,7 +2897,7 @@ ${d.text}` : d.text,
       }
       const role = roleRaw.slice(0, 60);
       // Resolve final model: per-spawn override > global pinned > inherit.
-      const settings = window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {};
+      const settings = CafresoHQClient && CafresoHQClient.getSettings ? CafresoHQClient.getSettings() : {};
       const globalSub = settings.subagentModel;
       let subModel = perSpawnModel
         || (globalSub && globalSub !== 'inherit' ? globalSub : null)
@@ -3221,7 +3229,7 @@ ${d.text}` : d.text,
   // watcher live (no reload needed).
   const [moneyModuleOn, setMoneyModuleOn] = useStateA(() => !!(window.hqMoneyOn && window.hqMoneyOn()));
   useEffectA(() => {
-    const C = window.CafresoHQClient;
+    const C = CafresoHQClient;
     if (!C || !C.onSettingsChange) return;
     return C.onSettingsChange(() => setMoneyModuleOn(!!(window.hqMoneyOn && window.hqMoneyOn())));
   }, []);
@@ -3236,7 +3244,7 @@ ${d.text}` : d.text,
     };
     window.addEventListener('cafresohq:agentTool', markToolMove);
     window.addEventListener('cafresohq:walletLocalMove', markLocalMove);
-    const chain = window.CafresoHQChain;
+    const chain = CafresoHQChain;
     // Money module off → no balance polling, no tip/payday celebrations.
     if (!moneyModuleOn || !(chain && chain.isAvailable && chain.isAvailable())) {
       return () => {
@@ -3356,7 +3364,7 @@ ${d.text}` : d.text,
         // the paper even when nothing else happened while away.
         let nightRuns = [];
         try {
-          const base = (window.CafresoHQClient && window.CafresoHQClient.backendBase()) || '';
+          const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
           const r = await fetch(base + '/missions/runs', { credentials: 'include' });
           const j = await r.json();
           nightRuns = (j.runs || []).filter(x => (x.finishedAt || 0) > prevSeen);
@@ -3371,7 +3379,7 @@ ${d.text}` : d.text,
           nightRuns: nightRuns.slice(-10),
         });
         try {
-          const chain = window.CafresoHQChain;
+          const chain = CafresoHQChain;
           if (chain && chain.isAvailable() && chain.docs && chain.docs.put) {
             const day = new Date().toISOString().slice(0, 10);
             chain.docs.put(`journal/${day}`, JSON.stringify({
@@ -3857,7 +3865,7 @@ ${d.text}` : d.text,
         // Downgrade if the senior's model needs elevation — assistants are
         // never elevated, so they need a non-elevated equivalent.
         const dg = downgradeElevatedModel(p.inheritModel,
-          window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {});
+          CafresoHQClient && CafresoHQClient.getSettings ? CafresoHQClient.getSettings() : {});
         const finalModel = dg.model;
         if (dg.swapped) {
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
@@ -4432,8 +4440,8 @@ ${d.text}` : d.text,
         onLaunch={desktopMode ? openOrRaise : undefined}
         runningViews={desktopMode ? (openWindows || []).filter(w => !w.minimized).map(w => w.view) : undefined}
       />
-      {window.CafresoHQUI && window.CafresoHQUI.MobileTabBar ? (
-        <window.CafresoHQUI.MobileTabBar
+      {CafresoHQUI && CafresoHQUI.MobileTabBar ? (
+        <CafresoHQUI.MobileTabBar
           active={activeView}
           setActive={setActiveView}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -4997,8 +5005,8 @@ ${d.text}` : d.text,
    openNote requests sent by the parent window so clicks sync across.
    ─────────────────────────────────────────────────────────────── */
 function GraphPopout() {
-  const { GraphView } = window.CafresoHQViews;
-  const { ToastProvider } = window.CafresoHQUI;
+  const { GraphView } = CafresoHQViews;
+  const { ToastProvider } = CafresoHQUI;
   const [activePath, setActivePath] = React.useState(null);
 
   React.useEffect(() => {

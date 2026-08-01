@@ -5,7 +5,7 @@
      - Anthropic Messages API (browser-direct, stream SSE)
      - LM Studio / Ollama (OpenAI-compatible /v1/chat/completions, SSE)
      - Claude Code / CafresoHQ / Codex CLIs, Google Gemini
-   Settings persisted in localStorage. window.CafresoHQClient is the surface.
+   Settings persisted in localStorage. CafresoHQClient is the surface.
    ========================================================================== */
 
 // ── API base resolution ─────────────────────────────────────────────────────
@@ -101,6 +101,10 @@ window.__hqShellOrigin = (function () {
   return null;
 })();
 const _SHELL_ORIGIN = window.__hqShellOrigin;
+
+// Assigned inside their setup IIFEs below (they close over _pending etc.);
+// declared here so they can be module exports instead of window globals.
+let VaultBridge, CafresoHQChain;
 
 // ── Credentialed fetch for cross-origin (canister UI → container API) ─────────
 // When the UI is on a different origin than the API, the browser won't send the
@@ -1618,7 +1622,7 @@ let _keychainKeys = null;       // {provider: plaintext} from the chain, once hy
 let _keychainHydration = null;  // settles exactly once; failures fall back local
 
 function _chainKeychain() {
-  const c = window.CafresoHQChain;
+  const c = CafresoHQChain;
   return (c && c.isAvailable && c.isAvailable() && c.keychain) ? c.keychain : null;
 }
 
@@ -1787,7 +1791,7 @@ async function exportPdf(path, content) {
 
 /* Read media provider/model from settings. Falls back to OpenAI/dall-e-3. */
 function _mediaConfig(kind /* 'image' | 'video' */) {
-  const s = (typeof getSettings === 'function') ? getSettings() : (window.CafresoHQClient && window.CafresoHQClient.getSettings ? window.CafresoHQClient.getSettings() : {});
+  const s = (typeof getSettings === 'function') ? getSettings() : (CafresoHQClient && CafresoHQClient.getSettings ? CafresoHQClient.getSettings() : {});
   const provider = (kind === 'video' ? s.videoProvider : s.imageProvider) || 'openai';
   const model = (kind === 'video' ? s.videoModel : s.imageModel) || (kind === 'video' ? '' : 'dall-e-3');
   return { provider, model };
@@ -2052,7 +2056,7 @@ async function publishSite(path, opts = {}) {
   const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
 
   let url = null, mode = 'preview', skipped = [], tipNotes = [];
-  const chain = window.CafresoHQChain;
+  const chain = CafresoHQChain;
   if (chain && chain.isAvailable && chain.isAvailable()) {
     try {
       const collected = await fsCollect(dir);
@@ -2200,7 +2204,7 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     }
   });
 
-  window.VaultBridge = {
+  VaultBridge = {
     /** True when framed by a TRUSTED shell — not merely "am I in an iframe".
         A hostile framer makes window.parent !== window just as well, so the
         resolved shell origin is the real precondition. */
@@ -2253,7 +2257,7 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     else resolve(e.data);
   });
 
-  window.CafresoHQChain = {
+  CafresoHQChain = {
     /** True when framed by a TRUSTED shell (on-chain ops available). Being in
         *an* iframe is not enough — see VaultBridge.isAvailable. */
     isAvailable() { try { return window.parent !== window && !!_SHELL_ORIGIN; } catch { return false; } },
@@ -2367,7 +2371,7 @@ async function backendHealth() {
 /** The resolved backend base URL (gateway when cross-origin, '' when same-origin). */
 function backendBase() { return _API_BASE || ''; }
 
-window.CafresoHQClient = {
+const CafresoHQClient = {
   getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
   probeManagedBrain, managedBrain,
   stream, listLMStudioModels, probe,
@@ -2390,3 +2394,5 @@ window.CafresoHQClient = {
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };
+
+export { CafresoHQClient, CafresoHQChain, VaultBridge };

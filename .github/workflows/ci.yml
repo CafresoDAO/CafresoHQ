@@ -41,6 +41,9 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Lint (no-undef tripwire for the ES-module conversion)
+        run: npm run lint
+
       - name: Build UI bundle
         run: npm run build
 

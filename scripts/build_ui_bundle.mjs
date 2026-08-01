@@ -6,15 +6,13 @@
  * load. This script removes Babel entirely:
  *   1. Self-hosts the vendor UMD globals (React prod, ReactDOM prod, xterm, fit
  *      addon) from node_modules — drops the unpkg dependency.
- *   2. esbuild-TRANSFORMS each .jsx -> .js (JSX -> React.createElement) with
- *      whitespace/syntax minify but NO identifier renaming. The 11 HQ files rely
- *      on separate-classic-script scoping (cross-file comms are via window.CafresoHQ*
- *      globals; component defs live on the global object, consumers take `const`
- *      bindings). Transforming each file independently and loading them as the
- *      SAME ordered <script> tags preserves that runtime model exactly — bundling
- *      or concatenating would collapse scopes and cause redeclaration errors.
- *   3. (Phase 1) BUNDLES the new graph engine + analytics worker (which DO use npm
- *      imports: sigma/graphology) into their own IIFE chunks. Skipped until present.
+ *   2. BUNDLES the app .jsx files into one IIFE chunk via a synthetic entry that
+ *      imports each file. The files are real ES modules (named import/export
+ *      between them); only late-bound runtime registries (window.CafresoHQGraph,
+ *      window.CafresoHQMessages, toast/prompt hooks) and the vendor UMD globals
+ *      still live on window. APP_FILES order is the entry's import order.
+ *   3. BUNDLES the graph engine + analytics worker (npm imports: sigma/
+ *      graphology) into their own IIFE chunks. Skipped when absent.
  *
  * Output: dist-ui/bundle/<name>-<hash>.{js,css} + dist-ui/manifest.json
  * The manifest drives placeholder substitution in hq.html (done by serve.py for

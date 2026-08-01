@@ -1,3 +1,6 @@
+import { Sprite } from './sprites.jsx';
+import { HQ } from './hq-runtime.jsx';
+import { CafresoHQModals } from './modals.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -7,7 +10,7 @@ const { useState: useSF, useEffect: useEF, useRef: useRF, useMemo: useMF } = Rea
 
 /* Pulled from CafresoHQModals so the modals defined in this file can use the
    shared <Modal> shell (focus trap, scroll lock, animated entry). */
-const { Modal: OcModal } = window.CafresoHQModals;
+const { Modal: OcModal } = CafresoHQModals;
 
 /* ---------------- Seed data ----------------
    Empty in production: fake demo tasks/memories used to be written into every
@@ -261,7 +264,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
       let buf = '';
       const update = makeRafGate(ph.id);
       try {
-        await window.HQ.agentStream(
+        await HQ.agentStream(
           ph.agentRef,
           `Meeting transcript so far:\n${transcript}\n\nRespond briefly (1-2 sentences) from your role's perspective.`,
           tok => { buf += tok; update(buf); },
@@ -281,7 +284,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
     if (!controller.signal.aborted) {
       const update = makeRafGate(ceoPlaceholder.id);
       try {
-        await window.HQ.ceoStream(
+        await HQ.ceoStream(
           `You are moderating a team meeting. Transcript:\n${transcript}\n\nSynthesize the discussion in 1-2 sentences and state the next action.`,
           tok => { buf += tok; update(buf); },
           { agents: participants, signal: controller.signal }
@@ -476,7 +479,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
       controller.signal.addEventListener('abort', onParentAbort);
       const timeoutId = setTimeout(() => perAgent.abort(), STANDUP_TIMEOUT_MS);
       try {
-        await window.HQ.agentStream(a, STANDUP_PROMPT,
+        await HQ.agentStream(a, STANDUP_PROMPT,
           tok => { buf += tok; updateReport(buf); },
           { signal: perAgent.signal, maxTokens: STANDUP_MAX_TOKENS }
         );
@@ -504,7 +507,7 @@ function StandupModal({ open, onClose, agents, onArchive }) {
     const transcript = finished.map(f => `${f.name} (${f.role}):\n${f.text}`).join('\n\n');
     const sumTimeout = setTimeout(() => controller.abort(), STANDUP_TIMEOUT_MS);
     try {
-      await window.HQ.ceoStream(
+      await HQ.ceoStream(
         `End-of-day stand-up reports:\n\n${transcript}\n\nSynthesize this in 2 sentences and call out the single most important next action for the boss.`,
         tok => { buf += tok; setSummary(buf); },
         { agents, signal: controller.signal, maxTokens: 200 }
@@ -841,4 +844,6 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-window.CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+const CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+
+export { CafresoHQV2 };

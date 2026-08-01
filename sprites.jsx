@@ -137,6 +137,4 @@ const SPRITES = {
   blush: 'blush',
 };
 
-window.Sprite = Sprite;
-window.SPRITES = SPRITES;
-window.HUMANS = HUMANS;
+export { Sprite, SPRITES, HUMANS };

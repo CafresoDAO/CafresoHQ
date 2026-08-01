@@ -1,3 +1,6 @@
+import { Sprite } from './sprites.jsx';
+import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
+import { HQ } from './hq-runtime.jsx';
 ﻿/* ==========================================================================
    CafresoHQ — modals (Hire / Settings)
    ========================================================================== */
@@ -8,11 +11,11 @@ const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
    any component using this hook re-renders whenever setSettings() is called,
    even from a different component tree. */
 function useSettingsStore() {
-  const [s, setS] = useStateM(() => window.CafresoHQClient.getSettings());
+  const [s, setS] = useStateM(() => CafresoHQClient.getSettings());
   useEffectM(() => {
-    return window.CafresoHQClient.onSettingsChange(fresh => setS({ ...fresh }));
+    return CafresoHQClient.onSettingsChange(fresh => setS({ ...fresh }));
   }, []);
-  return [s, patch => window.CafresoHQClient.setSettings(patch)];
+  return [s, patch => CafresoHQClient.setSettings(patch)];
 }
 
 /* Live model picker — loads all providers from localModelOptions(), which now
@@ -27,7 +30,7 @@ function ModelPicker({ value, onChange, refreshKey }) {
     let live = true;
     setLoading(true);
     setError(false);
-    window.CafresoHQClient.localModelOptions()
+    CafresoHQClient.localModelOptions()
       .then(g => {
         if (!live) return;
         setGroups(g);
@@ -37,14 +40,14 @@ function ModelPicker({ value, onChange, refreshKey }) {
         if (!live) return;
         /* Last-resort fallback — all static model lists so the picker
            is never blank. Static lists only. */
-        const s = window.CafresoHQClient.getSettings();
+        const s = CafresoHQClient.getSettings();
         const fallback = [
           { label: 'Anthropic (Claude API)', provider: 'anthropic',
-            options: window.CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
+            options: CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
           { label: 'Google (Gemini API)', provider: 'google',
-            options: window.CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
+            options: CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
           { label: 'Codex CLI', provider: 'codex',
-            options: window.CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
+            options: CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
         ];
         setGroups(fallback);
         setLoading(false);
@@ -614,7 +617,7 @@ function AgentWalletCard({ agent }) {
   const [capHrs, setCapHrs] = useStateM('24');
   const [fundTok, setFundTok] = useStateM('ICP');
   const [fundAmt, setFundAmt] = useStateM('0.05');
-  const chain = () => window.CafresoHQChain;
+  const chain = () => CafresoHQChain;
   const agentId = agent.id || agent.name;
 
   // Payroll (Sprint 2): a standing salary/refill the state canister's timer
@@ -823,7 +826,7 @@ function PayrollBudgetPanel() {
   const [days, setDays] = useStateM('30');
   const [busy, setBusy] = useStateM('');
   const [msg, setMsg] = useStateM('');
-  const chain = () => window.CafresoHQChain;
+  const chain = () => CafresoHQChain;
 
   const load = async () => {
     try {
@@ -901,14 +904,14 @@ function PayrollBudgetPanel() {
 
 function IcpServicesPanel({ agents }) {
   const [installed, setInstalled] = useStateM(() => {
-    try { return window.CafresoHQClient.getSettings().icpServices || {}; } catch (_e) { return {}; }
+    try { return CafresoHQClient.getSettings().icpServices || {}; } catch (_e) { return {}; }
   });
   const [moneyOn, setMoneyOn] = useStateM(() => !!(window.hqMoneyOn && window.hqMoneyOn()));
   const [available, setAvailable] = useStateM(false);
   const [pausedAll, setPausedAll] = useStateM(false);
   const [loading, setLoading] = useStateM(true);
   const [err, setErr] = useStateM('');
-  const chain = () => window.CafresoHQChain;
+  const chain = () => CafresoHQChain;
 
   const load = async () => {
     setLoading(true); setErr('');
@@ -919,7 +922,7 @@ function IcpServicesPanel({ agents }) {
       const flags = await chain().services.list();
       const map = { ...installed }; (flags || []).forEach(f => { map[f.serviceId] = !!f.enabled; });
       setInstalled(map);
-      window.CafresoHQClient.setSettings({ icpServices: map });
+      CafresoHQClient.setSettings({ icpServices: map });
       setPausedAll(await chain().wallet.pausedAll());
     } catch (e) { setErr(String(e.message || e)); }
     setLoading(false);
@@ -942,14 +945,14 @@ function IcpServicesPanel({ agents }) {
         + 'Tip: start tiny (0.05 ICP) until you trust the flow.',
         { okLabel: 'Turn on', cancelLabel: 'Not now' });
       if (!ok) return;
-      window.CafresoHQClient.setSettings({ moneyEnabled: true });
+      CafresoHQClient.setSettings({ moneyEnabled: true });
       setMoneyOn(true);
       if (available) {
         try {
           await chain().services.set('wallet', true, '');
           const map = { ...installed, wallet: true };
           setInstalled(map);
-          window.CafresoHQClient.setSettings({ icpServices: map });
+          CafresoHQClient.setSettings({ icpServices: map });
         } catch (e) { setErr(String(e.message || e)); }
       }
       return;
@@ -964,7 +967,7 @@ function IcpServicesPanel({ agents }) {
     if (available) {
       try { await chain().wallet.pauseAll(true); setPausedAll(true); } catch (_e) { /* best-effort */ }
     }
-    window.CafresoHQClient.setSettings({ moneyEnabled: false });
+    CafresoHQClient.setSettings({ moneyEnabled: false });
     setMoneyOn(false);
   };
 
@@ -974,7 +977,7 @@ function IcpServicesPanel({ agents }) {
     // Publish works without the bridge (container /fs path) — always store
     // locally; flip the on-chain flag too when the shell is reachable.
     setInstalled(map);
-    window.CafresoHQClient.setSettings({ icpServices: map });
+    CafresoHQClient.setSettings({ icpServices: map });
     if (available) {
       try { await chain().services.set('publish', next, ''); }
       catch (e) { setErr(String(e.message || e)); }
@@ -1098,7 +1101,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
   useEffectM(() => {
     if (!open) return;
     let live = true;
-    const C = window.CafresoHQClient;
+    const C = CafresoHQClient;
     (async () => {
       // Managed premium: the only live status the nav needs is "is my
       // container up" — provider keys and CLI installs are Cafreso's job now.
@@ -1457,7 +1460,7 @@ function SystemTab() {
       setHealth(r.ok ? await r.json() : false);
     } catch (_e) { setHealth(false); }
     try {
-      const C = window.CafresoHQClient;
+      const C = CafresoHQClient;
       if (C.hermesGetProvider) setProv(await C.hermesGetProvider());
     } catch (_e) { setProv(null); }
     setBusy(false);
@@ -1484,7 +1487,7 @@ function SystemTab() {
   const [importBusy, setImportBusy] = useStateM(false);
   const exportConfig = async () => {
     try {
-      const C = window.CafresoHQClient;
+      const C = CafresoHQClient;
       const data = await C.hermesExportConfig();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -1502,7 +1505,7 @@ function SystemTab() {
     setImportBusy(true); setNote('');
     try {
       const text = await file.text();
-      const C = window.CafresoHQClient;
+      const C = CafresoHQClient;
       const r = await C.hermesImportConfig(text);
       setNote(r.restarted
         ? '✓ config imported — agent reloading (~10s). Re-enter your key in Connections if needed.'
@@ -1637,7 +1640,7 @@ const HBACKENDS = {
 };
 
 function ApiTab() {
-  const C = window.CafresoHQClient;
+  const C = CafresoHQClient;
   const [s, update] = useSettingsStore();
   const [probing, setProbing] = useStateM(false);
   const [probeResult, setProbeResult] = useStateM(null);
@@ -1727,21 +1730,21 @@ function ApiTab() {
 
   useEffectM(() => {
     if (s.provider === 'lmstudio') {
-      window.CafresoHQClient.listLMStudioModels().then(setLmModels).catch(() => setLmModels([]));
+      CafresoHQClient.listLMStudioModels().then(setLmModels).catch(() => setLmModels([]));
     } else if (s.provider === 'ollama') {
-      window.CafresoHQClient.listOllamaModels().then(ms => setOlModels(ms.map(m => m.name))).catch(() => setOlModels([]));
+      CafresoHQClient.listOllamaModels().then(ms => setOlModels(ms.map(m => m.name))).catch(() => setOlModels([]));
     }
   }, [s.provider, s.lmstudioUrl, s.ollamaUrl]);
 
   const runProbe = async () => {
     setProbing(true); setProbeResult(null);
     try {
-      const r = await window.CafresoHQClient.probe();
+      const r = await CafresoHQClient.probe();
       setProbeResult(r);
       if (s.provider === 'lmstudio') {
-        setLmModels(await window.CafresoHQClient.listLMStudioModels());
+        setLmModels(await CafresoHQClient.listLMStudioModels());
       } else if (s.provider === 'ollama') {
-        const ms = await window.CafresoHQClient.listOllamaModels();
+        const ms = await CafresoHQClient.listOllamaModels();
         setOlModels(ms.map(m => m.name));
       } else if (s.provider === 'google') { // Add this block for Google models
         // No specific model listing needed here as it's done in claude-client.jsx
@@ -1928,7 +1931,7 @@ function ApiTab() {
           </div>
           {s.subagentModel === 'inherit' ? (
             <button className="px-btn secondary"
-                    onClick={() => update({ subagentModel: window.CafresoHQClient.getSettings().anthropicModel ? 'anthropic:' + window.CafresoHQClient.getSettings().anthropicModel : 'inherit' })}>
+                    onClick={() => update({ subagentModel: CafresoHQClient.getSettings().anthropicModel ? 'anthropic:' + CafresoHQClient.getSettings().anthropicModel : 'inherit' })}>
               PIN A MODEL…
             </button>
           ) : (
@@ -1976,7 +1979,7 @@ function ApiTab() {
           <div className="form-row">
             <label>MODEL</label>
             <select value={s.anthropicModel} onChange={e=>update({anthropicModel: e.target.value})}>
-              {window.CafresoHQClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              {CafresoHQClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
           </div>
@@ -1995,7 +1998,7 @@ function ApiTab() {
           <div className="form-row">
             <label>MODEL</label>
             <select value={s.googleModel} onChange={e=>update({googleModel: e.target.value})}>
-              {window.CafresoHQClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              {CafresoHQClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
           </div>
@@ -2067,7 +2070,7 @@ function ClaudeCodePanel({ s, update }) {
 
   const refresh = async () => {
     try {
-      const st = await window.CafresoHQClient.claudecodeStatus();
+      const st = await CafresoHQClient.claudecodeStatus();
       setStatus(st);
       if (!draft) setDraft(st.override || '');
     } catch (_e) {}
@@ -2077,7 +2080,7 @@ function ClaudeCodePanel({ s, update }) {
   const save = async () => {
     setBusy(true); setMsg(null);
     try {
-      await window.CafresoHQClient.claudecodeConfigure(draft.trim());
+      await CafresoHQClient.claudecodeConfigure(draft.trim());
       await refresh();
       setMsg({ ok: true, text: draft.trim() ? 'override saved' : 'cleared (using PATH)' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2114,7 +2117,7 @@ function ClaudeCodePanel({ s, update }) {
       <div className="row-knob">
         <div><div className="lbl">Default model</div><div className="sub">used when an agent hasn't pinned one</div></div>
         <select value={s.claudecodeModel} onChange={e=>update({claudecodeModel: e.target.value})}>
-          {window.CafresoHQClient.CLAUDECODE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          {CafresoHQClient.CLAUDECODE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       <div className="row-knob">
@@ -2133,7 +2136,7 @@ function CodexPanel({ s, update }) {
 
   const refresh = async () => {
     try {
-      const st = await window.CafresoHQClient.codexStatus();
+      const st = await CafresoHQClient.codexStatus();
       setStatus(st);
       if (!draft) setDraft(st.override || '');
     } catch (_e) {}
@@ -2143,7 +2146,7 @@ function CodexPanel({ s, update }) {
   const save = async () => {
     setBusy(true); setMsg(null);
     try {
-      await window.CafresoHQClient.codexConfigure(draft.trim());
+      await CafresoHQClient.codexConfigure(draft.trim());
       await refresh();
       setMsg({ ok: true, text: draft.trim() ? 'override saved' : 'cleared (using PATH)' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2186,7 +2189,7 @@ function CodexPanel({ s, update }) {
           <div className="sub">maps to a profile in <code>~/.codex/config.toml</code></div>
         </div>
         <select value={s.codexModel} onChange={e=>update({codexModel: e.target.value})}>
-          {window.CafresoHQClient.CODEX_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          {CafresoHQClient.CODEX_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       <div className="row-knob">
@@ -2211,14 +2214,14 @@ function VaultTab() {
 
   const refresh = async () => {
     try {
-      const s = await window.CafresoHQClient.vaultStatus();
+      const s = await CafresoHQClient.vaultStatus();
       setStatus({ ...s, unavailable: false, error: '' });
       setDraftRoot(s.root || '');
       setDraftUrl(s.restUrl || '');
       // We never get the actual key back from the server; only the masked sentinel.
       if (!draftKey) setDraftKey('');
       if (s.configured) {
-        try { setFiles(await window.CafresoHQClient.vaultList()); } catch (_e) { setFiles(null); }
+        try { setFiles(await CafresoHQClient.vaultList()); } catch (_e) { setFiles(null); }
       } else { setFiles(null); }
     } catch (e) {
       const message = e.message || 'CafresoHQ bridge is not reachable.';
@@ -2237,8 +2240,8 @@ function VaultTab() {
   const setBackend = async (backend) => {
     setBusy(true); setMsg(null);
     try {
-      await window.CafresoHQClient.vaultConfigure({ backend });
-      window.HQ.clearVaultReadyCache();
+      await CafresoHQClient.vaultConfigure({ backend });
+      HQ.clearVaultReadyCache();
       await refresh();
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy(false);
@@ -2248,8 +2251,8 @@ function VaultTab() {
     const root = cleanLocalRoot(draftRoot);
     setBusy(true); setMsg(null);
     try {
-      await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
-      window.HQ.clearVaultReadyCache();
+      await CafresoHQClient.vaultConfigure({ backend: 'fs', root });
+      HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: root ? 'configured' : 'cleared' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2262,8 +2265,8 @@ function VaultTab() {
     setBusy(true); setMsg(null);
     try {
       setDraftRoot(root);
-      await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root });
-      window.HQ.clearVaultReadyCache();
+      await CafresoHQClient.vaultConfigure({ backend: 'fs', root });
+      HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: 'using CafresoHQ vault' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2273,7 +2276,7 @@ function VaultTab() {
   const detectObsidianVault = async () => {
     setBusy(true); setMsg(null);
     try {
-      const found = await window.CafresoHQClient.vaultDiscover();
+      const found = await CafresoHQClient.vaultDiscover();
       const vaults = found.vaults || [];
       const pick = vaults.find(v => v.exists) || vaults[0];
       if (!pick) {
@@ -2282,8 +2285,8 @@ function VaultTab() {
         setMsg({ ok: false, text: `found ${pick.name}, but path is missing` });
       } else {
         setDraftRoot(pick.path);
-        await window.CafresoHQClient.vaultConfigure({ backend: 'fs', root: pick.path });
-        window.HQ.clearVaultReadyCache();
+        await CafresoHQClient.vaultConfigure({ backend: 'fs', root: pick.path });
+        HQ.clearVaultReadyCache();
         await refresh();
         setMsg({ ok: true, text: `using ${pick.name}` });
       }
@@ -2296,9 +2299,9 @@ function VaultTab() {
     try {
       const patch = { restUrl: draftUrl.trim() };
       if (draftKey.trim()) patch.restKey = draftKey.trim();
-      await window.CafresoHQClient.vaultConfigure(patch);
+      await CafresoHQClient.vaultConfigure(patch);
       setDraftKey(''); // clear the in-memory draft so we don't redisplay
-      window.HQ.clearVaultReadyCache();
+      HQ.clearVaultReadyCache();
       await refresh();
       setMsg({ ok: true, text: 'saved' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
@@ -2387,7 +2390,7 @@ function BraveTab({ s, update }) {
   const [result, setResult] = useStateM(null);
   const test = async () => {
     setProbing(true); setResult(null);
-    try { setResult(await window.CafresoHQClient.braveProbe()); }
+    try { setResult(await CafresoHQClient.braveProbe()); }
     catch (e) { setResult({ ok:false, detail: e.message }); }
     setProbing(false);
   };
@@ -2887,7 +2890,7 @@ const FURNISH_CATALOG = [
 ];
 
 function FurnishModal({ agent, onClose, onUpdate }) {
-  const chain = (typeof window !== 'undefined' && window.CafresoHQChain) || null;
+  const chain = (typeof window !== 'undefined' && CafresoHQChain) || null;
   const canBuy = !!(chain && chain.isAvailable && chain.isAvailable() && chain.shop);
   const [busyId, setBusyId] = useStateM(null);
   const [note, setNote] = useStateM('');
@@ -2981,4 +2984,6 @@ function FurnishModal({ agent, onClose, onUpdate }) {
   );
 }
 
-window.CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal };
+const CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal };
+
+export { CafresoHQModals };

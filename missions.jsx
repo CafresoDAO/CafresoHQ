@@ -1,3 +1,7 @@
+import { Sprite } from './sprites.jsx';
+import { HQ } from './hq-runtime.jsx';
+import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
+import { CafresoHQModals } from './modals.jsx';
 /* ==========================================================================
    CafresoHQ — research missions
 
@@ -14,7 +18,7 @@
    ========================================================================== */
 
 const { useState: useSM, useEffect: useEMission, useRef: useRMission } = React;
-const { Modal: OcModalM } = window.CafresoHQModals;
+const { Modal: OcModalM } = CafresoHQModals;
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -194,7 +198,7 @@ async function runMissionIteration(ctx) {
      what's already there. Cheap call (just file list). */
   let notesIndex = [];
   try {
-    const all = await window.CafresoHQClient.vaultList();
+    const all = await CafresoHQClient.vaultList();
     const prefix = mission.vaultFolder + '/';
     notesIndex = all
       .filter(f => f.path.startsWith(prefix))
@@ -545,7 +549,7 @@ function useMissionRunner(missions, setMissions, ctx) {
    Gazette also ingests.
    ========================================================================== */
 const nsBase = () => {
-  try { return window.CafresoHQClient.backendBase() || ''; } catch (_e) { return ''; }
+  try { return CafresoHQClient.backendBase() || ''; } catch (_e) { return ''; }
 };
 const nsFetch = (path, opts) =>
   fetch(nsBase() + path, { credentials: 'include', ...(opts || {}) }).then(r => r.json());
@@ -592,7 +596,7 @@ function NightShiftSection({ agents }) {
      mirror failures must never block or fail scheduling. */
   const chainMissions = () => {
     try {
-      const c = window.CafresoHQChain;
+      const c = CafresoHQChain;
       return c && c.isAvailable() ? c.missions : null;
     } catch (_e) { return null; }
   };
@@ -1088,6 +1092,8 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
   );
 }
 
-window.CafresoHQMissions = {
+const CafresoHQMissions = {
   MissionsModal, useMissionRunner, runMissionIteration, MIN, HOUR,
 };
+
+export { CafresoHQMissions };
