@@ -30,7 +30,7 @@ const VENDOR = Object.fromEntries(
 
 export default [
   {
-    files: ['*.jsx'],
+    files: ['*.jsx', 'views/*.jsx'],
     plugins: { react, 'react-hooks': reactHooks },
     languageOptions: {
       ecmaVersion: 2022,
