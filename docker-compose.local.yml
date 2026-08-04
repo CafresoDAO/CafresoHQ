@@ -47,8 +47,17 @@ services:
       # News + weather are new crons, opt-in via *_CRON=1 in serve.py — turned
       # on here per-container rather than by default in code, so a stale image
       # pulled elsewhere doesn't silently start hitting Brave/NWS unasked.
+      # ALL auto-content crons off 2026-08 — search/library/news pulled from
+      # the public site while the DAO runs lean; every cron write costs ydacz
+      # cycles. Re-enable deliberately when revenue covers the burn.
       NEWS_CRON: "0"
-      WEATHER_CRON: "1"
+      WEATHER_CRON: "0"
+      GAP_CRON: "0"
+      TOPICS_CRON: "0"
+      # Overrides worker.env's SEARCH_WORKER=1 — stop polling the ydacz job
+      # queue entirely (each poll is a paid update call; no public jobs exist
+      # while search is hidden).
+      SEARCH_WORKER: "0"
     volumes:
       - cafresohq-data:/data
     restart: unless-stopped
