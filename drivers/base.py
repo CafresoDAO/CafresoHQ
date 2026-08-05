@@ -8,8 +8,23 @@ module in this package, registering it in __init__.py, and nothing else.
 Stdlib-only on purpose: drivers ship inside the serve.py container image and
 must import with zero extra dependencies.
 """
+import subprocess
 import threading
 import uuid
+
+
+def probe_cli_version(bin_, timeout=6):
+    """First line of `<bin> --version`, '' on any failure. Shared by every
+    kind='cli' driver's detect(probe_version=True)."""
+    if not bin_:
+        return ''
+    try:
+        r = subprocess.run([bin_, '--version'], capture_output=True,
+                           text=True, timeout=timeout)
+        out = (r.stdout or r.stderr or '').strip()
+        return out.splitlines()[0][:80] if out else ''
+    except Exception:
+        return ''
 
 
 # ── Canonical event schema (DRIVER_CONTRACT.md §1.3) ─────────────────────────

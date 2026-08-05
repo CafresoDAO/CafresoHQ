@@ -84,11 +84,9 @@ HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
 # already-authenticated CLI does the auth. Binary resolution + the
 # CAFRESOHQ_CLAUDE_BIN override now live in drivers/claude_code.py.
 
-# Codex CLI — alternative elevated agent backend. Uses `codex exec --json`
-# with the same allowed-dirs sandbox. Auth is read from ~/.codex/config.toml
-# automatically; no API key is passed by serve.py.
-# Override binary path with CAFRESOHQ_CODEX_BIN env var.
-_codex_bin = os.environ.get('CAFRESOHQ_CODEX_BIN', '').strip()
+# Codex CLI — alternative elevated agent backend (`codex exec --json`, same
+# allowed-dirs sandbox). Binary resolution + the CAFRESOHQ_CODEX_BIN override
+# now live in drivers/codex.py; auth stays in ~/.codex — never touched here.
 
 # Hermes CLI (Nous Research) — the container's default agent runtime. Normally
 # on PATH (pip-installed in the image, or in the user's WSL/unix env). Override
@@ -1642,7 +1640,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'platform':         platform.system(),
             'user_principal':   _fleet_user_principal,
             'claude_code':      bool(self._claudecode_resolve()),
-            'codex':            bool(_codex_bin or shutil.which('codex')),
+            'codex':            bool(self._codex_resolve()),
             'hermes':           bool(_hermes_bin or shutil.which('hermes')),
             'gemini':           bool(_gemini_bin or shutil.which('gemini')),
             'runtime_env':      _RUNTIME_ENV,
@@ -1771,11 +1769,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         finally:
             drv.cancel(handle)   # idempotent; reaps the subprocess
 
-    def _agent_stream_legacy(self, driver_id, task, err_label):
+    def _agent_stream_legacy(self, driver_id, task, err_label,
+                             render_tools=False, done_sentinel=False):
         """Run a task through a driver but emit the LEGACY OpenAI-compat SSE
-        delta shape (/claudecode/stream, /cafresohq/stream keep one client
-        parser). token→delta frame, usage→final usage frame, error→⚠ content
-        frame; tool events are dropped (legacy clients never saw them)."""
+        delta shape (/claudecode/stream, /cafresohq/stream, /codex/stream keep
+        one client parser). token→delta frame, usage→final usage frame,
+        error→⚠ content frame. render_tools inlines tool_call/tool_result as
+        text frames (the old /codex/stream behavior); done_sentinel appends
+        the data: [DONE] trailer that route's client expects."""
         drv = _drivers.get(driver_id)
         try:
             handle = drv.start_task(task)
@@ -1809,8 +1810,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 elif et == 'error':
                     write_sse({'choices': [{'index': 0, 'delta': {
                         'content': f"\n\n\u26a0 {err_label} error: {ev['message']}"}}]})
+                elif et == 'tool_call' and render_tools:
+                    args = ev['args']
+                    if isinstance(args, dict):
+                        cmd_str = args.get('cmd') or args.get('command') or json.dumps(args)
+                    else:
+                        cmd_str = str(args)
+                    write_sse({'choices': [{'index': 0, 'delta': {
+                        'content': f"\n[{(ev['name'] or 'tool').upper()}: {cmd_str}]\n"}}]})
+                elif et == 'tool_result' and render_tools:
+                    if ev['summary']:
+                        write_sse({'choices': [{'index': 0, 'delta': {
+                            'content': f"\n\U0001f4e1 tool(\"{ev['id'][:60] or '...'}\" \u2192\n{ev['summary']}\n"}}]})
+                elif et == 'done' and ev.get('summary'):
+                    write_sse({'choices': [{'index': 0, 'delta': {
+                        'content': f"\n\n_({ev['summary']})_"}}]})
         finally:
             drv.cancel(handle)
+            if done_sentinel:
+                try:
+                    self.wfile.write(b'data: [DONE]\n\n')
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
     # ---- Tool execution proxy (bracket-format tools for any provider) ------
     def _validate_path(self, path, strict=False):
@@ -2141,7 +2163,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {
             'configured': bool(bin_) and bool(dirs_ok),
             'binary': bin_ or '',
-            'override': _codex_bin or '',
+            'override': _drivers.get('codex').binary_override or '',
             'allowedDirs': dirs_ok,
             'badDirs': dirs_bad,
             'allowedTools': list(_cafresohq_allowed_tools),
@@ -2179,10 +2201,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # /agents endpoint both read it.
                 return _drivers.get('claude-code').detect_auth()
             elif aid == 'codex':
-                if (home / '.codex' / 'auth.json').is_file():
-                    return True, 'oauth'
-                if os.environ.get('OPENAI_API_KEY', '').strip():
-                    return True, 'api-key'
+                return _drivers.get('codex').detect_auth()
             elif aid == 'gemini':
                 gdir = home / '.gemini'
                 if ((gdir / 'oauth_creds.json').is_file()
@@ -2655,19 +2674,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ---- Codex CLI elevated agent ----------------------------------------
     def _codex_resolve(self):
-        if _codex_bin and pathlib.Path(_codex_bin).is_file():
-            return _codex_bin
-        # On Windows, prefer codex.cmd over the extensionless npm wrapper.
-        # The extensionless file is a shell script that Windows can't exec
-        # directly — subprocess.Popen on it raises OSError 193 ("not a valid
-        # Win32 application"), which used to escape the except FileNotFoundError
-        # guard and kill the HTTP connection (→ browser "Failed to fetch").
-        if sys.platform == 'win32':
-            return (shutil.which('codex.cmd')
-                    or shutil.which(_codex_bin or 'codex')
-                    or shutil.which('codex')
-                    or '')
-        return shutil.which(_codex_bin or 'codex') or shutil.which('codex.cmd') or ''
+        """Find the codex binary. Returns absolute path or ''."""
+        return _drivers.get('codex').resolve()
 
     def _hermes_resolve(self):
         """Find the hermes binary. Returns absolute path or ''.
@@ -2692,387 +2700,67 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return shutil.which(_gemini_bin or 'gemini') or shutil.which('gemini.cmd') or ''
 
     def _codex_configure(self):
-        global _codex_bin
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
         except json.JSONDecodeError:
             return self._send_json(400, {'error': 'bad json'})
-        path = (body.get('binary') or '').strip()
-        if path and not pathlib.Path(path).is_file():
-            return self._send_json(400, {'error': f'not a file: {path}'})
-        _codex_bin = path
+        try:
+            _drivers.get('codex').configure({'binary': body.get('binary')})
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
         return self._codex_status()
 
     def _codex_stream(self):
-        """Streaming elevated agent backed by Codex CLI (codex exec --json).
-        Auth comes from ~/.codex/config.toml — serve.py never touches API keys.
-        Same SSE output shape as /cafresohq/stream so the UI uses one parser.
+        """Streaming elevated agent backed by the codex driver (codex exec
+        --json, workspace-write sandbox). Legacy route — same SSE output shape
+        as /cafresohq/stream (plus inline tool text + the [DONE] trailer this
+        route's client expects); the subprocess + event-zoo parsing now live
+        in drivers/codex.py. Auth comes from ~/.codex/auth.json or
+        OPENAI_API_KEY — serve.py never touches key material.
         """
-        bin_ = self._codex_resolve()
-        if not bin_:
-            return self._send_json(503, {
-                'error': 'codex CLI not found — install via npm i -g @openai/codex or set CAFRESOHQ_CODEX_BIN'
-            })
         if not _cafresohq_allowed_dirs:
             return self._send_json(503, {
-                'error': 'CAFRESOHQ_ALLOWED_DIRS not set — codex endpoint disabled'
+                'error': 'CAFRESOHQ_ALLOWED_DIRS not set \u2014 codex endpoint disabled'
             })
-
-        length = int(self.headers.get('content-length', 0) or 0)
-        try:
-            body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
-        except json.JSONDecodeError:
-            return self._send_json(400, {'error': 'bad json'})
-
         for d in _cafresohq_allowed_dirs:
             if not pathlib.Path(d).is_dir():
                 return self._send_json(503, {
                     'error': f'CAFRESOHQ_ALLOWED_DIRS includes missing dir: {d}'
                 })
 
-        messages = body.get('messages') or []
-        model    = (body.get('model') or '').strip()
-        system   = (body.get('system') or '').strip()
-        agent    = (body.get('agentName') or body.get('agent') or 'elevated-agent').strip()[:60]
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
+        except json.JSONDecodeError:
+            return self._send_json(400, {'error': 'bad json'})
 
-        # Build prompt from message history (same as cafresohq handler)
-        history_lines = []
-        for m in messages:
-            role = (m.get('role') or 'user').upper()
-            content = (m.get('content') or '').strip()
-            if not content: continue
-            history_lines.append(f'{role}: {content}')
-        prompt = '\n\n'.join(history_lines)
-        if not prompt:
-            return self._send_json(400, {'error': 'no prompt'})
-
-        # Use project cwd if provided and valid, otherwise first allowed dir.
-        primary_dir = _cafresohq_allowed_dirs[0]
-        req_cwd = (body.get('cwd') or '').strip()
-        if req_cwd:
-            try:
-                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
-                for d in _cafresohq_allowed_dirs:
-                    try:
-                        cwd_p.relative_to(pathlib.Path(d).resolve())
-                        if cwd_p.is_dir():
-                            primary_dir = str(cwd_p)
-                        break
-                    except ValueError:
-                        continue
-            except OSError:
-                pass
-        cmd = [bin_, 'exec',
-               '--json',
-               '--skip-git-repo-check',
-               '--sandbox', 'workspace-write',
-               '-C', primary_dir]
-        for d in _cafresohq_allowed_dirs[1:]:
-            cmd += ['--add-dir', d]
-        # Codex talks directly to OpenAI (default provider). Auth via
-        # OPENAI_API_KEY (user-supplied through HQ settings / operator env).
-        wire_model = model or 'gpt-4.1'
-        cmd += ['-c', 'model_provider="openai"']
-        cmd += ['--model', wire_model]
-        # OCI cloud requirements (synced into ~/.codex/cloud-requirements-cache.json)
-        # restrict approval_policy to "untrusted" — anything else (including
-        # "never") is rejected as `Configured value … is disallowed by
-        # requirements; falling back to required value UnlessTrusted`. That
-        # rejection used to surface as an `item.completed type=error` event
-        # and the user saw "Codex returned no content". Use the allowed
-        # value so the request actually runs.
-        cmd += ['-c', 'approval_policy="untrusted"']
-
+        agent = (body.get('agentName') or body.get('agent') or 'elevated-agent').strip()[:60]
+        system = (body.get('system') or '').strip()
+        model = (body.get('model') or '').strip()
+        # Guard-rail note is HOST policy, same wording as /cafresohq/stream.
         guard = (
             f'You are {agent}, an elevated HQ agent with computer access. '
             f'You are restricted to these directories: {", ".join(_cafresohq_allowed_dirs)}. '
             'When you intend to perform an action with side effects, first emit '
             '[NEEDS_APPROVAL: <one-line description>] and stop until the boss replies.'
         )
-        full_prompt = (guard + '\n\n' + (system + '\n\n' if system else '')) + prompt
 
         sys.stderr.write(f'[codex] stream: agent={agent} model={model or "(default)"} '
-                         f'wire_model={wire_model or "(default)"} '
                          f'dirs={_cafresohq_allowed_dirs}\n')
 
-        # Inherit env + Git Bash paths so shell tools work on Windows.
-        # Codex talks to OpenAI directly via OPENAI_API_KEY (BYOK / operator env).
-        import copy as _copy
-        agent_env = _copy.deepcopy(os.environ)
-        path_key = next((k for k in agent_env.keys() if k.lower() == 'path'), 'Path')
-        path_value = agent_env.get(path_key, '')
-        for _d in [r'C:\Program Files\Git\usr\bin',
-                   r'C:\Program Files\Git\bin',
-                   r'C:\Program Files\Git\mingw64\bin']:
-            if os.path.isdir(_d) and _d not in path_value:
-                path_value = _d + os.pathsep + path_value
-        path_value = os.pathsep.join(
-            p for p in path_value.split(os.pathsep)
-            if p and r'\.codex\tmp\arg0' not in p.lower()
-        )
-        for _k in [k for k in list(agent_env.keys()) if k.lower() == 'path']:
-            agent_env.pop(_k, None)
-        agent_env['Path'] = path_value
-        # Codex uses OpenAI directly via OPENAI_API_KEY; no base_url override.
-        agent_env.pop('OPENAI_BASE_URL', None)
-
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True, bufsize=1, encoding='utf-8',
-                cwd=primary_dir,
-                env=agent_env,
-            )
-        except (FileNotFoundError, OSError) as e:
-            return self._send_json(500, {'error': f'spawn codex: {e}'})
-
-        try:
-            proc.stdin.write(full_prompt)
-            proc.stdin.close()
-        except Exception as e:
-            # Codex died before we could send the prompt — capture stderr so
-            # the user sees the real failure (bad profile, bad config, etc.)
-            stderr_text = ''
-            try:
-                stderr_text = proc.stderr.read()[:1500]
-            except Exception:
-                pass
-            try: proc.kill()
-            except Exception: pass
-            return self._send_json(500, {
-                'error': f'codex exited before prompt could be sent: {e}',
-                'stderr': stderr_text,
-                'cmd': ' '.join(cmd),
-            })
-
-        # SSE response
-        self.send_response(200)
-        self.send_header('content-type', 'text/event-stream')
-        self.send_header('cache-control', 'no-store')
-        self.end_headers()
-
-        def write_sse(obj):
-            try:
-                self.wfile.write(b'data: ' + json.dumps(obj).encode('utf-8') + b'\n\n')
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                return False
-            return True
-
-        stderr_buf = []
-        def _drain_err():
-            try:
-                for line in proc.stderr:
-                    stderr_buf.append(line)
-            except Exception:
-                pass
-        threading.Thread(target=_drain_err, daemon=True).start()
-
-        item_text_seen = {}
-
-        def _content_text(value):
-            if value is None:
-                return ''
-            if isinstance(value, str):
-                return value
-            if isinstance(value, list):
-                parts = []
-                for block in value:
-                    if isinstance(block, str):
-                        parts.append(block)
-                    elif isinstance(block, dict):
-                        parts.append(block.get('text') or block.get('content') or block.get('output_text') or '')
-                return ''.join(parts)
-            if isinstance(value, dict):
-                return (
-                    value.get('text')
-                    or value.get('content')
-                    or value.get('message')
-                    or _content_text(value.get('content_parts'))
-                )
-            return ''
-
-        # Codex --json event types we care about:
-        #   agent_message / message  → text to show the user
-        #   function_call            → show tool invocation inline
-        #   function_call_output     → show tool result inline
-        #   error                    → surface as warning
-        #   turn.failed              → surface as error
-        #   thread.started / turn.started / turn.completed → silently ignored
-        events_seen = 0
-        text_emitted = False
-        try:
-            for line in proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    ev = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                events_seen += 1
-                t = ev.get('type', '')
-
-                # Assistant text output
-                if t in ('agent_message', 'message'):
-                    content = ev.get('content') or ev.get('message') or ''
-                    text = _content_text(content)
-                    if text:
-                        text_emitted = True
-                        write_sse({'choices': [{'index': 0, 'delta': {'content': text}}]})
-
-                elif t in ('agent_message_delta', 'message_delta', 'response.output_text.delta'):
-                    text = ev.get('delta') or ev.get('text') or ev.get('content') or ''
-                    if text:
-                        text_emitted = True
-                        write_sse({'choices': [{'index': 0, 'delta': {'content': str(text)}}]})
-
-                elif t in ('item.updated', 'item.completed'):
-                    item = ev.get('item') or {}
-                    item_type = item.get('type', '')
-                    # Codex 0.128 emits `type: "agent_message"` with a flat
-                    # `text` field for assistant replies (older versions used
-                    # `type: "message"` with `content` blocks). Surface errors
-                    # too — those are stream-disconnect / config-rejection
-                    # diagnostics the user needs to see.
-                    if item_type == 'error':
-                        msg = item.get('message') or item.get('text') or json.dumps(item)
-                        # Suppress informational warnings that don't block
-                        # the run — the cloud-requirements override message
-                        # always fires for `codex exec` because the CLI
-                        # defaults approval_policy to `Never` and the cloud
-                        # gate downgrades it to UnlessTrusted. Codex still
-                        # produces an answer in the next item.completed,
-                        # so showing the warning to the user is just noise.
-                        _is_warning = (
-                            'disallowed by requirements' in msg
-                            or 'falling back to required value' in msg
-                        )
-                        if not _is_warning:
-                            text_emitted = True
-                            write_sse({'choices': [{'index': 0, 'delta': {
-                                'content': f'\n\n⚠ Codex item error: {msg}'}}]})
-                    elif (item.get('role') == 'assistant'
-                          or item_type in ('message', 'agent_message')):
-                        text = (item.get('text')
-                                or _content_text(item.get('content') or item.get('message')))
-                        item_id = item.get('id') or ev.get('item_id') or 'assistant'
-                        prior = item_text_seen.get(item_id, '')
-                        if text and text.startswith(prior):
-                            delta = text[len(prior):]
-                        elif text and text != prior:
-                            delta = text
-                        else:
-                            delta = ''
-                        item_text_seen[item_id] = text or prior
-                        if delta:
-                            text_emitted = True
-                            write_sse({'choices': [{'index': 0, 'delta': {'content': delta}}]})
-
-                elif t in ('turn.completed', 'response.completed'):
-                    text = _content_text(ev.get('last_agent_message') or ev.get('message') or '')
-                    if text:
-                        text_emitted = True
-                        write_sse({'choices': [{'index': 0, 'delta': {'content': text}}]})
-
-                # Tool call — show what Codex is doing
-                elif t == 'function_call':
-                    name = ev.get('name') or ev.get('function') or 'tool'
-                    args = ev.get('arguments') or ev.get('input') or {}
-                    if isinstance(args, dict):
-                        cmd_str = args.get('cmd') or args.get('command') or json.dumps(args)
-                    else:
-                        cmd_str = str(args)
-                    text_emitted = True
-                    write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f'\n[{name.upper()}: {cmd_str}]\n'}}]})
-
-                # Tool result
-                elif t == 'function_call_output':
-                    output = ev.get('output') or ''
-                    if output:
-                        text_emitted = True
-                        write_sse({'choices': [{'index': 0, 'delta': {
-                            'content': f'\n📡 {name if (name := ev.get("name","tool")) else "result"}("{cmd_str[:60] if (cmd_str := str(ev.get("call_id",""))) else "..."}" →\n{output}\n'}}]})
-
-                # Errors
-                elif t in ('error', 'turn.failed'):
-                    msg = ev.get('message') or (ev.get('error') or {}).get('message') or str(ev)
-                    text_emitted = True
-                    write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f'\n\n⚠ Codex error: {msg}'}}]})
-
-        finally:
-            try: proc.wait(timeout=2)
-            except Exception:
-                try: proc.kill()
-                except Exception: pass
-
-            stderr_text = (''.join(stderr_buf)).strip()
-            rc = proc.returncode
-
-            def _summarize_stderr(s):
-                """Codex sometimes dumps the entire upstream HTTP body into
-                stderr. Trim that to the actual error summary so the chat
-                surface doesn't get blasted with HTML."""
-                if not s: return ''
-                # Known noise: a model-list refresh failure can include a large
-                # HTML payload. Show only the reason line.
-                m = re.search(r'failed to refresh available models:[^\n]+', s)
-                refresh_hint = ''
-                if m:
-                    refresh_hint = (
-                        '\n\nNote: the model-list refresh failed. Check that '
-                        'OPENAI_API_KEY is set and the selected model is valid.'
-                    )
-                # Drop any line that looks like raw HTML / JSON body, or
-                # known-benign codex startup chatter ("Reading prompt from
-                # stdin...", model-refresh notices that we already handle
-                # via the proxy). These are not user-facing errors.
-                _BENIGN_PATTERNS = (
-                    'Reading prompt from stdin',
-                    'codex_models_manager',
-                    'failed to refresh available models',
-                )
-                cleaned = []
-                for line in s.splitlines():
-                    if line.startswith(' ') or line.startswith('"') or line.startswith('}') or line.startswith('{'):
-                        continue
-                    if '<!DOCTYPE' in line or '<html' in line:
-                        continue
-                    if any(p in line for p in _BENIGN_PATTERNS):
-                        continue
-                    cleaned.append(line)
-                summary = '\n'.join(cleaned)[:600].rstrip()
-                return summary + refresh_hint
-
-            # Surface failures explicitly. Three cases that all used to look
-            # like a silent successful run with only [DONE]:
-            #   1. non-zero exit              → exited N: <stderr>
-            #   2. zero exit + no events      → no output (config/sandbox issue)
-            #   3. zero exit + stderr noise   → completed with warnings
-            if rc and rc not in (0, None):
-                err_text = _summarize_stderr(stderr_text) or f'exit {rc}'
-                write_sse({'choices': [{'index': 0, 'delta': {
-                    'content': f'\n\n⚠ Codex exited {rc}: {err_text}'}}]})
-            elif not text_emitted:
-                hint = _summarize_stderr(stderr_text) or '(no stdout, no stderr — likely the OS blocked the nested codex spawn)'
-                write_sse({'choices': [{'index': 0, 'delta': {
-                    'content': f'\n\n⚠ Codex returned no content (events seen: {events_seen}, exit: {rc}). {hint}'}}]})
-            elif stderr_text:
-                summary = _summarize_stderr(stderr_text)
-                if summary:
-                    write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f'\n\n_(codex stderr: {summary[:300]})_'}}]})
-
-            try: self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError): pass
-
+        cwd = self._agent_task_cwd(body)
+        task = {
+            'messages':  body.get('messages') or [],
+            'system':    guard + ('\n\n' + system if system else ''),
+            'model':     model,
+            'cwd':       cwd,
+            # Extra roots beyond the -C dir (old behavior: dirs[1:]).
+            'addDirs':   list(_cafresohq_allowed_dirs[1:]),
+            'agentName': agent,
+        }
+        return self._agent_stream_legacy('codex', task, 'Codex',
+                                         render_tools=True, done_sentinel=True)
 
     # ---- Filesystem browser (extracted to fs_routes.py) ------------------
     # Plain-function bindings — each receives this Handler as `self`.
@@ -4942,8 +4630,7 @@ if __name__ == '__main__':
                   f' · dirs={_cafresohq_allowed_dirs}')
         else:
             print('  /cafresohq/stream  DISABLED (set CAFRESOHQ_ALLOWED_DIRS to enable)')
-        _codex_found = (_codex_bin if _codex_bin and pathlib.Path(_codex_bin).is_file() else '') \
-            or shutil.which(_codex_bin or 'codex') or shutil.which('codex.cmd')
+        _codex_found = _drivers.get('codex').resolve()
         if _codex_found and _cafresohq_allowed_dirs:
             print(f'  /codex/stream     CODEX · dirs={_cafresohq_allowed_dirs}')
         else:

@@ -7,9 +7,10 @@ decomposition proceeds (DRIVER_CONTRACT.md §5).
 """
 from .base import Driver, DriverError, TaskHandle   # noqa: F401 — re-export
 from .claude_code import ClaudeCodeDriver
+from .codex import CodexDriver
 
 DRIVERS = {}
-for _drv in (ClaudeCodeDriver(),):
+for _drv in (ClaudeCodeDriver(), CodexDriver()):
     DRIVERS[_drv.MANIFEST['id']] = _drv
 
 def get(driver_id):

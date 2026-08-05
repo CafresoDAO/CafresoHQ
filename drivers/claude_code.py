@@ -14,7 +14,8 @@ import sys
 import threading
 
 from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
-                   ev_status, ev_token, ev_tool_call, ev_tool_result, ev_usage)
+                   ev_status, ev_token, ev_tool_call, ev_tool_result, ev_usage,
+                   probe_cli_version)
 
 # Tool names the CLI accepts for --disallowed-tools when a task runs with
 # tools off. --allowed-tools '' (empty string) is rejected by the CLI; a
@@ -79,15 +80,7 @@ class ClaudeCodeDriver(Driver):
     def detect(self, probe_version=False):
         bin_ = self.resolve()
         authed, mech = self.detect_auth()
-        version = ''
-        if bin_ and probe_version:
-            try:
-                r = subprocess.run([bin_, '--version'], capture_output=True,
-                                   text=True, timeout=6)
-                out = (r.stdout or r.stderr or '').strip()
-                version = out.splitlines()[0][:80] if out else ''
-            except Exception:
-                pass
+        version = probe_cli_version(bin_) if (bin_ and probe_version) else ''
         return {'installed': bool(bin_), 'authenticated': authed,
                 'auth': mech, 'version': version, 'detail': bin_}
 
