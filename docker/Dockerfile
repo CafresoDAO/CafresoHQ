@@ -87,6 +87,7 @@ RUN pip install --no-cache-dir "hermes-agent==0.15.1" aiohttp
 WORKDIR /app
 
 COPY serve.py                 ./serve.py
+COPY drivers/                 ./drivers/
 COPY night_runner.py          ./night_runner.py
 COPY hq.html ./hq.html
 COPY graph-viewer.html        ./graph-viewer.html

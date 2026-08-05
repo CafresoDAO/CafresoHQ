@@ -42,6 +42,12 @@ import urllib.parse
 import urllib.request
 import uuid
 
+# Agent runtimes sit behind the driver contract (docs/DRIVER_CONTRACT.md);
+# routes here speak only that surface. Backends migrate into drivers/ one at
+# a time — claude-code first, Hermes last (§5 of the contract doc).
+import drivers as _drivers
+from drivers.base import DriverError as _DriverError
+
 # Listen port. Env-configurable (the Dockerfile + entrypoint set PORT) so a
 # self-hoster can avoid a clash with another local service; defaults to 8787.
 PORT = int(os.environ.get('PORT', '8787') or '8787')
@@ -75,9 +81,8 @@ HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
                'proxy-authorization', 'te', 'trailers', 'transfer-encoding',
                'upgrade', 'content-length'}
 # Claude Code (Pro/Max subscription) — invoked as a subprocess so the user's
-# already-authenticated CLI does the auth. Path is overridable; if blank we
-# look up `claude` in PATH at request time.
-_claudecode_bin = os.environ.get('CAFRESOHQ_CLAUDE_BIN', '').strip()
+# already-authenticated CLI does the auth. Binary resolution + the
+# CAFRESOHQ_CLAUDE_BIN override now live in drivers/claude_code.py.
 
 # Codex CLI — alternative elevated agent backend. Uses `codex exec --json`
 # with the same allowed-dirs sandbox. Auth is read from ~/.codex/config.toml
@@ -1259,6 +1264,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._agents_install_status()
         if self.path == '/agents':
             return self._agents_status()
+        if self.path == '/agent/drivers':
+            return self._agent_drivers()
         if self.path == '/terminal/status':
             return self._terminal_status()
         if self.path == '/terminal/nonce':
@@ -1496,6 +1503,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._claudecode_configure()
         if self.path == '/codex/configure':
             return self._codex_configure()
+        if self.path == '/agent/stream':
+            return self._agent_stream()
         if self.path == '/claudecode/stream':
             return self._claudecode_stream()
         if self.path == '/cafresohq/stream':
@@ -1569,10 +1578,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ---- Claude Code (Pro/Max subscription via local CLI) -----------------
     def _claudecode_resolve(self):
         """Find the claude binary. Returns absolute path or None."""
-        if _claudecode_bin and pathlib.Path(_claudecode_bin).is_file():
-            return _claudecode_bin
-        # shutil.which respects PATH and Windows .cmd/.exe extensions.
-        return shutil.which(_claudecode_bin or 'claude')
+        return _drivers.get('claude-code').resolve() or None
 
     def _market_quotes(self):
         """GET /market/quotes — cached index/gold quotes for the office ticker."""
@@ -1635,7 +1641,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'uptime_seconds':   int(time.time() - _server_start_time),
             'platform':         platform.system(),
             'user_principal':   _fleet_user_principal,
-            'claude_code':      bool(_claudecode_bin or shutil.which('claude')),
+            'claude_code':      bool(self._claudecode_resolve()),
             'codex':            bool(_codex_bin or shutil.which('codex')),
             'hermes':           bool(_hermes_bin or shutil.which('hermes')),
             'gemini':           bool(_gemini_bin or shutil.which('gemini')),
@@ -1646,82 +1652,52 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _claudecode_status(self):
-        bin_ = self._claudecode_resolve()
+        drv = _drivers.get('claude-code')
+        bin_ = drv.resolve()
         return self._send_json(200, {
             'configured': bool(bin_),
             'binary': bin_ or '',
-            'override': _claudecode_bin or '',
+            'override': drv.binary_override or '',
         })
 
     def _claudecode_configure(self):
-        global _claudecode_bin
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
         except json.JSONDecodeError:
             return self._send_json(400, {'error': 'bad json'})
-        path = (body.get('binary') or '').strip()
-        if path and not pathlib.Path(path).is_file():
-            return self._send_json(400, {'error': f'not a file: {path}'})
-        _claudecode_bin = path
+        try:
+            _drivers.get('claude-code').configure({'binary': body.get('binary')})
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
         return self._claudecode_status()
 
     def _claudecode_stream(self):
-        """Stream a chat completion through the local `claude` CLI.
-
-        Body: {messages, system, model, maxTokens?}
-        We compose a single prompt from system + history + last user turn,
-        spawn `claude --print --output-format=stream-json --model <m> ...`,
-        pipe the prompt to stdin, and parse the line-delimited JSON events
-        on stdout. Each text delta is forwarded as an SSE-shaped frame
-        (matching what claude-client.jsx expects from the OpenAI-compat
-        backends, so we can reuse parseSSE on the client).
+        """Stream a chat completion through the claude-code driver (tools
+        DISABLED). Legacy route: output keeps the OpenAI-compat SSE delta
+        shape claude-client.jsx already parses. New clients should use
+        POST /agent/stream and consume contract events directly.
+        Body: {messages, system, model, cwd?}
         """
-        bin_ = self._claudecode_resolve()
-        if not bin_:
-            return self._send_json(503, {
-                'error': 'claude CLI not found — install Claude Code or set CAFRESOHQ_CLAUDE_BIN'
-            })
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
         except json.JSONDecodeError:
             return self._send_json(400, {'error': 'bad json'})
+        task = {
+            'messages': body.get('messages') or [],
+            'system':   (body.get('system') or '').strip(),
+            'model':    (body.get('model') or '').strip(),
+            'cwd':      self._agent_task_cwd(body),
+        }
+        return self._agent_stream_legacy('claude-code', task, 'Claude Code')
 
-        messages = body.get('messages') or []
-        system   = (body.get('system') or '').strip()
-        model    = (body.get('model') or '').strip()
-
-        # Compose a single prompt for non-interactive --print mode.
-        # Roles get prefixed so the model sees the conversation shape; we
-        # extract the last user turn to be the "current" message.
-        history_lines = []
-        last_user = ''
-        for m in messages:
-            role = (m.get('role') or 'user').upper()
-            content = (m.get('content') or '').strip()
-            if not content: continue
-            if role == 'USER': last_user = content
-            history_lines.append(f'{role}: {content}')
-        prompt = '\n\n'.join(history_lines) if history_lines else last_user
-        if not prompt:
-            return self._send_json(400, {'error': 'no prompt'})
-
-        # Use disallowed-tools to suppress all tool use in non-elevated mode.
-        # --allowed-tools '' (empty string) is rejected by Claude CLI; using
-        # --disallowed-tools with a wildcard is the correct idiom.
-        cmd = [bin_, '--print',
-               '--output-format', 'stream-json',
-               '--verbose',
-               '--disallowed-tools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,TodoWrite,Task',
-               '--input-format', 'text']
-        if model:
-            cmd += ['--model', model]
-        if system:
-            cmd += ['--append-system-prompt', system]
-
-        # Use project cwd if provided and valid, otherwise first allowed dir.
-        _cc_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else None
+    # ---- Agent driver surface (docs/DRIVER_CONTRACT.md) -------------------
+    def _agent_task_cwd(self, body):
+        """Working dir for an agent task: the client-requested cwd when it
+        falls inside an allowed dir and exists, else the first allowed dir.
+        (Shared by every agent stream route — was duplicated per-route.)"""
+        cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else None
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
@@ -1730,45 +1706,81 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
                         if cwd_p.is_dir():
-                            _cc_cwd = str(cwd_p)
+                            cwd = str(cwd_p)
                         break
                     except ValueError:
                         continue
             except OSError:
                 pass
-        import copy as _copy
-        _cc_env = _copy.deepcopy(os.environ)
-        for _d in [r'C:\Program Files\Git\usr\bin',
-                   r'C:\Program Files\Git\bin',
-                   r'C:\Program Files\Git\mingw64\bin']:
-            if os.path.isdir(_d) and _d not in _cc_env.get('PATH', ''):
-                _cc_env['PATH'] = _d + os.pathsep + _cc_env.get('PATH', '')
+        return cwd
 
+    def _agent_drivers(self):
+        """GET /agent/drivers — every registered driver's manifest + live
+        detection, the data the front desk turns into hireable coworkers."""
+        out = []
+        for drv in _drivers.DRIVERS.values():
+            d = dict(drv.MANIFEST)
+            d['detect'] = drv.detect(probe_version=False)
+            out.append(d)
+        return self._send_json(200, {'drivers': out})
+
+    def _agent_stream(self):
+        """POST /agent/stream — the contract-native task route.
+        Body: {driver?, prompt|messages, system?, model?, cwd?, tools?,
+        agentName?}. SSE where each data: frame is ONE contract event
+        (schema in drivers/base.py). tools:true binds the task to the
+        server-side CAFRESOHQ_ALLOWED_TOOLS/DIRS allowlists — the client
+        can request tools but can never name tools or widen dirs."""
+        length = int(self.headers.get('content-length', 0) or 0)
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True, bufsize=1, encoding='utf-8',
-                cwd=_cc_cwd,
-                env=_cc_env,
-            )
-        except FileNotFoundError as e:
-            return self._send_json(500, {'error': f'spawn: {e}'})
-
-        # Send the prompt and close stdin so the CLI knows we're done.
+            body = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
+        except json.JSONDecodeError:
+            return self._send_json(400, {'error': 'bad json'})
+        drv = _drivers.get(body.get('driver') or 'claude-code')
+        if drv is None:
+            return self._send_json(400, {'error': 'unknown driver'})
+        task = {
+            'prompt':    body.get('prompt') or '',
+            'messages':  body.get('messages') or [],
+            'system':    (body.get('system') or '').strip(),
+            'model':     (body.get('model') or '').strip(),
+            'cwd':       self._agent_task_cwd(body),
+            'agentName': (body.get('agentName') or '').strip()[:60],
+        }
+        if body.get('tools'):
+            if not (_cafresohq_allowed_dirs and _cafresohq_allowed_tools):
+                return self._send_json(503, {'error':
+                    'tools requested but CAFRESOHQ_ALLOWED_DIRS/TOOLS not configured'})
+            task['tools'] = list(_cafresohq_allowed_tools)
+            task['addDirs'] = list(_cafresohq_allowed_dirs)
         try:
-            proc.stdin.write(prompt)
-            proc.stdin.close()
-        except Exception as e:
-            try: proc.kill()
-            except Exception: pass
-            return self._send_json(500, {'error': f'stdin: {e}'})
+            handle = drv.start_task(task)
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
+        self.send_response(200)
+        self.send_header('content-type', 'text/event-stream')
+        self.send_header('cache-control', 'no-store')
+        self.end_headers()
+        try:
+            for ev in drv.events(handle):
+                try:
+                    self.wfile.write(b'data: ' + json.dumps(ev).encode('utf-8') + b'\n\n')
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+        finally:
+            drv.cancel(handle)   # idempotent; reaps the subprocess
 
-        # Stream stdout to the client as SSE-style "data: <json>\n\n" frames
-        # in the OpenAI-compatible chat-completion delta shape, so the
-        # existing client parser works without changes.
+    def _agent_stream_legacy(self, driver_id, task, err_label):
+        """Run a task through a driver but emit the LEGACY OpenAI-compat SSE
+        delta shape (/claudecode/stream, /cafresohq/stream keep one client
+        parser). token→delta frame, usage→final usage frame, error→⚠ content
+        frame; tool events are dropped (legacy clients never saw them)."""
+        drv = _drivers.get(driver_id)
+        try:
+            handle = drv.start_task(task)
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
         self.send_response(200)
         self.send_header('content-type', 'text/event-stream')
         self.send_header('cache-control', 'no-store')
@@ -1782,76 +1794,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return False
             return True
 
-        # Drain stderr in a thread so the pipe doesn't fill up and stall.
-        stderr_buf = []
-        def _drain_err():
-            try:
-                for line in proc.stderr:
-                    stderr_buf.append(line)
-            except Exception:
-                pass
-        threading.Thread(target=_drain_err, daemon=True).start()
-
-        in_tokens = 0
-        out_tokens = 0
         try:
-            for line in proc.stdout:
-                line = line.strip()
-                if not line: continue
-                try:
-                    ev = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                # Claude Code's stream-json wraps Anthropic message events.
-                # Common shapes:
-                #   {"type":"system","subtype":"init", ...}
-                #   {"type":"assistant","message":{"content":[{"type":"text","text":"…"}], "usage":{...}}}
-                #   {"type":"result","result":"…","usage":{...}}
-                t = ev.get('type')
-                if t == 'assistant':
-                    msg = ev.get('message') or {}
-                    for block in (msg.get('content') or []):
-                        if block.get('type') == 'text':
-                            text = block.get('text') or ''
-                            if text:
-                                ok = write_sse({
-                                    'choices': [{
-                                        'index': 0,
-                                        'delta': {'content': text},
-                                    }],
-                                })
-                                if not ok: break
-                    u = msg.get('usage')
-                    if u:
-                        in_tokens  = u.get('input_tokens', in_tokens)
-                        out_tokens = u.get('output_tokens', out_tokens)
-                elif t == 'result':
-                    u = ev.get('usage') or {}
-                    in_tokens  = u.get('input_tokens',  in_tokens)
-                    out_tokens = u.get('output_tokens', out_tokens)
-                elif t == 'error':
+            for ev in drv.events(handle):
+                et = ev['event']
+                if et == 'token':
+                    if not write_sse({'choices': [{'index': 0,
+                                      'delta': {'content': ev['text']}}]}):
+                        break
+                elif et == 'usage' and (ev['inTokens'] or ev['outTokens']):
+                    write_sse({'choices': [], 'usage': {
+                        'prompt_tokens':     ev['inTokens'],
+                        'completion_tokens': ev['outTokens'],
+                        'total_tokens':      ev['inTokens'] + ev['outTokens']}})
+                elif et == 'error':
                     write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f"\n\n⚠ Claude Code error: {ev.get('message') or ev}"}}]})
-            # Final usage frame so the client can attribute tokens.
-            if in_tokens or out_tokens:
-                write_sse({
-                    'choices': [],
-                    'usage': {
-                        'prompt_tokens': in_tokens,
-                        'completion_tokens': out_tokens,
-                        'total_tokens': in_tokens + out_tokens,
-                    },
-                })
+                        'content': f"\n\n\u26a0 {err_label} error: {ev['message']}"}}]})
         finally:
-            try: proc.wait(timeout=2)
-            except Exception:
-                try: proc.kill()
-                except Exception: pass
-            # If exit was non-zero and we never wrote any text, surface stderr.
-            if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
-                err_text = ('\n'.join(stderr_buf))[:600] or f'exit {proc.returncode}'
-                write_sse({'choices': [{'index': 0, 'delta': {
-                    'content': f"\n\n⚠ Claude Code exited {proc.returncode}: {err_text}"}}]})
+            drv.cancel(handle)
 
     # ---- Tool execution proxy (bracket-format tools for any provider) ------
     def _validate_path(self, path, strict=False):
@@ -2216,17 +2175,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         home = pathlib.Path.home()
         try:
             if aid == 'claude-code':
-                if (home / '.claude' / '.credentials.json').is_file():
-                    return True, 'oauth'
-                cfg = home / '.claude.json'
-                if cfg.is_file():
-                    try:
-                        if '"oauthAccount"' in cfg.read_text(encoding='utf-8', errors='ignore'):
-                            return True, 'oauth'
-                    except OSError:
-                        pass
-                if os.environ.get('ANTHROPIC_API_KEY', '').strip():
-                    return True, 'api-key'
+                # Moved into the driver — one detection, front desk and legacy
+                # /agents endpoint both read it.
+                return _drivers.get('claude-code').detect_auth()
             elif aid == 'codex':
                 if (home / '.codex' / 'auth.json').is_file():
                     return True, 'oauth'
@@ -2641,17 +2592,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 pass
 
     def _cafresohq_stream(self):
-        """Streaming chat for ELEVATED agents. Same SSE-shaped output as
-        /claudecode/stream so the client uses one parser. Differences:
+        """Streaming chat for ELEVATED agents (tools ENABLED, bound to the
+        server-side allowlists). Legacy route — same OpenAI-compat SSE shape
+        as /claudecode/stream so the client uses one parser; the subprocess +
+        parsing now live in the claude-code driver. Differences from the
+        plain route:
           - tools enabled (--allowed-tools <server-side allowlist>)
           - working set bound to --add-dir <each allowed dir>
           - refuses if either allowlist is empty (safe default)
         """
-        bin_ = self._claudecode_resolve()
-        if not bin_:
-            return self._send_json(503, {
-                'error': 'claude CLI not found — install Claude Code or set CAFRESOHQ_CLAUDE_BIN'
-            })
         if not _cafresohq_allowed_dirs:
             return self._send_json(503, {
                 'error': 'CAFRESOHQ_ALLOWED_DIRS not set — elevated endpoint disabled'
@@ -2674,179 +2623,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._send_json(400, {'error': 'bad json'})
 
-        messages = body.get('messages') or []
-        system   = (body.get('system') or '').strip()
-        model    = (body.get('model') or '').strip()
-        agent    = (body.get('agentName') or 'elevated-agent').strip()[:60]
-
-        history_lines = []
-        for m in messages:
-            role = (m.get('role') or 'user').upper()
-            content = (m.get('content') or '').strip()
-            if not content: continue
-            history_lines.append(f'{role}: {content}')
-        prompt = '\n\n'.join(history_lines)
-        if not prompt:
-            return self._send_json(400, {'error': 'no prompt'})
-
-        # Compose the Claude Code command. Critical bits:
-        #   --allowed-tools <comma-list>  bounds what Claude can DO
-        #   --add-dir <abs-path>          bounds where it can READ/WRITE
-        # Both come from server-side env, NOT from the request body.
-        cmd = [bin_, '--print',
-               '--output-format', 'stream-json',
-               '--verbose',
-               '--allowed-tools', ','.join(_cafresohq_allowed_tools),
-               '--input-format', 'text']
-        for d in _cafresohq_allowed_dirs:
-            cmd += ['--add-dir', d]
-        if model:
-            cmd += ['--model', model]
-        # Always prepend a guard-rail system note so the elevated agent knows
-        # it's running under HQ's authority and what its boundaries are.
+        agent = (body.get('agentName') or 'elevated-agent').strip()[:60]
+        system = (body.get('system') or '').strip()
+        # Guard-rail system note is HOST policy (not a driver detail): the
+        # elevated agent must know it runs under HQ's authority and where its
+        # boundaries are. Both allowlists come from server-side env, NOT from
+        # the request body.
         guard = (
             f'You are {agent}, an elevated HQ agent with computer access. '
             f'You are restricted to these directories: {", ".join(_cafresohq_allowed_dirs)}. '
             'When you intend to perform an action with side effects, first emit '
             '[NEEDS_APPROVAL: <one-line description>] and stop until the boss replies.'
         )
-        full_system = guard + ('\n\n' + system if system else '')
-        cmd += ['--append-system-prompt', full_system]
+        model = (body.get('model') or '').strip()
 
         # Audit: log every elevated invocation server-side so there's a
         # tamper-resistant record outside the browser.
         sys.stderr.write(f'[cafresohq] elevated stream: agent={agent} model={model or "(default)"} '
                          f'dirs={_cafresohq_allowed_dirs} tools={_cafresohq_allowed_tools}\n')
 
-        # Use project cwd if provided and valid, otherwise first allowed dir.
-        agent_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else None
-        req_cwd = (body.get('cwd') or '').strip()
-        if req_cwd:
-            try:
-                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
-                for d in _cafresohq_allowed_dirs:
-                    try:
-                        cwd_p.relative_to(pathlib.Path(d).resolve())
-                        if cwd_p.is_dir():
-                            agent_cwd = str(cwd_p)
-                        break
-                    except ValueError:
-                        continue
-            except OSError:
-                pass
-
-        # Ensure Git Bash is in PATH so Claude Code's Bash tool can find
-        # bash.exe on Windows. Without this, Bash exits 255 with
-        # "The system cannot find the path specified."
-        import copy as _copy
-        agent_env = _copy.deepcopy(os.environ)
-        _git_bash_dirs = [
-            r'C:\Program Files\Git\usr\bin',
-            r'C:\Program Files\Git\bin',
-            r'C:\Program Files\Git\mingw64\bin',
-        ]
-        _path_parts = agent_env.get('PATH', '').split(os.pathsep)
-        for _d in reversed(_git_bash_dirs):
-            if os.path.isdir(_d) and _d not in _path_parts:
-                agent_env['PATH'] = _d + os.pathsep + agent_env.get('PATH', '')
-
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True, bufsize=1, encoding='utf-8',
-                cwd=agent_cwd,
-                env=agent_env,
-            )
-        except FileNotFoundError as e:
-            return self._send_json(500, {'error': f'spawn: {e}'})
-
-        try:
-            proc.stdin.write(prompt)
-            proc.stdin.close()
-        except Exception as e:
-            try: proc.kill()
-            except Exception: pass
-            return self._send_json(500, {'error': f'stdin: {e}'})
-
-        # SSE response — same shape /claudecode/stream emits.
-        self.send_response(200)
-        self.send_header('content-type', 'text/event-stream')
-        self.send_header('cache-control', 'no-store')
-        self.end_headers()
-
-        def write_sse(obj):
-            try:
-                self.wfile.write(b'data: ' + json.dumps(obj).encode('utf-8') + b'\n\n')
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                return False
-            return True
-
-        stderr_buf = []
-        def _drain_err():
-            try:
-                for line in proc.stderr:
-                    stderr_buf.append(line)
-            except Exception:
-                pass
-        threading.Thread(target=_drain_err, daemon=True).start()
-
-        in_tokens = 0
-        out_tokens = 0
-        try:
-            for line in proc.stdout:
-                line = line.strip()
-                if not line: continue
-                try:
-                    ev = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                t = ev.get('type')
-                if t == 'assistant':
-                    msg = ev.get('message') or {}
-                    for block in (msg.get('content') or []):
-                        if block.get('type') == 'text':
-                            text = block.get('text') or ''
-                            if text:
-                                ok = write_sse({
-                                    'choices': [{
-                                        'index': 0,
-                                        'delta': {'content': text},
-                                    }],
-                                })
-                                if not ok: break
-                    u = msg.get('usage')
-                    if u:
-                        in_tokens  = u.get('input_tokens',  in_tokens)
-                        out_tokens = u.get('output_tokens', out_tokens)
-                elif t == 'result':
-                    u = ev.get('usage') or {}
-                    in_tokens  = u.get('input_tokens',  in_tokens)
-                    out_tokens = u.get('output_tokens', out_tokens)
-                elif t == 'error':
-                    write_sse({'choices': [{'index': 0, 'delta': {
-                        'content': f"\n\n⚠ CafresoHQ error: {ev.get('message') or ev}"}}]})
-            if in_tokens or out_tokens:
-                write_sse({
-                    'choices': [],
-                    'usage': {
-                        'prompt_tokens': in_tokens,
-                        'completion_tokens': out_tokens,
-                        'total_tokens': in_tokens + out_tokens,
-                    },
-                })
-        finally:
-            try: proc.wait(timeout=2)
-            except Exception:
-                try: proc.kill()
-                except Exception: pass
-            if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
-                err_text = ('\n'.join(stderr_buf))[:600] or f'exit {proc.returncode}'
-                write_sse({'choices': [{'index': 0, 'delta': {
-                    'content': f"\n\n⚠ CafresoHQ exited {proc.returncode}: {err_text}"}}]})
+        task = {
+            'messages':  body.get('messages') or [],
+            'system':    guard + ('\n\n' + system if system else ''),
+            'model':     model,
+            'cwd':       self._agent_task_cwd(body),
+            'tools':     list(_cafresohq_allowed_tools),
+            'addDirs':   list(_cafresohq_allowed_dirs),
+            'agentName': agent,
+        }
+        return self._agent_stream_legacy('claude-code', task, 'CafresoHQ')
 
     # ---- Codex CLI elevated agent ----------------------------------------
     def _codex_resolve(self):
