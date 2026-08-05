@@ -136,8 +136,10 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
    `gemini_cli.py`.
 3. **Hermes last** — most privileged today, most plumbing to fold inward. Done
    = zero references to hermes config/env/gateway outside `drivers/hermes.py`.
-4. `night_runner` switches from its private HTTP client to drivers → night
-   missions inherit every backend for free.
+4. ✅ **done 2026-08-05** — `night_runner` switched from its private HTTP
+   client to drivers (llm_call → `run_task_text` over the local-HTTP family;
+   groq + gemini-api drivers added so no provider was lost). Bonus: keyless
+   LOCAL backends now work for night missions — the old client refused them.
 5. Fix the `_re` NameError properly during extraction (module-scope import in
    the extracted module), and stop relying on build-time concatenation order.
 

@@ -39,12 +39,44 @@ def _http_error(code: int, retry_after: str | None = None) -> urllib.error.HTTPE
     return urllib.error.HTTPError('http://x', code, 'boom', hdrs, io.BytesIO(b'{}'))
 
 
+def _sse_response(text='ok'):
+    """A fake streaming chat-completions response the driver can iterate."""
+    lines = [
+        b'data: ' + json.dumps(
+            {'choices': [{'index': 0, 'delta': {'content': text}}]}).encode() + b'\n',
+        b'data: {"choices": [], "usage": {"prompt_tokens": 2, "completion_tokens": 3}}\n',
+        b'data: [DONE]\n',
+    ]
+
+    class _R:
+        def __iter__(self): return iter(lines)
+        def close(self): pass
+    return _R()
+
+
+def _night_ctx(nr):
+    """NightContext whose hermes_home resolves to an openrouter backend, so
+    llm_call routes through the OpenRouter driver (urlopen is monkeypatched —
+    nothing leaves the process)."""
+    hh = tempfile.mkdtemp(prefix='dur-hermes-')
+    (pathlib.Path(hh) / 'config.yaml').write_text(
+        'model:\n  default: test-model\n  provider: openrouter\n')
+    (pathlib.Path(hh) / '.env').write_text('OPENROUTER_API_KEY=sk-or-test\n')
+    return nr.NightContext('http://127.0.0.1:1', hermes_home=hh)
+
+
 def test_night_retry() -> None:
+    """llm_call rides the driver contract now (drivers/local_http.py); the
+    retry policy lives in llm_call itself, keyed off DriverError.upstream.
+    Same four guarantees as the old _llm_post_with_retry tests."""
     os.environ.setdefault('CAFRESOHQ_HQ_STATE_DIR', tempfile.mkdtemp(prefix='dur-'))
     import night_runner as nr
+    from drivers.base import DriverError
 
     slept: list[float] = []
     nr.time.sleep = lambda s: slept.append(s)          # keep the suite fast
+    ctx = _night_ctx(nr)
+    msgs = [{'role': 'user', 'content': 'hi'}]
 
     print('=== the night shift survives a transient 429 ===')
     calls = {'n': 0}
@@ -53,18 +85,14 @@ def test_night_retry() -> None:
         calls['n'] += 1
         if calls['n'] < 3:
             raise _http_error(429)
-
-        class _R:
-            def read(self): return json.dumps({'ok': True, 'n': calls['n']}).encode()
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-        return _R()
+        return _sse_response('recovered')
 
     nr.urllib.request.urlopen = flaky
     slept.clear()
-    out = nr._llm_post_with_retry(object())
-    check('retries until it succeeds', out.get('ok') is True, repr(out))
+    text, used = nr.llm_call(ctx, msgs)
+    check('retries until it succeeds', text == 'recovered', repr(text))
     check('took exactly 3 attempts', calls['n'] == 3, str(calls['n']))
+    check('usage flows through', used == 5, str(used))
     check('backed off between attempts', len(slept) == 2, repr(slept))
     check('backoff grows', len(slept) == 2 and slept[1] > slept[0], repr(slept))
 
@@ -78,9 +106,9 @@ def test_night_retry() -> None:
     nr.urllib.request.urlopen = unauthorized
     raised = False
     try:
-        nr._llm_post_with_retry(object())
-    except urllib.error.HTTPError as e:
-        raised = (e.code == 401)
+        nr.llm_call(ctx, msgs)
+    except DriverError as e:
+        raised = (e.upstream == 401)
     check('401 propagates', raised)
     check('401 is NOT retried', calls['n'] == 1, f'{calls["n"]} attempts')
 
@@ -92,15 +120,10 @@ def test_night_retry() -> None:
         calls['n'] += 1
         if calls['n'] == 1:
             raise _http_error(429, retry_after='7')
-
-        class _R:
-            def read(self): return b'{"ok":true}'
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-        return _R()
+        return _sse_response()
 
     nr.urllib.request.urlopen = rate_limited
-    nr._llm_post_with_retry(object())
+    nr.llm_call(ctx, msgs)
     check('waited the advertised 7s', slept == [7.0], repr(slept))
 
     print('=== it gives up rather than looping forever ===')
@@ -113,12 +136,32 @@ def test_night_retry() -> None:
     nr.urllib.request.urlopen = always_503
     gave_up = False
     try:
-        nr._llm_post_with_retry(object())
-    except urllib.error.HTTPError:
+        nr.llm_call(ctx, msgs)
+    except DriverError:
         gave_up = True
     check('raises after the cap', gave_up)
     check('capped at _LLM_RETRY_MAX attempts',
           calls['n'] == nr._LLM_RETRY_MAX, f'{calls["n"]} attempts')
+
+    print('=== keyless LOCAL backends now work (old client refused them) ===')
+    hh = tempfile.mkdtemp(prefix='dur-local-')
+    (pathlib.Path(hh) / 'config.yaml').write_text(
+        'model:\n  default: gemma-3\n  provider: lmstudio\n'
+        '  base_url: http://127.0.0.1:9/v1\n')
+    local_ctx = nr.NightContext('http://127.0.0.1:1', hermes_home=hh)
+    seen = {}
+
+    def local_ok(req, timeout=180):
+        seen['url'] = req.full_url
+        seen['auth'] = req.headers.get('Authorization', '')
+        return _sse_response('local answer')
+
+    nr.urllib.request.urlopen = local_ok
+    text, _ = nr.llm_call(local_ctx, msgs)
+    check('local backend answers', text == 'local answer', repr(text))
+    check('hit the configured base_url',
+          seen.get('url') == 'http://127.0.0.1:9/v1/chat/completions', repr(seen))
+    check('keyless — no Authorization header', not seen.get('auth'), repr(seen))
 
 
 def test_atomic_state_write() -> None:

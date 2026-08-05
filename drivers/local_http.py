@@ -20,9 +20,18 @@ from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
 
 
 class OpenAICompatDriver(Driver):
-    """Shared base: subclasses define the manifest plus base-URL/key policy."""
+    """Shared base: subclasses define the manifest plus base-URL/key policy.
+
+    Constructor overrides exist for hosts that resolve the backend from their
+    own config source (night_runner reads the operator's brain choice from
+    hermes config.yaml + .env): a private instance with explicit base_url /
+    api_key leaves the registry singletons' env-derived state untouched."""
     DEFAULT_MODEL = ''
     CONNECT_TIMEOUT = 300     # generous read window — local models can be slow
+
+    def __init__(self, base_url='', api_key=''):
+        self._base_override = (base_url or '').rstrip('/')
+        self._key_override = api_key or ''
 
     # ── subclass surface ────────────────────────────────────────────────────
     def base_url(self):
@@ -94,23 +103,34 @@ class OpenAICompatDriver(Driver):
         if not any(m['role'] != 'system' for m in messages):
             raise DriverError('no prompt', status=400)
 
-        payload = json.dumps({
+        body = {
             'model': (task.get('model') or '').strip() or self.DEFAULT_MODEL,
             'messages': messages,
             'stream': True,
-        }).encode('utf-8')
-        req = urllib.request.Request(base + '/chat/completions', data=payload,
+        }
+        max_tokens = (task.get('limits') or {}).get('maxTokens')
+        if max_tokens:
+            body['max_tokens'] = int(max_tokens)
+        req = urllib.request.Request(base + '/chat/completions',
+                                     data=json.dumps(body).encode('utf-8'),
                                      method='POST', headers=self._headers())
         try:
             resp = urllib.request.urlopen(req, timeout=self.CONNECT_TIMEOUT)
         except urllib.error.HTTPError as e:
-            body = ''
+            detail = ''
             try:
-                body = e.read().decode('utf-8', 'replace')[:300]
+                detail = e.read().decode('utf-8', 'replace')[:300]
             except Exception:
                 pass
-            raise DriverError(f'upstream {e.code}: {body or e.reason}',
-                              status=502)
+            retry_after = None
+            try:
+                ra = e.headers.get('Retry-After') if e.headers else None
+                retry_after = min(float(ra), 30.0) if ra else None
+            except (TypeError, ValueError):
+                pass
+            raise DriverError(f'upstream {e.code}: {detail or e.reason}',
+                              status=502, upstream=e.code,
+                              retry_after=retry_after)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise DriverError(f'cannot reach {base}: {e}', status=502)
 
@@ -187,13 +207,14 @@ class LMStudioDriver(OpenAICompatDriver):
     def base_url(self):
         # LMSTUDIO_BASE_URL is what fleet provisioning injects for the managed
         # brain (see /health's `brain` field); localhost is the self-host norm.
-        base = (os.environ.get('CAFRESOHQ_LMSTUDIO_URL', '').strip()
+        base = (self._base_override
+                or os.environ.get('CAFRESOHQ_LMSTUDIO_URL', '').strip()
                 or os.environ.get('LMSTUDIO_BASE_URL', '').strip()
                 or 'http://localhost:1234/v1')
         return base.rstrip('/')
 
     def api_key(self):
-        return os.environ.get('LMSTUDIO_API_KEY', '').strip()
+        return self._key_override or os.environ.get('LMSTUDIO_API_KEY', '').strip()
 
 
 class OllamaDriver(OpenAICompatDriver):
@@ -212,7 +233,8 @@ class OllamaDriver(OpenAICompatDriver):
 
     def base_url(self):
         # Ollama serves the OpenAI-compat surface under /v1.
-        base = (os.environ.get('CAFRESOHQ_OLLAMA_URL', '').strip()
+        base = (self._base_override
+                or os.environ.get('CAFRESOHQ_OLLAMA_URL', '').strip()
                 or 'http://localhost:11434/v1')
         return base.rstrip('/')
 
@@ -233,7 +255,55 @@ class OpenRouterDriver(OpenAICompatDriver):
     DEFAULT_MODEL = 'openai/gpt-oss-120b:free'
 
     def base_url(self):
-        return 'https://openrouter.ai/api/v1'
+        return self._base_override or 'https://openrouter.ai/api/v1'
 
     def api_key(self):
-        return os.environ.get('OPENROUTER_API_KEY', '').strip()
+        return self._key_override or os.environ.get('OPENROUTER_API_KEY', '').strip()
+
+
+class GroqDriver(OpenAICompatDriver):
+    MANIFEST = {
+        'id': 'groq',
+        'displayName': 'Groq',
+        'sprite': 'coworker-cloud',
+        'kind': 'http',
+        'authMode': 'api-key',
+        'models': [],
+        'capabilities': {'streaming': True, 'tools': False,
+                         'artifacts': False, 'workspaces': False},
+        'costHint': 'metered',
+    }
+
+    def base_url(self):
+        return self._base_override or 'https://api.groq.com/openai/v1'
+
+    def api_key(self):
+        return self._key_override or os.environ.get('GROQ_API_KEY', '').strip()
+
+
+class GeminiDriver(OpenAICompatDriver):
+    """Gemini through Google's OpenAI-compat surface (API-key path). The id is
+    'gemini-api' — 'gemini' stays reserved for the future gemini_cli driver,
+    which is a different runtime (CLI agent vs plain chat API)."""
+    MANIFEST = {
+        'id': 'gemini-api',
+        'displayName': 'Gemini (API)',
+        'sprite': 'coworker-cloud',
+        'kind': 'http',
+        'authMode': 'api-key',
+        'models': [],
+        'capabilities': {'streaming': True, 'tools': False,
+                         'artifacts': False, 'workspaces': False},
+        'costHint': 'metered',
+    }
+
+    def base_url(self):
+        # The exact URL night_runner's _PROVIDER_ENDPOINTS uses — bootstrap
+        # writers disagree on /v1beta vs /v1beta/openai, so this is pinned
+        # here, never taken from a config file's base_url.
+        return self._base_override or 'https://generativelanguage.googleapis.com/v1beta/openai'
+
+    def api_key(self):
+        return (self._key_override
+                or os.environ.get('GOOGLE_API_KEY', '').strip()
+                or os.environ.get('GEMINI_API_KEY', '').strip())

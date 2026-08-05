@@ -32,6 +32,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# LLM calls ride the driver contract (docs/DRIVER_CONTRACT.md §5 step 4) —
+# night missions inherit every OpenAI-compat backend the drivers support,
+# including keyless LOCAL daemons the old private client refused outright.
+from drivers.base import DriverError as _DriverError, run_task_text as _run_task_text
+from drivers.local_http import (GeminiDriver as _GeminiDriver,
+                                GroqDriver as _GroqDriver,
+                                LMStudioDriver as _LMStudioDriver,
+                                OpenRouterDriver as _OpenRouterDriver)
+
 NIGHT_GRAMMAR_VERSION = 1
 
 # ── Grammar (verbatim from hq-runtime.jsx TOOL_REGISTRY; /i → re.IGNORECASE) ──
@@ -236,33 +245,55 @@ _LLM_RETRY_BASE_S = 1.5
 _LLM_RETRY_CAP_S = 20.0
 
 
-def _llm_post_with_retry(req, timeout=180):
-    """POST a chat completion, retrying transient upstream failures.
+def _driver_for_backend(b):
+    """Private driver instance for a resolved Backend. Private (not the
+    registry singleton) so the hermes-config-resolved key/base_url never
+    leaks into the drivers /agent/stream uses."""
+    if b.local:
+        # Backend.url is the full …/chat/completions endpoint; the driver
+        # wants the API root.
+        root = b.url[:-len('/chat/completions')] if b.url.endswith('/chat/completions') else b.url
+        return _LMStudioDriver(base_url=root, api_key=b.key)
+    return {
+        'openrouter': _OpenRouterDriver,
+        'gemini':     _GeminiDriver,
+        'groq':       _GroqDriver,
+    }[b.provider](api_key=b.key)
 
-    The night shift runs unattended for hours against free provider tiers, so a
-    single 429 used to end an iteration and three in a row ended the run. Only
-    429 and 5xx retry: a 401 (bad key) or 400 (bad request) fails identically
-    on a second attempt. Mirrors fetchStreamHead's policy in claude-client.jsx —
+
+def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
+    """Non-streaming OpenAI-compatible chat completion via the driver family
+    (drivers/local_http.py). Returns (text, tokens).
+
+    Retry policy unchanged from the old private client: the night shift runs
+    unattended for hours against free provider tiers, so a single 429 used to
+    end an iteration and three in a row ended the run. Only 429/5xx/network
+    failures retry — a 401 (bad key) or 400 (bad request) fails identically on
+    a second attempt. Mirrors fetchStreamHead's policy in claude-client.jsx —
     keep the two in step.
     """
+    b = resolve_backend(ctx.hermes_home)
+    if b is None:
+        raise RuntimeError('no provider key configured (~/.hermes/.env) — '
+                           'set one via Settings → BYO key before scheduling night shifts')
+    drv = _driver_for_backend(b)
+    task = {'messages': list(messages), 'model': b.model or '',
+            'limits': {'maxTokens': max_tokens}}
     last_err = None
     for attempt in range(_LLM_RETRY_MAX):
-        wait = None
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode('utf-8', 'replace'))
-        except urllib.error.HTTPError as e:
+            text, usage = _run_task_text(drv, task)
+            if not text:
+                raise RuntimeError('provider returned no content')
+            return text, int(usage.get('inTokens', 0)) + int(usage.get('outTokens', 0))
+        except _DriverError as e:
             last_err = e
-            if not (e.code == 429 or 500 <= e.code <= 599):
+            up = e.upstream
+            transient = (up == 429 or (up is not None and 500 <= up <= 599)
+                         or (up is None and e.status == 502))
+            if not transient:
                 raise
-            retry_after = e.headers.get('Retry-After') if e.headers else None
-            if retry_after:
-                try:
-                    wait = min(float(retry_after), 30.0)
-                except (TypeError, ValueError):
-                    wait = None
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_err = e
+            wait = e.retry_after
         if attempt == _LLM_RETRY_MAX - 1:
             break
         if wait is None:
@@ -272,36 +303,6 @@ def _llm_post_with_retry(req, timeout=180):
               % (str(last_err)[:120], wait, attempt + 2, _LLM_RETRY_MAX), flush=True)
         time.sleep(wait)
     raise last_err if last_err else RuntimeError('llm_call failed after retries')
-
-
-def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
-    """Non-streaming OpenAI-compatible chat completion. Returns (text, tokens)."""
-    provider, model, key = read_provider_config(ctx.hermes_home)
-    if not key:
-        raise RuntimeError('no provider key configured (~/.hermes/.env) — '
-                           'set one via Settings → BYO key before scheduling night shifts')
-    env_var, url = _PROVIDER_ENDPOINTS[{'google-openai': 'gemini'}.get(provider, provider)]
-    payload = json.dumps({
-        'model': model or 'openai/gpt-oss-120b:free',
-        'messages': messages,
-        'max_tokens': max_tokens,
-    }).encode('utf-8')
-    req = urllib.request.Request(url, data=payload, method='POST', headers={
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + key,
-    })
-    data = _llm_post_with_retry(req)
-    text = ''
-    try:
-        text = data['choices'][0]['message']['content'] or ''
-    except Exception:
-        raise RuntimeError('provider returned no choices: %s' % json.dumps(data)[:300])
-    used = 0
-    try:
-        used = int(data.get('usage', {}).get('total_tokens', 0) or 0)
-    except Exception:
-        pass
-    return text, used
 
 
 # ── Tool execution (localhost self-calls; server-side validation applies) ────

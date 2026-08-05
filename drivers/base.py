@@ -88,6 +88,7 @@ class Driver:
       tools       list  — allowed tool names; empty/absent = tools disabled
       addDirs     list  — dirs the agent may touch, ALREADY validated
       agentName   str   — display name, for audit lines
+      limits      dict  — {'maxTokens': int} caps drivers honor best-effort
     Path/allowlist validation is the HOST's job (serve.py) — drivers trust
     task fields and never widen them.
     """
@@ -122,7 +123,38 @@ class Driver:
 
 
 class DriverError(Exception):
-    """Refusal with an HTTP-ish status the host can map onto a response."""
-    def __init__(self, message, status=500):
+    """Refusal with an HTTP-ish status the host can map onto a response.
+
+    upstream / retry_after carry the provider's own HTTP status and
+    Retry-After header (when the failure came from an upstream API), so
+    unattended callers like night_runner can apply a precise 429/5xx retry
+    policy instead of pattern-matching error strings."""
+    def __init__(self, message, status=500, upstream=None, retry_after=None):
         super().__init__(message)
         self.status = status
+        self.upstream = upstream
+        self.retry_after = retry_after
+
+
+def run_task_text(driver, task):
+    """Run a task to completion, non-streaming: returns (text, usage) where
+    usage = {'inTokens', 'outTokens'}. For callers that want an answer, not a
+    stream (night_runner, future cron/search jobs). Raises DriverError when
+    the driver ends in error having produced no text."""
+    handle = driver.start_task(task)
+    parts, usage, err = [], {'inTokens': 0, 'outTokens': 0}, None
+    try:
+        for ev in driver.events(handle):
+            k = ev['event']
+            if k == 'token':
+                parts.append(ev['text'])
+            elif k == 'usage':
+                usage = {'inTokens': ev['inTokens'], 'outTokens': ev['outTokens']}
+            elif k == 'error':
+                err = ev['message']
+    finally:
+        driver.cancel(handle)
+    text = ''.join(parts)
+    if not text and err:
+        raise DriverError(err, status=502)
+    return text, usage
