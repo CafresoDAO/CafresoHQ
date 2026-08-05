@@ -4,6 +4,13 @@ Self-orientation doc for autonomous agents asked to study this repo and propose
 upgrades. Read this first, then `docs/strategy/`. It captures what's already in
 flight so you build on it instead of re-discovering it.
 
+> **Product filter (2026-08-05):** every proposal must serve the north star in
+> `strategy/08-north-star-real-product.md` — *"One office where all your AIs
+> work together — no expertise required."* Architecture: `DRIVER_CONTRACT.md`
+> (no privileged backend). Design: `OFFICE_AS_INTERFACE.md`. Features that
+> don't serve a capable non-guru in the core path go behind the desktop-mode
+> door or on the park list — see North Star §5.
+
 ---
 
 ## 1. What this repo is
