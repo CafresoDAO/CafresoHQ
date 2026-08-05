@@ -1831,6 +1831,54 @@ actor CafresoHQState {
 
   public shared query (msg) func amPlanAdmin() : async Bool { isPlanAdminP(msg.caller) };
 
+  public type StorageStats = {
+    principalsWithUsage : Nat;
+    totalDocBytes : Nat;
+    totalVaultBytes : Nat;
+    totalObjCount : Nat;
+    vaultChunkPrincipals : Nat;
+    vaultChunkTotalCount : Nat;
+  };
+
+  // Admin-only aggregate visibility into the heap-resident doc/vault stores.
+  // docs/PHASE2_STATE_CANISTER.md §2 specifies shardId()/cycleBalance() for
+  // exactly this purpose but neither was ever implemented — there was no
+  // way to see how much data this canister actually holds before this
+  // method existed, which mattered during the 2026-08 out-of-cycles
+  // incident (see the migration note at the top of this file: this
+  // canister burns ~6x its reported idle rate from keeping vault
+  // ciphertext on the heap instead of stable memory). Cross-checks
+  // usageMap's tracked totals (cheap, already maintained on every write)
+  // against a direct vaultChunks structural count (touches map shape only,
+  // never blob contents, so this stays a cheap query).
+  public shared query (msg) func getStorageStats() : async ?StorageStats {
+    if (not isPlanAdminP(msg.caller)) { return null };
+    var principalsWithUsage = 0;
+    var totalDocBytes = 0;
+    var totalVaultBytes = 0;
+    var totalObjCount = 0;
+    for ((_, u) in pOps.entries(usageMap)) {
+      principalsWithUsage += 1;
+      totalDocBytes += u.docBytes;
+      totalVaultBytes += u.vaultBytes;
+      totalObjCount += u.objCount;
+    };
+    var vaultChunkPrincipals = 0;
+    var vaultChunkTotalCount = 0;
+    for ((_, cmap) in pOps.entries(vaultChunks)) {
+      vaultChunkPrincipals += 1;
+      vaultChunkTotalCount += tOps.size(cmap);
+    };
+    ?{
+      principalsWithUsage;
+      totalDocBytes;
+      totalVaultBytes;
+      totalObjCount;
+      vaultChunkPrincipals;
+      vaultChunkTotalCount;
+    };
+  };
+
   public shared (msg) func worker_admin_set_status(p : Principal, status : Text) : async () {
     if (not isPlanAdminP(msg.caller)) { throw Error.reject("plan admin only") };
     if (status != "approved" and status != "suspended" and status != "pending") {
