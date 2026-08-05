@@ -1,5 +1,12 @@
 # Hermes Agent Integration Plan — CafresoHQ Revamp
 
+> **SUPERSEDED (2026-08-05):** the "Hermes as **default** runtime" decision below
+> is reversed by `strategy/08-north-star-real-product.md` §3.1 — **no backend is
+> privileged**. Hermes remains fully supported as one driver among peers; see
+> `DRIVER_CONTRACT.md` for the architecture that replaces the per-backend
+> integration styles this plan describes. Kept for the still-accurate Hermes
+> technical detail (gateway surfaces, metering, config layout).
+
 > **Note (2026-08):** fleet provisioning files referenced below (`fleet-manager.py`, `oci-fleet/*`) now live in the separate **cafreso-fleet** repo; the container image files live under `docker/` here.
 
 > Goal: make **Nous Research's Hermes Agent (v0.15.1, released 2026-05-29)** the
