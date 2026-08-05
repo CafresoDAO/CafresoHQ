@@ -123,6 +123,19 @@ but leave the core path, the onboarding, and the pitch:
 (rebranded the "Night Shift" board), the Library integration, per-agent wallets,
 the trial brain.
 
+**Parked *forward* (not built yet — founder-flagged 2026-08-05): Ship-to-chain.**
+Give any hired coworker one tool to deploy the site/app it just built straight
+to an ICP asset canister — with the user's permission — so finished work gets a
+real, permanent URL instead of only a file in the vault. Asset canisters can
+host just about anything, so this covers shares, portfolios, and full frontends
+alike. This does **not** violate §4's "not Caffeine's lane": Caffeine sells
+*building on ICP*; Ship-to-chain is *publishing the output* of whatever agent
+you already pay for — hosting, not canister development. It rides the driver
+contract as one host tool + one approval (the coworker walks over and asks
+"ready to publish?"), and the groundwork already exists: Publish-to-Canister in
+`cafresohq_state` and the `@dfinity/assets` sync script in cafreso-pages.
+Parked until the Phase A core lands.
+
 ## 6. Sequencing — the big dreams, in order
 
 Each phase makes the next one stronger; none skips ahead of a legible core.

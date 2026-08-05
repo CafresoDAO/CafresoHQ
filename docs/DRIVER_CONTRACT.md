@@ -163,6 +163,11 @@ network coworker looks and behaves exactly like your own — which is the produc
 
 - **Not an MCP replacement.** MCP tools can later be exposed *through* a
   driver's tool surface; the contract governs agent runtimes, not tools.
+- **Ship-to-chain is parked, not forgotten** (founder-flagged 2026-08-05): a
+  host tool — `publish(dir) → ICP asset canister` — offered to every driver
+  through the same tool/approval surface, so any coworker can deploy what it
+  just built to a real on-chain URL after one user approval. Recorded in North
+  Star §5; not part of Phase A.
 - **Not on-chain inference.** Execution stays where GPUs are (see the serve.py
   ICP-portability audit); canisters hold state, identity, payment, reputation.
 - **Not a plugin store (yet).** Third-party driver *code* is out of scope until
