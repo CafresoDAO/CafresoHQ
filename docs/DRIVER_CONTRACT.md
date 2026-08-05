@@ -130,8 +130,10 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
    (SSE of contract events); legacy `/claudecode/stream` + `/cafresohq/stream`
    kept byte-compatible through one shared translator.
 2. `codex.py` (✅ done 2026-08-05 — legacy `/codex/stream` kept, incl. inline
-   tool text + `[DONE]` trailer), then `local_http.py` (ollama/lmstudio/
-   openrouter share a base), then `gemini_cli.py`.
+   tool text + `[DONE]` trailer), then `local_http.py` (✅ done 2026-08-05 —
+   one OpenAI-compat streaming base; lmstudio + ollama + openrouter drivers;
+   the raw ROUTES relays stay for the legacy in-browser client), then
+   `gemini_cli.py`.
 3. **Hermes last** — most privileged today, most plumbing to fold inward. Done
    = zero references to hermes config/env/gateway outside `drivers/hermes.py`.
 4. `night_runner` switches from its private HTTP client to drivers → night

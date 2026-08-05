@@ -8,9 +8,11 @@ decomposition proceeds (DRIVER_CONTRACT.md §5).
 from .base import Driver, DriverError, TaskHandle   # noqa: F401 — re-export
 from .claude_code import ClaudeCodeDriver
 from .codex import CodexDriver
+from .local_http import LMStudioDriver, OllamaDriver, OpenRouterDriver
 
 DRIVERS = {}
-for _drv in (ClaudeCodeDriver(), CodexDriver()):
+for _drv in (ClaudeCodeDriver(), CodexDriver(),
+             LMStudioDriver(), OllamaDriver(), OpenRouterDriver()):
     DRIVERS[_drv.MANIFEST['id']] = _drv
 
 def get(driver_id):
