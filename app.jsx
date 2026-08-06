@@ -1697,7 +1697,12 @@ ${d.text}` : d.text,
         MessageRegistry.transition(messageId, finalState, { by: agent.name, note: finalNote });
       }
     } catch (err) {
-      const aborted = err && err.name === 'AbortError';
+      /* The controller's own signal is authoritative: an error can be
+         re-wrapped on the way up (the retry layer used to do exactly
+         that), and a user-stop must never be recorded as the
+         coworker's failure — §5's ledger rule depends on this. */
+      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+        !!(err && err.name === 'AbortError');
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
@@ -2411,7 +2416,12 @@ ${d.text}` : d.text,
       const approvalDesc = HQ.extractApproval(cleanBuf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
     } catch (err) {
-      const aborted = err && err.name === 'AbortError';
+      /* The controller's own signal is authoritative: an error can be
+         re-wrapped on the way up (the retry layer used to do exactly
+         that), and a user-stop must never be recorded as the
+         coworker's failure — §5's ledger rule depends on this. */
+      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+        !!(err && err.name === 'AbortError');
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentId
@@ -2447,9 +2457,18 @@ ${d.text}` : d.text,
      one-shot steam beat so the click lands somewhere visible. */
   const onCoffee = (a) => {
     const wasRunning = abortAgentRun(a.id);
-    // `task` is "what they're working on" — parking a joke there left an
-    // idle coworker's desk bubble claiming a job that doesn't exist.
-    onUpdateAgent(a.id, { tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: null });
+    /* `status` matters as much as mood here. It used to be left alone, so
+       the room kept its busy plate — and, since anyLive reads status, the
+       whole building kept its LIVE lamp on — until the aborted request
+       finished unwinding through the catch path. Measured on a real run:
+       6.0 SECONDS between the boss being told "Stopped Sora" and the
+       office agreeing. A stop the boss commanded is true the moment they
+       command it; we don't need the network's permission to say so. The
+       later catch-path update lands on the same values and is a no-op.
+
+       `task` is "what they're working on" — parking a joke there left an
+       idle coworker's desk bubble claiming a job that doesn't exist. */
+    onUpdateAgent(a.id, { status: 'idle', tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: null });
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee',
       text: wasRunning ? 'stopped mid-run for a coffee — context cleared ☕'
                        : 'refreshed context at the coffee machine ☕' });
@@ -2687,7 +2706,12 @@ ${d.text}` : d.text,
         }
       }
     } catch (err) {
-      const aborted = err && err.name === 'AbortError';
+      /* The controller's own signal is authoritative: an error can be
+         re-wrapped on the way up (the retry layer used to do exactly
+         that), and a user-stop must never be recorded as the
+         coworker's failure — §5's ledger rule depends on this. */
+      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+        !!(err && err.name === 'AbortError');
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId

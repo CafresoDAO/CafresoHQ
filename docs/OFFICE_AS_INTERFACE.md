@@ -170,6 +170,32 @@
 > speech bubble is the thing §7 forbids; the cleanup path is still covered,
 > with causes the table cannot identify.
 
+> ✅ **Stopping a coworker is not their failure (2026-08-06).** Running the
+> coffee-abort against a real in-flight run — the path made *honest* two
+> commits earlier but never actually exercised — found three linked bugs:
+>
+> 1. **The stop took 6.0 seconds to appear.** `onCoffee` cleared mood and
+>    task but not `status`, so the room kept its busy plate (and, since
+>    `anyLive` reads status, the building kept its LIVE lamp) until the
+>    aborted request unwound. A stop the boss commanded is true the moment
+>    they command it; we do not need the network's permission to say so.
+>    Now ~1s, which is the measurement's own granularity.
+> 2. **The retry layer swallowed the cancellation.** Aborting during a
+>    backoff sleep fell out of the loop and threw the *last network error*,
+>    so `err.name === 'AbortError'` was false and the run was recorded as a
+>    failure: **"hit a snag — request failed after retries" on a coworker
+>    the boss had simply stopped.** §5's ledger rule ("a run the USER
+>    stopped is not the coworker's failure", which would otherwise reset
+>    their streak) could not be honoured, because the information was
+>    already destroyed one layer down. The loop now throws a real
+>    `AbortError`, and its backoff wakes on abort instead of sleeping out.
+> 3. **`err.name` was the only abort signal.** All three catch sites now
+>    also trust `controller.signal.aborted`, which no re-wrapping can lose.
+>
+> Verified after: stop visible in ~1s, and once the aborted request fully
+> unwinds the room is idle with **no bubble** and the log reads `run
+> stopped` — no `failed` row. A genuine failure still snags normally.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

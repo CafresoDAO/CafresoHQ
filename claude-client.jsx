@@ -491,7 +491,30 @@ async function fetchStreamHead(url, init = {}, headMs = 20000) {
     if (res) { try { await res.text(); } catch (_e) {} }        // drain so the socket is reusable
     if (last) break;
     try { console.warn(`[hq] ${res ? 'HTTP ' + res.status : 'network error'} — retrying in ${Math.round(wait)}ms (${attempt + 2}/${_STREAM_RETRY_MAX})`); } catch (_e) {}
-    await new Promise(r => setTimeout(r, wait));
+    /* Sleep, but wake immediately if the user cancels. Sitting out a full
+       backoff after "stop" is how a stop command ends up taking seconds to
+       visibly land. */
+    await new Promise(r => {
+      let timer = null;
+      const finish = () => {
+        if (timer !== null) clearTimeout(timer);
+        if (outer) { try { outer.removeEventListener('abort', finish); } catch (_e) {} }
+        r();
+      };
+      timer = setTimeout(finish, wait);
+      if (outer) { try { outer.addEventListener('abort', finish, { once: true }); } catch (_e) {} }
+    });
+  }
+  /* A user cancellation must surface AS a cancellation. Aborting during the
+     backoff used to fall out of the loop and throw the last network error
+     (or the generic line below), so callers saw a FAILURE: the floor put
+     "hit a snag" on a coworker the boss had simply stopped, and §5's ledger
+     rule ("a run the USER stopped is not the coworker's failure") could not
+     be honoured because the information was already lost here. */
+  if (outer && outer.aborted) {
+    const stopped = new Error('stopped by the operator');
+    stopped.name = 'AbortError';
+    throw stopped;
   }
   throw lastErr || new Error('request failed after retries');
 }
