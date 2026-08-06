@@ -1089,3 +1089,29 @@ settings — never on the floor, the cards, or onboarding.
 > prompt" above its cap, and this): **any sentence that asserts what a
 > control does, or what a number counts, is a claim — and claims decay.**
 > The ones on always-visible chrome decay loudest.
+
+> ✅ **Applied the claims rule as a sweep (2026-08-06).** Took the rule
+> named above — *a sentence asserting what a control does is a claim* —
+> and swept the `className="tag"` header copy, driving each control rather
+> than reading it. Most held. One did not, and it was the Tasks header:
+>
+> > *"click → CHAT to fan out, 📋 ROOM to open a meeting"*
+>
+> Measured live. **→ CHAT drafts.** It prefills the composer with the task
+> and sends nothing — the last chat message was still the CEO's welcome
+> afterwards — and adds at most the assignee's `@mention`. In the run
+> tested there wasn't even one, because that task's assignee had been let
+> go. A fan-out happens only if the boss types more `@names` themselves.
+> **📋 ROOM also drafts**: it opens the pre-filled NEW MEETING ROOM form
+> and creates nothing (meeting count unchanged).
+>
+> Both behaviours are *right* — the handlers say so explicitly, and
+> letting the boss review before work leaves the building is the correct
+> design. Only the copy was wrong, promising two done deals. Now: *"click
+> → CHAT to draft it in chat, 📋 ROOM to set up a meeting"*.
+>
+> The toast had the same fault and mattered more: `Sent "…" to chat`. A
+> boss who reads "sent" can close the tab believing the work is away when
+> it is sitting unsent in a composer. It now reads **`Drafted "…" in chat
+> — press Enter to send`**, which also names the one thing still left to
+> do. Verified live: header and toast both correct.

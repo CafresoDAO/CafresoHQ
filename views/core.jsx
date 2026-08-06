@@ -89,7 +89,15 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onDropTaskOnAgent, 
     <div className="view-tasks">
       <div className="section-title">
         📋 ALL TASKS
-        <span className="tag">{filtered.length} of {tasks.length} · click → CHAT to fan out, 📋 ROOM to open a meeting</span>
+        {/* Both buttons DRAFT — they hand the boss something to review, and
+            deliberately so (the handlers say as much). Measured live:
+            → CHAT prefills the composer with the task and sends nothing,
+            with at most the assignee's @mention — not a fan-out, which is
+            what happens only if the boss types more @names themselves.
+            📋 ROOM opens the pre-filled NEW MEETING ROOM form without
+            creating the meeting. The old line promised both were done
+            deals. */}
+        <span className="tag">{filtered.length} of {tasks.length} · click → CHAT to draft it in chat, 📋 ROOM to set up a meeting</span>
       </div>
       <div className="view-toolbar">
         <input className="view-search" placeholder="Search tasks…" value={q} onChange={e=>setQ(e.target.value)} />

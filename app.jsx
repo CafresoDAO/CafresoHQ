@@ -2623,7 +2623,11 @@ ${d.text}` : d.text,
        composer, focuses, ready for the boss to hit Enter. */
     window.dispatchEvent(new CustomEvent('cafresohq:prefill-composer', { detail: text }));
     if (task.status === 'inbox') onMoveTask(task.id, 'doing');
-    say(`Sent "${task.title.slice(0, 30)}" to chat`, 'TASK');
+    /* "Sent" was the wrong verb for the same reason the Tasks header was:
+       this drafts into the composer and waits for the boss to hit Enter.
+       Nothing has gone to a coworker yet, and saying it has invites the
+       boss to close the tab believing the work is away. */
+    say(`Drafted "${task.title.slice(0, 30)}" in chat — press Enter to send`, 'TASK');
   };
 
   /* Task → meeting room bridge. Spins up a fresh meeting using the task
