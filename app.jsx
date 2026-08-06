@@ -3677,7 +3677,9 @@ ${d.text}` : d.text,
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setChatMeetingModalOpen(true)} title="Spin up a multi-agent meeting room">
               📋 MEETING{meetings.length > 0 ? ` · ${meetings.length}` : ''}
             </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setWorkflowOpen(true)}>WORKFLOW</Btn>
+            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setWorkflowOpen(true)} title="Chain tasks into a pipeline">
+              WORKFLOW{workflows.length > 0 ? ` · ${workflows.length}` : ''}
+            </Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setNight(v=>!v)}>{night?'☀':'☾'} {night?'DAY':'NIGHT'}</Btn>
             {!hasKey && (
               <button className="chip chip-warn" onClick={()=>openSettings('keys')}

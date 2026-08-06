@@ -746,3 +746,31 @@ settings — never on the floor, the cards, or onboarding.
 >   forever), "already dealt with?" is a question about the child: a second
 >   click while the retry streams would otherwise quietly order the same
 >   work twice.
+
+> ✅ **A created workflow was invisible the instant it was created
+> (2026-08-06).** Built one live for the first time this session — named
+> it, chained two tasks, hit CREATE WORKFLOW. It worked: both tasks
+> correctly gained `chainTo`/`dependsOn`/`workflowId`. Then closed the
+> modal and reopened it, and there was no trace it had ever existed — no
+> list, no count anywhere in the app, the nav chip just said "WORKFLOW"
+> with nothing to distinguish zero from ten. `WorkflowModal` had been
+> receiving a `workflows` prop, built for exactly this, since it shipped —
+> nothing ever read it.
+>
+> This isn't a copy fix like the rest of this section; it's a half-built
+> feature completed to match what it already promised ("chain tasks" —
+> chaining that vanishes on close isn't that). Wired the prop up as a
+> compact **YOUR WORKFLOWS** list at the top of the same modal: name and
+> honest progress ("0/2 done", counting real task status, never invented).
+> Nav chip now carries a count, the same pattern `MEETING`/`RESEARCH`
+> already use. Also closed a correctness gap the missing list made easy to
+> hit blind: a task already claimed by one workflow (`t.workflowId` set)
+> could be silently re-added to a second, overwriting its `chainTo`/
+> `dependsOn` with no warning — excluded from "available tasks" now.
+>
+> Verified live end to end: created "Draft Pipeline Test" (2 steps),
+> confirmed it now lists with "0/2 done", dispatched step one to Miko in
+> this no-brain test environment, watched it snag and correctly return to
+> `inbox` with `chainTo`/`workflowId` intact (not orphaned), and confirmed
+> the list still honestly reads "0/2 done" after — a snag is not progress.
+> All 12 suites green.

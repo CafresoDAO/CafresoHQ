@@ -16,7 +16,11 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
 
   if (!open) return null;
 
-  const inboxTasks = tasks.filter(t => t.status !== 'done' && !steps.includes(t.id));
+  /* A task already claimed by another workflow (t.workflowId) has its
+     chainTo/dependsOn pointing at THAT workflow's neighbors — adding it
+     to a second one here would silently overwrite those links with no
+     warning, breaking the first workflow without ever saying so. */
+  const inboxTasks = tasks.filter(t => t.status !== 'done' && !t.workflowId && !steps.includes(t.id));
   const addStep = (taskId) => setSteps(s => [...s, taskId]);
   const removeStep = (taskId) => setSteps(s => s.filter(id => id !== taskId));
   const moveUp = (i) => { if (i === 0) return; const s = [...steps]; [s[i-1], s[i]] = [s[i], s[i-1]]; setSteps(s); };
@@ -54,6 +58,34 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
         </>
       }
     >
+          {/* `workflows` was passed into this modal since it was built but
+             never read — creating one worked, then it vanished: no list,
+             no badge anywhere, no way to check on it again. The nav chip
+             now shows a count (matching MEETING/RESEARCH); this is the
+             other half — where the boss actually SEES what they built. */}
+          {workflows.length > 0 && (
+            <div className="cb-panel" style={{marginBottom: 12}}>
+              <h4>YOUR WORKFLOWS ({workflows.length})</h4>
+              <div className="stack">
+                {workflows.map(wf => {
+                  const stepTasks = wf.steps.map(id => tasks.find(t => t.id === id));
+                  const known = stepTasks.filter(Boolean);
+                  const done = known.filter(t => t.status === 'done').length;
+                  const doing = known.filter(t => t.status === 'doing').length;
+                  const missing = stepTasks.length - known.length;
+                  const bits = [`${done}/${stepTasks.length} done`];
+                  if (doing) bits.push(`${doing} in progress`);
+                  if (missing) bits.push(`${missing} removed`);
+                  return (
+                    <div key={wf.id} className="row" style={{padding:'4px 6px'}}>
+                      <span className="grow tiny">{wf.name}</span>
+                      <span className="sub">{bits.join(' · ')}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="control-board">
             <div className="cb-panel">
               <h4>DETAILS</h4>
