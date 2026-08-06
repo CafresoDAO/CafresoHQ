@@ -8,8 +8,9 @@ import { HireModal } from './modals/hire.jsx';
 import { SettingsModal } from './modals/settings.jsx';
 import { FurnishModal, InboxModal, MeetingRoomModal, WorkflowModal } from './modals/collab.jsx';
 import { STARTER_TASKS, StarterCards, StarterTasksModal, buildStarterTask } from './modals/starter.jsx';
+import { DeliverySheet } from './modals/delivery.jsx';
 
 const CafresoHQModals = { Modal, HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
-  StarterTasksModal, StarterCards, STARTER_TASKS, buildStarterTask };
+  StarterTasksModal, StarterCards, STARTER_TASKS, buildStarterTask, DeliverySheet };
 
 export { CafresoHQModals };

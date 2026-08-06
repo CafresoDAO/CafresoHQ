@@ -206,7 +206,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, meetingActive = false, meetingIds = [] }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, meetingActive = false, meetingIds = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -271,6 +271,32 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     window.addEventListener('cafresohq:walkIn', onWalkIn);
     return () => { window.removeEventListener('cafresohq:walkIn', onWalkIn); clearTimeout(clearT); };
   }, [ambientOk]);
+
+  /* Artifact landing (OFFICE_AS_INTERFACE §4: `artifact` → "carries a
+     document to the out-tray"). app.jsx fires this once the deliverable is
+     genuinely in the cabinet, so the beat can never play for work that
+     wasn't actually filed. Keyed by agent id; the desk's tray plays a
+     one-shot drop. NOT ambientOk-gated the way the walkers are — this one
+     reports a real state change rather than decorating the floor, so a
+     reduced-motion user still gets the (CSS-shortened) cue. */
+  const [trayDrop, setTrayDrop] = React.useState({});
+  React.useEffect(() => {
+    const timers = new Map();
+    const onArtifact = (e) => {
+      const id = (e.detail || {}).agentId;
+      if (!id) return;
+      setTrayDrop(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+      clearTimeout(timers.get(id));
+      timers.set(id, setTimeout(() => {
+        setTrayDrop(prev => { const next = { ...prev }; delete next[id]; return next; });
+      }, 1800));
+    };
+    window.addEventListener('cafresohq:artifact', onArtifact);
+    return () => {
+      window.removeEventListener('cafresohq:artifact', onArtifact);
+      timers.forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   // Idle water-cooler visit — pick one genuinely-idle senior every few minutes.
   const [coolerVisitor, setCoolerVisitor] = React.useState(null);
@@ -885,6 +911,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const liveTool = liveTools[a.id];
           const screen = screens[a.id];
           const paperCount = Math.min((a.journal || []).length, 5);
+          /* Deliveries this coworker has filed — drives the out-tray. Read
+             off the tasks themselves so the tray can never claim a delivery
+             that isn't really in the cabinet. */
+          const myArtifacts = (tasks || []).filter(t => t.assignedTo === a.id && t.artifactPath);
+          const trayCount = myArtifacts.length;
+          const latestArtifact = trayCount ? myArtifacts[myArtifacts.length - 1].artifactPath : null;
           return (
           <div key={a.id}
                className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${liveTool ? ' tool-live' : ''}`}
@@ -934,6 +966,20 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   {Array.from({ length: paperCount }).map((_, pi) => (
                     <span key={pi} className="desk-paper" style={{ bottom: pi * 3, left: pi % 2 ? 1 : 0 }}/>
                   ))}
+                </div>
+              )}
+              {/* Out-tray: where finished work waits after it's filed to the
+                  cabinet (§1 "Artifacts / outputs → the out-tray, filed to
+                  the cabinet"). Only appears once this coworker has actually
+                  delivered something — an empty tray on a brand-new desk
+                  would be set dressing pretending to be state. */}
+              {trayCount > 0 && (
+                <div className={'out-tray' + (trayDrop[a.id] ? ' is-landing' : '')}
+                     title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed — click to open the latest`}
+                     onClick={(e)=>{ e.stopPropagation();
+                       if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }}>
+                  <span className="out-tray-slip" aria-hidden="true"/>
+                  <span className="out-tray-label" aria-hidden="true">OUT</span>
                 </div>
               )}
               <div className="mini-keys" aria-hidden="true"/>

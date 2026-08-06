@@ -2436,6 +2436,52 @@ body.night .office-task-rail .otr-more { color: var(--brand-banana); border-colo
 }
 .desk-papers:hover .desk-paper { background: #fff7e2; }
 
+/* Out-tray — finished work, filed to the cabinet (OFFICE_AS_INTERFACE §1/§3.6).
+   Sits opposite .desk-papers: the papers are what this coworker has read and
+   logged, the tray is what they've DELIVERED. Clickable → opens the artifact. */
+.out-tray {
+  position: absolute;
+  left: 12%; bottom: 36px;
+  width: 18px; height: 12px;
+  cursor: pointer;
+  z-index: 4;
+}
+.out-tray::after {                 /* the tray itself */
+  content: ''; position: absolute; left: 0; bottom: 0;
+  width: 18px; height: 6px;
+  background: var(--paper-2, #e8dcc4);
+  border: 1.5px solid var(--ink);
+  border-top-width: 0;
+}
+.out-tray-slip {                   /* the delivered sheet resting in it */
+  position: absolute; left: 2px; bottom: 4px;
+  width: 14px; height: 8px;
+  background: #f3ead8;
+  border: 1.5px solid var(--ink);
+}
+.out-tray-label {
+  position: absolute; left: 0; bottom: -9px;
+  font-family: 'Press Start 2P'; font-size: 4px;
+  letter-spacing: 0.06em; color: var(--ink-3);
+}
+.out-tray:hover .out-tray-slip { background: #fff7e2; }
+/* One-shot drop when an artifact actually lands (event: cafresohq:artifact). */
+.out-tray.is-landing .out-tray-slip { animation: tray-drop 1.1s ease-out 1; }
+@keyframes tray-drop {
+  0%   { transform: translateY(-26px) rotate(-8deg); opacity: 0; }
+  35%  { opacity: 1; }
+  70%  { transform: translateY(0) rotate(0deg); }
+  80%  { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+/* Reduced motion still gets the cue — just no travel. */
+@media (prefers-reduced-motion: reduce) {
+  .out-tray.is-landing .out-tray-slip { animation: tray-flash 0.6s ease-out 1; }
+  @keyframes tray-flash { 0%, 100% { background: #f3ead8; } 50% { background: var(--accent-sun, #d4a017); } }
+}
+body.night .out-tray::after { background: #3a3050; }
+body.night .out-tray-slip { background: #cbbfe4; }
+
 /* Window */
 .window {
   position: absolute;
@@ -5861,6 +5907,27 @@ body.night .post-card.frontdesk-card { background: #312842; }
 .tb-empty-hint { display: block; margin-top: 8px; font-size: 13px; color: var(--ink-3); }
 body.night .starter-card { background: #312842; color: #e8dcff; }
 body.night .starter-outcome { color: #b0a3c8; }
+
+/* ── First-delivery sheet (OFFICE_AS_INTERFACE §3.6) ──────────────────────── */
+.delivery-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px; margin-bottom: 10px;
+  border-bottom: 1px dashed var(--ink-3);
+}
+.delivery-note {
+  font-family: 'Inter'; font-size: 11px; line-height: 1.4; color: var(--ink-2);
+}
+.delivery-note em { font-style: normal; color: var(--ink); }
+.delivery-path {
+  font-family: 'VT323', monospace; font-size: 15px; color: var(--ink);
+  background: var(--paper-2); border: 1px dashed var(--ink-3);
+  padding: 6px 8px; overflow-wrap: anywhere;
+}
+.delivery-trust {
+  font-family: 'Inter'; font-size: 10.5px; line-height: 1.45;
+  color: var(--ink-3); margin: 10px 0 0;
+}
+body.night .delivery-path { background: #241d33; color: #e8dcff; }
 
 .post-remove {
   position: absolute; top: 4px; right: 4px;

@@ -8,6 +8,7 @@ import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
+import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -17,7 +18,7 @@ import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
-        StarterTasksModal } = CafresoHQModals;
+        StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
@@ -469,6 +470,10 @@ function App() {
   /* The coworker being offered a first assignment (null = sheet closed).
      Set by onHire on a genuinely first hire — see OFFICE_AS_INTERFACE §3.4. */
   const [starterFor, setStarterFor] = useStateA(null);
+  /* First artifact to land in the cabinet gets a sheet, once ever (§3.6).
+     Every later delivery is just a ticker line + the out-tray beat. */
+  const [firstDeliverySeen, setFirstDeliverySeen] = useStored(ks('firstDeliverySeen'), false);
+  const [delivery, setDelivery] = useStateA(null);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
   // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
@@ -864,6 +869,17 @@ ${d.text}` : d.text,
   /* The activity ticker is fed ONLY by real events now (tool calls, hires,
      task pickups/completions, coffee). A fake generator used to invent agent
      activity every 6.5s — production users couldn't tell real from fiction. */
+
+  /* Open a filed artifact in the cabinet. Two-step because VaultView has to
+     be mounted before it can hear the request (same shape the graph popout
+     uses). Shared by the delivery sheet and the desk out-tray. */
+  const openVaultNote = (path) => {
+    if (!path) return;
+    setActiveView('vault');
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path } })); } catch (_e) {}
+    }, 80);
+  };
 
   const onHire = (a) => {
     const firstEver = agents.length === 0 && tasks.length === 0;
@@ -2573,6 +2589,27 @@ ${d.text}` : d.text,
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
+      /* The artifact lands (OFFICE_AS_INTERFACE §3.6): the deliverable goes
+         into the cabinet, the coworker carries it to the out-tray, and the
+         very first one earns a sheet. Filing is best-effort and never
+         rethrows — the work is already done and recorded on the task either
+         way, so a missing vault must not read as a failed task. */
+      if (cleanBuf.trim()) {
+        const filedPath = await fileDelivery(task, agent, cleanBuf);
+        if (filedPath) {
+          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
+          logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
+            action: 'artifact', taskId, text: `filed "${filedPath}" to the cabinet 🗄` });
+          try {
+            window.dispatchEvent(new CustomEvent('cafresohq:artifact', { detail: { agentId: agent.id } }));
+          } catch (_e) {}
+          if (!firstDeliverySeen) {
+            setFirstDeliverySeen(true);
+            setDelivery({ path: filedPath, agentName: agent.name, agentColor: agent.color,
+              taskTitle: task.title, encrypted: cabinetIsEncrypted() });
+          }
+        }
+      }
       const approvalDesc = HQ.extractApproval(cleanBuf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Chain: if this task has a chainTo, activate the next step
@@ -3033,6 +3070,7 @@ ${d.text}` : d.text,
               tasks={tasks}
               onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agentId, status: 'doing' } : t))}
               onGoToTasks={() => setActiveView('tasks')}
+              onOpenArtifact={openVaultNote}
               maxSlots={5}
               ceoBusy={chat.some(m => m.from === 'ceo' && m.streaming)}
               attentionCount={attentionCount}
@@ -3659,6 +3697,12 @@ ${d.text}` : d.text,
           setActiveView('visual');
           onTaskDropOnAgent(task.id, agent, task);
         }}
+      />
+      <DeliverySheet
+        open={!!delivery}
+        delivery={delivery}
+        onClose={()=>setDelivery(null)}
+        onOpenNote={openVaultNote}
       />
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}

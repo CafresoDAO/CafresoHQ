@@ -93,9 +93,37 @@ no keys pasted in this path.
 5. **Watch the work.** The animation layer (§4) plays the task honestly.
    If the task needs a permission, the coworker walks over and asks — the
    user's first approval is diegetic, not a modal ambush.
-6. **The artifact lands.** Out-tray → filing cabinet, with a share/open sheet.
-   *"That's your first delivery. The cabinet is encrypted — only you can open
-   it."* First delight + the trust story in one beat.
+6. **The artifact lands.** Out-tray → filing cabinet, with an open sheet.
+   First delight + the trust story in one beat.
+   > ✅ **Shipped 2026-08-05** — `app/artifacts.jsx` + `modals/delivery.jsx`.
+   > When a TASK completes, the host files the deliverable to the vault
+   > (`Research/` · `Drafts/` · `Sites/` by starter card, else
+   > `Deliveries/`), the desk grows an out-tray that plays a one-shot drop
+   > and opens the latest artifact on click, and the first delivery ever
+   > gets a sheet with the path and an "Open it" that lands in the cabinet.
+   >
+   > **Filing is host-side, not a `[VAULT_NEW:…]` the agent emits.** No
+   > front-desk hire claims `vault` in its tools, so they *cannot* emit it —
+   > and the small local models a zero-config user is likeliest to hire are
+   > exactly the ones that would forget. The office files the out-tray; the
+   > coworker only has to finish the work. Deliverables are also swept of
+   > stray tool markers first (a file that opens on `[Vault_APPEND: …]` is
+   > not a deliverable) — narrowly, so prose, `[x]` checkboxes and
+   > `[Customer Name]` placeholders survive. Covered by
+   > `scripts/test_artifacts.py`.
+   >
+   > **The trust line is conditional, and that is the point.** "The cabinet
+   > is encrypted — only you can open it" is true only when HQ is framed by
+   > the shell that holds the user's identity and does the vetKeys work
+   > (`VaultBridge.isAvailable()`). A self-hosted vault is an ordinary
+   > folder, and the sheet says so instead. §4 forbids the animation layer
+   > from lying; a claim about *security* is the last place to start.
+   >
+   > Deferred: **share**. Vault notes have no publish path today
+   > (`publishSite` takes a workspace directory, not a note), so rather than
+   > ship a button that half-works this is left to the Ship-to-chain work
+   > (`DRIVER_CONTRACT.md` §7), which is the real sharing surface.
+   > Only task completions file — a chat reply or a DM is not an artifact.
 
 Exit test (from the North Star): a non-developer stranger completes this
 unaided in under five minutes.
