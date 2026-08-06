@@ -892,3 +892,32 @@ settings — never on the floor, the cards, or onboarding.
 > inbox tab, so the three can't drift. Verified live: 21 → 13 on all three
 > at once, a `×2` row reads "latest of 2", opening it moves 13 → 12 (one
 > item, not two), and both underlying entries persist as read.
+
+> ✅ **Walked §3 "first run" for real (2026-08-06).** Every check this
+> session had been run against an environment full of accumulated test
+> state — eight coworkers, 59 activity rows, old receipts. That is not
+> what an MVP is judged on. Wiped both halves of the store (localStorage
+> *and* the file-backed state dir) and opened the app as a brand-new boss.
+>
+> Most of it holds up: the Getting Started checklist, the CEO's welcome,
+> a floor of vacant units each offering `+ HIRE`, an honest empty inbox.
+> Hiring from the front desk asks for consent in plain language —
+> *"Claude works with computer access — reading and writing files and
+> running commands on this machine. Every action is logged and pauses for
+> your approval. Bring them aboard?"* — and completing it advances the
+> checklist 0/6 → 1/6, lands the room with a `reporting for duty` bubble,
+> and marks the nameplate `🛡 CLAUDE · CODING AGENT`.
+>
+> One thing did not hold up, and it was the *first sentence the office
+> ever spoke*: the ticker read **"All agents elevated · cafresohq:sonnet
+> pinned"**. A raw model id and two internal words (§6 bans both), fired
+> by a one-time schema migration whose flag lives in localStorage — so it
+> runs for a **new** install too, where the roster is empty. The office's
+> opening line, on a floor of vacant desks, was a developer migration
+> notice about zero coworkers.
+>
+> The ticker is the office's news feed ("Kenji picked up …"). Schema
+> housekeeping is not news, so it no longer says anything; the migration
+> still runs, silently, which is what housekeeping should do. Swept the
+> rest of the first-run surface for the same class of leak (`cafresohq:`,
+> other driver prefixes, "system prompt", "API key", "backend") — clean.

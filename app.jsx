@@ -781,7 +781,15 @@ function App() {
       model: a.model && a.model.startsWith('cafresohq:') ? a.model : 'cafresohq:sonnet',
     })));
     try { localStorage.setItem(FLAG, '1'); } catch (_e) {}
-    say('All agents elevated · cafresohq:sonnet pinned', 'ELEVATE');
+    /* No ticker line. This announced itself as
+         "All agents elevated · cafresohq:sonnet pinned"
+       — a raw model id and two internal words, and because the flag is
+       per-install it fires for a BRAND NEW boss too, whose roster is
+       empty. So the very first thing the office ever said, on a floor of
+       vacant desks, was a developer migration notice about zero coworkers.
+       The ticker is the office's news feed ("Kenji picked up …");
+       schema housekeeping is not news. The migration still runs, silently,
+       which is what housekeeping should do. */
   }, []);
 
   useEffectA(() => { document.body.classList.toggle('no-scanlines', !scanlines); }, [scanlines]);
