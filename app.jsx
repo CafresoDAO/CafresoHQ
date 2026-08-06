@@ -3356,7 +3356,7 @@ ${d.text}` : d.text,
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
-        return <CalendarView tasks={tasks} agents={agents} />;
+        return <CalendarView tasks={tasks} agents={agents} missions={missions} />;
       case 'projects':
         return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={setActiveView} />;
       case 'terminal':

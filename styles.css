@@ -5680,6 +5680,10 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
 }
 .cal-item:last-child { border-bottom: none; }
 .cal-item.status-done { opacity: 0.7; }
+/* A live mission is the one row on this view that points FORWARD — the
+   time on it is when the run wraps, not when it was logged. Marked so it
+   doesn't read as one more past entry in the day's log. */
+.cal-item.cal-mission { border-left: 3px solid var(--accent-lav); background: var(--paper-2, #f0e9d8); }
 .cal-time { font-family: 'VT323'; font-size: 16px; color: var(--ink-2); }
 .cal-title { font-family: 'VT323'; font-size: 17px; }
 .cal-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

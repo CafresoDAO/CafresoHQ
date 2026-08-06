@@ -529,17 +529,42 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
 }
 
 /* ---------------- Calendar (tasks grouped by createdAt date) ---------------- */
-function CalendarView({ tasks, agents }) {
+/* The business's day view.
+
+   It was a task-creation log wearing a calendar's name: every entry was a
+   `createdAt`, so the one question a calendar exists to answer — what is
+   still to come — had no answer here, and the header carried a standing
+   IOU ("scheduling coming with stand-up") for a feature that had since
+   shipped somewhere else entirely.
+
+   Live missions are the scheduled work the app already has: a running one
+   knows exactly when it ends (`startedAt + durationMs`). Those land on the
+   day they finish, which is a real future entry. Nothing here is invented —
+   a mission that isn't running contributes nothing, the same way an
+   un-created task does. (Night-shift schedules carry a `nextRunAt` too and
+   belong here as well, but they live behind the container bridge; they are
+   not local state this view can read honestly, so they are left out rather
+   than faked.) */
+function CalendarView({ tasks, agents, missions = [] }) {
   const groups = useMV(() => {
     const out = new Map();
-    for (const t of tasks) {
-      const d = new Date(t.createdAt || Date.now());
-      const key = d.toISOString().slice(0,10);
+    const push = (ts, entry) => {
+      const key = new Date(ts).toISOString().slice(0,10);
       if (!out.has(key)) out.set(key, []);
-      out.get(key).push(t);
+      out.get(key).push(entry);
+    };
+    for (const t of tasks) {
+      push(t.createdAt || Date.now(), { kind: 'task', at: t.createdAt || Date.now(), task: t });
     }
-    return [...out.entries()].sort((a,b) => b[0].localeCompare(a[0]));
-  }, [tasks]);
+    for (const m of missions) {
+      if (!m || m.status !== 'running' || !m.startedAt || !m.durationMs) continue;
+      push(m.startedAt + m.durationMs,
+           { kind: 'mission', at: m.startedAt + m.durationMs, mission: m });
+    }
+    return [...out.entries()]
+      .map(([day, items]) => [day, items.sort((a, b) => b.at - a.at)])
+      .sort((a,b) => b[0].localeCompare(a[0]));
+  }, [tasks, missions]);
 
   const fmt = (k) => {
     const d = new Date(k + 'T12:00:00');
@@ -552,26 +577,49 @@ function CalendarView({ tasks, agents }) {
     <div className="view-calendar">
       <div className="section-title">
         🗓 CALENDAR
-        <span className="tag">tasks grouped by created date · scheduling coming with stand-up</span>
+        {/* Was "scheduling coming with stand-up" — a standing IOU for a
+            feature that had since shipped elsewhere. Say what the view
+            shows now, not what it might one day. */}
+        <span className="tag">your business by day · tasks when raised · missions when they wrap</span>
       </div>
       {groups.length === 0 && (
         <div className="empty-state onboard">
           <div className="empty-title">🗓 Nothing on the calendar yet</div>
           <div className="empty-sub">
-            This is a live mirror of your task board, grouped by day. Add a task in the
-            <strong> Tasks</strong> tab (or drop one on an agent's desk in the office) and it shows up here.
+            Your business by day. Raise a task in the <strong>Tasks</strong> tab (or drop one on
+            an agent's desk in the office) and it lands here — so does a research mission,
+            on the day it's due to wrap up.
           </div>
         </div>
       )}
-      {groups.map(([day, ts]) => (
+      {groups.map(([day, items]) => (
         <div key={day} className="cal-day">
-          <div className="cal-day-head">{fmt(day)}<span className="cal-count">{ts.length}</span></div>
+          <div className="cal-day-head">{fmt(day)}<span className="cal-count">{items.length}</span></div>
           <div className="cal-day-body">
-            {ts.map(t => {
+            {items.map(entry => {
+              const time = new Date(entry.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+              if (entry.kind === 'mission') {
+                const m = entry.mission;
+                const a = agents.find(x => x.id === m.agentId);
+                /* Says what the clock actually means for this row — the
+                   time is when the run STOPS, not when it was set up. */
+                return (
+                  <div key={m.id} className="cal-item cal-mission">
+                    <div className="cal-time">{time}</div>
+                    <div className="cal-title">🔬 {m.topic} — wraps up</div>
+                    <div className="cal-meta">
+                      {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">{m.agentId}</span>}
+                      <span className="pri">every {Math.max(1, Math.round((m.intervalMs || 0) / 60000))}m</span>
+                      <span className="status-pill busy">RUNNING</span>
+                    </div>
+                  </div>
+                );
+              }
+              const t = entry.task;
               const a = agents.find(x => x.id === t.assignedTo);
               return (
                 <div key={t.id} className={`cal-item status-${t.status}`}>
-                  <div className="cal-time">{new Date(t.createdAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</div>
+                  <div className="cal-time">{time}</div>
                   <div className="cal-title">{t.title}</div>
                   <div className="cal-meta">
                     {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">unassigned</span>}

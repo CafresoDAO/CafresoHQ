@@ -814,3 +814,45 @@ settings — never on the floor, the cards, or onboarding.
 > `inbox` with `chainTo`/`workflowId` intact (not orphaned), and confirmed
 > the list still honestly reads "0/2 done" after — a snag is not progress.
 > All 12 suites green.
+
+> ✅ **The Calendar was a creation log, and Research was dead on load
+> (2026-08-06).** Opened the Calendar as a boss would and found a view
+> named for *when things happen* that only ever showed `createdAt` — every
+> row a record of when someone typed something. Its header carried a
+> standing IOU, "scheduling coming with stand-up", for a feature that had
+> since shipped somewhere else entirely.
+>
+> Live missions are the scheduled work the app already has: a running one
+> knows exactly when it ends (`startedAt + durationMs`). They now land on
+> the day they wrap, marked as forward-looking so they don't read as one
+> more past entry, and the header says what the view shows instead of what
+> it might one day. Nothing is invented — a mission that isn't running
+> contributes nothing, verified in both directions (row present while
+> RUNNING, gone the moment it paused). Night-shift schedules carry a
+> `nextRunAt` and belong here too, but they live behind the container
+> bridge; they are left out rather than faked.
+>
+> ⚠️ **Setting out to test that turned up a much worse bug.** A research
+> mission could not be started at all on a fresh page load. Both mission
+> forms seeded `agentId` with a lazy `useState` initialiser — which runs
+> once, at mount — and these modals mount *with the app*, below their own
+> `if (!open) return null`. The roster loads asynchronously, so at that
+> moment `agents` was `[]`, the seed resolved to `''`, and it never
+> recovered.
+>
+> The failure was invisible and total. `<select value="">` with no matching
+> option still **shows** a coworker, so the form read as complete while
+> START stayed permanently disabled, with nothing on screen explaining
+> why — the headline "put a coworker on a long-running job" action, dead,
+> silently. The only escape was to re-pick the coworker the form already
+> appeared to have. Diagnosed by reading React's own props off the fiber
+> after the DOM and the state disagreed: `select.value` said `a_tir7pj`,
+> React's `value` prop said `''`.
+>
+> `useValidAgentId` now re-seeds whenever the roster changes and the held
+> id isn't in it — which also covers the case that made this dangerous
+> rather than merely broken: **a coworker let go while selected**. The
+> state always names someone who exists, so the select can never display a
+> choice the app doesn't hold. Verified on a cold load: state resolves to a
+> real agent (correctly preferring the only one with both web + vault),
+> START is live untouched, and a mission runs end to end.

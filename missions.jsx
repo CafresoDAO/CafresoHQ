@@ -19,6 +19,40 @@ import { snagCause, snagSentence } from './app/floor.jsx';
    ========================================================================== */
 
 const { useState: useSM, useEffect: useEMission, useRef: useRMission } = React;
+
+/* Keep a picked agent valid as the roster loads and changes.
+
+   Both mission forms seeded `agentId` with a lazy useState initialiser —
+   which runs ONCE, at mount. These modals mount with the app (their
+   `if (!open) return null` sits below the hooks), and the roster arrives
+   asynchronously from storage, so at that moment `agents` is `[]` and the
+   seed resolved to `''` and never recovered.
+
+   The failure was invisible and total: `<select value="">` with no matching
+   option still SHOWS a coworker, so the form read as complete while START
+   stayed disabled — the headline "start a research mission" action was dead
+   on a fresh page load, with nothing on screen saying why. You could only
+   escape by re-picking the coworker the form already appeared to have.
+
+   Seeding on every roster change also covers the case that made this
+   dangerous rather than merely broken: an agent who is let go while
+   selected. `prefer` runs first, then any hire, then '' when the roster is
+   genuinely empty — so the state always names someone who exists, and the
+   select can never display a choice the app doesn't hold. */
+/* Module-level so they're referentially stable — a predicate rebuilt each
+   render would re-run the effect every render. */
+const RESEARCH_PREFERRED = (a) =>
+  !!a && (a.tools || []).includes('web') && (a.tools || []).includes('vault');
+const NIGHT_SHIFT_PREFERRED = (a) => !!a && (a.tools || []).includes('vault');
+
+function useValidAgentId(agents, agentId, setAgentId, prefer) {
+  useEMission(() => {
+    const roster = Array.isArray(agents) ? agents : [];
+    if (agentId && roster.some(a => a && a.id === agentId)) return;
+    const next = (roster.find(prefer) || roster[0] || {}).id || '';
+    if (next !== agentId) setAgentId(next);
+  }, [agents, agentId, setAgentId, prefer]);
+}
 const { Modal: OcModalM } = CafresoHQModals;
 
 const MIN = 60_000;
@@ -599,7 +633,8 @@ function NightShiftSection({ agents }) {
   const [runs, setRuns] = useSM([]);
   const [reachable, setReachable] = useSM(true);
   const [topic, setTopic] = useSM('');
-  const [agentId, setAgentId] = useSM(() => (agents.find(a => (a.tools || []).includes('vault')) || agents[0] || {}).id || '');
+  const [agentId, setAgentId] = useSM('');
+  useValidAgentId(agents, agentId, setAgentId, NIGHT_SHIFT_PREFERRED);
   const [folder, setFolder] = useSM('');
   const [startStr, setStartStr] = useSM(() => toLocalInput(nextTwoAm()));
   const [recurrence, setRecurrence] = useSM('once');
@@ -815,7 +850,8 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
   const [mode, setMode] = useSM('research'); // 'research' | 'project-study'
   const [topic, setTopic] = useSM('');
   const [projectId, setProjectId] = useSM('');
-  const [agentId, setAgentId] = useSM(() => agents.find(a => (a.tools||[]).includes('web') && (a.tools||[]).includes('vault'))?.id || agents[0]?.id || '');
+  const [agentId, setAgentId] = useSM('');
+  useValidAgentId(agents, agentId, setAgentId, RESEARCH_PREFERRED);
   const [duration, setDuration] = useSM(2 * HOUR);
   const [interval, setInterval_] = useSM(5 * MIN);
   const [folder, setFolder] = useSM('');
