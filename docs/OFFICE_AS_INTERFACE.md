@@ -339,6 +339,28 @@ append-only).
 > Tooltips claim no unit. Token counts are not word counts, and "words read
 > and written" would be a small lie told confidently.
 
+> ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
+> actual first-run path (empty roster, the Job Postings sheet auto-opens)
+> turned up the rest of it. The candidate cards printed prefix-stripped raw
+> ids; they use `brainName()` now. Five front-desk roles read `Local Model ·
+> your hardware` / `Cloud Model · your account` — model-as-selector in the
+> very first sentence a new boss reads about their first hire — and are now
+> plain job titles, with *where the brain runs* left to the powered-by chip
+> and the found line, which already said it honestly.
+>
+> That `·` clause was also feeding the office **door plate**, which printed
+> only the role's LAST word: hiring the local Llama produced a room labelled
+> **"LLAMA · HARDWARE"**, and every coding agent read "· AGENT". The plate
+> now prints the whole role and lets the existing ellipsis handle a long
+> one — **truncation is honest; word-picking guesses.** Verified a
+> pathological 57-character role clips with an ellipsis, stays inside the
+> plate, and leaves the status pip visible.
+>
+> Last of it: "bring your own model / your own key" → "bring your own
+> brain". *Brain* is already the product's word for it everywhere else
+> (onboarding, `/health`, the welcome message) — this was drift, not a
+> second concept.
+
 Raw model IDs, JSON, and driver names may appear in desktop-mode surfaces and
 settings — never on the floor, the cards, or onboarding.
 

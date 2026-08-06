@@ -1140,7 +1140,13 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                            if (taskId && onTaskDropOnAgent) onTaskDropOnAgent(taskId, a);
                          }}>
                       <div className="px-plate">
-                        <span>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {a.role.split(' ').slice(-1)[0].toUpperCase()}</span>
+                        {/* The plate used to print only the role's LAST word,
+                            which turned "Coding Agent" into "AGENT" and (before
+                            the front desk stopped saying it) "Local Model · your
+                            hardware" into "HARDWARE". Show the real role and let
+                            the existing ellipsis handle a long one — truncation
+                            is honest, word-picking guesses. */}
+                        <span title={`${a.name} · ${a.role}`}>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {String(a.role || '').toUpperCase()}</span>
                         {/* The word carries the beat where the animation
                             can't — a reduced-motion or mobile boss still
                             sees WHICH unit just became theirs. */}

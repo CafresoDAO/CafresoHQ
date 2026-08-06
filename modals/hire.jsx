@@ -1,6 +1,7 @@
 import { CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
+import { brainName } from '../app/cast.jsx';
 import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
@@ -14,6 +15,12 @@ const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
    cloud:true = plain-chat API backend riding POST /agent/stream (the key
    lives server-side, so these only count as found when detect.authenticated
    — a card that would fail its first task is worse than no card). */
+/* §6 note: a role is a JOB TITLE. These five used to read "Local Model ·
+   your hardware" / "Cloud Model · your account", which is model-as-selector
+   on the first surface a new boss ever reads — and the "·" clause also fed
+   the office door plate, so hiring the local Llama produced a room labelled
+   "LLAMA · HARDWARE". Where the brain runs is already carried honestly by
+   the powered-by chip and the found line; the role says what they do. */
 const FRONT_DESK = {
   'claude-code': { id: 'a_cli_claude', name: 'Claude', role: 'Coding Agent', color: 'leaf',
                    model: 'claudecode:sonnet', tools: ['files', 'shell', 'web'], elevated: true,
@@ -24,19 +31,19 @@ const FRONT_DESK = {
   'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Resident Agent', color: 'sky',
                    model: 'hermes:hermes-agent', tools: ['web', 'files', 'shell'], elevated: true,
                    poweredBy: 'Nous Research', found: 'The house agent — already moved in and ready to work.' },
-  'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Local Model · your hardware', color: 'teal',
+  'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Generalist', color: 'teal',
                    model: 'lmstudio:local-model', tools: ['web'],
-                   poweredBy: 'LM Studio', found: 'A local model is running on this machine — cheap and tireless.' },
-  'ollama':      { id: 'a_local_ollama', name: 'Llama', role: 'Local Model · your hardware', color: 'sun',
+                   poweredBy: 'LM Studio', found: 'Already running on this machine — cheap and tireless.' },
+  'ollama':      { id: 'a_local_ollama', name: 'Llama', role: 'Generalist', color: 'sun',
                    model: 'ollama:llama3.1', tools: ['web'],
-                   poweredBy: 'Ollama', found: 'A local model is running on this machine — cheap and tireless.' },
-  'openrouter':  { id: 'a_cloud_openrouter', name: 'OpenRouter', role: 'Cloud Model · your account', color: 'rose',
+                   poweredBy: 'Ollama', found: 'Already running on this machine — cheap and tireless.' },
+  'openrouter':  { id: 'a_cloud_openrouter', name: 'OpenRouter', role: 'Generalist', color: 'rose',
                    model: 'openrouter:openai/gpt-oss-120b:free', tools: ['web'], cloud: true,
                    poweredBy: 'OpenRouter', found: 'Your OpenRouter account is connected to this workspace.' },
-  'groq':        { id: 'a_cloud_groq', name: 'Groq', role: 'Cloud Model · your account', color: 'blush',
+  'groq':        { id: 'a_cloud_groq', name: 'Groq', role: 'Generalist', color: 'blush',
                    model: 'groq:llama-3.3-70b-versatile', tools: ['web'], cloud: true,
                    poweredBy: 'Groq', found: 'Your Groq account is connected to this workspace.' },
-  'gemini-api':  { id: 'a_cloud_gemini', name: 'Gemini', role: 'Cloud Model · your account', color: 'cafresohq',
+  'gemini-api':  { id: 'a_cloud_gemini', name: 'Gemini', role: 'Generalist', color: 'cafresohq',
                    model: 'gemini-api:gemini-2.5-flash', tools: ['web'], cloud: true,
                    poweredBy: 'Google', found: 'Your Google AI account is connected to this workspace.' },
 };
@@ -257,7 +264,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   </div>
                   <div className="post-role">{t.role}</div>
                   <div className="post-meta">
-                    <span>{(t.model||'').replace(/^[a-z]+:/,'') || '—'}</span>
+                    <span title={t.model || 'no brain assigned'}>{brainName(t)}</span>
                     <span>·</span>
                     <span>{(t.tools||[]).length} tool{(t.tools||[]).length===1?'':'s'}</span>
                   </div>
@@ -271,7 +278,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   </div>
                   <div className="post-role">{t.role}</div>
                   <div className="post-meta">
-                    <span>{(t.model||'').replace(/^[a-z]+:/,'') || '—'}</span>
+                    <span title={t.model || 'no brain assigned'}>{brainName(t)}</span>
                     <span>·</span>
                     <span>{(t.tools||[]).length} tool{t.tools.length===1?'':'s'}</span>
                   </div>

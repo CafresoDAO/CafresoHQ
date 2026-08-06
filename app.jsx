@@ -425,7 +425,7 @@ function App() {
       if ((firstRunChatRef.current || []).length === 0) {
         setChat([{
           id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
-          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. I'm already running on Cafreso's Gemma 4 brain — no keys to add, though you can bring your own model later in Settings. Let's make your first hire: I'm opening the candidate book now.",
+          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. I'm already running on Cafreso's Gemma 4 brain — nothing to sign up for, though you can bring your own brain later in Settings. Let's make your first hire: I'm opening the candidate book now.",
         }]);
       }
       /* Beat 2: the candidates deck opens itself a moment after the CEO's

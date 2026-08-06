@@ -268,7 +268,7 @@ function OnboardingKeyStep() {
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('cafresohq:openSettings', { detail: { tab: 'keys' } }))}
           style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', ...linkStyle }}
-        >bring your own key →</button>
+        >bring your own brain →</button>
       </div>
     </div>
   );
@@ -283,7 +283,7 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
   const steps = [
     // Managed containers include Cafreso's Gemma 4 brain — this step self-
     // completes on those, and stays actionable only for standalone setups.
-    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Gemma 4 by Cafreso is included — bring your own key anytime.', act: onAddKey, cta: 'Brain settings' },
+    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Gemma 4 by Cafreso is included — bring your own brain anytime.', act: onAddKey, cta: 'Brain settings' },
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
