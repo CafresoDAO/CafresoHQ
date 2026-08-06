@@ -105,10 +105,13 @@ R.snag429      = snagSentence('429 Too Many Requests');
 R.snagQuota    = snagSentence('insufficient_quota: you exceeded your current quota');
 R.snagRefused  = snagSentence('fetch failed: connect ECONNREFUSED 10.0.0.100:1234');
 R.snagTimeout  = snagSentence('Error: request timed out after 120000ms');
+// Measured live: a cold local Ollama produced exactly this, and it used to
+// fall through to the raw line, leaking the banned word "backend".
+R.snagCold     = snagSentence('backend did not start responding within 20s');
 R.snag500      = snagSentence('500 Internal Server Error');
 R.snagUnknown  = snagSentence('the flux capacitor came loose');
 // §6/§7: no jargon, no status codes, no raw dumps in ANY produced sentence.
-R.snagClean = [R.snagRealKey,R.snag401,R.snag429,R.snagQuota,R.snagRefused,R.snagTimeout,R.snag500]
+R.snagClean = [R.snagRealKey,R.snag401,R.snag429,R.snagQuota,R.snagRefused,R.snagTimeout,R.snag500,R.snagCold]
   .every(x => !/api[- ]?key|\b[45]\d\d\b|openrouter|econnrefused|bearer|quota|http/i.test(x));
 R.snagAllPrefixed = [R.snagRealKey,R.snag401,R.snagUnknown].every(x => x.indexOf('hit a snag — ') === 0);
 // An unrecognised cause must NOT be diagnosed — it falls through verbatim.
@@ -186,6 +189,9 @@ console.log(JSON.stringify(R));
           'http' not in out['snagUrl'] and 'while parsing' in out['snagUrl'], repr(out['snagUrl']))
     check('a recognised cause leaks none of the raw text it replaced',
           out['snagNoLeak'])
+    check('a cold local model reads as warming up, not "backend"',
+          'warming up' in out['snagCold'] and 'backend' not in out['snagCold'].lower(),
+          repr(out['snagCold']))
     check('long messages are capped with an ellipsis',
           out['snagLong'].endswith('…') and out['snagLongLen'] <= 104,
           str(out['snagLongLen']))

@@ -54,6 +54,15 @@ const SNAG_CAUSES = [
    "that brain's account is out of credit — top it up or pick another coworker"],
   [/econnrefused|connection refused|enotfound|failed to fetch|network error|dns/i,
    "couldn't reach that brain — it looks offline from here"],
+  /* "did not start responding" is how a cold LOCAL model reads: the driver
+     gives up before the weights finish loading. Caught live — a first call
+     to a freshly-woken Ollama produced `backend did not start responding
+     within 20s`, which matched nothing here and so fell through to the raw
+     first line, putting the §6-banned word "backend" straight into the
+     floor bubble. Its own sentence, because "warming up" is the actionable
+     part and "try again" really does work the second time (it did). */
+  [/did ?n[o']?t start responding|did ?n[o']?t respond|not responding/i,
+   "that brain didn't answer in time — it may still be warming up, so try again in a moment"],
   [/timed? ?out|etimedout|\b504\b/i,
    'that took too long, so I stopped waiting — try again or ask for less at once'],
   [/\b5\d\d\b|internal server error|service unavailable/i,

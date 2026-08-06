@@ -1203,3 +1203,33 @@ settings — never on the floor, the cards, or onboarding.
 > environment exercised nothing but failures, and this was invisible the
 > entire time. Testing only the sad path hides every bug that lives on the
 > happy one.
+
+> ✅ **Verified the settle on a real success — for free (2026-08-06).** The
+> previous entry's fix was reasoned, not watched, because the only agent
+> with a working brain here runs on the boss's own paid subscription. The
+> front desk had already detected a **local Ollama** ("already running on
+> this machine — cheap and tireless"), which costs nothing but the
+> machine's own electricity. Hired it and drove the success path properly.
+>
+> Sampled once a second across a real round trip:
+>
+> | t | status | bubble | header |
+> |---|---|---|---|
+> | 1s | `busy` | "Reply with exactly: OK" | **1 WORKING** |
+> | 15s | `active` | "reporting back" | **1 WORKING** |
+> | 19s | `idle` | "standing by" | **0 WORKING** |
+>
+> `tasksDone: 1`, 2 332 tokens — a genuine completion. The done-beat holds
+> for its 4s and the desk is handed back. Before the fix that header stayed
+> at 1 WORKING permanently. **First successful round trip verified end to
+> end in this whole effort** — everything before it exercised failures.
+>
+> It also caught one more §6 leak immediately: the model's FIRST call
+> cold-loaded past its budget and produced `backend did not start
+> responding within 20s`. That matched no `SNAG_CAUSES` pattern, so it fell
+> through to the raw first line and put **"backend"** — a banned word —
+> straight into the floor bubble. Cold local models are a first-run
+> normality, not an exotic edge, so it gets its own sentence: *"that brain
+> didn't answer in time — it may still be warming up, so try again in a
+> moment"* — and trying again did work. Pinned by a test using the exact
+> string the live run produced.
