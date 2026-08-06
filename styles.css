@@ -5814,6 +5814,54 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 .frontdesk-cta { color: var(--accent-sun, #d4a017); font-weight: 700; }
 body.night .post-card.frontdesk-card { background: #312842; }
 
+/* ── Starter tasks (OFFICE_AS_INTERFACE §3.4) ─────────────────────────────
+   Three real outcomes offered after the first hire, and again in an empty
+   task inbox. Same card idiom as the front desk so the two first-run beats
+   feel like one flow. */
+.starter-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px; margin-bottom: 10px;
+  border-bottom: 1px dashed var(--ink-3);
+}
+.starter-head-note {
+  font-family: 'Inter'; font-size: 11px; line-height: 1.4; color: var(--ink-2);
+}
+.starter-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.starter-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left;
+  background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 11px 10px; cursor: pointer; font: inherit; color: inherit;
+  transition: transform 0.06s, box-shadow 0.06s, border-color 0.06s;
+}
+.starter-card:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.starter-card.is-picked {
+  border-color: var(--accent-sun, #d4a017);
+  box-shadow: 3px 3px 0 0 var(--accent-sun, #d4a017);
+}
+.starter-icon { font-size: 17px; line-height: 1; }
+.starter-name { font-family: 'Press Start 2P'; font-size: 9px; line-height: 1.35; }
+.starter-outcome {
+  font-family: 'Inter'; font-size: 10px; line-height: 1.35; color: var(--ink-3);
+}
+.starter-fill { margin-top: 12px; }
+.starter-ask {
+  display: block; margin-bottom: 5px;
+  font-family: 'Press Start 2P'; font-size: 8px; color: var(--ink-2);
+}
+.starter-input-row { display: flex; gap: 8px; align-items: center; }
+.starter-input-row .oc-input { flex: 1; min-width: 0; }
+/* Compact = inside the task board's empty inbox column, where width is tight. */
+.starter-wrap.is-compact .starter-row { grid-template-columns: 1fr; gap: 7px; }
+.starter-wrap.is-compact .starter-card { padding: 8px 9px; box-shadow: 2px 2px 0 0 var(--ink); }
+.starter-wrap.is-compact { margin: 10px 0 8px; text-align: left; }
+.tb-empty-hint { display: block; margin-top: 8px; font-size: 13px; color: var(--ink-3); }
+body.night .starter-card { background: #312842; color: #e8dcff; }
+body.night .starter-outcome { color: #b0a3c8; }
+
 .post-remove {
   position: absolute; top: 4px; right: 4px;
 }

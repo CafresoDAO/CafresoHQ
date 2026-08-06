@@ -10,7 +10,7 @@ const { useState: useSF, useEffect: useEF, useRef: useRF, useMemo: useMF } = Rea
 
 /* Pulled from CafresoHQModals so the modals defined in this file can use the
    shared <Modal> shell (focus trap, scroll lock, animated entry). */
-const { Modal: OcModal } = CafresoHQModals;
+const { Modal: OcModal, StarterCards, buildStarterTask } = CafresoHQModals;
 
 /* ---------------- Seed data ----------------
    Empty in production: fake demo tasks/memories used to be written into every
@@ -162,7 +162,18 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
               })}
               {tasks.filter(t=>t.status===key).length === 0 && (
                 key === 'inbox'
-                  ? <div className="tb-empty onboard">No tasks yet.<br/>Hit <strong>+ NEW</strong> above, then drag a card onto an agent's desk to delegate.</div>
+                  /* Empty inbox is the other place a blank box would stall a
+                     newcomer — offer the same starter outcomes as the
+                     first-run sheet. These land unassigned, so the drag-to-a-
+                     desk mechanic below still gets taught. */
+                  ? <div className="tb-empty onboard">
+                      No tasks yet — start from one of these:
+                      <StarterCards compact onPick={(starter, subject) => {
+                        const t = buildStarterTask(starter, subject, null);
+                        if (t) onAdd(t);
+                      }} />
+                      <span className="tb-empty-hint">Or hit <strong>+ NEW</strong> above. Drag any card onto an agent's desk to delegate.</span>
+                    </div>
                   : <div className="tb-empty">—</div>
               )}
             </div>

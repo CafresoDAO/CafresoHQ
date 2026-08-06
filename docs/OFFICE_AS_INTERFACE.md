@@ -73,9 +73,23 @@ no keys pasted in this path.
 3. **Hire one.** One click; the sprite walks in, sits at a desk. (First
    micro-delight — target < 60 seconds from landing.)
 4. **Pick a starter task.** Three cards, real outcomes, zero blank-prompt
-   anxiety: *Research brief* ("give me a sourced brief on X") · *Digest*
-   ("summarize these files into my vault") · *Small site* ("make me a simple
-   page for X"). Free-text exists but is not the star.
+   anxiety. Free-text exists but is not the star.
+   > ✅ **Shipped 2026-08-05** — `modals/starter.jsx`. The sheet opens 1.4 s
+   > after the first hire (long enough that the walk-in is what you watch
+   > first) and only for a genuinely empty HQ. Cards: *Research brief* ·
+   > *First draft* · *Simple page* — each asks for ONE subject, then mints a
+   > normal task and sends it down the same path as dragging a card onto a
+   > desk, so activity logging and checklist steps 4/6 come free. The same
+   > cards fill the task board's empty inbox (there they land unassigned, so
+   > the drag-to-a-desk mechanic still gets taught).
+   >
+   > *Digest ("summarize these files into my vault") is deliberately not in
+   > the set:* a fresh HQ has an empty vault, and none of the front-desk
+   > hires claim `vault` access, so the card would promise a deliverable it
+   > can't file. For the same reason each brief adapts — it only says "save
+   > it to Research/…" when that coworker actually holds vault access, and
+   > otherwise asks for the deliverable in the reply. Revisit once filing to
+   > the cabinet (step 6) is wired for every hire.
 5. **Watch the work.** The animation layer (§4) plays the task honestly.
    If the task needs a permission, the coworker walks over and asks — the
    user's first approval is diegetic, not a modal ambush.

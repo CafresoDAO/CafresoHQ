@@ -16,7 +16,8 @@ import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
-const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal } = CafresoHQModals;
+const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
+        StarterTasksModal } = CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
@@ -465,6 +466,9 @@ function App() {
     return () => ch.close();
   }, []);
   const [hireOpen, setHireOpen] = useStateA(false);
+  /* The coworker being offered a first assignment (null = sheet closed).
+     Set by onHire on a genuinely first hire — see OFFICE_AS_INTERFACE §3.4. */
+  const [starterFor, setStarterFor] = useStateA(null);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
   // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
@@ -862,6 +866,7 @@ ${d.text}` : d.text,
      activity every 6.5s — production users couldn't tell real from fiction. */
 
   const onHire = (a) => {
+    const firstEver = agents.length === 0 && tasks.length === 0;
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
@@ -869,6 +874,12 @@ ${d.text}` : d.text,
        (OfficeView listens; gated behind ambientOk there). */
     try { window.dispatchEvent(new CustomEvent('cafresohq:walkIn', { detail: { color: a.color } })); } catch (_e) {}
     say(`Hired ${a.name}`, 'HIRE');
+    /* Beat 4 (OFFICE_AS_INTERFACE §3): the very first coworker gets a first
+       assignment offered — three real outcomes instead of a blank prompt.
+       Delayed so the walk-in animation is the thing they watch first, and
+       only for a genuinely empty HQ; anyone with tasks already knows the
+       shape of the product. */
+    if (firstEver) setTimeout(() => setStarterFor(a), 1400);
   };
 
   /* ─── Sub-agent spawn budget (Phase 3+) ──────────────────────────────
@@ -2498,8 +2509,12 @@ ${d.text}` : d.text,
     setTasks(prev => prev.filter(x => x.id !== id));
     say(`Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };
-  const onTaskDropOnAgent = async (taskId, agent) => {
-    const task = tasks.find(t => t.id === taskId);
+  /* taskFresh: a task created in THIS tick (starter cards) isn't in the
+     `tasks` closure yet. Callers that just minted one pass it directly; the
+     setTasks calls below still key off taskId and run against fresh state,
+     so nothing else changes. */
+  const onTaskDropOnAgent = async (taskId, agent, taskFresh) => {
+    const task = taskFresh || tasks.find(t => t.id === taskId);
     if (!task) return;
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agent.id, status: 'doing' } : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
@@ -2507,7 +2522,9 @@ ${d.text}` : d.text,
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
 
     const brief = task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title;
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text: `(dropped "${task.title}" on ${agent.name}'s desk)` };
+    // "started" for a starter card (the user clicked), "dropped" for a drag.
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You',
+      text: `(${taskFresh ? 'started' : 'dropped'} "${task.title}" on ${agent.name}'s desk)` };
     const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true }]);
 
@@ -3630,6 +3647,19 @@ ${d.text}` : d.text,
       </nav>
 
       <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
+      <StarterTasksModal
+        open={!!starterFor}
+        agent={starterFor}
+        onClose={()=>setStarterFor(null)}
+        onStart={(task, agent) => {
+          setStarterFor(null);
+          onAddTask(task);
+          /* Watch the work happen (§3 step 5) — the floor is the trace
+             viewer, so land there rather than on the task board. */
+          setActiveView('visual');
+          onTaskDropOnAgent(task.id, agent, task);
+        }}
+      />
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
         theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
