@@ -491,7 +491,7 @@ function App() {
       if (m.type === 'open-note' && m.path) {
         /* Switch to vault view + dispatch the openNote event so VaultView
            opens the file. The vault listens on this event already. */
-        setActiveView('vault');
+        goTo('vault');
         setTimeout(() => {
           window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: m.path } }));
         }, 80);
@@ -646,6 +646,16 @@ function App() {
   const [coachSeen, setCoachSeen] = useStored(ks('coachSeen'), {});
   const dismissCoach = React.useCallback((k2) =>
     setCoachSeen(prev => ({ ...(prev || {}), [k2]: true })), [setCoachSeen]);
+  /* `navTo` is the only honest way to change view (in windowed mode
+     setActiveView is a silent no-op), but it is declared far below — naming
+     it in a deps array up here would be a TDZ crash, a trap this file has
+     sprung before. Same live-ref discipline as `onApprovalRequestRef`:
+     always the current navTo, never a stale capture, safe to call from any
+     handler defined above it. */
+  const navToRef = useRefA(null);
+  const goTo = React.useCallback((view) => {
+    if (navToRef.current) navToRef.current(view);
+  }, []);
   const coachMark = React.useMemo(() => {
     if (gsDismissed) return null;
     const seen = coachSeen || {};
@@ -654,11 +664,11 @@ function App() {
     const assigned = tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned');
     const sawWork = activity.some(e => e.action === 'done');
     if (hired && !chatted && !seen.chat)
-      return { k: 'chat', text: 'Your first hire is at their desk — say hi and brief them.', cta: 'Open chat', act: () => setActiveView('chat') };
+      return { k: 'chat', text: 'Your first hire is at their desk — say hi and brief them.', cta: 'Open chat', act: () => goTo('chat') };
     if (chatted && !assigned && !seen.task)
-      return { k: 'task', text: 'Give them something real: drop a task on their desk.', cta: 'Open tasks', act: () => setActiveView('tasks') };
+      return { k: 'task', text: 'Give them something real: drop a task on their desk.', cta: 'Open tasks', act: () => goTo('tasks') };
     if (assigned && !sawWork && !seen.watch)
-      return { k: 'watch', text: 'Work is in flight — watch the desk light up.', cta: 'Open office', act: () => setActiveView('visual') };
+      return { k: 'watch', text: 'Work is in flight — watch the desk light up.', cta: 'Open office', act: () => goTo('visual') };
     return null;
   }, [gsDismissed, coachSeen, agents, chat, tasks, activity]);
 
@@ -921,7 +931,7 @@ ${d.text}` : d.text,
      uses). Shared by the delivery sheet and the desk out-tray. */
   const openVaultNote = (path) => {
     if (!path) return;
-    setActiveView('vault');
+    goTo('vault');
     setTimeout(() => {
       try { window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path } })); } catch (_e) {}
     }, 80);
@@ -3242,13 +3252,13 @@ ${d.text}` : d.text,
       else if (e.key === 's') setSettingsOpen(true);
       else if (e.key === 'd') setNight(v => !v);
       else if (e.key === 'n') onAddSticky();
-      else if (e.key === 'm') setActiveView('memory');
+      else if (e.key === 'm') goTo('memory');
       else if (e.key === 'f') setFocus(v => !v);
       else if (e.key === 'u') onOpenStandup();
       // 1-8 jump straight to a view, same order as the rail (NAV_ITEMS)
       else if (/^[1-8]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const item = NAV_ITEMS[parseInt(e.key, 10) - 1];
-        if (item) setActiveView(item[0]);
+        if (item) goTo(item[0]);
       }
       else if (e.key === '/') { e.preventDefault(); const t = document.querySelector('.composer textarea'); if (t) t.focus(); }
     };
@@ -3361,7 +3371,7 @@ ${d.text}` : d.text,
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
-        return <TeamView agents={agents} activity={activity} experience={experience} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} approvals={approvals} onApprove={onApprove} onReject={onReject} onRetry={onRetryActivity} />;
+        return <TeamView agents={agents} activity={activity} experience={experience} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>goTo('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} approvals={approvals} onApprove={onApprove} onReject={onReject} onRetry={onRetryActivity} />;
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
@@ -3465,6 +3475,8 @@ ${d.text}` : d.text,
       setActiveView(view);
     }
   }, [desktopMode, openOrRaise, setActiveView, setChatWinOpen]);
+  /* Publish it for the handlers declared above (see `goTo`). */
+  navToRef.current = navTo;
   /* Mobile presents the same openWindows model as an iOS-style app switcher:
      one app fullscreen at a time, a card stack to switch/close, a launcher
      grid to open more. mobileApp = the view shown fullscreen (or null). */
@@ -3526,7 +3538,7 @@ ${d.text}` : d.text,
         ts: ap.createdAt || Date.now(),
         unread: true,
         source: ap.by,
-        onClick: () => { setNotifOpen(false); setActiveView('visual'); },
+        onClick: () => { setNotifOpen(false); goTo('visual'); },
       });
     }
     /* Receipts → mark as unread until notifSeenAt threshold. */
@@ -3599,20 +3611,20 @@ ${d.text}` : d.text,
       onMissions={() => setMissionsOpen(true)}
       onWorkflow={() => setWorkflowOpen(true)}
       onStandup={onOpenStandup}
-      onMemory={() => setActiveView('memory')}
+      onMemory={() => goTo('memory')}
       onStopAll={onStopAll}
       anyBusy={agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')}
       agents={agents}
       chat={chat}
       onDmAgent={(agent) => {
         // Open chat thread + prefill composer with @-mention
-        setActiveView('visual');
+        goTo('visual');
         try { localStorage.setItem(k('composer_prefill'), '@' + (agent.name || '') + ' '); } catch(_e) {}
         if (window.cafresohqToast) window.cafresohqToast.info(`Composer ready for @${agent.name}`);
       }}
       onJumpToMessage={(msg) => {
         // Switch to chat view and toast the matched line
-        setActiveView('visual');
+        goTo('visual');
         if (window.cafresohqToast) window.cafresohqToast.info(`From ${msg.name}: ${String(msg.text || '').slice(0, 80)}…`, { duration: 6000 });
       }}
       messages={messages}
@@ -3671,7 +3683,7 @@ ${d.text}` : d.text,
           onOpenResearch={() => setMissionsOpen(true)}
           onOpenMeeting={() => setChatMeetingModalOpen(true)}
           onOpenWorkflow={() => setWorkflowOpen(true)}
-          onOpenMemory={() => setActiveView('memory')}
+          onOpenMemory={() => goTo('memory')}
           onToggleNight={() => setNight(v => !v)}
           night={night}
           inboxCount={inboxActiveCount}
@@ -3709,7 +3721,7 @@ ${d.text}` : d.text,
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · agent message registry (active handoffs, blocked tasks, failures)">
               📬 INBOX{inboxActiveCount > 0 ? ` · ${inboxActiveCount}` : ''}
             </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setActiveView('memory')}>📁 MEMORY</Btn>
+            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>goTo('memory')}>📁 MEMORY</Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={onOpenStandup} title="End-of-day stand-up (U)">🌅 STAND-UP</Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setMissionsOpen(true)} title="Long-running research missions">
               🔬 RESEARCH{missions.filter(m=>m.status==='running').length > 0 ? ` · ${missions.filter(m=>m.status==='running').length}` : ''}
@@ -3965,7 +3977,7 @@ ${d.text}` : d.text,
           onAddTask(task);
           /* Watch the work happen (§3 step 5) — the floor is the trace
              viewer, so land there rather than on the task board. */
-          setActiveView('visual');
+          goTo('visual');
           onTaskDropOnAgent(task.id, agent, task);
         }}
       />
@@ -4025,10 +4037,17 @@ ${d.text}` : d.text,
           sawWork={activity.some(e => e.action === 'done')}
           onAddKey={() => openSettings('keys')}
           onHire={() => setHireOpen(true)}
-          onChat={() => setActiveView('chat')}
-          onTasks={() => setActiveView('tasks')}
-          onProjects={() => setActiveView('projects')}
-          onWatch={() => setActiveView('visual')}
+          /* navTo, never setActiveView — in windowed mode setActiveView is a
+             silent no-op, so these four buttons moved the breadcrumb and
+             left whatever window was already in front sitting on top. On the
+             ONBOARDING checklist, of all surfaces: a brand-new boss clicks
+             "New Project →" and, as far as they can see, nothing happens.
+             Same failure as the dead attention banner (0d51159) — which is
+             why `navTo` exists. */
+          onChat={() => navTo('chat')}
+          onTasks={() => navTo('tasks')}
+          onProjects={() => navTo('projects')}
+          onWatch={() => navTo('visual')}
           onDismiss={() => setGsDismissed(true)}
         />
       )}
@@ -4076,31 +4095,31 @@ ${d.text}` : d.text,
               id: 'office',
               title: 'The Office — your agents',
               body: 'This is the Office. Each agent works at their own desk. Tap a desk to inspect an agent, see what they\'re doing, and delegate work.',
-              action: () => setActiveView('visual'),
+              action: () => goTo('visual'),
             },
             {
               id: 'chat',
               title: 'Chat with your team',
               body: 'The Chat view is where you talk to CafresoHQ and your crew. Swipe a message left to Reply or DM a specific agent directly.',
-              action: () => setActiveView('chat'),
+              action: () => goTo('chat'),
             },
             {
               id: 'vault',
               title: 'The Vault — shared memory',
               body: 'The Vault is your team\'s shared knowledge base — notes, docs, and memory your agents can read and write. Everything they learn lives here.',
-              action: () => setActiveView('vault'),
+              action: () => goTo('vault'),
             },
             {
               id: 'tasks',
               title: 'Tasks — track the work',
               body: 'The Tasks board tracks everything in flight: what you\'ve delegated, what agents are working on, and what\'s done.',
-              action: () => setActiveView('tasks'),
+              action: () => goTo('tasks'),
             },
             {
               id: 'projects',
               title: 'Projects — build real things',
               body: 'Projects is your shared workspace: agents write real files here — docs, decks, code, even whole websites. Tap a file and hit Preview to see it render live, and drop in files to share with your agents.',
-              action: () => setActiveView('projects'),
+              action: () => goTo('projects'),
             },
             {
               id: 'palette',
@@ -4113,7 +4132,7 @@ ${d.text}` : d.text,
               title: 'Hire your first agent',
               body: 'Tap + HIRE in the topbar to bring on your first sub-agent. Each hire gets a desk, a role, and their own AI model. You\'re ready — go build your team.',
               target: '.topbar .px-btn.primary',
-              action: () => setActiveView('visual'),
+              action: () => goTo('visual'),
             },
           ];
           // Desktop tour
@@ -4133,38 +4152,38 @@ ${d.text}` : d.text,
               title: 'Meet your CEO',
               body: 'This is CafresoHQ, your chief of staff. The 1:1 chair at the CEO desk opens a private chat — ask for anything and it gets routed to the right specialist. The desk lights up while she\'s replying.',
               target: () => document.querySelector('.room.ceo .guest-chair') || document.querySelector('.room.ceo'),
-              action: () => setActiveView('visual'),
+              action: () => goTo('visual'),
             },
             {
               id: 'office',
               title: 'The Office — your agents',
               body: 'Every agent works at their own desk; click a desk to inspect them. Desks light up while agents are actually working — and every real action streams into the ticker and the Team inbox.',
               target: '.rail',
-              action: () => setActiveView('visual'),
+              action: () => goTo('visual'),
             },
             {
               id: 'chat',
               title: 'Chat with your team',
               body: 'Chat is where you brief CafresoHQ and your crew. Ask questions, delegate, or DM a single agent — they reply using the free AI key you just set.',
-              action: () => setActiveView('chat'),
+              action: () => goTo('chat'),
             },
             {
               id: 'vault',
               title: 'The Vault — shared memory',
               body: 'The Vault is your team\'s shared knowledge base: notes, docs, and long-term memory your agents read from and write to. Everything they learn lives here.',
-              action: () => setActiveView('vault'),
+              action: () => goTo('vault'),
             },
             {
               id: 'tasks',
               title: 'Tasks — track the work',
               body: 'The Tasks board shows everything in flight — what you\'ve delegated, what agents are doing, and what\'s done. The left rail switches between all your views.',
-              action: () => setActiveView('tasks'),
+              action: () => goTo('tasks'),
             },
             {
               id: 'projects',
               title: 'Projects — where agents build you things',
               body: 'Projects is your shared workspace. Hand an agent a project and it writes real files right beside you — docs, decks, code, whole websites. Open any file and hit Preview to watch it render live, drop in files to share with your agents, and a built site serves with all its assets intact.',
-              action: () => setActiveView('projects'),
+              action: () => goTo('projects'),
             },
             {
               id: 'palette',
@@ -4177,7 +4196,7 @@ ${d.text}` : d.text,
               title: 'Ready to hire your team?',
               body: 'Click an empty desk (or press H, or ⌘K → "Hire") to meet the candidates — ready-made specialists like Vera (assistant), Kip (research), and Dax (data) — or build a role from scratch, or seed the whole crew at once. Then drop a task on their desk and watch the office come alive.',
               target: () => document.querySelector('.room.empty') || document.querySelector('.topbar .px-btn.primary'),
-              action: () => setActiveView('visual'),
+              action: () => goTo('visual'),
             },
           ];
         })()}

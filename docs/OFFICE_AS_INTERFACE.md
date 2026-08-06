@@ -921,3 +921,39 @@ settings — never on the floor, the cards, or onboarding.
 > still runs, silently, which is what housekeeping should do. Swept the
 > rest of the first-run surface for the same class of leak (`cafresohq:`,
 > other driver prefixes, "system prompt", "API key", "backend") — clean.
+
+> ✅ **The onboarding checklist's buttons were dead in windowed mode
+> (2026-08-06).** Continued the first-run walkthrough to §3 step 5,
+> "Create your first Project", and clicked its CTA. The breadcrumb moved
+> to WORKSPACE — and nothing else happened. The Staff Roster stayed in
+> front. `openWindows` held only `team`.
+>
+> Cause is the one this doc already names: **in windowed mode
+> `setActiveView` is a silent no-op**, and four of the six checklist CTAs
+> called it directly. The same failure as the dead attention banner
+> (0d51159), on the surface whose entire job is walking a brand-new boss
+> through their first five minutes — click "New Project →", see nothing,
+> conclude the product is broken.
+>
+> Swept the rest of the file rather than patching the one button: **26
+> navigation call sites** now route through `navTo` — the coach marks
+> (same onboarding family, same bug), the inbox's "Open task board →",
+> the 📁 MEMORY buttons, the notification-centre jump, both the vault
+> open-note paths, the number-key and `m` shortcuts, and all 13 command
+> palette entries. Four `setActiveView` calls remain and are correct:
+> `navTo`'s own body, the deliberate workspace-state restore, the
+> mobile-only mount redirect, and the mobile bottom nav (where
+> `navTo` reduces to `setActiveView` anyway).
+>
+> Ordering trap worth recording: `navTo` is declared ~2800 lines below
+> most of its new callers, so naming it in a `useMemo` deps array is a TDZ
+> crash — one this file has sprung three times. `goTo` wraps a live
+> `navToRef`, the same discipline `onApprovalRequestRef` already uses:
+> never stale, safe to call from any handler declared above it.
+>
+> Verified live by reproducing the exact failure: with the roster window
+> in front, "New Project →" now opens a WORKSPACE window and raises it
+> (z:3 over z:2). Projects itself is sound — its empty state's inline
+> "Classic" button does flip mode and reveals a working `+ ADD`. (An
+> earlier read that it was dead was a stale screenshot frame, not a
+> defect — the DOM had already re-rendered.)
