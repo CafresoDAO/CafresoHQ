@@ -3377,7 +3377,7 @@ ${d.text}` : d.text,
       case 'calendar':
         return <CalendarView tasks={tasks} agents={agents} missions={missions} />;
       case 'projects':
-        return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={setActiveView} />;
+        return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={goTo} />;
       case 'terminal':
         return <TerminalView />;
       default:

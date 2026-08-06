@@ -987,3 +987,33 @@ settings — never on the floor, the cards, or onboarding.
 > - A window-state snapshot that records only `w.view` cannot see a
 >   minimise. "Open office" looked like a no-op until the snapshot
 >   included `minimized`.
+
+> ✅ **Finished the navigation sweep, then opened the Vault (2026-08-06).**
+> Completing the audit found one last raw-setter navigation prop —
+> `WorkspaceView`'s `onSwitchView`, feeding a "TALK ›" button. Routed
+> through `navTo` for consistency, but **honestly: that button is
+> mobile-only** (its block sits behind `mobileStep`, which stays `null`
+> forever on desktop), and on mobile `navTo` already reduces to
+> `setActiveView`. So this is hardening against the next person moving
+> that block, not a live bug fixed. `Rail` and `MobileTabBar` were checked
+> and are already correct — the Rail prefers its desktop-aware `onLaunch`.
+> The codebase now has exactly one navigation verb.
+>
+> Then opened the **Vault** for the first time this session. Its graph
+> analysis panel described the office's five main topics as:
+>
+> > `boss, You → Aiko, You → Aiko` · `You → Sora, You → Sora, You → Sora`
+> > · `You → Kenji (2), You → Kenji (3), You → Kenji (2)`
+>
+> Distinct *nodes* can share a display *title* — many messages all render
+> as "You → Sora" — and the label sliced `topNodes` to three **before**
+> resolving titles, so collisions burned the slots. One topic, repeated,
+> dressed up as three exemplars: the same shape as the attention counter
+> that reported one problem twenty-one times.
+>
+> `topNodes` carries five candidates, so dedupe on the resolved title
+> across all of them and take the first three that genuinely differ. A
+> cluster with real variety now shows it; one that really is all about a
+> single thing says so once. Verified live — labels became `boss, You →
+> Sora` and `You → Kenji (2), You → Kenji (3), a5`, the Kenji cluster
+> surfacing a real third member the old slice was spending on a duplicate.

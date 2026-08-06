@@ -354,7 +354,26 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
               React.createElement('b', null, Math.round(c.share * 100) + '%'),
               React.createElement('span', { style: { color: '#8f8676' } }, c.size + (source === 'concepts' ? ' concepts' : ' notes'))),
             React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, paddingLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-              c.topNodes.slice(0, 3).map(titleFor).join(', ')))),
+              /* Distinct NODES can share a display title — several messages
+                 all render as "You → Sora" — so slicing to 3 before resolving
+                 titles produced labels like "You → Sora, You → Sora, You →
+                 Sora": one topic, repeated, dressed as three exemplars.
+                 `topNodes` carries 5 candidates; dedupe on the resolved title
+                 across all of them and take the first 3 that actually differ,
+                 so a cluster with real variety shows it and a cluster that
+                 genuinely is all one thing says so once. */
+              (() => {
+                const seen = new Set();
+                const names = [];
+                for (const id of (c.topNodes || [])) {
+                  const t = titleFor(id);
+                  if (!t || seen.has(t)) continue;
+                  seen.add(t);
+                  names.push(t);
+                  if (names.length === 3) break;
+                }
+                return names.join(', ');
+              })()))),
 
         // Structural gap.
         analytics.gap && React.createElement('div', { style: { marginTop: 12, padding: 8, borderRadius: 8, background: 'rgba(232,169,169,0.10)', border: '1px solid rgba(232,169,169,0.25)' } },
