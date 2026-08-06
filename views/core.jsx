@@ -1,5 +1,6 @@
 import { CafresoHQV2 } from '../features.jsx';
 import { Sprite } from '../sprites.jsx';
+import { xpStats } from '../app/experience.jsx';
 /* ==========================================================================
    CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
@@ -342,7 +343,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
   );
 }
 
-function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
+function TeamView({ agents, activity = [], experience = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
   const [selectedAgentId, setSelectedAgentId] = useSV(null);
   const [showInbox, setShowInbox] = useSV(false);
 
@@ -409,6 +410,9 @@ function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowC
         <div className="team-grid" style={{flex: 1, minWidth: 0, overflowY: 'auto', alignContent: 'start'}}>
           {agents.map(a => {
             const cost = ((a.tokens||0) * 0.0000015).toFixed(4);
+            // Experience (§5): jobs from the ledger, not a.tasksDone — that
+            // legacy counter also counted chat replies, which aren't jobs.
+            const xp = xpStats(experience, a.id);
             return (
               <div key={a.id} className="team-card" onClick={()=>onInspect(a)}>
                 <div className={`status-pill ${a.status}`}>{a.status.toUpperCase()}</div>
@@ -419,7 +423,7 @@ function TeamView({ agents, activity = [], onHire, onInspect, onDismiss, onShowC
                   <div><span className="lbl">Model</span><span className="val">{(a.model||'').replace(/^[a-z]+:/,'') || '—'}</span></div>
                   <div><span className="lbl">Tokens</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
                   <div><span className="lbl">Cost</span><span className="val">${cost}</span></div>
-                  <div><span className="lbl">Tasks</span><span className="val">{a.tasksDone||0}</span></div>
+                  <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
                 </div>
                 <div className="team-tools">
                   {(a.tools||[]).map(t => <span key={t}>{t}</span>)}

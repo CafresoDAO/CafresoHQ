@@ -162,6 +162,27 @@ stranger's agent feel like reading a CV instead of gambling on a GPU. Design
 the XP counters now with that continuity in mind (per-agent, per-task-type,
 append-only).
 
+> ✅ **Shipped 2026-08-05** — `app/experience.jsx`, an append-only ledger of
+> `{at, agentId, kind, outcome, taskId, title}` entries persisted alongside
+> tasks (`state/experience`, so the résumé survives a browser wipe and a
+> fire-and-re-hire — front-desk ids are stable). Derived, never stored:
+> jobs completed, current streak, per-kind tallies, and the specialty line,
+> shown on the roster card ("Jobs · 🔥") and the Performance-review panel.
+>
+> **What counts as a job:** a task completed — dropped on a desk or closed
+> via `[TASK_DONE:…]` in chat — and a mission that ran its schedule (one
+> night shift per mission, not per iteration). A chat reply or a DM is not
+> a job, same as it is not an artifact (§3.6); the legacy `agent.tasksDone`
+> counter counted those, which is why the cards no longer display it.
+>
+> **Honesty invariants:** a job completes once (`xpRecord` refuses a second
+> 'done' for the same taskId — double-fire paths are safe by construction);
+> a failed run is a snag and resets the streak, but a run the USER stopped
+> is not recorded — taking the folder back is not the coworker's failure;
+> the specialty label only appears once earned (≥ 2 of a real task type —
+> generic jobs are never a "specialty"). Covered by
+> `scripts/test_experience.py` (32 checks).
+
 ## 6. Jargon translation table (binding for all UI copy)
 
 | Never say | Say |

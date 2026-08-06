@@ -9,6 +9,7 @@ import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
+import { taskKind, xpRecord } from './app/experience.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -592,6 +593,11 @@ function App() {
 
   // V2 state
   const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS);
+  /* Experience ledger (OFFICE_AS_INTERFACE §5) — append-only job history,
+     the Phase B→C résumé bridge. xpRecord enforces append-only + one 'done'
+     per job; nothing else writes this. */
+  const [experience, setExperience] = useFileStored(k('experience'), 'state', 'experience', []);
+  const recordXp = (entry) => setExperience(prev => xpRecord(prev, entry));
   const [memory, setMemory] = useFileStored(k('memory'), 'memory', 'context', SEED_MEMORY);
   const [memoryOpen, setMemoryOpen] = useStateA(false);
   const [meetingOpen, setMeetingOpen] = useStateA(false);
@@ -1599,6 +1605,16 @@ ${d.text}` : d.text,
           }
           return t;
         }));
+        /* A [TASK_DONE:…] closed in chat is a completed job (§5). Read the
+           pre-update snapshot so an already-done task doesn't re-earn;
+           xpRecord's one-done-per-taskId guard backstops closure staleness. */
+        for (const upd of taskUpdates) {
+          if (upd.action !== 'done') continue;
+          const dt = tasks.find(x => x.id === upd.id);
+          if (dt && dt.status !== 'done') {
+            recordXp({ agentId: agent.id, kind: taskKind(dt), outcome: 'done', taskId: dt.id, title: dt.title });
+          }
+        }
         // Log blocked tasks as attention items (outside the setState updater).
         for (const upd of taskUpdates) {
           if (upd.action !== 'blocked') continue;
@@ -2121,7 +2137,7 @@ ${d.text}` : d.text,
   const agentsRef = useRefA(agents);  agentsRef.current = agents;
   const missionsRef = useRefA(missions); missionsRef.current = missions;
   useMissionRunner(missions, setMissions, {
-    setChat, appendJournal, onUpdateAgent, pulseGraph,
+    setChat, appendJournal, onUpdateAgent, pulseGraph, recordXp,
     agentsRef, missionsRef,
   });
 
@@ -2587,6 +2603,7 @@ ${d.text}` : d.text,
       });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', result: cleanBuf.slice(0, 600) } : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
+      recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
       /* The artifact lands (OFFICE_AS_INTERFACE §3.6): the deliverable goes
@@ -2649,6 +2666,10 @@ ${d.text}` : d.text,
       logActivity(aborted
         ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: `run stopped — "${task.title}" back to inbox` }
         : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'failed', priority: 'attention', text: `failed "${task.title}" — back to inbox`, detail: (err && err.message || String(err)).slice(0, 240) });
+      /* A failed run is a snag on the record — it resets the streak (§5).
+         A run the user STOPPED is not recorded: taking the folder back off
+         someone's desk is not their failure. */
+      if (!aborted) recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'snag', taskId, title: task.title });
     } finally {
       endAgentRun(agent.id, controller);
     }
@@ -3111,7 +3132,7 @@ ${d.text}` : d.text,
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
       case 'team':
-        return <TeamView agents={agents} activity={activity} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} approvals={approvals} onApprove={onApprove} onReject={onReject} onRetry={onRetryActivity} />;
+        return <TeamView agents={agents} activity={activity} experience={experience} onHire={()=>setHireOpen(true)} onInspect={onInspect} onDismiss={onDismiss} onShowCEO={()=>setCeoShown(true)} onOpenTasks={()=>setActiveView('tasks')} onMarkRead={(id)=>setActivity(xs=>xs.map(x=>x.id===id?{...x,unread:false}:x))} approvals={approvals} onApprove={onApprove} onReject={onReject} onRetry={onRetryActivity} />;
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
@@ -3707,7 +3728,7 @@ ${d.text}` : d.text,
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
         theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
-      <InspectPanel agent={inspect} activity={activity} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+      <InspectPanel agent={inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
       <FurnishModal

@@ -1,5 +1,6 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
+import { xpAffinityText, xpStats } from '../app/experience.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -51,13 +52,17 @@ const INSPECT_ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
 };
-function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMessage, onFurnish }) {
+function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate, onDismiss, onMessage, onFurnish }) {
   if (!agent) return null;
   /* Live activity for THIS agent, straight from the canonical log — replaces
      the old static `agent.recent` string with what the agent actually did. */
   const mine = React.useMemo(
     () => (activity || []).filter(e => e.agentId === agent.id).slice(0, 8),
     [activity, agent.id]);
+  /* Experience (§5) — derived from the append-only ledger, not
+     agent.tasksDone (which counted chat replies as tasks). */
+  const xp = React.useMemo(() => xpStats(experience, agent.id), [experience, agent.id]);
+  const specialty = xpAffinityText(xp);
   const ago = (ts) => {
     const dt = Date.now() - (ts || 0);
     if (dt < 60_000) return Math.max(0, Math.floor(dt / 1000)) + 's';
@@ -98,7 +103,9 @@ function InspectPanel({ agent, activity = [], onClose, onUpdate, onDismiss, onMe
         )}
         <div className="stat"><span className="lbl">Tokens (session)</span><span>{agent.tokens?.toLocaleString() || '0'}</span></div>
         <div className="stat"><span className="lbl">Cost</span><span>${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>
-        <div className="stat"><span className="lbl">Tasks done</span><span>{agent.tasksDone || 0}</span></div>
+        <div className="stat"><span className="lbl">Jobs completed</span><span>{xp.jobs}</span></div>
+        <div className="stat"><span className="lbl">Current streak</span><span>{xp.streak >= 2 ? `${xp.streak} 🔥` : xp.streak}</span></div>
+        {specialty && <div className="stat"><span className="lbl">Specialty</span><span>{specialty}</span></div>}
         <div className="stat"><span className="lbl">Model</span><span>{agent.model}</span></div>
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Tools used</div>

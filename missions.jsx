@@ -338,6 +338,15 @@ async function runMissionIteration(ctx) {
     status: completed ? 'done' : x.status,
   } : x));
 
+  /* A mission that finished its run is one completed night shift on the
+     record (OFFICE_AS_INTERFACE §5) — one job for the whole mission, not
+     one per iteration. xpRecord's per-taskId guard keeps this from double
+     counting against the deadline sweeps below. */
+  if (completed && ctx.recordXp) {
+    ctx.recordXp({ agentId: agent.id, kind: 'mission', outcome: 'done',
+                   taskId: mission.id, title: mission.topic });
+  }
+
   return { ok: true, completed };
 }
 
@@ -457,6 +466,12 @@ function useMissionRunner(missions, setMissions, ctx) {
       const deadline = m.startedAt + m.durationMs;
       if (Date.now() >= deadline) {
         setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+        // Ran its schedule → one night shift on the record — but only if it
+        // actually worked at least once (§5; the per-taskId guard dedupes).
+        if (m.iterations > 0 && ctx.recordXp) {
+          ctx.recordXp({ agentId: m.agentId, kind: 'mission', outcome: 'done',
+                         taskId: m.id, title: m.topic });
+        }
         continue;
       }
 
@@ -496,6 +511,10 @@ function useMissionRunner(missions, setMissions, ctx) {
              the budget ran out used to run one full extra iteration. */
           if (Date.now() >= (latest.startedAt + latest.durationMs)) {
             setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+            if (latest.iterations > 0 && ctx.recordXp) {
+              ctx.recordXp({ agentId: latest.agentId, kind: 'mission', outcome: 'done',
+                             taskId: latest.id, title: latest.topic });
+            }
             return;
           }
           _haveMissionLease();   // renew the heartbeat while we work
