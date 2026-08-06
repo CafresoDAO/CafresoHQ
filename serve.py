@@ -3667,37 +3667,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_header(k, v)
             self.send_header('Connection', 'close')
             self.end_headers()
-            # Use the underlying raw socket (resp.fp.read / resp.fp.read1)
-            # to avoid BufferedReader.read(n) blocking until it accumulates
-            # exactly n bytes — which kills SSE streaming.  HTTPResponse.read
-            # wraps a BufferedReader; read1 returns as soon as ANY data is
-            # available in the buffer (at most n bytes), which is exactly the
-            # behaviour we need for real-time proxy streaming.
-            raw_fp = resp  # HTTPResponse itself
-            # Bounded relay: when the upstream declares Content-Length, stop
-            # after exactly that many bytes. Keep-alive upstreams (Ollama's Go
-            # server) never close the socket after a CL-bounded body, so
-            # read-until-EOF would block here for the full 600s timeout while
-            # the browser — which got no Content-Length (it's stripped as a
-            # hop header under our HTTP/1.0 close-terminated responses) —
-            # waits forever for the body to end. SSE/chunked responses have
-            # no CL and keep the old read-until-close behavior.
-            try:
-                _cl = resp.getheader('Content-Length')
-                remaining = int(_cl) if _cl is not None else None
-            except (TypeError, ValueError):
-                remaining = None
-            while remaining is None or remaining > 0:
-                want = 8192 if remaining is None else min(8192, remaining)
+            # HTTPResponse.read1(n) — NOT resp.fp.read1(n). Both return as
+            # soon as any data is available (so SSE still streams token by
+            # token, which plain read(n) would ruin by blocking for a full n),
+            # but only the HTTPResponse method understands the body framing:
+            #   · chunked  → de-chunks. Reading the raw fp forwarded the chunk
+            #     size lines verbatim ("e0\r\ndata: {…}") even though
+            #     Transfer-Encoding was stripped as a hop header, corrupting
+            #     every relayed SSE stream.
+            #   · either framing → returns b'' at the true end of the body.
+            #     The raw fp only ends on socket close, which a keep-alive
+            #     upstream (Ollama's Go server, LM Studio) never does — so the
+            #     relay blocked for its full 600s timeout while the browser,
+            #     given no length of its own, waited forever for an end that
+            #     never came. That hang stalled every local-model chat turn.
+            reader = resp.read1 if hasattr(resp, 'read1') else None
+            while True:
                 try:
-                    # read1 = "one underlying read, return whatever we got"
-                    chunk = raw_fp.fp.read1(want) if hasattr(raw_fp.fp, 'read1') else raw_fp.read(min(want, 1024))
+                    chunk = reader(8192) if reader else resp.fp.read1(8192)
                 except Exception:
                     break
                 if not chunk:
                     break
-                if remaining is not None:
-                    remaining -= len(chunk)
                 try:
                     self.wfile.write(chunk)
                     self.wfile.flush()
