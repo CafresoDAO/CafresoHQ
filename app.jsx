@@ -893,9 +893,11 @@ ${d.text}` : d.text,
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
-    /* First micro-delight: the new coworker literally walks onto the floor
-       (OfficeView listens; gated behind ambientOk there). */
-    try { window.dispatchEvent(new CustomEvent('cafresohq:walkIn', { detail: { color: a.color } })); } catch (_e) {}
+    /* First micro-delight: the new coworker literally walks onto the floor.
+       The lobby walk is ambient (OfficeView gates it behind ambientOk), but
+       the id rides along so the ROOM can mark itself just-leased for every
+       user — see the movedIn beat in office.jsx. */
+    try { window.dispatchEvent(new CustomEvent('cafresohq:walkIn', { detail: { id: a.id, color: a.color } })); } catch (_e) {}
     say(`Hired ${a.name}`, 'HIRE');
     /* Beat 4 (OFFICE_AS_INTERFACE §3): the very first coworker gets a first
        assignment offered — three real outcomes instead of a blank prompt.

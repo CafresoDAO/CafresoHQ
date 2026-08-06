@@ -56,6 +56,17 @@
 > is "what they're working on", and an idle coworker's bubble must not
 > claim a job that doesn't exist.
 
+> ✅ **A hire lands for everyone (2026-08-06).** The only floor feedback on
+> the biggest state change in the product was the lobby walk-in, and that
+> is `ambientOk`-gated — so mobile and reduced-motion bosses watched a room
+> appear from nowhere with no cue that it was theirs. The **room** now
+> marks itself just-leased for ~2.6s (lights coming up, plate turns gold,
+> `MOVED IN` on the nameplate), ungated, on the `trayDrop` principle: this
+> reports real state, it doesn't decorate. The lobby **walk** stays gated —
+> that one genuinely is ambient. The tag pops rather than blinks: a blink
+> is a 50% duty cycle, so a label carrying the message would be unreadable
+> half the time it exists (the same trap the eye-blink fell into).
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

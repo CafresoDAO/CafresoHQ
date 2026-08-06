@@ -10025,6 +10025,33 @@ body.night .px-toolchip { z-index: 6; }
 .px-win.n { display: none; }
 body.night .px-win.d { display: none; }
 body.night .px-win.n { display: block; }
+/* ── Just-leased beat ────────────────────────────────────────────────────
+   A hire is the biggest state change in the product and the only floor
+   feedback was the ambient lobby walk, so mobile and reduced-motion bosses
+   saw a room appear from nowhere. The unit lights up for ~2.6s. Transform/
+   opacity + a background flash only; the MOVED IN tag carries the same
+   information as text, so nothing depends on the animation running. */
+.px-leased {
+  margin-left: 6px; flex: none;
+  color: var(--px-ink); background: var(--px-gold);
+  font-size: 7px; padding: 1px 3px;
+  /* A pop, NOT px-blink: blinking is a 50% duty cycle, so a label that
+     carries the message would be unreadable half the time it exists. */
+  animation: px-pop 0.4s ease-out 1;
+}
+.px-room.just-leased .px-plate { background: #6a5a2c; }
+.px-room.just-leased .px-int { animation: px-lease-lights 2.6s ease-out 1; }
+@keyframes px-lease-lights {
+  0%   { filter: brightness(1.9) saturate(0.6); }
+  18%  { filter: brightness(1.05); }
+  32%  { filter: brightness(1.5); }
+  100% { filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The tag stays — it IS the message — but stops flashing. */
+  .px-leased { animation: none; }
+  .px-room.just-leased .px-int { animation: none; }
+}
 .px-room.status-busy .px-plate, .px-room.status-active .px-plate {
   box-shadow: inset 3px 0 0 var(--live, #58d858);
 }

@@ -389,6 +389,27 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     return () => timers.forEach(clearTimeout);
   }, [moodSig]);
 
+  /* Just-leased beat. A hire is the single biggest state change in the
+     product, and the ONLY feedback on the floor was the lobby walk — which
+     is ambientOk-gated, so mobile and reduced-motion users watched a room
+     appear out of nowhere with no cue that it was theirs. The room itself
+     now marks itself newly-leased for ~2.6s, ungated, on the same
+     principle as trayDrop: this reports real state, it doesn't decorate.
+     The lobby WALK stays gated — that one is genuinely ambient. */
+  const [movedIn, setMovedIn] = React.useState(null);
+  React.useEffect(() => {
+    let clearT;
+    const onNewHire = (e) => {
+      const id = (e.detail || {}).id;
+      if (!id) return;
+      setMovedIn(id);
+      clearTimeout(clearT);
+      clearT = setTimeout(() => setMovedIn(null), 2600);
+    };
+    window.addEventListener('cafresohq:walkIn', onNewHire);
+    return () => { window.removeEventListener('cafresohq:walkIn', onNewHire); clearTimeout(clearT); };
+  }, []);
+
   // New-hire walk-in — the coworker literally walks onto the floor when
   // hired (app.jsx onHire dispatches 'cafresohq:walkIn'). One-shot, ~2s.
   const [arrival, setArrival] = React.useState(null);
@@ -1100,7 +1121,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                     : busy ? 'back' : 'front';
                   return (
                     <div key={a.id}
-                         className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}`}
+                         className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}${movedIn === a.id ? ' just-leased' : ''}`}
                          onClick={() => onInspect(a)}
                          style={{ cursor: 'pointer' }}
                          onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
@@ -1112,6 +1133,10 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                          }}>
                       <div className="px-plate">
                         <span>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {a.role.split(' ').slice(-1)[0].toUpperCase()}</span>
+                        {/* The word carries the beat where the animation
+                            can't — a reduced-motion or mobile boss still
+                            sees WHICH unit just became theirs. */}
+                        {movedIn === a.id && <span className="px-leased">MOVED IN</span>}
                         {subs.length > 0 && (
                           <span className="px-subct" title={`${subs.length} subordinate${subs.length === 1 ? '' : 's'}`}>
                             +{subs.length}
