@@ -1569,6 +1569,19 @@ body.theme-coffeeshop .desk::after {
   color: var(--ink);
   font-weight: 500;
 }
+/* Repeat count on a collapsed attention row — grouping must never look
+   like the extra reports were thrown away, so the row states how many. */
+.oc-notif-row .oc-notif-times {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--ink-3);
+  border-radius: 8px;
+  font-family: 'VT323', monospace;
+  font-size: var(--text-11);
+  color: var(--ink-2);
+  vertical-align: middle;
+}
 .oc-notif-row .oc-notif-meta {
   font-size: var(--text-9);
   color: var(--ink-3);

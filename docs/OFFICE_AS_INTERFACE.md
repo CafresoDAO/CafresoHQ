@@ -856,3 +856,39 @@ settings — never on the floor, the cards, or onboarding.
 > choice the app doesn't hold. Verified on a cold load: state resolves to a
 > real agent (correctly preferring the only one with both web + vault),
 > START is live untouched, and a mission runs end to end.
+
+> ✅ **"21 need you" was one problem (2026-08-06).** Stopped grepping and
+> just looked at the office as a boss would. The loudest thing on screen
+> was the attention pill: **⚠ 21 need you**. Counted what was actually in
+> it — 21 unread rows, every single one the same root cause ("that brain
+> isn't signed in yet"), re-raised across seven coworkers and several runs
+> each, in four different wordings (two of them left over from before the
+> failure-language fixes).
+>
+> One decision to make. The wall said twenty-one. **A chief of staff who
+> hands you the same note twenty-one times isn't being thorough — they're
+> burying the one thing you have to do.** The counter was answering "how
+> many times was something reported", not "how many things need me", and
+> those diverge exactly when the office is in trouble, which is when the
+> number matters most.
+>
+> `app/attention.jsx` (14 checks in `scripts/test_attention.py`) groups
+> identical reports from the same coworker into one item carrying its own
+> `×N`, and the count counts items. The honesty constraints are what the
+> tests pin hardest:
+>
+> - **Different problems never merge.** The key is the whole sentence, so
+>   `failed "Draft the brief"` and `failed "Ship the page"` stay two items
+>   — two pieces of work stuck is not one thing repeated.
+> - **Nothing is hidden.** The row states its own repeat count, and the
+>   grouping applies *only* to the Needs-attention queue — Activity stays a
+>   complete chronological log of every event (header still read 59 EVENTS
+>   with the queue at 13).
+> - **Clearing a group clears every occurrence.** Marking only the newest
+>   read would drop the count by one and the row would return unread on the
+>   next render — the loop this exists to end.
+>
+> One shared helper drives the office pill, the Team nav badge and the
+> inbox tab, so the three can't drift. Verified live: 21 → 13 on all three
+> at once, a `×2` row reads "latest of 2", opening it moves 13 → 12 (one
+> item, not two), and both underlying entries persist as read.

@@ -12,6 +12,7 @@ import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
+import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -3554,9 +3555,13 @@ ${d.text}` : d.text,
   const tickerItems = useMemoA(
     () => activity.slice(0, 24).map(e => ({ agent: e.agentName || 'HQ', msg: e.text })),
     [activity]);
-  /* Count of unread attention items — drives the Team-nav badge + office pill. */
+  /* How many things need the boss — drives the Team-nav badge + office pill.
+     Counts distinct problems, not repeat reports of one: see
+     app/attention.jsx for the measured case that motivated it (21 rows,
+     one decision). Approvals are folded in here so the pill and the
+     inbox tab agree on a single number. */
   const attentionCount = useMemoA(
-    () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
+    () => attentionCountOf(activity, approvals), [activity, approvals]);
   const openAttention = useCallbackA(() => {
     navTo('team');
     setTimeout(() => window.dispatchEvent(new CustomEvent('cafresohq:openAgentInbox')), 60);

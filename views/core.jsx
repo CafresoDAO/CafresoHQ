@@ -2,6 +2,7 @@ import { CafresoHQV2 } from '../features.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
 import { brainName } from '../app/cast.jsx';
+import { attentionCount as attentionCountOf, groupAttention } from '../app/attention.jsx';
 /* ==========================================================================
    CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
@@ -200,8 +201,10 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
   const pendingApprovals = React.useMemo(
     () => (approvals || []).filter(p => !selectedAgentId || p.agentId === selectedAgentId),
     [approvals, selectedAgentId]);
+  /* Same rule as the office pill and the nav badge — one shared helper, so
+     the three can't drift apart (app/attention.jsx). */
   const attentionCount = React.useMemo(
-    () => activity.filter(e => e.priority === 'attention' && e.unread).length + pendingApprovals.length,
+    () => attentionCountOf(activity, pendingApprovals),
     [activity, pendingApprovals]);
   const doneCount = React.useMemo(
     () => activity.filter(e => e.action === 'done').length, [activity]);
@@ -212,17 +215,29 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     return c;
   }, [activity]);
 
+  /* The attention tab groups; Activity and Done stay a full chronological
+     log. This is the split that keeps grouping honest — the queue answers
+     "what needs me", the log still shows every single event that happened,
+     so nothing is ever actually hidden from the boss. */
   const filtered = React.useMemo(() => {
     let xs = activity;
     if (selectedAgentId) xs = xs.filter(e => e.agentId === selectedAgentId);
-    if (tab === 'attention') xs = xs.filter(e => e.priority === 'attention');
-    else if (tab === 'done') xs = xs.filter(e => e.action === 'done');
-    return xs;
+    if (tab === 'attention') {
+      return groupAttention(xs.filter(e => e.priority === 'attention'));
+    }
+    if (tab === 'done') xs = xs.filter(e => e.action === 'done');
+    return xs.map(e => ({ key: e.id, entry: e, count: 1, ids: [e.id] }));
   }, [activity, selectedAgentId, tab]);
 
-  const toggle = (e) => {
-    setExpandedId(prev => prev === e.id ? null : e.id);
-    if (e.priority === 'attention' && e.unread && onMarkRead) onMarkRead(e.id);
+  /* Opening a group marks every occurrence read, not just the newest —
+     otherwise the count would drop by one and the same row would come
+     straight back unread, which is exactly the loop this fixes. */
+  const toggle = (g) => {
+    const e = g.entry;
+    setExpandedId(prev => prev === g.key ? null : g.key);
+    if (e.priority === 'attention' && onMarkRead) {
+      (g.ids || [e.id]).forEach(id => onMarkRead(id));
+    }
     if (e.action === 'vault' && e.nodeId)
       window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: e.nodeId } }));
   };
@@ -309,22 +324,29 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
             </span>
           </div>
         )}
-        {filtered.map(e => {
+        {filtered.map(g => {
+          const e = g.entry;
           const attn = e.priority === 'attention';
-          const open = expandedId === e.id;
+          const open = expandedId === g.key;
           return (
-            <div key={e.id} className={'oc-notif-row' + (attn ? ' is-attn' : '')}
-              onClick={() => toggle(e)} role="button" tabIndex={0}
+            <div key={g.key} className={'oc-notif-row' + (attn ? ' is-attn' : '')}
+              onClick={() => toggle(g)} role="button" tabIndex={0}
               aria-expanded={open}
-              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(e); } }}>
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(g); } }}>
               <span className="oc-notif-icon" style={{color: attn ? 'var(--error)' : (e.color || 'var(--ink-3)')}} aria-hidden="true">
                 {ACT_ICON[e.action] || '✦'}
               </span>
               <div className="oc-notif-body">
                 <div className="oc-notif-msg">
                   <span style={{fontWeight:600}}>{e.agentName || 'HQ'}</span> {e.text}
+                  {/* The repeat count, so collapsing hides nothing: this
+                      said one thing N times and the row says so. */}
+                  {g.count > 1 && <span className="oc-notif-times" title={`reported ${g.count} times`}>×{g.count}</span>}
                 </div>
-                <div className="oc-notif-meta"><span>{fmtAgo(e.ts)} ago</span></div>
+                <div className="oc-notif-meta">
+                  <span>{fmtAgo(e.ts)} ago</span>
+                  {g.count > 1 && <span> · latest of {g.count}</span>}
+                </div>
                 {/* Retry sits ON the row, not behind an expand.
 
                     This is the surface whose whole job is "something needs
@@ -340,9 +362,13 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                     which is the honest answer, not a bookkeeping trick. */}
                 {e.action === 'failed' && onRetry && (
                   <div className="oc-act-jumps" style={{marginTop:6}} onClick={ev => ev.stopPropagation()}>
+                    {/* Retry acts on the NEWEST occurrence (g.entry) and
+                        clears the whole group — retrying "Kenji is stuck"
+                        deals with that problem, not with one of its three
+                        reports. */}
                     <button className="px-btn primary" style={{fontSize:8}}
-                      onClick={() => { onRetry(e); if (e.unread && onMarkRead) onMarkRead(e.id); }}>↻ Retry</button>
-                    <button className="px-btn ghost" style={{fontSize:8}} onClick={() => toggle(e)}>
+                      onClick={() => { onRetry(e); if (onMarkRead) (g.ids || [e.id]).forEach(id => onMarkRead(id)); }}>↻ Retry</button>
+                    <button className="px-btn ghost" style={{fontSize:8}} onClick={() => toggle(g)}>
                       {open ? 'Hide what happened' : 'What happened?'}
                     </button>
                   </div>
