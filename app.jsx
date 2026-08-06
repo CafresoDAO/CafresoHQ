@@ -1025,9 +1025,15 @@ ${d.text}` : d.text,
       agentAbortersRef.current.delete(agentId);
     }
   };
+  // Returns whether anything was actually in flight — callers that report
+  // the cancellation to the user need to know, so the copy can't claim a
+  // run was stopped when nothing was running.
   const abortAgentRun = (agentId) => {
     const c = agentAbortersRef.current.get(agentId);
-    if (c) { try { c.abort(); } catch (_e) {} agentAbortersRef.current.delete(agentId); }
+    if (!c) return false;
+    try { c.abort(); } catch (_e) {}
+    agentAbortersRef.current.delete(agentId);
+    return true;
   };
   /* The chat Stop button's reach. Room / @-mention / brainstorm / handoff
      sends run through dispatchToAgent's per-agent controllers, which the
@@ -2428,11 +2434,23 @@ ${d.text}` : d.text,
       }
     }
   };
+  /* The mug is a real control with real consequences: it clears the
+     coworker's context AND kills whatever they were mid-way through. That
+     used to be reported as a bland "Cleared X's context" whether or not a
+     run died with it, and the desk showed no sign anything had happened.
+     Now the toast says which of the two occurred, and the floor plays a
+     one-shot steam beat so the click lands somewhere visible. */
   const onCoffee = (a) => {
-    abortAgentRun(a.id); // cancel any in-flight stream — context is being cleared
-    onUpdateAgent(a.id, { tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: 'freshly caffeinated' });
-    logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee', text: 'refreshed context at the coffee machine ☕' });
-    say(`Cleared ${a.name}'s context`, 'COFFEE');
+    const wasRunning = abortAgentRun(a.id);
+    // `task` is "what they're working on" — parking a joke there left an
+    // idle coworker's desk bubble claiming a job that doesn't exist.
+    onUpdateAgent(a.id, { tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: null });
+    logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee',
+      text: wasRunning ? 'stopped mid-run for a coffee — context cleared ☕'
+                       : 'refreshed context at the coffee machine ☕' });
+    try { window.dispatchEvent(new CustomEvent('cafresohq:coffee', { detail: { agentId: a.id } })); } catch (_e) {}
+    say(wasRunning ? `Stopped ${a.name} and cleared their context`
+                   : `Cleared ${a.name}'s context`, 'COFFEE');
   };
   const onAddSticky = () => {
     const text = prompt('New sticky note for CafresoHQ:');

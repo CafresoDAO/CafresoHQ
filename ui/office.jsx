@@ -315,6 +315,15 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   const subordinatesOf = (seniorId) => agents.filter(a =>
     a.reportsTo === seniorId || a.parentAgentId === seniorId);
   const emptySlots = Math.max(0, maxSlots - seniorAgents.length);
+  /* The tower is two units per storey. Vacant units belong in that SAME
+     sequence, not in a separate full-width band below it — a leased floor
+     and an unleased one are the same architecture, and rendering the
+     vacancies as one wide strip made the building change shape halfway
+     down. Flowing them through chunk2 also fills the odd slot beside a
+     lone coworker, so the facade `filler` block only appears when the
+     total unit count is genuinely odd. */
+  const units = seniorAgents.map((a, idx) => ({ kind: 'agent', a, idx }))
+    .concat(Array.from({ length: emptySlots }, (_, i) => ({ kind: 'vacant', idx: seniorAgents.length + i })));
   const [dropTarget, setDropTarget] = React.useState(null);
   const vocab = useVocab();
   const isMobileOffice = typeof window !== 'undefined' && window.innerWidth <= 768;
@@ -432,6 +441,30 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     window.addEventListener('cafresohq:artifact', onArtifact);
     return () => {
       window.removeEventListener('cafresohq:artifact', onArtifact);
+      timers.forEach(t => clearTimeout(t));
+    };
+  }, []);
+
+  /* Coffee beat — the mug clears context and kills any in-flight run, and
+     until now the only sign at the desk was the glow going out (and none
+     at all if they were idle). One-shot steam, ~1.3s. Same class as
+     trayDrop: it reports a real state change the boss just caused, so it
+     is NOT ambientOk-gated — reduced-motion gets the CSS-shortened cue. */
+  const [coffeeSteam, setCoffeeSteam] = React.useState({});
+  React.useEffect(() => {
+    const timers = new Map();
+    const onCoffeeEvt = (e) => {
+      const id = (e.detail || {}).agentId;
+      if (!id) return;
+      setCoffeeSteam(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+      clearTimeout(timers.get(id));
+      timers.set(id, setTimeout(() => {
+        setCoffeeSteam(prev => { const next = { ...prev }; delete next[id]; return next; });
+      }, 1300));
+    };
+    window.addEventListener('cafresohq:coffee', onCoffeeEvt);
+    return () => {
+      window.removeEventListener('cafresohq:coffee', onCoffeeEvt);
       timers.forEach(t => clearTimeout(t));
     };
   }, []);
@@ -1026,10 +1059,25 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             </div>
 
             {/* Agent floors — two rooms per storey. */}
-            {chunk2(seniorAgents).map((pair, ri) => (
+            {chunk2(units).map((pair, ri) => (
               <div className="px-floor" key={'f' + ri}>
-                {pair.map((a, ci) => {
-                  const i = ri * 2 + ci;
+                {pair.map((u, ci) => {
+                  if (u.kind === 'vacant') return (
+                    <div className="px-room vacant" key={'v' + u.idx}
+                         onClick={onHire} title={vocab.hireTitle}>
+                      <div className="px-plate">
+                        <span>UNIT {u.idx + 1} · {vocab.vacant}</span>
+                        <span className="pip" />
+                      </div>
+                      <div className="px-int vacant">
+                        <Px n="window_day" className="px-win d" style={{ left: 10, top: 8 }} />
+                        <Px n="window_night" className="px-win n" style={{ left: 10, top: 8 }} />
+                        <span className="px-vacant-plus">+ {vocab.hire}</span>
+                      </div>
+                    </div>
+                  );
+                  const a = u.a;
+                  const i = u.idx;
                   const subs = subordinatesOf(a.id);
                   const awayMeeting = ambientOk && meetingIdSet.has(a.id);
                   const awayCooler = ambientOk && coolerVisitor === a.id;
@@ -1099,8 +1147,10 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           )}
                           <Px n="desk_agent" className="px-desk" />
                           {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
-                          <Px n="mug" className="px-mug clickable" title={`Refresh ${a.name}'s context`}
+                          <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
+                              title={`Refresh ${a.name}'s context`}
                               onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
+                          {coffeeSteam[a.id] ? <span className="px-steam" aria-hidden="true" /> : null}
                           {/* The pile grows with the real filed-report count
                               (capped at 5 sheets so a busy desk stays legible)
                               — this counter was already computed and thrown
@@ -1176,18 +1226,6 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 {pair.length === 1 && <div className="px-room filler" aria-hidden="true" />}
               </div>
             ))}
-
-            {/* Vacant floor — hireable units. */}
-            {emptySlots > 0 && (
-              <div className="px-floor is-vacant">
-                {Array.from({length: emptySlots}).map((_, i) => (
-                  <div key={'e'+i} className="px-vacant" onClick={onHire} title={vocab.hireTitle}>
-                    <span className="px-forrent">{vocab.vacant}</span>
-                    <span className="px-vacant-plus">+ {vocab.hire}</span>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {/* Vault — real on-chain balances, display only (unchanged gating). */}
             {!isMobileOffice && walletServiceOn && (goldTreasury !== null || bankBalance !== null) && (

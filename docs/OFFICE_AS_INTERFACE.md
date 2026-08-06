@@ -33,6 +33,29 @@
 > effort as distance. Placards now appear only for meeting / water-cooler /
 > asking-the-boss, where the coworker genuinely IS off the floor.
 
+> ✅ **Vacant units are rooms, not gaps (2026-08-06).** Unhired slots used
+> to render as one full-width band of flat `#4c4658` rectangles below the
+> tower — so the building changed shape halfway down, and since
+> `INITIAL_AGENTS` is empty that band was the majority of what a first-run
+> boss ever saw. Vacancies now flow through the same two-per-storey
+> sequence as leased rooms: same wall, same floorboards, same window,
+> unfurnished and drained of warmth. **A vacant unit keeps its unlit pane
+> at night** rather than swapping to the lamplit `window_night` art — the
+> night swap is a time-of-day cue everywhere else, but in an empty room it
+> would be an occupancy claim. Nothing in the room is earned state: no
+> desk, no props, and the nameplate pip stays grey.
+
+> ✅ **The mug says what it did (2026-08-06).** Coffee clears a coworker's
+> context *and* kills whatever they were mid-way through, and reported both
+> identically ("Cleared X's context") with no sign at the desk at all. The
+> toast now distinguishes the two (`abortAgentRun` returns whether anything
+> was in flight), and a one-shot steam beat plays at the mug. Not
+> `ambientOk`-gated — like `trayDrop`, it reports a real state change the
+> boss just caused, so reduced-motion gets the still cue rather than none.
+> It also stopped parking `task: 'freshly caffeinated'` on the agent: `task`
+> is "what they're working on", and an idle coworker's bubble must not
+> claim a job that doesn't exist.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

@@ -9802,7 +9802,6 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
 .pxhq .clickable { cursor: pointer; }
 .pxhq .clickable:hover { filter: brightness(1.15); }
 .pxhq .clickable:active { translate: 0 1px; filter: brightness(0.94); }
-.pxhq .px-vacant:active,
 .pxhq .px-nsb:active,
 .pxhq .px-asking:active { translate: 0 1px; }
 
@@ -10077,6 +10076,28 @@ body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46);
 .px-papers { z-index: 5; position: absolute; left: -8px; bottom: 22px; }
 .px-tray   { z-index: 5; position: absolute; right: -20px; bottom: 8px; }
 .px-tray.is-landing { animation: px-pop 0.5s ease-out 1; }
+/* Coffee beat — the mug jumps and steams for one shot when the boss clears
+   this coworker's context. Three pixel puffs drawn with box-shadow rather
+   than a new sprite; transform/opacity only, per §4 "cheap". */
+.px-mug.is-fresh { animation: px-pop 0.5s ease-out 1; }
+.px-steam {
+  position: absolute; right: 2px; bottom: 36px; z-index: 6;
+  width: 2px; height: 2px;
+  background: #fff6d8;
+  box-shadow: 4px -4px 0 #fff6d8, -2px -9px 0 #fff6d8, 3px -13px 0 rgba(255, 246, 216, 0.55);
+  pointer-events: none;
+  animation: px-steam-rise 1.3s ease-out 1 forwards;
+}
+@keyframes px-steam-rise {
+  0%   { opacity: 0; translate: 0 6px; }
+  20%  { opacity: 1; }
+  100% { opacity: 0; translate: 0 -10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Still shown — it reports a real state change — but held still. */
+  .px-steam { animation: none; opacity: 0.9; }
+  .px-mug.is-fresh { animation: none; }
+}
 .px-mood {
   position: absolute; top: -12px; right: -14px;
   font-size: 11px; line-height: 1;
@@ -10284,30 +10305,39 @@ body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46);
   animation: px-blink 0.8s steps(2) infinite;
 }
 
-/* ── Vacant floor ── */
-.px-floor.is-vacant { min-height: 66px; }
-.px-vacant {
-  flex: 1;
-  position: relative;
-  background: #4c4658;
-  border-left: 3px solid var(--px-ink);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  cursor: pointer;
-  min-height: 66px;
+/* ── Vacant units ────────────────────────────────────────────────────────
+   An unleased unit is the SAME room as a leased one — same wall, same
+   floorboards, same window — just unfurnished and unlit. It used to be a
+   flat #4c4658 rectangle, which read as a hole in the UI rather than a
+   room nobody has moved into yet; since INITIAL_AGENTS is empty, that
+   rectangle was the majority of what a first-run boss ever saw.
+   The room claims nothing: no desk, no props, no nameplate pip. */
+.px-room.vacant { cursor: pointer; }
+.px-room.vacant .px-plate { color: #9a9382; background: #3c3a4e; }
+.px-int.vacant {
+  /* Same tiles as an occupied room, drained of warmth — the wallpaper is
+     still up, the lights are off. */
+  filter: saturate(0.28) brightness(0.62);
+  display: flex; align-items: center; justify-content: center;
 }
-.px-vacant:first-child { border-left: none; }
-.px-vacant:hover { background: #5a5468; }
-.px-forrent {
-  font-family: 'Press Start 2P', monospace; font-size: 8px;
-  color: #b8b09a;
-}
+.px-room.vacant:hover .px-int.vacant { filter: saturate(0.5) brightness(0.8); }
+/* Nobody has moved in, so nobody left a lamp on: a vacant unit keeps the
+   unlit pane at night instead of swapping to the lamplit `window_night`
+   art, which would put a light in an empty room. Beats `body.night
+   .px-win.n` on specificity — the night swap is a room-occupancy claim
+   here, not a time-of-day one. */
+.pxhq .px-int.vacant .px-win.n { display: none; }
+.pxhq .px-int.vacant .px-win.d { display: block; }
 .px-vacant-plus {
+  position: relative; z-index: 3;
   font-family: 'Press Start 2P', monospace; font-size: 7px;
   color: var(--px-gold);
+  background: rgba(26, 28, 44, 0.72);
   border: 1px dashed var(--px-gold);
-  padding: 2px 5px;
+  padding: 3px 6px;
 }
-.px-vacant:hover .px-vacant-plus { background: rgba(248, 200, 64, 0.15); }
+.px-room.vacant:hover .px-vacant-plus { background: rgba(248, 200, 64, 0.22); color: #fff6d8; }
+.px-room.vacant:active .px-vacant-plus { translate: 0 1px; }
 
 /* ── Vault ── */
 .px-int.vault {
@@ -10432,6 +10462,13 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   .px-floor { flex-direction: column; padding: 0 6px; }
   .px-room { border-left: none; border-right: none; min-width: 100%; }
   .px-room.filler { display: none; }
+  /* Vacant units stack full-width on mobile, so a fresh HQ would be five
+     108px empty rooms between the CEO and the vault. Keep every unit
+     visible (the count is real capacity) but compact, and drop the window
+     art — at this height it would collide with the hire chip. */
+  .px-int.vacant { min-height: 54px; }
+  .pxhq .px-int.vacant .px-win.d,
+  .pxhq .px-int.vacant .px-win.n { display: none; }
   .px-sign { transform: translateX(-50%) scale(0.75); transform-origin: bottom center; }
   .px-screen { width: 56%; }
   .px-cork { left: 4%; width: 130px; }
