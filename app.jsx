@@ -3828,6 +3828,7 @@ ${d.text}` : d.text,
           (saved on blur), and an always-mounted panel would resurface an
           abandoned draft on reopen as if it were saved — §4-dishonest. */}
       {inspect && <InspectPanel agent={inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+        onCoffee={onCoffee}
         onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>}
       <FurnishModal

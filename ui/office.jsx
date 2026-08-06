@@ -961,7 +961,10 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               </div>
             )}
             {officeTokens > 0 && (
-              <div className="sw-row" title={`≈ ${(officeTokens/1000).toFixed(0)}k tokens spent this session (~$${(officeTokens*0.0000015).toFixed(2)})`}>
+              /* §6 names the floor explicitly: never "tokens" here. Same
+                 number, office words — and no invented unit ("words" would
+                 overstate it), just what the figure means. */
+              <div className="sw-row" title={`Work done across the office this session — about $${(officeTokens*0.0000015).toFixed(2)} in payroll`}>
                 <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
               </div>
             )}
@@ -1173,7 +1176,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           <Px n="desk_agent" className="px-desk" />
                           {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
                           <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
-                              title={`Refresh ${a.name}'s context`}
+                              title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
                               onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
                           {coffeeSteam[a.id] ? <span className="px-steam" aria-hidden="true" /> : null}
                           {/* The pile grows with the real filed-report count

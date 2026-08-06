@@ -83,6 +83,21 @@ R.unknownTag   = statBars(A('mystery-model-9000')).tag;
 // ── specialtyTag — earned beats hunch ───────────────────────────────────
 R.earnedWins   = specialtyTag(A('ollama:llama3.1'), '12 research briefs');
 R.hunchDefault = specialtyTag(A('ollama:llama3.1'), '');
+// ── brainName — §6: no raw model ids on a card ─────────────────────────
+R.bnPrefix   = brainName(A('openrouter:google/gemma-3-27b-it'));
+R.bnLocal    = brainName(A('ollama:llama-3.3-70b-instruct'));
+R.bnDated    = brainName(A('claude-haiku-4-5-20251001'));
+R.bnGpt      = brainName(A('gpt-5'));
+R.bnFree     = brainName(A('openrouter:qwen/qwen-2.5-7b-instruct:free'));
+R.bnNone     = brainName(A(''));
+R.bnMissing  = brainName({});
+R.bnNoColon  = brainName(A('mystery-model-9000'));
+// Formatting only — every word of the id's identity must survive.
+R.bnKeepsAll = ['gemma','3','27']
+  .every(t => brainName(A('openrouter:google/gemma-3-27b-it')).toLowerCase().includes(t));
+R.bnNoPrefixLeak = ['openrouter','ollama','gemini-api','google/','meta-llama/']
+  .every(p => !brainName(A('openrouter:google/gemma-3-27b-it')).toLowerCase().includes(p)
+           && !brainName(A('ollama:llama-3.3-70b-instruct')).toLowerCase().includes(p));
 console.log(JSON.stringify(R));
 ''')
 
@@ -113,6 +128,26 @@ console.log(JSON.stringify(R));
           out['earnedWins'] == '12 research briefs')
     check('no affinity yet → the class tagline',
           out['hunchDefault'] == 'cheap and tireless')
+
+    # §6: the card shows a NAME, never the raw id. Formatting only — the
+    # identity the id carries must survive, the plumbing around it must not.
+    check('routing prefix + org path are dropped',
+          out['bnPrefix'] == 'Gemma 3 27B', out['bnPrefix'])
+    check('local model keeps its size marker',
+          out['bnLocal'] == 'Llama 3.3 70B', out['bnLocal'])
+    check('trailing date stamp is dropped',
+          out['bnDated'] == 'Claude Haiku 4 5', out['bnDated'])
+    check('gpt keeps its casing', out['bnGpt'] == 'GPT 5', out['bnGpt'])
+    check(':free tier suffix is dropped',
+          out['bnFree'] == 'Qwen 2.5 7B', out['bnFree'])
+    check('no model set says so, never invents one',
+          out['bnNone'] == 'not set yet' and out['bnMissing'] == 'not set yet',
+          f"{out['bnNone']} / {out['bnMissing']}")
+    check('an unrecognised id still yields a name',
+          out['bnNoColon'] == 'Mystery Model 9000', out['bnNoColon'])
+    check('every identity token of the id survives', out['bnKeepsAll'])
+    check('no routing prefix or org path ever leaks to the card',
+          out['bnNoPrefixLeak'])
 
     print()
     if FAILS:

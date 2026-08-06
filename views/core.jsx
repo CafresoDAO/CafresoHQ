@@ -1,6 +1,7 @@
 import { CafresoHQV2 } from '../features.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
+import { brainName } from '../app/cast.jsx';
 /* ==========================================================================
    CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
@@ -420,9 +421,12 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                 <div className="name">{a.name}</div>
                 <div className="role">{a.role}</div>
                 <div className="team-stats">
-                  <div><span className="lbl">Model</span><span className="val">{(a.model||'').replace(/^[a-z]+:/,'') || '—'}</span></div>
-                  <div><span className="lbl">Tokens</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
-                  <div><span className="lbl">Cost</span><span className="val">${cost}</span></div>
+                  {/* §6, binding: no raw model ids and no "tokens"/"cost" on
+                      a coworker card — brain · work done · payroll. The id
+                      stays in the tooltip so debugging doesn't lose it. */}
+                  <div><span className="lbl">Brain</span><span className="val" title={a.model || 'no brain assigned'}>{brainName(a)}</span></div>
+                  <div><span className="lbl">Work done</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
+                  <div><span className="lbl">Payroll</span><span className="val">${cost}</span></div>
                   <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
                 </div>
                 <div className="team-tools">

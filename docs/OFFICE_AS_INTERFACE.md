@@ -306,6 +306,25 @@ append-only).
 | tool call | (shown as the action itself: "reading files", "searching") |
 | inference / completion | working / answer |
 
+> ✅ **Audited and enforced 2026-08-06.** The table had drifted where it
+> mattered most — the coworker card and the Team card were printing
+> `Tokens (session)`, `Cost`, and `Model: openrouter:google/gemma-3-27b-it`,
+> and the Situation Wall's FUEL row said "tokens spent" *on the floor*,
+> which this section names explicitly. Now: **Work done · Payroll · Brain**,
+> with the raw id kept in the `title` so debugging doesn't lose it.
+> `brainName()` (`app/cast.jsx`, 9 checks in `scripts/test_cast.py`) is
+> **formatting only** — it drops the routing prefix, org path and tuning
+> suffixes but never substitutes a different name, so a card can't claim a
+> brain the coworker isn't running; no model at all reads "not set yet"
+> rather than inventing a default. Renaming Cost → Payroll also un-collides
+> it with the Cost *stat-bar*, which means the opposite thing (value, not
+> spend). And the card's `☕ REFRESH CTX` button — jargon, and it zeroed the
+> counter while leaving an in-flight run streaming — is now `☕ COFFEE
+> BREAK` on the floor's own `onCoffee` handler: one gesture, one behaviour.
+>
+> Tooltips claim no unit. Token counts are not word counts, and "words read
+> and written" would be a small lie told confidently.
+
 Raw model IDs, JSON, and driver names may appear in desktop-mode surfaces and
 settings — never on the floor, the cards, or onboarding.
 

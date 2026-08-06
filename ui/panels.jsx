@@ -1,7 +1,7 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
-import { poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
+import { brainName, poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -53,7 +53,7 @@ const INSPECT_ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
 };
-function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate, onDismiss, onMessage, onFurnish }) {
+function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate, onDismiss, onMessage, onFurnish, onCoffee }) {
   if (!agent) return null;
   /* Live activity for THIS agent, straight from the canonical log — replaces
      the old static `agent.recent` string with what the agent actually did. */
@@ -122,8 +122,14 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             🛋 FURNISH DESK · pay in gold
           </button>
         )}
-        <div className="stat"><span className="lbl">Tokens (session)</span><span>{agent.tokens?.toLocaleString() || '0'}</span></div>
-        <div className="stat"><span className="lbl">Cost</span><span>${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>
+        {/* §6 is binding: never "tokens", never "cost" here — "work done ·
+            payroll". Same numbers, office words. Renaming Cost → Payroll
+            also un-collides it with the Cost stat-bar two rows down, which
+            means something else entirely (value, not spend). */}
+        <div className="stat"><span className="lbl">Work done</span>
+          <span title="How much reading and writing this coworker has done this session">{agent.tokens?.toLocaleString() || '0'}</span></div>
+        <div className="stat"><span className="lbl">Payroll</span>
+          <span title="Estimated spend on this coworker this session">${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>
         {/* The cast (§2): four bars, no more — honest class judgements,
             not benchmark cosplay. Cost reads as value (4 = costs nothing). */}
         <div className="stat-bars">
@@ -147,7 +153,10 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             placeholder={`Describe ${agent.name}'s job in plain words — tone, priorities, what "done" means.`}
             onChange={e => setJd(e.target.value)} onBlur={saveJd} />
         </div>
-        <div className="stat"><span className="lbl">Model</span><span>{agent.model}</span></div>
+        {/* The brain, by name — the raw id stays reachable in the tooltip
+            for debugging, but §6 keeps it off the card face. */}
+        <div className="stat"><span className="lbl">Brain</span>
+          <span title={agent.model || 'no brain assigned'}>{brainName(agent)}</span></div>
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Tools used</div>
           <div className="tools-used">
@@ -187,7 +196,13 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         )}
         <div style={{display:'flex',gap:6,marginTop:4}}>
           {onMessage && <button className="px-btn primary" style={{fontSize:8,flex:1}} onClick={()=>onMessage(agent)}>💬 MESSAGE</button>}
-          <button className="px-btn secondary" style={{fontSize:8,flex:1}} onClick={()=>onUpdate(agent.id, { tokens: 0, recent: 'context cleared ☕' })}>☕ REFRESH CTX</button>
+          {/* Was "REFRESH CTX" — §6 bans the context-window vocabulary, and
+              the button ALSO did a different thing than the floor's mug: it
+              zeroed the counter while leaving an in-flight run streaming.
+              Same gesture, same surface, one handler. */}
+          <button className="px-btn secondary" style={{fontSize:8,flex:1}}
+                  title="Stops anything they're running and clears their desk for the next job"
+                  onClick={()=>(onCoffee ? onCoffee(agent) : onUpdate(agent.id, { tokens: 0, recent: 'context cleared ☕' }))}>☕ COFFEE BREAK</button>
           <button className="px-btn danger" style={{fontSize:8}} onClick={()=>{onDismiss(agent.id); onClose();}}>LET GO</button>
         </div>
       </div>
@@ -199,7 +214,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
 function TokenHUD({ tokens, budget=1000000, className='' }) {
   const pct = Math.min(100, (tokens/budget)*100);
   return (
-    <div className={`token-hud${className ? ' '+className : ''}`} title={`${tokens.toLocaleString()} tokens · $${(tokens*0.0000015).toFixed(2)} est.`}>
+    <div className={`token-hud${className ? ' '+className : ''}`} title={`Work done across the office this session · about $${(tokens*0.0000015).toFixed(2)} in payroll`}>
       <span>⛽</span>
       <span>{(tokens/1000).toFixed(1)}K</span>
       <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>
