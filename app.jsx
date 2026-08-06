@@ -3205,12 +3205,12 @@ ${d.text}` : d.text,
               onRemoveSticky={onRemoveSticky}
               onUnpin={onUnpin}
               onSitWithCEO={() => setFocus(true)}
-              onOpenMemory={() => setActiveView('memory')}
+              onOpenMemory={() => navTo('memory')}
               onOpenMeeting={onOpenMeeting}
               onTaskDropOnAgent={onTaskDropOnAgent}
               tasks={tasks}
               onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agentId, status: 'doing' } : t))}
-              onGoToTasks={() => setActiveView('tasks')}
+              onGoToTasks={() => navTo('tasks')}
               onOpenArtifact={openVaultNote}
               maxSlots={5}
               experience={experience}
@@ -3345,6 +3345,21 @@ ${d.text}` : d.text,
      On phones the window manager is suppressed (mobile keeps its tab bar);
      the mobile app-switcher is a separate, card-stack presentation. */
   const desktopMode = windowsEnabled && !isNarrowViewport;
+  /* One navigation verb for every in-office button. In windowed desktop
+     mode setActiveView is a silent no-op — the wallpaper doesn't change
+     because windows sit over it — so "Board →", the ⚠ attention banner
+     and the memory cabinet all clicked into nothing while the RAIL worked
+     (it alone went through openOrRaise). Every surface routes through the
+     mode's real navigation now. 'chat' is special in desktop mode: chat
+     is a floating panel with its own switch, not a window view. */
+  const navTo = useCallbackA((view) => {
+    if (desktopMode) {
+      if (view === 'chat') { setChatWinOpen(true); return; }
+      openOrRaise(view);
+    } else {
+      setActiveView(view);
+    }
+  }, [desktopMode, openOrRaise, setActiveView, setChatWinOpen]);
   /* Mobile presents the same openWindows model as an iOS-style app switcher:
      one app fullscreen at a time, a card stack to switch/close, a launcher
      grid to open more. mobileApp = the view shown fullscreen (or null). */
@@ -3447,9 +3462,9 @@ ${d.text}` : d.text,
   const attentionCount = useMemoA(
     () => activity.filter(e => e.priority === 'attention' && e.unread).length, [activity]);
   const openAttention = useCallbackA(() => {
-    setActiveView('team');
+    navTo('team');
     setTimeout(() => window.dispatchEvent(new CustomEvent('cafresohq:openAgentInbox')), 60);
-  }, [setActiveView]);
+  }, [navTo]);
 
   const vocab = getVocab(theme);
   return (
@@ -3868,7 +3883,7 @@ ${d.text}` : d.text,
         open={ceoShown}
         onClose={() => setCeoShown(false)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onSitWithCEO={() => { setActiveView('chat'); }}
+        onSitWithCEO={() => { navTo('chat'); }}
         onOpenMemory={() => setMemoryOpen(true)}
         onOpenMeeting={() => setMeetingOpen(true)}
       />

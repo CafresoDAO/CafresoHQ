@@ -258,6 +258,24 @@
 > correctly keeps naming the last real *attempt* rather than the latest
 > assignment.
 
+> ✅ **The office's buttons work in windowed mode (2026-08-06).** With 8
+> real failures accumulated, the **⚠ "N need you" banner clicked into
+> nothing.** Cause: in desktop/windowed mode `setActiveView` is a silent
+> no-op — windows sit *over* the office wallpaper, so changing the
+> wallpaper view changes nothing visible — and only the nav rail routed
+> through `openOrRaise`. Every in-office navigation button was dead in
+> that mode: the attention banner, the inbox tray's **Board →**, and the
+> **memory cabinet** prop. The exact buttons that exist to be clicked in a
+> moment of "something needs me".
+>
+> One verb now: `navTo(view)` — `openOrRaise` in desktop mode (with
+> `'chat'` mapped to the chat panel's own switch, since chat is not a
+> window view), `setActiveView` otherwise. Verified in windowed mode
+> (banner → STAFF ROSTER window with the inbox open; Board → TASKS window;
+> cabinet → MEMORY SHELF window) and at 375px (Board → switches the full
+> view, zero windows). Rule for future buttons: **never call
+> `setActiveView` directly from an office surface — go through `navTo`.**
+
 ---
 
 ## 1. The principle: the metaphor does the teaching
