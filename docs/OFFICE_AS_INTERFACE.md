@@ -233,6 +233,31 @@
 > wants to answer "is this coworker working right now" has to read
 > `status`. Every new run path needs to set it.
 
+> ✅ **The Meeting Room's own layout was broken (2026-08-06).** Went back to
+> run a real stand-up after the fixes above and the modal itself was
+> unusable: the three seats (moderator + 2 attendees) rendered as a ~46×12px
+> sliver at the top of the dialog, every seat pushed off the bottom, and the
+> transcript log invisible. Cause: `.meeting-table` was defined TWICE in
+> `styles.css` — once as this modal's real seat grid, once as a leftover
+> decorative floor-nook sprite from an abandoned isometric-office concept
+> that nothing in the codebase still built (`grep` for the class in every
+> `.jsx` found exactly one caller: this modal). Same class name, later rule
+> wins, so the modal's grid quietly inherited a 46×12px wood-table sprite's
+> dimensions. The dead rule also sat in a `≤768px { display: none }` list —
+> so on any phone-width viewport the seats didn't overflow, they vanished
+> outright, a second bug from the same collision. Deleted the orphaned rule
+> (plus its now-pointless `body.night` filter and the equally-orphaned
+> `.floor-zone`/`.fz-meeting`/`.fz-kitchen`) and dropped `.meeting-table`
+> from the mobile hide-list — the grid's own `auto-fit` already reflows to
+> one column on narrow screens, no override needed.
+>
+> Verified live: reopened the room, all three seats render side by side
+> with names/roles/remove buttons, ran a real round (2 fast OpenRouter
+> snags + one slower Hermes 502-then-retry snag, ~35s), and every turn
+> landed in a properly-sized, scrollable transcript in the same
+> `snagSentence()` language as the floor and inbox. One event, one story,
+> now on a fourth surface.
+
 > ✅ **The delegation loop, end to end (2026-08-06).** Drove the headline
 > interaction — the banner's own "DROP TASK CARDS ON DESKS TO DELEGATE" —
 > for the first time: starter card → real task → `dragover` lights the
