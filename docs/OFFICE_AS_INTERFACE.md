@@ -957,3 +957,33 @@ settings — never on the floor, the cards, or onboarding.
 > "Classic" button does flip mode and reveals a working `+ ADD`. (An
 > earlier read that it was dead was a stale screenshot frame, not a
 > defect — the DOM had already re-rendered.)
+
+> ✅ **Verifying the sweep found the half I'd missed (2026-08-06).** Went
+> back to check the previous commit's 26-site navigation fix rather than
+> trust it, and walked each family: the Getting Started CTAs raise the
+> right window and "Open office →" correctly *minimises* every window to
+> reveal the floor (openOrRaise treats `visual` as the wallpaper, not a
+> window). The `m` and `1-8` shortcuts open windows now — they were
+> silently dead in desktop mode too.
+>
+> Then the command palette's "Switch view: Vault" set `activeView` to
+> `vault` and opened nothing. The 13 `action:` entries I had swept in
+> `app.jsx` are the **onboarding tour**; the palette's 47 commands live in
+> `app/commands.jsx` and were never touched — all eight Navigation
+> entries still called the raw setter. The palette is the app's fastest
+> path to anywhere, and its entire Navigation section was inert in the
+> default mode.
+>
+> The prop is now named `navigate` rather than `setActiveView`, and takes
+> `navTo`. The rename is the point: the old name invited exactly this bug
+> in the next component that accepts it, because passing a raw state
+> setter *looks* correct right up until desktop mode makes it a no-op.
+>
+> Two measurement traps worth recording, both of which nearly produced a
+> false bug report:
+> - Dispatching a synthetic `keydown` on `document` makes `e.target` a
+>   non-Element, so the handler's `e.target.matches(…)` guard throws and
+>   every shortcut looks broken. Dispatch on `document.body`.
+> - A window-state snapshot that records only `w.view` cannot see a
+>   minimise. "Open office" looked like a no-op until the snapshot
+>   included `minimized`.

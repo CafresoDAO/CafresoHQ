@@ -3594,7 +3594,7 @@ ${d.text}` : d.text,
     <CommandPaletteProvider>
     <AppGlobalCommands
       activeView={activeView}
-      setActiveView={setActiveView}
+      navigate={goTo}
       night={night} setNight={setNight}
       railCollapsed={railCollapsed} setRailCollapsed={setRailCollapsed}
       chatWinOpen={chatWinOpen} setChatWinOpen={setChatWinOpen}

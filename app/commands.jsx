@@ -3,7 +3,12 @@ import { whoCan } from './agents.jsx';
 import { CafresoHQUI } from '../ui.jsx';
 const { useCommands } = CafresoHQUI;
 function AppGlobalCommands({
-  activeView, setActiveView,
+  /* `navigate`, not setActiveView. Every one of these eight entries used
+     the raw setter, which in windowed (desktop) mode is a SILENT no-op —
+     so the command palette's whole Navigation section moved the breadcrumb
+     and opened nothing. The host passes `navTo`, which opens/raises the
+     window on desktop and falls back to the plain setter on mobile. */
+  activeView, navigate,
   night, setNight,
   railCollapsed, setRailCollapsed,
   chatWinOpen, setChatWinOpen,
@@ -21,14 +26,14 @@ function AppGlobalCommands({
 }) {
   const cmds = [
     /* Switch view — one entry per nav item. */
-    { id: 'nav.office',     label: 'Switch view: Office',    section: 'Navigation', icon: '🏢', run: () => setActiveView('visual') },
-    { id: 'nav.tasks',      label: 'Switch view: Tasks',     section: 'Navigation', icon: '📋', run: () => setActiveView('tasks') },
-    { id: 'nav.calendar',   label: 'Switch view: Calendar',  section: 'Navigation', icon: '🗓', run: () => setActiveView('calendar') },
-    { id: 'nav.memory',     label: 'Switch view: Memory',    section: 'Navigation', icon: '📁', run: () => setActiveView('memory') },
-    { id: 'nav.vault',      label: 'Switch view: Vault',     section: 'Navigation', icon: '📓', run: () => setActiveView('vault') },
-    { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => setActiveView('team') },
-    { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => setActiveView('terminal') },
-    { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => setActiveView('projects') },
+    { id: 'nav.office',     label: 'Switch view: Office',    section: 'Navigation', icon: '🏢', run: () => navigate('visual') },
+    { id: 'nav.tasks',      label: 'Switch view: Tasks',     section: 'Navigation', icon: '📋', run: () => navigate('tasks') },
+    { id: 'nav.calendar',   label: 'Switch view: Calendar',  section: 'Navigation', icon: '🗓', run: () => navigate('calendar') },
+    { id: 'nav.memory',     label: 'Switch view: Memory',    section: 'Navigation', icon: '📁', run: () => navigate('memory') },
+    { id: 'nav.vault',      label: 'Switch view: Vault',     section: 'Navigation', icon: '📓', run: () => navigate('vault') },
+    { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => navigate('team') },
+    { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => navigate('terminal') },
+    { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => navigate('projects') },
 
     /* Top-level actions. */
     { id: 'act.hire',     label: 'Hire a new agent',         section: 'Actions', icon: '＋', run: onHire },
@@ -205,7 +210,7 @@ function AppGlobalCommands({
 
   useCommands(cmds, [
     activeView, night, railCollapsed, chatWinOpen, anyBusy, density, theme,
-    setActiveView, setNight, setRailCollapsed, setChatWinOpen, setDensity, setTheme,
+    navigate, setNight, setRailCollapsed, setChatWinOpen, setDensity, setTheme,
     workspaces, activeWorkspace,
     onApplyWorkspace, onSaveWorkspace, onDeleteWorkspace,
     onHire, onSettings, onMissions, onWorkflow, onStandup, onMemory, onStopAll,
