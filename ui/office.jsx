@@ -494,6 +494,35 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   }, []);
   const anyLive = Object.keys(liveTools).length > 0;
 
+  /* §4 prop walk — arrival edge. The transit animation is a fixed 0.8s
+     regardless of how long the tool actually runs; this flag just flips the
+     pose from "walking" to "working at the furniture" once they get there,
+     so a long tool call reads as standing at the cabinet, not jogging in
+     place for 40 seconds. */
+  const [propArrived, setPropArrived] = React.useState({});
+  const propSig = Object.keys(liveTools)
+    .map(id => id + ':' + ((liveTools[id] || {}).prop || '')).join(',');
+  React.useEffect(() => {
+    const timers = [];
+    Object.keys(liveTools).forEach(id => {
+      if ((liveTools[id] || {}).prop && !propArrived[id]) {
+        timers.push(setTimeout(
+          () => setPropArrived(s => (s[id] ? s : { ...s, [id]: true })), 800));
+      }
+    });
+    // Drop arrivals for anyone no longer at a prop, so the next trip walks.
+    setPropArrived(s => {
+      let changed = false;
+      const n = { ...s };
+      for (const id in s) {
+        if (!(liveTools[id] || {}).prop) { delete n[id]; changed = true; }
+      }
+      return changed ? n : s;
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [propSig]);
+
+
   /* ── Desk screens — each monitor shows the tail of its agent's REAL output
      stream (cafresohq:agentScreen from the app-level run paths, throttled at
      the source). phase 'stream' scrolls; 'done' freezes the last line ~8s
@@ -993,7 +1022,10 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   const awayAsking = (approvals || []).some(p => p && p.agentId === a.id);
                   const propVisit = !awayAsking && !awayMeeting && !awayCooler &&
                     !!(liveTool && liveTool.prop);
-                  const away = awayMeeting || awayCooler || awayAsking || propVisit;
+                  // §4: a prop visit keeps them in the room — they WALK to the
+                  // furniture. Only meeting/cooler/asking take them off the floor,
+                  // and only those get a placard standing in for a missing body.
+                  const away = awayMeeting || awayCooler || awayAsking;
                   const screen = screens[a.id];
                   const paperCount = Math.min((a.journal || []).length, 5);
                   const myArtifacts = (tasks || []).filter(t => t.assignedTo === a.id && t.artifactPath);
@@ -1039,11 +1071,10 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                             ? <div className="px-placard">
                                 {awayMeeting ? 'in the meeting room'
                                   : awayCooler ? 'stretching legs'
-                                  : awayAsking ? 'at your desk, asking'
-                                  : PROP_PLACARD[liveTool.prop]}
+                                  : 'at your desk, asking'}
                               </div>
-                            : (a.task ? <div className="px-bubble">{a.task}</div> : null)}
-                          {!away && (
+                            : (a.task && !propVisit ? <div className="px-bubble">{a.task}</div> : null)}
+                          {!away && !propVisit && (
                             <div className="px-charwrap">
                               <PxChar color={a.color} pose={pose}
                                       className={pose === 'front' ? 'idle-anim' : pose === 'stretch' ? 'pop' : ''}
@@ -1077,6 +1108,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           )}
                         </div>
 
+                        {/* §4 "tool_call → walks to the relevant prop". They
+                            stay in the room; the furniture is a real
+                            destination now that deskKit put it there. */}
+                        {propVisit && (
+                          <div className={'px-propvisit is-' + liveTool.prop}
+                               title={`${a.name} is ${PROP_PLACARD[liveTool.prop]}`}>
+                            <PxChar color={a.color}
+                                    pose={propArrived[a.id] ? 'back' : 'walk'}
+                                    className={propArrived[a.id] ? 'idle-anim' : ''} />
+                          </div>
+                        )}
                         {screen && !away && (
                           <div className={`px-screen ${screen.phase === 'done' ? 'is-done' : screen.phase === 'error' ? 'is-error' : 'is-live'}`} aria-hidden="true">
                             {screen.tail}
@@ -1105,7 +1147,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                                    onClick={(e)=>{ e.stopPropagation(); onInspect(s); }}
                                    title={`${s.name} · ${s.role}${s.transient ? ' (transient sub)' : ' (assistant)'}${s.task ? ' · ' + s.task : ''}`}>
                                 <PxChar color={s.color}
-                                        pose={s.status === 'busy' || s.status === 'active' ? 'back' : 'front'} />
+                                        pose={s.status === 'busy' || s.status === 'active' ? 'back' : 'front'}
+                                        className={(s.status === 'busy' || s.status === 'active') ? '' : 'idle-anim'} />
                                 <span className="px-sub-name">{s.name}<span className={`pip ${s.status || 'idle'}`}/></span>
                               </div>
                             ))}
@@ -1171,7 +1214,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 <div className="px-meetcluster" title="In a meeting" aria-hidden="true">
                   {meetingIds.map(id => {
                     const a = agents.find(x => x.id === id);
-                    return a ? <PxChar key={id} color={a.color} pose="front" /> : null;
+                    return a ? <PxChar key={id} color={a.color} pose="front" className="idle-anim" /> : null;
                   })}
                 </div>
               )}

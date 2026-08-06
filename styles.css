@@ -10453,3 +10453,24 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   width: 22px; height: 26px;
   z-index: 5;
 }
+
+/* §4 prop walk — the coworker crosses the room to the furniture.
+   The transit is a FIXED 0.8s; the standing-at-the-prop state then lasts
+   as long as the tool really runs. Never scale the walk to the tool's
+   duration — that would turn a 40s call into a 40s stroll and misreport
+   effort as distance. */
+.px-propvisit {
+  position: absolute; bottom: 12px; right: 40px;
+  z-index: 4;
+  animation: px-walk-to-prop 0.8s steps(7) 1;
+}
+.px-propvisit.is-bookshelf { right: 34px; }
+.px-propvisit.is-cabinet   { right: 36px; }
+.px-propvisit.is-phone     { right: 32px; }
+@keyframes px-walk-to-prop {
+  from { transform: translateX(-88px); }
+  to   { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .px-propvisit { animation: none; }
+}

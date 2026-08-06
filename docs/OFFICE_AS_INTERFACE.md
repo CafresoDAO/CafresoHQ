@@ -22,6 +22,16 @@
 > balances) carried over 1:1 — this is a re-skin of real wiring, not a mockup.
 > This is a full replacement, not a selectable theme: the old room-card
 > rendering is gone.
+>
+> ✅ **§4's prop walk is a real walk (2026-08-06).** It was a teleport: the
+> code unmounted the coworker and hung a sign reading "at the bookshelf".
+> Now `deskKit()` puts the furniture in the room (from `agent.tools`, the
+> capability actually granted) and the coworker crosses to it. Binding
+> invariant: the **transit is a fixed 0.8s; the standing-at-the-prop state
+> lasts the real tool duration**. Never scale the walk to the call — a 40s
+> tool must not produce a 40s stroll, or the animation starts reporting
+> effort as distance. Placards now appear only for meeting / water-cooler /
+> asking-the-boss, where the coworker genuinely IS off the floor.
 
 ---
 
