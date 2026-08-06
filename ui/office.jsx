@@ -638,7 +638,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
      streaming a reply lit their desk while the roof stayed dark — two
      lights, two definitions. A finished/failed screen lingers on purpose
      (§4 lets 'done' read for 8s) and must NOT keep the roof lit. */
+  /* One definition of "live", third pass. This counted only tool calls and
+     open streams — both EVENT-driven — so a coworker who was genuinely
+     running lit their own desk while the rooftop stayed dark for the whole
+     stretch between dispatch and first token. Caught by watching a real
+     run: the room read status-busy and the lamp read nothing.
+     `agent.status` is the authoritative answer to "is anyone working", so
+     it belongs here alongside the events. A finished screen still doesn't
+     count — a lingering result must never keep the building claiming work
+     is in progress. */
   const anyLive = Object.keys(liveTools).length > 0 ||
+    agents.some(a => a && (a.status === 'busy' || a.status === 'active')) ||
     Object.keys(screens).some(id => {
       const s = screens[id];
       return s && s.phase !== 'done' && s.phase !== 'error';

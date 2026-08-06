@@ -29,12 +29,43 @@ const PROP_PLACARD = {
   phone:     'on the phone',
 };
 
-/* One honest sentence for the "hit a snag" bubble (§4 error row, §7 "no
-   raw error dumps"). First line only — stack traces and JSON bodies are
-   for the inspect panel, not the floor — collapsed and capped so it reads
-   as speech, not a log. */
+/* What a coworker says when a run fails (§4 error row, §7 "no raw error
+   dumps — every failure is one honest sentence plus try again / ask
+   differently / pick another coworker").
+
+   Driving a real failed run through the floor showed this was still a log
+   line wearing a speech bubble: it said
+
+     "hit a snag — OpenRouter 503: error : openrouter: no API key configured"
+
+   — an HTTP status, a doubled "error :", a provider name, and "API key",
+   which §6 bans outright. The cause was recognisable and the fix was
+   actionable, and the bubble said neither.
+
+   SNAG_CAUSES maps only failures we can identify with confidence. Anything
+   unrecognised falls through to the old cleaned first line: a wrong-but-
+   confident diagnosis is worse than a vague honest one. */
+const SNAG_CAUSES = [
+  [/no api key|api[- ]?key (?:not|isn'?t) |missing api key|unauthor|invalid bearer|\b401\b/i,
+   "that brain isn't signed in yet — add it in Settings, or give this to someone else"],
+  [/\b429\b|rate.?limit|too many requests/i,
+   'that brain is rate-limited right now — worth trying again in a minute'],
+  [/insufficient|quota|billing|payment required|\b402\b/i,
+   "that brain's account is out of credit — top it up or pick another coworker"],
+  [/econnrefused|connection refused|enotfound|failed to fetch|network error|dns/i,
+   "couldn't reach that brain — it looks offline from here"],
+  [/timed? ?out|etimedout|\b504\b/i,
+   'that took too long, so I stopped waiting — try again or ask for less at once'],
+  [/\b5\d\d\b|internal server error|service unavailable/i,
+   "that brain's service is having trouble — not something you did"],
+];
+
 function snagSentence(raw) {
-  const first = String(raw || '').split('\n')[0]
+  const text = String(raw || '');
+  for (const [re, sentence] of SNAG_CAUSES) {
+    if (re.test(text)) return 'hit a snag — ' + sentence;
+  }
+  const first = text.split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
     .replace(/[{}[\]"\\]/g, ' ')               // JSON shrapnel
     .replace(/\s+/g, ' ')

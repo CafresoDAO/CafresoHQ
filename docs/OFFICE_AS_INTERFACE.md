@@ -137,6 +137,39 @@
 > real artifact exists, so there is no prop to animate. Absence of the
 > animation is not absence of the wire.
 
+> ✅ **What one real failed run taught us (2026-08-06).** Everything above
+> was verified with synthetic events. Dispatching an actual message to a
+> coworker with no brain configured — a genuine round trip, failing
+> locally at no cost — found two things no synthetic test had:
+>
+> 1. **The rooftop lamp was dark for the entire run.** `anyLive` counted
+>    tool calls and open streams, both *event*-driven, so nothing lit
+>    between dispatch and first token — the room read `status-busy` while
+>    the building claimed nothing was happening. `agent.status` is the
+>    authoritative answer to "is anyone working" and now sits alongside the
+>    events. (Third pass on this one definition. It keeps drifting because
+>    the events are the tempting signal and the status is the true one.)
+> 2. **The snag bubble was still a log line.** It read *"hit a snag —
+>    OpenRouter 503: error : openrouter: no API key configured"*: a status
+>    code, a provider name, a doubled `error :`, and a §6-banned term, on
+>    the floor. `SNAG_CAUSES` maps identifiable failures to one office
+>    sentence that also says what to do. **Unrecognised causes still fall
+>    through to the cleaned raw line** — a confident wrong diagnosis is
+>    worse than a vague honest one — and `detail` keeps the raw text for
+>    the inspect panel, per §7.
+>
+> The attention inbox was rendering the same failure as *"unknown: Inspect
+> error and retry"* — `classify()`'s developer strings straight through. It
+> now uses the same `snagSentence`, so the inbox and the floor tell one
+> story in one voice. `classify()`'s structured `kind`/`retryable` stay:
+> escalation reads them, users never do.
+>
+> **Two existing assertions in `test_floor.py` changed** — they fed inputs
+> (`code: 429`, `: 502`) that the table now classifies, and asserted the
+> raw content *survived*. That was the old contract. Keeping "502" in a
+> speech bubble is the thing §7 forbids; the cleanup path is still covered,
+> with causes the table cannot identify.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

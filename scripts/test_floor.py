@@ -73,8 +73,14 @@ R.placards = PROP_PLACARD;
 // ── snagSentence — one honest sentence, no raw dumps (§7) ───────────────
 R.snagPlain   = snagSentence('model overloaded, please retry');
 R.snagStack   = snagSentence('boom\n    at Object.<anonymous> (/x/y.js:1:1)\n    at Module._compile');
-R.snagJson    = snagSentence('{"error":{"message":"quota exceeded","code":429}}');
-R.snagUrl     = snagSentence('fetch failed for https://api.example.com/v1/chat: 502');
+/* These two exercise the FALL-THROUGH cleanup, so they must use causes the
+   table cannot identify — a recognised cause is now replaced wholesale, not
+   tidied up, which is the point of the table. */
+R.snagJson    = snagSentence('{"error":{"message":"the flux capacitor came loose"}}');
+R.snagUrl     = snagSentence('fetch failed for https://api.example.com/v1/chat while parsing');
+// A recognised cause must not leak the raw text it replaced.
+R.snagNoLeak  = (() => { const out = snagSentence('{"error":{"message":"quota exceeded","code":429}}');
+                         return !/quota exceeded|429|[{}"]/.test(out); })();
 R.snagLong    = snagSentence('x'.repeat(300));
 R.snagLongLen = snagSentence('x'.repeat(300)).length;
 R.snagEmpty   = snagSentence('');
@@ -91,6 +97,22 @@ R.kitNone    = deskKit([]);
 R.kitNull    = deskKit(null);
 R.kitJunk    = deskKit(['wallet','payroll']);        // unmappable → shelf
 R.snagNull    = snagSentence(null);
+// ── snag causes: the sentence a real failure produces ──────────────────
+// The literal string a live run put on the floor before this table existed.
+R.snagRealKey  = snagSentence('OpenRouter 503: error : openrouter: no API key configured');
+R.snag401      = snagSentence('HTTP 401 invalid bearer token');
+R.snag429      = snagSentence('429 Too Many Requests');
+R.snagQuota    = snagSentence('insufficient_quota: you exceeded your current quota');
+R.snagRefused  = snagSentence('fetch failed: connect ECONNREFUSED 10.0.0.100:1234');
+R.snagTimeout  = snagSentence('Error: request timed out after 120000ms');
+R.snag500      = snagSentence('500 Internal Server Error');
+R.snagUnknown  = snagSentence('the flux capacitor came loose');
+// §6/§7: no jargon, no status codes, no raw dumps in ANY produced sentence.
+R.snagClean = [R.snagRealKey,R.snag401,R.snag429,R.snagQuota,R.snagRefused,R.snagTimeout,R.snag500]
+  .every(x => !/api[- ]?key|\b[45]\d\d\b|openrouter|econnrefused|bearer|quota|http/i.test(x));
+R.snagAllPrefixed = [R.snagRealKey,R.snag401,R.snagUnknown].every(x => x.indexOf('hit a snag — ') === 0);
+// An unrecognised cause must NOT be diagnosed — it falls through verbatim.
+R.snagUnknownVerbatim = R.snagUnknown === 'hit a snag — the flux capacitor came loose';
 // ── the floor event contract ───────────────────────────────────────────
 R.evNames   = Object.keys(FLOOR_EVENT).sort();
 R.evValues  = Object.keys(FLOOR_EVENT).map(k => FLOOR_EVENT[k]);
@@ -145,11 +167,13 @@ console.log(JSON.stringify(R));
           out['snagPlain'] == 'hit a snag — model overloaded, please retry')
     check('stack trace collapses to its first line',
           out['snagStack'] == 'hit a snag — boom', repr(out['snagStack']))
-    check('JSON shrapnel is stripped',
-          '{' not in out['snagJson'] and 'quota exceeded' in out['snagJson'],
+    check('JSON shrapnel is stripped from an unrecognised cause',
+          '{' not in out['snagJson'] and 'flux capacitor' in out['snagJson'],
           repr(out['snagJson']))
     check('URLs are dropped from the bubble',
-          'http' not in out['snagUrl'] and '502' in out['snagUrl'], repr(out['snagUrl']))
+          'http' not in out['snagUrl'] and 'while parsing' in out['snagUrl'], repr(out['snagUrl']))
+    check('a recognised cause leaks none of the raw text it replaced',
+          out['snagNoLeak'])
     check('long messages are capped with an ellipsis',
           out['snagLong'].endswith('…') and out['snagLongLen'] <= 104,
           str(out['snagLongLen']))
@@ -176,6 +200,24 @@ console.log(JSON.stringify(R));
     check('every kit prop has a placard (walk destinations exist)',
           all(p in out['placards'] for p in
               set(out['kitFull'] + out['kitSearch'] + out['kitNone'])))
+
+    # ── snag sentences ────────────────────────────────────────────────
+    # A live failed run put "hit a snag — OpenRouter 503: error :
+    # openrouter: no API key configured" on the floor: a status code, a
+    # provider name, a doubled "error :", and a §6-banned term.
+    check('a real missing-sign-in failure reads as one office sentence',
+          out['snagRealKey'] == "hit a snag — that brain isn't signed in yet — add it in Settings, or give this to someone else",
+          out['snagRealKey'])
+    check('401 maps to the same sign-in cause', 'signed in' in out['snag401'], out['snag401'])
+    check('429 says to wait, not what the code was', 'rate-limited' in out['snag429'], out['snag429'])
+    check('quota failures name credit, not billing APIs', 'credit' in out['snagQuota'], out['snagQuota'])
+    check('a refused connection reads as offline', 'offline' in out['snagRefused'], out['snagRefused'])
+    check('a timeout says we stopped waiting', 'stopped waiting' in out['snagTimeout'], out['snagTimeout'])
+    check('5xx says it is not the user\'s fault', 'not something you did' in out['snag500'], out['snag500'])
+    check('no produced sentence leaks jargon or a status code', out['snagClean'])
+    check('every sentence still opens with the snag phrase', out['snagAllPrefixed'])
+    check('an unrecognised cause is NOT diagnosed, just cleaned',
+          out['snagUnknownVerbatim'], out['snagUnknown'])
 
     # ── the floor event contract ──────────────────────────────────────
     # Six names, one table. These used to be raw literals at ~30 sites; a

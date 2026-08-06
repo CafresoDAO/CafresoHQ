@@ -1735,7 +1735,14 @@ ${d.text}` : d.text,
         ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: 'run stopped' }
         : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
             action: 'failed', priority: 'attention',
-            text: `${cause.kind}: ${cause.actionNeeded}`, detail: cause.message });
+            /* The attention inbox is a user surface, and this row was
+               rendering "unknown: Inspect error and retry" — classify()'s
+               developer-facing strings, straight through. The structured
+               cause stays (escalation reads cause.kind, and `detail` keeps
+               the raw text for the inspect panel per §7); only the SENTENCE
+               changes, and it comes from snagSentence so the inbox and the
+               floor tell the same story in the same words. */
+            text: snagSentence(raw).replace(/^hit a snag — /, ''), detail: cause.message });
     } finally {
       endAgentRun(agent.id, controller);
     }
