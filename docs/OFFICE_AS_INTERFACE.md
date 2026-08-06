@@ -101,6 +101,22 @@
 > that opens the coworker's file, which is also a better affordance than a
 > whole-room hit target that only mouse users could ever discover.
 
+> ✅ **…and so can the rest of the app (2026-08-06).** Re-running the same
+> census outside the office turned up something worse than the floor: the
+> **navigation rail** is nine `<a>` tags with **no `href`**, so Office /
+> Tasks / Calendar / Memory / Vault / Team / Terminal / Workspace /
+> Settings were *all* unreachable by keyboard. Not a corner of the product
+> — its primary navigation. Also fixed: the Situation Wall's SEARCH row
+> (the one instrument you can *act* on — it re-probes the search network)
+> and the keyboard-shortcuts button, which was itself mouse-only.
+>
+> Census now: 74 click handlers, 3 unreachable — and all three are the
+> `role="group"` rooms, which is the intended design, not a gap.
+>
+> Method note: a naive "has onclick but isn't focusable" scan reports
+> `#root` as a violation. That is React's delegated listener, not a
+> control. Check the handler before believing the count.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

@@ -9799,6 +9799,17 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
   overflow: hidden;
 }
 .pxhq .px-sp { position: absolute; image-rendering: pixelated; background-repeat: no-repeat; }
+/* Keyboard focus in the app chrome. The nav rail's items are <a> tags with
+   no href, so nothing in the primary navigation was tabbable — a keyboard
+   user could not reach Office / Tasks / Vault / Settings at all. They are
+   pressables now; this is the ring they get. */
+.rail a:focus-visible,
+.rail .brand:focus-visible,
+.floppy-btn:focus-visible {
+  outline: 2px solid var(--accent-sun, #f8c840);
+  outline-offset: 2px;
+}
+
 /* Keyboard focus on the floor. `outline` only — a border or padding would
    reflow the room, and half these props carry centring transforms that a
    layout change would fight. Mouse clicks don't draw it (:focus-visible),

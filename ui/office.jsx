@@ -70,6 +70,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
               onClick={()=> onLaunch ? onLaunch(k) : setActive(k)}
               title={collapsed ? `${label} (${i + 1})` : `Shortcut: ${i + 1}`}
               aria-current={active===k ? 'page' : undefined}
+              {...pressable(()=> onLaunch ? onLaunch(k) : setActive(k), label)}
             >
               <Ico kind={k}/> {!collapsed && label}
             </a>
@@ -81,6 +82,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         className="door-btn"
         style={{marginTop:8, justifyContent:'center'}}
         title={collapsed ? 'Settings' : undefined}
+        {...pressable(()=>onOpenSettings(), 'Settings')}
       >
         <Ico kind="settings"/> {!collapsed && 'SETTINGS'}
       </a>
@@ -984,7 +986,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                      setWallSearch(null);
                      try { setWallSearch(await CafresoHQClient.braveProbe()); }
                      catch (_e) { setWallSearch({ ok: false }); }
-                   }}>
+                   }}
+                   {...pressable(async () => {
+                     setWallSearch(null);
+                     try { setWallSearch(await CafresoHQClient.braveProbe()); }
+                     catch (_e) { setWallSearch({ ok: false }); }
+                   }, `Search network ${wallSearch.ok ? 'is up' : 'is unavailable'} — check again`)}>
                 <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
               </div>
             )}

@@ -243,7 +243,10 @@ function ShortcutHud({ open, setOpen }) {
           </div>
         </div>
       )}
-      <div className="floppy-btn" title="Keyboard shortcuts" onClick={()=>setOpen(!open)}/>
+      <div className="floppy-btn" title="Keyboard shortcuts" role="button" tabIndex={0}
+           aria-label="Keyboard shortcuts" aria-expanded={open}
+           onClick={()=>setOpen(!open)}
+           onKeyDown={(e)=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); setOpen(!open); } }}/>
     </div>
   );
 }
