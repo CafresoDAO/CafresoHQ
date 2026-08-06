@@ -3372,8 +3372,18 @@ ${d.text}` : d.text,
             if (agentId) {
               const target = agents.find(a => a.id === agentId);
               if (target) {
-                onUpdateAgent(target.id, { task: task.title.toLowerCase().slice(0, 40) });
-                say(`Assigned "${task.title.slice(0, 24)}" to ${target.name}`, 'TASK');
+                /* Deliberately does NOT touch `agent.task`. Assigning names
+                   an owner; it does not start a run (see the comment above
+                   — dispatch is a separate, explicit act). Writing the title
+                   into `task` put it in the coworker's DESK BUBBLE, so the
+                   floor showed them working on something nobody had started
+                   — measured: status stayed `idle` while the bubble read
+                   "workflow step one — outline". Same invariant the coffee
+                   fix set: `task` is what they're working on, and an idle
+                   coworker's bubble must not claim a job that doesn't
+                   exist. The assignment is already visible where it belongs
+                   — on the card's assignee chip. */
+                say(`Assigned "${task.title.slice(0, 24)}" to ${target.name} — drop it on their desk to start`, 'TASK');
               }
             }
           }}

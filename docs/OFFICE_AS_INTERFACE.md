@@ -1141,3 +1141,32 @@ settings — never on the floor, the cards, or onboarding.
 > handler was already retrying, so the boss never had anything to do.
 > Swept the rest: every other `serve.py` mention is a code comment, none
 > reach a user surface.
+
+> ✅ **Assigning made the floor lie (2026-08-06).** Swept the toasts next —
+> they fire at the moment of action, so a wrong one is read exactly when
+> it matters. `Assigned "…" to X` looked innocent until the handler was
+> read: assignment deliberately does **not** dispatch (the comment says
+> so — starting work is a separate, explicit act), yet it wrote the task
+> title into `agent.task`.
+>
+> `agent.task` is the **desk bubble**. Measured live: after assigning from
+> the Tasks board, `status` stayed `idle` and the floor showed
+> `🛡 CLAUDE · CODING AGENT / workflow step one — outline` — a coworker
+> standing still, captioned with a job nobody had started.
+>
+> That is the exact invariant the coffee fix established earlier in this
+> same document: **`task` is what they're working on, and an idle
+> coworker's bubble must not claim a job that doesn't exist.** The rule
+> was written down and the assign path still broke it — which is the
+> argument for driving each surface rather than trusting that a stated
+> rule is an enforced one.
+>
+> The assign path no longer touches `task` (the owner is already shown on
+> the card's assignee chip, which is where it belongs), and the toast now
+> names the step still outstanding: *"Assigned … to Claude — drop it on
+> their desk to start"*.
+>
+> Verified both paths stay distinguishable: assigning leaves `idle` /
+> "standing by"; dropping on a desk via the office inbox still goes
+> `busy` / `thinking` with the title in the bubble — there, correctly,
+> because a run really is in flight.
