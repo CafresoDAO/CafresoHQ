@@ -3,6 +3,9 @@ import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
 import { brainName } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention } from '../app/attention.jsx';
+import { HQ } from '../hq-runtime.jsx';
+/* One source of truth with the runtime that does the folding. */
+const MEM_CAP = HQ.MEMORY_PROMPT_CAP;
 /* ==========================================================================
    CafresoHQ — main-area views (one per sidebar item)
    The Office cross-section stays in app.jsx; everything else lives here.
@@ -124,7 +127,16 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
     <div className="view-memory">
       <div className="section-title">
         📁 LONG-TERM MEMORY
-        <span className="tag">{memory.length} entries · folded into every prompt CafresoHQ and the team see</span>
+        {/* Only the newest MEMORY_PROMPT_CAP entries actually reach a
+            prompt (hq-runtime `memorySummary`). Below the cap the old
+            unqualified line was true; above it, the boss would have been
+            told every note was working when the oldest silently weren't.
+            Say which ones, and only once it matters. */}
+        <span className="tag">
+          {memory.length > MEM_CAP
+            ? `${memory.length} saved · the newest ${MEM_CAP} go into every prompt CafresoHQ and the team see`
+            : `${memory.length} ${memory.length === 1 ? 'entry' : 'entries'} · folded into every prompt CafresoHQ and the team see`}
+        </span>
       </div>
       <div className="view-toolbar">
         <div className="memtag-row">

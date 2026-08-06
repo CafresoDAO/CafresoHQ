@@ -1311,10 +1311,17 @@ function rosterSummary(agents) {
   ).join('\n');
 }
 
+/* How many memory entries actually reach a prompt. Exported because the
+   Memory Shelf tells the boss what happens to what they save — and an
+   unqualified "folded into every prompt" stops being true the moment the
+   shelf outgrows this number. One constant, so the copy and the runtime
+   can't drift apart. Entries are newest-first, so this keeps the newest. */
+const MEMORY_PROMPT_CAP = 24;
+
 function memorySummary(memory) {
   if (!memory || !memory.length) return '';
   return 'Long-term memory (notes CafresoHQ has saved about the boss & ongoing work):\n' +
-    memory.slice(0, 24).map(m => `  [${m.tag}] ${m.text}`).join('\n');
+    memory.slice(0, MEMORY_PROMPT_CAP).map(m => `  [${m.tag}] ${m.text}`).join('\n');
 }
 
 /* Most recent N journal entries surfaced to the agent so they can build on
@@ -1628,7 +1635,7 @@ function resolveModel(m) {
 }
 
 const HQ = {
-  AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS,
+  AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,

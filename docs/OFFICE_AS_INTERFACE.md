@@ -1039,3 +1039,27 @@ settings — never on the floor, the cards, or onboarding.
 > notes it doesn't have. Cluster rows say "items", true whatever they
 > hold. Concept mode keeps "concepts" and its "over N notes" line: there
 > the nodes really are concepts drawn from real note bodies.
+
+> ✅ **"Folded into every prompt" had a ceiling (2026-08-06).** Opened the
+> Memory Shelf, added a real entry, and traced the claim rather than
+> trusting it: `HQ._memory` → `memorySummary()` → pushed into **both** the
+> CEO system prompt and the per-agent prompt. The promise is real, and the
+> wiring is sound — good.
+>
+> But `memorySummary` slices to the newest 24, and the header said
+> "folded into every prompt" with no qualification. True at 5 entries;
+> false at 30, silently, with the boss believing every note they had ever
+> saved was still steering the team. Long-term memory is the one feature
+> whose whole value is "the team remembers it forever" — an invisible
+> ceiling is the worst place to keep one.
+>
+> The cap is now `HQ.MEMORY_PROMPT_CAP`, read by the copy, so the two
+> cannot drift: under it the line is unchanged, over it it reads
+> **"30 saved · the newest 24 go into every prompt"**. Verified at 30, at
+> 1 and at 0. Fixed a plural bug found while checking — the header said
+> "1 entries".
+>
+> Method note: memory is `useFileStored`, so seeding `localStorage` to
+> test proves nothing — hydration from `memory/context.json` overwrites it
+> on load. Seed the server file. (This is the storage layer working
+> correctly, not a bug: the server is the source of truth.)
