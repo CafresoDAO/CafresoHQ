@@ -226,7 +226,7 @@ function MemoryShelf({ open, onClose, memory, onAdd, onRemove }) {
 }
 
 /* ---------------- Meeting Room ---------------- */
-function MeetingRoom({ participants, agents, onClose, onRemove }) {
+function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent }) {
   const [msgs, setMsgs] = useSF([]);
   const [input, setInput] = useSF('');
   const [streaming, setStreaming] = useSF(false);
@@ -275,6 +275,13 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
     for (const ph of placeholders) {
       let buf = '';
       const update = makeRafGate(ph.id);
+      /* A turn is work from the moment it is dispatched, not from the first
+         token — the screen event only fires once tokens arrive, which left
+         the whole dispatch→first-token wait looking idle. `status` is what
+         anyLive and the room plate both read, so it is the honest signal
+         for "this coworker is working right now". Cleared in `finally` so
+         a failed or stopped turn can never strand them as busy. */
+      if (onUpdateAgent) onUpdateAgent(ph.agentRef.id, { status: 'busy', mood: 'thinking' });
       try {
         await HQ.agentStream(
           ph.agentRef,
@@ -301,6 +308,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
         if (stopped) break;
       } finally {
         floorEmit('screen', { agentId: ph.agentRef.id, tail: '', phase: 'done' });
+        if (onUpdateAgent) onUpdateAgent(ph.agentRef.id, { status: 'idle', mood: 'idle' });
         updateById(ph.id, { streaming: false });
       }
     }

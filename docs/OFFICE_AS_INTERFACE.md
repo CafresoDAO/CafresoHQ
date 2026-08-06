@@ -219,10 +219,19 @@
 > a stale monitor lit until the 60s backstop swept it. A terminal event
 > with no tail now closes the monitor immediately.
 >
-> ⬜ **Still open:** the meeting's dispatch→first-token window shows no
-> work, because `MeetingRoom` has no `onUpdateAgent` and so cannot set
-> `status: 'busy'` the way every other run path does. Same gap the rooftop
-> lamp had, one surface further out.
+> ~~⬜ Still open: the meeting's dispatch→first-token window shows no
+> work…~~ ✅ **Closed same day.** `onUpdateAgent` is threaded through to
+> `MeetingRoom`, and each participant is marked `busy` for the **whole
+> turn** — set before the stream opens, cleared in `finally` so a failed or
+> stopped turn can never strand them. Measured across a real round: busy
+> and the rooftop lamp both run ~1s→~12s covering both turns, and both are
+> clean at the end.
+>
+> The general rule, now three surfaces deep: **work starts when it is
+> dispatched, not when the first token lands.** Event-driven signals
+> (`tool`, `screen`) can only ever report the second, so anything that
+> wants to answer "is this coworker working right now" has to read
+> `status`. Every new run path needs to set it.
 
 ---
 

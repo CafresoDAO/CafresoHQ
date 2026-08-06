@@ -3872,7 +3872,7 @@ ${d.text}` : d.text,
         onOpenMeeting={() => setMeetingOpen(true)}
       />
       <MemoryShelf open={memoryOpen} onClose={()=>setMemoryOpen(false)} memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory}/>
-      {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting}/>}
+      {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting} onUpdateAgent={onUpdateAgent}/>}
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
       {/* ApprovalTray moved inline into view-area */}
       <ReceiptTray receipts={receipts} onOpen={()=>setReceiptsOpen(true)}/>
