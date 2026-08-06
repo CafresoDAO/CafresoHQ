@@ -178,7 +178,14 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       };
 
       ws.onerror = () => {
-        term.writeln('\r\n\x1b[31m[connection error — is serve.py running?]\x1b[0m');
+        /* Was "[connection error — is serve.py running?]" — an internal
+           filename on a user surface (§6), and pointing at the one thing
+           that cannot be the cause: this page was served BY serve.py, so
+           if it weren't running there'd be nothing to read the message on.
+           What actually failed is the terminal's own socket. Say that, and
+           say what happens next — the onclose handler below is already
+           retrying, so the boss doesn't have to do anything. */
+        term.writeln('\r\n\x1b[31m[couldn\'t reach the terminal service — retrying]\x1b[0m');
       };
 
       ws.onclose = () => {

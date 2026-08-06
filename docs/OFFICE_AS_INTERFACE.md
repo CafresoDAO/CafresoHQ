@@ -1115,3 +1115,29 @@ settings — never on the floor, the cards, or onboarding.
 > it is sitting unsent in a composer. It now reads **`Drafted "…" in chat
 > — press Enter to send`**, which also names the one thing still left to
 > do. Verified live: header and toast both correct.
+
+> ✅ **The Terminal blamed the wrong thing (2026-08-06).** Continued the
+> claims sweep into `hint` copy — most of it is Settings-area and exempt,
+> and two claims worth checking held up (*"A new desk will be assigned on
+> spawn"* is true: the floor maps **all** senior agents and only fills the
+> remainder with vacancies, so desks keep appearing past the 5 visible
+> slots; the front-desk "found on this machine" lines matched the real
+> detections).
+>
+> Then opened the Terminal, where failure is guaranteed in a container-less
+> environment, to see whether it fails honestly. It printed:
+>
+> > `[connection error — is serve.py running?]`
+>
+> An internal filename on a user surface (§6) — and pointing at the one
+> thing that **cannot** be the cause. This page is served *by* `serve.py`;
+> if it weren't running there would be no window to read the message in.
+> The boss is sent to check the single component they can prove is fine,
+> while the thing that actually failed — the terminal's own socket — goes
+> unnamed.
+>
+> Now: **`[couldn't reach the terminal service — retrying]`**. Names what
+> failed, in office words, and states what happens next — the `onclose`
+> handler was already retrying, so the boss never had anything to do.
+> Swept the rest: every other `serve.py` mention is a code comment, none
+> reach a user surface.
