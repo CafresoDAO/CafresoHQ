@@ -619,7 +619,23 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     const timers = new Map();
     const onScreen = (e) => {
       const d = e.detail || {};
-      if (!d.agentId || !d.tail) return;
+      if (!d.agentId) return;
+      const terminal = d.phase === 'done' || d.phase === 'error';
+      /* A caller closing its monitor has nothing left to show, and the old
+         `!d.tail` guard dropped that event on the floor — so the desk kept
+         a stale monitor lit until the 60s backstop swept it. A terminal
+         event with no tail closes the monitor now. (Found when the meeting
+         room started emitting screen events: its turn-end close was a
+         silent no-op.) */
+      if (!d.tail) {
+        if (!terminal) return;
+        const t0 = timers.get(d.agentId); if (t0) clearTimeout(t0);
+        setScreens(prev => {
+          if (!(d.agentId in prev)) return prev;
+          const n = { ...prev }; delete n[d.agentId]; return n;
+        });
+        return;
+      }
       setScreens(prev => ({ ...prev, [d.agentId]: { tail: d.tail, phase: d.phase, _at: Date.now() } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
       // Run paths now close their monitor explicitly on failure (phase

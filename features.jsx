@@ -1,6 +1,7 @@
 import { Sprite } from './sprites.jsx';
 import { HQ } from './hq-runtime.jsx';
 import { CafresoHQModals } from './modals.jsx';
+import { floorEmit, snagSentence } from './app/floor.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -278,15 +279,28 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
         await HQ.agentStream(
           ph.agentRef,
           `Meeting transcript so far:\n${transcript}\n\nRespond briefly (1-2 sentences) from your role's perspective.`,
-          tok => { buf += tok; update(buf); },
+          /* A stand-up is real work, and the office used to show none of it:
+             participants stood in the meeting room while the building's LIVE
+             lamp stayed dark for the whole round. The screen event is exactly
+             the "this coworker is streaming" signal, so the floor lights up
+             for the turn that is actually happening. */
+          tok => { buf += tok; update(buf);
+                   floorEmit('screen', { agentId: ph.agentRef.id, tail: buf.slice(-240), phase: 'stream' }); },
           { signal: controller.signal }
         );
         updateById(ph.id, { text: buf });  // final flush
       } catch (err) {
-        const stopped = err.name === 'AbortError';
-        updateById(ph.id, { text: stopped ? (buf + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped });
+        const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';
+        /* §7: no raw error dumps on a user surface. This read
+           `⚠ OpenRouter 503: {"error": "openrouter: no API key configured"}`
+           — the floor already had one honest sentence for exactly this. */
+        updateById(ph.id, {
+          text: stopped ? (buf + ' …(stopped)') : '⚠ ' + snagSentence(err && err.message || String(err)),
+          error: !stopped,
+        });
         if (stopped) break;
       } finally {
+        floorEmit('screen', { agentId: ph.agentRef.id, tail: '', phase: 'done' });
         updateById(ph.id, { streaming: false });
       }
     }
@@ -302,8 +316,11 @@ function MeetingRoom({ participants, agents, onClose, onRemove }) {
         );
         updateById(ceoPlaceholder.id, { text: buf });
       } catch (err) {
-        const stopped = err.name === 'AbortError';
-        updateById(ceoPlaceholder.id, { text: stopped ? (buf + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped });
+        const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';
+        updateById(ceoPlaceholder.id, {
+          text: stopped ? (buf + ' …(stopped)') : '⚠ ' + snagSentence(err && err.message || String(err)),
+          error: !stopped,
+        });
       }
     }
     updateById(ceoPlaceholder.id, { streaming: false });

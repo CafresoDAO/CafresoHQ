@@ -196,6 +196,34 @@
 > unwinds the room is idle with **no bubble** and the log reads `run
 > stopped` — no `failed` row. A genuine failure still snags normally.
 
+> ✅ **The stand-up speaks office too (2026-08-06).** Ran a real meeting.
+> The floor half is sound — measured the participants walking to the room
+> (2 walkers, 1.0s→8s) and their desks holding the "in the meeting room"
+> placard for the whole meeting, exactly the §4 split between a fixed
+> transit and a real-duration away state. Two things were not:
+>
+> - **The transcript dumped raw JSON.** Each failed turn read `⚠ OpenRouter
+>   503: {"error": "openrouter: no API key configured"}` — §7's raw dump
+>   and a §6-banned term, on a user surface. The floor already had one
+>   honest sentence for exactly this failure; the meeting room just never
+>   used it. It uses `snagSentence` now, both for participants and for the
+>   moderator's synthesis.
+> - **The building went dark during a stand-up.** `moderate()` streams
+>   directly and touched no floor state, so a boss watching the office saw
+>   nothing while the whole team was mid-round. Participant turns now emit
+>   the `screen` event as they stream.
+>
+> That last change exposed a latent bug worth recording: the screen
+> listener guarded on `!d.tail`, so **a caller closing its monitor — which
+> by definition has nothing left to show — was dropped**, and the desk kept
+> a stale monitor lit until the 60s backstop swept it. A terminal event
+> with no tail now closes the monitor immediately.
+>
+> ⬜ **Still open:** the meeting's dispatch→first-token window shows no
+> work, because `MeetingRoom` has no `onUpdateAgent` and so cannot set
+> `status: 'busy'` the way every other run path does. Same gap the rooftop
+> lamp had, one surface further out.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching
