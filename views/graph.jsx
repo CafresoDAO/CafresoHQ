@@ -124,6 +124,15 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     }
     rawRef.current.maxInlinks = maxIn;
     rawRef.current.mtimeRange = mMin < mMax ? { min: mMin, max: mMax } : null;
+    /* What the map is actually made of. `/vault/graph` returns the whole
+       business — tasks, decisions, message threads, coworkers AND vault
+       notes — so a single count cannot honestly be called any one of them
+       (see the stats row below). */
+    rawRef.current.byType = g.nodes.reduce((acc, n) => {
+      const t = n.type || 'note';
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {});
     const edges = g.edges.map((e) => ({ ...e, color: edgeColorForType(e.type, isDark) }));
     return { nodes: g.nodes, edges };
   };
@@ -336,8 +345,35 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         React.createElement('div', { style: { display: 'inline-block', padding: '3px 9px', borderRadius: 20, background: 'rgba(245,210,93,0.16)', color: '#F5D25D', fontWeight: 600, textTransform: 'capitalize', marginBottom: 6 } }, m.structure || '—'),
         React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } }, STRUCT_COPY[m.structure] || ''),
         React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', marginBottom: 12 } },
-          [[source === 'concepts' ? 'Concepts' : 'Notes', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Components', m.components], ['Modularity', (m.modularity || 0).toFixed(2)], ['Avg degree', (m.avgDegree || 0).toFixed(1)]]
+          /* "Notes" was a lie on a business surface. `/vault/graph` returns
+             the whole office — measured on a real session it was 19 message
+             threads, 12 coworkers, 5 decisions and 2 tasks, and **zero**
+             vault notes (the vault was empty) — all counted and labelled
+             "Notes: 38". Concept mode really is concepts, so it keeps its
+             word; the links map gets one that covers what it holds, with
+             the actual mix spelled out below. */
+          [[source === 'concepts' ? 'Concepts' : 'On the map', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Components', m.components], ['Modularity', (m.modularity || 0).toFixed(2)], ['Avg degree', (m.avgDegree || 0).toFixed(1)]]
             .map(([k, v]) => React.createElement('div', { key: k }, React.createElement('span', { style: { color: '#8f8676' } }, k + ': '), React.createElement('b', null, v)))),
+
+        /* The mix, in office words. Says nothing when a kind is absent, so
+           an empty vault never claims notes it doesn't have. */
+        source !== 'concepts' && (() => {
+          const NAMES = {
+            note: ['note', 'notes'], task: ['task', 'tasks'],
+            decision: ['decision', 'decisions'], 'message-thread': ['conversation', 'conversations'],
+            agent: ['coworker', 'coworkers'],
+          };
+          const by = (rawRef.current && rawRef.current.byType) || {};
+          const parts = Object.keys(by)
+            .sort((a, b) => by[b] - by[a])
+            .map((t) => {
+              const n = by[t];
+              const nm = NAMES[t] || [t, t + 's'];
+              return n + ' ' + (n === 1 ? nm[0] : nm[1]);
+            });
+          if (!parts.length) return null;
+          return React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginTop: -6, marginBottom: 12, lineHeight: 1.45 } }, parts.join(' · '));
+        })(),
 
         // Top influential (betweenness brokers).
         React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
@@ -352,7 +388,10 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
               React.createElement('span', { style: { width: 9, height: 9, borderRadius: '50%', background: window.CafresoGraphEngine.communityColor(c.community), display: 'inline-block', flex: '0 0 auto' } }),
               React.createElement('b', null, Math.round(c.share * 100) + '%'),
-              React.createElement('span', { style: { color: '#8f8676' } }, c.size + (source === 'concepts' ? ' concepts' : ' notes'))),
+              /* Same correction as the stat row above: a cluster mixes
+                 conversations, coworkers, decisions and tasks, so "notes"
+                 was wrong here too. "items" is true whatever it holds. */
+              React.createElement('span', { style: { color: '#8f8676' } }, c.size + (source === 'concepts' ? ' concepts' : ' items'))),
             React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, paddingLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
               /* Distinct NODES can share a display title — several messages
                  all render as "You → Sora" — so slicing to 3 before resolving

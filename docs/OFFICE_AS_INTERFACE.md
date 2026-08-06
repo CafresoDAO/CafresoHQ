@@ -1017,3 +1017,25 @@ settings — never on the floor, the cards, or onboarding.
 > single thing says so once. Verified live — labels became `boss, You →
 > Sora` and `You → Kenji (2), You → Kenji (3), a5`, the Kenji cluster
 > surfacing a real third member the old slice was spending on a duplicate.
+
+> ✅ **The Vault said 38 notes; there were none (2026-08-06).** Opened the
+> Vault's note list and it was empty — correctly, the vault directory holds
+> zero files. The graph panel beside it read **"Notes: 38"**.
+>
+> Queried `/vault/graph` directly rather than guess: 38 nodes, every one
+> `source: hq-state` — **19 message-threads, 12 agents, 5 decisions, 2
+> tasks, 0 notes**. The endpoint returns the whole business (that is the
+> feature: one map of everything the office knows), and the panel was
+> labelling all of it with the name of the one kind that wasn't there.
+> Same for each cluster row: "6 notes", "5 notes".
+>
+> Not jargon — a **wrong count of a real business asset**, which is worse.
+> A boss reading that panel would believe they had 38 filed notes.
+>
+> The links map now reads **"On the map: 38"** with the true mix spelled
+> out underneath — `19 conversations · 12 coworkers · 5 decisions · 2
+> tasks` — built from the node types the component already had. A kind
+> with none present simply isn't listed, so an empty vault never claims
+> notes it doesn't have. Cluster rows say "items", true whatever they
+> hold. Concept mode keeps "concepts" and its "over N notes" line: there
+> the nodes really are concepts drawn from real note bodies.
