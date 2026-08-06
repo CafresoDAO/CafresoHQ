@@ -5935,6 +5935,38 @@ body.night .starter-outcome { color: #b0a3c8; }
   font-family: 'Inter'; font-size: 10.5px; line-height: 1.45;
   color: var(--ink-3); margin: 10px 0 0;
 }
+/* Night Shift board (§1) — hangs beside the corkboard once missions exist.
+   Real state only: the glow plays iff a mission is RUNNING right now. */
+.nightshift-board {
+  position: absolute; top: 12px; right: 96px;
+  width: 92px; padding: 4px 6px 5px;
+  background: #1c1730; border: 2px solid #3a3050; border-radius: 3px;
+  cursor: pointer; z-index: 4;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.25);
+}
+.nightshift-board .nsb-title {
+  font-family: 'Press Start 2P'; font-size: 6px; letter-spacing: 0.06em;
+  color: #b7a8d6; margin-bottom: 3px; white-space: nowrap;
+}
+.nightshift-board .nsb-line {
+  font-family: 'VT323', monospace; font-size: 12px; line-height: 1;
+  color: #e8dcff;
+}
+.nightshift-board .nsb-topic {
+  font-family: 'Inter'; font-size: 8px; color: #8f7fb5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-top: 2px;
+}
+.nightshift-board.is-live { animation: nsb-glow 2.4s ease-in-out infinite; }
+@keyframes nsb-glow {
+  0%, 100% { box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  50%      { box-shadow: 0 0 8px 1px rgba(124,107,255,0.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nightshift-board.is-live { animation: none; border-color: #7c6bff; }
+}
+@media (max-width: 768px) { .nightshift-board { display: none; } }
+
 /* The cast (§2): coworker-card stat bars + vendor chip + job description. */
 .powered-chip {
   margin-left: 6px; padding: 1px 5px;

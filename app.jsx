@@ -3170,6 +3170,8 @@ ${d.text}` : d.text,
               attentionCount={attentionCount}
               onOpenAttention={openAttention}
               approvals={approvals}
+              missions={missions}
+              onOpenMissions={() => setMissionsOpen(true)}
               meetingActive={meetingOpen}
               meetingIds={meetingParticipants.map(p => p.id)}
             />

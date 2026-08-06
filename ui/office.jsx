@@ -207,7 +207,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], meetingActive = false, meetingIds = [] }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -288,6 +288,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     () => (approvals || []).find(p => p && p.agentId && agents.some(a => a.id === p.agentId)) || null,
     [approvals, agents]);
   const askingAgent = askingApproval ? agents.find(a => a.id === askingApproval.agentId) : null;
+
+  /* Night Shift board (§1: scheduled missions → the bulletin board). Only
+     hangs on the wall once missions EXIST — an empty board on a fresh HQ
+     would be set dressing pretending to be state (the out-tray rule). */
+  const nightMissions = (missions || []).filter(m => m && (m.status === 'running' || m.status === 'paused'));
+  const nightRunning = nightMissions.filter(m => m.status === 'running').length;
 
   const [trayDrop, setTrayDrop] = React.useState({});
   React.useEffect(() => {
@@ -793,6 +799,19 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 </div>
               ))}
             </div>
+            {nightMissions.length > 0 && (
+              <div className={'nightshift-board' + (nightRunning ? ' is-live' : '')}
+                   title={nightRunning
+                     ? `Night Shift — ${nightRunning} mission${nightRunning === 1 ? '' : 's'} running right now · click to open the board`
+                     : `Night Shift — ${nightMissions.length} paused · click to open the board`}
+                   onClick={(e)=>{ e.stopPropagation(); onOpenMissions && onOpenMissions(); }}>
+                <div className="nsb-title">🌙 NIGHT SHIFT</div>
+                <div className="nsb-line">
+                  {nightRunning ? `${nightRunning} on shift` : `${nightMissions.length} paused`}
+                </div>
+                <div className="nsb-topic">{String(nightMissions[0].topic || '').slice(0, 24)}</div>
+              </div>
+            )}
             <div className="window">
               <div className="sun"/>
               <div className="cloud cloud-a"/>
