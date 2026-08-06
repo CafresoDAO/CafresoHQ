@@ -78,6 +78,18 @@ R.snagUrl     = snagSentence('fetch failed for https://api.example.com/v1/chat: 
 R.snagLong    = snagSentence('x'.repeat(300));
 R.snagLongLen = snagSentence('x'.repeat(300)).length;
 R.snagEmpty   = snagSentence('');
+// ── deskKit — room props from GRANTED capability, never achievement ─────
+R.kitVault   = deskKit(['vault']);
+R.kitFiles   = deskKit(['files']);
+R.kitWeb     = deskKit(['web']);
+R.kitEmail   = deskKit(['email']);
+R.kitSearch  = deskKit(['search']);
+R.kitFull    = deskKit(['web','email','cal','vault']);
+R.kitDedup   = deskKit(['vault','files','fs']);      // all → one cabinet
+R.kitCap     = deskKit(['vault','web','search','db']); // capped at 2
+R.kitNone    = deskKit([]);
+R.kitNull    = deskKit(null);
+R.kitJunk    = deskKit(['wallet','payroll']);        // unmappable → shelf
 R.snagNull    = snagSentence(null);
 console.log(JSON.stringify(R));
 ''')
@@ -120,6 +132,26 @@ console.log(JSON.stringify(R));
     check('empty error still says something honest',
           out['snagEmpty'] == 'hit a snag — something went wrong on the last run')
     check('null error tolerated', out['snagNull'] == out['snagEmpty'])
+
+    # deskKit — capability, not achievement
+    check('vault grants a cabinet', out['kitVault'] == ['cabinet'])
+    check('files grants a cabinet', out['kitFiles'] == ['cabinet'])
+    check('web grants a phone', out['kitWeb'] == ['phone'])
+    check('email grants a phone', out['kitEmail'] == ['phone'])
+    check('search grants a bookshelf', out['kitSearch'] == ['bookshelf'])
+    check('a full kit picks phone + cabinet', out['kitFull'] == ['phone', 'cabinet'],
+          repr(out['kitFull']))
+    check('storage synonyms collapse to ONE cabinet', out['kitDedup'] == ['cabinet'],
+          repr(out['kitDedup']))
+    check('room never shows more than 2 props', len(out['kitCap']) == 2, repr(out['kitCap']))
+    check('toolless agent still gets a shelf (never a bare room)',
+          out['kitNone'] == ['bookshelf'])
+    check('null tools tolerated', out['kitNull'] == ['bookshelf'])
+    check('unmappable tools claim nothing, fall back to shelf',
+          out['kitJunk'] == ['bookshelf'], repr(out['kitJunk']))
+    check('every kit prop has a placard (walk destinations exist)',
+          all(p in out['placards'] for p in
+              set(out['kitFull'] + out['kitSearch'] + out['kitNone'])))
 
     print()
     if FAILS:

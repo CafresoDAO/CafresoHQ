@@ -43,4 +43,33 @@ function snagSentence(raw) {
   return 'hit a snag — ' + (line.length > 90 ? line.slice(0, 89).trimEnd() + '…' : line);
 }
 
-export { PROP_PLACARD, snagSentence, toolProp };
+/* Which props stand in a coworker's room. Driven by `agent.tools` — the
+   capability the boss ACTUALLY granted at hire — so a room furnishes to
+   what its occupant can really do, and the §4 walk destinations exist in
+   the room the walk happens in.
+
+   Honesty note: this is capability, never achievement. A cabinet means
+   "may open the vault", not "has filed a lot" — the papers pile and the
+   out-tray are the earned counters, and they already read real numbers.
+   An agent with no declared tools still gets a shelf: a bare office would
+   read as broken, and a shelf claims nothing. Capped at two so the room
+   stays legible at ×2 scale. */
+const KIT_RULES = [
+  [/^(vault|files?|fs|disk|memory)$/i, 'cabinet'],
+  [/^(web|email|mail|http|browse|slack)$/i, 'phone'],
+  [/^(search|library|research|db|index)$/i, 'bookshelf'],
+];
+
+function deskKit(tools) {
+  const list = Array.isArray(tools) ? tools : [];
+  const out = [];
+  for (const t of list) {
+    for (const [re, prop] of KIT_RULES) {
+      if (re.test(String(t)) && out.indexOf(prop) === -1) out.push(prop);
+    }
+  }
+  if (!out.length) out.push('bookshelf');
+  return out.slice(0, 2);
+}
+
+export { deskKit, PROP_PLACARD, snagSentence, toolProp };

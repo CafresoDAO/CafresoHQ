@@ -758,6 +758,25 @@ def gen_furniture():
         'KmmmmmmmmmmK',
         'KKKKKKKKKKKK',
     ])
+    # Desk phone — the §4 'on the phone' prop finally has a sprite
+    # (PROP_PLACARD.phone has been pointing at nothing).
+    sprite('phone', 14, [
+        '..KKKKKKKKKK..',
+        '.KmmmmmmmmmmK.',
+        'KmKKKKKKKKKKmK',
+        'KmKnnnnnnnnKmK',
+        'KmKKKKKKKKKKmK',
+        'KmmmmmmmmmmmmK',
+        'KmMmKmKmKmMmmK',
+        'KmMmKmKmKmMmmK',
+        'KmmmmmmmmmmmmK',
+        '.KMMMMMMMMMMK.',
+        '..KKKKKKKKKK..',
+        '.....KK.......',
+        '....KMMK......',
+        '...KMMMMK.....',
+        '...KKKKKK.....',
+    ])
     sprite('meetdoor', 16, [
         'KKKKKKKKKKKKKKKK',
         'KwwwwwwwwwwwwwwK',

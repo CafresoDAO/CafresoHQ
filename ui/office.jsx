@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico, NAV_ITEMS, useVocab } from './primitives.jsx';
-import { PROP_PLACARD, toolProp } from '../app/floor.jsx';
+import { deskKit, PROP_PLACARD, toolProp } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 function Tab({
   value, label, badge, icon, disabled,
@@ -207,6 +207,14 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
+/* Room props say what the occupant may DO, never what they've achieved
+   (the papers pile and out-tray carry the earned counts). */
+const KIT_TITLE = {
+  cabinet:   'can open the filing cabinet',
+  bookshelf: 'can use the bookshelf',
+  phone:     'can pick up the phone',
+};
+
 /* ── Pixel HQ primitives ─────────────────────────────────────────────────
    The floor renders as a GBA-era building cutaway (assets/px/*, generated
    by scripts/gen_pixel_hq.py). Px places one sprite; PxChar is the 7-pose
@@ -219,7 +227,7 @@ const PX_SIZES = {
   window_day: [18, 12], window_night: [18, 12], clock: [10, 10], mug: [6, 6],
   papers: [10, 7], tray: [12, 6], meetdoor: [16, 17], doors: [24, 16],
   lamp: [10, 18], tree: [20, 17], vending: [14, 14], bush: [14, 6],
-  sign_hq: [146, 48], sun: [20, 20], moon: [16, 16],
+  sign_hq: [146, 48], sun: [20, 20], moon: [16, 16], phone: [14, 15],
 };
 
 function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
@@ -1019,9 +1027,11 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                       <div className="px-int">
                         <Px n="window_day" className="px-win d" style={{ left: 10, top: 8 }} />
                         <Px n="window_night" className="px-win n" style={{ left: 10, top: 8 }} />
-                        {i % 2 === 0
-                          ? <Px n="bookshelf" className="px-deco" style={{ right: 8, bottom: 14 }} />
-                          : <Px n="cabinet" className="px-deco" style={{ right: 10, bottom: 14 }} />}
+                        {deskKit(a.tools).map((prop, ki) => (
+                          <Px key={prop} n={prop} className="px-deco"
+                              title={KIT_TITLE[prop]}
+                              style={{ right: 8 + ki * 26, bottom: 14 }} />
+                        ))}
                         <Px n="plant" className="px-plant" style={{ left: 8, bottom: 10 }} />
 
                         <div className="px-deskset">
@@ -1045,10 +1055,19 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
                           <Px n="mug" className="px-mug clickable" title={`Refresh ${a.name}'s context`}
                               onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
+                          {/* The pile grows with the real filed-report count
+                              (capped at 5 sheets so a busy desk stays legible)
+                              — this counter was already computed and thrown
+                              away, rendering one sheet for 1 report or 30. */}
                           {paperCount > 0 && (
-                            <Px n="papers" className="px-papers clickable"
-                                title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
-                                onClick={(e)=>{ e.stopPropagation(); onInspect(a); }} />
+                            <div className="px-paperstack clickable"
+                                 title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
+                                 onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}>
+                              {Array.from({ length: paperCount }).map((_, pi) => (
+                                <Px key={pi} n="papers"
+                                    style={{ position: 'absolute', left: (pi % 2) * 2, bottom: pi * 3 }} />
+                              ))}
+                            </div>
                           )}
                           {trayCount > 0 && (
                             <Px n="tray" className={'px-tray clickable' + (trayDrop[a.id] ? ' is-landing' : '')}

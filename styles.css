@@ -9801,6 +9801,10 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
 .pxhq .px-sp { position: absolute; image-rendering: pixelated; background-repeat: no-repeat; }
 .pxhq .clickable { cursor: pointer; }
 .pxhq .clickable:hover { filter: brightness(1.15); }
+.pxhq .clickable:active { translate: 0 1px; filter: brightness(0.94); }
+.pxhq .px-vacant:active,
+.pxhq .px-nsb:active,
+.pxhq .px-asking:active { translate: 0 1px; }
 
 /* ── Backdrop: sky, stars, sun/moon, clouds, skylines ── */
 .px-sky {
@@ -10006,7 +10010,19 @@ body.night .px-sign {
     url('assets/px/wall_int.png') repeat-x top left / 32px 48px,
     url('assets/px/floor_ceo.png') repeat top left / 32px 32px #7a5a9c;
 }
-body.night .px-int { filter: brightness(0.86) saturate(0.92); }
+body.night .px-int::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(24, 28, 60, 0.34);
+  pointer-events: none;
+  z-index: 1;                 /* under the desk set (z2+), over the tiles */
+}
+/* Lit surfaces punch back through the night tint — a window whose whole
+   job is to be lamplit must not read darker than its daytime self. */
+body.night .px-win.n,
+body.night .px-screen,
+body.night .px-glow,
+body.night .px-toolchip { z-index: 6; }
 .px-win.n { display: none; }
 body.night .px-win.d { display: none; }
 body.night .px-win.n { display: block; }
@@ -10014,7 +10030,7 @@ body.night .px-win.n { display: block; }
   box-shadow: inset 3px 0 0 var(--live, #58d858);
 }
 .px-room.is-away .px-int { filter: saturate(0.85) brightness(0.96); }
-body.night .px-room.is-away .px-int { filter: brightness(0.8) saturate(0.8); }
+body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46); }
 
 /* ── Desk set & characters ── */
 .px-deskset {
@@ -10429,4 +10445,11 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
     inset: -12px;
   }
   .px-pin-x { padding: 6px; margin: -6px; }
+}
+
+/* Paper stack — sheets accumulate with the real filed-report count. */
+.px-paperstack {
+  position: absolute; left: -9px; bottom: 22px;
+  width: 22px; height: 26px;
+  z-index: 5;
 }
