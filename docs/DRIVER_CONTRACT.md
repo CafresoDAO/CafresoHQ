@@ -105,6 +105,13 @@ layer, usage metering, and the approval flow consume **only** this stream.
 
 ## 3. Detection-driven defaults
 
+> ✅ **Shipped 2026-08-05** — the front desk lives at the top of the hire
+> board (`modals/hire.jsx` ← `GET /agent/drivers?probe=1`): detected backends
+> appear as FOUND cards, hires are one click (computer-access backends get a
+> plain-language consent sheet first), and the old silent CLI auto-hire in
+> `app.jsx` is refresh-only now. Local daemons count as found only on a live
+> probe (`detect.version === 'reachable'`).
+
 On first run the host calls every driver's `detect()`:
 
 - ≥1 authenticated driver → those appear as hireable coworkers ("We found your

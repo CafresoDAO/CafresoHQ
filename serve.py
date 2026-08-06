@@ -1258,7 +1258,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._agents_install_status()
         if self.path == '/agents':
             return self._agents_status()
-        if self.path == '/agent/drivers':
+        if self.path.split('?')[0] == '/agent/drivers':
             return self._agent_drivers()
         if self.path == '/terminal/status':
             return self._terminal_status()
@@ -1709,12 +1709,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return cwd
 
     def _agent_drivers(self):
-        """GET /agent/drivers — every registered driver's manifest + live
-        detection, the data the front desk turns into hireable coworkers."""
+        """GET /agent/drivers[?probe=1] — every registered driver's manifest +
+        live detection, the data the front desk turns into hireable coworkers.
+
+        probe=1 runs the deep detection (CLI --version spawns, local-daemon
+        /models liveness) CONCURRENTLY — needed because http drivers report
+        installed:true from their hard-coded default base URL alone; only
+        detect.version ('reachable') proves a local daemon is actually up.
+        Without probe the response is cheap file/PATH checks only."""
+        probe = 'probe=1' in (self.path.split('?', 1)[1] if '?' in self.path else '')
+        drivers = list(_drivers.DRIVERS.values())
+        if probe:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=len(drivers)) as ex:
+                futs = {drv.MANIFEST['id']: ex.submit(drv.detect, True)
+                        for drv in drivers}
+                detects = {}
+                for did, f in futs.items():
+                    try:
+                        detects[did] = f.result(timeout=10)
+                    except Exception:
+                        detects[did] = {'installed': False, 'authenticated': False,
+                                        'auth': '', 'version': '', 'detail': ''}
+        else:
+            detects = {drv.MANIFEST['id']: drv.detect(probe_version=False)
+                       for drv in drivers}
         out = []
-        for drv in _drivers.DRIVERS.values():
+        for drv in drivers:
             d = dict(drv.MANIFEST)
-            d['detect'] = drv.detect(probe_version=False)
+            d['detect'] = detects[d['id']]
             out.append(d)
         return self._send_json(200, {'drivers': out})
 

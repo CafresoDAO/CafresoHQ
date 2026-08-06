@@ -903,6 +903,20 @@ async function agentsInstall(agent) {
   return d;
 }
 
+/* Driver contract surface (docs/DRIVER_CONTRACT.md): every backend the host
+   knows, with manifest + live detection. probe=true runs the deep check
+   (CLI --version, local-daemon liveness) — a few seconds, so reserve it for
+   deliberate moments like opening the candidates deck. Only
+   detect.version === 'reachable' proves a local daemon is actually up;
+   `installed` alone is a hint for http drivers. */
+async function agentDrivers(probe) {
+  try {
+    const r = await fetch(_API_BASE + '/agent/drivers' + (probe ? '?probe=1' : ''));
+    if (!r.ok) return { drivers: [] };
+    return await r.json();
+  } catch (_e) { return { drivers: [] }; }
+}
+
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
    and translates its stream-json output into the OpenAI-compat SSE shape,
    so we can reuse parseSSE here. */
@@ -2390,7 +2404,7 @@ const CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
-  agentsStatus, agentsInstall,
+  agentsStatus, agentsInstall, agentDrivers,
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

@@ -36,15 +36,14 @@ function App() {
     }
   }, [agents]);
 
-  /* ── Local CLI agent sync ──────────────────────────────────────────────
-     Detect agent CLIs already installed on the backend host (hermes, claude,
-     codex, gemini — GET /agents now reports installed + login state) and
-     populate them into the crew automatically, so a self-hoster's existing
-     agents show up in the app without a manual "hire". Idempotent: stable
-     a_cli_* ids, never duplicates, refreshes version/login on later runs, and
-     skips anything the user explicitly dismissed (see onDismiss). Runs twice
-     because useFileStored's async file read REPLACES the roster when it lands
-     — the second pass re-merges if the first one got clobbered. */
+  /* ── Local CLI agent sync — REFRESH-ONLY since the front desk landed ───
+     Detect agent CLIs on the backend host (GET /agents reports installed +
+     login state) and keep ALREADY-HIRED a_cli_* agents' version/login fresh.
+     It no longer ADDS agents: hiring is consensual now — detected backends
+     appear as FOUND cards at the front desk (HireModal ← /agent/drivers) and
+     join only on a click (DRIVER_CONTRACT §3: no driver is pre-selected by
+     us). Runs twice because useFileStored's async file read REPLACES the
+     roster when it lands — the second pass re-merges if clobbered. */
   React.useEffect(() => {
     const DEFS = {
       'hermes':      { id: 'a_cli_hermes', name: 'Hermes',      role: 'Resident Agent · CLI',
@@ -77,14 +76,7 @@ function App() {
             + (d.authenticated ? ' · logged in' : ' · needs login — open a Terminal tab');
           const i = next.findIndex(a => a.id === def.id);
           if (i === -1) {
-            changed = true;
-            next.push({
-              ...def, status: 'idle', mood: 'idle', task: 'standing by',
-              elevated: true, temperature: 0.4, hiredAt: Date.now(),
-              lastRun: '—', nextRun: 'on demand', tokens: 0, tasksDone: 0,
-              cli: d.id, cliVersion: d.version || '', cliAuthed: !!d.authenticated,
-              recent,
-            });
+            continue;   // not hired — the front desk offers them instead
           } else if (next[i].cliVersion !== (d.version || '')
                      || next[i].cliAuthed !== !!d.authenticated) {
             changed = true;
@@ -873,6 +865,9 @@ ${d.text}` : d.text,
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
+    /* First micro-delight: the new coworker literally walks onto the floor
+       (OfficeView listens; gated behind ambientOk there). */
+    try { window.dispatchEvent(new CustomEvent('cafresohq:walkIn', { detail: { color: a.color } })); } catch (_e) {}
     say(`Hired ${a.name}`, 'HIRE');
   };
 

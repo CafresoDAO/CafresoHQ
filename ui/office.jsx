@@ -257,6 +257,21 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     return () => clearTimeout(t);
   }, [meetingActive, ambientOk]);
 
+  // New-hire walk-in — the coworker literally walks onto the floor when
+  // hired (app.jsx onHire dispatches 'cafresohq:walkIn'). One-shot, ~2s.
+  const [arrival, setArrival] = React.useState(null);
+  React.useEffect(() => {
+    if (!ambientOk) return;
+    let clearT;
+    const onWalkIn = (e) => {
+      setArrival({ key: 'arr-' + Date.now(), color: (e.detail || {}).color || 'cafresohq' });
+      clearTimeout(clearT);
+      clearT = setTimeout(() => setArrival(null), 2200);
+    };
+    window.addEventListener('cafresohq:walkIn', onWalkIn);
+    return () => { window.removeEventListener('cafresohq:walkIn', onWalkIn); clearTimeout(clearT); };
+  }, [ambientOk]);
+
   // Idle water-cooler visit — pick one genuinely-idle senior every few minutes.
   const [coolerVisitor, setCoolerVisitor] = React.useState(null);
   React.useEffect(() => {
@@ -630,6 +645,11 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       {ambientOk && coolerVisitorAgent && (
         <div className="walker cooler" aria-hidden="true">
           <Sprite data={coolerVisitorAgent.color} scale={2} />
+        </div>
+      )}
+      {ambientOk && arrival && (
+        <div key={arrival.key} className="walker arriving" aria-hidden="true">
+          <Sprite data={arrival.color} scale={2} />
         </div>
       )}
       {/* Meeting cluster — participants grouped at the meeting door while the

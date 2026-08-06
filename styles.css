@@ -5797,6 +5797,23 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
   margin-top: auto; padding-top: 6px;
   border-top: 1px dashed var(--ink-3);
 }
+/* Front desk — detection-driven FOUND cards at the top of the hire board. */
+.frontdesk-head {
+  font-family: 'Press Start 2P'; font-size: 9px; color: var(--ink-2);
+  padding: 4px 2px 0;
+}
+.frontdesk-head .hint {
+  font-family: 'Inter'; font-size: 10px; text-transform: none;
+  letter-spacing: 0; color: var(--ink-3);
+}
+.post-card.frontdesk-card { border-color: var(--accent-sun, #d4a017); }
+.post-card.frontdesk-card .post-tag { background: var(--accent-sun, #d4a017); }
+.frontdesk-note {
+  font-family: 'Inter'; font-size: 11px; line-height: 1.35; color: var(--ink-2);
+}
+.frontdesk-cta { color: var(--accent-sun, #d4a017); font-weight: 700; }
+body.night .post-card.frontdesk-card { background: #312842; }
+
 .post-remove {
   position: absolute; top: 4px; right: 4px;
 }
@@ -8885,6 +8902,16 @@ body.night .att-badge { border-color: var(--ink); }
   88%  { left: 72%; opacity: 1; transform: scaleX(1); }
   100% { left: 74%; opacity: 0; }
 }
+/* New-hire walk-in: through the door (left) to the middle of the floor,
+   where they "take their seat" (fade as the desk render takes over). */
+.walker.arriving { animation: walk-in-door 2s ease-in-out forwards; }
+@keyframes walk-in-door {
+  0%   { left: -4%; opacity: 0; transform: scaleX(1); }
+  10%  { opacity: 1; }
+  85%  { left: 46%; opacity: 1; transform: scaleX(1); }
+  100% { left: 48%; opacity: 0; }
+}
+
 .walker.cooler { animation: walk-to-cooler 20s ease-in-out forwards; }
 @keyframes walk-to-cooler {        /* stroll right to .water-cooler, pause, return */
   0%   { left: 40%; opacity: 0; transform: scaleX(1); }

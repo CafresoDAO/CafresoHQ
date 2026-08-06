@@ -1,8 +1,35 @@
+import { CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
+
+/* ── The front desk (DRIVER_CONTRACT §3 · OFFICE_AS_INTERFACE §3) ─────────
+   What /agent/drivers detected on THIS machine, offered as one-click hires.
+   The default is whatever the user already pays for or runs — no driver is
+   pre-selected by us. Ids match app.jsx's CLI-sync DEFS (a_cli_*) so the
+   version/login refresher keeps maintaining these agents after hire. Copy
+   follows the jargon table: subscriptions and sign-ins, never CLIs/keys.
+   Only drivers with a browser stream path appear (openrouter/groq/gemini-api
+   wait on POST /agent/stream being wired into stream()). */
+const FRONT_DESK = {
+  'claude-code': { id: 'a_cli_claude', name: 'Claude', role: 'Coding Agent', color: 'leaf',
+                   model: 'claudecode:sonnet', tools: ['files', 'shell', 'web'], elevated: true,
+                   poweredBy: 'Claude', found: 'We found your Claude subscription on this machine.' },
+  'codex':       { id: 'a_cli_codex', name: 'Codex', role: 'Coding Agent', color: 'mint',
+                   model: 'codex:gpt-4.1', tools: ['files', 'shell'], elevated: true,
+                   poweredBy: 'OpenAI', found: 'We found your Codex subscription on this machine.' },
+  'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Resident Agent', color: 'sky',
+                   model: 'hermes:hermes-agent', tools: ['web', 'files', 'shell'], elevated: true,
+                   poweredBy: 'Nous Research', found: 'The house agent — already moved in and ready to work.' },
+  'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Local Model · your hardware', color: 'teal',
+                   model: 'lmstudio:local-model', tools: ['web'],
+                   poweredBy: 'LM Studio', found: 'A local model is running on this machine — cheap and tireless.' },
+  'ollama':      { id: 'a_local_ollama', name: 'Llama', role: 'Local Model · your hardware', color: 'sun',
+                   model: 'ollama:llama3.1', tools: ['web'],
+                   poweredBy: 'Ollama', found: 'A local model is running on this machine — cheap and tireless.' },
+};
 function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
   const [role, setRole] = useStateM(HQ.ROLES[0]);
@@ -16,6 +43,23 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [elevated, setElevated] = useStateM(false);
   const [templates, setTemplates] = useStateM(loadTemplates);
   const [showBoard, setShowBoard] = useStateM(true);
+  /* Front-desk detection: null = probing (the deep check takes a few seconds
+     — CLI version spawns + local-daemon liveness), [] = nothing found. */
+  const [driverList, setDriverList] = useStateM(null);
+
+  useEffectM(() => {
+    if (!open) return;
+    let dead = false;
+    setDriverList(null);
+    (async () => {
+      try {
+        const d = await (CafresoHQClient.agentDrivers
+          ? CafresoHQClient.agentDrivers(true) : Promise.resolve({ drivers: [] }));
+        if (!dead) setDriverList(d.drivers || []);
+      } catch (_e) { if (!dead) setDriverList([]); }
+    })();
+    return () => { dead = true; };
+  }, [open]);
 
   /* Reset the form whenever the modal (re)opens so a previous draft never bleeds
      into a fresh hire. Mirrors MeetingRoomModal's [open]-effect. */
@@ -71,6 +115,41 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const hiredNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
   const candidates = (HQ.OPENSWARM_ROSTER || []).filter(t => !hiredNames.has(t.name.toLowerCase()));
 
+  /* Front-desk cards: present = installed for CLIs/hermes; for local daemons
+     only a LIVE probe ('reachable') counts — their detect.installed is true
+     from the default URL alone. Detection is a hint, not a verdict (macOS
+     keychain creds are invisible), so missing auth reads as "needs a
+     sign-in", never "broken". */
+  const hiredIds = new Set((currentAgents || []).map(a => a.id));
+  const deskCards = (driverList || []).map(d => {
+    const def = FRONT_DESK[d.id];
+    if (!def || hiredIds.has(def.id)) return null;
+    const det = d.detect || {};
+    const localDaemon = d.id === 'lmstudio' || d.id === 'ollama';
+    if (localDaemon ? det.version !== 'reachable' : !det.installed) return null;
+    return { ...def, driverId: d.id,
+             needsLogin: !localDaemon && d.id !== 'hermes' && !det.authenticated };
+  }).filter(Boolean);
+
+  const hireDetected = async (c) => {
+    if (c.elevated && !(await window.hqConfirm(
+      `${c.name} works with computer access — reading and writing files and ` +
+      `running commands on this machine. Every action is logged and pauses ` +
+      `for your approval. Bring them aboard?`,
+      { okLabel: `Hire ${c.name}` }))) return;
+    onHire({
+      id: c.id, name: c.name, role: c.role, color: c.color,
+      model: c.model, tools: c.tools, temperature: 0.4,
+      status: 'idle', task: 'reporting for duty',
+      elevated: !!c.elevated,
+      ...(c.driverId !== 'lmstudio' && c.driverId !== 'ollama'
+        ? { cli: c.driverId } : {}),
+      hiredAt: Date.now(), lastRun: 'just hired', nextRun: 'on demand',
+      recent: 'hired at the front desk',
+    });
+    onClose();
+  };
+
   const submit = () => {
     if (!name.trim()) return;
     if (elevated && !window.confirm(
@@ -124,7 +203,35 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     >
           {showBoard ? (
             <div className="hire-board">
-              {templates.length === 0 && candidates.length === 0 && (
+              {driverList === null && (
+                <div className="frontdesk-head" style={{gridColumn: '1 / -1'}}>
+                  AT THE FRONT DESK <span className="hint">— checking who's available on this machine…</span>
+                </div>
+              )}
+              {deskCards.length > 0 && (
+                <div className="frontdesk-head" style={{gridColumn: '1 / -1'}}>
+                  AT THE FRONT DESK <span className="hint">— found on this machine, ready to join</span>
+                </div>
+              )}
+              {deskCards.map(c => (
+                <div key={c.id} className="post-card frontdesk-card" onClick={() => hireDetected(c)}>
+                  <div className="post-head">
+                    <Sprite data={c.color} scale={2}/>
+                    <div className="post-name">{c.name}</div>
+                    <span className="post-tag">FOUND</span>
+                  </div>
+                  <div className="post-role">{c.role}</div>
+                  <div className="frontdesk-note">
+                    {c.found}{c.needsLogin ? ' Needs a sign-in before their first task.' : ''}
+                  </div>
+                  <div className="post-meta">
+                    <span>powered by {c.poweredBy}</span>
+                    <span>·</span>
+                    <span className="frontdesk-cta">HIRE ✓</span>
+                  </div>
+                </div>
+              ))}
+              {templates.length === 0 && candidates.length === 0 && deskCards.length === 0 && (
                 <div className="empty-state" style={{gridColumn:'1 / -1'}}>
                   <div className="empty-title">No saved roles yet.</div>
                   <div className="empty-sub">Build one with "NEW HIRE →" then click "SAVE AS TEMPLATE" to pin it here for next time.</div>
