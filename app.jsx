@@ -772,7 +772,13 @@ function App() {
       try { c.abort(); } catch (_e) {}
     }
     agentAbortersRef.current.clear();
-    setAgents(prev => prev.map(a => a.status === 'busy' ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
+    /* 'active' as well as 'busy'. Missions leave a coworker at `active ·
+       on mission` between iterations, so filtering on 'busy' alone meant
+       STOP ALL paused the missions but left their coworkers lit on the
+       floor and counted in N WORKING — the one button whose entire job is
+       "make it all stop" couldn't clear the state missions produce. */
+    setAgents(prev => prev.map(a => (a.status === 'busy' || a.status === 'active')
+      ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
     setMissions(prev => prev.map(m => m.status === 'running' ? { ...m, status: 'paused', lastError: 'stopped by boss' } : m));
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}.` }]);
@@ -1076,6 +1082,40 @@ ${d.text}` : d.text,
       agentAbortersRef.current.delete(agentId);
     }
   };
+  /* Sit back down after a SUCCESSFUL run.
+
+     A finished run sets `status: 'active' · mood: 'done' · task: 'reporting
+     back'` so §4's done-stretch plays and the boss sees the ✓. Nothing ever
+     took them out of it. `active` is "working" everywhere on the floor —
+     the sprite turns its back, the desk lamp and rooftop light stay on, and
+     the header counts it — so a coworker who SUCCEEDS stood lit forever,
+     and `N WORKING` became a high-water mark of completed tasks rather than
+     a count of live work. Measured: one finished chat run, nothing
+     streaming, header still reading "1 WORKING".
+
+     Every failure path already reset to idle correctly, which is exactly
+     why a session spent testing failures never surfaced this.
+
+     The linger keeps the beat (same order as the 2.5s error freeze and the
+     1.6s prop return), then hands the desk back. Guarded on both id and
+     state: if the boss dispatched again inside the window the agent is
+     'busy' and we leave it entirely alone. */
+  const settleTimersRef = useRefA(new Map());
+  const settleAfterRun = (agentId) => {
+    if (!agentId) return;
+    const prev = settleTimersRef.current.get(agentId);
+    if (prev) clearTimeout(prev);
+    const t = setTimeout(() => {
+      settleTimersRef.current.delete(agentId);
+      setAgents(prev2 => prev2.map(a => (a.id === agentId && a.status === 'active')
+        ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
+    }, 4000);
+    settleTimersRef.current.set(agentId, t);
+  };
+  useEffectA(() => () => {
+    for (const t of settleTimersRef.current.values()) clearTimeout(t);
+    settleTimersRef.current.clear();
+  }, []);
   // Returns whether anything was actually in flight — callers that report
   // the cancellation to the user need to know, so the copy can't claim a
   // run was stopped when nothing was running.
@@ -1703,6 +1743,7 @@ ${d.text}` : d.text,
         tasksDone: (agent.tasksDone || 0) + 1,
         task: 'reporting back',
       });
+      settleAfterRun(agent.id);
       logActivity({
         agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
         action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300),
@@ -2471,6 +2512,7 @@ ${d.text}` : d.text,
         recent: brief.slice(0, 80),
         tokens: (a.tokens || 0) + usedTokens,
       });
+      settleAfterRun(a.id);
       logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
       const approvalDesc = HQ.extractApproval(cleanBuf);
@@ -2742,6 +2784,7 @@ ${d.text}` : d.text,
         tokens: (agent.tokens || 0) + usedTokens,
         tasksDone: (agent.tasksDone || 0) + 1,
       });
+      settleAfterRun(agent.id);
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', result: cleanBuf.slice(0, 600) } : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
       recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });

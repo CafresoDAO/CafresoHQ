@@ -1170,3 +1170,36 @@ settings — never on the floor, the cards, or onboarding.
 > "standing by"; dropping on a desk via the office inbox still goes
 > `busy` / `thinking` with the title in the bubble — there, correctly,
 > because a run really is in flight.
+
+> ✅ **A coworker who SUCCEEDS never sat back down (2026-08-06).** Followed
+> the assign-path fix by auditing every write to `agent.task`, then to
+> `agent.status`. Two more violations of the same invariant, both on paths
+> a failure-only test run can't reach:
+>
+> - **Missions.** A completed iteration leaves `active · on mission`, which
+>   is honest while the mission runs. None of the four stop paths — budget
+>   spent, auto-paused on repeated errors, self-declared complete, agent
+>   removed — cleared it, so the mission ended and the coworker kept
+>   standing there captioned "on mission". `standDown()` now runs on all
+>   four. **STOP ALL** couldn't rescue them either: it filtered on
+>   `status === 'busy'`, and missions produce `'active'` — the one button
+>   whose whole job is "make it all stop" was blind to the state missions
+>   create. It now covers both.
+>
+> - **Every successful run.** `status: 'active' · mood: 'done' · task:
+>   'reporting back'` is set at three sites so §4's done-stretch can play
+>   — and nothing ever took them out of it. `active` reads as *working*
+>   everywhere on the floor: the sprite turns its back, the desk and
+>   rooftop lights stay on, and the header counts it. So **`N WORKING`
+>   was a high-water mark of completed tasks, not a count of live work.**
+>   Measured: one finished chat run, nothing streaming, header still
+>   reading `1 WORKING`. `settleAfterRun()` keeps the beat for 4s (the
+>   order of the existing 2.5s error freeze and 1.6s prop return), then
+>   hands the desk back — guarded so a re-dispatch inside the window is
+>   left alone.
+>
+> The lesson is the sharper half of this: **every failure path already
+> reset correctly.** A whole session of testing against a brain-less
+> environment exercised nothing but failures, and this was invisible the
+> entire time. Testing only the sad path hides every bug that lives on the
+> happy one.

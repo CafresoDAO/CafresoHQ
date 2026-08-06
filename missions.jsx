@@ -477,6 +477,25 @@ function useMissionRunner(missions, setMissions, ctx) {
      frozen and no follow-up iteration ever scheduled. */
   const ctxWithSetters = { ...ctx, setMissions };
 
+  /* Send a coworker back to their desk when their mission stops.
+
+     A finished iteration leaves them `status: 'active' · task: 'on mission'`
+     (see runMissionIteration), which is honest WHILE the mission is running.
+     None of the four stop paths below — time budget spent, auto-paused on
+     repeated errors, self-declared complete, agent removed — cleared it, so
+     the mission ended and the coworker went on standing at their desk
+     captioned "on mission", counted in the header's N WORKING and lit on
+     the rooftop. Same invariant as the assign-path fix: an idle coworker's
+     bubble must not claim a job that isn't happening.
+
+     `persistableAgents` strips runtime state, so this never survived a
+     reload — the damage was bounded to the session. Bounded is not the
+     same as harmless: the boss watching the floor is watching it live. */
+  const standDown = (agentId) => {
+    if (!agentId || !ctx.onUpdateAgent) return;
+    ctx.onUpdateAgent(agentId, { status: 'idle', mood: 'idle', task: 'standing by' });
+  };
+
   useEMission(() => {
     /* Cancel timers + abort in-flight streams for missions that have left
        running state (paused, done, or removed). Without the abort, hitting
@@ -508,6 +527,7 @@ function useMissionRunner(missions, setMissions, ctx) {
       const deadline = m.startedAt + m.durationMs;
       if (Date.now() >= deadline) {
         setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+        standDown(m.agentId);
         // Ran its schedule → one night shift on the record — but only if it
         // actually worked at least once (§5; the per-taskId guard dedupes).
         if (m.iterations > 0 && ctx.recordXp) {
@@ -521,6 +541,7 @@ function useMissionRunner(missions, setMissions, ctx) {
          a busted backend. */
       if ((m.errors || 0) >= 3) {
         setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'paused', lastError: x.lastError || 'too many errors' } : x));
+        standDown(m.agentId);
         continue;
       }
 
@@ -553,6 +574,7 @@ function useMissionRunner(missions, setMissions, ctx) {
              the budget ran out used to run one full extra iteration. */
           if (Date.now() >= (latest.startedAt + latest.durationMs)) {
             setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+            standDown(m.agentId);
             if (latest.iterations > 0 && ctx.recordXp) {
               ctx.recordXp({ agentId: latest.agentId, kind: 'mission', outcome: 'done',
                              taskId: latest.id, title: latest.topic });
@@ -563,6 +585,7 @@ function useMissionRunner(missions, setMissions, ctx) {
           const agent = ctxWithSetters.agentsRef.current.find(a => a.id === latest.agentId);
           if (!agent) {
             setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'error', lastError: 'agent removed' } : x));
+            standDown(m.agentId);
             return;
           }
           await runMissionIteration({ ...ctxWithSetters, mission: latest, agent, signal: controller.signal });
