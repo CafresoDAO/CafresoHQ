@@ -2,6 +2,7 @@ import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico, NAV_ITEMS, useVocab } from './primitives.jsx';
 import { deskKit, floorOn, PROP_PLACARD, toolProp } from '../app/floor.jsx';
+import { xpLastAttempt, xpLastAttemptText } from '../app/experience.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 function Tab({
   value, label, badge, icon, disabled,
@@ -330,7 +331,7 @@ function freshCacheEntries(bucket) {
   return out;
 }
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [] }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -889,6 +890,13 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   <div className="otr-card-title">{t.title}</div>
                 </div>
                 {t.detail && <div className="otr-card-detail">{t.detail}</div>}
+                {/* §5, derived: the card says who already tried and snagged,
+                    so the obvious next move isn't handing it straight back
+                    to the coworker it just defeated. A fact, not advice. */}
+                {(() => {
+                  const line = xpLastAttemptText(xpLastAttempt(experience, t.id, agents));
+                  return line ? <div className="otr-card-lastry">⚠ {line}</div> : null;
+                })()}
                 <div className="otr-card-foot">
                   <span className="otr-grip" aria-hidden="true">⋮⋮</span>
                   {onAssignTask ? (

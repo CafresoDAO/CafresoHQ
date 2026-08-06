@@ -233,6 +233,31 @@
 > wants to answer "is this coworker working right now" has to read
 > `status`. Every new run path needs to set it.
 
+> ✅ **The delegation loop, end to end (2026-08-06).** Drove the headline
+> interaction — the banner's own "DROP TASK CARDS ON DESKS TO DELEGATE" —
+> for the first time: starter card → real task → `dragover` lights the
+> room's drop outline → drop delegates → the coworker goes busy with the
+> real title in their bubble → snag → mood stuck, rooftop dark, `{kind:
+> 'brief', outcome: 'snag'}` in the ledger, task back to `inbox` with
+> `assignedTo` cleared. All correct.
+>
+> One gap: **a snagged task came back looking untouched.** Returning it to
+> the inbox is right (it must stay re-delegatable), but the one surface
+> where you decide what to do next said nothing, so the obvious next move
+> was handing it straight back to the coworker it had just defeated. Both
+> card surfaces now carry `⚠ Kenji hit a snag on this`, derived from the
+> ledger — never stored, same rule as the rest of §5. It states a **fact,
+> not a recommendation**: whether to retry, reword or reassign is the
+> boss's call and we have no standing to guess. A let-go coworker leaves
+> the fact intact and loses only the name ("someone since let go").
+>
+> Two things checked and found already honest, worth not "fixing": the
+> dropdown assign path (the keyboard-reachable one) assigns **without**
+> dispatching — so the room shows the task on the desk while staying
+> `idle` with the rooftop dark, which is exactly right — and the marker
+> correctly keeps naming the last real *attempt* rather than the latest
+> assignment.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

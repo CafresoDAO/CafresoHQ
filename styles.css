@@ -10587,3 +10587,13 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
 @media (prefers-reduced-motion: reduce) {
   .px-propvisit { animation: none; }
 }
+
+/* Last-attempt marker on a task card (§5, derived from the XP ledger).
+   A snagged task returns to the inbox unassigned — correct, it must stay
+   re-delegatable — but the card came back looking untouched. This states
+   the fact; what to do about it is the boss's call. */
+.otr-card-lastry, .tc-lastry {
+  margin-top: 4px;
+  font-family: 'VT323', monospace; font-size: 12px; line-height: 1.2;
+  color: var(--warn, #e8a33d);
+}

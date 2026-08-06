@@ -2,6 +2,7 @@ import { Sprite } from './sprites.jsx';
 import { HQ } from './hq-runtime.jsx';
 import { CafresoHQModals } from './modals.jsx';
 import { floorEmit, snagSentence } from './app/floor.jsx';
+import { xpLastAttempt, xpLastAttemptText } from './app/experience.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -67,7 +68,7 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
   );
 }
 
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask }) {
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, experience = [] }) {
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
   const [expanded, setExpanded] = useSF({});
@@ -117,6 +118,10 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                     )}
                     <div className="tc-title">{t.title}</div>
                     {t.detail && <div className="tc-detail">{t.detail}</div>}
+                    {(() => {
+                      const line = xpLastAttemptText(xpLastAttempt(experience, t.id, agents));
+                      return line ? <div className="tc-lastry">⚠ {line}</div> : null;
+                    })()}
                     <div className="tc-foot">
                       {/* Inline assignee picker — tap to reassign without
                           having to drag-and-drop or open a modal. Falls back

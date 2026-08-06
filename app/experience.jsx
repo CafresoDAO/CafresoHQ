@@ -99,4 +99,42 @@ function xpAffinityText(stats) {
     : '';
 }
 
-export { taskKind, xpAffinityText, xpKindLabel, xpRecord, xpStats, XP_KIND_LABEL };
+/* What happened the LAST time someone tried this task, or null.
+
+   A snagged task goes back to the inbox with assignedTo cleared, which is
+   right — it must stay re-delegatable — but the card came back looking
+   untouched. The system knew Kenji had already tried it and failed (the
+   attention row, his room, this ledger all said so); the one surface where
+   you decide what to do next said nothing, so the obvious next move was to
+   hand it straight back to the coworker it had just defeated.
+
+   Derived, never stored — same rule as the rest of §5. It reports a fact
+   ("Kenji hit a snag on this"), never a recommendation: whether to retry,
+   reword, or reassign is the boss's call, and we don't have the standing
+   to guess. */
+function xpLastAttempt(ledger, taskId, agents) {
+  if (!taskId) return null;
+  const rows = (Array.isArray(ledger) ? ledger : []).filter(e => e && e.taskId === taskId);
+  if (!rows.length) return null;
+  const last = rows.reduce((a, b) => ((b.at || 0) >= (a.at || 0) ? b : a));
+  const who = (Array.isArray(agents) ? agents : []).find(a => a && a.id === last.agentId);
+  return {
+    agentId: last.agentId,
+    // A coworker who has since been let go leaves the fact intact but
+    // nameless — better than inventing a name or dropping the history.
+    name: who ? who.name : null,
+    outcome: last.outcome,
+    at: last.at || 0,
+  };
+}
+
+/* That fact as one line of office English, or '' when there is nothing
+   worth saying (no attempt, or the last one succeeded — a finished task
+   isn't sitting in the inbox needing a warning). */
+function xpLastAttemptText(attempt) {
+  if (!attempt || attempt.outcome === 'done') return '';
+  const who = attempt.name || 'someone since let go';
+  return `${who} hit a snag on this`;
+}
+
+export { taskKind, xpAffinityText, xpKindLabel, xpLastAttempt, xpLastAttemptText, xpRecord, xpStats, XP_KIND_LABEL };

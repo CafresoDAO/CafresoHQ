@@ -3213,6 +3213,7 @@ ${d.text}` : d.text,
               onGoToTasks={() => setActiveView('tasks')}
               onOpenArtifact={openVaultNote}
               maxSlots={5}
+              experience={experience}
               ceoBusy={chat.some(m => m.from === 'ceo' && m.streaming)}
               attentionCount={attentionCount}
               onOpenAttention={openAttention}
@@ -3226,7 +3227,7 @@ ${d.text}` : d.text,
           </div>
         );
       case 'tasks':
-        return <TasksView tasks={tasks} agents={agents}
+        return <TasksView tasks={tasks} agents={agents} experience={experience}
           onAdd={onAddTask} onMove={onMoveTask} onDelete={onDeleteTask}
           /* Chat bridges — let a task fan out to chat or to a fresh
              meeting room without a kanban-drag affordance. The drag-

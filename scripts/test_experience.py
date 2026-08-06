@@ -103,6 +103,22 @@ R.kindWeird     = taskKind({ starter: 'nonsense' });
 R.kindNull      = taskKind(null);
 R.affText       = xpAffinityText(s1);
 R.affTextEmpty  = xpAffinityText(xpStats([], 'a1'));
+// ── xpLastAttempt — what happened last time on THIS task ───────────────
+const AG = [{ id: 'a5', name: 'Kenji' }, { id: 'a1', name: 'Miko' }];
+const LED = [
+  { at: 100, agentId: 'a1', kind: 'brief', outcome: 'snag', taskId: 'tk_1' },
+  { at: 200, agentId: 'a5', kind: 'brief', outcome: 'snag', taskId: 'tk_1' },
+  { at: 150, agentId: 'a1', kind: 'draft', outcome: 'done', taskId: 'tk_2' },
+];
+R.laNone      = xpLastAttempt(LED, 'tk_missing', AG);
+R.laNoTaskId  = xpLastAttempt(LED, null, AG);
+R.laLatest    = xpLastAttempt(LED, 'tk_1', AG);          // 200 beats 100
+R.laText      = xpLastAttemptText(xpLastAttempt(LED, 'tk_1', AG));
+R.laDoneText  = xpLastAttemptText(xpLastAttempt(LED, 'tk_2', AG));  // '' — nothing to warn about
+R.laFiredName = xpLastAttempt(LED, 'tk_1', [{ id: 'a1', name: 'Miko' }]);   // a5 no longer hired
+R.laFiredText = xpLastAttemptText(R.laFiredName);
+R.laNullAgents= xpLastAttemptText(xpLastAttempt(LED, 'tk_1', null));
+R.laEmptyLed  = xpLastAttempt([], 'tk_1', AG);
 console.log(JSON.stringify(R));
 ''')
 
@@ -146,6 +162,27 @@ console.log(JSON.stringify(R));
     check('null task tolerated', out['kindNull'] == 'task')
     check('affinity text reads like a résumé line', out['affText'] == '3 research briefs')
     check('affinity text empty when unearned', out['affTextEmpty'] == '')
+
+    # ── xpLastAttempt: the card remembers who already tried ───────────
+    # A snagged task returns to the inbox unassigned (correct — it must stay
+    # re-delegatable), but the card used to come back looking untouched, so
+    # the obvious next move was handing it back to the coworker it just beat.
+    check('no attempt on this task reads as nothing', out['laNone'] is None)
+    check('a missing task id is tolerated', out['laNoTaskId'] is None)
+    check('the LATEST attempt wins, not the first',
+          out['laLatest']['agentId'] == 'a5' and out['laLatest']['at'] == 200,
+          str(out['laLatest']))
+    check('a snag reads as one office sentence',
+          out['laText'] == 'Kenji hit a snag on this', out['laText'])
+    check('a task whose last attempt SUCCEEDED says nothing',
+          out['laDoneText'] == '', repr(out['laDoneText']))
+    check('a let-go coworker keeps the fact, loses the name',
+          out['laFiredName']['name'] is None, str(out['laFiredName']))
+    check('...and still reads as a sentence, never a blank or "undefined"',
+          out['laFiredText'] == 'someone since let go hit a snag on this',
+          out['laFiredText'])
+    check('a null roster is tolerated', 'hit a snag on this' in out['laNullAgents'])
+    check('an empty ledger reads as nothing', out['laEmptyLed'] is None)
 
     print()
     if FAILS:
