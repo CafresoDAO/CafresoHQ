@@ -1,15 +1,4 @@
 import { ProjectTerminal } from './terminal.jsx';
-function ComingSoon({ label }) {
-  return (
-    <div className="view-soon">
-      <div className="section-title">{label || 'Coming Soon'}</div>
-      <div className="empty-state">
-        <div className="empty-title">🚧 In progress</div>
-        <div className="empty-sub">This feature is coming soon.</div>
-      </div>
-    </div>
-  );
-}
 
 /* ================================================================
    TerminalView — full-screen standalone terminal
@@ -57,4 +46,4 @@ function TerminalView() {
 }
 
 
-export { ComingSoon, TerminalView };
+export { TerminalView };

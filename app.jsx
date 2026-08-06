@@ -23,7 +23,7 @@ const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, F
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
-const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ComingSoon, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 function App() {
   /* Empty by design — HQ.INITIAL_AGENTS is []. Fresh offices start with the
      CEO alone; the fake-stats mapping that used to live here (invented tokens

@@ -4,7 +4,7 @@
 import { CalendarView, MemoryPage, TasksView, TeamView, VIEW_LABELS } from './views/core.jsx';
 import { VaultView } from './views/vault.jsx';
 import { GraphView } from './views/graph.jsx';
-import { ComingSoon, TerminalView } from './views/misc.jsx';
+import { TerminalView } from './views/misc.jsx';
 import { ProjectsView, WorkspaceView } from './views/projects.jsx';
 
 const CafresoHQViews = {
@@ -14,7 +14,6 @@ const CafresoHQViews = {
   CalendarView,
   VaultView,
   GraphView,
-  ComingSoon,
   ProjectsView,
   WorkspaceView,
   TerminalView,
