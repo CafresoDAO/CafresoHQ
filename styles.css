@@ -10481,8 +10481,30 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
      nested scrollers were clipping the bottom of the building unreachably. */
   .office.pxhq-root { max-height: none; overflow: visible; }
   .pxhq { min-height: 420px; max-height: 62vh; }
-  .px-skyline, .px-cloud, .px-sun, .px-moon, .px-street, .px-hud,
-  .px-antenna, .px-tank, .px-dog, .px-livelamp { display: none; }
+  /* Scenery goes; instruments stay. Everything in this list is decoration
+     with no state behind it — the LIVE lamp and the Situation Wall used to
+     be in it too, which left a phone unable to tell a working office from
+     a dead one, or a healthy container from an unreachable one. */
+  .px-skyline, .px-cloud, .px-sun, .px-moon, .px-street,
+  .px-antenna, .px-tank, .px-dog { display: none; }
+  /* P&L rows are `white-space: nowrap` three-figure lines — they genuinely
+     do not fit, and truncating money is worse than deferring it to Team. */
+  .pxhq .px-hud.pl-frame { display: none; }
+  /* The Situation Wall becomes a strip above the tower instead of a box
+     floating over it: same rows, same live data, laid out to the width. */
+  .pxhq .px-hud.sit-wall {
+    /* `relative`, not `static`: z-index is inert on a static box, which
+       drops the wall behind every absolutely-positioned scenery layer
+       (.px-stars was painting straight over it). In flow, still stacked. */
+    position: relative;
+    margin: 0 6px 6px; padding: 5px 8px;
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 3px 12px;
+  }
+  .pxhq .px-hud.sit-wall .sw-title { width: 100%; margin-bottom: 0; }
+  /* The rooftop lamp is the single "is my business working right now"
+     signal — it belongs on the phone more than anywhere else. */
+  .px-livelamp { right: 6px; bottom: 8px; font-size: 7px; }
   .px-scene { align-items: stretch; }
   .px-building { width: 100%; }
   .px-rooftop { height: 54px; }

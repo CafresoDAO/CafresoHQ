@@ -67,6 +67,20 @@
 > is a 50% duty cycle, so a label carrying the message would be unreadable
 > half the time it exists (the same trap the eye-blink fell into).
 
+> ✅ **Scenery hides on mobile; instruments don't (2026-08-06).** The narrow
+> viewport rule swept the **LIVE lamp** and the **Situation Wall** into the
+> same `display: none` list as the clouds, the skyline and the dog. Those
+> two are not scenery — they are the only answers to "is my business
+> working right now?" and "is the container even up?", so a phone had no
+> way to tell a running office from a dead one. Both render everywhere now;
+> the wall lays out as a strip above the tower instead of a box floating
+> over it. **The Agent P&L stays desktop-only** on purpose: its rows are
+> `nowrap` three-figure money lines, and truncating money is worse than
+> deferring it to the Team tab.
+>
+> Rule of thumb for that media query: if hiding it loses the user a *fact*,
+> it is an instrument — re-lay it out, don't drop it.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

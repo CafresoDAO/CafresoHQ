@@ -937,8 +937,14 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             })}
           </div>
         )}
-        {!isMobileOffice && (
-          <div className="px-hud right sit-wall" title="Situation Wall — live office telemetry">
+        {/* The Situation Wall is the business's instrument panel — is the
+            container up, is search reachable, how many are working, what's
+            in the treasury. It was `!isMobileOffice`-gated alongside the
+            clouds and the dog, which put a phone in the position of not
+            being able to tell a healthy office from a dead one. It renders
+            everywhere now; CSS lays it out as a strip on narrow screens
+            instead of a floating box. */}
+        <div className="px-hud right sit-wall" title="Situation Wall — live office telemetry">
             <div className="sw-title">◉ SITUATION</div>
             <div className="sw-row" title={wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
               <span className={`sw-lamp ${wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
@@ -973,8 +979,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 ◈ {plFmt(goldTreasury, 'sGLDT')} GOLD
               </div>
             )}
-          </div>
-        )}
+        </div>
 
         <div className="px-scene">
           <div className="px-building">
