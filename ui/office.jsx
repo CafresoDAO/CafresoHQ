@@ -207,6 +207,87 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
+/* ── Pixel HQ primitives ─────────────────────────────────────────────────
+   The floor renders as a GBA-era building cutaway (assets/px/*, generated
+   by scripts/gen_pixel_hq.py). Px places one sprite; PxChar is the 7-pose
+   character sheet. All art is 1x-scale PNG shown at integer ×2 — no
+   fractional scaling, no blur. */
+const PX_SIZES = {
+  desk_agent: [28, 20], desk_ceo: [36, 19], bookshelf: [20, 20], cabinet: [16, 17],
+  plant: [12, 14], cooler: [12, 15], couch: [28, 10], corkboard: [26, 11],
+  nightboard: [24, 12], vaultdoor: [26, 18], goldbar: [10, 6], arcade: [18, 18],
+  window_day: [18, 12], window_night: [18, 12], clock: [10, 10], mug: [6, 6],
+  papers: [10, 7], tray: [12, 6], meetdoor: [16, 17], doors: [24, 16],
+  lamp: [10, 18], tree: [20, 17], vending: [14, 14], bush: [14, 6],
+  sign_hq: [146, 48], sun: [20, 20], moon: [16, 16],
+};
+
+function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
+  // `night` swaps window_day → window_night; anything else ignores it.
+  const name = night && n === 'window_day' ? 'window_night' : n;
+  const [w, h] = PX_SIZES[n] || [16, 16];
+  return (
+    <div
+      className={`px-sp ${className}`}
+      title={title}
+      onClick={onClick}
+      style={{
+        width: w * s, height: h * s,
+        backgroundImage: `url(assets/px/${name}.png)`,
+        backgroundSize: '100% 100%',
+        ...style,
+      }}
+    />
+  );
+}
+
+/* Pose sheet order (gen_pixel_hq.py): back · frontA · frontB · sideA ·
+   sideB · stretch · stuck. Working = facing the monitor (back to camera);
+   idle = turned toward you. A real state a newcomer reads untaught. */
+function PxChar({ color = 'cafresohq', pose = 'front', className = '', style = {}, title }) {
+  const safe = ['cafresohq', 'rose', 'teal', 'sun', 'leaf', 'sky', 'mint', 'blush', 'lavender']
+    .indexOf(color) !== -1 ? color : 'cafresohq';
+  return (
+    <div
+      className={`px-char pose-${pose} ${className}`}
+      title={title}
+      style={{ backgroundImage: `url(assets/px/char_${safe}.png)`, ...style }}
+    />
+  );
+}
+
+function chunk2(xs) {
+  const out = [];
+  for (let i = 0; i < xs.length; i += 2) out.push(xs.slice(i, i + 2));
+  return out;
+}
+
+/* ── Cross-mount live-state cache ─────────────────────────────────────────
+   screens/liveTools/tipRain are deliberately kept OUT of the agents array
+   (see their own comments below) so token-rate traffic never triggers
+   app-wide re-renders. That locality had a side effect: switching the
+   active view away from Office and back fully unmounts OfficeView, wiping
+   this state — so a coworker genuinely mid-run rendered as idle on return,
+   an §4 honesty violation (the floor claimed nothing was happening while
+   real work was in flight). This module-scope cache survives the
+   component's mount/unmount (it only resets on an actual page reload,
+   which is honest — a fresh reload has no live SSE connections yet
+   either). Each entry carries an `_at` timestamp so an entry that's
+   ACTUALLY stale (backgrounded well past its own normal lifetime) doesn't
+   resurrect on remount looking live. */
+const officeLiveCache = { screens: {}, liveTools: {}, tipRain: {} };
+const LIVE_CACHE_MAX_AGE = { screens: 65000, liveTools: 46000, tipRain: 4500 };
+function freshCacheEntries(bucket) {
+  const now = Date.now();
+  const maxAge = LIVE_CACHE_MAX_AGE[bucket];
+  const src = officeLiveCache[bucket];
+  const out = {};
+  for (const id in src) {
+    if (now - (src[id]._at || 0) <= maxAge) out[id] = src[id];
+  }
+  return out;
+}
+
 function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
@@ -257,6 +338,34 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     const t = setTimeout(() => setWalkers([]), 3600 + parts.length * 1200);
     return () => clearTimeout(t);
   }, [meetingActive, ambientOk]);
+
+  /* §4 "done" beat: the stretch is a TRANSITION, not a status — mood stays
+     'done' upstream until the agent's next run starts, which used to leave
+     the sprite frozen arms-up indefinitely (the `.pop` keyframe is a 0.7s
+     one-shot; nothing ever moved the pose off 'stretch'). Play it once on
+     the rising edge of mood==='done', same edge-timer shape as trayDrop/
+     tipRain below. Clearing on ANY mood change (not just after the timer)
+     keeps it interruptible per §4. */
+  const [stretching, setStretching] = React.useState({});
+  const prevMoodRef = React.useRef({});
+  const moodSig = agents.map(a => a.id + ':' + a.mood).join(',');
+  React.useEffect(() => {
+    const timers = [];
+    agents.forEach(a => {
+      const prev = prevMoodRef.current[a.id];
+      if (a.mood === 'done' && prev !== 'done') {
+        setStretching(s => ({ ...s, [a.id]: true }));
+        timers.push(setTimeout(() => setStretching(s => {
+          if (!s[a.id]) return s;
+          const n = { ...s }; delete n[a.id]; return n;
+        }), 900));
+      } else if (a.mood !== 'done' && prev === 'done') {
+        setStretching(s => { if (!s[a.id]) return s; const n = { ...s }; delete n[a.id]; return n; });
+      }
+      prevMoodRef.current[a.id] = a.mood;
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [moodSig]);
 
   // New-hire walk-in — the coworker literally walks onto the floor when
   // hired (app.jsx onHire dispatches 'cafresohq:walkIn'). One-shot, ~2s.
@@ -346,7 +455,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
      (cafresohq:agentTool events carry agentId since the Open Floor pass).
      'done' lingers ~1.6s so the glow reads; a 45s safety clear covers
      error paths where 'done' never fires. */
-  const [liveTools, setLiveTools] = React.useState({});   // agentId -> {name}
+  const [liveTools, setLiveToolsState] = React.useState(() => freshCacheEntries('liveTools'));
+  const setLiveTools = (updater) => setLiveToolsState(prev => {
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    officeLiveCache.liveTools = next;
+    return next;
+  });
   React.useEffect(() => {
     const timers = new Map();
     const clearLater = (id, ms) => {
@@ -361,7 +475,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       if (d.phase === 'start') {
         // §4: the tool decides the prop — cabinet for files, bookshelf for
         // search, phone for the web; null keeps them at the desk.
-        setLiveTools(prev => ({ ...prev, [d.agentId]: { name: d.name, prop: toolProp(d.name) } }));
+        setLiveTools(prev => ({ ...prev, [d.agentId]: { name: d.name, prop: toolProp(d.name), _at: Date.now() } }));
         clearLater(d.agentId, 45000);
       } else if (d.phase === 'done') {
         clearLater(d.agentId, 1600);
@@ -377,13 +491,18 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
      the source). phase 'stream' scrolls; 'done' freezes the last line ~8s
      then fades. Kept in local state (never on the agents array) so token
      traffic can't trigger app-wide re-renders. */
-  const [screens, setScreens] = React.useState({});   // agentId -> {tail, phase}
+  const [screens, setScreensState] = React.useState(() => freshCacheEntries('screens'));
+  const setScreens = (updater) => setScreensState(prev => {
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    officeLiveCache.screens = next;
+    return next;
+  });
   React.useEffect(() => {
     const timers = new Map();
     const onScreen = (e) => {
       const d = e.detail || {};
       if (!d.agentId || !d.tail) return;
-      setScreens(prev => ({ ...prev, [d.agentId]: { tail: d.tail, phase: d.phase } }));
+      setScreens(prev => ({ ...prev, [d.agentId]: { tail: d.tail, phase: d.phase, _at: Date.now() } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
       // Run paths now close their monitor explicitly on failure (phase
       // 'error' — cleared fast, §4 forbids a "working" glow on a dead run);
@@ -399,13 +518,18 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   /* ── Tip Rain — money events land as coins on the earning agent's desk.
      Fed by the app-level tip watcher via cafresohq:moneyEvent. Reduced-motion
      users get a static "+X TOKEN" chip instead (CSS side). */
-  const [tipRain, setTipRain] = React.useState({});   // agentId -> {amount, token, kind}
+  const [tipRain, setTipRainState] = React.useState(() => freshCacheEntries('tipRain'));
+  const setTipRain = (updater) => setTipRainState(prev => {
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    officeLiveCache.tipRain = next;
+    return next;
+  });
   React.useEffect(() => {
     const timers = new Map();
     const onMoney = (e) => {
       const d = e.detail || {};
       if (!d.agentId || (d.kind !== 'tip' && d.kind !== 'payday' && d.kind !== 'furnish')) return;
-      setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token, kind: d.kind } }));
+      setTipRain(prev => ({ ...prev, [d.agentId]: { amount: d.amount, token: d.token, kind: d.kind, _at: Date.now() } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
       timers.set(d.agentId, setTimeout(() => {
         setTipRain(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
@@ -562,7 +686,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     : Math.min(8, 1 + Math.floor(Math.log10(Number(goldTreasury) / 1e8 + 1) * 3));
 
   return (
-    <div className="office">
+    <div className="office pxhq-root">
       {/* Task rail — slim strip of draggable cards above the rooms.
           - Desktop: drag a card onto a senior agent's desk to delegate.
           - Mobile: tap the assignee dropdown inside the card; drag-and-drop
@@ -663,453 +787,404 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           </div>
         </div>
       )}
-      <div className="wall-line" />
-      <div className="floor" />
-      {/* Open-floor "lounge" — couch + water cooler frame the room, a floor mat
-          announces the HQ. Decorative only (pointer-events:none), desktop-only. */}
-      {!isMobileOffice && (
-        <div className="floor-decor" aria-hidden="true">
-          <div className="meeting-table" />
-          <div className="floor-zone fz-meeting">MEETING</div>
-          <div className="floor-mat">CAFRESO HQ</div>
-          <div className="lounge-couch" />
-          <div className="water-cooler"><span className="wc-bubble" /></div>
-          <div className="floor-zone fz-kitchen">KITCHEN</div>
-        </div>
-      )}
-      <div className="pet" aria-label="Maximus"><Sprite data="maximus" scale={2}/></div>
+      {/* ════════ PIXEL HQ — the CafresoHQ building, GBA-era cutaway ════════
+          Sky → skyline → building (rooftop sign / CEO penthouse / agent
+          floors / vacancies / vault / lobby) → street. Every live surface
+          from the old floor survives with identical wiring; only the paint
+          changed. Day/night pairs (sun+moon, window day+night) both render
+          and body.night picks one in CSS. */}
+      <div className="pxhq">
+        <div className="px-sky" aria-hidden="true" />
+        <div className="px-stars" aria-hidden="true" />
+        <Px n="sun" s={3} className="px-sun" />
+        <Px n="moon" s={3} className="px-moon" />
+        <div className="px-cloud c1" aria-hidden="true" />
+        <div className="px-cloud c2" aria-hidden="true" />
+        <div className="px-skyline far" aria-hidden="true" />
+        <div className="px-skyline near" aria-hidden="true" />
 
-      {/* Ambient walkers — meeting commute + idle cooler visit. Children of
-          .office so their left% keyframes ride the open floor like .pet. */}
-      {ambientOk && walkers.map(w => (
-        <div key={w.key} className={'walker' + (w.dir === 'return' ? ' return' : '')}
-             style={{ ['--wd']: w.delay + 's' }} aria-hidden="true">
-          <Sprite data={w.color} scale={2} />
-        </div>
-      ))}
-      {ambientOk && coolerVisitorAgent && (
-        <div className="walker cooler" aria-hidden="true">
-          <Sprite data={coolerVisitorAgent.color} scale={2} />
-        </div>
-      )}
-      {ambientOk && arrival && (
-        <div key={arrival.key} className="walker arriving" aria-hidden="true">
-          <Sprite data={arrival.color} scale={2} />
-        </div>
-      )}
-      {/* Meeting cluster — participants grouped at the meeting door while the
-          meeting is in session (this is the P5 "proximity" surface). */}
-      {ambientOk && meetingActive && meetingIds.length > 0 && (
-        <div className="meeting-cluster" title="In a meeting" aria-hidden="true">
-          {meetingIds.map(id => {
-            const a = agents.find(x => x.id === id);
-            return a ? <Sprite key={id} data={a.color} scale={1.4} /> : null;
-          })}
-        </div>
-      )}
-
-      <div className="rooms">
-        {/* Wall fixtures — zone chip, LIVE pip, wallet P&L board */}
+        {/* HUD — Situation Wall + Agent P&L as game menu boxes. Same live
+            data and gating as the old wall furniture. */}
+        {!isMobileOffice && walletServiceOn && plWallets && plWallets.length > 0 && (
+          <div className="px-hud left pl-frame" title="Agent P&L — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
+            <div className="pl-title">◈ AGENT P&L</div>
+            {plWallets.slice(0, 3).map(w => {
+              const who = agents.find(x => x.id === w.agentId);
+              const name = (who ? who.name : w.agentId).slice(0, 8);
+              const t = plTotals && plTotals[w.agentId];
+              if (!t) {
+                return (
+                  <div key={w.agentId} className="pl-row">
+                    {name} {plFmt(w.windowSpent, w.token)}/{plFmt(w.spendCap, w.token)} {w.token}
+                  </div>
+                );
+              }
+              const net = t.earnedRaw - t.spentRaw;
+              return (
+                <div key={w.agentId} className="pl-row">
+                  {name} ▲{plFmt(t.earnedRaw, t.token)} ▼{plFmt(t.spentRaw, t.token)} ={net < BigInt(0) ? '-' : ''}{plFmt(net < BigInt(0) ? -net : net, t.token)} {t.token}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {!isMobileOffice && (
-          <>
-            <span className="wall-zone" style={{ left: '42%' }} aria-hidden="true">TEAM FLOOR</span>
-            {anyLive && <span className="wall-live" title="An agent is working right now">● {vocab.live}</span>}
-            {walletServiceOn && plWallets && plWallets.length > 0 && (
-              <div className="pl-frame" title="Agent P&L — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
-                <div className="pl-title">◈ AGENT P&L</div>
-                {plWallets.slice(0, 3).map(w => {
-                  const who = agents.find(x => x.id === w.agentId);
-                  const name = (who ? who.name : w.agentId).slice(0, 8);
-                  const t = plTotals && plTotals[w.agentId];
-                  if (!t) {
-                    return (
-                      <div key={w.agentId} className="pl-row">
-                        {name} {plFmt(w.windowSpent, w.token)}/{plFmt(w.spendCap, w.token)} {w.token}
+          <div className="px-hud right sit-wall" title="Situation Wall — live office telemetry">
+            <div className="sw-title">◉ SITUATION</div>
+            <div className="sw-row" title={wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
+              <span className={`sw-lamp ${wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
+            </div>
+            {wallSearch !== null && (
+              <div className="sw-row" title={`Search network: ${wallSearch.ok ? (wallSearch.detail || 'up') : 'unavailable'} — click to re-check`}
+                   style={{cursor:'pointer'}}
+                   onClick={async (e) => {
+                     e.stopPropagation();
+                     setWallSearch(null);
+                     try { setWallSearch(await CafresoHQClient.braveProbe()); }
+                     catch (_e) { setWallSearch({ ok: false }); }
+                   }}>
+                <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
+              </div>
+            )}
+            {wallCrew && wallCrew.total > 0 && (
+              <div className="sw-row" title={`${wallCrew.installed}/${wallCrew.total} agent runtimes installed · ${busyCount} working now`}>
+                ⚒ {wallCrew.installed}/{wallCrew.total}{busyCount > 0 ? ` · ${busyCount} busy` : ''}
+              </div>
+            )}
+            {officeTokens > 0 && (
+              <div className="sw-row" title={`≈ ${(officeTokens/1000).toFixed(0)}k tokens spent this session (~$${(officeTokens*0.0000015).toFixed(2)})`}>
+                <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
+              </div>
+            )}
+            {goldTreasury !== null && goldTreasury > BigInt(0) && (
+              <div className="sw-row" title={`Office treasury — ${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+                ◈ {plFmt(goldTreasury, 'sGLDT')} GOLD
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-scene">
+          <div className="px-building">
+            {/* Rooftop — the logo sign. The lamp beside it is the honest
+                LIVE surface: lit only while an agent is really working. */}
+            <div className="px-rooftop">
+              <div className="px-antenna" aria-hidden="true" />
+              <div className="px-tank" aria-hidden="true" />
+              <Px n="sign_hq" s={2} className="px-sign" />
+              {anyLive && (
+                <span className="px-livelamp" title="An agent is working right now">
+                  ● {vocab.live}
+                </span>
+              )}
+            </div>
+
+            {/* CEO penthouse */}
+            <div className="px-floor is-ceo">
+              <div className="px-room ceo">
+                <div className="px-plate">
+                  <span>{vocab.corner} · CAFRESOHQ</span>
+                  <span className="pip" />
+                </div>
+                <div className="px-int">
+                  <Px n="window_day" className="px-win d" style={{ left: '8%', top: 8 }} />
+                  <Px n="window_night" className="px-win n" style={{ left: '8%', top: 8 }} />
+                  <Px n="window_day" className="px-win d" style={{ right: '30%', top: 8 }} />
+                  <Px n="window_night" className="px-win n" style={{ right: '30%', top: 8 }} />
+                  <Px n="clock" className="px-clock" title="Wall clock" style={{ left: '25%', top: 4 }} />
+
+                  {/* Bulletin corkboard — pinned memory & receipts (live). */}
+                  <div className="px-cork" title="Bulletin board — pinned memory & receipts">
+                    {corkPins.length === 0 && <div className="px-cork-empty">📌 pin memory here</div>}
+                    {corkPins.slice(0, 4).map(p => (
+                      <div key={p.id} className={`px-pin kind-${p.kind}`} title={p.text}>
+                        <span className="px-pin-text">{p.text}</span>
+                        <button className="px-pin-x" onClick={(e)=>{ e.stopPropagation(); onUnpin && onUnpin(p.id); }}>✕</button>
                       </div>
-                    );
-                  }
-                  const net = t.earnedRaw - t.spentRaw;
+                    ))}
+                    {corkPins.length > 4 && <div className="px-pin more">+{corkPins.length - 4}</div>}
+                  </div>
+
+                  {/* Night Shift board (§1 bulletin board) — only once missions exist. */}
+                  {nightMissions.length > 0 && (
+                    <div className={'px-nsb' + (nightRunning ? ' is-live' : '')}
+                         title={nightRunning
+                           ? `Night Shift — ${nightRunning} mission${nightRunning === 1 ? '' : 's'} running right now · click to open the board`
+                           : `Night Shift — ${nightMissions.length} paused · click to open the board`}
+                         onClick={(e)=>{ e.stopPropagation(); onOpenMissions && onOpenMissions(); }}>
+                      <div className="px-nsb-title">🌙 NIGHT SHIFT</div>
+                      <div className="px-nsb-line">
+                        {nightRunning ? `${nightRunning} on shift` : `${nightMissions.length} paused`}
+                      </div>
+                      <div className="px-nsb-topic">{String(nightMissions[0].topic || '').slice(0, 20)}</div>
+                    </div>
+                  )}
+
+                  {/* Sticky notes — pinned context. */}
+                  <div className="px-stickies">
+                    {stickies.slice(0, 3).map(s => (
+                      <div key={s.id} className="px-sticky" title="Pinned context">
+                        <span className="px-sticky-x" onClick={(e)=>{e.stopPropagation(); onRemoveSticky(s.id);}}>✕</span>
+                        {s.text}
+                      </div>
+                    ))}
+                    <div className="px-sticky add" onClick={(e)=>{ e.stopPropagation(); onAddSticky(); }}>+ NOTE</div>
+                  </div>
+
+                  <Px n="bookshelf" className="px-deco" style={{ left: '2%', bottom: 14 }} />
+                  <Px n="cabinet" className="px-cab clickable" title="Browse CafresoHQ's memory"
+                      onClick={(e)=>{ e.stopPropagation(); onOpenMemory(); }}
+                      style={{ left: '14%', bottom: 12 }} />
+                  <div className="px-label" style={{ left: '13%', bottom: 2 }}>MEMORY</div>
+
+                  <Px n="couch" className="px-couch clickable" title="Sit down with CafresoHQ — 1:1"
+                      onClick={(e)=>{ e.stopPropagation(); onSitWithCEO(); }}
+                      style={{ left: '27%', bottom: 8 }} />
+                  <div className="px-label" style={{ left: '29%', bottom: 2 }}>1:1 SOFA</div>
+
+                  <a className="px-arcadelink" href="https://ai.cafreso.com/workspaces"
+                     title="ARCADE · Boot up Cafreso Workspaces"
+                     onClick={(e)=>e.stopPropagation()}>
+                    <Px n="arcade" className="px-arcade" style={{}} />
+                  </a>
+
+                  <div className="px-deskset ceo">
+                    {ceoBusy ? <div className="px-bubble">replying to you…</div> : null}
+                    <PxChar color="cafresohq" pose={ceoBusy ? 'back' : 'front'}
+                            className={ceoBusy ? '' : 'idle-anim'} title="CafresoHQ · CEO" />
+                    <Px n="desk_ceo" className="px-desk" />
+                  </div>
+
+                  {askingAgent && (
+                    <div className="px-asking"
+                         title={`${askingAgent.name} is waiting for your go-ahead — click to answer`}
+                         onClick={(e) => { e.stopPropagation(); if (onOpenAttention) onOpenAttention(); }}>
+                      <div className="px-bubble ask">
+                        {askingAgent.name} asks: {String(askingApproval.title || 'may I?').slice(0, 40)}
+                      </div>
+                      <PxChar color={askingAgent.color} pose="front" className="idle-anim" />
+                      <span className="px-alert" aria-hidden="true">!</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Agent floors — two rooms per storey. */}
+            {chunk2(seniorAgents).map((pair, ri) => (
+              <div className="px-floor" key={'f' + ri}>
+                {pair.map((a, ci) => {
+                  const i = ri * 2 + ci;
+                  const subs = subordinatesOf(a.id);
+                  const awayMeeting = ambientOk && meetingIdSet.has(a.id);
+                  const awayCooler = ambientOk && coolerVisitor === a.id;
+                  const liveTool = liveTools[a.id];
+                  const awayAsking = (approvals || []).some(p => p && p.agentId === a.id);
+                  const propVisit = !awayAsking && !awayMeeting && !awayCooler &&
+                    !!(liveTool && liveTool.prop);
+                  const away = awayMeeting || awayCooler || awayAsking || propVisit;
+                  const screen = screens[a.id];
+                  const paperCount = Math.min((a.journal || []).length, 5);
+                  const myArtifacts = (tasks || []).filter(t => t.assignedTo === a.id && t.artifactPath);
+                  const trayCount = myArtifacts.length;
+                  const latestArtifact = trayCount ? myArtifacts[myArtifacts.length - 1].artifactPath : null;
+                  const busy = a.status === 'busy' || a.status === 'active';
+                  const pose = stretching[a.id] ? 'stretch'
+                    : a.mood === 'stuck' ? 'stuck'
+                    : busy ? 'back' : 'front';
                   return (
-                    <div key={w.agentId} className="pl-row">
-                      {name} ▲{plFmt(t.earnedRaw, t.token)} ▼{plFmt(t.spentRaw, t.token)} ={net < BigInt(0) ? '-' : ''}{plFmt(net < BigInt(0) ? -net : net, t.token)} {t.token}
+                    <div key={a.id}
+                         className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}`}
+                         onClick={() => onInspect(a)}
+                         style={{ cursor: 'pointer' }}
+                         onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
+                         onDragLeave={()=>setDropTarget(null)}
+                         onDrop={e=>{
+                           const taskId = e.dataTransfer.getData('task');
+                           setDropTarget(null);
+                           if (taskId && onTaskDropOnAgent) onTaskDropOnAgent(taskId, a);
+                         }}>
+                      <div className="px-plate">
+                        <span>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {a.role.split(' ').slice(-1)[0].toUpperCase()}</span>
+                        {subs.length > 0 && (
+                          <span className="px-subct" title={`${subs.length} subordinate${subs.length === 1 ? '' : 's'}`}>
+                            +{subs.length}
+                          </span>
+                        )}
+                        <span className={`pip ${a.status}`} />
+                      </div>
+                      <div className="px-int">
+                        <Px n="window_day" className="px-win d" style={{ left: 10, top: 8 }} />
+                        <Px n="window_night" className="px-win n" style={{ left: 10, top: 8 }} />
+                        {i % 2 === 0
+                          ? <Px n="bookshelf" className="px-deco" style={{ right: 8, bottom: 14 }} />
+                          : <Px n="cabinet" className="px-deco" style={{ right: 10, bottom: 14 }} />}
+                        <Px n="plant" className="px-plant" style={{ left: 8, bottom: 10 }} />
+
+                        <div className="px-deskset">
+                          {away
+                            ? <div className="px-placard">
+                                {awayMeeting ? 'in the meeting room'
+                                  : awayCooler ? 'stretching legs'
+                                  : awayAsking ? 'at your desk, asking'
+                                  : PROP_PLACARD[liveTool.prop]}
+                              </div>
+                            : (a.task ? <div className="px-bubble">{a.task}</div> : null)}
+                          {!away && (
+                            <div className="px-charwrap">
+                              <PxChar color={a.color} pose={pose}
+                                      className={pose === 'front' ? 'idle-anim' : pose === 'stretch' ? 'pop' : ''}
+                                      title={a.name} />
+                              <div className={`px-mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood || 'idle']}</div>
+                            </div>
+                          )}
+                          <Px n="desk_agent" className="px-desk" />
+                          {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
+                          <Px n="mug" className="px-mug clickable" title={`Refresh ${a.name}'s context`}
+                              onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
+                          {paperCount > 0 && (
+                            <Px n="papers" className="px-papers clickable"
+                                title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
+                                onClick={(e)=>{ e.stopPropagation(); onInspect(a); }} />
+                          )}
+                          {trayCount > 0 && (
+                            <Px n="tray" className={'px-tray clickable' + (trayDrop[a.id] ? ' is-landing' : '')}
+                                title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed — click to open the latest`}
+                                onClick={(e)=>{ e.stopPropagation();
+                                  if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }} />
+                          )}
+                        </div>
+
+                        {screen && !away && (
+                          <div className={`px-screen ${screen.phase === 'done' ? 'is-done' : screen.phase === 'error' ? 'is-error' : 'is-live'}`} aria-hidden="true">
+                            {screen.tail}
+                          </div>
+                        )}
+                        {liveTool && !away && (
+                          <div className="px-toolchip" aria-hidden="true">
+                            ⚙ {String(liveTool.name || '').replace(/_/g, ' ').toLowerCase()}
+                          </div>
+                        )}
+                        {tipRain[a.id] && (
+                          <div className="px-tiprain" aria-hidden="true">
+                            {Array.from({ length: 6 }, (_, ci2) => (
+                              <span key={ci2} className="px-coin" style={{ left: `${10 + ci2 * 15}%`, animationDelay: `${ci2 * 0.18}s` }} />
+                            ))}
+                            <div className="px-tipamount">
+                              {tipRain[a.id].kind === 'payday' ? '💰 PAYDAY ' : ''}+{tipRain[a.id].amount} {tipRain[a.id].token}
+                            </div>
+                          </div>
+                        )}
+                        {subs.length > 0 && (
+                          <div className="px-subs">
+                            {subs.map((s) => (
+                              <div key={s.id}
+                                   className={`px-sub ${s.transient ? 'transient' : 'assistant'}`}
+                                   onClick={(e)=>{ e.stopPropagation(); onInspect(s); }}
+                                   title={`${s.name} · ${s.role}${s.transient ? ' (transient sub)' : ' (assistant)'}${s.task ? ' · ' + s.task : ''}`}>
+                                <PxChar color={s.color}
+                                        pose={s.status === 'busy' || s.status === 'active' ? 'back' : 'front'} />
+                                <span className="px-sub-name">{s.name}<span className={`pip ${s.status || 'idle'}`}/></span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
+                {pair.length === 1 && <div className="px-room filler" aria-hidden="true" />}
+              </div>
+            ))}
+
+            {/* Vacant floor — hireable units. */}
+            {emptySlots > 0 && (
+              <div className="px-floor is-vacant">
+                {Array.from({length: emptySlots}).map((_, i) => (
+                  <div key={'e'+i} className="px-vacant" onClick={onHire} title={vocab.hireTitle}>
+                    <span className="px-forrent">{vocab.vacant}</span>
+                    <span className="px-vacant-plus">+ {vocab.hire}</span>
+                  </div>
+                ))}
               </div>
             )}
-            {/* Situation Wall — the office's ops board. Live data only;
-                tiles that can't know their answer (standalone mode, no
-                wallet service) simply don't render. */}
-            <div className="sit-wall" title="Situation Wall — live office telemetry">
-              <div className="sw-title">◉ SITUATION</div>
-              <div className="sw-row" title={wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
-                <span className={`sw-lamp ${wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
+
+            {/* Vault — real on-chain balances, display only (unchanged gating). */}
+            {!isMobileOffice && walletServiceOn && (goldTreasury !== null || bankBalance !== null) && (
+              <div className="px-floor is-vault" title="Vault Room — real balances, display only">
+                <div className="px-room vault">
+                  <div className="px-plate"><span>VAULT · TREASURY</span><span className="pip idle" /></div>
+                  <div className="px-int vault">
+                    <Px n="vaultdoor" className="px-vaultdoor" style={{ left: 12, bottom: 8 }} />
+                    {goldTreasury !== null && (
+                      <div className="px-goldstack" title={`${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+                        {Array.from({ length: goldBars }).map((_, gi) => (
+                          <Px key={gi} n="goldbar" style={{ position: 'absolute', left: (gi % 4) * 16, bottom: Math.floor(gi / 4) * 9 }} />
+                        ))}
+                        <div className="px-goldlabel">{plFmt(goldTreasury, 'sGLDT')} sGLDT</div>
+                      </div>
+                    )}
+                    {bankBalance !== null && (
+                      <div className={`px-bankcase ${bankTier || 'empty'}`}
+                           title={`BANK — Banking Brave · ${plFmt(bankBalance, 'BANK')} held${bankTier ? ` · ${bankTier} tier` : ''}`}>
+                        <div className="px-bankcoin">◈</div>
+                        <div className="px-banklabel">{plFmt(bankBalance, 'BANK')} BANK</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              {wallSearch !== null && (
-                <div className="sw-row" title={`Search network: ${wallSearch.ok ? (wallSearch.detail || 'up') : 'unavailable'} — click to re-check`}
-                     style={{cursor:'pointer'}}
-                     onClick={async (e) => {
-                       e.stopPropagation();
-                       setWallSearch(null);
-                       try { setWallSearch(await CafresoHQClient.braveProbe()); }
-                       catch (_e) { setWallSearch({ ok: false }); }
-                     }}>
-                  <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
+            )}
+
+            {/* Lobby — doors, meeting room, water cooler; ambient walkers
+                commute across this floor (same gating as before). */}
+            <div className="px-lobby">
+              <div className="px-awning" aria-hidden="true" />
+              <Px n="cooler" className="px-lobbycooler" title="Water cooler" style={{ left: 18, bottom: 10 }} />
+              <Px n="doors" className="px-doors" />
+              <Px n="meetdoor" className="px-meetdoor clickable" title="Open meeting room"
+                  onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}} style={{ right: 24, bottom: 10 }} />
+              <div className="px-label" style={{ right: 20, bottom: 2 }}>MEETING</div>
+              {ambientOk && meetingActive && meetingIds.length > 0 && (
+                <div className="px-meetcluster" title="In a meeting" aria-hidden="true">
+                  {meetingIds.map(id => {
+                    const a = agents.find(x => x.id === id);
+                    return a ? <PxChar key={id} color={a.color} pose="front" /> : null;
+                  })}
                 </div>
               )}
-              {wallCrew && wallCrew.total > 0 && (
-                <div className="sw-row" title={`${wallCrew.installed}/${wallCrew.total} agent runtimes installed · ${busyCount} working now`}>
-                  ⚒ {wallCrew.installed}/{wallCrew.total}{busyCount > 0 ? ` · ${busyCount} busy` : ''}
+              {ambientOk && walkers.map(w => (
+                <div key={w.key} className={'px-walker' + (w.dir === 'return' ? ' ret' : '')}
+                     style={{ ['--wd']: w.delay + 's' }} aria-hidden="true">
+                  <PxChar color={w.color} pose="walk" />
+                </div>
+              ))}
+              {ambientOk && coolerVisitorAgent && (
+                <div className="px-walker at-cooler" aria-hidden="true">
+                  <PxChar color={coolerVisitorAgent.color} pose="front" className="idle-anim" />
                 </div>
               )}
-              {officeTokens > 0 && (
-                <div className="sw-row" title={`≈ ${(officeTokens/1000).toFixed(0)}k tokens spent this session (~$${(officeTokens*0.0000015).toFixed(2)})`}>
-                  <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
-                </div>
-              )}
-              {goldTreasury !== null && goldTreasury > BigInt(0) && (
-                <div className="sw-row" title={`Office treasury — ${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
-                  ◈ {plFmt(goldTreasury, 'sGLDT')} GOLD
+              {ambientOk && arrival && (
+                <div key={arrival.key} className="px-walker arriving" aria-hidden="true">
+                  <PxChar color={arrival.color} pose="walk" />
                 </div>
               )}
             </div>
-          </>
-        )}
-        {/* CEO office */}
-        <div className="room ceo">
-          <div className="nameplate">
-            <span>{vocab.corner} · CAFRESOHQ</span>
-            <span className="pip" />
           </div>
-          <div className="interior">
-            {/* Office furnishings — overhead light, rug, framed photo on the
-                back wall. These run first so they sit BEHIND the interactive
-                pieces (corkboard, arcade, desk, etc.). */}
-            <div className="ceo-ceiling-light" aria-hidden="true"/>
-            <div className="office-carpet" aria-hidden="true"/>
-            <div className="wall-photo" title="Cafreso skyline" aria-hidden="true"/>
-            <div className="corkboard" title="Bulletin board — pinned memory & receipts">
-              {corkPins.length === 0 && (
-                <div className="cork-empty">📌 pin memory or receipts here</div>
-              )}
-              {corkPins.slice(0, 9).map(p => (
-                <div key={p.id} className={`cork-pin kind-${p.kind}`} title={p.text}>
-                  <span className="cp-text">{p.text}</span>
-                  <button className="cp-x" onClick={(e)=>{ e.stopPropagation(); onUnpin && onUnpin(p.id); }}>✕</button>
-                </div>
-              ))}
-            </div>
-            {nightMissions.length > 0 && (
-              <div className={'nightshift-board' + (nightRunning ? ' is-live' : '')}
-                   title={nightRunning
-                     ? `Night Shift — ${nightRunning} mission${nightRunning === 1 ? '' : 's'} running right now · click to open the board`
-                     : `Night Shift — ${nightMissions.length} paused · click to open the board`}
-                   onClick={(e)=>{ e.stopPropagation(); onOpenMissions && onOpenMissions(); }}>
-                <div className="nsb-title">🌙 NIGHT SHIFT</div>
-                <div className="nsb-line">
-                  {nightRunning ? `${nightRunning} on shift` : `${nightMissions.length} paused`}
-                </div>
-                <div className="nsb-topic">{String(nightMissions[0].topic || '').slice(0, 24)}</div>
-              </div>
-            )}
-            <div className="window">
-              <div className="sun"/>
-              <div className="cloud cloud-a"/>
-              <div className="cloud cloud-b"/>
-            </div>
-            {/* Wall clock — analog, ticking minute hand */}
-            <div className="wall-clock" title="Wall clock">
-              <span className="wc-hand wc-hour"/>
-              <span className="wc-hand wc-min"/>
-              <span className="wc-pin"/>
-            </div>
-            {/* Mini strategy whiteboard on the right wall */}
-            <div className="whiteboard" title="Strategy whiteboard">
-              <span className="wb-line">Q3 — SHIP HQ</span>
-              <span className="wb-line wb-r">★ ECOSYSTEM</span>
-              <span className="wb-line">DAO · CHAIN · AI</span>
-            </div>
-            {/* Bookshelf with colored binder spines — slots into the gap above
-                the floor between the arcade and the desk. */}
-            <div className="bookshelf" title="Quarterly binders" aria-hidden="true">
-              <div className="shelf"><i className="book b1"/><i className="book b2"/><i className="book b3"/><i className="book b4"/><i className="book b5"/></div>
-              <div className="shelf"><i className="book b3"/><i className="book b1"/><i className="book b5"/><i className="book b2"/></div>
-              <div className="shelf"><i className="book b4"/><i className="book b3"/><i className="book b1"/></div>
-            </div>
-            <div className="plant" />
-            {/* Coffee mug on the desk top */}
-            <div className="coffee-mug" title="CEO's coffee" aria-hidden="true">
-              <span className="cm-steam"/>
-            </div>
-            {/* Desk peripherals — keyboard, mouse, phone */}
-            <div className="desk-keyboard" aria-hidden="true"/>
-            <div className="desk-mouse" aria-hidden="true"/>
-            <div className="desk-phone" title="Desk phone" aria-hidden="true"/>
-            {/* Trash bin between desk and filing cabinet */}
-            <div className="trash-bin" title="Trash" aria-hidden="true"/>
-            {/* Clickable filing cabinet → memory shelf */}
-            <div className="filing clickable" title="Browse CafresoHQ's memory" onClick={(e)=>{e.stopPropagation(); onOpenMemory();}}>
-              <span/><span/><span/>
-              <div className="tag">MEMORY</div>
-            </div>
-            {/* Guest chair — click to start 1:1 */}
-            <div className="guest-chair" title="Sit down with CafresoHQ" onClick={(e)=>{e.stopPropagation(); onSitWithCEO();}}/>
-            <div className="guest-chair-label">↑ 1:1 CHAIR</div>
-            {/* Meeting room door */}
-            <div className="meeting-door" title="Open meeting room" onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}}/>
-            <div className="meeting-door-label">MEETING →</div>
-            {/* Pac-Man arcade — clickable easter egg that boots Cafreso Workspaces */}
-            <a className="arcade clickable" href="https://ai.cafreso.com/workspaces"
-               title="PAC-MAN · Boot up Cafreso Workspaces"
-               onClick={(e)=>e.stopPropagation()}>
-              <span className="arcade-marquee">PAC-MAN</span>
-              <span className="arcade-bezel">
-                <span className="arcade-screen">
-                  <i className="dot"/><i className="dot"/><i className="dot"/><i className="dot"/>
-                  <i className="pac"/>
-                  <i className="ghost blinky"/>
-                  <i className="ghost pinky"/>
-                  <i className="ghost inky"/>
-                </span>
-              </span>
-              <span className="arcade-coin"/>
-              <span className="arcade-controls">
-                <i className="joystick"/>
-                <i className="btn-red"/>
-                <i className="btn-red"/>
-              </span>
-              <span className="arcade-base"/>
-            </a>
-            <div className="sticky-stack">
-              {stickies.map(s => (
-                <div key={s.id} className="sticky" title="Pinned context">
-                  <span className="x" onClick={(e)=>{e.stopPropagation(); onRemoveSticky(s.id);}}>✕</span>
-                  {s.text}
-                </div>
-              ))}
-              <div className="add-sticky" onClick={onAddSticky}>+ NOTE</div>
-            </div>
-            <div className="desk" />
-            {/* Office chair behind the CEO — the backrest pokes up
-                behind the sprite so it reads as "sitting at the desk". */}
-            <div className="office-chair" aria-hidden="true"/>
-            <div className="sprite-slot">
-              {ceoBusy ? <div className="bubble t-body">replying to you…</div> : null}
-              <Sprite data="cafresohq" scale={2} className="bob slow"/>
-            </div>
-            {askingAgent && (
-              <div className="asking-visitor"
-                   title={`${askingAgent.name} is waiting for your go-ahead — click to answer`}
-                   onClick={(e) => { e.stopPropagation(); if (onOpenAttention) onOpenAttention(); }}>
-                <div className="bubble t-body">
-                  {askingAgent.name} asks: {String(askingApproval.title || 'may I?').slice(0, 44)}
-                </div>
-                <Sprite data={askingAgent.color} scale={2} className="bob fast"/>
-              </div>
+
+          {/* Street — the Japan-town ground floor of the scene. */}
+          <div className="px-street">
+            <Px n="tree" className="px-streetsp" style={{ left: '2%', bottom: 14 }} />
+            <Px n="lamp" className="px-streetlamp" style={{ left: '16%', bottom: 14 }} />
+            <Px n="bush" className="px-streetsp" style={{ left: '24%', bottom: 12 }} />
+            <Px n="vending" className="px-streetsp" title="Vending machine" style={{ right: '14%', bottom: 14 }} />
+            <Px n="lamp" className="px-streetlamp" style={{ right: '5%', bottom: 14 }} />
+            <Px n="tree" className="px-streetsp" style={{ right: '0%', bottom: 14 }} />
+            {ambientOk && (
+              <div className="px-dog" aria-label="Maximus" title="Maximus" />
             )}
           </div>
         </div>
-
-        {/* Vault Room — the office's treasury, mirroring REAL on-chain
-            balances. Display-only by design: no transfer UI in this room.
-            Gold bars scale with aggregate sGLDT across agent wallets; the
-            glass case shows the boss's BANK holdings (prestige, not spend).
-            The capped pipe is minegold.brave — plumbed, not yet flowing. */}
-        {!isMobileOffice && walletServiceOn && (goldTreasury !== null || bankBalance !== null) && (
-          <div className="room vault" title="Vault Room — real balances, display only">
-            <div className="nameplate">
-              <span>VAULT · TREASURY</span>
-              <span className="pip idle" />
-            </div>
-            <div className="interior">
-              <div className="vault-door" aria-hidden="true"/>
-              {goldTreasury !== null && (
-                <div className="gold-stack" title={`${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
-                  {Array.from({ length: goldBars }).map((_, gi) => (
-                    <span key={gi} className="gold-bar" style={{ left: (gi % 4) * 14, bottom: Math.floor(gi / 4) * 8 }}/>
-                  ))}
-                  <div className="gold-label">{plFmt(goldTreasury, 'sGLDT')} sGLDT</div>
-                </div>
-              )}
-              {bankBalance !== null && (
-                <div className={`bank-case ${bankTier || 'empty'}`}
-                     title={`BANK — Banking Brave · ${plFmt(bankBalance, 'BANK') } held${bankTier ? ` · ${bankTier} tier` : ''}`}>
-                  <div className="bank-coin">◈</div>
-                  <div className="bank-label">{plFmt(bankBalance, 'BANK')} BANK</div>
-                </div>
-              )}
-              <div className="gold-pipe" title="minegold.brave — coming soon" aria-hidden="true"/>
-            </div>
-          </div>
-        )}
-
-        {/* Senior agent desks (drop-targetable for tasks).
-            Assistants + transient sub-agents render NESTED inside their
-            senior's interior, not as separate top-level desks. */}
-        {seniorAgents.map((a, i) => {
-          const subs = subordinatesOf(a.id);
-          const awayMeeting = ambientOk && meetingIdSet.has(a.id);
-          const awayCooler = ambientOk && coolerVisitor === a.id;
-          const liveTool = liveTools[a.id];
-          /* §4 walks. Asking: a pending approval from this coworker means
-             they're over at YOUR desk waiting for the stamp. Prop visit: the
-             running tool decides the prop; only plays while the tool really
-             runs (liveTools clears on 'done'). Both are real state, not
-             ambience — so neither is ambientOk-gated. */
-          const awayAsking = (approvals || []).some(p => p && p.agentId === a.id);
-          const propVisit = !awayAsking && !awayMeeting && !awayCooler &&
-            !!(liveTool && liveTool.prop);
-          const screen = screens[a.id];
-          const paperCount = Math.min((a.journal || []).length, 5);
-          /* Deliveries this coworker has filed — drives the out-tray. Read
-             off the tasks themselves so the tray can never claim a delivery
-             that isn't really in the cabinet. */
-          const myArtifacts = (tasks || []).filter(t => t.assignedTo === a.id && t.artifactPath);
-          const trayCount = myArtifacts.length;
-          const latestArtifact = trayCount ? myArtifacts[myArtifacts.length - 1].artifactPath : null;
-          return (
-          <div key={a.id}
-               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${awayAsking ? ' away-asking' : ''}${propVisit ? ' away-prop' : ''}${liveTool ? ' tool-live' : ''}`}
-               onClick={() => onInspect(a)}
-               style={{cursor:'pointer', zIndex: 2 + i}}
-               onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
-               onDragLeave={()=>setDropTarget(null)}
-               onDrop={e=>{
-                 const taskId = e.dataTransfer.getData('task');
-                 setDropTarget(null);
-                 if (taskId && onTaskDropOnAgent) onTaskDropOnAgent(taskId, a);
-               }}>
-            <div className="nameplate">
-              <span>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {a.role.split(' ').slice(-1)[0].toUpperCase()}</span>
-              {subs.length > 0 && (
-                <span className="subord-count" title={`${subs.length} subordinate${subs.length === 1 ? '' : 's'}`}
-                      style={{fontSize:9,opacity:0.65,marginLeft:6}}>
-                  +{subs.length}
-                </span>
-              )}
-              <span className={`pip ${a.status}`} />
-            </div>
-            <div className="interior">
-              {/* Per-desk decor — the agent's OWN furnishings when bought in
-                  the Furnish Shop (a.decor, persisted on the agent record);
-                  falls back to the original index-deterministic pick so
-                  unfurnished offices look exactly like they always did. */}
-              {(() => { const W = ['mini-window','poster','wall-shelf','pin-note','poster p1','mini-window']; const w = (a.decor && a.decor.wall) || W[i % W.length]; return <div className={w} aria-hidden="true">{w.startsWith('mini-window') ? <span className="sun"/> : null}</div>; })()}
-              <div className="room-rug" data-variant={(a.decor && a.decor.rug != null) ? a.decor.rug : i % 3} aria-hidden="true"/>
-              <div className="plant" style={{left: 6}}/>
-              <div className="coffee" title={`Refresh ${a.name}'s context`}
-                onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
-              <div className="desk" />
-              {/* Live monitor: the tail of this agent's REAL output stream.
-                  Dark when idle (no element), scrolling text while running,
-                  frozen last line briefly after 'done'. */}
-              {screen && !awayMeeting && !awayCooler && (
-                <div className={`desk-screen ${screen.phase === 'done' ? 'is-done' : screen.phase === 'error' ? 'is-error' : 'is-live'}`} aria-hidden="true">
-                  {screen.tail}
-                </div>
-              )}
-              {/* Filed reports pile up as papers; click opens the journal. */}
-              {paperCount > 0 && (
-                <div className="desk-papers"
-                     title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
-                     onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}>
-                  {Array.from({ length: paperCount }).map((_, pi) => (
-                    <span key={pi} className="desk-paper" style={{ bottom: pi * 3, left: pi % 2 ? 1 : 0 }}/>
-                  ))}
-                </div>
-              )}
-              {/* Out-tray: where finished work waits after it's filed to the
-                  cabinet (§1 "Artifacts / outputs → the out-tray, filed to
-                  the cabinet"). Only appears once this coworker has actually
-                  delivered something — an empty tray on a brand-new desk
-                  would be set dressing pretending to be state. */}
-              {trayCount > 0 && (
-                <div className={'out-tray' + (trayDrop[a.id] ? ' is-landing' : '')}
-                     title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed — click to open the latest`}
-                     onClick={(e)=>{ e.stopPropagation();
-                       if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }}>
-                  <span className="out-tray-slip" aria-hidden="true"/>
-                  <span className="out-tray-label" aria-hidden="true">OUT</span>
-                </div>
-              )}
-              <div className="mini-keys" aria-hidden="true"/>
-              <div className="desk-lamp" aria-hidden="true"/>
-              {liveTool && !awayMeeting && !awayCooler && (
-                <div className="tool-chip" aria-hidden="true">
-                  ⚙ {String(liveTool.name || '').replace(/_/g, ' ').toLowerCase()}
-                </div>
-              )}
-              {tipRain[a.id] && (
-                <div className="tip-rain" aria-hidden="true">
-                  {Array.from({ length: 7 }, (_, ci) => (
-                    <span key={ci} className="tip-coin" style={{ left: `${8 + ci * 13}%`, animationDelay: `${ci * 0.18}s` }}>◉</span>
-                  ))}
-                  <div className="tip-amount">
-                    {tipRain[a.id].kind === 'payday' ? '💰 PAYDAY ' : ''}+{tipRain[a.id].amount} {tipRain[a.id].token}
-                  </div>
-                </div>
-              )}
-              <div className="sprite-slot">
-                {(awayMeeting || awayCooler || awayAsking || propVisit)
-                  ? <div className="away-placard">
-                      {awayMeeting ? 'in the meeting room'
-                        : awayCooler ? 'stretching legs'
-                        : awayAsking ? 'at your desk, asking'
-                        : PROP_PLACARD[liveTool.prop]}
-                    </div>
-                  : (a.task ? <div className="bubble t-body">{a.task}</div> : null)}
-                <div style={{position:'relative'}}>
-                  {/* Bob speed tracks real effort — fast only while the agent
-                      is actually running, not by desk-index parity. The
-                      one-shot stretch plays when a run really finishes (§4
-                      `done` row) — keyed on mood so it can't loop. */}
-                  <Sprite data={a.color} scale={2} className={`bob ${a.status === 'busy' ? 'fast' : 'slow'}${a.mood === 'done' ? ' stretch' : ''}`}/>
-                  <div className={`mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood||'idle']}</div>
-                </div>
-              </div>
-              {/* Subordinates — assistants sit at their own mini desks
-                  in the background of the senior's office. */}
-              {subs.length > 0 && (
-                <div className="subord-bg">
-                  {subs.map((s) => (
-                    <div key={s.id}
-                         className={`subord-desk ${s.transient ? 'transient' : 'assistant'}`}
-                         onClick={(e)=>{ e.stopPropagation(); onInspect(s); }}
-                         title={`${s.name} · ${s.role}${s.transient ? ' (transient sub)' : ' (assistant)'}${s.task ? ' · ' + s.task : ''}`}>
-                      <div className="subord-sprite-slot">
-                        <Sprite data={s.color} scale={1.6} className="bob slow"/>
-                      </div>
-                      <div className="subord-mini-desk"/>
-                      <div className="subord-name">
-                        {s.name}
-                        <span className={`pip ${s.status || 'idle'}`}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        );})}
-
-        {/* Empty hireable desks */}
-        {Array.from({length: emptySlots}).map((_, i) => (
-          <div key={'e'+i} className="room empty" onClick={onHire} title={vocab.hireTitle}
-               style={{ zIndex: 2 + seniorAgents.length + i }}>
-            <div className="nameplate">
-              <span style={{color:'#9a8a80'}}>{vocab.vacant}</span>
-              <span className="pip idle" />
-            </div>
-            <div className="interior">
-              <div className="hire-sign" aria-hidden="true">FOR HIRE</div>
-              <div className="desk" style={{opacity:0.6}}/>
-              <div className="hire">
-                <div className="plus">+</div>
-                <div className="label">{vocab.hire}</div>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

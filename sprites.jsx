@@ -70,6 +70,7 @@ const HUMANS = {
   sky:      makePal({ h:'#5a3a28', H:'#331e12', c:'#89c8e0', C:'#5a98b0' }),
   mint:     makePal({ h:'#2c1a10', H:'#120804', c:'#b6e0c8', C:'#6fa890' }),
   blush:    makePal({ h:'#6a3a28', H:'#3a1c12', c:'#f3c1b2', C:'#b87866' }),
+  lavender: makePal({ h:'#3a2c20', H:'#1e140c', c:'#b6a8e0', C:'#7d6bb0' }),
 };
 
 // 16×16 dog character — floppy ears, muzzle, nostrils.

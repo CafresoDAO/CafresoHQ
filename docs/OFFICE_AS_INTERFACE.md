@@ -6,6 +6,22 @@
 > (desktop mode) — those cover how the office *renders*; this covers how it
 > *teaches*. Scope: the metaphor as onboarding + UX for people who will never
 > open a terminal, and the copy/animation rules that keep it honest.
+>
+> ✅ **Rendering replaced 2026-08-06 — "Pixel HQ."** The DOM/CSS cross-section
+> floor (`OFFICE_REVAMP.md`/`LIVING_FLOOR.md`) is retired; `ui/office.jsx`
+> now renders a GBA-era pixel-art building cutaway — sky/skyline backdrop,
+> rooftop "CAFRESO HQ" sign, CEO penthouse, agent floors (two rooms per
+> storey), vacant-desk floor, vault, lobby, and a Japan-town street with an
+> ambient dog patrol. Assets are hand-authored ASCII pixel specs machine-
+> rendered to PNG by `scripts/gen_pixel_hq.py` (pure stdlib, no Pillow/sips —
+> deterministic, re-runnable). Original art only: no Nintendo/Game Freak
+> assets, names, or trade dress — era-authentic grammar (16×24 characters,
+> blue-black outlines, dialog-box speech bubbles), not a copy. Every §4
+> event→animation beat and every live surface (desk screens, tool placards,
+> the asking-visitor, Night Shift board, P&L/Situation HUD, tip rain, vault
+> balances) carried over 1:1 — this is a re-skin of real wiring, not a mockup.
+> This is a full replacement, not a selectable theme: the old room-card
+> rendering is gone.
 
 ---
 
