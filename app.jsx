@@ -3802,9 +3802,12 @@ ${d.text}` : d.text,
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
         theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
-      <InspectPanel agent={inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+      {/* Mounted only while open: the card holds a job-description DRAFT
+          (saved on blur), and an always-mounted panel would resurface an
+          abandoned draft on reopen as if it were saved — §4-dishonest. */}
+      {inspect && <InspectPanel agent={inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
-        onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>
+        onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>}
       <FurnishModal
         agent={furnishFor ? (agents.find(x => x.id === furnishFor.id) || furnishFor) : null}
         onClose={() => setFurnishFor(null)}

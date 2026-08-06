@@ -1,6 +1,7 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
+import { poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -63,6 +64,23 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
      agent.tasksDone (which counted chat replies as tasks). */
   const xp = React.useMemo(() => xpStats(experience, agent.id), [experience, agent.id]);
   const specialty = xpAffinityText(xp);
+  /* The cast (§2): vendor chip + four honest class bars + one specialty
+     line (earned affinity beats the class hunch). */
+  const vendor = poweredBy(agent);
+  const bars = statBars(agent);
+  const tagLine = specialtyTag(agent, specialty);
+  /* Job description = the persona, editable in place (§2). It IS the system
+     prompt — we just never call it that (§6). Draft state so a half-typed
+     edit never saves on re-render; commit on blur. */
+  const [jd, setJd] = React.useState(null);
+  React.useEffect(() => { setJd(null); }, [agent.id]);
+  const jdValue = jd !== null ? jd : (agent.systemPrompt || '');
+  const saveJd = () => {
+    if (jd === null || jd === (agent.systemPrompt || '')) { setJd(null); return; }
+    onUpdate(agent.id, { systemPrompt: jd });
+    setJd(null);
+    if (window.cafresohqToast) window.cafresohqToast.success(`${agent.name}'s job description updated`);
+  };
   const ago = (ts) => {
     const dt = Date.now() - (ts || 0);
     if (dt < 60_000) return Math.max(0, Math.floor(dt / 1000)) + 's';
@@ -84,7 +102,10 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
           <Sprite data={agent.color} scale={2}/>
           <div style={{flex:1}}>
             <div style={{fontFamily:'Press Start 2P',fontSize:10}}>{agent.elevated ? '🛡 ' : ''}{agent.name}</div>
-            <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)'}}>{agent.role}</div>
+            <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)'}}>
+              {agent.role}
+              {vendor && <span className="powered-chip" title="Who runs the model — the coworker is yours; the vendor is just the engine">powered by {vendor}</span>}
+            </div>
           </div>
           <div className={`mood ${agent.mood||'idle'}`} style={{position:'static'}}>{(agent.mood||'idle')[0].toUpperCase()}</div>
         </div>
@@ -103,9 +124,29 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         )}
         <div className="stat"><span className="lbl">Tokens (session)</span><span>{agent.tokens?.toLocaleString() || '0'}</span></div>
         <div className="stat"><span className="lbl">Cost</span><span>${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>
+        {/* The cast (§2): four bars, no more — honest class judgements,
+            not benchmark cosplay. Cost reads as value (4 = costs nothing). */}
+        <div className="stat-bars">
+          {[['Speed', bars.speed], ['Depth', bars.depth], ['Code', bars.code], ['Cost', bars.cost]].map(([lbl, n]) => (
+            <div className="stat-bar-row" key={lbl}>
+              <span className="sb-lbl">{lbl}</span>
+              <span className="sb-track" aria-label={`${lbl}: ${n} of 4`}>
+                {[1, 2, 3, 4].map(i => <span key={i} className={'sb-seg' + (i <= n ? ' on' : '')} />)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="stat"><span className="lbl">Specialty</span><span>{tagLine}</span></div>
         <div className="stat"><span className="lbl">Jobs completed</span><span>{xp.jobs}</span></div>
         <div className="stat"><span className="lbl">Current streak</span><span>{xp.streak >= 2 ? `${xp.streak} 🔥` : xp.streak}</span></div>
-        {specialty && <div className="stat"><span className="lbl">Specialty</span><span>{specialty}</span></div>}
+        <div>
+          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>
+            Job description <span style={{textTransform:'none',letterSpacing:0,opacity:0.7}}>· what they believe their job is — edit it and they'll work to it</span>
+          </div>
+          <textarea className="jobdesc" rows={4} value={jdValue}
+            placeholder={`Describe ${agent.name}'s job in plain words — tone, priorities, what "done" means.`}
+            onChange={e => setJd(e.target.value)} onBlur={saveJd} />
+        </div>
         <div className="stat"><span className="lbl">Model</span><span>{agent.model}</span></div>
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Tools used</div>

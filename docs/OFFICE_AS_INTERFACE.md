@@ -58,6 +58,17 @@ Tone guardrails: **corporate HQ with heart** — warm, professional, a little
 playful. Not childish, no baby-talk, no fake enthusiasm in copy. The office is
 charming; the coworkers are competent.
 
+> ✅ **Card shipped 2026-08-06 (Phase B1)** — `app/cast.jsx` + the inspect
+> panel. Powered-by chip from the model id's shape (unknown vendor → NO chip,
+> never a wrong brand; local daemons say "your hardware"). The four bars are
+> a small model-CLASS table (1..4, first match wins through driver prefixes)
+> — coarse colleague-judgements, exactly not benchmark cosplay — with Cost
+> reading as value (4 = costs nothing extra; payroll shows real numbers).
+> Specialty: an EARNED XP affinity ("2 drafts") beats the class tagline
+> ("cheap and tireless"). Job description edits in place, saves on blur; the
+> panel now mounts only while open so an abandoned draft can't resurface
+> looking saved. Covered by `scripts/test_cast.py`.
+
 ## 3. First run — five minutes to first delight
 
 The protected front door (North Star §3.6). No settings pages, no model IDs,

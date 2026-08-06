@@ -34,6 +34,7 @@ SUITES: list[tuple[str, int, bool]] = [
     ('scripts/test_artifacts.py',                    60,  False),
     ('scripts/test_experience.py',                   60,  False),
     ('scripts/test_floor.py',                        60,  False),
+    ('scripts/test_cast.py',                         60,  False),
     ('scripts/test_brave_ledger.py',                 60,  False),
     ('scripts/test_gap_cron.py',                     60,  False),
     ('scripts/test_deep_research.py',               600,  True),

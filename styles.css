@@ -5935,6 +5935,37 @@ body.night .starter-outcome { color: #b0a3c8; }
   font-family: 'Inter'; font-size: 10.5px; line-height: 1.45;
   color: var(--ink-3); margin: 10px 0 0;
 }
+/* The cast (§2): coworker-card stat bars + vendor chip + job description. */
+.powered-chip {
+  margin-left: 6px; padding: 1px 5px;
+  font-size: 8px; letter-spacing: 0.04em; text-transform: none;
+  border: 1px solid var(--rule); border-radius: 3px;
+  color: var(--ink-3); background: var(--paper-2);
+  white-space: nowrap;
+}
+.stat-bars { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; }
+.stat-bar-row { display: flex; align-items: center; gap: 8px; }
+.sb-lbl {
+  font-family: 'Inter'; font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-2); width: 42px;
+}
+.sb-track { display: flex; gap: 3px; }
+.sb-seg {
+  width: 22px; height: 7px;
+  background: var(--paper-2); border: 1px solid var(--rule);
+}
+.sb-seg.on { background: var(--accent-teal, #2a9d8f); border-color: var(--accent-teal, #2a9d8f); }
+.jobdesc {
+  width: 100%; resize: vertical; min-height: 58px;
+  font-family: 'Inter'; font-size: 11px; line-height: 1.45;
+  color: var(--ink); background: var(--paper-2);
+  border: 1px dashed var(--ink-3); border-radius: 4px; padding: 6px 8px;
+}
+.jobdesc:focus { outline: none; border-style: solid; border-color: var(--accent-teal, #2a9d8f); }
+body.night .powered-chip { background: #241d33; color: #b7a8d6; border-color: #3a3050; }
+body.night .sb-seg { background: #241d33; border-color: #3a3050; }
+body.night .jobdesc { background: #241d33; color: #e8dcff; border-color: #4a3f63; }
+
 /* Ship-to-chain share row — pages only, shell only (see delivery.jsx). */
 .delivery-share {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
