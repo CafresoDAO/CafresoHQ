@@ -1060,12 +1060,53 @@ async function codexStatus() {
   } catch (_e) { return { configured: false, binary: '', override: '', allowedDirs: [], badDirs: [] }; }
 }
 
+/* Contract-native chat (docs/DRIVER_CONTRACT.md §1.3): backends with no
+   bespoke browser client — OpenRouter, Groq, Gemini API — ride
+   POST /agent/stream. serve.py picks the driver, holds the API key
+   (env/operator-configured; nothing secret ever reaches the browser), and
+   relays contract events as SSE `data:` frames. Only the chat-relevant
+   events matter here: token → text, usage → meter, error → visible ⚠ line
+   (these drivers emit no tool_call/artifact — capabilities.tools=false). */
+async function streamAgentContract(driver, label, { system, messages, model, maxTokens, onToken, onUsage, signal }) {
+  const body = {
+    driver,
+    messages: normalizeMessages(messages),
+    system,
+    model,
+    maxTokens: maxTokens || _settings.maxTokens || 1024,
+  };
+  const res = await fetchStreamHead(_API_BASE + '/agent/stream', {
+    method: 'POST', signal,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
+  }
+  await parseSSE(res, (_event, data) => {
+    if (!data) return;
+    try {
+      const ev = JSON.parse(data);
+      if (ev.event === 'token' && ev.text) onToken(ev.text);
+      else if (ev.event === 'error' && ev.message) onToken(`\n⚠ ${label}: ${ev.message}`);
+      else if (ev.event === 'usage' && onUsage) {
+        onUsage({
+          input: ev.inTokens || 0,
+          output: ev.outTokens || 0,
+          total: (ev.inTokens || 0) + (ev.outTokens || 0),
+        });
+      }
+    } catch (_e) {}
+  });
+}
+
 /* Provider-prefixed model IDs (e.g. "ollama:gpt-oss:20b") let each agent
    pin a backend regardless of the global provider toggle. Bare ids fall
    back to whatever provider the user picked in Settings. */
 function parseModelId(id) {
   if (!id) return { provider: null, model: null };
-  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'cafresohq:', 'codex:', 'google:']) {
+  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'cafresohq:', 'codex:', 'google:', 'openrouter:', 'groq:', 'gemini-api:']) {
     if (id.startsWith(p)) return { provider: p.slice(0, -1), model: id.slice(p.length) };
   }
   return { provider: null, model: id };
@@ -1083,6 +1124,9 @@ async function stream(opts) {
   if (provider === 'codex')      return streamCodex(next);
   if (provider === 'google')     return streamGoogle(next);
   if (provider === 'ollama')     return streamOllama(next);
+  if (provider === 'openrouter') return streamAgentContract('openrouter', 'OpenRouter', next);
+  if (provider === 'groq')       return streamAgentContract('groq', 'Groq', next);
+  if (provider === 'gemini-api') return streamAgentContract('gemini-api', 'Gemini', next);
   return streamLMStudio(next);
 }
 
@@ -2404,7 +2448,7 @@ const CafresoHQClient = {
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
   hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
-  agentsStatus, agentsInstall, agentDrivers,
+  agentsStatus, agentsInstall, agentDrivers, streamAgentContract,
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

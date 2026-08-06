@@ -25,6 +25,9 @@ for _k, _v in list(os.environ.items()):
         os.environ.setdefault('CAFRESOHQ_' + _k[len('OPENCLAW_'):], _v)
 import pathlib
 import re
+import re as _re  # module-scope alias: three handler sites use `_re.…` and
+                  # previously only worked in the container's concatenated
+                  # build (DRIVER_CONTRACT §0/§5 — the latent NameError).
 import secrets
 import select
 import socket
@@ -276,7 +279,8 @@ _market_lock = threading.Lock()
 _hq_state_dir   = pathlib.Path(os.environ.get('CAFRESOHQ_HQ_STATE_DIR',
                     os.path.join(os.path.dirname(__file__), 'hq-state')))
 _hq_memory_dir  = pathlib.Path(os.environ.get('CAFRESOHQ_MEMORY_DIR',
-                    os.path.join(os.path.dirname(__file__), 'hq-state', 'memory')))
+                    str(_hq_state_dir / 'memory')))  # follows CAFRESOHQ_HQ_STATE_DIR
+                                                     # unless explicitly overridden
 
 
 # ---- Night Shift (Sprint 4 MVP-1) ------------------------------------------
@@ -1764,6 +1768,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'cwd':       self._agent_task_cwd(body),
             'agentName': (body.get('agentName') or '').strip()[:60],
         }
+        try:
+            max_toks = int(body.get('maxTokens') or 0)
+        except (TypeError, ValueError):
+            max_toks = 0
+        if max_toks > 0:
+            task['limits'] = {'maxTokens': min(max_toks, 131072)}
         if body.get('tools'):
             if not (_cafresohq_allowed_dirs and _cafresohq_allowed_tools):
                 return self._send_json(503, {'error':
@@ -3664,14 +3674,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # available in the buffer (at most n bytes), which is exactly the
             # behaviour we need for real-time proxy streaming.
             raw_fp = resp  # HTTPResponse itself
-            while True:
+            # Bounded relay: when the upstream declares Content-Length, stop
+            # after exactly that many bytes. Keep-alive upstreams (Ollama's Go
+            # server) never close the socket after a CL-bounded body, so
+            # read-until-EOF would block here for the full 600s timeout while
+            # the browser — which got no Content-Length (it's stripped as a
+            # hop header under our HTTP/1.0 close-terminated responses) —
+            # waits forever for the body to end. SSE/chunked responses have
+            # no CL and keep the old read-until-close behavior.
+            try:
+                _cl = resp.getheader('Content-Length')
+                remaining = int(_cl) if _cl is not None else None
+            except (TypeError, ValueError):
+                remaining = None
+            while remaining is None or remaining > 0:
+                want = 8192 if remaining is None else min(8192, remaining)
                 try:
                     # read1 = "one underlying read, return whatever we got"
-                    chunk = raw_fp.fp.read1(8192) if hasattr(raw_fp.fp, 'read1') else raw_fp.read(1024)
+                    chunk = raw_fp.fp.read1(want) if hasattr(raw_fp.fp, 'read1') else raw_fp.read(min(want, 1024))
                 except Exception:
                     break
                 if not chunk:
                     break
+                if remaining is not None:
+                    remaining -= len(chunk)
                 try:
                     self.wfile.write(chunk)
                     self.wfile.flush()

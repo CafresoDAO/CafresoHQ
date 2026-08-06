@@ -150,8 +150,21 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
    client to drivers (llm_call → `run_task_text` over the local-HTTP family;
    groq + gemini-api drivers added so no provider was lost). Bonus: keyless
    LOCAL backends now work for night missions — the old client refused them.
-5. Fix the `_re` NameError properly during extraction (module-scope import in
-   the extracted module), and stop relying on build-time concatenation order.
+5. ✅ **done 2026-08-05** — the `_re` NameError fixed at module scope in
+   serve.py; repo-direct runs no longer depend on the container build's
+   concatenation order (it was crashing every `/hq/state|memory` save when
+   serve.py ran straight from the repo).
+6. ✅ **done 2026-08-05** — the browser client rides the contract:
+   `streamAgentContract()` in claude-client.jsx consumes `POST /agent/stream`
+   SSE, and `openrouter:` / `groq:` / `gemini-api:` model prefixes dispatch
+   through it — those three appear at the front desk as key-gated FOUND
+   cards (only when the key is configured server-side; keys never reach the
+   browser). Verified end-to-end in the office UI. Bonus fixes surfaced by
+   that verification: the ROUTES relay now bounds its read by upstream
+   Content-Length (keep-alive upstreams like Ollama never close, so
+   read-until-EOF hung the relay — and with it every `registrySnippet()`
+   caller — for 600s), and `_hq_memory_dir` now defaults under
+   `CAFRESOHQ_HQ_STATE_DIR` instead of always pointing at the repo.
 
 Each step ships independently; the UI consumes the contract from step 1 and
 never learns backend specifics again.

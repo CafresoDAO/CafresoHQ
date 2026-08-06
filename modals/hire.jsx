@@ -11,8 +11,9 @@ const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
    pre-selected by us. Ids match app.jsx's CLI-sync DEFS (a_cli_*) so the
    version/login refresher keeps maintaining these agents after hire. Copy
    follows the jargon table: subscriptions and sign-ins, never CLIs/keys.
-   Only drivers with a browser stream path appear (openrouter/groq/gemini-api
-   wait on POST /agent/stream being wired into stream()). */
+   cloud:true = plain-chat API backend riding POST /agent/stream (the key
+   lives server-side, so these only count as found when detect.authenticated
+   — a card that would fail its first task is worse than no card). */
 const FRONT_DESK = {
   'claude-code': { id: 'a_cli_claude', name: 'Claude', role: 'Coding Agent', color: 'leaf',
                    model: 'claudecode:sonnet', tools: ['files', 'shell', 'web'], elevated: true,
@@ -29,6 +30,15 @@ const FRONT_DESK = {
   'ollama':      { id: 'a_local_ollama', name: 'Llama', role: 'Local Model · your hardware', color: 'sun',
                    model: 'ollama:llama3.1', tools: ['web'],
                    poweredBy: 'Ollama', found: 'A local model is running on this machine — cheap and tireless.' },
+  'openrouter':  { id: 'a_cloud_openrouter', name: 'OpenRouter', role: 'Cloud Model · your account', color: 'rose',
+                   model: 'openrouter:openai/gpt-oss-120b:free', tools: ['web'], cloud: true,
+                   poweredBy: 'OpenRouter', found: 'Your OpenRouter account is connected to this workspace.' },
+  'groq':        { id: 'a_cloud_groq', name: 'Groq', role: 'Cloud Model · your account', color: 'blush',
+                   model: 'groq:llama-3.3-70b-versatile', tools: ['web'], cloud: true,
+                   poweredBy: 'Groq', found: 'Your Groq account is connected to this workspace.' },
+  'gemini-api':  { id: 'a_cloud_gemini', name: 'Gemini', role: 'Cloud Model · your account', color: 'cafresohq',
+                   model: 'gemini-api:gemini-2.5-flash', tools: ['web'], cloud: true,
+                   poweredBy: 'Google', found: 'Your Google AI account is connected to this workspace.' },
 };
 function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
@@ -126,9 +136,10 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     if (!def || hiredIds.has(def.id)) return null;
     const det = d.detect || {};
     const localDaemon = d.id === 'lmstudio' || d.id === 'ollama';
-    if (localDaemon ? det.version !== 'reachable' : !det.installed) return null;
+    if (def.cloud ? !det.authenticated
+        : localDaemon ? det.version !== 'reachable' : !det.installed) return null;
     return { ...def, driverId: d.id,
-             needsLogin: !localDaemon && d.id !== 'hermes' && !det.authenticated };
+             needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes' && !det.authenticated };
   }).filter(Boolean);
 
   const hireDetected = async (c) => {
@@ -142,7 +153,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
       model: c.model, tools: c.tools, temperature: 0.4,
       status: 'idle', task: 'reporting for duty',
       elevated: !!c.elevated,
-      ...(c.driverId !== 'lmstudio' && c.driverId !== 'ollama'
+      ...(!c.cloud && c.driverId !== 'lmstudio' && c.driverId !== 'ollama'
         ? { cli: c.driverId } : {}),
       hiredAt: Date.now(), lastRun: 'just hired', nextRun: 'on demand',
       recent: 'hired at the front desk',
