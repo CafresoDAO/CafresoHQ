@@ -1,6 +1,7 @@
 import { Sprite } from '../sprites.jsx';
 import { Modal } from './base.jsx';
 import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
+import { snagCause } from '../app/floor.jsx';
 const { useState } = React;
 
 /* ── <DeliverySheet> — first-delivery beat (OFFICE_AS_INTERFACE §3 step 6) ──
@@ -38,7 +39,9 @@ function DeliverySheet({ open, delivery, onClose, onOpenNote }) {
         agentId ? { tipJar: { agentId, agentName } } : {});
       setShare({ path, url: r.url });
     } catch (e) {
-      setShare({ path, err: String(e && e.message || e).slice(0, 120) });
+      // §7, same sweep as every other run/action failure this session:
+      // one honest clause, not the raw exception, on the "Didn't ship — …" line below.
+      setShare({ path, err: snagCause(e && e.message || String(e)) });
     }
   };
   return (

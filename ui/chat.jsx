@@ -1,7 +1,7 @@
 import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
-import { snagSentence } from '../app/floor.jsx';
+import { snagCause, snagSentence } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
@@ -313,8 +313,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               threadOverride: activeThread,
               coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
             }).catch(err => {
+              /* §7, same sweep as the standup/missions fixes: this used to
+                 read "(Miko bowed out: OpenRouter 503: {"error": …})" —
+                 a raw dump introducing itself as a parenthetical system
+                 note. snagCause() supplies the clause; "bowed out" is
+                 already the subject+verb. Six call sites in this file had
+                 independently copy-pasted the same raw ${err.message}. */
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${a.name} bowed out: ${err && err.message || err})`, thread: activeThread }]);
+                text: `(${a.name} bowed out — ${snagCause(err && err.message || String(err))})`, thread: activeThread }]);
             })
           ));
         } finally {
@@ -358,7 +364,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           onDispatchToAgent && onDispatchToAgent(a, brainPrompt, { userText: null })
             .catch(err => {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${a.name} bowed out: ${err && err.message || err})`, thread: 'team' }]);
+                text: `(${a.name} bowed out — ${snagCause(err && err.message || String(err))})`, thread: 'team' }]);
             })
         ));
       } finally {
@@ -428,7 +434,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               coParticipants: dedup.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
             }).catch(err => {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${a.name} bowed out: ${err && err.message || err})`, thread: targetThread }]);
+                text: `(${a.name} bowed out — ${snagCause(err && err.message || String(err))})`, thread: targetThread }]);
             })
           ));
         } finally {
@@ -462,7 +468,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         });
       } catch (err) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(${handoffAgent.name} bowed out: ${err && err.message || err})`, thread: activeThread }]);
+          text: `(${handoffAgent.name} bowed out — ${snagCause(err && err.message || String(err))})`, thread: activeThread }]);
       } finally {
         setStreaming(false);
       }
@@ -558,7 +564,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           });
         } catch (err) {
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: `(${target.name} couldn't take the handoff: ${err && err.message || err})`,
+            text: `(${target.name} couldn't take the handoff — ${snagCause(err && err.message || String(err))})`,
             thread: activeThread }]);
         }
       } else {
@@ -590,7 +596,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               coParticipants: targets.filter(o => o.agent.id !== t.agent.id).map(o => ({ name: o.agent.name, role: o.agent.role })),
             }).catch(err => {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${t.agent.name} bowed out: ${err && err.message || err})`,
+                text: `(${t.agent.name} bowed out — ${snagCause(err && err.message || String(err))})`,
                 thread: activeThread }]);
             })
           ));

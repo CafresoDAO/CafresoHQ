@@ -2968,8 +2968,12 @@ ${d.text}` : d.text,
               text: `shipped "${String(p.path).slice(0, 40)}" ${r.mode === 'canister' ? 'to the Internet Computer 🚀' : 'as a preview link'}` });
             say('Shipped', 'PUBLISH');
           } catch (err) {
+            /* snagCause(), not snagSentence().replace(…) — regexing the
+               spine off snagSentence's output is exactly the pattern that
+               produced the verbless "Kenji that brain isn't signed in yet"
+               inbox-row bug two commits ago. Same clause, no fragile strip. */
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-              text: `⚠ The publish didn't make it out — ${snagSentence(err && err.message || String(err)).replace(/^hit a snag — /, '')}` }]);
+              text: `⚠ The publish didn't make it out — ${snagCause(err && err.message || String(err))}` }]);
             logActivity({ agentId: p.agentId, agentName: p.agentName || 'agent', action: 'failed',
               priority: 'attention', text: 'publish failed after approval',
               detail: (err && err.message || String(err)).slice(0, 240) });

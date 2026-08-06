@@ -292,6 +292,38 @@
 > by hand into new features seven times before anyone searched for it.
 > All 12 suites green.
 
+> ✅ **Second pass — the pattern search widened (2026-08-06).** Grepped
+> more broadly (`err.message` in any shape, not just the one literal
+> string) and found six more copies of the exact same mistake: every
+> multi-@mention dispatch and DM/handoff failure path in `ui/chat.jsx`
+> wrote `"(Miko bowed out: OpenRouter 503: {...})"` — a raw dump
+> introducing itself as a system aside. Fixed all six with `snagCause()`
+> (each line already supplies its own subject: "bowed out", "couldn't
+> take the handoff"). Also found — and fixed — a stray instance of the
+> exact anti-pattern §7 exists to prevent: `app.jsx`'s ship-to-chain
+> failure note was calling `snagSentence(...).replace(/^hit a snag — /,
+> '')` to get the bare clause, the same fragile regex-strip that produced
+> the verbless inbox row two commits ago. Swapped for `snagCause()`
+> directly — the function this whole thread built specifically so nobody
+> has to do that again.
+>
+> Also checked and deliberately left alone: `hq-runtime.jsx`'s tool-call
+> error banners (raw text fed back into the AGENT's own context so it can
+> self-correct — a different audience, not the boss), and every raw
+> `e.message` inside Vault/Terminal/Projects/IDE/Settings, which §6's own
+> exception covers explicitly ("desktop-mode surfaces and settings").
+> Not every raw string is the bug — only the ones a non-technical boss
+> reads as the whole story.
+>
+> Live-verified five of six `ui/chat.jsx` sites is impractical — the
+> multi-@mention `.catch()` only fires for exceptions `dispatchToAgent`
+> doesn't already handle internally (confirmed live: two agents mentioned
+> at once both resolved through the already-fixed per-agent bubble, no
+> "bowed out" note at all — that path needs a genuinely unexpected throw,
+> not an ordinary no-brain failure). Correctness here rests on the same
+> `snagCause()` already proven live across seven other surfaces today,
+> not a fresh repro. All 12 suites green.
+
 > ✅ **The delegation loop, end to end (2026-08-06).** Drove the headline
 > interaction — the banner's own "DROP TASK CARDS ON DESKS TO DELEGATE" —
 > for the first time: starter card → real task → `dragover` lights the
