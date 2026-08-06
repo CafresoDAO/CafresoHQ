@@ -5857,6 +5857,10 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 .receipt-card.rejected .rc-stamp { color: var(--error); }
 .rc-body { flex: 1; min-width: 0; }
 .rc-title { font-family: 'VT323'; font-size: 18px; }
+/* Inherits .ap-detail (the approval row's payload box) — same content,
+   same meaning, so it should read the same. Slightly tighter here: a
+   receipts list stacks many at once, where the approval tray shows a few. */
+.rc-detail { max-height: 84px; margin: 4px 0 5px; font-size: 10px; }
 .rc-meta {
   display: flex; gap: 6px; flex-wrap: wrap;
   font-family: 'Inter'; font-size: 10px; text-transform: uppercase;

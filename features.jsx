@@ -849,9 +849,16 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
             <div className="rc-stamp">{stampFor(r)}</div>
             <div className="rc-body">
               <div className="rc-title">{r.elevated && r.kind !== 'tool-execution' ? '🛡 ' : ''}{r.title}</div>
+              {/* What was actually authorised. The title above is the
+                  REQUESTER's summary of its own request — an audit trail
+                  that keeps only that records the asker's words, not the
+                  act. Receipts written before this shipped have no detail
+                  and simply omit the box; nothing is invented for them. */}
+              {r.detail && <pre className="ap-detail rc-detail">{r.detail}</pre>}
               <div className="rc-meta">
                 <span>by {r.by}</span>
                 <span>·</span>
+                {r.cwd && <><span>in {r.cwd}</span><span>·</span></>}
                 <span>{r.kind || (r.amount ? '$'+r.amount : 'action')}</span>
                 <span>·</span>
                 <span>{fmt(r.decidedAt)}</span>

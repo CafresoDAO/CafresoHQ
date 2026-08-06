@@ -593,6 +593,19 @@ walker/commute system from `OFFICE_REVAMP.md`; no per-event new tech).
 >   > box scrolls), so a tight cap bought nothing but hiding the END of
 >   > long input — exactly where something buried would be. Cap is 8000 now
 >   > and a test pins the tail surviving.
+>   >
+>   > **And the receipt had it worse (fixed same day).** `recordReceipt()`
+>   > copied `title` and dropped `detail`, so the *permanent* record of a
+>   > decision kept only the asker's summary. The evidence was already
+>   > sitting in the audit trail from testing the fix above: the entry for
+>   > the request whose command ended `; rm -rf /important` read, in full,
+>   > **"Bash: Harmless cleanup"**. The approval row is transient — you
+>   > decide and it's gone — but the receipt is the answer to "what did I
+>   > actually authorise?", and it was answering with the requester's
+>   > marketing copy. Receipts now carry `detail` + `cwd` and render the
+>   > same box. **An audit trail that doesn't record what was audited is
+>   > decoration.** Rows written before this have no `detail` and simply
+>   > omit the box — nothing is back-filled or invented for them.
 > - **error → one honest sentence:** failed runs set a "hit a snag — …"
 >   bubble via `snagSentence()` (first line only, URLs/JSON shrapnel
 >   stripped, ~90 chars — the full dump stays in the inspect panel, §7).

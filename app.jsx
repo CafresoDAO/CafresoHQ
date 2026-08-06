@@ -2952,6 +2952,18 @@ ${d.text}` : d.text,
       amount: ap.amount,
       decision,
       decidedAt: Date.now(),
+      /* What was actually authorised — the same reason the approval row
+         carries it (see app/approvals.jsx). This is the stronger case of
+         the two: the row is transient, but the receipt IS the record, and
+         `title` is the requesting agent's own summary of its request.
+         Before this, rejecting a command that read
+         `echo …; rm -rf /important` left an audit trail whose only entry
+         said "Bash: Harmless cleanup" — the asker's words, preserved as
+         though they were the fact. An audit trail that doesn't record what
+         was audited is decoration. */
+      detail: ap.detail,
+      cwd: ap.cwd,
+      elevated: ap.elevated,
     };
     setReceipts(prev => [r, ...prev]);
   };
