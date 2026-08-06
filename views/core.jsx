@@ -325,11 +325,32 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                   <span style={{fontWeight:600}}>{e.agentName || 'HQ'}</span> {e.text}
                 </div>
                 <div className="oc-notif-meta"><span>{fmtAgo(e.ts)} ago</span></div>
+                {/* Retry sits ON the row, not behind an expand.
+
+                    This is the surface whose whole job is "something needs
+                    you", and the one verb that answers a failure was hidden
+                    until you clicked to open the row — the same shape as the
+                    attention banner that looked live and did nothing. The
+                    pinned approval rows above already show Approve/Reject
+                    inline; a failure is no less actionable than a stamp.
+
+                    Acting on a row also marks it read: the header count means
+                    "not dealt with yet", and this dealt with it. If the retry
+                    fails again a fresh unread row lands and the count rises —
+                    which is the honest answer, not a bookkeeping trick. */}
+                {e.action === 'failed' && onRetry && (
+                  <div className="oc-act-jumps" style={{marginTop:6}} onClick={ev => ev.stopPropagation()}>
+                    <button className="px-btn primary" style={{fontSize:8}}
+                      onClick={() => { onRetry(e); if (e.unread && onMarkRead) onMarkRead(e.id); }}>↻ Retry</button>
+                    <button className="px-btn ghost" style={{fontSize:8}} onClick={() => toggle(e)}>
+                      {open ? 'Hide what happened' : 'What happened?'}
+                    </button>
+                  </div>
+                )}
                 {open && (e.detail || e.taskId || e.nodeId || e.action === 'failed') && (
                   <div className="oc-act-detail" onClick={ev => ev.stopPropagation()}>
                     {e.detail && <div className="oc-act-detail-body">{e.detail}</div>}
                     <div className="oc-act-jumps">
-                      {e.action === 'failed' && onRetry && <button className="px-btn primary" onClick={() => onRetry(e)}>↻ Retry</button>}
                       {e.taskId && onOpenTasks && <button className="px-btn ghost" onClick={onOpenTasks}>Open task board →</button>}
                       {e.nodeId && <button className="px-btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path: e.nodeId } }))}>Open note →</button>}
                       <button className="px-btn ghost" onClick={openChat}>Open chat →</button>

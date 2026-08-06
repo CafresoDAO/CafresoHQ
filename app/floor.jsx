@@ -60,10 +60,18 @@ const SNAG_CAUSES = [
    "that brain's service is having trouble — not something you did"],
 ];
 
-function snagSentence(raw) {
+/* Just the cause, as a clause: "that brain isn't signed in yet — …".
+
+   Surfaces that already supply their own subject and verb (an escalation
+   headline naming the coworker, a card that says "blocked by") need this
+   half without the "hit a snag" spine. They must NOT get it by stripping
+   the prefix off snagSentence — that is exactly how the inbox ended up
+   printing "Kenji that brain isn't signed in yet", a sentence with no
+   verb. One classifier, two shapes, no regex surgery at the call site. */
+function snagCause(raw) {
   const text = String(raw || '');
   for (const [re, sentence] of SNAG_CAUSES) {
-    if (re.test(text)) return 'hit a snag — ' + sentence;
+    if (re.test(text)) return sentence;
   }
   const first = text.split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
@@ -71,7 +79,11 @@ function snagSentence(raw) {
     .replace(/\s+/g, ' ')
     .trim();
   const line = first || 'something went wrong on the last run';
-  return 'hit a snag — ' + (line.length > 90 ? line.slice(0, 89).trimEnd() + '…' : line);
+  return line.length > 90 ? line.slice(0, 89).trimEnd() + '…' : line;
+}
+
+function snagSentence(raw) {
+  return 'hit a snag — ' + snagCause(raw);
 }
 
 /* Which props stand in a coworker's room. Driven by `agent.tools` — the
@@ -149,4 +161,4 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagSentence, toolProp };
+export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, toolProp };

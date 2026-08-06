@@ -1,4 +1,4 @@
-import { floorEmit } from './floor.jsx';
+import { floorEmit, snagCause } from './floor.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 
@@ -229,22 +229,39 @@ const makeScreenEmitter = (agentId) => {
   };
 };
 
-// Friendlier chat-bubble text for run failures. Zero-config users run on the
-// shared Cafreso brain with no key of their own — when that path fails, a raw
-// upstream error reads like THEY misconfigured something. Detect the
-// no-key-and-no-managed-brain case and explain what actually happened + the
-// two ways out (wait, or BYOK in Settings). Everyone else gets the raw error.
+/* The chat bubble for a failed run — the THIRD surface that speaks about a
+   failure, after the floor bubble and the inbox row, and until now the only
+   one still improvising.
+
+   Watching one real failure land on all three at once: the inbox said "that
+   brain isn't signed in yet", the floor said the same, and the bubble said
+   "The shared Cafreso brain isn't responding right now — it may be waking
+   up". Nothing was waking up. There was no key. The bubble guessed, because
+   the no-key branch fired on the CONNECTION state and then narrated the
+   CAUSE — and it was a guess it made for every failure alike, 429s and
+   timeouts included, before appending the raw error in parentheses anyway.
+   The other branch just dumped `raw`, which §7 bans outright.
+
+   So: name the cause with the same classifier the other two surfaces use,
+   and keep the shared-brain line for what it's genuinely good for — telling
+   a zero-config user that BYOK is a way out. Advice, after the diagnosis,
+   not instead of it. */
 const chatErrorText = (err) => {
   const raw = (err && err.message) || String(err);
+  const because = snagCause(raw);
+  let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
   try {
     const C = CafresoHQClient;
     if (C && C.hasUsableKey && !C.hasUsableKey()) {
-      return '⚠ The shared Cafreso brain isn’t responding right now — it may be waking up or briefly down. ' +
-             'Try again in a minute, or add your own AI key in Settings → Keys to run independently. ' +
-             '(' + raw.slice(0, 120) + ')';
+      // The cause is a clause, not a sentence — it ends mid-thought ("…give
+      // this to someone else"). Butting the advice straight onto it reads as
+      // one long run-on, so close the diagnosis first.
+      if (!/[.!?…]$/.test(out)) out += '.';
+      out += ' You’re on the shared Cafreso brain — you can add your own AI key ' +
+             'in Settings → Keys to run independently of it.';
     }
   } catch (_) {}
-  return `⚠ ${raw}`;
+  return out;
 };
 
 // Cap messages registry at 500 entries (rolling) and strip any runtime-only

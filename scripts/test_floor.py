@@ -113,6 +113,18 @@ R.snagClean = [R.snagRealKey,R.snag401,R.snag429,R.snagQuota,R.snagRefused,R.sna
 R.snagAllPrefixed = [R.snagRealKey,R.snag401,R.snagUnknown].every(x => x.indexOf('hit a snag — ') === 0);
 // An unrecognised cause must NOT be diagnosed — it falls through verbatim.
 R.snagUnknownVerbatim = R.snagUnknown === 'hit a snag — the flux capacitor came loose';
+// ── snagCause — the same verdict, without the spine ────────────────────
+// Surfaces that supply their own subject/verb take this half. The contract
+// is compositional so nobody is ever tempted to regex the prefix off
+// snagSentence again (that produced "Kenji that brain isn't signed in yet").
+R.causeComposes = ['OpenRouter 503: openrouter: no API key configured',
+                   '429 Too Many Requests', 'the flux capacitor came loose', '', null]
+  .every(x => snagSentence(x) === 'hit a snag — ' + snagCause(x));
+R.causeNoSpine = ['OpenRouter 503: no API key configured', '429 Too Many Requests', '']
+  .every(x => !/hit a snag/.test(snagCause(x)));
+R.causeClean = ['OpenRouter 503: openrouter: no API key configured','HTTP 401 invalid bearer token',
+                '429 Too Many Requests','insufficient_quota: exceeded','500 Internal Server Error']
+  .map(snagCause).every(x => !/api[- ]?key|\b[45]\d\d\b|openrouter|bearer|quota|http/i.test(x));
 // ── the floor event contract ───────────────────────────────────────────
 R.evNames   = Object.keys(FLOOR_EVENT).sort();
 R.evValues  = Object.keys(FLOOR_EVENT).map(k => FLOOR_EVENT[k]);
@@ -180,6 +192,14 @@ console.log(JSON.stringify(R));
     check('empty error still says something honest',
           out['snagEmpty'] == 'hit a snag — something went wrong on the last run')
     check('null error tolerated', out['snagNull'] == out['snagEmpty'])
+
+    # snagCause — the clause half, for surfaces that bring their own verb
+    check('snagSentence is exactly the spine plus snagCause',
+          out['causeComposes'])
+    check('snagCause never carries the "hit a snag" spine',
+          out['causeNoSpine'])
+    check('snagCause leaks no jargon either',
+          out['causeClean'])
 
     # deskKit — capability, not achievement
     check('vault grants a cabinet', out['kitVault'] == ['cabinet'])

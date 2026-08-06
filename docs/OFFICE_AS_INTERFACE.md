@@ -567,3 +567,50 @@ settings — never on the floor, the cards, or onboarding.
 - Settings as a prerequisite to the first task.
 - Raw error dumps — every failure is one honest sentence plus "try again /
   ask differently / pick another coworker."
+
+> ✅ **Shipped 2026-08-06 — one failure, one story, and the verb on the row.**
+>
+> A single real failed run (no brain configured) was watched across every
+> surface it touches at once. All four told the boss something different:
+>
+> | surface | what it said |
+> |---|---|
+> | floor bubble | "hit a snag — that brain isn't signed in yet" ✅ |
+> | inbox row | "**Kenji** that brain isn't signed in yet" — no verb |
+> | escalation toast | "2× **unknown** failures across team / Last cause: unknown. **Inspect error and retry**" |
+> | chat bubble | "The shared Cafreso brain isn't responding — it may be **waking up**" |
+>
+> Nothing was waking up and the cause was not unknown: two surfaces named it
+> exactly while the loudest two claimed ignorance. The fix is one classifier,
+> two shapes — **`snagCause()`** returns the clause, **`snagSentence()`** is
+> exactly `'hit a snag — ' + snagCause()`. Surfaces that bring their own
+> subject take the clause; nobody regexes the spine off the sentence again
+> (that is what produced the verbless inbox row). Pinned by three tests.
+>
+> - **Escalation speaks office.** `kind`/`actionNeeded` never reach the boss;
+>   the headline carries what escalation actually knows that a single row
+>   doesn't ("*Sora has hit 2 snags in five minutes*", "*2 of the team are
+>   hitting the same wall*") and the cause underneath is the same sentence
+>   the floor gave. "Across team" now counts **coworkers, not messages** — it
+>   was announcing one coworker failing twice as a floor-wide pattern, which
+>   the per-agent rule already covered.
+> - **Escalation lands in the room it's about.** Every note was filed under
+>   TEAM "so the boss sees it in context" — including notes about one
+>   coworker, raised seconds after the boss watched that coworker fail from
+>   the DIRECT tab. One coworker → DIRECT; a pattern → TEAM. **An alert
+>   nobody is in the room for isn't context, it's bookkeeping.** (Its
+>   pointer also named "INBOX → Failed", a tab that does not exist.)
+> - **Retry sits ON the row.** The one verb that answers a failure was hidden
+>   until you clicked the row open — on the surface whose entire job is
+>   "something needs you", and the same shape as the dead attention banner.
+>   It now sits inline beside *What happened?* (which still holds the raw
+>   cause, §7). Acting on a row marks it read, so the counter means "not
+>   dealt with yet"; a retry that fails again lands a fresh unread row and
+>   the count rises, which is the honest answer rather than a tidy one.
+> - **The button now does what the row says.** Retry re-sent "the newest
+>   failure for this agent" regardless of which row you clicked — tolerable
+>   buried, a lie once it's on every row. Rows carry their `messageId`. And
+>   because a retry mints a *child* dispatch (the parent stays `failed`
+>   forever), "already dealt with?" is a question about the child: a second
+>   click while the retry streams would otherwise quietly order the same
+>   work twice.

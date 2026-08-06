@@ -10,7 +10,7 @@ import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { floorEmit, snagSentence } from './app/floor.jsx';
+import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -282,38 +282,66 @@ function App() {
         x.state === 'failed' &&
         (x.updatedAt || x.createdAt || 0) >= now - WINDOW_MS);
       const sameAgent = recent.filter(x => x.toAgentId === m.toAgentId).length;
-      const sameKind  = recent.filter(x => (x.failureCause || {}).kind === kind).length;
+      const sameKindMsgs = recent.filter(x => (x.failureCause || {}).kind === kind);
+      const sameKind  = sameKindMsgs.length;
+      /* "across team" has to actually BE across the team. Counting messages
+         let one coworker failing twice announce itself as a team-wide
+         pattern — and the per-agent rule above already covers that case,
+         so the only thing the message count bought was a false headline. */
+      const kindAgents = new Set(sameKindMsgs.map(x => x.toAgentId)).size;
+      /* The same sentence the floor bubble and the inbox row use for this
+         very failure. It used to read "Last cause: unknown. Inspect error
+         and retry" — classify()'s developer strings — while the inbox two
+         panels away named the cause exactly. Two surfaces, one event, and
+         the louder one claimed we had no idea what happened. */
+      const because = snagCause((cause.message) || '');
       // Cooldown check: don't re-escalate the same key inside COOLDOWN_MS.
       const last = state.lastEscalatedFor.get(key) || 0;
       const lastKind = state.lastEscalatedFor.get(kindKey) || 0;
       let escalate = false;
       let title = '';
       let detail = '';
+      /* §6: the headline carries what escalation actually KNOWS that a
+         single inbox row doesn't — that it keeps happening, or that it
+         isn't just one coworker. The cause underneath is the office
+         sentence, never the classifier's label. */
       if (critical && now - last > COOLDOWN_MS) {
         escalate = true;
-        title = `${m.toAgentName}: ${kind} failure`;
-        detail = cause.actionNeeded || 'Action needed';
+        title = `${m.toAgentName} is stuck`;
+        detail = because;
         state.lastEscalatedFor.set(key, now);
       } else if (sameAgent >= 2 && now - last > COOLDOWN_MS) {
         escalate = true;
-        title = `${m.toAgentName}: ${sameAgent} failures in 5 min`;
-        detail = `Last cause: ${kind}. ${cause.actionNeeded || ''}`;
+        title = `${m.toAgentName} has hit ${sameAgent} snags in five minutes`;
+        detail = because;
         state.lastEscalatedFor.set(key, now);
-      } else if (sameKind >= 2 && now - lastKind > COOLDOWN_MS) {
+      } else if (sameKind >= 2 && kindAgents >= 2 && now - lastKind > COOLDOWN_MS) {
         escalate = true;
-        title = `${sameKind}× ${kind} failures across team`;
-        detail = cause.actionNeeded || 'Pattern across multiple agents';
+        title = `${kindAgents} of the team are hitting the same wall`;
+        detail = because;
         state.lastEscalatedFor.set(kindKey, now);
       }
       if (escalate) {
         toast.error(`⚠ ${title}\n${detail}`, { duration: 12000 });
-        // Also push a system note into chat so the boss sees it in context.
+        /* And a note in the room this is ABOUT.
+           Every escalation used to be filed under TEAM "so the boss sees it
+           in context" — including the ones about a single coworker, raised
+           seconds after the boss watched that coworker fail from the DIRECT
+           tab. The note landed one tab away, behind an unread count that was
+           already double digits, and the toast timed out. An alert nobody is
+           in the room for isn't context, it's bookkeeping. So: one coworker
+           in trouble is DIRECT, a pattern across the floor is TEAM. */
+        const escThread = (sameKind >= 2 && kindAgents >= 2 && !critical && sameAgent < 2)
+          ? 'team' : 'direct';
         setChat(prev => [...prev, {
           id: HQ.uid('m'),
           from: 'system',
           name: 'HQ',
-          text: `⚠ Escalation: ${title} — ${detail}. Check 📬 INBOX → Failed for details and retry.`,
-          thread: 'team',
+          /* Pointed at "Failed", a tab that does not exist — the inbox's
+             three tabs are Needs attention / Activity / Done. Directions
+             to a room that isn't there are worse than no directions. */
+          text: `⚠ ${title} — ${detail}. Open 📬 INBOX → Needs attention to see it and retry.`,
+          thread: escThread,
         }]);
       }
     }
@@ -1746,8 +1774,19 @@ ${d.text}` : d.text,
                cause stays (escalation reads cause.kind, and `detail` keeps
                the raw text for the inspect panel per §7); only the SENTENCE
                changes, and it comes from snagSentence so the inbox and the
-               floor tell the same story in the same words. */
-            text: snagSentence(raw).replace(/^hit a snag — /, ''), detail: cause.message });
+               floor tell the same story in the same words.
+
+               Keep the verb: the inbox row template is "NAME + text", and
+               stripping the "hit a snag" prefix (as the first cut did) made
+               rows read "Kenji that brain isn't signed in yet" — a sentence
+               with no spine. With it, "Kenji hit a snag — …". */
+            text: snagSentence(raw), detail: cause.message,
+            /* Which message this row is ABOUT. The inbox's Retry used to
+               re-send "the newest failed message to this agent" regardless
+               of which row you clicked — tolerable while the button was
+               buried behind an expand, a lie once it sits on every row.
+               Carrying the id makes the button do what the row says. */
+            messageId });
     } finally {
       endAgentRun(agent.id, controller);
     }
@@ -2485,23 +2524,49 @@ ${d.text}` : d.text,
   const onRemoveSticky = (id) => setPins(prev => prev.filter(p => p.id !== id));
   const onInspect = (a) => setInspect(a);
 
-  /* Retry a failed item straight from the inbox attention tab. Given the
-     activity entry (carries agentId), find the most recent failed message to
-     that agent and re-dispatch it — same path as the global onRetryFailed but
-     scoped to the row the user clicked. Falls back to a toast when the message
-     or recipient can't be recovered. */
+  /* Retry a failed item straight from the inbox attention tab.
+
+     The row names a specific run, so retry that run: rows written since the
+     inbox carried `messageId` resolve to their OWN message. Rows from before
+     that (and any row whose message has aged out of the registry) fall back
+     to the newest failed message for the same agent — the old behaviour, kept
+     so historical rows still have a working button, never used to override a
+     row that knows its own message.
+
+     A retry does not revive the failed record — it mints a CHILD dispatch and
+     the parent stays `failed` forever. So "has this row already been dealt
+     with?" is a question about that child, not about the row's own state, and
+     a naive re-check would answer it wrong every time. With Retry now sitting
+     on every row, a second click (or a click on a row whose retry is still
+     streaming) would quietly send the same prompt to the same coworker twice.
+     Real work, ordered twice, that the boss never asked for. */
   const onRetryActivity = (entry) => {
     const agentId = entry && entry.agentId;
-    const pool = (messagesRef.current || []).filter(m => m.state === 'failed');
-    const failed = agentId ? pool.filter(m => m.toAgentId === agentId) : pool;
-    if (!failed.length) {
-      window.cafresohqToast && window.cafresohqToast.warn(
-        agentId ? 'No failed message on record for this agent to retry.'
-                : 'No failed messages to retry.');
-      return;
+    const all = messagesRef.current || [];
+    let m = entry && entry.messageId ? all.find(x => x.id === entry.messageId) : null;
+    if (m) {
+      const already = all.find(x => x.parentId === m.id &&
+        x.state !== 'failed' && x.state !== 'cancelled');
+      if (already) {
+        const running = already.state !== 'completed';
+        window.cafresohqToast && window.cafresohqToast.warn(running
+          ? `${m.toAgentName || 'They'} are on the retry right now — give it a moment.`
+          : 'Already retried, and that one went through — nothing left to do here.');
+        return;
+      }
     }
-    failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    const m = failed[0];
+    if (!m) {
+      const pool = all.filter(x => x.state === 'failed');
+      const failed = agentId ? pool.filter(x => x.toAgentId === agentId) : pool;
+      if (!failed.length) {
+        window.cafresohqToast && window.cafresohqToast.warn(
+          agentId ? 'No failed message on record for this agent to retry.'
+                  : 'No failed messages to retry.');
+        return;
+      }
+      failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      m = failed[0];
+    }
     const agent = agents.find(a => a.id === m.toAgentId);
     if (!agent) {
       window.cafresohqToast && window.cafresohqToast.error(
