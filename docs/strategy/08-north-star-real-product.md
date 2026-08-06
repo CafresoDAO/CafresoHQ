@@ -123,6 +123,17 @@ but leave the core path, the onboarding, and the pitch:
 (rebranded the "Night Shift" board), the Library integration, per-agent wallets,
 the trial brain.
 
+> ✅ **Shipped 2026-08-06** (Phase A UI complete, so the park expired). Exactly
+> the shape below: `PUBLISH_SITE` is the one host tool — every floor coworker
+> gets it through the runtime's shared tool surface regardless of driver — and
+> the marker now QUEUES a one-click approval instead of publishing (the
+> coworker literally walks to the boss desk and asks, via the §4 approval
+> walk). The stamp executes the publish, tip jar riding along. Bonus surface:
+> page deliverables in the cabinet grew a "Share it live" button on the
+> delivery sheet (user-initiated — the click is the approval), which closes
+> OFFICE_AS_INTERFACE §3.6's deferred share. Not yet covered: night_runner
+> missions and CLI-native runs, which don't ride the browser tool surface.
+
 **Parked *forward* (not built yet — founder-flagged 2026-08-05): Ship-to-chain.**
 Give any hired coworker one tool to deploy the site/app it just built straight
 to an ICP asset canister — with the user's permission — so finished work gets a

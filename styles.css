@@ -5935,6 +5935,23 @@ body.night .starter-outcome { color: #b0a3c8; }
   font-family: 'Inter'; font-size: 10.5px; line-height: 1.45;
   color: var(--ink-3); margin: 10px 0 0;
 }
+/* Ship-to-chain share row — pages only, shell only (see delivery.jsx). */
+.delivery-share {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px;
+}
+.delivery-share-hint {
+  font-family: 'Inter'; font-size: 10px; line-height: 1.4; color: var(--ink-3);
+  flex: 1; min-width: 140px;
+}
+.delivery-share-done {
+  font-family: 'Inter'; font-size: 11px; line-height: 1.5; color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.delivery-share-done a { color: var(--accent-teal, #2a9d8f); }
+.delivery-share-err {
+  font-family: 'Inter'; font-size: 10.5px; color: var(--accent-rose, #c0455e);
+}
 body.night .delivery-path { background: #241d33; color: #e8dcff; }
 
 .post-remove {

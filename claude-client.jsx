@@ -2147,6 +2147,44 @@ async function publishSite(path, opts = {}) {
   return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped, tipNotes };
 }
 
+/* Share a PAGE deliverable already filed in the cabinet (a .html vault note)
+   to the public HQ host. User-initiated only — the click IS the approval,
+   which is why this takes no approval detour the way an agent-emitted
+   PUBLISH_SITE does. Only pages ship: a brief or a draft is a private note,
+   not a site. Requires the II-holding shell, and there is deliberately NO
+   preview fallback — a "share" that hands back a localhost link would be
+   the §4 kind of lie. opts.tipJar as publishSite. Returns { url, tipNotes }. */
+async function sharePage(vaultPath, opts = {}) {
+  if (!/\.html?$/i.test(vaultPath || '')) {
+    throw new Error('only page deliverables (.html) can go live');
+  }
+  const chain = CafresoHQChain;
+  if (!(chain && chain.isAvailable && chain.isAvailable())) {
+    throw new Error('public hosting needs the Cafreso shell that holds your identity');
+  }
+  const html = await vaultRead(vaultPath);
+  const base = _splitOsPath(vaultPath).base;
+  const slug = base.replace(/\.html?$/i, '')
+    .replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+  let files = [{
+    path: 'index.html', contentType: 'text/html',
+    b64: _bytesToStdB64(new TextEncoder().encode(html)),
+  }];
+  let tipNotes = [];
+  if (opts.tipJar && opts.tipJar.agentId) {
+    try {
+      const addr = await chain.wallet.address(opts.tipJar.agentId);
+      const inj = _injectTipJar(files, 'index.html', { ...addr, agentName: opts.tipJar.agentName });
+      files = inj.files; tipNotes = inj.notes;
+    } catch (e) { tipNotes = ['tip jar skipped: ' + (e && e.message || 'wallet address unavailable')]; }
+  }
+  const res = await chain.publish(slug, files);
+  if (!(res && res.mode === 'canister' && res.url)) {
+    throw new Error((res && res.error) || 'the shell declined the publish');
+  }
+  return { url: res.url, mode: 'canister', tipNotes };
+}
+
 /* Read a text file's FULL content + conflict metadata (mtime/hash) in one GET.
    The Workspace editor uses this instead of FILE_READ so it gets the whole file
    (FILE_READ truncates at 8000) and the headers conflict-safety needs. */
@@ -2449,7 +2487,7 @@ const CafresoHQClient = {
   hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall, agentDrivers, streamAgentContract,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite, sharePage,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };
 

@@ -667,25 +667,31 @@ const TOOL_REGISTRY = {
     docShort: 'Send tokens from your HQ wallet (auto under your cap; over-cap asks the boss).',
     run: async () => '(WALLET_SEND is bound at agent-build time — see toolsForAgent)',
   },
-  /* PUBLISH_SITE — publish a built multi-file site and drop a clickable
-     `<name>.url` deliverable into the project dir. Available when the Publish
-     ICP-Service is installed. (Public *.icp0.io canister hosting is the gated
-     upgrade — see docs/PUBLISH_TO_CANISTER.md.) */
+  /* PUBLISH_SITE — Ship-to-chain (DRIVER_CONTRACT §7). Making something
+     PUBLIC is the boss's call: the marker queues a one-click approval and
+     returns immediately — the actual publish runs host-side after the stamp
+     (WALLET_SEND's over-cap pattern; a stream must never block on a human).
+     Available when the Publish ICP-Service is installed. (Public *.icp0.io
+     canister hosting is the gated upgrade — see docs/PUBLISH_TO_CANISTER.md.) */
   publish_site: {
     name: 'PUBLISH_SITE',
     re: /\[\s*PUBLISH_SITE\s*:\s*([^\]\n]+)\]/i,
     requires: () => icpPublishEnabled(),
     doc:
-      '- [PUBLISH_SITE: <dir or index.html path>] — publish a built site and write a clickable <name>.url link into the project for the boss.\n' +
-      '  Point it at the site\'s folder (or its index.html). Returns the shareable URL + the .url file path.\n' +
+      '- [PUBLISH_SITE: <dir or index.html path>] — ask the boss to put a built site live on the public internet.\n' +
+      '  Point it at the site\'s folder (or its index.html). The boss gets a one-click approval; once stamped,\n' +
+      '  the site publishes and a clickable <name>.url lands in the project. NOTHING is public until they stamp it.\n' +
       '  When you have an HQ wallet, published pages automatically include a tip jar paying into it —\n' +
       '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
-    docShort: 'Publish a built site (with your wallet\'s tip jar) and write a clickable .url deliverable.',
+    docShort: 'Ask the boss to publish a built site (one stamp; tip jar rides along unless tip=off).',
     run: async (arg) => {
-      const r = await CafresoHQClient.publishSite(String(arg || '').trim());
-      const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
-      const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
-      return `Published — ${where}:\n${r.url}\nWrote clickable link: ${r.file}${skips}`;
+      const raw = String(arg || '').replace(/\s*:\s*tip\s*=\s*(on|off)\s*$/i, '').trim();
+      try {
+        window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
+          detail: { agentId: null, agentName: 'agent', path: raw, tip: false },
+        }));
+      } catch (e) { return `Publish failed to queue: ${e && e.message || e}`; }
+      return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
     },
   },
   /* ACK is a lightweight status-update marker — it doesn't run anything,
@@ -950,7 +956,9 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     });
   }
   // PUBLISH_SITE — when the Publish ICP-Service is installed. Any agent that
-  // can build a site can ship it; the server enforces the allowed-dirs guard.
+  // can build a site can ASK to ship it; the boss's stamp does the shipping
+  // (Ship-to-chain, DRIVER_CONTRACT §7 — one approval per deploy, and the
+  // approval carries agentId so the coworker walks to the boss desk, §4).
   // Bound per-agent so the tip jar credits the PUBLISHING agent's wallet.
   // Tip default: on whenever the Wallet service is installed; opt out per
   // publish with a trailing " : tip=off". The flag is stripped with a
@@ -965,12 +973,13 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         let tip = icpWalletEnabled();
         const flag = /\s*:\s*tip\s*=\s*(on|off)\s*$/i.exec(raw);
         if (flag) { tip = flag[1].toLowerCase() === 'on' && icpWalletEnabled(); raw = raw.slice(0, flag.index).trim(); }
-        const r = await CafresoHQClient.publishSite(raw,
-          tip ? { tipJar: { agentId: pubAgentId, agentName: pubAgentName } } : {});
-        const where = r.mode === 'canister' ? 'live on the Internet Computer (public)' : 'preview link (public canister hosting pending)';
-        const skips = (r.skipped && r.skipped.length) ? `\nSkipped ${r.skipped.length} file(s) (too large / limit).` : '';
-        const tips = (r.tipNotes && r.tipNotes.length) ? `\nTip jar: ${r.tipNotes.join('; ')}` : '';
-        return `Published — ${where}:\n${r.url}\nWrote clickable link: ${r.file}${skips}${tips}`;
+        if (!raw) return 'PUBLISH_SITE needs a folder or index.html path — nothing queued.';
+        try {
+          window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
+            detail: { agentId: pubAgentId, agentName: pubAgentName, path: raw, tip },
+          }));
+        } catch (e) { return `Publish failed to queue: ${e && e.message || e}`; }
+        return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
       },
     });
   }

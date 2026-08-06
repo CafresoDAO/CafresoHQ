@@ -119,10 +119,15 @@ no keys pasted in this path.
    > folder, and the sheet says so instead. §4 forbids the animation layer
    > from lying; a claim about *security* is the last place to start.
    >
-   > Deferred: **share**. Vault notes have no publish path today
-   > (`publishSite` takes a workspace directory, not a note), so rather than
-   > ship a button that half-works this is left to the Ship-to-chain work
-   > (`DRIVER_CONTRACT.md` §7), which is the real sharing surface.
+   > ~~Deferred: **share**.~~ ✅ **Shipped 2026-08-06 with Ship-to-chain**
+   > (`DRIVER_CONTRACT.md` §7): PAGE deliverables get a "Share it live"
+   > button on the delivery sheet — `sharePage()` publishes the .html note
+   > to the public HQ host, tip jar riding along. Pages only (a brief or a
+   > draft is a private note, not a site), and only when the II-holding
+   > shell is present — no shell → no button, never a localhost link
+   > dressed up as "shared". The user's click is the approval;
+   > agent-initiated publishes (`[PUBLISH_SITE:…]`) instead queue one
+   > boss stamp and the coworker walks over to ask (§4).
    > Only task completions file — a chat reply or a DM is not an artifact.
 
 Exit test (from the North Star): a non-developer stranger completes this

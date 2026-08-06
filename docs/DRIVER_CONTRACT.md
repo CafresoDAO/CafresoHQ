@@ -192,11 +192,18 @@ network coworker looks and behaves exactly like your own — which is the produc
 
 - **Not an MCP replacement.** MCP tools can later be exposed *through* a
   driver's tool surface; the contract governs agent runtimes, not tools.
-- **Ship-to-chain is parked, not forgotten** (founder-flagged 2026-08-05): a
-  host tool — `publish(dir) → ICP asset canister` — offered to every driver
-  through the same tool/approval surface, so any coworker can deploy what it
-  just built to a real on-chain URL after one user approval. Recorded in North
-  Star §5; not part of Phase A.
+- ~~**Ship-to-chain is parked, not forgotten**~~ **Shipped 2026-08-06** (was a
+  non-goal only while Phase A was in flight): `PUBLISH_SITE` is the one host
+  tool, offered to every floor coworker through the browser runtime's shared
+  tool surface — which is driver-agnostic by construction, since every driver's
+  stream passes through the same marker parser. The marker QUEUES a one-click
+  approval (`cafresohq:publishRequest` → approval tray, and the coworker walks
+  to the boss desk per the §4 mapping); the user's stamp executes
+  `publishSite()` with the agent's tip jar. One approval per deploy, nothing
+  public before the stamp. Cabinet page deliverables also ship directly from
+  the delivery sheet (`sharePage()` — user-initiated, so the click is the
+  approval). Still out: night_runner missions and CLI-native runs, which
+  execute their tools outside the browser runtime.
 - **Not on-chain inference.** Execution stays where GPUs are (see the serve.py
   ICP-portability audit); canisters hold state, identity, payment, reputation.
 - **Not a plugin store (yet).** Third-party driver *code* is out of scope until

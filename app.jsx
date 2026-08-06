@@ -2631,7 +2631,7 @@ ${d.text}` : d.text,
           } catch (_e) {}
           if (!firstDeliverySeen) {
             setFirstDeliverySeen(true);
-            setDelivery({ path: filedPath, agentName: agent.name, agentColor: agent.color,
+            setDelivery({ path: filedPath, agentId: agent.id, agentName: agent.name, agentColor: agent.color,
               taskTitle: task.title, encrypted: cabinetIsEncrypted() });
           }
         }
@@ -2731,6 +2731,29 @@ ${d.text}` : d.text,
     logActivity({ agentName: req.by || 'agent', action: 'attention', priority: 'attention',
       text: `requests approval: ${String(req.title || '').slice(0, 48)}`, taskId: req.taskId });
   };
+  const onApprovalRequestRef = useRefA(null);
+  onApprovalRequestRef.current = onApprovalRequest;
+
+  /* Ship-to-chain (DRIVER_CONTRACT §7): an agent's [PUBLISH_SITE:…] queues
+     here instead of publishing — making something PUBLIC is the boss's call,
+     one stamp per deploy. The runtime tool dispatches this event and returns
+     immediately (streams never block on a human); the approval carries the
+     agentId, so the asking coworker walks to the boss desk (§4). */
+  useEffectA(() => {
+    const onPub = (e) => {
+      const d = e.detail || {};
+      if (!d.path) return;
+      onApprovalRequestRef.current({
+        title: `publish "${String(d.path).slice(0, 60)}" to the public internet`,
+        by: d.agentName || 'agent',
+        kind: 'publish',
+        agentId: d.agentId || undefined,
+        publishRequest: { path: d.path, tip: !!d.tip, agentId: d.agentId, agentName: d.agentName },
+      });
+    };
+    window.addEventListener('cafresohq:publishRequest', onPub);
+    return () => window.removeEventListener('cafresohq:publishRequest', onPub);
+  }, []);
 
   /* External approvals: the local `claude` CLI's PreToolUse hook posts
      tool-use requests to /approvals/external; we poll the pending list and
@@ -2814,6 +2837,34 @@ ${d.text}` : d.text,
     recordReceipt(ap, 'approved');
     if (ap) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✓ APPROVED — ${ap.title}` }]);
+      /* Ship-to-chain: the stamp is what actually publishes. Async on
+         purpose (canister upload can take a while) — the outcome lands in
+         chat + activity either way, and a failure is one honest sentence,
+         never a silent drop. */
+      if (ap.kind === 'publish' && ap.publishRequest) {
+        const p = ap.publishRequest;
+        (async () => {
+          try {
+            const r = await CafresoHQClient.publishSite(p.path,
+              p.tip && p.agentId ? { tipJar: { agentId: p.agentId, agentName: p.agentName } } : {});
+            const where = r.mode === 'canister'
+              ? 'live on the Internet Computer (public)'
+              : 'a local preview link (public hosting needs the shell)';
+            setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: `🚀 Shipped — ${where}:\n${r.url}\nClickable link filed at ${r.file}` }]);
+            logActivity({ agentId: p.agentId, agentName: p.agentName || 'agent', action: 'artifact',
+              text: `shipped "${String(p.path).slice(0, 40)}" ${r.mode === 'canister' ? 'to the Internet Computer 🚀' : 'as a preview link'}` });
+            say('Shipped', 'PUBLISH');
+          } catch (err) {
+            setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: `⚠ The publish didn't make it out — ${snagSentence(err && err.message || String(err)).replace(/^hit a snag — /, '')}` }]);
+            logActivity({ agentId: p.agentId, agentName: p.agentName || 'agent', action: 'failed',
+              priority: 'attention', text: 'publish failed after approval',
+              detail: (err && err.message || String(err)).slice(0, 240) });
+          }
+        })();
+        return;
+      }
       // Hire-agent proposal: construct the new agent and call onHire.
       // Permanent addition to the team. Cannot grant elevation through
       // this path — security/cost guardrail. The proposing agent gets
