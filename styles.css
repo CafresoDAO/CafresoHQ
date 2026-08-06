@@ -10051,12 +10051,16 @@ body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46);
 }
 .px-char.pose-back    { background-position: 0 0; }
 .px-char.pose-front   { background-position: -32px 0; }
-.px-char.pose-walk    { animation: px-walkframes 0.45s steps(2) infinite; background-position: -96px 0; }
+.px-char.pose-walk    { animation: px-walkframes 0.3s steps(2) infinite; background-position: -96px 0; }
 .px-char.pose-stretch { background-position: -160px 0; }
 .px-char.pose-stuck   { background-position: -192px 0; }
-.px-char.idle-anim    { animation: px-idleframes 1.8s steps(2) infinite; }
+.px-char.idle-anim    { animation: px-idleframes 3.6s step-end infinite; }
 .px-char.pop          { animation: px-pop 0.7s ease-out 1; }
-@keyframes px-idleframes { from { background-position-x: -32px; } to { background-position-x: -96px; } }
+@keyframes px-idleframes {
+  0%, 90%  { background-position-x: -32px; }   /* eyes open — most of the cycle */
+  91%, 96% { background-position-x: -64px; }   /* blink ≈ 180ms */
+  97%      { background-position-x: -32px; }
+}
 @keyframes px-walkframes { from { background-position-x: -96px; } to { background-position-x: -160px; } }
 @keyframes px-pop { 0% { transform: translateY(0); } 30% { transform: translateY(-6px); } 60% { transform: translateY(0); } 80% { transform: translateY(-3px); } 100% { transform: translateY(0); } }
 .px-glow {
@@ -10359,15 +10363,15 @@ body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46);
 .px-walker {
   position: absolute; bottom: 8px; left: -40px;
   z-index: 4;
-  animation: px-cross 3.2s linear var(--wd, 0s) forwards;
+  animation: px-cross 6.4s linear var(--wd, 0s) forwards;
 }
 .px-walker.ret { animation-name: px-cross-ret; }
 .px-walker.ret .px-char { transform: scaleX(-1); }
-.px-walker.arriving { animation: px-arrive 2s ease-out forwards; }
+.px-walker.arriving { animation: px-arrive 2.6s ease-out forwards; }
 .px-walker.at-cooler { left: 44px; animation: none; }
-@keyframes px-cross { from { left: -40px; } to { left: calc(100% + 8px); } }
-@keyframes px-cross-ret { from { left: calc(100% + 8px); } to { left: -40px; } }
-@keyframes px-arrive { from { left: -40px; } to { left: calc(50% - 16px); } }
+@keyframes px-cross { from { translate: 0; } to { translate: 1200px; } }
+@keyframes px-cross-ret { from { translate: 1200px; } to { translate: 0; } }
+@keyframes px-arrive { from { translate: 0; } to { translate: 420px; } }
 .px-street {
   position: relative;
   width: 100%;

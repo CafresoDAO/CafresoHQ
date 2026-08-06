@@ -252,14 +252,19 @@ function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
 /* Pose sheet order (gen_pixel_hq.py): back · frontA · frontB · sideA ·
    sideB · stretch · stuck. Working = facing the monitor (back to camera);
    idle = turned toward you. A real state a newcomer reads untaught. */
-function PxChar({ color = 'cafresohq', pose = 'front', className = '', style = {}, title }) {
+function PxChar({ color = 'cafresohq', pose = 'front', className = '', style = {}, title, phase = 0 }) {
   const safe = ['cafresohq', 'rose', 'teal', 'sun', 'leaf', 'sky', 'mint', 'blush', 'lavender']
     .indexOf(color) !== -1 ? color : 'cafresohq';
   return (
     <div
       className={`px-char pose-${pose} ${className}`}
       title={title}
-      style={{ backgroundImage: `url(assets/px/char_${safe}.png)`, ...style }}
+      style={{
+        backgroundImage: `url(assets/px/char_${safe}.png)`,
+        // Negative delay starts the cycle mid-way instead of pausing it.
+        ...(phase ? { animationDelay: `${-(phase % 3.6).toFixed(2)}s` } : null),
+        ...style,
+      }}
     />
   );
 }
@@ -492,7 +497,6 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     window.addEventListener('cafresohq:agentTool', onTool);
     return () => { window.removeEventListener('cafresohq:agentTool', onTool); timers.forEach(clearTimeout); };
   }, []);
-  const anyLive = Object.keys(liveTools).length > 0;
 
   /* §4 prop walk — arrival edge. The transit animation is a fixed 0.8s
      regardless of how long the tool actually runs; this flag just flips the
@@ -551,6 +555,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     window.addEventListener('cafresohq:agentScreen', onScreen);
     return () => { window.removeEventListener('cafresohq:agentScreen', onScreen); timers.forEach(clearTimeout); };
   }, []);
+
+  /* The rooftop LIVE lamp and the per-desk screen glow must agree on what
+     "live" means. anyLive counted tool calls ONLY, so a coworker visibly
+     streaming a reply lit their desk while the roof stayed dark — two
+     lights, two definitions. A finished/failed screen lingers on purpose
+     (§4 lets 'done' read for 8s) and must NOT keep the roof lit. */
+  const anyLive = Object.keys(liveTools).length > 0 ||
+    Object.keys(screens).some(id => {
+      const s = screens[id];
+      return s && s.phase !== 'done' && s.phase !== 'error';
+    });
 
   /* ── Tip Rain — money events land as coins on the earning agent's desk.
      Fed by the app-level tip watcher via cafresohq:moneyEvent. Reduced-motion
@@ -1078,7 +1093,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                             <div className="px-charwrap">
                               <PxChar color={a.color} pose={pose}
                                       className={pose === 'front' ? 'idle-anim' : pose === 'stretch' ? 'pop' : ''}
-                                      title={a.name} />
+                                      phase={i * 0.83} title={a.name} />
                               <div className={`px-mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood || 'idle']}</div>
                             </div>
                           )}
