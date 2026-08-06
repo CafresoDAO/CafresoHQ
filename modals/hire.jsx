@@ -327,13 +327,22 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               <span className="hint">make it playful</span>
             </div>
             <div className="form-row full">
-              <label>SYSTEM PROMPT</label>
+              {/* §6, binding: "system prompt" is on the never-say list —
+                  "job description" is the office word for the exact same
+                  field ("This IS the system prompt — we just never call
+                  it that", §2). The character-creation form was still
+                  using the raw term. */}
+              <label>JOB DESCRIPTION</label>
               <textarea rows={4} value={prompt} onChange={e=>setPrompt(e.target.value)} />
             </div>
             <div className="form-row">
-              <label>MODEL</label>
+              {/* Same rule, same fix as the coworker card's Brain field —
+                  "Model" as a selector label is banned outright. The
+                  picker itself still needs to show real ids (you're
+                  choosing exactly which one), same as Settings. */}
+              <label>BRAIN</label>
               <ModelPicker value={model} onChange={setModel} />
-              <span className="hint">backend is encoded in the id (anthropic / lmstudio / ollama)</span>
+              <span className="hint">each option is one real brain, grouped by who runs it</span>
             </div>
             <div className="form-row">
               <label>TEMPERATURE · {temp.toFixed(2)}</label>

@@ -667,6 +667,27 @@ append-only).
 > (onboarding, `/health`, the welcome message) — this was drift, not a
 > second concept.
 
+> ✅ **Pass three — the character-creation form itself (2026-08-06).** Pass
+> two covered the quick-hire front desk and the candidate cards; it never
+> reached "NEW HIRE →", the manual form for building a coworker from
+> scratch. Loaded it and found three violations in one screen: the persona
+> field was labelled **`SYSTEM PROMPT`** (the exact never-say term — §2
+> already calls this "job description" and has for a while, this form just
+> never got the memo), the brain picker was labelled **`MODEL`** (the same
+> "model as a selector" ban the coworker card was fixed for), and its hint
+> read **"backend is encoded in the id (anthropic / lmstudio / ollama)"** —
+> "backend" plus three raw driver names, in the single most core "grow
+> your business" action in the app. Relabelled to `JOB DESCRIPTION` /
+> `BRAIN`, hint rewritten to "each option is one real brain, grouped by
+> who runs it" — same fact, no plumbing words. The picker's own dropdown
+> options keep real model ids, same as Settings: you're choosing a
+> specific one, that part genuinely needs the raw list.
+>
+> Verified live end to end: hired a candidate ("Vera") through the fixed
+> form, watched her walk onto the floor for real, and her roster card
+> reads `Brain · Sonnet` — clean, via the same `brainName()` every other
+> surface already uses.
+
 Raw model IDs, JSON, and driver names may appear in desktop-mode surfaces and
 settings — never on the floor, the cards, or onboarding.
 
