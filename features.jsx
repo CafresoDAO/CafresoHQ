@@ -881,10 +881,16 @@ function ApprovalTray({ pending, onApprove, onReject }) {
       <div className="ap-head">⚖ APPROVALS · {pending.length}</div>
       {pending.map(p => (
         <div key={p.id} className={`ap-row${p.elevated ? ' elevated' : ''}`}>
-          <div>
+          <div style={{minWidth:0}}>
             <div className="ap-title">{p.elevated ? '🛡 ' : ''}{p.title}</div>
+            {/* The actual thing being authorised, verbatim. The title above
+                is the REQUESTER's summary of its own request — this gate
+                exists to catch a summary that doesn't match the action, so
+                the boss has to be able to see both. */}
+            {p.detail && <pre className="ap-detail">{p.detail}</pre>}
             <div className="ap-sub">
               by {p.by} · {p.amount ? '$' + p.amount : p.kind}
+              {p.cwd && <span> · in {p.cwd}</span>}
               {p.elevated && <span style={{color:'#c44',marginLeft:6}}>· agent waiting on your call</span>}
             </div>
           </div>

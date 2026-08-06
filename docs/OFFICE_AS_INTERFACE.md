@@ -566,6 +566,33 @@ walker/commute system from `OFFICE_REVAMP.md`; no per-event new tech).
 >   name matches a floor coworker — a CLI tool-use request walks the same
 >   walk instead of living only in the tray. This also ships §3 step 5's
 >   diegetic-approval beat.
+>
+>   > ⚠️ **The row showed the claim, not the act (fixed 2026-08-06).**
+>   > Posting a real request to `/approvals/external` — `Bash`, input
+>   > `rm -rf build/`, summary "Clean the build directory" — the boss was
+>   > shown **only** `Bash: Clean the build directory`. `p.input` was
+>   > dropped at the mapping entirely, so the command never reached the UI
+>   > in any form. (The no-summary fallback was no better: it printed
+>   > argument NAMES, not values — `Bash (command)`.) The title is written
+>   > by the agent *asking for permission*; this gate exists to catch a
+>   > summary that doesn't match the action, and it was showing the summary
+>   > alone.
+>   >
+>   > **An approval surface inverts §7.** Everywhere else raw payload is
+>   > noise to translate away; here it is the entire point — consent needs
+>   > the real thing, verbatim, or it isn't consent. The row now carries
+>   > `formatToolInput(p.input)` (`app/approvals.jsx`, 14 checks in
+>   > `scripts/test_approvals.py`) in a monospace box, plus the `cwd`.
+>   >
+>   > The first cut capped values at 400 chars and testing it produced the
+>   > lesson worth keeping: a command padded with 500 harmless characters
+>   > and ending in `rm -rf /important` — titled "Harmless cleanup" by its
+>   > author — rendered as a wall of padding with the dangerous tail cut
+>   > off. The truncation was *marked*, and the one part that mattered was
+>   > still the part that vanished. Length was never a layout problem (the
+>   > box scrolls), so a tight cap bought nothing but hiding the END of
+>   > long input — exactly where something buried would be. Cap is 8000 now
+>   > and a test pins the tail surviving.
 > - **error → one honest sentence:** failed runs set a "hit a snag — …"
 >   bubble via `snagSentence()` (first line only, URLs/JSON shrapnel
 >   stripped, ~90 chars — the full dump stays in the inspect panel, §7).

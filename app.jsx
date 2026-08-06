@@ -11,6 +11,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
+import { formatToolInput } from './app/approvals.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -24,6 +25,7 @@ const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, F
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
+
 function App() {
   /* Empty by design — HQ.INITIAL_AGENTS is []. Fresh offices start with the
      CEO alone; the fake-stats mapping that used to live here (invented tokens
@@ -2907,6 +2909,19 @@ ${d.text}` : d.text,
                 elevated: true,           // red border + "agent waiting" treatment
                 external: true,
                 cwd: p.cwd,
+                /* What the boss is ACTUALLY authorising.
+                   `summary` is written by the agent asking for permission —
+                   it is a claim, not a fact, and this gate exists precisely
+                   to catch a claim that doesn't match the action. Until now
+                   `p.input` was dropped here entirely, so approving
+                   `rm -rf build/` showed only "Bash: Clean the build
+                   directory" and the command never appeared anywhere in the
+                   UI. (The no-summary fallback above is no better: it lists
+                   argument NAMES, not values — "Bash (command)".)
+                   §7's ban on raw dumps is about error text nobody asked
+                   for; this is the opposite — consent needs the real thing,
+                   verbatim, before you can meaningfully say yes. */
+                detail: formatToolInput(p.input),
               };
             });
           if (fresh.length === 0 && kept.length === prev.length) return prev;

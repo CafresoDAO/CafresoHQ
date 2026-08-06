@@ -4757,6 +4757,22 @@ body.night .focus-overlay { background: linear-gradient(180deg, #2a2340 0%, #1e1
 .ap-row:last-child { border-bottom: 0; }
 .ap-title { font-family: 'Press Start 2P'; font-size: 9px; }
 .ap-sub { font-family: 'VT323'; font-size: 15px; color: var(--ink-2); }
+/* The literal tool payload on an approval row. Monospace and boxed so it
+   reads as "this exact text", not as more prose to skim — the boss is
+   authorising precisely this. Scrolls rather than wrapping forever; a long
+   command must never push the APPROVE/REJECT buttons off the row. */
+.ap-detail {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px; line-height: 1.45;
+  margin: 5px 0 4px;
+  padding: 5px 7px;
+  max-height: 108px; overflow: auto;
+  background: var(--paper-2, #f0e9d8);
+  border: 1px solid var(--ink-3);
+  border-left: 3px solid var(--error);
+  white-space: pre-wrap; word-break: break-all;
+  color: var(--ink);
+}
 .stamp {
   font-family: 'Press Start 2P'; font-size: 8px;
   padding: 6px 7px;
