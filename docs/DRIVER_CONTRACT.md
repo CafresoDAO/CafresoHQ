@@ -134,8 +134,11 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
    one OpenAI-compat streaming base; lmstudio + ollama + openrouter drivers;
    the raw ROUTES relays stay for the legacy in-browser client), then
    `gemini_cli.py`.
-3. **Hermes last** — most privileged today, most plumbing to fold inward. Done
-   = zero references to hermes config/env/gateway outside `drivers/hermes.py`.
+3. ✅ **done 2026-08-05** — **Hermes last** — most privileged today, most
+   plumbing to fold inward. Done-criterion met: zero hermes config/env/gateway
+   knowledge outside `drivers/hermes.py` (the four gateway-restart call sites
+   collapsed to one `gateway_restart()`; serve.py's /hermes/* routes keep only
+   HTTP shape + host policy — trial metering, key-regex/base_url validation).
 4. ✅ **done 2026-08-05** — `night_runner` switched from its private HTTP
    client to drivers (llm_call → `run_task_text` over the local-HTTP family;
    groq + gemini-api drivers added so no provider was lost). Bonus: keyless

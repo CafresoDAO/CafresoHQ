@@ -56,14 +56,12 @@ ROUTES = {
     '/ollama/':   ('localhost', 11434),
 }
 
-# Hermes Agent (Nous Research) — the per-container `hermes gateway` exposes an
-# OpenAI-compatible API server (enable via ~/.hermes/.env:
-# API_SERVER_ENABLED=true, API_SERVER_KEY=…). We proxy /hermes/* → that server,
-# injecting the Bearer key server-side so it never reaches the browser, and
+# Hermes Agent (Nous Research) — we proxy /hermes/* → the gateway's
+# OpenAI-compatible API server, injecting the Bearer key server-side and
 # metering the OpenAI `usage` object for per-principal billing. Not in ROUTES
 # because it needs the dedicated _hermes_proxy (auth injection + usage tap).
-HERMES_HOST = os.environ.get('HERMES_API_HOST', '127.0.0.1')
-HERMES_PORT = int(os.environ.get('HERMES_API_PORT', '8642') or '8642')
+# Gateway host/port, key handling, and ALL config.yaml/.env plumbing live in
+# drivers/hermes.py (DRIVER_CONTRACT §5: Hermes is one driver among peers).
 
 # ── Idle tracking (powers fleet reap-idle → stop idle containers, free A1 pool) ─
 # Single-slot list so the request handler can mutate it without `global`.
@@ -88,12 +86,9 @@ HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
 # allowed-dirs sandbox). Binary resolution + the CAFRESOHQ_CODEX_BIN override
 # now live in drivers/codex.py; auth stays in ~/.codex — never touched here.
 
-# Hermes CLI (Nous Research) — the container's default agent runtime. Normally
-# on PATH (pip-installed in the image, or in the user's WSL/unix env). Override
-# the binary path with CAFRESOHQ_HERMES_BIN. Hermes is unix-only (its gateway +
-# pty_bridge import termios/pty/fcntl) so it never resolves on native Windows —
-# the supported Windows path runs the whole stack inside WSL (see Start-CafresoHQ).
-_hermes_bin = os.environ.get('CAFRESOHQ_HERMES_BIN', '').strip()
+# Hermes CLI (Nous Research) — binary resolution + the CAFRESOHQ_HERMES_BIN
+# override live in drivers/hermes.py. Hermes is unix-only (gateway/pty_bridge
+# import termios/pty/fcntl); on native Windows run the stack in WSL.
 
 # Gemini CLI (Google) — npm `@google/gemini-cli`, native on every platform.
 # Override the binary path with CAFRESOHQ_GEMINI_BIN.
@@ -374,8 +369,9 @@ def _trial_cap():
     return _TRIAL_DAILY_CAP
 
 
-def _hermes_home():
-    return os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
+# ~/.hermes path resolution lives in drivers/hermes.py; trial.json (host-side
+# trial-brain policy state) shares that directory.
+_hermes_home = _drivers.hermes.home
 
 
 def _validate_local_base_url(u):
@@ -1641,7 +1637,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'user_principal':   _fleet_user_principal,
             'claude_code':      bool(self._claudecode_resolve()),
             'codex':            bool(self._codex_resolve()),
-            'hermes':           bool(_hermes_bin or shutil.which('hermes')),
+            'hermes':           bool(self._hermes_resolve()),
             'gemini':           bool(_gemini_bin or shutil.which('gemini')),
             'runtime_env':      _RUNTIME_ENV,
             'auth_required':    bool(CAFRESOHQ_API_KEY),
@@ -2211,21 +2207,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         or os.environ.get('GOOGLE_API_KEY', '').strip()):
                     return True, 'api-key'
             elif aid == 'hermes':
-                hh = pathlib.Path(os.environ.get('HERMES_HOME', '').strip()
-                                  or (home / '.hermes'))
-                if (hh / 'config.yaml').is_file():
-                    return True, 'config'
+                return _drivers.get('hermes').detect_auth()
         except OSError:
             pass
         return False, ''
 
     def _hermes_gateway_running(self):
         """True when the Hermes gateway is accepting connections on loopback."""
-        try:
-            with socket.create_connection(('127.0.0.1', HERMES_PORT), timeout=0.8):
-                return True
-        except OSError:
-            return False
+        return _drivers.hermes.gateway_running()
 
     def _agents_status(self):
         """GET /agents — which agents are available on this serve.py host.
@@ -2678,13 +2667,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return _drivers.get('codex').resolve()
 
     def _hermes_resolve(self):
-        """Find the hermes binary. Returns absolute path or ''.
-        CAFRESOHQ_HERMES_BIN overrides; otherwise PATH lookup. In the container
-        and in WSL/unix this resolves natively; on native Windows it returns ''
-        (hermes is unix-only — run the stack in WSL instead)."""
-        if _hermes_bin and pathlib.Path(_hermes_bin).is_file():
-            return _hermes_bin
-        return shutil.which(_hermes_bin or 'hermes') or ''
+        """Find the hermes binary. Returns absolute path or ''."""
+        return _drivers.get('hermes').resolve()
 
     def _gemini_resolve(self):
         """Find the gemini binary (npm @google/gemini-cli). Returns path or ''.
@@ -3684,99 +3668,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # HTTP 413). 'lite' forces tool_search deferral + trims the preamble so the
     # prompt fits the free tier; 'full' restores the rich prompt for BYOK/paid
     # keys that can afford it. The HQ Settings toggle drives this.
-    def _hermes_capability_file(self):
-        import os as _os
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        return _os.path.join(home, 'capability_mode')
-
-    # ── Hermes model quick-switch ─────────────────────────────────────────────
+    # ── Hermes model / capability / provider — all config surgery lives in
+    # drivers/hermes.py; these handlers keep the HTTP shape + host-side
+    # validation (key regexes, base_url allowlist, trial policy) only.
     # GET  /hermes/model            → {model, presets}
-    # POST /hermes/model {model}    → rewrite config.yaml model.default + restart
-    # Presets are curated OpenRouter free open-weights ids verified to accept
-    # Hermes' large prompt. The UI offers these as one-click switches.
-    _HERMES_MODEL_PRESETS = [
-        {'id': 'openai/gpt-oss-120b:free',                  'label': 'GPT-OSS 120B (default)'},
-        {'id': 'nvidia/nemotron-3-super-120b-a12b:free',    'label': 'Nemotron 3 Super 120B'},
-        {'id': 'nousresearch/hermes-3-llama-3.1-405b:free', 'label': 'Hermes 3 405B (Nous)'},
-        {'id': 'meta-llama/llama-3.3-70b-instruct:free',    'label': 'Llama 3.3 70B'},
-        {'id': 'qwen/qwen3-next-80b-a3b-instruct:free',     'label': 'Qwen3-Next 80B'},
-    ]
-
-    def _hermes_config_path(self):
-        import os as _os
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        return _os.path.join(home, 'config.yaml')
-
+    # POST /hermes/model {model}    → driver configure (config rewrite + restart)
     def _hermes_get_model(self):
-        import re as _re
-        model = ''
-        try:
-            with open(self._hermes_config_path(), 'r', encoding='utf-8') as f:
-                m = _re.search(r'^\s*default:\s*(.+)\s*$', f.read(), _re.MULTILINE)
-                if m:
-                    model = m.group(1).strip()
-        except Exception:
-            pass
-        return self._send_json(200, {'model': model, 'presets': self._HERMES_MODEL_PRESETS})
+        return self._send_json(200, {'model': _drivers.hermes.read_model(),
+                                     'presets': _drivers.hermes.MODEL_PRESETS})
 
     def _hermes_set_model(self):
-        """POST {model} → rewrite config.yaml model.default + restart gateway.
-        Only the model id changes; provider/base_url (OpenRouter) are preserved."""
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length) or b'{}')
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
         model = str(req.get('model', '')).strip()
-        # Allow presets OR any plausible model id. The vendor slash is OPTIONAL:
-        # cloud ids look like "vendor/model[:tag]" but local ones often don't —
-        # Ollama's are bare ("llama3.3:70b"), and requiring the slash 400'd every
-        # local backend.
-        import re as _re
-        valid = any(p['id'] == model for p in self._HERMES_MODEL_PRESETS) or \
-            bool(_re.match(r'^[\w.\-]+(/[\w.\-]+)*(:[\w.\-]+)?$', model))
-        if not model or not valid:
+        if not model or not _drivers.hermes.valid_model_id(model):
             return self._send_json(400, {'error': 'invalid model id'})
-
-        cfg_path = self._hermes_config_path()
         try:
-            with open(cfg_path, 'r', encoding='utf-8') as f:
-                cfg = f.read()
-        except Exception as e:
-            return self._send_json(500, {'error': f'read config: {e}'})
-
-        new_cfg, n = _re.subn(r'(^\s*default:\s*).+$',
-                              lambda m: m.group(1) + model, cfg,
-                              count=1, flags=_re.MULTILINE)
-        if n == 0:
-            return self._send_json(500, {'error': 'no model.default line in config'})
-        try:
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                f.write(new_cfg)
-        except Exception as e:
-            return self._send_json(500, {'error': f'write config: {e}'})
-
-        restarted = False
-        try:
-            subprocess.Popen(['hermes', 'gateway', 'restart'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            restarted = True
-        except Exception as e:
-            sys.stderr.write(f'[hermes] model restart failed: {e}\n')
-        return self._send_json(200, {'model': model, 'restarted': restarted,
+            d = _drivers.get('hermes').configure({'model': model})
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
+        return self._send_json(200, {'model': model, 'restarted': d['restarted'],
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_get_capability(self):
-        try:
-            with open(self._hermes_capability_file(), 'r', encoding='utf-8') as f:
-                mode = (f.read().strip() or 'lite')
-        except Exception:
-            mode = 'lite'
-        return self._send_json(200, {'mode': mode if mode in ('lite', 'full') else 'lite'})
+        return self._send_json(200, {'mode': _drivers.hermes.read_capability()})
 
     def _hermes_set_capability(self):
-        """POST {mode: 'lite'|'full'} → rewrite config.yaml's capability block and
-        restart the hermes gateway so the new system-prompt size takes effect."""
+        """POST {mode: 'lite'|'full'} → rewrite the capability block via the
+        driver and restart the gateway so the new system-prompt size takes
+        effect."""
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length) or b'{}')
@@ -3785,105 +3708,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         mode = str(req.get('mode', '')).strip().lower()
         if mode not in ('lite', 'full'):
             return self._send_json(400, {'error': "mode must be 'lite' or 'full'"})
-
-        import os as _os
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        cfg_path = _os.path.join(home, 'config.yaml')
         try:
-            with open(cfg_path, 'r', encoding='utf-8') as f:
-                cfg = f.read()
-        except Exception as e:
-            return self._send_json(500, {'error': f'read config: {e}'})
-
-        # Replace the toolsets/agent/tools tail (everything from the first
-        # 'toolsets:' line) with the requested capability block. The block layout
-        # matches hermes-bootstrap.py:_capability_block so the two stay in sync.
-        if mode == 'full':
-            block = ('toolsets:\n  - hermes-cli\n'
-                     'agent:\n  environment_probe: true\n  task_completion_guidance: true\n'
-                     'tools:\n  tool_search:\n    enabled: auto\n')
-        else:
-            block = ('toolsets:\n  - hermes-cli\n'
-                     'agent:\n  environment_probe: false\n  task_completion_guidance: false\n'
-                     'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
-
-        idx = cfg.find('\ntoolsets:')
-        new_cfg = (cfg[:idx + 1] if idx >= 0 else cfg.rstrip() + '\n') + block
-        try:
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                f.write(new_cfg)
-            with open(self._hermes_capability_file(), 'w', encoding='utf-8') as f:
-                f.write(mode)
-        except Exception as e:
-            return self._send_json(500, {'error': f'write config: {e}'})
-
-        # Restart the gateway so it reloads config.yaml. Best-effort; the proxy
-        # keeps serving until the new gateway binds. `hermes gateway restart`
-        # replaces the running singleton.
-        restarted = False
-        try:
-            subprocess.Popen(['hermes', 'gateway', 'restart'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            restarted = True
-        except Exception as e:
-            sys.stderr.write(f'[hermes] capability restart failed: {e}\n')
-        return self._send_json(200, {'mode': mode, 'restarted': restarted,
+            d = _drivers.get('hermes').configure({'capability': mode})
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
+        return self._send_json(200, {'mode': mode, 'restarted': d['restarted'],
                                      'note': 'gateway reloading; allow ~10s'})
-
-    # ── Backend providers the user can pick in HQ Settings ──────────────────
-    # Each logical provider maps to the Hermes model block + the env var that
-    # carries its API key. OpenRouter is the zero-config default; **Gemini
-    # (direct) is the most RELIABLE free tier** (≈15 RPM / 1500 RPD on Flash vs
-    # OpenRouter :free's 20 RPM / 50 RPD — the documented reliability pain);
-    # Groq is fast + free. Gemini + Groq ride their OpenAI-compatible endpoints
-    # (custom_providers) so they use the exact chat_completions path OpenRouter
-    # uses — no unverified native adapter, no silent config keys.
-    # 'local' backends are the operator's own hardware: no key, reached at a
-    # base_url they supply. They write `provider: lmstudio` either way — there is
-    # no `ollama` provider in hermes-agent (bootstrap's model block is explicit
-    # that Ollama rides the lmstudio block as a generic OpenAI-compatible
-    # endpoint), and since hermes is a pinned third-party package we can't add
-    # one. 'ollama' is a UI label, not a config value.
-    _HERMES_PROVIDERS = {
-        'openrouter': {'env': 'OPENROUTER_API_KEY', 'model': 'openai/gpt-oss-120b:free',
-                       're': r'^sk-or-[A-Za-z0-9_\-]{8,}$', 'label': 'OpenRouter'},
-        'gemini':     {'env': 'GOOGLE_API_KEY',     'model': 'gemini-2.5-flash',
-                       're': r'^AIza[A-Za-z0-9_\-]{30,}$', 'label': 'Google Gemini'},
-        'groq':       {'env': 'GROQ_API_KEY',       'model': 'llama-3.3-70b-versatile',
-                       're': r'^gsk_[A-Za-z0-9]{20,}$', 'label': 'Groq'},
-        'lmstudio':   {'env': '', 'model': 'local-model', 're': None, 'local': True,
-                       'label': 'LM Studio (local)', 'default_url': 'http://localhost:1234/v1'},
-        'ollama':     {'env': '', 'model': 'llama3.1', 're': None, 'local': True,
-                       'label': 'Ollama (local)', 'default_url': 'http://localhost:11434/v1'},
-    }
-
-    @staticmethod
-    def _hermes_model_block(provider, model, base_url=None):
-        """Return the config.yaml model block (+ custom_providers) for a provider."""
-        if provider in ('lmstudio', 'ollama'):
-            # Mirrors docker/hermes-bootstrap.py's lmstudio block exactly:
-            # no key_env, no custom_providers. Both UI labels write `lmstudio`.
-            return (f'model:\n  default: {model}\n  provider: lmstudio\n'
-                    f'  base_url: {base_url}\n')
-        if provider == 'gemini':
-            return (f'model:\n  default: {model}\n  provider: google-openai\n'
-                    '  base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
-                    'custom_providers:\n'
-                    '  - name: google-openai\n'
-                    '    base_url: https://generativelanguage.googleapis.com/v1beta/openai\n'
-                    '    key_env: GOOGLE_API_KEY\n'
-                    '    api_mode: chat_completions\n')
-        if provider == 'groq':
-            return (f'model:\n  default: {model}\n  provider: groq\n'
-                    '  base_url: https://api.groq.com/openai/v1\n'
-                    'custom_providers:\n'
-                    '  - name: groq\n'
-                    '    base_url: https://api.groq.com/openai/v1\n'
-                    '    key_env: GROQ_API_KEY\n'
-                    '    api_mode: chat_completions\n')
-        # openrouter — Hermes' native default provider (no custom_providers)
-        return (f'model:\n  default: {model}\n  provider: openrouter\n'
-                '  base_url: https://openrouter.ai/api/v1\n')
 
     def _hermes_local_models(self, query):
         """GET /hermes/local-models?base_url=… → {models:[{id, state, loaded}], detail}
@@ -3936,53 +3766,39 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         on load to decide whether to re-push the user's saved key: a container
         recreate wipes the ephemeral ~/.hermes, so the key must be re-applied from
         the browser-side settings copy (that's the 'keys vanish on recreate' fix)."""
-        import os as _os, re as _re
         import night_runner as _nr
-        home = _hermes_home()
-        cfg = _nr.read_model_config(home)          # scoped to the model: block
+        cfg = _nr.read_model_config(_drivers.hermes.home())  # scoped to the model: block
         provider = cfg['raw_provider'] or 'openrouter'
         model, base_url = cfg['model'], cfg['base_url']
         logical = {'google-openai': 'gemini'}.get(provider, provider)
-        spec = self._HERMES_PROVIDERS.get(logical)
-        configured = False
+        spec = _drivers.hermes.PROVIDERS.get(logical)
         if spec and spec.get('local'):
             # A local backend has no key — having a base_url IS being configured.
             configured = bool(base_url)
         elif spec:
-            if _os.environ.get(spec['env'], '').strip():
-                configured = True
-            else:
-                try:
-                    with open(_os.path.join(home, '.env'), 'r', encoding='utf-8') as f:
-                        configured = bool(_re.search(
-                            r'(?m)^%s\s*=\s*\S' % _re.escape(spec['env']), f.read()))
-                except Exception:
-                    pass
+            configured = _drivers.hermes.key_configured(spec['env'])
+        else:
+            configured = False
         return self._send_json(200, {'provider': logical, 'model': model,
                                      'base_url': base_url, 'configured': configured})
 
     def _hermes_set_provider(self, force_provider=None):
-        """POST /hermes/provider {provider, key, model?} → write the provider's key
-        into ~/.hermes/.env, REWRITE config.yaml's model block to that provider, and
-        restart the gateway. Generalizes the old OpenRouter-only path so users can
-        switch to a more reliable free backend (Gemini direct / Groq) with their own
-        free key. /hermes/openrouter-key routes here with force_provider='openrouter'.
-
-        Unlike first-boot bootstrap (skip-if-exists), this REWRITES the model block
-        so switching providers actually changes the live backend. The capability
-        tail (toolsets/agent/tools) is preserved. Key lives only in the container
-        .env (0600), never persisted server-side beyond that file."""
+        """POST /hermes/provider {provider, key, model?} → write the provider's
+        key + rewrite config.yaml's model block + restart, all via the hermes
+        driver's configure(). Host-side here: request validation (key regex,
+        the local-base_url allowlist) and trial policy. Key lives only in the
+        container .env (0600), never persisted server-side beyond that file.
+        /hermes/openrouter-key routes here with force_provider='openrouter'."""
         length = int(self.headers.get('content-length', 0) or 0)
         try:
             req = json.loads(self.rfile.read(length) or b'{}')
         except Exception:
             return self._send_json(400, {'error': 'bad json'})
         provider = (force_provider or str(req.get('provider', 'openrouter'))).strip().lower()
-        spec = self._HERMES_PROVIDERS.get(provider)
+        spec = _drivers.hermes.PROVIDERS.get(provider)
         if not spec:
             return self._send_json(400, {'error': f'unknown provider: {provider}'})
         key = str(req.get('key', '')).strip()
-        import os as _os, re as _re
         local = bool(spec.get('local'))
         base_url = str(req.get('base_url', '')).strip() or spec.get('default_url')
         if local:
@@ -3991,76 +3807,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ok, err = _validate_local_base_url(base_url)
             if not ok:
                 return self._send_json(400, {'error': err})
-        elif not _re.match(spec['re'], key):
+        elif not re.match(spec['re'], key):
             return self._send_json(400, {'error': f"invalid {spec['label']} key"})
         model = str(req.get('model', '')).strip() or spec['model']
 
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        env_path = _os.path.join(home, '.env')
-        cfg_path = _os.path.join(home, 'config.yaml')
         try:
-            _os.makedirs(home, exist_ok=True)
-            # 1. write the key into .env (replace any prior line for THIS env var).
-            #    A local backend has no key and no env var — skip entirely.
-            if not local:
-                lines = []
-                if _os.path.exists(env_path):
-                    with open(env_path, 'r', encoding='utf-8') as f:
-                        lines = [l for l in f.read().splitlines()
-                                 if not l.startswith(spec['env'] + '=')]
-                lines.append(f"{spec['env']}={key}")
-                with open(env_path, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(lines) + '\n')
-                try:
-                    _os.chmod(env_path, 0o600)
-                except Exception:
-                    pass
-        except Exception as e:
-            return self._send_json(500, {'error': f'write .env: {e}'})
-
-        # 2. rewrite config.yaml's model block (everything before `approvals:`),
-        #    preserving the capability tail so the lite/full toggle survives.
-        try:
-            cfg = ''
-            if _os.path.exists(cfg_path):
-                with open(cfg_path, 'r', encoding='utf-8') as f:
-                    cfg = f.read()
-            header = ('# CafresoHQ — Hermes config (provider set via HQ Settings).\n'
-                      '# capability_mode controls system-prompt size (lite=free-tier-safe).\n')
-            block = self._hermes_model_block(provider, model, base_url)
-            m = _re.search(r'^approvals:', cfg, _re.MULTILINE)
-            if m:
-                new_cfg = header + block + cfg[m.start():]
-            else:
-                # fresh/unknown config — write a complete minimal one (lite caps)
-                new_cfg = (header + block +
-                           'approvals:\n  mode: manual\n'
-                           'toolsets:\n  - hermes-cli\n'
-                           'agent:\n  environment_probe: false\n  task_completion_guidance: false\n'
-                           'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                f.write(new_cfg)
-        except Exception as e:
-            return self._send_json(500, {'error': f'write config: {e}'})
+            d = _drivers.get('hermes').configure({'provider': provider, 'key': key,
+                                                  'model': model, 'baseUrl': base_url})
+        except _DriverError as e:
+            return self._send_json(e.status, {'error': str(e)})
 
         # The user just brought their OWN key (or their own hardware) — end the
         # shared-trial cap. Their key draws on their own account, so it's never
         # metered here.
         _trial_deactivate()
-
-        # 3. export into THIS process env so the restarted gateway (which inherits
-        #    serve.py's env via the bootstrap) sees the key immediately.
-        if not local:
-            _os.environ[spec['env']] = key
-        restarted = False
-        try:
-            subprocess.Popen(['hermes', 'gateway', 'restart'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            restarted = True
-        except Exception as e:
-            sys.stderr.write(f'[hermes] provider restart failed: {e}\n')
         return self._send_json(200, {'ok': True, 'provider': provider, 'model': model,
-                                     'restarted': restarted,
+                                     'restarted': d['restarted'],
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_trial_status(self):
@@ -4084,33 +3846,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ~/.hermes) in one click. config.yaml holds NO secrets — keys live in
     # .env, which is never exported and never accepted on import.
     def _hermes_export_config(self):
-        import os as _os
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        cfg = ''
-        try:
-            with open(_os.path.join(home, 'config.yaml'), 'r', encoding='utf-8') as f:
-                cfg = f.read()
-        except Exception:
-            pass
-        mode = 'lite'
-        try:
-            with open(self._hermes_capability_file(), 'r', encoding='utf-8') as f:
-                mode = (f.read().strip() or 'lite')
-        except Exception:
-            pass
+        cfg, mode = _drivers.hermes.export_config()
         return self._send_json(200, {
             'version': 1,
             'kind': 'cafresohq-hermes-config',
-            'capability': mode if mode in ('lite', 'full') else 'lite',
+            'capability': mode,
             'config_yaml': cfg,
             'note': 'keys are NOT included — set them in Settings → Connections',
         })
 
     def _hermes_import_config(self):
-        """POST {config_yaml, capability?} → replace ~/.hermes/config.yaml and
-        restart the gateway. Refuses key material (keys belong in .env via
-        Settings) and obviously-broken payloads. Accepts a raw Hermes
-        config.yaml or our export envelope's config_yaml field."""
+        """POST {config_yaml, capability?} → replace ~/.hermes/config.yaml (via
+        the driver, which keeps a .bak rollback) and restart the gateway.
+        Refuses key material (keys belong in .env via Settings) and
+        obviously-broken payloads."""
         length = int(self.headers.get('content-length', 0) or 0)
         if length > 64 * 1024:
             return self._send_json(413, {'error': 'config too large (64 KB max)'})
@@ -4123,49 +3872,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._send_json(400, {'error': 'config_yaml is empty'})
         if 'model:' not in cfg:
             return self._send_json(400, {'error': "doesn't look like a Hermes config (no model: block)"})
-        import re as _re
-        if _re.search(r'(?im)^\s*[\w-]*(api[_-]?key|secret|token|password)\s*:\s*\S', cfg):
+        if re.search(r'(?im)^\s*[\w-]*(api[_-]?key|secret|token|password)\s*:\s*\S', cfg):
             return self._send_json(400, {
                 'error': 'config contains key material — remove it; API keys are set in Settings → Connections'})
-        import os as _os
-        home = _os.environ.get('HERMES_HOME', '').strip() or _os.path.expanduser('~/.hermes')
-        cfg_path = _os.path.join(home, 'config.yaml')
-        try:
-            _os.makedirs(home, exist_ok=True)
-            # Keep one rollback copy in case the imported config breaks the gateway.
-            if _os.path.exists(cfg_path):
-                try:
-                    with open(cfg_path, 'r', encoding='utf-8') as f:
-                        prev = f.read()
-                    with open(cfg_path + '.bak', 'w', encoding='utf-8') as f:
-                        f.write(prev)
-                except Exception:
-                    pass
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                f.write(cfg)
-        except Exception as e:
-            return self._send_json(500, {'error': f'write config: {e}'})
         cap = str(req.get('capability', '')).strip().lower()
-        if cap in ('lite', 'full'):
-            try:
-                with open(self._hermes_capability_file(), 'w', encoding='utf-8') as f:
-                    f.write(cap)
-            except Exception:
-                pass
-        restarted = False
-        try:
-            subprocess.Popen(['hermes', 'gateway', 'restart'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            restarted = True
-        except Exception as e:
-            sys.stderr.write(f'[hermes] import restart failed: {e}\n')
+        ok, restarted, rollback, err = _drivers.hermes.import_config(cfg, cap)
+        if not ok:
+            return self._send_json(500, {'error': err})
         return self._send_json(200, {'ok': True, 'restarted': restarted,
-                                     'rollback': cfg_path + '.bak',
+                                     'rollback': rollback,
                                      'note': 'gateway reloading; allow ~10s'})
 
     def _hermes_proxy(self, method):
         """Proxy /hermes/* → the local `hermes gateway` OpenAI-compatible API
-        server (HERMES_HOST:HERMES_PORT, default 127.0.0.1:8642).
+        server (drivers.hermes.HERMES_HOST:PORT, default 127.0.0.1:8642).
 
         /hermes/v1/chat/completions → http://127.0.0.1:8642/v1/chat/completions
 
@@ -4210,7 +3930,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                'origin', 'referer', 'cookie'}
         headers = {k: v for k, v in self.headers.items()
                    if k.lower() not in _drop}
-        headers['Host'] = f'{HERMES_HOST}:{HERMES_PORT}'
+        headers['Host'] = f'{_drivers.hermes.HERMES_HOST}:{_drivers.hermes.HERMES_PORT}'
         headers['Accept-Encoding'] = 'identity'
         # Force the upstream (aiohttp) to close after responding. We relay the
         # body with a raw read1() loop (so SSE streams straight through) which
@@ -4221,19 +3941,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # close makes the gateway send EOF after the body, so the loop ends.
         headers['Connection'] = 'close'
 
-        env_key = os.environ.get('API_SERVER_KEY', '').strip()
-        if not env_key:
-            # Fallback: read API_SERVER_KEY from ~/.hermes/.env so the proxy
-            # works even when the env var wasn't injected at container start.
-            try:
-                import re as _re
-                _hermes_home = os.environ.get('HERMES_HOME', '').strip() or os.path.expanduser('~/.hermes')
-                with open(os.path.join(_hermes_home, '.env'), 'r', encoding='utf-8') as _hf:
-                    _km = _re.search(r'^API_SERVER_KEY\s*=\s*([^\r\n]+)', _hf.read(), _re.MULTILINE)
-                    if _km:
-                        env_key = _km.group(1).strip().strip('"\'')
-            except Exception:
-                pass
+        env_key = _drivers.hermes.api_server_key()
         if env_key:
             headers['Authorization'] = 'Bearer ' + env_key
         else:
@@ -4253,7 +3961,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         resp = None
         last_err = None
         for _attempt in range(10):
-            conn = http.client.HTTPConnection(HERMES_HOST, HERMES_PORT, timeout=600)
+            conn = http.client.HTTPConnection(_drivers.hermes.HERMES_HOST,
+                                              _drivers.hermes.HERMES_PORT, timeout=600)
             try:
                 conn.request(method, upstream_path, body=body, headers=headers)
                 resp = conn.getresponse()

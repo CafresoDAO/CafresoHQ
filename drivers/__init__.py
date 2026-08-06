@@ -10,11 +10,12 @@ from .claude_code import ClaudeCodeDriver
 from .codex import CodexDriver
 from .local_http import (GeminiDriver, GroqDriver, LMStudioDriver,
                          OllamaDriver, OpenRouterDriver)
+from .hermes import HermesDriver
 
 DRIVERS = {}
 for _drv in (ClaudeCodeDriver(), CodexDriver(),
              LMStudioDriver(), OllamaDriver(), OpenRouterDriver(),
-             GroqDriver(), GeminiDriver()):
+             GroqDriver(), GeminiDriver(), HermesDriver()):
     DRIVERS[_drv.MANIFEST['id']] = _drv
 
 def get(driver_id):
