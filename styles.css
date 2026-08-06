@@ -9784,7 +9784,14 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
   display: flex; flex-direction: column;
   background: #141828;
   border-color: var(--px-ink);
+  min-height: 0;              /* the 420px floor blocked flex shrink */
 }
+/* The office pane must FILL its container and scroll inside .px-scene —
+   never grow past it. .hq-desktop is a block with overflow:auto, so
+   without a definite height here .office-wrap sized to content and pushed
+   the ticker below the fold (the whole street + ticker were unreachable). */
+.hq-desktop > .office-wrap,
+.view-area > .office-wrap { height: 100%; min-height: 0; }
 .pxhq {
   position: relative;
   flex: 1;
@@ -9844,6 +9851,33 @@ body.night .px-cloud { opacity: 0.25; }
 }
 body.night .px-skyline.far { background-image: url('assets/px/skyline_far_night.png'); }
 body.night .px-skyline.near { background-image: url('assets/px/skyline_near_night.png'); }
+/* Foreground canopy — the closest parallax layer. Sits above the skyline
+   but below the building (z 3), so it frames the tower without ever
+   covering a live surface. Purely scenic, hence aria-hidden + no events. */
+.px-canopy {
+  position: absolute; top: -6px;
+  width: 264px; height: 148px;
+  background: url('assets/px/fg_canopy.png') no-repeat top left / 100% 100%;
+  image-rendering: pixelated;
+  z-index: 2; pointer-events: none;
+  animation: px-sway 11s ease-in-out infinite alternate;
+}
+.px-canopy.left { left: -28px; }
+.px-canopy.right {
+  right: -30px; transform: scaleX(-1);
+  animation-delay: -4s;
+}
+body.night .px-canopy { filter: brightness(0.55) saturate(0.8); }
+@keyframes px-sway {
+  from { transform: translate(0, 0) rotate(-0.4deg); }
+  to   { transform: translate(3px, 2px) rotate(0.4deg); }
+}
+/* The mirrored copy needs its flip preserved inside the sway. */
+@keyframes px-sway-flip {
+  from { transform: scaleX(-1) translate(0, 0) rotate(0.4deg); }
+  to   { transform: scaleX(-1) translate(3px, 2px) rotate(-0.4deg); }
+}
+.px-canopy.right { animation-name: px-sway-flip; }
 
 /* ── HUD boxes (Situation / P&L) — game-menu chrome over the sky ── */
 .pxhq .px-hud {
@@ -10360,6 +10394,8 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   .px-char, .px-dog, .px-cloud, .px-walker, .px-livelamp, .px-nsb-title, .px-alert {
     animation: none !important;
   }
+  .px-canopy { animation: none !important; }
+  .px-canopy.right { transform: scaleX(-1); }
   .px-dog { display: none; }
 }
 @media (max-width: 768px) {

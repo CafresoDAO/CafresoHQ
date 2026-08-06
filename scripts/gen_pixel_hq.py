@@ -1009,12 +1009,17 @@ def _grad_strip(name, stops, h=280, w=4):
 
 
 def gen_sky():
+    # Day: a late-afternoon gradient — sky blue overhead falling through
+    # cyan to a warm cream/peach band at the horizon, so the skyline reads
+    # against light instead of against flat blue.
     _grad_strip('sky_day.png',
-                ['5ab0dc', '6cbce4', '7ec8e8', '96d4ec', 'aee0f0',
-                 'c6e8ee', 'dceee0', 'f0ecc8', 'f6e4b0'])
+                ['4fa8d8', '5cb2de', '6cbce4', '7ec8e8', '92d2ec',
+                 'a8dcee', 'bee6ee', 'd2ecea', 'e4eede', 'f0ead0',
+                 'f8e2bc', 'f8d4a8'])
     _grad_strip('sky_night.png',
-                ['10142e', '161a3a', '1a2048', '222a56', '2a3468',
-                 '344076', '3e4680', '4a4a80', '564a78'])
+                ['0c1028', '10142e', '161a3a', '1a2048', '222a56',
+                 '2a3468', '344076', '3e4680', '4a4a80', '564a78',
+                 '664e74', '7a5670'])
     # Stars — sparse tile, night only.
     rng = LCG(7)
     st = Canvas(64, 64)
@@ -1024,21 +1029,60 @@ def gen_sky():
         if rng.rint(0, 3) == 0:
             st.set(x + 1, y, hx('8a92c8'))
     st.save('stars.png')
-    # Clouds — two puffs on a transparent sheet.
-    cl = Canvas(96, 32)
-    puff = [
-        '..........qqqq..................',
-        '......qqqqqqqqqq................',
-        '....qqqqqqqqqqqqqqqq............',
-        '..qqqqqqqqqqqqqqqqqqqq..........',
-        '.qqqqqqqqqqqqqqqqqqqqqq.........',
-        'qqqqqqqqqqqqqqqqqqqqqqqq........',
-        'DDDDDDDDDDDDDDDDDDDDDDDD........',
-    ]
-    pal = {'.': None, 'q': hx('ffffff'), 'D': hx('d8e8f0')}
-    cl.blit_ascii(puff, pal, 2, 4)
-    cl.blit_ascii(puff[1:], pal, 52, 14)
-    cl.save('clouds.png')
+    _gen_clouds()
+
+
+def _gen_clouds():
+    """Soft dithered cumulus on a transparent sheet. Each puff is built from
+    overlapping discs (so the silhouette is lumpy, not a dome), shaded in
+    three bands — lit crown, body, shadowed underside — with a checkerboard
+    dither at each colour join. That dither is what makes it read as era
+    pixel art rather than a blurred gradient."""
+    CROWN, BODY, SHADE = hx('ffffff'), hx('eaf4fb'), hx('c9dcec')
+    W, H = 160, 44
+    cv = Canvas(W, H)
+    rng = LCG(0x0C10D)
+
+    def puff(cx, cy, discs):
+        # cover[y][x] = True where any disc includes the pixel
+        cover = [[False] * W for _ in range(H)]
+        bottom = cy
+        for (dx, dy, r) in discs:
+            ox, oy = cx + dx, cy + dy
+            bottom = max(bottom, oy + r)
+            for y in range(max(0, oy - r), min(H, oy + r + 1)):
+                for x in range(max(0, ox - r), min(W, ox + r + 1)):
+                    if (x - ox) ** 2 + (y - oy) ** 2 <= r * r:
+                        cover[y][x] = True
+        # Flat-bottom the cloud: cumulus sit on a horizontal base.
+        base = min(H - 1, bottom - 2)
+        for y in range(base + 1, H):
+            for x in range(W):
+                cover[y][x] = False
+        for y in range(H):
+            for x in range(W):
+                if not cover[y][x]:
+                    continue
+                # depth = how far below this column's own top edge we are
+                top = y
+                while top > 0 and cover[top - 1][x]:
+                    top -= 1
+                d = y - top
+                if d <= 1:
+                    c = CROWN
+                elif d <= 3:
+                    c = CROWN if (x + y) % 2 == 0 else BODY
+                elif y >= base - 1:
+                    c = SHADE
+                elif y >= base - 3:
+                    c = SHADE if (x + y) % 2 == 0 else BODY
+                else:
+                    c = BODY
+                cv.set(x, y, c)
+
+    puff(30, 20, [(0, 0, 9), (-11, 3, 7), (10, 2, 8), (-4, -5, 7), (18, 5, 5)])
+    puff(112, 26, [(0, 0, 7), (-9, 2, 6), (9, 2, 5), (-2, -4, 5)])
+    cv.save('clouds.png')
     # Sun + moon
     sun = Canvas(20, 20)
     for y in range(20):
@@ -1057,50 +1101,187 @@ def gen_sky():
     moon.save('moon.png')
 
 
+def _mix(a, b, t):
+    """Blend two RGBA tuples; t=0 → a, t=1 → b."""
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3)) + (255,)
+
+
+def _body_rows(kind, bw, bh):
+    """Silhouette of one tower as (row_from_top, x_inset, width) triples.
+    A real skyline is a set of crowns, not a row of equal boxes — this is
+    what gives the backdrop its architectural read."""
+    rows = []
+    if kind == 'taper':          # pyramid/chamfered crown
+        crown = max(2, min(bh // 3, bw // 2))
+        for i in range(bh):
+            if i < crown:
+                inset = int((crown - i) * (bw / 2.0) / crown)
+                rows.append((i, inset, max(1, bw - 2 * inset)))
+            else:
+                rows.append((i, 0, bw))
+    elif kind == 'cyl':          # rounded glass cylinder
+        r = max(2, bw // 2)
+        for i in range(bh):
+            if i < r:
+                dy = r - i
+                inset = r - int(max(0.0, r * r - dy * dy) ** 0.5)
+                rows.append((i, inset, max(1, bw - 2 * inset)))
+            else:
+                rows.append((i, 0, bw))
+    elif kind == 'step':         # art-deco setbacks
+        t1, t2 = bh // 4, bh // 2
+        for i in range(bh):
+            if i < t1:
+                rows.append((i, bw // 3, max(1, bw - 2 * (bw // 3))))
+            elif i < t2:
+                rows.append((i, bw // 6, max(1, bw - 2 * (bw // 6))))
+            else:
+                rows.append((i, 0, bw))
+    elif kind == 'slant':        # single-slope roof
+        crown = max(2, min(bh // 4, bw))
+        for i in range(bh):
+            rows.append((i, max(0, crown - i) if i < crown else 0, bw if i >= crown else max(1, bw - (crown - i))))
+    else:                        # 'flat'
+        rows = [(i, 0, bw) for i in range(bh)]
+    return rows
+
+
 def _skyline(name, w, h, night, near):
+    """One parallax band of the city. `near` is the detailed foreground row;
+    the far band is hazed toward the sky colour (atmospheric perspective),
+    which is what actually sells depth between the two layers."""
     rng = LCG(0xCAFE50 if near else 0xB0BA)
     cv = Canvas(w, h)
-    x = 0
-    day_walls = ['d8b090', 'c8b8a8', 'b8c8c0', 'd0c0a0', 'c0a898']
+    HAZE = hx('bee6ee') if not night else hx('222a56')   # far-band sky match
+
+    # Warm stone, cool concrete, and glass — the three families in the ref.
+    day_walls = ['d8b090', 'c8a884', 'd8d0c4', 'c2ccd2', 'b8c8c0', 'cbb69c']
+    glass_walls = ['8fb8cc', '7ba8c4', '9ec4d4']
     signs = ['d84848', '4878c8', '58a858', 'e86a8a', 'f8c840']
-    while x < w - 4:
-        bw = rng.rint(16, 40) if near else rng.rint(12, 30)
-        bh = rng.rint(int(h * 0.42), h - 6) if near else rng.rint(int(h * 0.35), h - 4)
-        if near and rng.rint(0, 3) == 0:
-            bh = rng.rint(int(h * 0.25), int(h * 0.45))   # low shopfront rows
-        wall = (hx('202650') if night else hx(rng.pick(day_walls))) if near else \
-               (hx('1a2044') if night else hx('a0c4dc'))
-        cv.rect(x, h - bh, bw, bh, wall)
-        # roof line / parapet
-        cv.rect(x, h - bh, bw, 1, hx('12142e') if night else (hx('8a7864') if near else hx('8cb0cc')))
+    kinds_tall = ['flat', 'taper', 'step', 'cyl', 'slant', 'flat']
+
+    x = -rng.rint(0, 6)
+    while x < w:
+        bw = rng.rint(16, 42) if near else rng.rint(12, 30)
+        tall = rng.rint(0, 9) < (5 if near else 6)
         if near:
-            # shopfront awning on low buildings, window grid on tall ones
-            for wy in range(h - bh + 3, h - 3, 5):
-                for wx in range(x + 2, x + bw - 2, 4):
-                    lit = rng.rint(0, 9) < 7
-                    c = (hx('f8e8a0') if lit else hx('2a3048')) if night else \
-                        (hx('78b0cc') if rng.rint(0, 1) else hx('5a90ac'))
-                    cv.rect(wx, wy, 2, 3, c)
-            if rng.rint(0, 2) == 0 and bh > int(h * 0.5):
-                sc = hx(rng.pick(signs))
-                sx = x + rng.rint(1, max(1, bw - 7))
-                sh = rng.rint(10, min(20, bh - 8))
-                cv.rect(sx, h - bh + 3, 6, sh, sc)
-                cv.rect(sx, h - bh + 3, 6, 1, hx('12142e'))
-                for gy in range(h - bh + 5, h - bh + 2 + sh - 1, 3):
-                    cv.rect(sx + 2, gy, 2, 1, hx('fffaf0') if night else hx('f0ecd8'))
+            bh = rng.rint(int(h * 0.46), h - 4) if tall else rng.rint(int(h * 0.22), int(h * 0.44))
         else:
-            if night:
-                for _ in range(max(1, (bw * bh) // 60)):
-                    cv.set(x + rng.rint(1, bw - 2), h - bh + rng.rint(2, bh - 2), hx('c8c890'))
-            if rng.rint(0, 3) == 0:   # antenna
-                ax = x + rng.rint(2, max(2, bw - 3))
-                cv.rect(ax, h - bh - rng.rint(2, 5), 1, 5, hx('1a2044') if night else hx('8cb0cc'))
-        x += bw + (0 if near and rng.rint(0, 2) else rng.rint(0, 2))
+            bh = rng.rint(int(h * 0.38), h - 3) if tall else rng.rint(int(h * 0.2), int(h * 0.4))
+        kind = rng.pick(kinds_tall) if (tall and bw >= 14) else 'flat'
+        if kind == 'cyl':
+            bw = max(bw, 18)
+
+        is_glass = rng.rint(0, 3) == 0 or kind == 'cyl'
+        if night:
+            base = hx('1e2450') if near else hx('18203e')
+        else:
+            base = hx(rng.pick(glass_walls if is_glass else day_walls))
+        wall = base if near else _mix(base, HAZE, 0.55)
+        # Vertical shading: each tower is a touch darker at its base.
+        shade = _mix(wall, hx('000000'), 0.10 if near else 0.05)
+        trim = _mix(wall, hx('000000'), 0.30 if near else 0.14)
+
+        top = h - bh
+        rows = _body_rows(kind, bw, bh)
+        widths = {}
+        for (i, inset, rw) in rows:
+            y = top + i
+            if y < 0 or y >= h:
+                continue
+            c = shade if i > bh * 0.72 else wall
+            cv.rect(x + inset, y, rw, 1, c)
+            widths[y] = (x + inset, rw)
+        # Crown line + a lit western face on the left edge (low sun).
+        for (i, inset, rw) in rows:
+            y = top + i
+            if y < 0 or y >= h:
+                continue
+            if i == 0 or (i > 0 and rows[i - 1][2] < rw):
+                cv.rect(x + inset, y, rw, 1, trim)
+            if not night and rw > 3:
+                cv.rect(x + inset, y, 1, 1, _mix(wall, hx('ffffff'), 0.28))
+
+        # Windows — a regular grid clipped to the silhouette.
+        step_y, step_x = (4, 3) if near else (3, 3)
+        pad = 2 if near else 1
+        for y in range(top + 3, h - pad, step_y):
+            if y not in widths:
+                continue
+            wx0, ww = widths[y]
+            for wx in range(wx0 + pad, wx0 + ww - pad, step_x):
+                if night:
+                    c = hx('f8e2a0') if rng.rint(0, 9) < (6 if near else 4) else hx('232a54')
+                else:
+                    lit = rng.rint(0, 5)
+                    c = _mix(hx('6fa2c0') if lit else hx('58809c'), HAZE, 0.0 if near else 0.5)
+                cv.rect(wx, y, 2 if near else 1, 2, c)
+
+        # Rooftop hardware — masts, and the occasional vertical sign.
+        if kind in ('flat', 'step') and rng.rint(0, 2) == 0:
+            ax = x + bw // 2
+            mast = rng.rint(3, 8 if near else 6)
+            cv.rect(ax, max(0, top - mast), 1, mast, trim)
+            if night and rng.rint(0, 1):
+                cv.set(ax, max(0, top - mast), hx('ff6a6a'))
+        if near and tall and rng.rint(0, 3) == 0 and bh > h * 0.55:
+            sc = hx(rng.pick(signs))
+            sx = x + rng.rint(2, max(2, bw - 8))
+            sh = rng.rint(10, min(22, bh - 10))
+            cv.rect(sx, top + 4, 6, sh, sc)
+            cv.rect(sx, top + 4, 6, 1, hx('12142e'))
+            for gy in range(top + 6, top + 3 + sh, 3):
+                cv.rect(sx + 2, gy, 2, 1, hx('fffaf0') if night else hx('f0ecd8'))
+
+        x += bw + (rng.rint(0, 1) if near else rng.rint(0, 3))
     cv.save(name)
 
 
+def _gen_canopy():
+    """Foreground tree canopy — the nearest parallax layer, hugging the top
+    corners. Almost-black foliage reading as an out-of-focus branch in front
+    of the camera: it frames the tower and gives the scene a real sense of
+    depth (sky → far skyline → near skyline → HQ → canopy)."""
+    DARK, MID, LIT = hx('12291f'), hx('1b3b2c'), hx('2c5a41')
+    W, H = 132, 74
+    cv = Canvas(W, H)
+    rng = LCG(0x7E3E)
+    discs = [(16, 6, 20), (42, 2, 24), (72, 8, 22), (98, 4, 18), (120, 12, 16),
+             (30, 26, 18), (60, 30, 20), (90, 28, 17), (10, 24, 14)]
+    cover = [[False] * W for _ in range(H)]
+    for (ox, oy, r) in discs:
+        for y in range(max(0, oy - r), min(H, oy + r + 1)):
+            for x in range(max(0, ox - r), min(W, ox + r + 1)):
+                dx, dy = x - ox, y - oy
+                # squash vertically — canopies spread wider than they hang
+                if dx * dx + (dy * 1.5) ** 2 <= r * r:
+                    cover[y][x] = True
+    for y in range(H):
+        for x in range(W):
+            if not cover[y][x]:
+                continue
+            # depth from the underside: the leading edge catches light
+            below = 0
+            while y + below + 1 < H and cover[y + below + 1][x]:
+                below += 1
+            if below <= 1:
+                c = LIT if (x + y) % 3 else MID
+            elif below <= 3:
+                c = MID if (x + y) % 2 == 0 else DARK
+            else:
+                c = DARK
+            # a few leaf gaps so light punches through
+            if rng.rint(0, 40) == 0 and below > 2:
+                continue
+            cv.set(x, y, c)
+    # A branch running back to the corner.
+    for i in range(0, 46):
+        cv.rect(i, 20 + i // 6, 3, 2, DARK)
+    cv.save('fg_canopy.png')
+
+
 def gen_skylines():
+    _gen_canopy()
     _skyline('skyline_far_day.png', 320, 60, night=False, near=False)
     _skyline('skyline_far_night.png', 320, 60, night=True, near=False)
     _skyline('skyline_near_day.png', 320, 88, night=False, near=True)

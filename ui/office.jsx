@@ -802,6 +802,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         <div className="px-cloud c2" aria-hidden="true" />
         <div className="px-skyline far" aria-hidden="true" />
         <div className="px-skyline near" aria-hidden="true" />
+        {/* Nearest parallax layer — an out-of-focus branch framing the tower. */}
+        <div className="px-canopy left" aria-hidden="true" />
+        <div className="px-canopy right" aria-hidden="true" />
 
         {/* HUD — Situation Wall + Agent P&L as game menu boxes. Same live
             data and gating as the old wall furniture. */}
