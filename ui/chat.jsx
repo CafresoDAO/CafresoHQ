@@ -1,6 +1,7 @@
 import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
+import { snagSentence } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
@@ -505,8 +506,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
          raw truncated text. */
       flush.cancel();
       const stopped = err.name === 'AbortError';
+      // Same raw-dump bug fixed everywhere else a run can fail this session (§7).
       setChat(prev => prev.map(m => m.id === ceoId
-        ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped}
+        ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`, error: !stopped}
         : m));
     }
     /* Deliberately NOT clearing abortRef here — the DM fan-out and synthesis

@@ -3,6 +3,7 @@ import { HQ } from './hq-runtime.jsx';
 import { CafresoHQModals } from './modals.jsx';
 import { floorEmit, snagSentence } from './app/floor.jsx';
 import { xpLastAttempt, xpLastAttemptText } from './app/experience.jsx';
+import { brainName } from './app/cast.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -416,7 +417,7 @@ function FocusMode({ active, onClose, chat, setChat }) {
     } catch (err) {
       const stopped = err.name === 'AbortError';
       setChat(p => p.map(m => m.id===ceoId
-        ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${err.message}`, error: !stopped}
+        ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`, error: !stopped}
         : m));
     }
     abortRef.current = null;
@@ -532,8 +533,14 @@ function StandupModal({ open, onClose, agents, onArchive }) {
         const userStopped = controller.signal.aborted;
         const timedOut = !userStopped && perAgent.signal.aborted;
         const label = userStopped ? '…(stopped)' : timedOut ? '…(timed out — model too slow or unloaded)' : null;
+        /* Same rule as everywhere else a run can fail (§7): one honest
+           sentence, never the raw exception. This row was printing
+           `⚠ OpenRouter 503: {"error": "openrouter: no API key
+           configured"}` straight through — a status code and a JSON
+           blob, on the one ritual meant to feel like the whole team
+           checking in. */
         setReports(prev => prev.map(r => r.agentId === a.id
-          ? { ...r, streaming: false, error: !label, text: label ? (buf + ' ' + label) : `⚠ ${err.message}` }
+          ? { ...r, streaming: false, error: !label, text: label ? (buf + ' ' + label) : `⚠ ${snagSentence(err && err.message || String(err))}` }
           : r));
         if (userStopped) { clearTimeout(timeoutId); controller.signal.removeEventListener('abort', onParentAbort); setPhase('idle'); abortRef.current = null; return; }
         // Skip to next agent on per-agent timeout instead of hanging.
@@ -555,7 +562,8 @@ function StandupModal({ open, onClose, agents, onArchive }) {
       );
     } catch (err) {
       const stopped = controller.signal.aborted;
-      setSummary(stopped ? (buf + ' …(stopped)') : `⚠ ${err.message}`);
+      // Same raw-dump bug as the per-agent reports above, one function down.
+      setSummary(stopped ? (buf + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`);
     } finally {
       clearTimeout(sumTimeout);
     }
@@ -643,8 +651,13 @@ function StandupModal({ open, onClose, agents, onArchive }) {
                       <div className="su-body">
                         <div className="su-name">
                           {a.name} <span className="tiny">· {a.role}</span>
-                          {local && <span className="model-chip local">{(a.model||'').replace(/^[a-z]+:/,'')}</span>}
-                          {!local && a.model && <span className="model-chip cloud">{(a.model||'').replace(/^[a-z]+:/,'')}</span>}
+                          {/* §6, binding: raw model ids never appear outside desktop-mode
+                              surfaces and settings. This chip was printing
+                              "GOOGLE/GEMMA-3-27B-IT" straight from the id (only the
+                              routing prefix stripped) — brainName() is the same
+                              formatting-only pass the coworker card already uses. */}
+                          {local && <span className="model-chip local">{brainName(a)}</span>}
+                          {!local && a.model && <span className="model-chip cloud">{brainName(a)}</span>}
                         </div>
                         <div className="su-text" style={{fontFamily:'Inter',fontSize:11,color:'var(--ink-3)'}}>
                           {off ? 'skipping' : 'will report'}

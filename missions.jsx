@@ -2,6 +2,7 @@ import { Sprite } from './sprites.jsx';
 import { HQ } from './hq-runtime.jsx';
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { CafresoHQModals } from './modals.jsx';
+import { snagCause, snagSentence } from './app/floor.jsx';
 /* ==========================================================================
    CafresoHQ — research missions
 
@@ -290,11 +291,18 @@ async function runMissionIteration(ctx) {
         : m));
       return { ok: false, aborted: true };
     }
+    /* §7: the same raw-dump bug fixed across every other run-failure surface
+       this session. `lastError` also feeds two more UI reads below (the
+       receipts row and the mission card) — both already prefix their own
+       "⚠", so it's stored as the bare CLAUSE (snagCause), not the full
+       "hit a snag — …" sentence, matching the snagCause/snagSentence split
+       used everywhere else a surface brings its own icon or subject. */
+    const cause = snagCause(err && err.message || String(err));
     setChat(prev => prev.map(m => m.id === msgId
-      ? { ...m, text: `⚠ Mission iteration failed: ${err.message}`, error: true, streaming: false }
+      ? { ...m, text: `⚠ Mission iteration failed — ${cause}`, error: true, streaming: false }
       : m));
     setMissions(prev => prev.map(x => x.id === mission.id
-      ? { ...x, errors: (x.errors || 0) + 1, lastError: err.message }
+      ? { ...x, errors: (x.errors || 0) + 1, lastError: cause }
       : x));
     return { ok: false };
   }
@@ -534,7 +542,7 @@ function useMissionRunner(missions, setMissions, ctx) {
           console.error('[mission] iteration error:', err);
           setMissions(prev => prev.map(x => x.id === m.id ? { ...x,
             errors: (x.errors || 0) + 1,
-            lastError: err && err.message ? err.message : String(err),
+            lastError: snagCause(err && err.message || String(err)),
           } : x));
         } finally {
           runningRef.current[m.id] = false;

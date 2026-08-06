@@ -258,6 +258,40 @@
 > `snagSentence()` language as the floor and inbox. One event, one story,
 > now on a fourth surface.
 
+> ✅ **Sweep for the same bug everywhere else it could hide (2026-08-06).**
+> Four fixed surfaces raised an obvious question — where else does a run
+> failure still dump raw text? Ran the STAND-UP for the first time this
+> session and found two more, immediately:
+>
+> - The pre-flight agent list printed the raw model id as a chip —
+>   **`GOOGLE/GEMMA-3-27B-IT`** — the exact §6 violation `brainName()` was
+>   built to fix on the coworker card, just never migrated to this call
+>   site. Same fix: `brainName()`, formatting only.
+> - Every reporting agent's failure read `⚠ OpenRouter 503: {"error":
+>   "openrouter: no API key configured"}` verbatim — its own, separate,
+>   never-fixed error path.
+>
+> `grep`ing the whole codebase for the shape of that second bug (`` `⚠
+> ${err.message}` ``) found **five more live instances**, not one:
+> the stand-up's own end-of-round synthesis, the CEO 1:1 chat panel (two
+> separate implementations — `features.jsx` and `ui/chat.jsx` duplicate
+> this logic), and Research Missions' both the chat notification AND the
+> `lastError` field stored on the mission itself, which two more surfaces
+> (the mission card, the receipts row) read back out raw. Seven call sites
+> total, one bug, because nobody had grepped for it as a pattern before.
+>
+> `snagSentence`/`snagCause` already existed for exactly this (added two
+> commits ago for this same reason) — every site now calls one of the two,
+> chosen by whether the surface supplies its own subject ("Mission
+> iteration failed — …") or needs the full sentence. Verified live: a
+> real stand-up round now reads "hit a snag — that brain isn't signed in
+> yet — …" from every agent and the synthesis step, and a real 1-minute
+> research mission's card, chat note, and (by construction, same write
+> path) the receipts row all read the same clause. Nothing here was a
+> design decision that needed relitigating — it was one bug, copy-pasted
+> by hand into new features seven times before anyone searched for it.
+> All 12 suites green.
+
 > ✅ **The delegation loop, end to end (2026-08-06).** Drove the headline
 > interaction — the banner's own "DROP TASK CARDS ON DESKS TO DELEGATE" —
 > for the first time: starter card → real task → `dragover` lights the
