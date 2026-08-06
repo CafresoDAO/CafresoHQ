@@ -1,3 +1,4 @@
+import { floorEmit } from './floor.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 
@@ -201,11 +202,7 @@ const persistableChat = (xs) => xs.slice(-80).map(({ streaming, error, ...rest }
 const makeScreenEmitter = (agentId) => {
   let last = 0, trailing = null;
   const send = (tail, phase) => {
-    try {
-      window.dispatchEvent(new CustomEvent('cafresohq:agentScreen', {
-        detail: { agentId, tail: String(tail || '').slice(-240), phase },
-      }));
-    } catch (_) {}
+    floorEmit('screen', { agentId, tail: String(tail || '').slice(-240), phase });
   };
   return {
     stream(buf) {

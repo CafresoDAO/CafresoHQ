@@ -117,6 +117,26 @@
 > `#root` as a violation. That is React's delegated listener, not a
 > control. Check the handler before believing the count.
 
+> ✅ **The event→floor wire is one table (2026-08-06).** §4's mapping was
+> real but its *transport* was not: six event names as raw string literals
+> at ~30 sites across 10 files. A typo in one is the worst kind of bug this
+> layer can have — **nothing throws, nothing warns, the beat simply never
+> plays**. (`cafresohq:coffee` was added exactly that way: by hand, twice,
+> in two files.) `FLOOR_EVENT` / `floorEmit` / `floorOn` in `app/floor.jsx`
+> now own the six names, with 11 checks in `scripts/test_floor.py`.
+>
+> Two rules the emitter enforces, both learned from this layer's failure
+> mode. An **unknown kind throws** — a typo must be loud, not silent. And
+> an event with **no agent id is refused with one warning**: every floor
+> beat is *about* a coworker, so without an id the office has no room to
+> play it in and would drop it anyway; the warning names the site that got
+> it wrong instead of leaving a dead animation to be discovered by eye.
+>
+> Note for anyone verifying this: the artifact beat correctly does nothing
+> on a floor with no filed deliveries — the out-tray only renders once a
+> real artifact exists, so there is no prop to animate. Absence of the
+> animation is not absence of the wire.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

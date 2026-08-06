@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico, NAV_ITEMS, useVocab } from './primitives.jsx';
-import { deskKit, PROP_PLACARD, toolProp } from '../app/floor.jsx';
+import { deskKit, floorOn, PROP_PLACARD, toolProp } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 function Tab({
   value, label, badge, icon, disabled,
@@ -435,8 +435,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       clearTimeout(clearT);
       clearT = setTimeout(() => setMovedIn(null), 2600);
     };
-    window.addEventListener('cafresohq:walkIn', onNewHire);
-    return () => { window.removeEventListener('cafresohq:walkIn', onNewHire); clearTimeout(clearT); };
+    const off = floorOn('walkIn', onNewHire);
+    return () => { off(); clearTimeout(clearT); };
   }, []);
 
   // New-hire walk-in — the coworker literally walks onto the floor when
@@ -450,8 +450,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       clearTimeout(clearT);
       clearT = setTimeout(() => setArrival(null), 2200);
     };
-    window.addEventListener('cafresohq:walkIn', onWalkIn);
-    return () => { window.removeEventListener('cafresohq:walkIn', onWalkIn); clearTimeout(clearT); };
+    const off = floorOn('walkIn', onWalkIn);
+    return () => { off(); clearTimeout(clearT); };
   }, [ambientOk]);
 
   /* Artifact landing (OFFICE_AS_INTERFACE §4: `artifact` → "carries a
@@ -488,11 +488,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         setTrayDrop(prev => { const next = { ...prev }; delete next[id]; return next; });
       }, 1800));
     };
-    window.addEventListener('cafresohq:artifact', onArtifact);
-    return () => {
-      window.removeEventListener('cafresohq:artifact', onArtifact);
-      timers.forEach(t => clearTimeout(t));
-    };
+    const off = floorOn('artifact', onArtifact);
+    return () => { off(); timers.forEach(t => clearTimeout(t)); };
   }, []);
 
   /* Coffee beat — the mug clears context and kills any in-flight run, and
@@ -512,11 +509,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         setCoffeeSteam(prev => { const next = { ...prev }; delete next[id]; return next; });
       }, 1300));
     };
-    window.addEventListener('cafresohq:coffee', onCoffeeEvt);
-    return () => {
-      window.removeEventListener('cafresohq:coffee', onCoffeeEvt);
-      timers.forEach(t => clearTimeout(t));
-    };
+    const off = floorOn('coffee', onCoffeeEvt);
+    return () => { off(); timers.forEach(t => clearTimeout(t)); };
   }, []);
 
   // Idle water-cooler visit — pick one genuinely-idle senior every few minutes.
@@ -577,8 +571,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         clearLater(d.agentId, 1600);
       }
     };
-    window.addEventListener('cafresohq:agentTool', onTool);
-    return () => { window.removeEventListener('cafresohq:agentTool', onTool); timers.forEach(clearTimeout); };
+    const off = floorOn('tool', onTool);
+    return () => { off(); timers.forEach(clearTimeout); };
   }, []);
 
   /* §4 prop walk — arrival edge. The transit animation is a fixed 0.8s
@@ -635,8 +629,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         setScreens(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
       }, d.phase === 'done' ? 8000 : d.phase === 'error' ? 2500 : 60000));
     };
-    window.addEventListener('cafresohq:agentScreen', onScreen);
-    return () => { window.removeEventListener('cafresohq:agentScreen', onScreen); timers.forEach(clearTimeout); };
+    const off = floorOn('screen', onScreen);
+    return () => { off(); timers.forEach(clearTimeout); };
   }, []);
 
   /* The rooftop LIVE lamp and the per-desk screen glow must agree on what

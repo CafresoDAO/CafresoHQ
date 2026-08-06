@@ -72,4 +72,50 @@ function deskKit(tools) {
   return out.slice(0, 2);
 }
 
-export { deskKit, PROP_PLACARD, snagSentence, toolProp };
+/* ── The wire between the runtime and the floor ───────────────────────────
+   Six events carry every beat the office plays. They were raw string
+   literals at ~30 sites across 10 files, and a typo in one is a SILENTLY
+   dead beat: nothing throws, no warning appears, the animation simply
+   never plays. (`cafresohq:coffee` was added that way — by hand, twice,
+   in two files.) One table now, and the names are checked.
+
+   Guarded for headless: scripts/test_floor.py runs this file verbatim
+   under node, where there is no window. */
+const FLOOR_EVENT = {
+  tool:     'cafresohq:agentTool',       // { agentId, name, phase: start|done }
+  screen:   'cafresohq:agentScreen',     // { agentId, text, phase }
+  artifact: 'cafresohq:artifact',        // { agentId }
+  walkIn:   'cafresohq:walkIn',          // { id, color }
+  coffee:   'cafresohq:coffee',          // { agentId }
+  activity: 'cafresohq:agentActivity',   // { agentId, agentName, color, kind }
+};
+
+/* Every floor beat is ABOUT a coworker: with no id the office has no room
+   to play it in and drops the event on the floor (literally). Catching
+   that at the emitter turns a silent no-op into one warning at the site
+   that got it wrong, which is the whole point of routing through here. */
+function floorEmit(kind, detail) {
+  const name = FLOOR_EVENT[kind];
+  if (!name) throw new Error('unknown floor event: ' + kind);
+  const d = detail || {};
+  if (!d.agentId && !d.id) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn(`[floor] ${kind} dropped — no agentId; the office cannot place it`);
+    }
+    return false;
+  }
+  if (typeof window === 'undefined' || !window.dispatchEvent) return false;
+  try { window.dispatchEvent(new CustomEvent(name, { detail: d })); return true; }
+  catch (_e) { return false; }
+}
+
+/* Subscribe; returns the unsubscribe so effects can just return it. */
+function floorOn(kind, handler) {
+  const name = FLOOR_EVENT[kind];
+  if (!name) throw new Error('unknown floor event: ' + kind);
+  if (typeof window === 'undefined' || !window.addEventListener) return () => {};
+  window.addEventListener(name, handler);
+  return () => window.removeEventListener(name, handler);
+}
+
+export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagSentence, toolProp };

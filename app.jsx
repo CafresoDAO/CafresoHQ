@@ -10,7 +10,7 @@ import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { snagSentence } from './app/floor.jsx';
+import { floorEmit, snagSentence } from './app/floor.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -897,7 +897,7 @@ ${d.text}` : d.text,
        The lobby walk is ambient (OfficeView gates it behind ambientOk), but
        the id rides along so the ROOM can mark itself just-leased for every
        user — see the movedIn beat in office.jsx. */
-    try { window.dispatchEvent(new CustomEvent('cafresohq:walkIn', { detail: { id: a.id, color: a.color } })); } catch (_e) {}
+    floorEmit('walkIn', { id: a.id, color: a.color });
     say(`Hired ${a.name}`, 'HIRE');
     /* Beat 4 (OFFICE_AS_INTERFACE §3): the very first coworker gets a first
        assignment offered — three real outcomes instead of a blank prompt.
@@ -2123,14 +2123,10 @@ ${d.text}` : d.text,
     // monitor glow + ticker — needs to know WHO is working, hence the agent
     // fields). Fired before the graph early-return so it works even when the
     // graph engine isn't loaded. Extra fields are ignored by older listeners.
-    try {
-      window.dispatchEvent(new CustomEvent('cafresohq:agentTool', {
-        detail: {
-          phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result,
-          agentId: agent && agent.id, agentName: agent && agent.name, agentColor: agent && agent.color,
-        },
-      }));
-    } catch (_e) {}
+    floorEmit('tool', {
+      phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result,
+      agentId: agent && agent.id, agentName: agent && agent.name, agentColor: agent && agent.color,
+    });
     const g = window.CafresoHQGraph;
     if (!g || !g.pulse) return;
     const name = ev.name;
@@ -2450,7 +2446,7 @@ ${d.text}` : d.text,
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee',
       text: wasRunning ? 'stopped mid-run for a coffee — context cleared ☕'
                        : 'refreshed context at the coffee machine ☕' });
-    try { window.dispatchEvent(new CustomEvent('cafresohq:coffee', { detail: { agentId: a.id } })); } catch (_e) {}
+    floorEmit('coffee', { agentId: a.id });
     say(wasRunning ? `Stopped ${a.name} and cleared their context`
                    : `Cleared ${a.name}'s context`, 'COFFEE');
   };
@@ -2647,7 +2643,7 @@ ${d.text}` : d.text,
           logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
             action: 'artifact', taskId, text: `filed "${filedPath}" to the cabinet 🗄` });
           try {
-            window.dispatchEvent(new CustomEvent('cafresohq:artifact', { detail: { agentId: agent.id } }));
+            floorEmit('artifact', { agentId: agent.id });
           } catch (_e) {}
           if (!firstDeliverySeen) {
             setFirstDeliverySeen(true);

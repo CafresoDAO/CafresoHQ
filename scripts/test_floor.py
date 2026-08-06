@@ -91,6 +91,30 @@ R.kitNone    = deskKit([]);
 R.kitNull    = deskKit(null);
 R.kitJunk    = deskKit(['wallet','payroll']);        // unmappable → shelf
 R.snagNull    = snagSentence(null);
+// ── the floor event contract ───────────────────────────────────────────
+R.evNames   = Object.keys(FLOOR_EVENT).sort();
+R.evValues  = Object.keys(FLOOR_EVENT).map(k => FLOOR_EVENT[k]);
+R.evUnique  = new Set(R.evValues).size === R.evValues.length;
+R.evPrefixed = R.evValues.every(v => v.indexOf('cafresohq:') === 0);
+// Unknown kind is a THROW, not a silent no-op — a typo must be loud.
+R.evUnknownThrows = (() => { try { floorEmit('nope', { agentId: 'a1' }); return false; }
+                             catch (e) { return /unknown floor event/.test(e.message); } })();
+R.onUnknownThrows = (() => { try { floorOn('nope', () => {}); return false; }
+                             catch (e) { return /unknown floor event/.test(e.message); } })();
+// An event with nobody to attach it to is refused at the emitter.
+const warned = [];
+const _warn = console.warn; console.warn = (m) => warned.push(String(m));
+R.evNoIdRefused  = floorEmit('coffee', {}) === false;
+R.evNoIdWarned   = warned.length === 1 && /no agentId/.test(warned[0]);
+R.evNullDetail   = floorEmit('artifact', null) === false;
+console.warn = _warn;
+// walkIn carries `id`, not `agentId` — both must count as placeable.
+R.evAcceptsId    = (() => { const w = []; const o = console.warn; console.warn = (m) => w.push(m);
+                            floorEmit('walkIn', { id: 'a1', color: 'teal' }); console.warn = o;
+                            return w.length === 0; })();
+// Headless (no window) returns false rather than exploding.
+R.evHeadlessSafe = floorEmit('coffee', { agentId: 'a1' }) === false;
+R.onHeadlessSafe = typeof floorOn('coffee', () => {}) === 'function';
 console.log(JSON.stringify(R));
 ''')
 
@@ -152,6 +176,24 @@ console.log(JSON.stringify(R));
     check('every kit prop has a placard (walk destinations exist)',
           all(p in out['placards'] for p in
               set(out['kitFull'] + out['kitSearch'] + out['kitNone'])))
+
+    # ── the floor event contract ──────────────────────────────────────
+    # Six names, one table. These used to be raw literals at ~30 sites; a
+    # typo in one is a silently dead beat, which is the hardest kind of
+    # bug to notice in an animation layer.
+    check('all six floor events are declared',
+          out['evNames'] == ['activity', 'artifact', 'coffee', 'screen', 'tool', 'walkIn'],
+          str(out['evNames']))
+    check('event names are unique', out['evUnique'])
+    check('every event is namespaced', out['evPrefixed'])
+    check('an unknown event kind throws at the emitter', out['evUnknownThrows'])
+    check('an unknown event kind throws at the listener', out['onUnknownThrows'])
+    check('an event with no agentId is refused', out['evNoIdRefused'])
+    check('...and says so once, at the site that got it wrong', out['evNoIdWarned'])
+    check('a null detail is refused, not thrown', out['evNullDetail'])
+    check('walkIn\'s `id` counts as placeable', out['evAcceptsId'])
+    check('emitting headless returns false, never throws', out['evHeadlessSafe'])
+    check('subscribing headless returns an unsubscribe', out['onHeadlessSafe'])
 
     print()
     if FAILS:
