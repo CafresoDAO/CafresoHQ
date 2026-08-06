@@ -151,6 +151,39 @@ erroring), **interruptible** (a tap on the sprite opens the live task detail
 for anyone who does want the text stream), and **cheap** (reuse the existing
 walker/commute system from `OFFICE_REVAMP.md`; no per-event new tech).
 
+> ✅ **Shipped 2026-08-06** — the table above is now fully wired.
+> `app/floor.jsx` holds the pure mapping (covered by
+> `scripts/test_floor.py`); the floor renders it with the away-placard
+> language the meeting/cooler states already spoke — no new animation tech.
+>
+> - **tool_call → prop walk:** the tool name decides the prop (search →
+>   bookshelf, web → phone, files/vault/memory → cabinet; search WINS over
+>   storage, so `VAULT_SEARCH` is a bookshelf trip). Unmappable tools stay
+>   at the desk with the tool chip. `tool_result`/`done` walks them back
+>   (the 1.6 s linger the monitor glow already used). Real state — not
+>   ambientOk-gated, and the placard survives mobile.
+> - **needs-approval → walks to YOUR desk:** any pending approval carrying
+>   an `agentId` stands that coworker at the boss desk with the ask in a
+>   speech bubble ("<name> asks: …", click answers it) while their own desk
+>   shows "at your desk, asking". External CLI approvals
+>   (`/approvals/external`) now carry `agentId` when the asking agent's
+>   name matches a floor coworker — a CLI tool-use request walks the same
+>   walk instead of living only in the tray. This also ships §3 step 5's
+>   diegetic-approval beat.
+> - **error → one honest sentence:** failed runs set a "hit a snag — …"
+>   bubble via `snagSentence()` (first line only, URLs/JSON shrapnel
+>   stripped, ~90 chars — the full dump stays in the inspect panel, §7).
+>   A run the USER stopped clears the bubble instead: taking the folder
+>   back is not the coworker's failure.
+> - **The honesty fix that motivated the beat:** run paths now close the
+>   desk monitor on failure (`makeScreenEmitter.error()` → a brief red
+>   `is-error` freeze, cleared in 2.5 s). Before this, a crashed run left
+>   the monitor in its live "working" flicker for the full 60 s safety
+>   sweep — exactly what the rule above forbids.
+> - **done → stretch:** a one-shot scaleY stretch composed WITH the bob
+>   (a lone animation would freeze the sway for as long as the mood
+>   lingers), then back to idle. Reduced-motion drops it.
+
 ## 5. Experience & the résumé (Phase B → C bridge)
 
 Each completed task increments the coworker's visible experience: jobs

@@ -1,6 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico, NAV_ITEMS, useVocab } from './primitives.jsx';
+import { PROP_PLACARD, toolProp } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 function Tab({
   value, label, badge, icon, disabled,
@@ -206,7 +207,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
 /* ------------ Office cross-section view ------------ */
 const MOOD_ICON = { thinking: '💭', stuck: '!', done: '✓', idle: '·', busy: '⚡', active: '⚡' };
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, meetingActive = false, meetingIds = [] }) {
+function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], meetingActive = false, meetingIds = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -279,6 +280,15 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
      one-shot drop. NOT ambientOk-gated the way the walkers are — this one
      reports a real state change rather than decorating the floor, so a
      reduced-motion user still gets the (CSS-shortened) cue. */
+  /* §4 "tool_call (needs approval) → walks to YOUR desk and asks": the
+     first pending approval whose coworker is on the floor stands them at
+     the boss desk with the ask in a speech bubble. Clicking answers it
+     (opens the attention surface). Real state — never ambientOk-gated. */
+  const askingApproval = React.useMemo(
+    () => (approvals || []).find(p => p && p.agentId && agents.some(a => a.id === p.agentId)) || null,
+    [approvals, agents]);
+  const askingAgent = askingApproval ? agents.find(a => a.id === askingApproval.agentId) : null;
+
   const [trayDrop, setTrayDrop] = React.useState({});
   React.useEffect(() => {
     const timers = new Map();
@@ -343,7 +353,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       const d = e.detail || {};
       if (!d.agentId) return;
       if (d.phase === 'start') {
-        setLiveTools(prev => ({ ...prev, [d.agentId]: { name: d.name } }));
+        // §4: the tool decides the prop — cabinet for files, bookshelf for
+        // search, phone for the web; null keeps them at the desk.
+        setLiveTools(prev => ({ ...prev, [d.agentId]: { name: d.name, prop: toolProp(d.name) } }));
         clearLater(d.agentId, 45000);
       } else if (d.phase === 'done') {
         clearLater(d.agentId, 1600);
@@ -367,11 +379,12 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       if (!d.agentId || !d.tail) return;
       setScreens(prev => ({ ...prev, [d.agentId]: { tail: d.tail, phase: d.phase } }));
       const t = timers.get(d.agentId); if (t) clearTimeout(t);
-      // Streams that die mid-run (error/abort) never send 'done' — a 60s
-      // safety clear keeps monitors from showing stale text forever.
+      // Run paths now close their monitor explicitly on failure (phase
+      // 'error' — cleared fast, §4 forbids a "working" glow on a dead run);
+      // the 60s sweep stays as the backstop for anything that dies silently.
       timers.set(d.agentId, setTimeout(() => {
         setScreens(prev => { if (!(d.agentId in prev)) return prev; const n = { ...prev }; delete n[d.agentId]; return n; });
-      }, d.phase === 'done' ? 8000 : 60000));
+      }, d.phase === 'done' ? 8000 : d.phase === 'error' ? 2500 : 60000));
     };
     window.addEventListener('cafresohq:agentScreen', onScreen);
     return () => { window.removeEventListener('cafresohq:agentScreen', onScreen); timers.forEach(clearTimeout); };
@@ -865,6 +878,16 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               {ceoBusy ? <div className="bubble t-body">replying to you…</div> : null}
               <Sprite data="cafresohq" scale={2} className="bob slow"/>
             </div>
+            {askingAgent && (
+              <div className="asking-visitor"
+                   title={`${askingAgent.name} is waiting for your go-ahead — click to answer`}
+                   onClick={(e) => { e.stopPropagation(); if (onOpenAttention) onOpenAttention(); }}>
+                <div className="bubble t-body">
+                  {askingAgent.name} asks: {String(askingApproval.title || 'may I?').slice(0, 44)}
+                </div>
+                <Sprite data={askingAgent.color} scale={2} className="bob fast"/>
+              </div>
+            )}
           </div>
         </div>
 
@@ -909,6 +932,14 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const awayMeeting = ambientOk && meetingIdSet.has(a.id);
           const awayCooler = ambientOk && coolerVisitor === a.id;
           const liveTool = liveTools[a.id];
+          /* §4 walks. Asking: a pending approval from this coworker means
+             they're over at YOUR desk waiting for the stamp. Prop visit: the
+             running tool decides the prop; only plays while the tool really
+             runs (liveTools clears on 'done'). Both are real state, not
+             ambience — so neither is ambientOk-gated. */
+          const awayAsking = (approvals || []).some(p => p && p.agentId === a.id);
+          const propVisit = !awayAsking && !awayMeeting && !awayCooler &&
+            !!(liveTool && liveTool.prop);
           const screen = screens[a.id];
           const paperCount = Math.min((a.journal || []).length, 5);
           /* Deliveries this coworker has filed — drives the out-tray. Read
@@ -919,7 +950,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
           const latestArtifact = trayCount ? myArtifacts[myArtifacts.length - 1].artifactPath : null;
           return (
           <div key={a.id}
-               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${liveTool ? ' tool-live' : ''}`}
+               className={`room status-${a.status || 'idle'} ${dropTarget===a.id?'drop-target':''} ${a.elevated ? 'elevated' : ''}${subs.length ? ' has-subordinates' : ''}${awayMeeting ? ' away-meeting' : ''}${awayCooler ? ' away-cooler' : ''}${awayAsking ? ' away-asking' : ''}${propVisit ? ' away-prop' : ''}${liveTool ? ' tool-live' : ''}`}
                onClick={() => onInspect(a)}
                style={{cursor:'pointer', zIndex: 2 + i}}
                onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
@@ -954,7 +985,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   Dark when idle (no element), scrolling text while running,
                   frozen last line briefly after 'done'. */}
               {screen && !awayMeeting && !awayCooler && (
-                <div className={`desk-screen ${screen.phase === 'done' ? 'is-done' : 'is-live'}`} aria-hidden="true">
+                <div className={`desk-screen ${screen.phase === 'done' ? 'is-done' : screen.phase === 'error' ? 'is-error' : 'is-live'}`} aria-hidden="true">
                   {screen.tail}
                 </div>
               )}
@@ -1000,13 +1031,20 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 </div>
               )}
               <div className="sprite-slot">
-                {(awayMeeting || awayCooler)
-                  ? <div className="away-placard">{awayMeeting ? 'in the meeting room' : 'stretching legs'}</div>
+                {(awayMeeting || awayCooler || awayAsking || propVisit)
+                  ? <div className="away-placard">
+                      {awayMeeting ? 'in the meeting room'
+                        : awayCooler ? 'stretching legs'
+                        : awayAsking ? 'at your desk, asking'
+                        : PROP_PLACARD[liveTool.prop]}
+                    </div>
                   : (a.task ? <div className="bubble t-body">{a.task}</div> : null)}
                 <div style={{position:'relative'}}>
                   {/* Bob speed tracks real effort — fast only while the agent
-                      is actually running, not by desk-index parity. */}
-                  <Sprite data={a.color} scale={2} className={`bob ${a.status === 'busy' ? 'fast' : 'slow'}`}/>
+                      is actually running, not by desk-index parity. The
+                      one-shot stretch plays when a run really finishes (§4
+                      `done` row) — keyed on mood so it can't loop. */}
+                  <Sprite data={a.color} scale={2} className={`bob ${a.status === 'busy' ? 'fast' : 'slow'}${a.mood === 'done' ? ' stretch' : ''}`}/>
                   <div className={`mood ${a.mood || 'idle'}`} title={a.mood || 'idle'}>{MOOD_ICON[a.mood||'idle']}</div>
                 </div>
               </div>

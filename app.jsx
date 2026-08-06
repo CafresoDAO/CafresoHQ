@@ -10,6 +10,7 @@ import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
+import { snagSentence } from './app/floor.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
@@ -1690,14 +1691,19 @@ ${d.text}` : d.text,
     } catch (err) {
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
+      screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
-      onUpdateAgent(agent.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
+      const raw = err && err.message || String(err);
+      // The snag bubble is one honest sentence on the floor (§4/§7); an
+      // aborted run clears the bubble instead — stopping them isn't a snag.
+      onUpdateAgent(agent.id, aborted
+        ? { status: 'idle', mood: 'idle', task: '' }
+        : { status: 'idle', mood: 'stuck', task: snagSentence(raw) });
       // Structured failure cause — Plato's "no silent failures" ask.
       // Classify common cases so the inbox can show actionable hints
       // instead of raw error strings.
-      const raw = err && err.message || String(err);
       const classify = (s) => {
         if (/401|invalid bearer|unauthor/i.test(s))
           return { kind: 'auth', retryable: true, actionNeeded: 'Refresh agent auth (logout/login the upstream API)' };
@@ -2396,10 +2402,13 @@ ${d.text}` : d.text,
     } catch (err) {
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
+      screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentId
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
-      onUpdateAgent(a.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
+      onUpdateAgent(a.id, aborted
+        ? { status: 'idle', mood: 'idle', task: '' }
+        : { status: 'idle', mood: 'stuck', task: snagSentence(err && err.message || String(err)) });
       logActivity(aborted
         ? { agentId: a.id, agentName: a.name, color: a.color, action: 'progress', text: 'run stopped' }
         : { agentId: a.id, agentName: a.name, color: a.color, action: 'failed', priority: 'attention', text: 'delegation failed', detail: (err && err.message || String(err)).slice(0, 240) });
@@ -2657,10 +2666,13 @@ ${d.text}` : d.text,
     } catch (err) {
       const aborted = err && err.name === 'AbortError';
       flush.cancel();
+      screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
         : m));
-      onUpdateAgent(agent.id, { status: 'idle', mood: aborted ? 'idle' : 'stuck' });
+      onUpdateAgent(agent.id, aborted
+        ? { status: 'idle', mood: 'idle', task: '' }
+        : { status: 'idle', mood: 'stuck', task: snagSentence(err && err.message || String(err)) });
       // Aborted task should go back to inbox so the user can re-drop it; failed tasks too.
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'inbox', assignedTo: null } : t));
       logActivity(aborted
@@ -2740,18 +2752,28 @@ ${d.text}` : d.text,
           // Add any new ones.
           const fresh = pending
             .filter(p => !haveIds.has(p.id))
-            .map(p => ({
-              id: HQ.uid('apx'),
-              externalId: p.id,
-              title: p.summary
-                ? `${p.tool}: ${p.summary}`
-                : `${p.tool} (${Object.keys(p.input || {}).join(', ') || 'no args'})`,
-              by: p.agent || 'claude-code',
-              kind: 'claude-code · tool use',
-              elevated: true,           // red border + "agent waiting" treatment
-              external: true,
-              cwd: p.cwd,
-            }));
+            .map(p => {
+              /* If the asking CLI agent IS a floor coworker, carry their id —
+                 that's what walks the sprite to the boss desk (§4 "needs
+                 approval → walks to YOUR desk and asks") instead of the ask
+                 living only in the tray. Name match against the live roster
+                 via ref: this effect mounts once and agents would be stale. */
+              const owner = agentsRef.current.find(
+                a => a.name.toLowerCase() === String(p.agent || '').trim().toLowerCase());
+              return {
+                id: HQ.uid('apx'),
+                externalId: p.id,
+                agentId: owner ? owner.id : undefined,
+                title: p.summary
+                  ? `${p.tool}: ${p.summary}`
+                  : `${p.tool} (${Object.keys(p.input || {}).join(', ') || 'no args'})`,
+                by: p.agent || 'claude-code',
+                kind: 'claude-code · tool use',
+                elevated: true,           // red border + "agent waiting" treatment
+                external: true,
+                cwd: p.cwd,
+              };
+            });
           if (fresh.length === 0 && kept.length === prev.length) return prev;
           if (fresh.length) say(`Claude Code wants ${fresh[0].title.slice(0, 30)}…`, 'STAMP');
           return [...kept, ...fresh];
@@ -3096,6 +3118,7 @@ ${d.text}` : d.text,
               ceoBusy={chat.some(m => m.from === 'ceo' && m.streaming)}
               attentionCount={attentionCount}
               onOpenAttention={openAttention}
+              approvals={approvals}
               meetingActive={meetingOpen}
               meetingIds={meetingParticipants.map(p => p.id)}
             />

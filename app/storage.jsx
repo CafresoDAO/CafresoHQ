@@ -222,6 +222,13 @@ const makeScreenEmitter = (agentId) => {
       if (trailing) { clearTimeout(trailing); trailing = null; }
       send(buf, 'done');
     },
+    /* Failed/aborted runs must CLOSE the monitor too (§4: never play
+       "working" when the driver is erroring). Without this the desk screen
+       kept its live glow for the 60s safety window after a crash. */
+    error(buf) {
+      if (trailing) { clearTimeout(trailing); trailing = null; }
+      send(buf || ' ', 'error');
+    },
   };
 };
 

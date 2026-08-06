@@ -2413,6 +2413,14 @@ body.night .office-task-rail .otr-more { color: var(--brand-banana); border-colo
 }
 .desk-screen.is-live { animation: desk-screen-flicker 1.6s steps(2) infinite; }
 .desk-screen.is-done { color: #b9e8c9; animation: none; opacity: 0.92; }
+/* Failed run — the glow dies with it (§4: never play "working" on a dead
+   run). Brief red-tinted freeze, then the fast clear removes it. */
+.desk-screen.is-error {
+  color: #e8a1a1;
+  animation: none;
+  opacity: 0.8;
+  box-shadow: 0 0 0 1px rgba(232, 120, 120, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+}
 @keyframes desk-screen-flicker {
   0%, 100% { box-shadow: 0 0 0 1px rgba(120, 220, 160, 0.15), inset 0 1px 0 rgba(255,255,255,0.08); }
   50%      { box-shadow: 0 0 6px 1px rgba(120, 220, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.08); }
@@ -9038,12 +9046,58 @@ body.night .att-badge { border-color: var(--ink); }
   100% { left: 38%; opacity: 0; }
 }
 
-/* Empty desk while its owner is away — sprite fades, placard explains. */
+/* Empty desk while its owner is away — sprite fades, placard explains.
+   away-asking (waiting at YOUR desk for a stamp) and away-prop (§4 tool
+   walk: cabinet/bookshelf/phone) ride the same language. */
 .room.away-meeting .sprite-slot > div:last-child,
-.room.away-cooler .sprite-slot > div:last-child {
+.room.away-cooler .sprite-slot > div:last-child,
+.room.away-asking .sprite-slot > div:last-child,
+.room.away-prop .sprite-slot > div:last-child {
   opacity: 0.32;
   filter: grayscale(0.6);
   transition: opacity 0.4s, filter 0.4s;
+}
+
+/* §4: the coworker waiting at the boss desk with their ask. Real state —
+   clicking answers it. Slides in from the floor side; reduced-motion just
+   shows them standing there. */
+.asking-visitor {
+  position: absolute;
+  right: 6px; bottom: 10px;
+  z-index: 6;
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  animation: asking-arrive 0.6s ease-out;
+}
+.asking-visitor .bubble {
+  position: static;
+  max-width: 150px;
+  white-space: normal;
+  font-size: 10px;
+}
+@keyframes asking-arrive {
+  from { transform: translateX(46px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* §4 `done` — one honest stretch when a run really finishes, then back to
+   the idle bob. One-shot by construction: the class appears with mood
+   'done' and the animation doesn't loop. */
+/* Composed with the bob so the idle sway resumes seamlessly after the
+   one-shot (a lone `animation:` here would freeze the sprite for as long
+   as the 'done' mood lingers). */
+.bob.stretch { animation: sprite-stretch 0.7s ease-out 1, bob 3.1s ease-in-out infinite; }
+@keyframes sprite-stretch {
+  0%   { transform: scaleY(1); }
+  40%  { transform: scaleY(1.14) translateY(-2px); }
+  100% { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asking-visitor { animation: none; }
+  .bob.stretch { animation: none; }
+}
+@media (max-width: 768px) {
+  .asking-visitor { display: none; }   /* the mobile approvals FAB covers this */
 }
 .away-placard {
   font-family: 'VT323', monospace;
@@ -9078,7 +9132,10 @@ body.night .att-badge { border-color: var(--ink); }
   .walker { display: none !important; }
 }
 @media (max-width: 768px) {
-  .walker, .meeting-cluster, .away-placard { display: none !important; }
+  /* Ambient movement never plays on mobile. Placards STAY: away-asking and
+     away-prop are real state (mobile never gets meeting/cooler placards
+     anyway — those are ambientOk-gated, which is false on mobile). */
+  .walker, .meeting-cluster { display: none !important; }
 }
 
 /* Mobile pane-switcher (WorkspaceView renders this instead of the grid ≤768px). */
