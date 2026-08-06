@@ -9799,6 +9799,18 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
   overflow: hidden;
 }
 .pxhq .px-sp { position: absolute; image-rendering: pixelated; background-repeat: no-repeat; }
+/* Keyboard focus on the floor. `outline` only — a border or padding would
+   reflow the room, and half these props carry centring transforms that a
+   layout change would fight. Mouse clicks don't draw it (:focus-visible),
+   so the pixel scene looks identical until someone reaches for Tab. */
+.pxhq [role="button"]:focus-visible,
+.pxhq a:focus-visible {
+  outline: 2px solid var(--px-gold);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+.pxhq .px-room.vacant:focus-visible { outline-offset: -3px; }
+.pxhq .px-plate > span[role="button"] { cursor: pointer; }
 .pxhq .clickable { cursor: pointer; }
 .pxhq .clickable:hover { filter: brightness(1.15); }
 .pxhq .clickable:active { translate: 0 1px; filter: brightness(0.94); }

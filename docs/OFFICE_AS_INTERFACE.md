@@ -81,6 +81,26 @@
 > Rule of thumb for that media query: if hiding it loses the user a *fact*,
 > it is an instrument — re-lay it out, don't drop it.
 
+> ✅ **The floor is keyboard-operable (2026-08-06).** Measured before
+> touching anything: **19 clickable surfaces, exactly 1 keyboard-reachable**
+> — and that one an `<a href>` by accident. Hire, open a file, read the
+> reports, take a delivery, sit with the CEO, answer an approval: none of it
+> could be done without a mouse, on the product's primary surface. Now 15
+> labelled controls, 0 unlabelled.
+>
+> `pressable(onActivate, label)` gives a prop `role` + `tabIndex` +
+> Enter/Space and an `aria-label` in office words. Two constraints it
+> encodes: the focus ring is an **`outline`**, never a border or padding —
+> half these props carry centring transforms and a layout change on focus
+> would make the room jump — and it **stops propagation** the same way the
+> click handlers do, so activating the mug can't also open the room behind
+> it. `:focus-visible` means a mouse user never sees the ring.
+>
+> An occupied room is `role="group"`, not a button — it *contains* buttons,
+> and nesting them is invalid. Its **door plate** is the focusable control
+> that opens the coworker's file, which is also a better affordance than a
+> whole-room hit target that only mouse users could ever discover.
+
 ---
 
 ## 1. The principle: the metaphor does the teaching

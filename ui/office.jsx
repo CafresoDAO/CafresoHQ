@@ -230,7 +230,7 @@ const PX_SIZES = {
   sign_hq: [146, 48], sun: [20, 20], moon: [16, 16], phone: [14, 15],
 };
 
-function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
+function Px({ n, s = 2, style = {}, className = '', title, onClick, night, ...rest }) {
   // `night` swaps window_day → window_night; anything else ignores it.
   const name = night && n === 'window_day' ? 'window_night' : n;
   const [w, h] = PX_SIZES[n] || [16, 16];
@@ -239,6 +239,7 @@ function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
       className={`px-sp ${className}`}
       title={title}
       onClick={onClick}
+      {...rest}
       style={{
         width: w * s, height: h * s,
         backgroundImage: `url(assets/px/${name}.png)`,
@@ -247,6 +248,32 @@ function Px({ n, s = 2, style = {}, className = '', title, onClick, night }) {
       }}
     />
   );
+}
+
+/* ── Keyboard reach ───────────────────────────────────────────────────────
+   Every prop on the floor was a bare <div onClick>: 19 clickable surfaces,
+   exactly ONE keyboard-reachable element (an <a href>, and that by
+   accident). So the product's primary surface — hire, open a file, read
+   the reports, take a delivery, sit with the CEO, answer an approval —
+   could not be operated at all without a mouse.
+
+   This turns any prop into a real button for the Tab key and assistive
+   tech without moving a pixel: role + tabIndex + Enter/Space, and a focus
+   ring drawn as an `outline` (never a border or padding, which would
+   reflow the room on focus). stopPropagation matches the click handlers —
+   activating the mug must not also open the room behind it. */
+function pressable(onActivate, label) {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      e.preventDefault();       // Space must not scroll the floor
+      e.stopPropagation();
+      onActivate(e);
+    },
+  };
 }
 
 /* Pose sheet order (gen_pixel_hq.py): back · frontA · frontB · sideA ·
@@ -1028,7 +1055,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                          title={nightRunning
                            ? `Night Shift — ${nightRunning} mission${nightRunning === 1 ? '' : 's'} running right now · click to open the board`
                            : `Night Shift — ${nightMissions.length} paused · click to open the board`}
-                         onClick={(e)=>{ e.stopPropagation(); onOpenMissions && onOpenMissions(); }}>
+                         onClick={(e)=>{ e.stopPropagation(); onOpenMissions && onOpenMissions(); }}
+                         {...pressable(()=>onOpenMissions && onOpenMissions(), 'Open the night shift board')}>
                       <div className="px-nsb-title">🌙 NIGHT SHIFT</div>
                       <div className="px-nsb-line">
                         {nightRunning ? `${nightRunning} on shift` : `${nightMissions.length} paused`}
@@ -1041,26 +1069,31 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   <div className="px-stickies">
                     {stickies.slice(0, 3).map(s => (
                       <div key={s.id} className="px-sticky" title="Pinned context">
-                        <span className="px-sticky-x" onClick={(e)=>{e.stopPropagation(); onRemoveSticky(s.id);}}>✕</span>
+                        <span className="px-sticky-x" onClick={(e)=>{e.stopPropagation(); onRemoveSticky(s.id);}}
+                            {...pressable(()=>onRemoveSticky(s.id), 'Remove this note')}>✕</span>
                         {s.text}
                       </div>
                     ))}
-                    <div className="px-sticky add" onClick={(e)=>{ e.stopPropagation(); onAddSticky(); }}>+ NOTE</div>
+                    <div className="px-sticky add" onClick={(e)=>{ e.stopPropagation(); onAddSticky(); }}
+                         {...pressable(()=>onAddSticky(), 'Pin a new note to the CEO desk')}>+ NOTE</div>
                   </div>
 
                   <Px n="bookshelf" className="px-deco" style={{ left: '2%', bottom: 14 }} />
                   <Px n="cabinet" className="px-cab clickable" title="Browse CafresoHQ's memory"
                       onClick={(e)=>{ e.stopPropagation(); onOpenMemory(); }}
+                      {...pressable(()=>onOpenMemory(), 'Open the memory cabinet')}
                       style={{ left: '14%', bottom: 12 }} />
                   <div className="px-label" style={{ left: '13%', bottom: 2 }}>MEMORY</div>
 
                   <Px n="couch" className="px-couch clickable" title="Sit down with CafresoHQ — 1:1"
                       onClick={(e)=>{ e.stopPropagation(); onSitWithCEO(); }}
+                      {...pressable(()=>onSitWithCEO(), 'Sit down with CafresoHQ for a one-to-one')}
                       style={{ left: '27%', bottom: 8 }} />
                   <div className="px-label" style={{ left: '29%', bottom: 2 }}>1:1 SOFA</div>
 
                   <a className="px-arcadelink" href="https://ai.cafreso.com/workspaces"
                      title="ARCADE · Boot up Cafreso Workspaces"
+                     aria-label="Arcade — boot up Cafreso Workspaces"
                      onClick={(e)=>e.stopPropagation()}>
                     <Px n="arcade" className="px-arcade" style={{}} />
                   </a>
@@ -1075,7 +1108,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   {askingAgent && (
                     <div className="px-asking"
                          title={`${askingAgent.name} is waiting for your go-ahead — click to answer`}
-                         onClick={(e) => { e.stopPropagation(); if (onOpenAttention) onOpenAttention(); }}>
+                         onClick={(e) => { e.stopPropagation(); if (onOpenAttention) onOpenAttention(); }}
+                         {...pressable(()=>onOpenAttention && onOpenAttention(), 'Answer the request waiting at your desk')}>
                       <div className="px-bubble ask">
                         {askingAgent.name} asks: {String(askingApproval.title || 'may I?').slice(0, 40)}
                       </div>
@@ -1093,7 +1127,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 {pair.map((u, ci) => {
                   if (u.kind === 'vacant') return (
                     <div className="px-room vacant" key={'v' + u.idx}
-                         onClick={onHire} title={vocab.hireTitle}>
+                         onClick={onHire} title={vocab.hireTitle}
+                         {...pressable(()=>onHire(), `Unit ${u.idx + 1} is vacant — ${vocab.hireTitle}`)}>
                       <div className="px-plate">
                         <span>UNIT {u.idx + 1} · {vocab.vacant}</span>
                         <span className="pip" />
@@ -1131,6 +1166,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                     <div key={a.id}
                          className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}${movedIn === a.id ? ' just-leased' : ''}`}
                          onClick={() => onInspect(a)}
+                         role="group"
+                         aria-label={`${a.name}, ${a.role} — ${a.status || 'idle'}${a.task ? ', ' + a.task : ''}`}
                          style={{ cursor: 'pointer' }}
                          onDragOver={e=>{e.preventDefault(); setDropTarget(a.id);}}
                          onDragLeave={()=>setDropTarget(null)}
@@ -1146,7 +1183,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                             hardware" into "HARDWARE". Show the real role and let
                             the existing ellipsis handle a long one — truncation
                             is honest, word-picking guesses. */}
-                        <span title={`${a.name} · ${a.role}`}>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {String(a.role || '').toUpperCase()}</span>
+                        <span title={`${a.name} · ${a.role} — open their file`}
+                              {...pressable(()=>onInspect(a), `${a.name}, ${a.role} — open their file`)}>{a.elevated ? '🛡 ' : ''}{a.name.toUpperCase()} · {String(a.role || '').toUpperCase()}</span>
                         {/* The word carries the beat where the animation
                             can't — a reduced-motion or mobile boss still
                             sees WHICH unit just became theirs. */}
@@ -1188,7 +1226,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
                           <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
                               title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
-                              onClick={(e)=>{e.stopPropagation(); onCoffee(a);}} />
+                              onClick={(e)=>{e.stopPropagation(); onCoffee(a);}}
+                              {...pressable(()=>onCoffee(a), `Send ${a.name} for coffee — stops anything running and clears their desk`)} />
                           {coffeeSteam[a.id] ? <span className="px-steam" aria-hidden="true" /> : null}
                           {/* The pile grows with the real filed-report count
                               (capped at 5 sheets so a busy desk stays legible)
@@ -1197,7 +1236,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           {paperCount > 0 && (
                             <div className="px-paperstack clickable"
                                  title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
-                                 onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}>
+                                 onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}
+                                 {...pressable(()=>onInspect(a), `${(a.journal || []).length} filed reports by ${a.name} — open`)}>
                               {Array.from({ length: paperCount }).map((_, pi) => (
                                 <Px key={pi} n="papers"
                                     style={{ position: 'absolute', left: (pi % 2) * 2, bottom: pi * 3 }} />
@@ -1208,7 +1248,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                             <Px n="tray" className={'px-tray clickable' + (trayDrop[a.id] ? ' is-landing' : '')}
                                 title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed — click to open the latest`}
                                 onClick={(e)=>{ e.stopPropagation();
-                                  if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }} />
+                                  if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }}
+                                {...pressable(()=>{ if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); },
+                                  `${trayCount} deliveries filed by ${a.name} — open the latest`)} />
                           )}
                         </div>
 
@@ -1249,6 +1291,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                               <div key={s.id}
                                    className={`px-sub ${s.transient ? 'transient' : 'assistant'}`}
                                    onClick={(e)=>{ e.stopPropagation(); onInspect(s); }}
+                                   {...pressable(()=>onInspect(s), `${s.name}, ${s.role} — open their file`)}
                                    title={`${s.name} · ${s.role}${s.transient ? ' (transient sub)' : ' (assistant)'}${s.task ? ' · ' + s.task : ''}`}>
                                 <PxChar color={s.color}
                                         pose={s.status === 'busy' || s.status === 'active' ? 'back' : 'front'}
@@ -1300,7 +1343,9 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <Px n="cooler" className="px-lobbycooler" title="Water cooler" style={{ left: 18, bottom: 10 }} />
               <Px n="doors" className="px-doors" />
               <Px n="meetdoor" className="px-meetdoor clickable" title="Open meeting room"
-                  onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}} style={{ right: 24, bottom: 10 }} />
+                  onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}}
+                  {...pressable(()=>onOpenMeeting(), 'Open the meeting room — start a stand-up')}
+                  style={{ right: 24, bottom: 10 }} />
               <div className="px-label" style={{ right: 20, bottom: 2 }}>MEETING</div>
               {ambientOk && meetingActive && meetingIds.length > 0 && (
                 <div className="px-meetcluster" title="In a meeting" aria-hidden="true">
