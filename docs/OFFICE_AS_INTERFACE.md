@@ -337,6 +337,26 @@ charming; the coworkers are competent.
 > ("cheap and tireless"). Job description edits in place, saves on blur; the
 > panel now mounts only while open so an abandoned draft can't resurface
 > looking saved. Covered by `scripts/test_cast.py`.
+>
+> ✅ **Roster distress signal, shipped 2026-08-06.** Watching a real failure
+> (Miko, no brain configured) all the way through, the STAFF ROSTER grid —
+> the one place a boss goes to see "who's who" — turned out to be the one
+> surface that stayed silent. The floor sprite two panels away showed an
+> honest "hit a snag" bubble; the roster card read **IDLE · 0 · 0 · $0**,
+> pixel-identical to a coworker who has never been given a single task.
+> `agent.mood === 'stuck'` already carried the signal (set beside the honest
+> sentence in `agent.task` when a run fails) — the card simply never looked.
+>
+> Now: a small `!` badge, a one-line honest reason under the role (the same
+> `snagSentence()` text the floor and inbox use — no new copy to keep in
+> sync), and Retry sits right on the card next to LET GO. The **status
+> pill still only reports `agent.status`** — busy/idle, nothing else —
+> because that is the §4 invariant this whole thread of fixes rests on:
+> only `status` answers "is this coworker working right now." Distress is
+> a second axis and gets its own badge rather than borrowing that word.
+> Gated on the *live* mood, not "ever failed" — the instant a retry
+> succeeds, mood clears and the badge should go with it, the same honesty
+> rule as a prop visit only playing while the tool call is really running.
 
 ## 3. First run — five minutes to first delight
 

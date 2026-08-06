@@ -370,6 +370,24 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
   const [selectedAgentId, setSelectedAgentId] = useSV(null);
   const [showInbox, setShowInbox] = useSV(false);
 
+  /* The roster grid was blind to a coworker who just failed. Watching a real
+     one (Miko, no brain configured) confirmed it: the floor sprite two
+     panels away showed an honest "hit a snag — …" bubble, and this card —
+     the one place a boss actually goes to see "who's who" — read IDLE, 0
+     work done, identical to a coworker who has never been given anything.
+     `agent.mood === 'stuck'` already carries the signal (set alongside the
+     honest sentence in `agent.task`); the card just never looked at it.
+
+     `activity` is newest-first (logActivity prepends), so the first 'failed'
+     entry per agent IS the latest — the same one Retry should act on. Gated
+     on the LIVE mood, not "has ever failed": the moment a retry succeeds,
+     mood clears and the card should stop pointing at old news. */
+  const lastFailedByAgent = React.useMemo(() => {
+    const m = new Map();
+    for (const e of activity) if (e.action === 'failed' && !m.has(e.agentId)) m.set(e.agentId, e);
+    return m;
+  }, [activity]);
+
   // The office attention pill / nav badge fires this to force the inbox open.
   React.useEffect(() => {
     const open = () => setShowInbox(true);
@@ -436,12 +454,24 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
             // Experience (§5): jobs from the ledger, not a.tasksDone — that
             // legacy counter also counted chat replies, which aren't jobs.
             const xp = xpStats(experience, a.id);
+            // Live distress, not history: see the useMemo above for why this
+            // is gated on mood rather than "ever failed".
+            const stuck = a.mood === 'stuck';
+            const lastFailed = stuck ? lastFailedByAgent.get(a.id) : null;
             return (
-              <div key={a.id} className="team-card" onClick={()=>onInspect(a)}>
+              <div key={a.id} className={'team-card' + (stuck ? ' is-stuck' : '')} onClick={()=>onInspect(a)}>
+                {/* The STATUS pill stays truthful about liveness (busy/idle) —
+                    §4's rule that only agent.status answers "is this running
+                    right now" applies here too. Distress is a second axis and
+                    gets its own badge, never borrows this one's word. */}
                 <div className={`status-pill ${a.status}`}>{a.status.toUpperCase()}</div>
+                {stuck && <div className="team-stuck-badge" title="Needs you">!</div>}
                 <div className="sprite-box"><Sprite data={a.color} scale={3} className="bob"/></div>
                 <div className="name">{a.name}</div>
                 <div className="role">{a.role}</div>
+                {stuck && a.task && (
+                  <div className="team-stuck-line" title={a.task}>⚠ {a.task}</div>
+                )}
                 <div className="team-stats">
                   {/* §6, binding: no raw model ids and no "tokens"/"cost" on
                       a coworker card — brain · work done · payroll. The id
@@ -460,7 +490,16 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                   onClick={(e)=>{ e.stopPropagation(); setShowInbox(true); setSelectedAgentId(a.id); }}
                   title="Show this agent's activity"
                 >📥</button>
-                <button className="px-btn danger team-dismiss" style={{fontSize:8}} onClick={(e)=>{e.stopPropagation(); onDismiss(a.id);}}>LET GO</button>
+                {lastFailed && onRetry ? (
+                  <div className="team-card-actions">
+                    <button className="px-btn primary" style={{fontSize:8, flex:1}}
+                      onClick={(e)=>{ e.stopPropagation(); onRetry(lastFailed); }}>↻ Retry</button>
+                    <button className="px-btn danger team-dismiss" style={{fontSize:8, flex:1}}
+                      onClick={(e)=>{e.stopPropagation(); onDismiss(a.id);}}>LET GO</button>
+                  </div>
+                ) : (
+                  <button className="px-btn danger team-dismiss" style={{fontSize:8}} onClick={(e)=>{e.stopPropagation(); onDismiss(a.id);}}>LET GO</button>
+                )}
               </div>
             );
           })}

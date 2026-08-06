@@ -5556,6 +5556,26 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
 .team-card .sprite-box { display: flex; justify-content: center; padding: 8px 0; }
 .team-card .name { font-family: 'Press Start 2P'; font-size: 11px; }
 .team-card .role { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); }
+/* The roster grid's own distress signal (OFFICE_AS_INTERFACE §4, shipped
+   2026-08-06) — a coworker who just hit a snag used to look identical to
+   one who has never been given anything. `.status-pill` stays truthful
+   about liveness; this is a second, separate axis. */
+.team-card.is-stuck { border-color: var(--error); }
+.team-stuck-badge {
+  position: absolute; top: -6px; right: -6px;
+  width: 18px; height: 18px;
+  background: var(--error); color: #fff8ee;
+  border: 2px solid var(--ink);
+  display: grid; place-items: center;
+  font-family: 'Press Start 2P'; font-size: 10px;
+  z-index: 2;
+}
+.team-stuck-line {
+  font-family: 'Inter'; font-size: 9px; color: var(--error);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: -4px;
+}
+.team-card-actions { display: flex; gap: 6px; }
 .team-stats {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px;
   padding-top: 6px; border-top: 1px dashed var(--ink-3);
