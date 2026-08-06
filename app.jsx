@@ -3306,7 +3306,15 @@ ${d.text}` : d.text,
           <div className="office-wrap">
             <div className="section-title">
               🏢 {vocab.agent.toUpperCase()} {vocab.office.toUpperCase()}
-              <span className="tag">drop task cards on desks to delegate · click guest chair for 1:1 · meeting door opens standup</span>
+              {/* Audited all three claims against what the controls do.
+                  Cards-on-desks and the guest chair are accurate (the chair
+                  opens Focus Mode, which streams only `ceoStream` — a real
+                  one-to-one). The third was not: the meeting door calls
+                  `onOpenMeeting`, which seats the team in the MEETING ROOM.
+                  The stand-up is a different modal behind 🌅 STAND-UP / `u`.
+                  The banner is always on screen, so it was the app's most
+                  repeated wrong sentence. */}
+              <span className="tag">drop task cards on desks to delegate · click guest chair for 1:1 · meeting door seats the team</span>
             </div>
             <OfficeView
               agents={agents}

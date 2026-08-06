@@ -1063,3 +1063,29 @@ settings — never on the floor, the cards, or onboarding.
 > test proves nothing — hydration from `memory/context.json` overwrites it
 > on load. Seed the server file. (This is the storage layer working
 > correctly, not a bug: the server is the source of truth.)
+
+> ✅ **Audited the office banner's three claims (2026-08-06).** The strip
+> under 🏢 AGENT OFFICE is on screen the entire time a boss is on the
+> floor, which makes it the app's most-repeated sentence — so each clause
+> was checked against what the control actually does, rather than read.
+>
+> - *"drop task cards on desks to delegate"* — **true**, driven end to end
+>   earlier this session.
+> - *"click guest chair for 1:1"* — **true**. The chair opens Focus Mode,
+>   which streams only `ceoStream`, and the room is titled `1:1 WITH
+>   CAFRESOHQ · quiet room · no distractions`. Confirmed live.
+> - *"meeting door opens standup"* — **false**. The door calls
+>   `onOpenMeeting`, which seats the team in the **Meeting Room**
+>   (verified live earlier: `MEETING ROOM · 3 IN THE ROOM · CAFRESOHQ
+>   MODERATING`). The stand-up is a different modal, reached from 🌅
+>   STAND-UP or `u`.
+>
+> Fixed the copy, not the door: a door marked MEETING that opens a meeting
+> room is the right mapping — the sentence was simply describing a
+> different feature. It now reads *"meeting door seats the team"*.
+>
+> Worth stating as a rule, since three separate finds this session were
+> the same shape (`Notes: 38` on an empty vault, "folded into every
+> prompt" above its cap, and this): **any sentence that asserts what a
+> control does, or what a number counts, is a claim — and claims decay.**
+> The ones on always-visible chrome decay loudest.
