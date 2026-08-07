@@ -388,17 +388,46 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
 **Which rules are executable now.** Most of this document is prose a reader has
-to remember. Three parts are not, and that is where the leverage is — each was
+to remember. Four parts are not, and that is where the leverage is — each was
 written only after the same class of bug was fixed by hand three or four times:
 
 | test | what it refuses to let back in |
 |---|---|
 | `scripts/test_no_invented_numbers.py` | a hardcoded per-token price; a percentage against a phantom 1,000,000-token budget |
-| `scripts/test_floor_vocabulary.py` | `sub-agent`, `elevated`, `tok`, `iteration` — and `agent` meaning a person — in any string a person reads, **including the prompt**, since the prompt teaches the model the word and the model says it back. Config surfaces and genuine technical nouns are exempt *by name, with reasons* |
-| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax, and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
+| `scripts/test_floor_vocabulary.py` | `sub-agent`, `elevated`, `tok`, `iteration`/`iter` — and `agent` meaning a person — in any string a person reads, **including the prompt**, since the prompt teaches the model the word and the model says it back. Config surfaces and genuine technical nouns are exempt *by name, with reasons* |
+| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
+| `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
 
-The pattern behind all three: when you catch yourself doing the same sweep a
-third time, **the sweep is the deliverable, not the fix**. And a detector's
+How to re-derive that list rather than trust the number: a *rule* asserts
+about source it is not the unit test of. Two scan the repo (`ROOT.glob`); one
+classifies a whole registry inside its subject; and `test_cast.py` is the only
+suite that opens a second file — `ui/chat.jsx` — because the thing it defends
+lives at a call site its own module cannot see. Every other suite reads
+exactly one file, its own.
+
+The pattern behind all four: when you catch yourself doing the same sweep a
+third time, **the sweep is the deliverable, not the fix**.
+
+*A rule is usually right about WHAT and wrong about WHERE.* The vocabulary
+ban never changed; the list of places it looks has been wrong five times, and
+each new surface was found by a leak, not by design. It started on display
+props and JSX text, and has since had to learn: text sandwiched between two
+interpolations (`{r.iterations} iter · {n} notes`, which touches neither `>`
+nor `<`); the `body:` key, behind which the entire onboarding tour was
+teaching every new boss "sub-agent" under titles that already said
+"coworkers"; blocking dialogs, the loudest copy in the app and the least
+prop-like; and `|| 'fallback'` defaults, which are the hardest of all,
+because they only render when the real value is missing — precisely when
+nobody is watching. One of those sat on the approval card for publishing to
+the public internet, where the emitter, the builder and the renderer all
+independently defaulted to the same banned word. When a rule passes clean,
+ask what it cannot see before believing the surface is clean.
+
+*Not every gap is worth a rule.* A sixth surface — string literals inside JSX
+child expressions — returned 221 hits, mostly code fragments a regex misread
+as strings. That needs a real parser, and a tripwire nobody trusts is worse
+than none, so it was left out deliberately rather than exempted into
+silence. And a detector's
 first run is about the detector — two of these returned confident garbage
 before they were useful, so prove one against a bug you can reproduce (0 → 1 →
 0) before trusting a zero from it.
