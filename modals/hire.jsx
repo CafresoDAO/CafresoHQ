@@ -83,7 +83,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   useEffectM(() => {
     if (!open) return;
     setName(''); setRole(HQ.ROLES[0]);
-    setPrompt('You are a helpful sub-agent. Be concise and warm.');
+    setPrompt('You are a helpful coworker. Be concise and warm.');
     setTools(['web','files']); setAvatar('rose');
     setModel('anthropic:claude-haiku-4-5-20251001'); setTemp(0.4);
     setElevated(false); setShowBoard(true);

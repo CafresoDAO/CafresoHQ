@@ -170,6 +170,31 @@ def _fallback_spots(body):
         yield m.start(1), m.group(1)
 
 
+# The sixth surface, and the one this whole test was written about: the
+# PROMPT ITSELF. The docstring above says layer 1 is "the prompt tells the
+# model its colleagues are sub-agents" — and the rule scanned prompt PROSE
+# built inline, while missing prompts assigned to a key or pushed through a
+# setter. Two were still live:
+#
+#   · the transient helper's systemPrompt, "You are a transient one-shot
+#     sub-agent… You CANNOT spawn further sub-agents"
+#   · the hire modal's DEFAULT job description, "You are a helpful
+#     sub-agent" — which the model reads AND the boss sees in the job
+#     description field while hiring, so it leaks on both layers at once
+#
+# 12 prompt literals in the codebase, 2 of them wrong. Protocol tokens are
+# stripped by TOKEN_RE as everywhere else, so SPAWN_SUBAGENT stays safe.
+PROMPT_RE = re.compile(
+    r'\b(?:systemPrompt|persona|prompt)\s*:\s*(' + _STR + r')'
+    r'|\bset(?:System)?Prompt\s*\(\s*(' + _STR + r')', re.S | re.I)
+
+
+def _prompt_spots(body):
+    for m in PROMPT_RE.finditer(body):
+        raw = m.group(1) or m.group(2)
+        yield (m.start(1) if m.group(1) else m.start(2)), raw
+
+
 # SPAWN_SUBAGENT, HIRE_AGENT, MEMORY_LIST… — the wire protocol. Stripped
 # before matching so the tokens can never trip this test.
 TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9_]{3,}\b')
@@ -204,6 +229,7 @@ def main():
                       if _reads_like_copy(m.group(1))]
             spots += [(m.start(1), m.group(1)) for m in DIALOG_RE.finditer(body)]
             spots += list(_fallback_spots(body))
+            spots += list(_prompt_spots(body))
             for start, raw in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)
