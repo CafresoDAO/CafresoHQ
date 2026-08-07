@@ -578,6 +578,45 @@ function App() {
     })();
     return () => { cancelled = true; };
   }, [backendProbeNonce]);
+  /* …and the other direction: notice when the building loses power MID-
+     SESSION. The probe above runs at mount (and on a manual retry) and then
+     stops; the self-healing loop below only runs while we already know we are
+     down. So a backend that dies AFTER a good startup probe was never
+     noticed — `backendDown` stayed false forever, the offline banner never
+     appeared, and the office went on implying everything was fine.
+
+     Measured by actually stopping the server mid-session: ~28 seconds with
+     no backend and not one thing on screen said so.
+
+     Gentle on purpose — 30s, and never while the tab is hidden. A single
+     failed probe is enough to raise the banner because backendHealth() has
+     its own 3s timeout and the recovery loop below re-probes immediately, so
+     a one-off blip corrects itself within seconds rather than needing a
+     confirmation round here. */
+  React.useEffect(() => {
+    if (backendDown) return;            // the recovery loop owns that state
+    let stop = false;
+    const probe = async () => {
+      if (document.hidden || stop) return;
+      let ok = false;
+      try { ok = await CafresoHQClient.backendHealth(); } catch (_e) {}
+      if (!stop && !ok) setBackendDown(true);
+    };
+    const t = setInterval(probe, 30000);
+    /* …and on returning to the tab, because a hidden tab is exactly where an
+       outage goes unnoticed: browsers throttle background timers to a minute
+       or more, and this probe skips hidden tabs anyway. Without this, coming
+       back after an hour away shows a confident LIVE until the next tick.
+       Same shape the approvals poll already uses for the same reason. */
+    const onVisible = () => { if (!document.hidden) probe(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [backendDown]);
+
   /* Self-healing: while the backend is down, quietly re-probe on a gentle
      backoff (5s → 30s) so a container that comes back online reconnects on its
      own — the user shouldn't have to babysit the Retry button. A single
@@ -4122,7 +4161,16 @@ ${d.text}` : d.text,
           </div>
           <div className="status">
             <TokenHUD tokens={totalTokens} className="mobile-hidden" />
-            <div className="chip mobile-hidden"><span className="dot"/> LIVE</div>
+            {/* Was a hardcoded chip that always read LIVE — a status-shaped
+                element measuring nothing, sitting between two that are
+                genuinely derived (WORKING and HIRED). It kept saying LIVE
+                with the backend stopped. Now it answers the question its
+                shape implies. */}
+            <div className={`chip mobile-hidden${backendDown ? ' chip-warn' : ''}`}
+                 title={backendDown ? 'No connection to your HQ backend — see the banner below'
+                                    : 'Connected to your HQ backend'}>
+              <span className="dot"/> {backendDown ? 'OFFLINE' : 'LIVE'}
+            </div>
             <div className="chip mobile-hidden">{agents.filter(a=>a.status==='busy'||a.status==='active').length} WORKING</div>
             <div className="chip mobile-hidden">{agents.length} HIRED</div>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · what your coworkers have handed to each other — live handoffs, blocked jobs, failures">
