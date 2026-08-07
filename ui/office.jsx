@@ -874,6 +874,18 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
       <div className="office-task-rail" aria-label="Inbox tasks">
         <div className="otr-head">
           <span className="otr-title">📋 Inbox</span>
+          {/* One empty-state line, and a true one.
+
+              There were three: this hint, an `.otr-empty` body reading
+              "All clear. Drop something here from the Tasks tab to
+              delegate.", and the `0` count beside them — the same nothing,
+              said three ways, holding a full row of the floor open on the
+              one surface where vertical space IS the product.
+
+              The body line was also FALSE. There is no drop handler on this
+              rail; the only onDrop in the office is on an agent's desk. It
+              told the boss to perform a gesture that does nothing. Gone —
+              the hint below already names the real next action. */}
           <span className="otr-hint">
             {inboxTasks.length === 0
               ? 'No tasks waiting — add one in the Tasks tab.'
@@ -894,9 +906,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             </button>
           )}
         </div>
-        {inboxTasks.length === 0 ? (
-          <div className="otr-empty">All clear. Drop something here from the Tasks tab to delegate.</div>
-        ) : (
+        {inboxTasks.length === 0 ? null : (
           <div className="otr-scroll">
             {inboxTasks.map(t => (
               <div key={t.id}

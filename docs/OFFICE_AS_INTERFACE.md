@@ -1090,6 +1090,37 @@ append-only).
 > the rail; **Office clears the floor and the office is visible**; Chat
 > comes back; Tasks still opens its window and does *not* disturb chat.
 
+> ✅ **Swept the rest of the class — mostly clean (2026-08-06).** A one-way
+> door built out of *persisted* state is a class, not an incident, so every
+> other persisted flag got the same treatment. Findings, including the
+> negatives, because "we checked and it's fine" is worth writing down:
+>
+> - **Chat window geometry** — already safe. Seeded `{x:2400, y:1200}` (as
+>   if dragged to the edge of a 2560px monitor, then reopened at 1400) and
+>   reloaded: the window landed at (992, 432), on-screen. `app/windows.jsx`
+>   carries a deliberate "one-time repair" for stale/oversized geometry.
+> - **`windowsEnabled`** — reachable both ways: the dock's power button
+>   exits, Settings and `openOrRaise` re-enter.
+> - **`railCollapsed`** — has its own «/» toggle.
+>
+> Also verified the new rail Chat entry across **both** modes, since it
+> routes through `navTo` and I'd only driven it in one: with desktop mode
+> off, the rail item still opens a visible, on-screen composer.
+
+> ✅ **The empty out-tray said nothing three times, and one of them was a
+> lie (2026-08-06).** The header hint ("No tasks waiting — add one in the
+> Tasks tab."), an `.otr-empty` body ("All clear. Drop something here from
+> the Tasks tab to delegate.") and the `0` count all reported the same
+> emptiness — holding a full row open on the one surface where vertical
+> space *is* the product.
+>
+> The body line was also **false**: there is no `onDrop` handler on the
+> task rail. The only one in the office is on an agent's desk. It told the
+> boss to perform a gesture that does nothing.
+>
+> Gone. The hint already names the real next action. Measured: the rail
+> drops 80px → **53px** and the floor gains 26px of height (top 182 → 156).
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw
