@@ -1460,6 +1460,21 @@ append-only).
 > task board"**, verified by finding *"Stand-up — Aug 7"* on the board after
 > a reload.
 >
+> **Swept the class.** A success message that names a *destination* is a
+> checkable claim, so all five in the app were checked:
+>
+> | claim | verdict |
+> |---|---|
+> | `✓ archived to Docs` | **false** — fixed above |
+> | `filed to <folder> 🗄` | true — six files on disk |
+> | `N deliverables filed to the cabinet` | true — 6 = 6 |
+> | `Clickable link filed at <file>` | honest — `url`/`file`/`mode` all come from the server's own response |
+> | `✓ Key saved to your container` | honest — shown only when the server reports `serverStored`, with a separate *"Stored in this browser — your container will pick it up"* for the other case |
+>
+> The credential one is the one that would matter most and it is the most
+> careful: it never claims server storage on the client's say-so. Recording
+> the negatives so this isn't re-swept.
+>
 > **Left as a product decision, not made silently:** whether an end-of-day
 > report *should* live in the cabinet (`Docs/`) rather than the task board.
 > Filing it there is defensible — it is a document, and §3.6's machinery
