@@ -3003,7 +3003,20 @@ ${d.text}` : d.text,
     const toolVisits = [];      // what they consulted, for the delivery footer
     const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
-    const recentChat = chat.slice(-6);
+    /* A task run gets NO chat history, unlike the two conversational paths.
+       A card dropped on a desk is the whole job — the brief is right there,
+       and the coworker still has their own memory and the vault for anything
+       they need to carry forward. Six lines of unrelated conversation are not
+       context here, they are noise with a failure mode.
+
+       Measured: back-to-back tasks, one about pears and the next about plums.
+       chat.slice(-6) still held the pears exchange, and the plums delivery
+       came back describing pears — filed, kept, and about the wrong fruit. I
+       had been recording that as model confabulation. Part of it was the
+       office handing over the wrong subject.
+
+       The conversational paths keep their history, because there the last six
+       lines ARE the job. */
     const screen = makeScreenEmitter(agent.id);
     try {
       await HQ.agentStream(agent, /* No "say what you'll do first". That clause is why EVERY filed memo
@@ -3039,7 +3052,7 @@ ${d.text}` : d.text,
           }
         },
         peers: agents.filter(x => x.id !== agent.id),
-        chat: recentChat,
+        // no `chat` — see the note above the stream call: a task is its brief.
         signal: controller.signal,
       });
       flush.flushNow();

@@ -741,6 +741,16 @@ should extend that boundary, not blur it.
 
 **Known open, honestly:**
 
+- **Part of what looked like confabulation was the office's own doing.**
+  Task runs passed `chat.slice(-6)` as context, same as the conversational
+  paths, so back-to-back tasks handed the previous job's subject to the next
+  one: a task about plums came back describing pears, filed and kept. Fixed
+  2026-08-07 — a task now runs on its brief alone, since a card dropped on a
+  desk IS the job and the coworker still has their memory and the vault. The
+  chat paths keep their history, where the last six lines really are the job.
+  Re-tested straight after the plums/pears pair: "Name one colour of a ripe
+  tomato" returned "Red" and nothing else. Worth remembering before blaming a
+  model: check what you handed it.
 - **A coworker can still assert something false in prose**, and that prose
   reaches the filed memo. Prompt wording moved it (three deliveries' worth of
   before/after in §6), but no instruction makes a small model honest. The
