@@ -841,7 +841,7 @@ function App() {
       const d = e.detail || {};
       logActivity({
         agentName: 'agent runner', action: 'failed', priority: 'attention',
-        text: `agent action failed: ${d.kind || ''}`,
+        text: `That didn't work${d.kind ? ` — ${d.kind}` : ''}`,
       });
     };
     const onAgentChatResponse = (e) => {
@@ -1170,7 +1170,7 @@ ${d.text}` : d.text,
     if (dmBudgetRef.current.notified) return;
     dmBudgetRef.current.notified = true;
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-      text: '(DM rate limit reached — pausing inter-agent chatter for ~1 min so we don\'t burn through the budget.)',
+      text: '(Too many messages at once — your coworkers will stop messaging each other for ~1 min so we don\'t burn through the budget.)',
       thread: 'team' }]);
     say('DM budget hit — chatter paused', 'LIMIT');
   };
@@ -4076,7 +4076,7 @@ ${d.text}` : d.text,
                   title: 'Long-running research missions',
                   onClick: () => setMissionsOpen(true) },
                 { key: 'meeting',  label: '📋 Meeting rooms', count: meetings.length,
-                  title: 'Spin up a multi-agent meeting room',
+                  title: 'Open a meeting room and seat the team',
                   onClick: () => setChatMeetingModalOpen(true) },
                 { key: 'workflow', label: '⛓ Workflows', count: workflows.length,
                   title: 'Chain tasks into a pipeline',
@@ -4115,7 +4115,7 @@ ${d.text}` : d.text,
               </button>
             )}
             {(agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')) && (
-              <Btn variant="danger" size="sm" onClick={onStopAll} title="Abort every in-flight agent + pause every running mission">■ STOP ALL</Btn>
+              <Btn variant="danger" size="sm" onClick={onStopAll} title="Stop everyone mid-job and pause every running night shift">■ STOP ALL</Btn>
             )}
             {/* Activity cluster — bell + receipts paired at top-right.
                 Receipt tray renders itself in document order (fixed position
@@ -4485,7 +4485,7 @@ ${d.text}` : d.text,
             },
             {
               id: 'office',
-              title: 'The Office — your agents',
+              title: 'The Office — your coworkers',
               body: 'This is the Office. Each agent works at their own desk. Tap a desk to inspect an agent, see what they\'re doing, and delegate work.',
               action: () => goTo('visual'),
             },
@@ -4521,7 +4521,7 @@ ${d.text}` : d.text,
             },
             {
               id: 'hire',
-              title: 'Hire your first agent',
+              title: 'Hire your first coworker',
               body: 'Tap + HIRE in the topbar to bring on your first sub-agent. Each hire gets a desk, a role, and their own AI model. You\'re ready — go build your team.',
               target: '.topbar .px-btn.primary',
               action: () => goTo('visual'),
@@ -4548,7 +4548,7 @@ ${d.text}` : d.text,
             },
             {
               id: 'office',
-              title: 'The Office — your agents',
+              title: 'The Office — your coworkers',
               body: 'Every agent works at their own desk; click a desk to inspect them. Desks light up while agents are actually working — and every real action streams into the ticker and the Team inbox.',
               target: '.rail',
               action: () => goTo('visual'),
@@ -4573,7 +4573,7 @@ ${d.text}` : d.text,
             },
             {
               id: 'projects',
-              title: 'Projects — where agents build you things',
+              title: 'Projects — where your coworkers build you things',
               body: 'Projects is your shared workspace. Hand an agent a project and it writes real files right beside you — docs, decks, code, whole websites. Open any file and hit Preview to watch it render live, drop in files to share with your agents, and a built site serves with all its assets intact.',
               action: () => goTo('projects'),
             },

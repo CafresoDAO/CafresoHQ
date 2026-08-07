@@ -36,13 +36,13 @@ function AppGlobalCommands({
     { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => navigate('projects') },
 
     /* Top-level actions. */
-    { id: 'act.hire',     label: 'Hire a new agent',         section: 'Actions', icon: '＋', run: onHire },
+    { id: 'act.hire',     label: 'Hire a new coworker',         section: 'Actions', icon: '＋', run: onHire },
     { id: 'act.standup',  label: 'Run end-of-day stand-up',  section: 'Actions', icon: '🌅', run: onStandup },
     { id: 'act.missions', label: 'Open research missions',   section: 'Actions', icon: '🔬', run: onMissions },
     { id: 'act.workflow', label: 'New workflow',             section: 'Actions', icon: '⚡', run: onWorkflow },
     { id: 'act.memory',   label: 'Open memory shelf',        section: 'Actions', icon: '📁', run: onMemory },
     { id: 'act.settings', label: 'Open settings',            section: 'Actions', icon: '⚙', shortcut: ['⌘', ','], run: onSettings },
-    { id: 'act.stop-all', label: 'Stop all agents + missions', section: 'Actions', icon: '■', run: onStopAll, when: anyBusy },
+    { id: 'act.stop-all', label: 'Stop everyone + every night shift', section: 'Actions', icon: '■', run: onStopAll, when: anyBusy },
 
     /* Toggles. */
     { id: 'tog.night',
@@ -180,7 +180,7 @@ function AppGlobalCommands({
     /* /who-can — quick agent capability lookup. The label gets a sub-prompt
        when the user has typed something past 'who can'; otherwise it just
        opens a toast with the full capability roster. */
-    { id: 'comms.who-can', label: '/who-can — find an agent by capability',
+    { id: 'comms.who-can', label: '/who-can — find the right coworker for a job',
       section: 'Comms', icon: '🔎',
       run: () => {
         const q = window.prompt('Find agents who can do…\n(e.g. "code review", "docs", "deployment")', '');

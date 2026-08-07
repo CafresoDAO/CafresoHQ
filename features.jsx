@@ -219,7 +219,7 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                         const t = buildStarterTask(starter, subject, null);
                         if (t) onAdd(t);
                       }} />
-                      <span className="tb-empty-hint">Or hit <strong>+ NEW</strong> above. Drag any card onto an agent's desk to delegate.</span>
+                      <span className="tb-empty-hint">Or hit <strong>+ NEW</strong> above. Drag any card onto a coworker's desk to delegate.</span>
                     </div>
                     : <div className="tb-empty">Nothing waiting — hit <strong>+ NEW</strong> to add one.</div>)
                   : <div className="tb-empty">—</div>

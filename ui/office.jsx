@@ -1017,7 +1017,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
         {/* HUD — Situation Wall + Agent P&L as game menu boxes. Same live
             data and gating as the old wall furniture. */}
         {!isMobileOffice && walletServiceOn && plWallets && plWallets.length > 0 && (
-          <div className="px-hud left pl-frame" title="Agent P&L — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
+          <div className="px-hud left pl-frame" title="Your team's books — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
             <div className="pl-title">◈ AGENT P&L</div>
             {plWallets.slice(0, 3).map(w => {
               const who = agents.find(x => x.id === w.agentId);
@@ -1114,7 +1114,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               </div>
             )}
             {goldTreasury !== null && goldTreasury > BigInt(0) && (
-              <div className="sw-row" title={`Office treasury — ${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+              <div className="sw-row" title={`Office treasury — ${plFmt(goldTreasury, 'sGLDT')} sGLDT across every coworker's wallet`}>
                 ◈ {plFmt(goldTreasury, 'sGLDT')} GOLD
               </div>
             )}
@@ -1450,7 +1450,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                   <div className="px-int vault">
                     <Px n="vaultdoor" className="px-vaultdoor" style={{ left: 12, bottom: 8 }} />
                     {goldTreasury !== null && (
-                      <div className="px-goldstack" title={`${plFmt(goldTreasury, 'sGLDT')} sGLDT across all agent wallets`}>
+                      <div className="px-goldstack" title={`${plFmt(goldTreasury, 'sGLDT')} sGLDT across every coworker's wallet`}>
                         {Array.from({ length: goldBars }).map((_, gi) => (
                           <Px key={gi} n="goldbar" style={{ position: 'absolute', left: (gi % 4) * 16, bottom: Math.floor(gi / 4) * 9 }} />
                         ))}

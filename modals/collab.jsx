@@ -221,7 +221,7 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
           <div className="meeting-attendee-grid">
             {agents.length === 0 && (
               <div style={{fontSize:10,opacity:0.5,gridColumn:'1/-1',padding:'8px'}}>
-                No agents hired. Hire some on the Team tab first.
+                No coworkers hired. Hire someone on the Team tab first.
               </div>
             )}
             {agents.map(a => (
@@ -453,7 +453,7 @@ function InboxModal({ open, onClose }) {
       {visibleThreads.length === 0 ? (
         <div className="empty-state">
           <div className="empty-title">No messages match this filter.</div>
-          <div className="empty-sub">Try widening the state filter, or @-mention an agent to start a thread.</div>
+          <div className="empty-sub">Try widening the state filter, or @-mention a coworker to start a thread.</div>
         </div>
       ) : (
         <div style={{display:'flex',flexDirection:'column',gap:10}}>

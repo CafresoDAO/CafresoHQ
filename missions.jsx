@@ -1153,7 +1153,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
               <label>EARLY STOP</label>
               <label style={{display:'flex',alignItems:'center',gap:8,fontFamily:'VT323',fontSize:16,cursor:'pointer'}}>
                 <input type="checkbox" checked={allowSelfComplete} onChange={e=>setAllowSelfComplete(e.target.checked)}/>
-                Allow agent to declare the mission complete before time is up
+                Let them call the night shift finished before time is up
               </label>
               <span className="hint">
                 {allowSelfComplete

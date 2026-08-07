@@ -53,6 +53,30 @@ BANNED = [
      'the Night Shift board calls these rounds.'),
 ]
 
+# "agent" is the hardest one, so it is scoped rather than banned outright.
+#
+# CONFIG surfaces are exempt on purpose: Settings and the provider picker are
+# where you choose a runtime, and naming the real thing is the point there —
+# the same reasoning that leaves raw model IDs visible in Settings while
+# banning them from the floor.
+CONFIG_SURFACES = {'modals/settings.jsx', 'modals/providers.jsx',
+                   'views/terminal.jsx'}
+
+# …and a few places where "agent" is a genuine technical noun rather than a
+# person: what is installed on the machine, a category of CLI tool, a folder
+# path. Matched as substrings against the display string.
+AGENT_OK = (
+    'agent runtimes',      # which runtimes exist on this machine
+    'CLI agent',           # a category of tool, not a colleague
+    'Agents/<your name>',  # the private-notes folder path
+    'Agents/',
+)
+
+AGENT_RE = re.compile(r'\bagents?\b', re.I)
+AGENT_WHY = ('means the person here — the office calls them coworkers. If it '
+             'genuinely means a runtime, a CLI tool or a folder path, add it '
+             'to AGENT_OK with a note.')
+
 # Files allowed to NAME the banned words while explaining why they were
 # removed. Their comments are stripped anyway; this covers the rare case of
 # a word inside a string that is documentation (e.g. a test fixture).
@@ -118,7 +142,10 @@ def main():
             spots += [(m.start(1), m.group(1)) for m in JSX_TEXT_RE.finditer(body)]
             for start, raw in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
-                for pattern, why in BANNED:
+                checks = list(BANNED)
+                if rel not in CONFIG_SURFACES and not any(ok in raw for ok in AGENT_OK):
+                    checks.append((AGENT_RE, AGENT_WHY))
+                for pattern, why in checks:
                     m = pattern.search(prose)
                     if not m:
                         continue

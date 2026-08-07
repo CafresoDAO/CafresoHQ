@@ -372,7 +372,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       setInput('');
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: 'team' }]);
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `🧠 Brainstorm: "${topic}" — broadcasting to ${agents.length} agent${agents.length === 1 ? '' : 's'}. They will DM each other once and synthesize.`,
+        text: `🧠 Brainstorm: "${topic}" — asking ${agents.length} coworker${agents.length === 1 ? '' : 's'}. They will DM each other once and synthesize.`,
         thread: 'team' }]);
       const brainPrompt =
         `BRAINSTORM TOPIC: ${topic}\n\n` +
@@ -914,7 +914,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             {activeThread === 'direct'   && <>No messages yet — type below to message CafresoHQ.</>}
             {activeThread === 'team'     && <>No team chatter yet. When coworkers DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
             {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each iteration's output lands here.</>}
-            {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message all assigned agents at once, or @-mention a subset.</>}
+            {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message everyone assigned at once, or @-mention just some of them.</>}
             {activeRoom && activeRoom.kind === 'meeting' && <>No messages in this meeting yet. Type below to send to all attendees, or @-mention specific people.</>}
           </div>
         )}

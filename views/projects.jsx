@@ -59,7 +59,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const openPath = async (path, opts) => {
     const cur = openFileRef.current;
     // Never silently drop unsaved edits when switching files. Auto-opens
-    // (Follow agent) skip; user-initiated opens confirm first.
+    // (Follow along) skip; user-initiated opens confirm first.
     if (cur && cur.dirty && cur.path !== path) {
       if (opts && opts.auto) return;
       if (!(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
@@ -239,7 +239,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   );
   const agentPane = () => (
     <div className="ws-pane ws-agent">
-      <div className="ws-pane-hd">Agents · co-operators<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open the multi-agent room for this project">TALK ↗</button></div></div>
+      <div className="ws-pane-hd">Coworkers · working together<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open this project's room, where the team works together">TALK ↗</button></div></div>
       <div className="ws-ledger">
         {ledger.length === 0 && <div className="ws-led-empty">Your agents share this filesystem &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
         {ledger.map(l => (
@@ -265,7 +265,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
             </select>
             <span className="ws-env" title={project.path}><span className="ico">⬡</span> {project.source === 'github' ? 'repo' : 'local'} · {shortPath(project.path) || project.path}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label className="ws-follow" title="Auto-open whatever file the agent is writing"><input type="checkbox" checked={followAgent} onChange={e => { setFollowAgent(e.target.checked); LSset('follow', e.target.checked); }} /> Follow agent</label>
+              <label className="ws-follow" title="Auto-open whatever file they are writing"><input type="checkbox" checked={followAgent} onChange={e => { setFollowAgent(e.target.checked); LSset('follow', e.target.checked); }} /> Follow along</label>
               <span className={'ws-pip ' + agentStatus}><span className="dot" />{statusLabel}</span>
             </div>
           </>
@@ -717,7 +717,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                   <button
                     className="px-btn ghost"
                     style={{fontSize:11,padding:'4px 10px'}}
-                    title="Upload files to share with this project's agents"
+                    title="Upload files to share with the team on this project"
                     onClick={() => { setUploadTargetDir(null); if (uploadInputRef.current) uploadInputRef.current.click(); }}
                   >⬆ Share file</button>
                 </div>
@@ -926,7 +926,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
               <button
                 className="px-btn ghost"
                 style={{fontSize:9,padding:'2px 7px',flexShrink:0}}
-                title="Upload files to this project — share them with the assigned agents"
+                title="Upload files to this project — share them with whoever is assigned"
                 onClick={() => { setUploadTargetDir(null); if (uploadInputRef.current) uploadInputRef.current.click(); }}
               >⬆ Share</button>
             </div>
@@ -953,7 +953,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
               {fileDragHover && (
                 <div style={{position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
                              pointerEvents:'none', fontSize:11, fontWeight:600, color:'var(--accent-sun)',
-                             textShadow:'0 1px 2px var(--paper)'}}>Drop to share with agents</div>
+                             textShadow:'0 1px 2px var(--paper)'}}>Drop to share with the team</div>
               )}
             </div>
             {/* Agent assignment — assigning at least one agent reveals a
@@ -975,13 +975,13 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                     if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true);
                     window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id }));
                   }}
-                  title="Open the multi-agent chat room for this project"
+                  title="Open this project's chat room, where the team talks"
                 >TALK ↗</button>
               </div>
               <div className="proj-agents-list">
                 {agents.length === 0 && (
                   <div style={{fontSize: 10, opacity: 0.5, padding: '6px'}}>
-                    No agents hired yet — go to Team to hire some.
+                    No coworkers hired yet — go to Team to hire someone.
                   </div>
                 )}
                 {agents.map(a => {
@@ -1293,7 +1293,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   >📁 Browse</button>
                 </div>
               </label>
-              <small>Path must be inside CAFRESOHQ_ALLOWED_DIRS for agents to access it.</small>
+              <small>Path must be inside CAFRESOHQ_ALLOWED_DIRS for your coworkers to reach it.</small>
               {err ? <div className="addproj-err">{err}</div> : null}
               <div className="addproj-actions">
                 <button type="button" className="px-btn secondary" onClick={onClose}>Cancel</button>
