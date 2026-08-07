@@ -796,7 +796,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*PEER_JOURNAL\s*:\s*([^\]\n]+)\]/i,
     requires: () => true,
     doc: '- [PEER_JOURNAL: <coworker name>] — read your coworker\'s last 5 journal entries to understand what they\'ve been working on. Use BEFORE [DM_TO: name] when you want to brief them with context.',
-    docShort: 'Read another agent\'s last 5 journal entries.',
+    docShort: 'Read a coworker\'s last 5 journal entries.',
     run: async (_name) => '(no peer roster bound)',
   },
   /* WALLET_BALANCE / WALLET_SEND — the agent's own on-chain "HQ wallet"
@@ -909,7 +909,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc:
       '- [SPAWN_SUBAGENT: <role / specialty>]\n<task description>\n[/SPAWN_SUBAGENT] — bring in a one-shot helper for a focused task.\n' +
-      '  The role tells the host what kind of agent to create (e.g. "code reviewer", "summarizer", "fact-checker", "JSON wrangler").\n' +
+      '  The role says what kind of helper you need (e.g. "code reviewer", "summarizer", "fact-checker", "JSON wrangler").\n' +
       '  The task is what they should do. Write it like you\'d brief a fresh coworker — clear scope, expected output.\n' +
       '  Helpers are sandboxed: NEVER elevated, can\'t bring in helpers of their own, and leave when the job is done. Use sparingly (budget caps apply).\n' +
       '  Optional per-spawn model override: `[SPAWN_SUBAGENT: code-reviewer | model:claudecode:sonnet]` — pin a specific model id for this one sub-agent (overrides the global "Sub-agent model" setting). Useful when a particular task warrants a stronger or cheaper model than the spawner uses.',
@@ -970,7 +970,7 @@ const TOOL_REGISTRY = {
       '  REQUIRED: name AND role in the marker header. Without a name, the request is dropped with a warning.\n' +
       '  If using JSON tool format, include both: `{"tool":"HIRE_AGENT","name":"Quill","role":"Senior Editor","rationale":"..."}`.\n' +
       '  This requires the boss to APPROVE in their approval tray. Format the body as: rationale (why we need them), suggested model, suggested tools (web/vault/browser).\n' +
-      '  Cannot grant elevation — only the boss can promote an agent to elevated status manually.\n' +
+      '  Cannot grant elevation — only the boss can give a coworker file and shell access, and only by hand.\n' +
       '  Use only when the team is genuinely missing a capability. One outstanding hire request at a time.',
     docShort: 'Propose hiring a new permanent teammate (requires boss approval).',
     run: async () => '(HIRE_AGENT is dispatched by the host after boss approval)',
@@ -984,7 +984,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*DM_TO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*DM_TO\s*\]/i,
     requires: () => true,
     doc: '- [DM_TO: <coworker name>]\n<message>\n[/DM_TO] — direct-message another coworker on the team. Use this when you need their expertise or to hand off a sub-task. Stop after the block; the host will deliver it and continue the chain.',
-    docShort: 'Send a direct message to another sub-agent on the team to hand off a task.',
+    docShort: 'Send a direct message to a coworker to hand off a task.',
     run: async (_to, _ctx, _body) => {
       // The host catches DM_TO before this runs; this is a sentinel that
       // also handles the case where it slips through (no-op summary).

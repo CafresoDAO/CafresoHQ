@@ -860,7 +860,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               <span className="room-banner-empty">No participants yet — assign agents to this {activeRoom.kind}</span>
             )}
             {activeRoom.participants.map(a => (
-              <span key={a.id} className="room-chip" title={`${a.role}${a.elevated ? ' · elevated' : ''}`}>
+              <span key={a.id} className="room-chip" title={`${a.role}${a.elevated ? ' · has file and shell access' : ''}`}>
                 {a.elevated ? '🛡' : '👤'} {a.name}
                 {activeRoom.kind === 'meeting' && setMeetings && activeRoom.participants.length > 1 && (
                   <span className="room-chip-x"
@@ -1330,7 +1330,7 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
       {agents.map(a => (
         <div key={a.id} className={`agent-card ${a.elevated ? 'elevated' : ''}`} onClick={()=>onClick(a)}>
           <div className={`status-pill ${a.status}`}>{a.status.toUpperCase()}</div>
-          {a.elevated && <div className="elevated-badge" title="Computer access (elevated session)">🛡</div>}
+          {a.elevated && <div className="elevated-badge" title="Has file and shell access">🛡</div>}
           <div className="sprite-box"><Sprite data={a.color} scale={2} className="bob"/></div>
           <div className="name">{a.name}</div>
           <div className="role">{a.role}</div>

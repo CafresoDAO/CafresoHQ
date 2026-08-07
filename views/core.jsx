@@ -343,7 +343,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
               <div className="oc-notif-msg">
                 <span style={{fontWeight:600}}>{ap.by || 'agent'}</span> needs a stamp: {ap.title}
               </div>
-              <div className="oc-notif-meta"><span>{ap.kind || 'approval'}{ap.elevated ? ' · 🛡 elevated' : ''}</span></div>
+              <div className="oc-notif-meta"><span>{ap.kind || 'approval'}{ap.elevated ? ' · 🛡 file and shell access' : ''}</span></div>
               <div className="oc-act-jumps" style={{marginTop:6}}>
                 <button className="px-btn primary" style={{fontSize:8}} onClick={() => onApprove && onApprove(ap.id)}>✓ Approve</button>
                 <button className="px-btn danger" style={{fontSize:8}} onClick={() => onReject && onReject(ap.id)}>✕ Reject</button>

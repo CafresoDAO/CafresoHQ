@@ -1369,7 +1369,7 @@ ${d.text}` : d.text,
        added to the team thread so the boss can see the handoff. */
     if (dmFrom && agent.elevated) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `(${dmFrom.name} → ${agent.name}: elevated handoff in progress)`,
+        text: `(${dmFrom.name} → ${agent.name}: handing over, with file and shell access)`,
         thread: 'team' }]);
     }
     /* Resolve destination thread:
@@ -1633,7 +1633,7 @@ ${d.text}` : d.text,
           } else if (ev.phase === 'request-elevation') {
             if (agent.elevated) {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${agent.name} requested elevation but is already elevated — ignored)`, thread: 'team' }]);
+                text: `(${agent.name} asked for file and shell access but already has it.)`, thread: 'team' }]);
             } else {
               elevationRequestQueue.push({ reason: ev.arg, body: ev.body });
             }
@@ -2255,7 +2255,7 @@ ${d.text}` : d.text,
     for (const req of elevationRequestQueue) {
       if (pendingElevationRef.current.has(agent.id)) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(${agent.name} already has a pending elevation request — wait for the boss's decision)`, thread: 'team' }]);
+          text: `(${agent.name} has already asked for file and shell access — waiting on your decision.)`, thread: 'team' }]);
         continue;
       }
       pendingElevationRef.current.add(agent.id);
@@ -2280,7 +2280,7 @@ ${d.text}` : d.text,
         },
       });
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `🛡 ${agent.name} is requesting elevated access — see approval tray. Reason: ${reason}`,
+        text: `🛡 ${agent.name} is asking for file and shell access — it's in your approvals. Their reason: ${reason}`,
         thread: 'team' }]);
     }
   };
@@ -3358,7 +3358,10 @@ ${d.text}` : d.text,
         const finalModel = dg.model;
         if (dg.swapped) {
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: `🔁 Assistant model swapped: ${p.inheritModel} → ${finalModel} (${dg.why} — assistants can't be elevated).`,
+            /* Sibling of the helper swap notice — same two raw model IDs
+               named to the boss, same fix. brainName, and the reason stated
+               as what an assistant is allowed rather than as provider flags. */
+            text: `🔁 ${p.name || 'That assistant'} is on ${brainName({ model: finalModel })} rather than ${brainName({ model: p.inheritModel })} — that brain is only for coworkers with file and shell access, and an assistant never gets those.`,
             thread: 'team' }]);
         }
         const newAgent = {
@@ -3411,7 +3414,7 @@ ${d.text}` : d.text,
             recent: 'elevation granted — file/shell available next turn',
           });
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: `🛡 ${target.name} is now elevated. Their next dispatch will have file/shell access.`,
+            text: `🛡 ${target.name} now has file and shell access. It applies from their next job.`,
             thread: 'team' }]);
           // Auto-dispatch a follow-up so they know to proceed with the
           // task that prompted the request — saves a manual prod from boss.
@@ -3477,7 +3480,7 @@ ${d.text}` : d.text,
         const target = agents.find(a => a.id === er.requestedBy);
         if (target) {
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: `🛡 Boss declined ${target.name}'s elevation request. They remain non-elevated.`,
+            text: `🛡 You declined ${target.name}'s request for file and shell access. They carry on without it.`,
             thread: 'team' }]);
           // Dispatch a follow-up so the agent knows to find another path.
           dispatchToAgent(target,
