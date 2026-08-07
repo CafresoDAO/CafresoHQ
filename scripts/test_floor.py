@@ -202,6 +202,20 @@ R.tvCapped = toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5
 R.tvCappedEllipsis = /\u2026$/.test(toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5000) }).body);
 // A visit object must expose no field a model could have authored as prose.
 R.tvKeys = Object.keys(toVisit({ name: 'MEMORY_READ', arg: 'x', result: 'y' })).sort().join(',');
+/* The verb, not just the noun. This table keyed on VAULT|FILE|MEMORY alone,
+   so every write came out "Opened notes/x.md" — the coworker saved something
+   and the floor said they looked at it — and EXPORT/GENERATE/PUBLISH fell to
+   the modest default, "Checked deck.pptx", for work that produced a file.
+   Found by running all 31 registry tools through visitWords rather than
+   spot-checking; VAULT_NEW was still wrong after the first fix because its
+   name says NEW, not WRITE. */
+R.vWrites = ['MEMORY_WRITE','MEMORY_APPEND','FILE_WRITE','VAULT_NEW','VAULT_APPEND']
+  .map(n => visitLine(n, 'x.md', 'past'));
+R.vReads  = ['VAULT_READ','FILE_READ','MEMORY_READ','DIR_LIST']
+  .map(n => visitLine(n, 'x.md', 'past'));
+R.vMade   = visitLine('EXPORT_PPTX', 'deck.pptx', 'past');
+R.vPub    = visitLine('PUBLISH_SITE', 'site/', 'past');
+R.vSearchTool = visitLine('VAULT_SEARCH', 'gold', 'past');
 console.log(JSON.stringify(R));
 ''')
 
@@ -375,6 +389,14 @@ console.log(JSON.stringify(R));
           out['tvCapped'] <= 620 and out['tvCappedEllipsis'] is True, str(out['tvCapped']))
     check('the visit shape is exactly {at, body, head, icon}',
           out['tvKeys'] == 'at,body,head,icon', out['tvKeys'])
+
+    check('every write reads as a write, not as a read',
+          all(v.startswith('Saved ') for v in out['vWrites']), out['vWrites'])
+    check('…and reads are untouched',
+          all(v.startswith('Opened ') for v in out['vReads']), out['vReads'])
+    check('an export is something they made', out['vMade'] == 'Made deck.pptx', out['vMade'])
+    check('a publish says published', out['vPub'] == 'Published site/', out['vPub'])
+    check('a vault search still looks it up', out['vSearchTool'] == 'Looked up gold', out['vSearchTool'])
 
     print()
     if FAILS:

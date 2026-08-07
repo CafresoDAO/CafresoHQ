@@ -46,8 +46,22 @@ const PROP_PLACARD = {
 
    Same taxonomy and same order as toolProp above — search before web,
    because WEB_SEARCH contains both words and is a trip to the bookshelf. */
+/* Ordered: the VERB patterns run before the NOUN ones, because the table
+   used to key on the noun alone and so described every write as a read.
+   MEMORY_WRITE and FILE_WRITE both came out "Opened notes/x.md" — the
+   coworker saved something and the floor said they looked at it — and
+   EXPORT_PPTX fell through to the default as "Checked deck.pptx" for work
+   that produced a file.
+
+   The default's reasoning is right and stays: an unknown tool gets a modest
+   verb rather than a confident wrong one. But "Opened" for a write is not
+   claiming less, it is claiming something else, and it costs the boss the
+   one bit that matters — whether anything changed. */
 const VISIT_WORDS = [
   [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', icon: '🔎' }],
+  [/PUBLISH/,                    { now: 'publishing',    past: 'Published', icon: '🌍' }],
+  [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      icon: '🖨' }],
+  [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     icon: '📝' }],
   [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      icon: '🌐' }],
   [/VAULT|FILE|DIR|MEMORY|NOTE/, { now: 'opening',       past: 'Opened',    icon: '📁' }],
 ];
