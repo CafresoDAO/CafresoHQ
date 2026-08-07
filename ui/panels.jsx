@@ -112,7 +112,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         </div>
         {agent.elevated && (
           <div className="elevated-banner">
-            🛡 <b>ELEVATED</b> — backed by a CafresoHQ / Codex session with computer access. Every tool call is logged to Receipts.
+            🛡 <b>FILE & SHELL ACCESS</b> — backed by a CafresoHQ / Codex session with computer access. Every tool call is logged to Receipts.
             <ElevatedToolkit />
           </div>
         )}

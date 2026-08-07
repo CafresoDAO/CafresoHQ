@@ -303,7 +303,7 @@ function ApiTab() {
           are doing high-volume one-shot tasks (e.g. summaries) and you
           don't want to burn the parent's premium model on each. */}
       <div className="cb-panel">
-        <h4>SUB-AGENT MODEL</h4>
+        <h4>HELPER MODEL</h4>
         <div className="row-knob">
           <div>
             <div className="lbl">Helper brain</div>

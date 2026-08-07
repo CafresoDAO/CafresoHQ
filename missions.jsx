@@ -834,7 +834,7 @@ function NightShiftSection({ agents }) {
           <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="what should get researched overnight?" />
         </div>
         <div className="form-row">
-          <label>AGENT</label>
+          <label>COWORKER</label>
           <select value={agentId} onChange={e => setAgentId(e.target.value)}>
             {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}
           </select>
@@ -1144,7 +1144,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
               </div>
             )}
             <div className="form-row">
-              <label>AGENT</label>
+              <label>COWORKER</label>
               <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
                 {agents.map(a => (
                   <option key={a.id} value={a.id} disabled={!canDoMode(a)}>

@@ -245,7 +245,21 @@ def _prompt_spots(body):
 
 # SPAWN_SUBAGENT, HIRE_AGENT, MEMORY_LIST… — the wire protocol. Stripped
 # before matching so the tokens can never trip this test.
-TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9_]{3,}\b')
+#
+# Requires an UNDERSCORE, and that is the whole point. The first version
+# stripped any ALL-CAPS run of 4+ characters, which in a UI built on
+# ALL-CAPS headers meant every banned word was invisible the moment it was
+# shouted: AGENT, PROMPT, CONTEXT, ELEVATED, ITERATIONS. Four boss-facing
+# labels were hiding behind it — an ELEVATED permission badge on the
+# coworker card, a SUB-AGENT MODEL heading in the provider picker, and two
+# AGENT field labels on the Night Shift form.
+#
+# Every real protocol token is snake_case (SPAWN_SUBAGENT, HIRE_AGENT,
+# VAULT_NEW, TASK_DONE), so requiring the underscore keeps them safe while
+# letting a shouted English word through to the rules. The bare tokens that
+# lose their exemption — ACK, SEARCH, BASH — are not banned words, so
+# nothing new can trip on them.
+TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b')
 
 # `${a.elevated ? ' · has file and shell access' : ''}` — the CONDITION is a
 # property, the branches are prose. Drop the expression head but keep any
