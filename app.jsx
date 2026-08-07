@@ -2036,6 +2036,12 @@ ${d.text}` : d.text,
          hand-off that never parsed. Each leaves a person waiting. */
       const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
       if (missBlocks && flush && flush.note) flush.note(missBlocks);
+      /* …and the case with no marker to find at all: the coworker DECLARED
+         they are waiting on a teammate while the delivery queue came back
+         empty. Reads the parsed ACK STATES, not the reply text, so prose
+         that merely mentions a colleague is left alone. */
+      const missAskState = HQ.unsentAsk && HQ.unsentAsk(acks.map(a => a.state), dmQueue.length);
+      if (missAskState && flush && flush.note) flush.note(missAskState);
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();

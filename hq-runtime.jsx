@@ -526,6 +526,37 @@ function unsentHandoff(text, deliveredCount) {
   return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
 }
 
+/* The gap `unsentHandoff` cannot see, found by driving two local coworkers
+   on 2026-08-07 and failing to produce a handoff twice.
+
+   Attempt one: Llama replied "Nova, can you name one colour of a ripe
+   lemon?" — plain prose, no marker at all. Attempt two, after being told
+   explicitly to use the block: it emitted an ACK reading
+   `asked Nova about lemon color` and still sent nothing.
+
+   `unsentHandoff` needs an OPENING MARKER to notice, and there was none
+   either time, so it stayed silent — correctly, by its own rule. But in
+   the second case the office holds a structured contradiction it can prove
+   without reading a word of prose: the coworker declared the state
+   `awaiting_reply` — "I have asked someone and I'm waiting" — while the
+   delivery queue came back empty. A state the model CHOSE from a fixed set
+   is not prose; it is a claim in the office's own vocabulary, and this one
+   is false.
+
+   Same conservatism as its sibling: silent if anything was delivered, and
+   silent unless the coworker actually declared the wait. Prose that merely
+   mentions a teammate is left alone — that is a sentence, not a claim, and
+   guessing at sentences is the thing this file refuses to do.
+
+   Takes the ACK STATES rather than the raw text so it cannot be fooled by
+   the word appearing in a reply, and so the harness can drive it. */
+function unsentAsk(ackStates, deliveredCount) {
+  if (deliveredCount > 0) return null;
+  const arr = Array.isArray(ackStates) ? ackStates : [];
+  if (!arr.some(s => String(s || '').trim() === 'awaiting_reply')) return null;
+  return '_(they marked this as waiting on a teammate, but nothing was sent and nobody has picked it up. Ask them again, or hand it to someone yourself.)_';
+}
+
 /* Same shape as unsentHandoff, for the one marker where silence is worst.
    [REQUEST_ELEVATION] only parses in its BLOCK form — opening tag, a line of
    detail, closing tag — and a model that writes just the opening line has
@@ -2277,7 +2308,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

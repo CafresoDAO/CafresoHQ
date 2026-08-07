@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -112,6 +112,16 @@ R.inlineVaultNote = unsentBlocks(
    because write-class markers were excluded from this guard on the argument
    that a missing visit block is record enough. It is not: an absence does not
    contradict a claim. */
+/* Off the floor, 2026-08-07. Two local coworkers, two attempts to make
+   one hand off to the other. Neither produced a marker, so unsentHandoff
+   stayed silent — correctly. The second attempt ACKed `awaiting_reply`
+   having sent nothing, which is a claim the office can prove false from
+   its own structured data. */
+R.claimedAsk     = unsentAsk(['awaiting_reply'], 0);
+R.claimedAskSent = unsentAsk(['awaiting_reply'], 1);
+R.noClaimNoNote  = unsentAsk(['completed'], 0);
+R.proseOnlyQuiet = unsentAsk([], 0);
+
 R.unsentWrite  = unsentBlocks(
   '[MEMORY_WRITE: notes/citrus.md]\nThe boss likes lemons.\n\n' +
   '[ACK: completed: • saved note on citrus preferences]');
@@ -307,6 +317,14 @@ def main():
     check('…and the office still says the file was never written',
           bool(out['inlineVaultNote']) and 'cabinet' in out['inlineVaultNote'],
           repr(out['inlineVaultNote']))
+    check('a DECLARED wait with nothing sent is called out',
+          bool(out['claimedAsk']) and 'nothing was sent' in out['claimedAsk'],
+          repr(out['claimedAsk']))
+    check('…and it stays silent when something really was delivered',
+          out['claimedAskSent'] is None, repr(out['claimedAskSent']))
+    check('…and when no wait was declared',
+          out['noClaimNoNote'] is None and out['proseOnlyQuiet'] is None,
+          repr([out['noClaimNoNote'], out['proseOnlyQuiet']]))
     check('an unclosed WRITE is called out, not left to an absent visit block',
           bool(out['unsentWrite']) and 'saved' in out['unsentWrite'],
           repr(out['unsentWrite']))
