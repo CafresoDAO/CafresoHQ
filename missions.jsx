@@ -1227,8 +1227,27 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                 ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + vault writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
                 : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 elevated agent' : ''}` : 'enter a topic to start')
             }</div>
+            {/* canDoMode is in here because the dropdown alone does not hold
+                the line. Disabling an <option> stops it being CHOSEN; it does
+                not stop it being the value already there, and the default
+                agent is picked by useValidAgentId without consulting tools.
+
+                So a boss whose default hire lacks Vault Notes could type a
+                topic, press START, and get a mission that ran its full
+                duration and wrote nothing. Measured, not reasoned: a 15-minute
+                research mission on Llama (tools: ['web']) reached round 4,
+                reported "Wrote 1" in its own transcript, and left
+                `writes: null`, `folder: null` and no Research/ directory
+                anywhere. The Night Shift's whole promise is notes in the vault
+                by morning; this spent the night and delivered none.
+
+                The §7 route out already sits under the AGENT row — "turn them
+                on in Settings → Roster" — so a blocked START now has a reason
+                and somewhere to go. */}
             <button className="px-btn primary" onClick={submit}
-              disabled={mode === 'project-study' ? (!projectId || !agentId || (isElevated && !elevatedAuth)) : (!topic.trim() || !agentId || (isElevated && !elevatedAuth))}
+              disabled={mode === 'project-study'
+                ? (!projectId || !agentId || !canDoMode(selectedAgent) || (isElevated && !elevatedAuth))
+                : (!topic.trim() || !agentId || !canDoMode(selectedAgent) || (isElevated && !elevatedAuth))}
               title={isElevated && !elevatedAuth ? 'Tick the elevated authorization checkbox first' : ''}>
               {mode === 'project-study' ? '▶ START STUDY' : '▶ START RESEARCH'}
             </button>
