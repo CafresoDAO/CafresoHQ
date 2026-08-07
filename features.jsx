@@ -158,6 +158,19 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                             onKeyDown={onCyclePriority ? (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); e.stopPropagation(); onCyclePriority(t.id);} } : undefined}
                       >{t.priority.toUpperCase()}</span>
                     </div>
+                    {/* Why this card is back in the inbox looking untouched.
+                        `stalledNote` was written by the reload scrub and read
+                        by NOTHING — I added the write earlier today and never
+                        gave it a surface, so the office had an honest
+                        explanation for a stalled card and kept it to itself.
+                        A card that went back to the inbox without the boss
+                        putting it there has to say so on the card; the
+                        activity strip scrolls away, this does not. */}
+                    {t.stalledNote && t.status !== 'done' && (
+                      <div className="tc-stalled" title="Why this went back to the inbox">
+                        ↩ {String(t.stalledNote).slice(0, 140)}
+                      </div>
+                    )}
                     {/* Is anybody actually on this? A DOING card used to look
                         identical whether a coworker was mid-run or the job
                         had been abandoned there for hours. §4: `agent.status`

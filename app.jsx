@@ -3086,7 +3086,39 @@ ${d.text}` : d.text,
   const onTaskDropOnAgent = async (taskId, agent, taskFresh) => {
     const task = taskFresh || tasks.find(t => t.id === taskId);
     if (!task) return;
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'doing'), assignedTo: agent.id } : t));
+
+    /* Dropping a second folder on a busy desk. `beginAgentRun` aborts any
+       run already in flight for this coworker — one coworker, one run — so
+       starting a second job SILENTLY KILLS the first. Measured: started
+       "cherry" on Llama, started "lime" on Llama while it ran. Lime
+       finished; cherry came back to the inbox still assigned to Llama with
+       nothing anywhere saying why. The board offers ▶ START on every
+       assigned card regardless of whether that coworker is mid-run, so this
+       is one click away and looks like queueing.
+
+       The abort path can't tell the difference on its own — an AbortSignal
+       from a boss-stop and one from a handover are the same signal — which
+       is why the honest sentence has to be written HERE, where the office
+       knows the reason. Ask first (the work in flight is lost), then say on
+       the displaced card why it moved. */
+    const displaced = tasks.find(t =>
+      t && t.id !== taskId && t.assignedTo === agent.id && t.status === 'doing');
+    if (displaced) {
+      const ok = window.confirm(
+        `${agent.name} is working on "${displaced.title}".\n\n` +
+        `Start "${task.title}" instead? "${displaced.title}" goes back to the inbox ` +
+        `and whatever they had done on it so far is lost.`);
+      if (!ok) return;
+      setTasks(prev => prev.map(t => t.id === displaced.id
+        ? { ...t, stalledNote: `put aside when you started "${task.title}" — start it again when you want it` }
+        : t));
+    }
+
+    /* Starting clears the note: it explains why a card is sitting in the
+       inbox, so it must not outlive the sitting. */
+    setTasks(prev => prev.map(t => t.id === taskId
+      ? { ...applyStatus(t, 'doing'), assignedTo: agent.id, stalledNote: null }
+      : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
     logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'assigned', taskId, text: `picked up "${task.title}" 📁` });
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');

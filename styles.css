@@ -4021,6 +4021,13 @@ body.night .settings-shell .cb-panel {
 .tc-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .tc-assigned { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; color: var(--ink); }
 .tc-unassigned { color: var(--ink-3); font-size: 14px; font-style: italic; }
+/* Why a card came back to the inbox on its own. Quiet — it explains, it
+   does not alarm: nothing went wrong, the job just stopped being run. */
+.tc-stalled {
+  margin-top: 4px; font-size: 12px; line-height: 1.35;
+  color: var(--ink-2); font-style: italic;
+  border-left: 2px solid var(--ink-3); padding-left: 6px;
+}
 .pri { font-family: 'Press Start 2P'; font-size: 7px; padding: 2px 4px; border: 1px solid var(--ink); }
 .pri.pri-high { background: var(--error); color: #fff8ee; }
 .pri.pri-med { background: var(--accent-sun); }
