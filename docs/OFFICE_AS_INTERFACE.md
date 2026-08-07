@@ -526,6 +526,19 @@ DIFFER — if every branch agrees, suspect the fixture before the code, and
 prove the precondition is real (`brainReady: [true, true]`, `0 HIRED`,
 `onOffice: true`) rather than assuming the setup took.
 
+**Clearing the mirror ALONE destroys the file — the trap runs both ways.**
+Learned by doing it: `useFileStored` seeds from `localStorage` at mount and
+fetches the file a beat later, but its debounced PUT does not wait for that
+fetch. Wipe the mirror, reload, and the app boots with empty state and
+persists the emptiness over a perfectly good file before the merge lands. A
+restored `memory/agents.json` holding two coworkers read `[]` within seconds,
+and nothing errored. Everything else in the directory survived, which is what
+makes it dangerous — the state looks broadly fine.
+
+So: never clear a mirror key to "reset" a file-backed value. Write the FILE
+(that is the source), restart the server if it caches, and reload once. If
+you must clear the mirror, stop the app first, then restore, then start.
+
 **Cleaning up needs BOTH, and the mirror is the one that survives.** Restoring
 only the file looks like it worked — the file reads clean — while the tab
 still holds the fixture and `mergeByIdCap` merges it straight back on the next
