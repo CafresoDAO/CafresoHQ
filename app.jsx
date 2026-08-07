@@ -1921,6 +1921,10 @@ ${d.text}` : d.text,
       const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
       const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
       if (missAsk && flush && flush.note) flush.note(missAsk);
+      /* …and the rest of the class: a hire, an assistant, a helper, a
+         hand-off that never parsed. Each leaves a person waiting. */
+      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
+      if (missBlocks && flush && flush.note) flush.note(missBlocks);
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
@@ -2656,6 +2660,10 @@ ${d.text}` : d.text,
       const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
       const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
       if (missAsk && flush && flush.note) flush.note(missAsk);
+      /* …and the rest of the class: a hire, an assistant, a helper, a
+         hand-off that never parsed. Each leaves a person waiting. */
+      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
+      if (missBlocks && flush && flush.note) flush.note(missBlocks);
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
@@ -3091,6 +3099,10 @@ ${d.text}` : d.text,
       const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
       const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
       if (missAsk && flush && flush.note) flush.note(missAsk);
+      /* …and the rest of the class: a hire, an assistant, a helper, a
+         hand-off that never parsed. Each leaves a person waiting. */
+      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
+      if (missBlocks && flush && flush.note) flush.note(missBlocks);
     }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());

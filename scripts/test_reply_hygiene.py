@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -151,6 +151,16 @@ R.ueRaised    = unsentElevation(BARE_ASK, true);       // one really did land �
 R.ueWellFormed= unsentElevation(FULL_ASK, true);
 R.ueNoMarker  = unsentElevation('Here are three colours.', false);
 R.ueSaysRoute = /approvals|Settings/i.test(unsentElevation(BARE_ASK, false) || '');
+
+// unsentBlocks — the rest of the class, each leaving a person waiting.
+R.ubHire     = unsentBlocks('[HIRE_AGENT: Quill]\nwe need an editor');
+R.ubHireOk   = unsentBlocks('[HIRE_AGENT: Quill]\nwe need an editor\n[/HIRE_AGENT]');
+R.ubSpawn    = unsentBlocks('[SPAWN_SUBAGENT: reviewer]\ncheck this diff');
+R.ubHandoff  = unsentBlocks('[HANDOFF_TO: Mika]\nover to you');
+R.ubTwo      = unsentBlocks('[HIRE_AGENT: A]\nx\n[SPAWN_SUBAGENT: b]\ny');
+R.ubWrite    = unsentBlocks('[MEMORY_WRITE: notes/a.md]\nhello');   // write class → not ours
+R.ubNone     = unsentBlocks('Just an ordinary reply.');
+R.ubMixed    = unsentBlocks('[HIRE_AGENT: A]\nx\n[/HIRE_AGENT]\n[SPAWN_SUBAGENT: b]\ny');
 R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
 R.uhEmpty     = unsentHandoff('', 0);
 R.uhNull      = unsentHandoff(null, 0);
@@ -224,6 +234,19 @@ def main():
     check('a request that really landed stays silent', out['ueRaised'] is None)
     check('a well-formed block stays silent', out['ueWellFormed'] is None)
     check('no marker at all says nothing', out['ueNoMarker'] is None)
+
+    # unsentBlocks — one guard for the rest of the request class
+    check('an unclosed hire request is called out', bool(out['ubHire']))
+    check('…and a well-formed one is not', out['ubHireOk'] is None)
+    check('an unclosed helper request is called out', bool(out['ubSpawn']))
+    check('an unclosed hand-off is called out', bool(out['ubHandoff']))
+    check('two broken markers produce two notes',
+          out['ubTwo'] is not None and out['ubTwo'].count('_(') == 2, out['ubTwo'])
+    check('a WRITE marker is not this guard\'s business — no visit block is '
+          'already the honest record', out['ubWrite'] is None)
+    check('an ordinary reply is silent', out['ubNone'] is None)
+    check('a good marker beside a broken one only flags the broken one',
+          out['ubMixed'] is not None and out['ubMixed'].count('_(') == 1, out['ubMixed'])
     check('an own-line marker still counts as unsent', bool(out['uhOwnLine']))
     check('empty and null are safe', out['uhEmpty'] is None and out['uhNull'] is None)
     check('a runaway name cannot blow up the note', out['uhLongName'] is True)

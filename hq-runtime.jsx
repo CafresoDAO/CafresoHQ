@@ -402,6 +402,43 @@ function unsentElevation(text, raised) {
   return '_(that request for file and shell access never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Roster.)_';
 }
 
+/* The rest of the "request that leaves someone waiting" class.
+   DM_TO and REQUEST_ELEVATION each got a bespoke guard after being caught in
+   the wild; sweeping the registry showed 13 block-form markers and four more
+   with the same consequence — a coworker believes they asked for something,
+   and nobody is coming.
+
+   The WRITE markers (VAULT_NEW, MEMORY_WRITE, FILE_WRITE, EXPORT_*) are
+   deliberately NOT here. When one of those fails to parse the tool simply
+   never ran, and the office already has an honest record of that: no visit
+   block. These four are different because a person is left expecting
+   something — a hire, a helper, a colleague picking work up.
+
+   Unlike unsentHandoff this needs no "did anything land" flag: a marker
+   opened with no closing tag of its own is proof THAT ONE did not parse,
+   whatever else in the reply did. */
+function unsentBlocks(text) {
+  /* Table lives inside the function: scripts/test_reply_hygiene.py lifts
+     named functions out of this file to run them under node, so a
+     module-level const beside it is invisible to the harness. */
+  const KINDS = [
+    ['HIRE_AGENT',      'that request to hire never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals.'],
+    ['HIRE_ASSISTANT',  'that request for an assistant never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals.'],
+    ['SPAWN_SUBAGENT',  'no helper was ever brought in — that needs the task on its own lines and a closing tag. Ask them to try again, or hand the job to a coworker yourself.'],
+    ['HANDOFF_TO',      'that hand-off never went out — it needs the message on its own lines and a closing tag. Nothing was sent.'],
+  ];
+  const t = String(text || '');
+  const notes = [];
+  for (const [name, why] of KINDS) {
+    const opened = new RegExp('\\[\\s*' + name + '\\s*:', 'i').test(t);
+    if (!opened) continue;
+    const closed = new RegExp('\\[\\s*\\/\\s*' + name + '\\s*\\]', 'i').test(t);
+    if (closed) continue;
+    notes.push('_(' + why + ')_');
+  }
+  return notes.length ? notes.join('\n') : null;
+}
+
 function visibleReply(text) {
   const raw = String(text || '');
   const cleaned = stripOrphanTags(stripAcks(raw)).replace(/\n{3,}/g, '\n\n').trim();
@@ -2019,7 +2056,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
