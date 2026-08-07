@@ -1,5 +1,5 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
-import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
+import { snagCause, stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
@@ -766,7 +766,14 @@ const TOOL_REGISTRY = {
       const u = `/browser/screenshot?url=${encodeURIComponent(url.trim())}`;
       const r = await fetch(u, { signal });
       const j = await r.json();
-      if (j.error) return `Screenshot unavailable: ${j.error}\n${j.hint || ''}`;
+      /* §7: no raw error dumps on a user surface, and a tool result IS one —
+         it lands verbatim in the visit block. `j.error` is whatever the
+         backend said. snagCause is the classifier the chat bubble, the desk
+         and the inbox already share, so this failure now reads the same way
+         they do rather than in the browser service's own words. The backend
+         hint is kept: §7 wants the route out, and that is what it carries. */
+      if (j.error) return `Couldn't take that screenshot — ${snagCause(String(j.error))}` +
+        (j.hint ? `\n${j.hint}` : '');
       // Embed as markdown — chat renders the data: URL inline
       return `Screenshot of ${j.url} (${j.width}×${j.height}):\n\n![screenshot](${j.png})`;
     },
@@ -1105,7 +1112,14 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         const tokens = filter && filter.toLowerCase() !== 'all' ? [filter] : WALLET_TOKENS;
         const bals = await CafresoHQChain.wallet.balances(walletAgentId, tokens);
         const lines = Object.entries(bals).map(([k, v]) => `• ${k}: ${v == null ? '—' : v}`);
-        return lines.length ? `Your HQ wallet (raw base units):\n${lines.join('\n')}` : '(no balances yet)';
+        /* "raw base units" is jargon, but the CAVEAT it carries is the
+           honest part — these are unscaled ledger figures, so 100000000 is
+           not a hundred million of anything. Dropping the warning to sound
+           friendlier would trade §6 jargon for a misleading number, which is
+           a worse trade. Plain words, same warning; no decimal conversion is
+           invented here because the office does not reliably know each
+           token's precision. */
+        return lines.length ? `Your HQ wallet (exact ledger amounts, not rounded for reading):\n${lines.join('\n')}` : '(no balances yet)';
       },
     });
     out.push({
@@ -1115,7 +1129,13 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         const [mainPart, ...memoParts] = String(arg || '').split(':');
         const memo = memoParts.join(':').trim();
         const bits = mainPart.trim().split(/\s+/).filter(Boolean);
-        if (bits.length < 3) return 'Bad format. Use [WALLET_SEND: <token> <amount> <to-principal> : <memo>].';
+        /* Same two-reader problem as the memory results above: this lands
+           verbatim in the visit block the boss watches. Spelling the marker
+           back is the obvious way to correct a malformed call, but §6 bans
+           that vocabulary on the floor and the coworker already has the form
+           in its system prompt — so name what is MISSING instead, which is
+           the part they actually got wrong. */
+        if (bits.length < 3) return 'That send was incomplete — it needs a token, an amount and a destination, in that order. Nothing was sent.';
         const [token, amount, to] = bits;
         const res = await CafresoHQChain.wallet.send(walletAgentId, token, amount, to, memo);
         switch (res.status) {
