@@ -398,6 +398,34 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+**Hit-testing the floor: a rect is not what you can see.** Occlusion — a
+control the user can see but cannot click — is worth sweeping for, because
+each instance is silent (nothing errors, the click just goes nowhere). The
+sweep is: for every interactive element, `document.elementFromPoint` at its
+centre, and flag it when the answer is neither the element nor a descendant.
+Two corrections it needs, both learned by getting them wrong:
+
+- **Filter for real visibility first.** The naive version flagged 45 controls
+  per view, identically across all eight views — the tell that the detector,
+  not the app, was broken. Almost all were chrome inside *minimised windows*,
+  which still have layout and a non-null `offsetParent`. `el.checkVisibility({
+  checkOpacity: true, checkVisibilityCSS: true })` drops them: 45 → 1.
+- **`getBoundingClientRect` ignores ancestor scroll-clipping, and so does
+  `checkVisibility`.** The one survivor was the meeting-room door, apparently
+  covered by the activity ticker. It is not: `.px-scene` is `overflow:auto`
+  and ends at y=844, `.px-building` runs to 908, so the lobby and its door are
+  simply **scrolled below the fold** and painted nowhere. The ticker band
+  (868–893) lives *below* the scene's clip boundary and therefore cannot cover
+  any scene control at all. An element whose rect is on screen may be painted
+  entirely off it; intersect with every clipping ancestor before believing the
+  rect.
+
+Result after both corrections: zero occluded controls across all eight views
+at 1440px. A `pointer-events: none` on the ticker was written and then
+reverted — the change was harmless but the failure it claimed to fix does not
+exist, and a comment in this codebase is supposed to record a measurement,
+not a hypothesis.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
