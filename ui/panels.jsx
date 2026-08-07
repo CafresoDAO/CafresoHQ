@@ -134,8 +134,19 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         <div className="stat"><span className="lbl">Payroll</span>
           <span title={payrollLabel(agent).title}>{payrollLabel(agent).text}</span></div>
         {/* The cast (§2): four bars, no more — honest class judgements,
-            not benchmark cosplay. Cost reads as value (4 = costs nothing). */}
-        <div className="stat-bars">
+            not benchmark cosplay. Cost reads as value (4 = costs nothing).
+
+            The tooltip exists because of WHERE these sit: directly above
+            "Jobs completed" and "Current streak", which are earned, counted
+            from the experience ledger. Four judgements stacked on two
+            measurements, with nothing on screen telling them apart — a boss
+            reading down the card would fairly take all six as this
+            coworker's record. These four are not. They come from
+            `statBars(agent)`, which keys off the BRAIN, so two coworkers on
+            the same model show identical bars however differently they have
+            performed. Saying so costs one line and settles it. */}
+        <div className="stat-bars"
+             title="What this brain is typically good at — a judgement about the model they run on, not a measurement of their work. Jobs and streak below are the earned record.">
           {[['Speed', bars.speed], ['Depth', bars.depth], ['Code', bars.code], ['Cost', bars.cost]].map(([lbl, n]) => (
             <div className="stat-bar-row" key={lbl}>
               <span className="sb-lbl">{lbl}</span>
