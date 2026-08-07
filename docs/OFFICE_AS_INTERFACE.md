@@ -1054,8 +1054,14 @@ should extend that boundary, not blur it.
   chain and the branch fired four times. End state: **19 messages, 19
   completed, 0 stuck**, four carrying `all 1 reply came back`, and the
   topbar showing no pending count at all. Before the fix those four would
-  have been permanent. Still open, and still a decision rather than a fix:
-  a recipient who never answers, and a boss who wants to clear one by hand.
+  have been permanent. **The boss's half is now built too**: any
+  non-terminal message in the Inbox carries a **✓ CLEAR THIS** button,
+  transitioning it to completed with `by: 'you'` and the note `closed by
+  you`, so the record never claims a coworker finished something they did
+  not. Driven live on the message this race had stranded for 54 minutes:
+  cleared, badge went from `📬 INBOX · 1` to no count, history showing
+  `you`. What stays open is only the automatic case — a real recipient who
+  never answers — still a policy question rather than a fix.
   The original writeup follows.
 
 - **~~`awaiting_reply` never resolves, so the inbox badge only ever grows.~~**
