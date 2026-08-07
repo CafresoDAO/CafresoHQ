@@ -902,8 +902,16 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
               told the boss to perform a gesture that does nothing. Gone —
               the hint below already names the real next action. */}
           <span className="otr-hint">
+            {/* Names the button that is ALREADY sitting beside this line,
+                and borrows the board's own words. It used to read "add one
+                in the Tasks tab", which is a redirect to a redirect: the
+                board's empty inbox says "hit + NEW to add one", so a boss
+                who followed the floor's instruction arrived and had to read
+                a second, differently-worded one to find the actual action.
+                Two empty states for the same collection should not disagree
+                about what to do next. */}
             {inboxTasks.length === 0
-              ? 'No tasks waiting — add one in the Tasks tab.'
+              ? 'Nothing waiting — open the Board and hit + NEW.'
               : (isMobileOffice
                   ? 'tap the picker to assign'
                   : 'drag a card onto a coworker\'s desk')}
