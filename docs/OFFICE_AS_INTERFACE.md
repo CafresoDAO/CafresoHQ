@@ -385,6 +385,24 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | private memory | write → the index reaching the next prompt (captured off the wire) → read → the coworker answering from it |
 | day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
 | refusal | a mission that cannot write notes will not start, and now says where to fix it |
+| first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
+
+**Which rules are executable now.** Most of this document is prose a reader has
+to remember. Three parts are not, and that is where the leverage is — each was
+written only after the same class of bug was fixed by hand three or four times:
+
+| test | what it refuses to let back in |
+|---|---|
+| `scripts/test_no_invented_numbers.py` | a hardcoded per-token price; a percentage against a phantom 1,000,000-token budget |
+| `scripts/test_floor_vocabulary.py` | `sub-agent`, `elevated`, `tok`, `iteration` — and `agent` meaning a person — in any string a person reads, **including the prompt**, since the prompt teaches the model the word and the model says it back. Config surfaces and genuine technical nouns are exempt *by name, with reasons* |
+| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax, and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
+
+The pattern behind all three: when you catch yourself doing the same sweep a
+third time, **the sweep is the deliverable, not the fix**. And a detector's
+first run is about the detector — two of these returned confident garbage
+before they were useful, so prove one against a bug you can reproduce (0 → 1 →
+0) before trusting a zero from it.
+
 
 **Testing a state-dependent branch: localStorage is a mirror, not the store.**
 A surface that only renders past a threshold (`{xp.snags > 0 && …}`) is exactly
