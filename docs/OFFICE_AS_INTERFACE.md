@@ -1384,6 +1384,32 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> ✅ **Swept the dead-end class (2026-08-06).** The mission block turned out
+> to be one of a family: **a refusal that states the reason and not the
+> route**. Swept the other blocked and empty states.
+>
+> Mostly clean, and the negatives are worth recording. The stand-up's
+> *"nobody participating"* case disables START over a list of agent rows the
+> boss can click back on — the way out is already on screen. The
+> `⚠ ADD AI KEY` chip opens Settings → Connections. The task board's empty
+> inbox offers starter cards.
+>
+> One genuine dead end: **the stand-up with nobody hired.** START was not
+> rendered at all, and the body showed a preflight reading *"0 of 0 agents ·
+> cap 1200 tok/each · 45s timeout"* over an empty list — a technical readout
+> about a meeting with nobody in it, and no way forward. It now reads *"No
+> coworkers yet — a stand-up is your team reporting back; hire someone first
+> and they'll have something to report"* with a **+ HIRE YOUR FIRST
+> COWORKER** button that closes the modal and opens the front desk. Words
+> would have been enough for §7, but every other empty state on the floor
+> offers the *action* (a vacant room shows "+ HIRE", the empty board shows
+> starter cards), so this one does too.
+>
+> Verified both branches, since the change split one conditional in two: with
+> a hire, the preflight and `▶ START (1)` are unchanged; with none, the new
+> empty state appears, the "0 of 0" readout is gone, and the button really
+> lands on the front desk. Fixture restored by re-hiring afterwards.
+
 > ✅ **The night shift refuses honestly — but was a dead end (2026-08-06).**
 > Exercised the mission modal for the first time. The gating is **right**:
 > with only a Generalist hired (`tools: ['web']`, no vault), the agent

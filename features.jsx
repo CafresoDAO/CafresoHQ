@@ -514,7 +514,7 @@ Stop after the TOMORROW line. No reasoning, no commentary, no preamble.`;
 const STANDUP_MAX_TOKENS = 220;
 const STANDUP_TIMEOUT_MS = 90_000;
 
-function StandupModal({ open, onClose, agents, onArchive }) {
+function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   const [reports, setReports] = useSF([]);   // [{agentId, name, color, text, streaming, error}]
   const [summary, setSummary] = useSF('');
   const [phase, setPhase] = useSF('idle');   // idle | running | summarizing | done
@@ -672,7 +672,24 @@ function StandupModal({ open, onClose, agents, onArchive }) {
         </>
       }
     >
-          {phase === 'idle' && reports.length === 0 && (
+          {/* Nobody hired yet. The preflight below would otherwise read
+              "0 of 0 agents · cap 1200 tok/each · 45s timeout" over an
+              empty list, with the START button not rendered at all — a
+              technical readout about a meeting with nobody in it, and no
+              way forward. §7: a block states the reason AND the route.
+              Every other empty state on the floor offers the action (a
+              vacant room shows "+ HIRE", the empty board shows starter
+              cards), so this one does too. */}
+          {phase === 'idle' && reports.length === 0 && agents.length === 0 && (
+            <div className="standup-preflight">
+              <div className="empty-title">No coworkers yet</div>
+              <div className="empty-sub">A stand-up is your team reporting back — hire someone first and they'll have something to report.</div>
+              {onHire && (
+                <button className="px-btn primary" style={{marginTop:10}} onClick={onHire}>+ HIRE YOUR FIRST COWORKER</button>
+              )}
+            </div>
+          )}
+          {phase === 'idle' && reports.length === 0 && agents.length > 0 && (
             <div>
               <div className="standup-preflight">
                 <div className="empty-title">Run today's stand-up?</div>

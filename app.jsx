@@ -4500,7 +4500,10 @@ ${d.text}` : d.text,
           ];
         })()}
       />
-      <StandupModal open={standupOpen} onClose={()=>setStandupOpen(false)} agents={agents} onArchive={onArchiveStandup}/>
+      <StandupModal open={standupOpen} onClose={()=>setStandupOpen(false)} agents={agents} onArchive={onArchiveStandup}
+        /* A real route out of the empty stand-up, not just words: close
+           this and open the front desk. */
+        onHire={()=>{ setStandupOpen(false); setHireOpen(true); }}/>
       <MissionsModal open={missionsOpen} onClose={()=>setMissionsOpen(false)} agents={agents} missions={missions}
         projects={projects}
         onStart={onStartMission} onStop={onStopMission} onResume={onResumeMission} onClear={onClearMission}/>
