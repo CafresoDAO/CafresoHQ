@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -104,6 +104,12 @@ R.unsentWrite  = unsentBlocks(
   '[MEMORY_WRITE: notes/citrus.md]\nThe boss likes lemons.\n\n' +
   '[ACK: completed: • saved note on citrus preferences]');
 R.closedWriteOk = unsentBlocks('[MEMORY_WRITE: a.md]\nbody\n[/MEMORY_WRITE]');
+/* Verbatim, 2026-08-07. The model read the office's own context format out of
+   its history and typed it back, which pushed the marker off column zero and
+   blinded the line-anchored strip. */
+R.echoedLabel  = visibleReply('[Llama · Generalist]: [MEMORY_WRITE: notes/figs.md]\nThe boss likes figs.');
+R.refDefKept   = visibleReply('[1]: https://example.com\nSee the link.');
+R.midReplyKept = visibleReply('I asked, and\n[Mika · Head of Inbox]: said no.');
 R.noMarkers    = visibleReply('Red, green, blue.');
 R.empty        = visibleReply('');
 R.nullIn       = visibleReply(null);
@@ -300,6 +306,12 @@ def main():
     # own ACK. An absence is not a record a person reads, and it never wins
     # against an explicit claim to the contrary.
     check('an unclosed WRITE is called out too', bool(out['ubWrite']), repr(out['ubWrite']))
+    check('an echoed [Name · Role] label goes, and unblinds the marker strip',
+          out['echoedLabel'] == 'The boss likes figs.', repr(out['echoedLabel']))
+    check('a markdown reference definition is not a speaker label',
+          out['refDefKept'].startswith('[1]: https://example.com'), repr(out['refDefKept']))
+    check('a label quoted mid-reply is content, not a self-announcement',
+          '[Mika · Head of Inbox]:' in out['midReplyKept'], repr(out['midReplyKept']))
     check('an ordinary reply is silent', out['ubNone'] is None)
     check('a good marker beside a broken one only flags the broken one',
           out['ubMixed'] is not None and out['ubMixed'].count('_(') == 1, out['ubMixed'])

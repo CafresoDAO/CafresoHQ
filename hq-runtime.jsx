@@ -380,6 +380,30 @@ function vaultPaths(list) {
     .filter(Boolean);
 }
 
+/* The office labels peer turns as `[Name · Role]: …` when it builds the
+   model's context (chatToMessages, below) so a coworker can tell who said
+   what. Small models read that shape as house style and type it back at the
+   top of their own reply — seen verbatim:
+
+     [Llama · Generalist]: [MEMORY_WRITE: notes/figs.md]
+
+   which is worse than noise: it shoves the marker off column zero, and
+   ORPHAN_TAG_RE is line-anchored on purpose, so the strip that would have
+   removed the marker no longer matches. One echoed label defeats the
+   cleaner for the whole line.
+
+   The bubble is already captioned with the speaker, so a coworker naming
+   themselves inside it is redundant even when harmless.
+
+   Deliberately keyed on the ` · ` separator rather than "a leading bracket":
+   that is the office's own `${name} · ${role}` template and nothing else
+   emits it, so a markdown reference definition (`[1]: http://…`), a
+   checkbox, or a real tool marker cannot match. Start of text only — a
+   mid-reply quotation of someone else stays. */
+function stripSelfLabel(text) {
+  return String(text || '').replace(/^\s*\[[^\]\n]*\s·\s[^\]\n]*\]\s*:\s*/, '');
+}
+
 function stripOrphanTags(text) {
   return String(text || '').replace(ORPHAN_TAG_RE, '');
 }
@@ -544,7 +568,10 @@ function visibleReply(text) {
   // Blocks first: their delimiters are also whole-line markers, so letting
   // stripOrphanTags run first would remove the tags this needs to find the
   // payload by, and strand the body exactly as before.
-  const cleaned = stripOrphanTags(stripAcks(stripBlocks(raw))).replace(/\n{3,}/g, '\n\n').trim();
+  // stripSelfLabel FIRST: while the echoed label is still there the marker
+  // is not at column zero, and the line-anchored strip below cannot see it.
+  const cleaned = stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(raw))))
+    .replace(/\n{3,}/g, '\n\n').trim();
   if (cleaned) return cleaned;
   /* Nothing survived the strip. `stripAcks` matches ANY lowercase state
      while `extractAcks` only accepts the four real ones, so a typo'd
