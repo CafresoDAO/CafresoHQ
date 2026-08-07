@@ -1353,6 +1353,34 @@ append-only).
 > away on the desk out-tray. The pulse reads as a sequence again:
 > *picked up …* → *finished … ✓* → *filed to Deliveries 🗄*.
 
+> ✅ **An empty column is not a new office (2026-08-06).** Opened the views
+> never exercised this session. **Calendar is good** — *"your business by
+> day · tasks when raised · missions when they wrap"*, three dated entries
+> with owner, priority and status. No changes needed.
+>
+> The Tasks board contradicted itself, though: header **"3 of 3"**, inbox
+> column **"No tasks yet — start from one of these"** with the full starter
+> card set. Both describing the same three tasks. The onboarding state was
+> gated only on the *inbox column* being empty, so it came back every time
+> the boss cleared their queue — greeting an office three deliveries deep as
+> if it had never run anything. A cleared column now reads *"Nothing waiting
+> — hit + NEW to add one."*
+>
+> **The first version of that fix was wrong**, and only checking it caught
+> it: `TaskBoard` receives the **filtered** list (TasksView applies the
+> search box and the show-completed toggle), so gating on `tasks.length`
+> would have shown onboarding to an established boss whose search matched
+> nothing. `totalCount` is now passed unfiltered and is the only thing that
+> may trigger it. Verified all three: cleared, filtered-to-nothing, and
+> genuinely empty — the starter cards return only in the last.
+>
+> Method note, a third time: two readings during this check were taken
+> against a precondition that was never established. Deleting the tasks
+> "failed" and looked like a regression — the deletes were being refused by
+> `window.confirm`, which guards tasks carrying agent output. **The guard is
+> correct product behaviour**; the test was fighting it. Confirm the state
+> you think you set up before trusting what you read from it.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

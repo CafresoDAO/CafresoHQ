@@ -108,6 +108,10 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onDropTaskOnAgent, 
         </label>
       </div>
       <TaskBoard tasks={filtered} agents={agents}
+        /* The UNFILTERED count — `filtered` shrinks with the search box and
+           the show-completed toggle, and neither of those makes the office
+           new again. */
+        totalCount={tasks.length}
         onAdd={onAdd} onMove={onMove} onDelete={onDelete}
         onAssign={onAssign}
         onAssignToChat={onAssignToChat}

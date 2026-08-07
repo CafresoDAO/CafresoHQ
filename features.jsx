@@ -70,7 +70,13 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
   );
 }
 
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [] }) {
+/* `tasks` here is the FILTERED list (TasksView applies search + the
+   show-completed toggle), so it must never be used to decide whether the
+   office is new. `totalCount` is the unfiltered figure and is the only
+   thing allowed to trigger onboarding — otherwise a search matching
+   nothing would greet an established boss with "No tasks yet". */
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [] }) {
+  const officeIsNew = (totalCount === null ? tasks.length : totalCount) === 0;
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
   const [expanded, setExpanded] = useSF({});
@@ -199,7 +205,15 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                      newcomer — offer the same starter outcomes as the
                      first-run sheet. These land unassigned, so the drag-to-a-
                      desk mechanic below still gets taught. */
-                  ? <div className="tb-empty onboard">
+                  ? (officeIsNew
+                    /* "No tasks YET" and the starter cards are ONBOARDING —
+                       they belong to an office that has never had a task.
+                       Gated only on the INBOX column being empty, they kept
+                       showing after the work was done, so the board read
+                       "3 of 3" in its header and "No tasks yet — start from
+                       one of these" underneath. Both about the same three
+                       tasks. An empty column is not a new office. */
+                    ? <div className="tb-empty onboard">
                       No tasks yet — start from one of these:
                       <StarterCards compact onPick={(starter, subject) => {
                         const t = buildStarterTask(starter, subject, null);
@@ -207,6 +221,7 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                       }} />
                       <span className="tb-empty-hint">Or hit <strong>+ NEW</strong> above. Drag any card onto an agent's desk to delegate.</span>
                     </div>
+                    : <div className="tb-empty">Nothing waiting — hit <strong>+ NEW</strong> to add one.</div>)
                   : <div className="tb-empty">—</div>
               )}
             </div>
