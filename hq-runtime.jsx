@@ -209,7 +209,27 @@ function throttleTokens(setChat, msgId) {
     setChat(prev => prev.map(m => m.id === msgId ? { ...m, text: display } : m));
   };
   const ontok = (tok) => { raw += tok; schedule(); };
-  ontok.note = (text) => { suffix += (suffix ? '\n\n' : '\n\n') + text; schedule(); };
+  /* A note is out-of-band: it is the OFFICE speaking about a request that
+     never parsed, and it arrives after the stream is done. It therefore has
+     to survive `cancel()`, which the callers now use to stop a queued frame
+     from repainting the final cleaned text from `raw`.
+
+     Two reasons it appends to the message rather than going through
+     `schedule()` once cancelled: a cancelled flush is a no-op, so the note
+     would be dropped entirely; and re-rendering from `raw` would undo the
+     cleaned text the caller just wrote. Getting this wrong silently kills
+     exactly the warnings that exist because a request went silently
+     nowhere. */
+  ontok.note = (text) => {
+    suffix += (suffix ? '\n\n' : '\n\n') + text;
+    if (cancelled) {
+      setChat(prev => prev.map(m => m.id === msgId
+        ? { ...m, text: ((m.text || '') + '\n\n' + text).replace(/\n{3,}/g, '\n\n') }
+        : m));
+      return;
+    }
+    schedule();
+  };
   ontok.flushNow = () => { flush(); };
   ontok.cancel = () => { cancelled = true; };
   ontok.raw = () => raw;
@@ -454,18 +474,31 @@ function unsentElevation(text, raised) {
    consequence — a coworker believes they asked for something, and nobody
    is coming.
 
-   The WRITE markers (VAULT_NEW, MEMORY_WRITE, FILE_WRITE, EXPORT_*) are
-   deliberately NOT here. When one of those fails to parse the tool simply
-   never ran, and the office already has an honest record of that: no visit
-   block. These four are different because a person is left expecting
-   something — a hire, a helper, a colleague picking work up.
+   The WRITE markers used to be deliberately excluded, on the argument that
+   a failed parse means the tool never ran and "the office already has an
+   honest record of that: no visit block". Watching a real run retired that
+   argument. Asked to save a note, Llama replied:
+
+     [MEMORY_WRITE: notes/citrus.md]
+     The boss likes lemons.
+     [ACK: completed: • saved note on citrus preferences]
+
+   — no closing tag, so nothing was written, while the coworker's own ACK
+   announced success. An ABSENT visit block is not a record a person reads;
+   it is the lack of one, and it loses every time against an explicit claim
+   to the contrary. Three runs, three confident claims, zero files on disk.
+
+   So write-class is guarded too now, with one difference in the wording:
+   nobody is left waiting for a hire, but the boss is left believing a note
+   exists. The sentence has to contradict the claim, not just describe a
+   parse failure.
 
    The arithmetic, so a reader can check it rather than trust it:
    16 block-form markers = 6 request-class (DM_TO, HANDOFF_TO, HIRE_AGENT,
    HIRE_ASSISTANT, REQUEST_ELEVATION, SPAWN_SUBAGENT — all guarded now) +
    10 write-class (VAULT_NEW, VAULT_APPEND, MEMORY_WRITE, MEMORY_APPEND,
-   FILE_WRITE, EXPORT_PPTX/DOCX/PDF, GENERATE_IMAGE/VIDEO — none, on
-   purpose). The commit that added this said 13; that was a miscount off a
+   FILE_WRITE, EXPORT_PPTX/DOCX/PDF, GENERATE_IMAGE/VIDEO — all guarded
+   now). The commit that added this said 13; that was a miscount off a
    printed list, found by re-running the classifier during an audit of my
    own comments.
 
@@ -481,6 +514,18 @@ function unsentBlocks(text) {
     ['HIRE_ASSISTANT',  'that request for an assistant never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals.'],
     ['SPAWN_SUBAGENT',  'no helper was ever brought in — that needs the task on its own lines and a closing tag. Ask them to try again, or hand the job to a coworker yourself.'],
     ['HANDOFF_TO',      'that hand-off never went out — it needs the message on its own lines and a closing tag. Nothing was sent.'],
+    /* Write-class. Phrased to contradict the success the coworker may have
+       just claimed, because that claim is what the boss actually read. */
+    ['MEMORY_WRITE',    'nothing was saved to their memory — that note needs a closing tag to be written, so it is not there however it was described above. Ask them to save it again.'],
+    ['MEMORY_APPEND',   'nothing was added to their memory — that note needs a closing tag to be written. Ask them to try again.'],
+    ['VAULT_NEW',       'no file reached the cabinet — that one needs a closing tag to be written, so the Vault does not have it. Ask them to file it again.'],
+    ['VAULT_APPEND',    'nothing was appended in the cabinet — that one needs a closing tag to be written. Ask them to try again.'],
+    ['FILE_WRITE',      'nothing was written to the workspace — that one needs a closing tag. The file is unchanged.'],
+    ['EXPORT_PPTX',     'no deck was produced — that export needs a closing tag. Nothing was created.'],
+    ['EXPORT_DOCX',     'no document was produced — that export needs a closing tag. Nothing was created.'],
+    ['EXPORT_PDF',      'no PDF was produced — that export needs a closing tag. Nothing was created.'],
+    ['GENERATE_IMAGE',  'no image was made — that one needs a closing tag. Nothing was created.'],
+    ['GENERATE_VIDEO',  'no video was made — that one needs a closing tag. Nothing was created.'],
   ];
   const t = String(text || '');
   const notes = [];

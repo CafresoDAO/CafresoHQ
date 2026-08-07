@@ -94,6 +94,16 @@ R.realBlockLeak = visibleReply(
    must still be able to see the opener. Stripping to end-of-text would also
    swallow any real answer that followed. */
 R.unclosedKept = stripBlocks('Sure.\n[HIRE_AGENT: designer]\nname: Vee');
+/* Verbatim off the floor, 2026-08-07. Three runs asked Llama to save a note;
+   all three emitted an unclosed [MEMORY_WRITE:…] — so nothing was written —
+   and all three announced success in their own ACK. The office said nothing,
+   because write-class markers were excluded from this guard on the argument
+   that a missing visit block is record enough. It is not: an absence does not
+   contradict a claim. */
+R.unsentWrite  = unsentBlocks(
+  '[MEMORY_WRITE: notes/citrus.md]\nThe boss likes lemons.\n\n' +
+  '[ACK: completed: • saved note on citrus preferences]');
+R.closedWriteOk = unsentBlocks('[MEMORY_WRITE: a.md]\nbody\n[/MEMORY_WRITE]');
 R.noMarkers    = visibleReply('Red, green, blue.');
 R.empty        = visibleReply('');
 R.nullIn       = visibleReply(null);
@@ -176,7 +186,7 @@ R.ubHireOk   = unsentBlocks('[HIRE_AGENT: Quill]\nwe need an editor\n[/HIRE_AGEN
 R.ubSpawn    = unsentBlocks('[SPAWN_SUBAGENT: reviewer]\ncheck this diff');
 R.ubHandoff  = unsentBlocks('[HANDOFF_TO: Mika]\nover to you');
 R.ubTwo      = unsentBlocks('[HIRE_AGENT: A]\nx\n[SPAWN_SUBAGENT: b]\ny');
-R.ubWrite    = unsentBlocks('[MEMORY_WRITE: notes/a.md]\nhello');   // write class → not ours
+R.ubWrite    = unsentBlocks('[MEMORY_WRITE: notes/a.md]\nhello');   // write class → NOW ours
 R.ubNone     = unsentBlocks('Just an ordinary reply.');
 R.ubMixed    = unsentBlocks('[HIRE_AGENT: A]\nx\n[/HIRE_AGENT]\n[SPAWN_SUBAGENT: b]\ny');
 R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
@@ -229,6 +239,14 @@ def main():
           repr(out['realBlockLeak']))
     check('an UNCLOSED block keeps its opener so unsentBlocks can report it',
           'HIRE_AGENT' in out['unclosedKept'], repr(out['unclosedKept']))
+    check('an unclosed WRITE is called out, not left to an absent visit block',
+          bool(out['unsentWrite']) and 'saved' in out['unsentWrite'],
+          repr(out['unsentWrite']))
+    check('…and the note contradicts the claim rather than describing a parse error',
+          bool(out['unsentWrite']) and 'however it was described above' in out['unsentWrite'],
+          repr(out['unsentWrite']))
+    check('a properly closed write says nothing at all',
+          out['closedWriteOk'] is None, repr(out['closedWriteOk']))
     check('an unrecognised ACK state stays as ordinary text',
           '[ACK: banana: hm]' in out['unknownState'], repr(out['unknownState']))
     check('an unclosed DM_TO opener is scrubbed, its text kept',
@@ -274,8 +292,14 @@ def main():
     check('an unclosed hand-off is called out', bool(out['ubHandoff']))
     check('two broken markers produce two notes',
           out['ubTwo'] is not None and out['ubTwo'].count('_(') == 2, out['ubTwo'])
-    check('a WRITE marker is not this guard\'s business — no visit block is '
-          'already the honest record', out['ubWrite'] is None)
+    # SUPERSEDED, deliberately, by evidence rather than by preference. This
+    # asserted the opposite until 2026-08-07: that a write marker was not this
+    # guard's business because "no visit block is already the honest record".
+    # Three live runs killed that argument — Llama emitted an unclosed
+    # [MEMORY_WRITE:…] every time, wrote nothing, and announced success in its
+    # own ACK. An absence is not a record a person reads, and it never wins
+    # against an explicit claim to the contrary.
+    check('an unclosed WRITE is called out too', bool(out['ubWrite']), repr(out['ubWrite']))
     check('an ordinary reply is silent', out['ubNone'] is None)
     check('a good marker beside a broken one only flags the broken one',
           out['ubMixed'] is not None and out['ubMixed'].count('_(') == 1, out['ubMixed'])
