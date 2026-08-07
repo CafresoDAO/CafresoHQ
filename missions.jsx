@@ -1086,6 +1086,16 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                       {nextLabel && <div className="mc-next">⏳ {nextLabel}</div>}
                       {m.lastAction && <div className="mc-last">last: {m.lastAction.slice(0, 200)}{m.lastAction.length > 200 ? '…' : ''}</div>}
                       {m.lastError && <div className="mc-err">⚠ {m.lastError.slice(0, 200)}</div>}
+                      {/* `pauseNote` was written by two paths and read by
+                          none — the reload scrub sets "paused on reload —
+                          resume to continue", and STOP ALL now sets its own,
+                          and neither ever reached a screen. A pause the boss
+                          caused deserves a plain line, not the ⚠ above it:
+                          that row is for things that went wrong, and neither
+                          of these did. */}
+                      {m.pauseNote && !m.lastError && (
+                        <div className="mc-last" style={{opacity:0.8}}>{m.pauseNote.slice(0, 200)}</div>
+                      )}
                       <div className="mc-actions">
                         {m.status === 'running' && <button className="px-btn danger" style={{fontSize:9}} onClick={()=>onStop(m.id)}>■ STOP</button>}
                         {m.status === 'paused' && <button className="px-btn primary" style={{fontSize:9}} onClick={()=>onResume(m.id)}>▶ RESUME</button>}

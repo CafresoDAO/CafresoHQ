@@ -844,7 +844,15 @@ function App() {
        "make it all stop" couldn't clear the state missions produce. */
     setAgents(prev => prev.map(a => (a.status === 'busy' || a.status === 'active')
       ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
-    setMissions(prev => prev.map(m => m.status === 'running' ? { ...m, status: 'paused', lastError: 'stopped by boss' } : m));
+    /* `pauseNote`, not `lastError`. §5's rule that a boss-stop is not the
+       coworker's failure is applied carefully everywhere else — a stopped run
+       leaves mood 'idle' rather than 'stuck', and stays off the XP ledger —
+       and then this wrote the boss's own decision into the error field, where
+       the mission card renders it as "⚠ stopped by boss" and the Gazette's
+       night-shift story turns its ✓ into a ⚠. The boss pressed the button;
+       the office should not file it as something that went wrong. */
+    setMissions(prev => prev.map(m => m.status === 'running'
+      ? { ...m, status: 'paused', pauseNote: 'you stopped this — resume when you want it' } : m));
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}.` }]);
     say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
