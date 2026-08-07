@@ -386,6 +386,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
 | refusal | a mission that cannot write notes will not start, and now says where to fix it |
 | work in → work out, re-verified 2026-08-07 | after the reply-pipeline repairs: task created → assigned → **▶ START** → done in 10s → filed to `Deliveries/` reading "Yellow." and nothing else. Assignment and dispatch are deliberately separate; a task waits at ▶ START until the boss says go |
+| no desk stays lit — audited, 2026-08-07 | the §4 lie is a coworker who looks busy after the run ended, so all six `agentStream` paths were walked for it. Clean: the three dispatch paths clear in `finally` via `endAgentRun`/`settleAfterRun`; the meeting turn resets status in `finally`; the stand-up never sets a status, so it has nothing to leave behind; the night shift calls `standDown` on every one of its three endings (deadline, error-limit, coworker removed). And `ceoBusy` is **derived** — `chat.some(m => m.from === 'ceo' && m.streaming)` — not a flag that can desync from what it describes |
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
@@ -446,6 +447,14 @@ of a branch that was never actually entered. That is failure shape (4), a
 measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
+
+*Census beats sweep, and a clean census still earns its keep.* The reply-path
+census found three uncleaned paths under a green suite; the desk-clearing
+census that followed found nothing. Both were worth running, and the second
+is worth WRITING DOWN — otherwise the next reader re-derives it, or worse,
+assumes it was never checked. Enumerate by ENTRY POINT (every
+`agentStream(` caller) rather than by grepping for the fix: grepping for the
+fix can only ever find the places that already have it.
 
 *What the office cannot catch, and should not pretend to.* Two residues in
 filed deliverables came from the model, not the pipeline: a stale sentence
