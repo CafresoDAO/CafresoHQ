@@ -746,6 +746,18 @@ should extend that boundary, not blur it.
   filing-deferral path (needs a cloud brain), and the Gazette's
   *"+N more coworkers"* line (needs five hires and a four-hour absence).
   Both rest on unit tests.
+- **A front-desk hire cannot run a Night Shift.** Detected brains get their
+  tools by kind — a local model `['web']`, a CLI agent `['files','shell','web']`
+  — and none of them include Vault Notes, which a research mission requires
+  alongside web. The saved ROLES do carry it (Kip is `['web','vault']`, Vera
+  `['web','email','cal','vault']`), so the feature works if you hire a
+  specialist and not if you hire a brain. That means the §3 zero-config path —
+  the one first run is optimised for — lands on an office that cannot use the
+  headline overnight feature until someone visits Settings → Roster. The
+  route out is on screen at the point of failure, and START is now correctly
+  blocked rather than running a doomed mission, so this is friction rather
+  than a trap. Whether a detected brain should arrive with Vault Notes on is a
+  permissions decision: it is write access to the boss's cabinet.
 - **The boss is typed `agent` on the vault map**, so the analysis panel counts
   the office's owner among its coworkers — "3 coworkers" for two hired. The
   node itself now reads *"You (boss)"* rather than a mysterious colleague
