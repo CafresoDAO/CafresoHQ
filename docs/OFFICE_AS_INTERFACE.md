@@ -1384,6 +1384,27 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> ✅ **The night shift refuses honestly — but was a dead end (2026-08-06).**
+> Exercised the mission modal for the first time. The gating is **right**:
+> with only a Generalist hired (`tools: ['web']`, no vault), the agent
+> option renders `disabled`, `▶ START RESEARCH` renders `disabled`, and the
+> requirement is stated on the form. The office will not launch an overnight
+> mission it knows cannot write a single note — exactly the refusal the rest
+> of this document argues for.
+>
+> *(`🌙 SCHEDULE` and `▶ RUN NOW` sit together above the submit as a
+> when-to-run pair, not a second way in. Checked their coordinates before
+> assuming a bypass existed.)*
+>
+> What was missing is §7's other half: *"every failure is one honest
+> sentence **plus** try again / ask differently / pick another coworker."*
+> The hint read `must have Web Search and Vault Notes tools enabled` and
+> stopped there — a boss whose only hire lacks the tool met a disabled
+> agent, a disabled button, and no route out. Tools are editable in
+> **Settings → ROSTER** (the inspect panel shows them read-only), so the
+> hint now names it: *"needs Web Search and Vault Notes — turn them on in
+> Settings → Roster."* Verified the copy renders and START stays disabled.
+
 > ✅ **Two copies of one deliverable (2026-08-06).** §3.6 files host-side
 > because filing *"can't depend on the coworker cooperating"* — true for the
 > front-desk hires, which hold no vault tools at all. But the **specialist**

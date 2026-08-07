@@ -1092,7 +1092,16 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                   </option>
                 ))}
               </select>
-              <span className="hint">{mode === 'project-study' ? 'must have Vault Notes tool enabled' : 'must have Web Search and Vault Notes tools enabled'}</span>
+              {/* §7: a failure is one honest sentence PLUS a way forward —
+                  try again, ask differently, or pick another coworker. This
+                  hint stated the requirement and stopped there, so a boss
+                  whose only hire lacks Vault Notes hit a disabled agent, a
+                  disabled START, and no route out. The tools live in
+                  Settings → ROSTER (the inspect panel only shows them,
+                  read-only), so name that. */}
+              <span className="hint">{mode === 'project-study'
+                ? 'needs the Vault Notes tool — turn it on in Settings → Roster'
+                : 'needs Web Search and Vault Notes — turn them on in Settings → Roster'}</span>
             </div>
             <div className="form-row">
               <label>VAULT FOLDER</label>
