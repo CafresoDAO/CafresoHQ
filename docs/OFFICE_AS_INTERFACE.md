@@ -426,6 +426,28 @@ reverted — the change was harmless but the failure it claimed to fix does not
 exist, and a comment in this codebase is supposed to record a measurement,
 not a hypothesis.
 
+**Panes that grow instead of filling.** This class has bitten twice — the
+office scene (see the note above `.hq-desktop > .office-wrap` in styles.css)
+and the chat pane — and both times the symptom was a control pushed below the
+fold rather than anything visibly broken. It is worth sweeping for, because it
+gets WORSE with use: the pane is sized by its content, so a fresh install looks
+correct and the office degrades as it fills.
+
+The sweep: for every visible block, walk up to the nearest ancestor that bounds
+height (`overflow-y` auto/scroll/hidden, or `position:fixed`) and flag the
+child when it is more than ~1.5× its host. `.monitor` scored **26×** — 11,050px
+inside a 417px window.
+
+**Prove the detector before trusting a zero.** A null result from an unverified
+sweep is worth nothing; two of the three sweeps in this document returned
+confident garbage on their first run. Here: recreate the bug in the live DOM
+(`monitor.style.flex = '0 1 auto'`, parent back to `display:block`), confirm the
+sweep catches it, then restore and confirm it goes quiet. 0 → 1 → 0. Only then
+does "no other pane has this" mean anything.
+
+Current result, with that check done: **no oversized panes** across all eight
+views or with the chat window open.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
