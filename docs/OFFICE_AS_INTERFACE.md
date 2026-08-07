@@ -833,10 +833,13 @@ should extend that boundary, not blur it.
   controls are four filter tabs and CLOSE. Expanding a thread does show each
   message's real state (`AWAITING REPLY` is right there, honestly labelled),
   so the DETAIL is truthful — but nothing in the UI can resolve, dismiss or
-  close a message. The boss can watch the number and cannot touch it. One
-  more oddity while looking: under the ACTIVE filter the single visible row
-  is badged COMPLETED, because a thread shows its root's state while the
-  active messages are the replies nested inside it.
+  close a message. The boss can watch the number and cannot touch it.
+  The row/filter contradiction found alongside it IS fixed: a thread is listed
+  when ANY message matches, while its pill shows the LAST message's state, so
+  "ACTIVE · 8" opened on a single row badged COMPLETED. A filtered row now
+  also carries "N here" — how many messages in that thread matched — so it
+  reads "8 here · COMPLETED": why it is listed and where it got to, both true.
+  Hidden under ALL, where nothing needs explaining.
 - **The boss is typed `agent` on the vault map**, so the analysis panel counts
   the office's owner among its coworkers — "3 coworkers" for two hired. The
   node itself now reads *"You (boss)"* rather than a mysterious colleague
