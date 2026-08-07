@@ -1438,6 +1438,34 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> 🚨 **"✓ archived to Docs" was archiving nowhere near Docs (2026-08-07).**
+> Two coworkers unlocked the end-of-day **stand-up**, which a one-coworker
+> office could never exercise. Ran one end to end and it works: preflight
+> states the real budget (*"2 of 2 agents · cap 220 tok/each · 90s timeout ·
+> ⚠ 2 local models — heavy on a VM"*), both agents reported in
+> TODAY/BLOCKED/TOMORROW, the CEO synthesised, and the modal reached *done*.
+>
+> Llama's report even referenced *"Mika's request for perspective"* — the
+> handoff delivered in the earlier fan-out had become shared context. Two
+> coworkers genuinely worked together and each knew it.
+>
+> Then the archive claimed **"✓ archived to Docs"**, and the cabinet had no
+> `Docs/` folder at all. `archive()` builds a done TASK carrying the full
+> report and hands it to `onArchiveStandup`, which does `setTasks(...)` —
+> nothing goes near the vault. The archive is genuine and the report is
+> readable; the signpost pointed at a place that does not exist.
+>
+> Same shape as the *Sent → Drafted* fix in §5, on the one artifact a boss
+> would rely on at the end of a day. The copy now says **"✓ saved to your
+> task board"**, verified by finding *"Stand-up — Aug 7"* on the board after
+> a reload.
+>
+> **Left as a product decision, not made silently:** whether an end-of-day
+> report *should* live in the cabinet (`Docs/`) rather than the task board.
+> Filing it there is defensible — it is a document, and §3.6's machinery
+> exists — but it needs the vault-unconfigured path handled, or the fix
+> re-creates the very claim it removes.
+
 > ✅ **Multi-agent verified — the north star's actual claim (2026-08-07).**
 > Every run in this session until now used **one** coworker, which meant
 > *"one office where all your AIs work together"* had never been tested.

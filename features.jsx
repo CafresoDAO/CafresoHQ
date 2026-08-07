@@ -661,7 +661,18 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       size="lg"
       footer={
         <>
-          <div className="hint" style={{marginRight: 'auto'}}>{archived ? '✓ archived to Docs' : phase==='done' ? 'tap ARCHIVE to save to Docs' : ''}</div>
+          {/* "Docs" was a destination the code never wrote to. `archive()`
+              builds a DONE TASK carrying the full report and hands it to
+              `onArchiveStandup`, which does `setTasks(...)` — nothing goes
+              near the vault. Verified on a real stand-up: the modal said
+              "✓ archived to Docs" and the cabinet had no `Docs/` folder at
+              all. The archive is genuine and the report is readable; only
+              the signpost pointed somewhere that doesn't exist.
+
+              Whether an end-of-day report *should* live in the cabinet
+              rather than the task board is a product decision, noted in the
+              doc rather than made silently here. */}
+          <div className="hint" style={{marginRight: 'auto'}}>{archived ? '✓ saved to your task board' : phase==='done' ? 'tap ARCHIVE to keep this on your task board' : ''}</div>
           {phase === 'idle' && agents.length > 0 && <button className="px-btn primary" onClick={start} disabled={participating.length === 0}>▶ START ({participating.length})</button>}
           {(phase === 'running' || phase === 'summarizing') && <button className="px-btn danger" onClick={stop}>■ STOP</button>}
           {phase === 'done' && (<>
