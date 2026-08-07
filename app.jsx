@@ -2067,6 +2067,41 @@ ${d.text}` : d.text,
       });
     }
 
+    /* The wait ends when the thing being waited for has happened.
+       `awaiting_reply` is set above when a coworker fans out DMs, with the
+       note "chained to N recipients" — and NOTHING ever closed it. All
+       eight transition sites act on the sender's own message; a reply
+       arrives as a NEW message and leaves the waiter open. So the topbar
+       count, which counts non-terminal messages, climbed by one for every
+       hand-off that ended in a question and never came down. Measured on
+       the older test office: 32 messages, 24 completed, 8 stuck, badge
+       reading 8 with nothing actually needing the boss.
+
+       This was written up as needing a comms-lifecycle DECISION — does a
+       wait end on the reply, a timeout, or the boss? For the common case
+       it needs no decision at all: the loop above AWAITS every child
+       dispatch, so by the time it exits, each recipient has run to a
+       terminal state. The awaited thing is done. Saying so is a statement
+       of fact, not a policy.
+
+       Deliberately narrow. Only touches a message still sitting in
+       `awaiting_reply` — one that reached `completed` or `blocked`
+       mid-stream keeps whatever it earned — and it fires only when this
+       run actually dispatched somebody, so a fan-out that matched no
+       hired teammate still reads as waiting, because it is. The genuinely
+       open cases — a recipient who never answers, a boss who wants to
+       clear one by hand — remain open and remain the decision they were. */
+    if (dmQueue.length > 0 && messageId) {
+      const cur = MessageRegistry.getMessage(messageId);
+      if (cur && cur.state === 'awaiting_reply') {
+        const n = dmQueue.length;
+        MessageRegistry.transition(messageId, 'completed', {
+          by: 'host',
+          note: `all ${n} repl${n === 1 ? 'y' : 'ies'} came back`,
+        });
+      }
+    }
+
     /* ── Sub-agent spawn fanout ─────────────────────────────────────
        After all DMs are dispatched, process any SPAWN_SUBAGENT requests
        the parent emitted. Each spawn:
