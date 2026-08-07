@@ -1320,6 +1320,16 @@ function toolsPromptSnippet(tools) {
     'Rules: only one tool call per turn; only invoke tools listed above; if a question needs no tool, just answer.',
     'NEVER write a tool\'s result yourself. After the call, stop. If you have not been handed a result, you do not have one — do not guess it, summarise it, or list what you think it contains.',
     'Use the real value, never the example: [BROWSER_FETCH: <url>] is the shape, not a request. A call whose argument is still a placeholder is refused and nothing is looked up.',
+    /* A marker written INSIDE a sentence survives every strip we have, on
+       purpose: stripToolMarkers only removes lines that are entirely one
+       marker, because cutting one out mid-sentence leaves a broken sentence.
+       Both comments on that decision call it a prompt problem, so this is
+       the prompt half finally being written.
+       Seen in a filed deliverable — the note a boss opens months later:
+       "I've created a new note at [VAULT_NEW: projects/local_file_access.md]
+       to store my thoughts". The marker is not a call there, it is the
+       coworker narrating its own plumbing into a kept record. */
+    'Never write marker syntax inside a sentence. A marker is a call, on its own line — if you are telling the boss what you did, name the file or the page in plain words instead ("saved it to projects/notes.md"), because that sentence is kept and they should not have to read machine syntax to understand it.',
   ].join('\n');
 }
 
