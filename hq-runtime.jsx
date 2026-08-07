@@ -1045,7 +1045,17 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       run: async () => {
         const all = vaultPaths(await CafresoHQClient.vaultList());
         const mine = all.filter(p => p.startsWith(root + '/'));
-        if (!mine.length) return `(your memory is empty — write your first note with [MEMORY_WRITE: notes/foo.md]…[/MEMORY_WRITE])`;
+        /* A tool result has TWO readers: the coworker, who acts on it, and
+           the BOSS, who sees it verbatim in the visit block on the floor.
+           This one taught marker syntax — "[MEMORY_WRITE: notes/foo.md]…
+           [/MEMORY_WRITE]" — which §6 bans outright on the floor, and which
+           is addressed to the wrong person anyway: bosses do not write
+           markers. Seen live in a visit block reading "📁 at the filing
+           cabinet (your memory is empty — write your first note with
+           [MEMORY_WRITE: …])".
+           The coworker already has the vocabulary from its system prompt, so
+           the nudge only has to say WHAT to do, not spell the syntax. */
+        if (!mine.length) return `(your memory is empty — nothing saved here yet; save a note to start one)`;
         return mine.map(p => '• ' + p.slice(root.length + 1)).join('\n');
       },
     });
@@ -1057,7 +1067,8 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
           return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
         } catch (e) {
           if (String(e.message || '').includes('404') || String(e.message || '').toLowerCase().includes('not found')) {
-            return `(no memory at "${rel}" — use [MEMORY_LIST] to see what you've saved)`;
+            // Same two-reader problem as memory_list above.
+            return `(no memory saved at "${rel}" — list your memory to see what is there)`;
           }
           throw e;
         }
