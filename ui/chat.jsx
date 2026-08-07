@@ -1144,7 +1144,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               </div>
             )}
             {agents.map(a => (
-              <div key={a.id} className="item" onClick={()=>{ onDelegate(a); setShowDelegate(false); }}>
+              <div key={a.id} className="item" onClick={()=>{ onDelegate(a, input); setInput(''); setShowDelegate(false); }}>
                 <Sprite data={a.color} scale={1}/>
                 <div style={{display:'flex',flexDirection:'column',lineHeight:1.1}}>
                   <span>{a.name}</span>

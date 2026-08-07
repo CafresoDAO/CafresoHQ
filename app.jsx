@@ -1669,6 +1669,21 @@ ${d.text}` : d.text,
     let buf = '';
     let usedTokens = 0;
     const dmQueue = [];                      // collect every DM the agent emits
+    /* Run-scoped, because the guard after the fan-out loop cannot ask the
+       REGISTRY what state this message is in. `MessageRegistry.getMessage`
+       reads React state, and the write that sets `awaiting_reply` happens
+       in this same run through `setMessages`, which is async.
+
+       Measured, and it is why this is here: when the loop really dispatches
+       children it awaits them, React flushes in the meantime, and the read
+       saw `awaiting_reply` — that path worked, four times on a live chain.
+       When the loop short-circuits with no awaits at all (a self-DM, or a
+       name matching nobody hired) nothing flushes, the read returned the
+       STALE state, and the message stayed stuck at `awaiting_reply`
+       forever — the exact bug the closer exists to fix, reproduced by the
+       closer's own race. */
+    let dmDelivered = 0;                     // children actually dispatched
+    let markedAwaiting = false;              // this run set awaiting_reply
     const subSpawnQueue = [];                // [{role, body}]
     const hireRequestQueue = [];             // [{nameAndRole, body}]
     const hireAssistantQueue = [];           // [{nameAndRole, body}]
@@ -1946,6 +1961,7 @@ ${d.text}` : d.text,
         finalNote = (acks.find(a => a.state === 'blocked')?.note) || 'blocked, no reason given';
       } else if (willFanOut) {
         finalState = 'awaiting_reply';
+        markedAwaiting = true;
         finalNote = `chained to ${dmQueue.length} recipient${dmQueue.length === 1 ? '' : 's'}`;
       } else {
         finalState = 'completed';
@@ -2092,6 +2108,7 @@ ${d.text}` : d.text,
       await dispatchToAgent(target, dm.body, {
         dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
       });
+      dmDelivered++;
     }
 
     /* The wait ends when the thing being waited for has happened.
@@ -2111,22 +2128,38 @@ ${d.text}` : d.text,
        terminal state. The awaited thing is done. Saying so is a statement
        of fact, not a policy.
 
-       Deliberately narrow. Only touches a message still sitting in
-       `awaiting_reply` — one that reached `completed` or `blocked`
-       mid-stream keeps whatever it earned — and it fires only when this
-       run actually dispatched somebody, so a fan-out that matched no
-       hired teammate still reads as waiting, because it is. The genuinely
-       open cases — a recipient who never answers, a boss who wants to
-       clear one by hand — remain open and remain the decision they were. */
-    if (dmQueue.length > 0 && messageId) {
-      const cur = MessageRegistry.getMessage(messageId);
-      if (cur && cur.state === 'awaiting_reply') {
-        const n = dmQueue.length;
-        MessageRegistry.transition(messageId, 'completed', {
-          by: 'host',
-          note: `all ${n} repl${n === 1 ? 'y' : 'ies'} came back`,
-        });
-      }
+       Only touches a message THIS RUN put into `awaiting_reply`; one that
+       reached `completed` or `blocked` mid-stream keeps what it earned,
+       because `markedAwaiting` is set in the same branch that chose the
+       state.
+
+       Two endings, and the second was a correction. The first version left
+       a fan-out that dispatched nobody sitting at `awaiting_reply`, on the
+       argument that it really is still waiting. It is not: a self-DM or a
+       name matching no hired teammate means nothing was sent and nobody
+       will ever answer, so that is a badge that grows forever for a
+       message with no recipient — the very bug this closer exists to fix.
+       It now closes with "nothing was sent — nobody to wait for", and
+       `unsentAsk` is what tells the boss about it in chat.
+
+       The genuinely open cases — a real recipient who never answers, a
+       boss who wants to clear one by hand — remain open and remain the
+       decision they were. */
+    if (markedAwaiting && dmDelivered > 0 && messageId) {
+      MessageRegistry.transition(messageId, 'completed', {
+        by: 'host',
+        note: `all ${dmDelivered} repl${dmDelivered === 1 ? 'y' : 'ies'} came back`,
+      });
+    } else if (markedAwaiting && messageId) {
+      /* Declared a wait, dispatched nobody — a self-DM, or a name matching
+         no hired teammate. The wait is not "over", it never started, and
+         leaving it open would grow the badge for a message nobody will ever
+         answer. `unsentAsk` already tells the boss in chat; this stops the
+         counter claiming something is pending. */
+      MessageRegistry.transition(messageId, 'completed', {
+        by: 'host',
+        note: 'nothing was sent — nobody to wait for',
+      });
     }
 
     /* ── Sub-agent spawn fanout ─────────────────────────────────────
@@ -2744,11 +2777,22 @@ ${d.text}` : d.text,
     };
   }, []);
 
-  const onDelegate = async (a) => {
-    // Use the CEO's last ask (or most recent user message) as the brief.
-    const lastUser = [...chat].reverse().find(m => m.from === 'user');
-    const brief = lastUser ? lastUser.text : 'Standing order: review your backlog and report the top next step.';
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text: `(delegated "${brief}" to ${a.name})` };
+  const onDelegate = async (a, typed) => {
+    /* What the boss just TYPED wins. This used to read only the last user
+       message in chat, so a boss who wrote a request, opened HAND OFF TO…
+       and picked a coworker had their text silently dropped and something
+       older sent instead — the one gesture on this panel that looks like
+       "give them this" was the one thing it would not do.
+
+       And the synthetic wrapper compounded, because it is itself a user
+       message: four clicks produced
+       `(delegated "(delegated "(delegated "(delegated "…" to Nova)" …`
+       and the coworker received the stack. Seen on the floor, four deep.
+       `delegated: true` marks these so they are never picked up as an ask. */
+    const lastUser = [...chat].reverse().find(m => m.from === 'user' && !m.delegated);
+    const brief = (typed && typed.trim())
+      || (lastUser ? lastUser.text : 'Standing order: review your backlog and report the top next step.');
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})` };
     const agentId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);
     onUpdateAgent(a.id, { status: 'busy', mood: 'thinking', task: brief.slice(0, 40) });
