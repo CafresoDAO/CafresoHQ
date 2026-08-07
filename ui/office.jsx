@@ -1372,7 +1372,13 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                           )}
                           {trayCount > 0 && (
                             <Px n="tray" className={'px-tray clickable' + (trayDrop[a.id] ? ' is-landing' : '')}
-                                title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed — click to open the latest`}
+                                /* Says whose. The screen-reader label below
+                                   already named the coworker; the hover text
+                                   didn't, so the two diverged by accident and
+                                   the mouse got the worse sentence. On a floor
+                                   of several desks, "whose out-tray" is the
+                                   whole point of the tray being ON a desk. */
+                                title={`${trayCount} deliver${trayCount === 1 ? 'y' : 'ies'} filed by ${a.name} — click to open the latest`}
                                 onClick={(e)=>{ e.stopPropagation();
                                   if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); }}
                                 {...pressable(()=>{ if (latestArtifact && onOpenArtifact) onOpenArtifact(latestArtifact); },
