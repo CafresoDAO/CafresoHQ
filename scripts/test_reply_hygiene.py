@@ -283,6 +283,48 @@ def main():
     check('a tag mid-sentence is content, not scaffolding',
           out['inlineKept'] == 'Use [DM_TO: name] to reach someone.', repr(out['inlineKept']))
 
+    # ── Every block-form marker has had a guard DECISION ──────────────────
+    #
+    # A marker whose regex demands a closing tag can be written without one,
+    # in which case it silently never parses. For a REQUEST that leaves a
+    # person waiting (a hire, a helper, a hand-off, an access request) the
+    # office must say so; for a WRITE it must not, because "no visit block"
+    # is already the honest record.
+    #
+    # This was a comment claiming "13 block-form markers" — which was a
+    # miscount for 16, and the kind of number that rots the moment someone
+    # adds a marker. As a test it cannot rot: adding a block-form marker
+    # fails here until it is placed in one bucket or the other.
+    src = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
+    names = [(m.start(), m.group(1))
+             for m in re.finditer(r"name: '([A-Z_]+)'", src)]
+    regexes = [(m.start(), m.group(0)) for m in re.finditer(r're: /[^\n]+', src)]
+    block = set()
+    for pos, name in names:
+        near = [rx for p, rx in regexes if 0 <= p - pos < 900]
+        if not near:
+            continue
+        rx = near[0]
+        closing = ('\\/' in rx and name in rx.split('\\/')[1][:40]) \
+            or ('/\\s*' + name) in rx
+        if closing:
+            block.add(name)
+
+    # Guarded by name, in unsentBlocks' own table or a bespoke guard.
+    guarded = set(re.findall(r"\['([A-Z_]+)',", src)) | {'DM_TO', 'REQUEST_ELEVATION'}
+    # Deliberately silent: the tool simply never ran and no visit block says so.
+    write_class = {'VAULT_NEW', 'VAULT_APPEND', 'MEMORY_WRITE', 'MEMORY_APPEND',
+                   'FILE_WRITE', 'EXPORT_PPTX', 'EXPORT_DOCX', 'EXPORT_PDF',
+                   'GENERATE_IMAGE', 'GENERATE_VIDEO'}
+    undecided = block - guarded - write_class
+    check('every block-form marker is either guarded or a known write',
+          not undecided,
+          'undecided: ' + ', '.join(sorted(undecided)) +
+          ' — add a guard in unsentBlocks, or list it as write-class with a reason')
+    check('the request-class guards all still exist',
+          {'DM_TO', 'HANDOFF_TO', 'HIRE_AGENT', 'HIRE_ASSISTANT',
+           'REQUEST_ELEVATION', 'SPAWN_SUBAGENT'} <= guarded)
+
     print()
     if FAILS:
         print(f'reply hygiene: {len(FAILS)} failure(s)')
