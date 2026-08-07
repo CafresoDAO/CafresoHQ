@@ -110,6 +110,12 @@ R.closedWriteOk = unsentBlocks('[MEMORY_WRITE: a.md]\nbody\n[/MEMORY_WRITE]');
 R.echoedLabel  = visibleReply('[Llama · Generalist]: [MEMORY_WRITE: notes/figs.md]\nThe boss likes figs.');
 R.refDefKept   = visibleReply('[1]: https://example.com\nSee the link.');
 R.midReplyKept = visibleReply('I asked, and\n[Mika · Head of Inbox]: said no.');
+/* Verbatim from a filed task delivery, 2026-08-07. A stale line from earlier
+   context, then the speaker's OWN label, then the real answer — so the label
+   was not at the start of the text and survived. Naming the speaker is what
+   separates it from the quotation above. */
+R.selfMidText  = visibleReply('The boss likes figs.\n\n[Llama · Generalist]: Grape.', 'Llama');
+R.othersKept   = visibleReply('I asked, and\n[Mika · Head of Inbox]: said no.', 'Llama');
 R.noMarkers    = visibleReply('Red, green, blue.');
 R.empty        = visibleReply('');
 R.nullIn       = visibleReply(null);
@@ -312,6 +318,10 @@ def main():
           out['refDefKept'].startswith('[1]: https://example.com'), repr(out['refDefKept']))
     check('a label quoted mid-reply is content, not a self-announcement',
           '[Mika · Head of Inbox]:' in out['midReplyKept'], repr(out['midReplyKept']))
+    check('the speaker\'s own label goes wherever it lands, not just line one',
+          out['selfMidText'] == 'The boss likes figs.\n\nGrape.', repr(out['selfMidText']))
+    check('…and another coworker\'s label is still content',
+          '[Mika · Head of Inbox]:' in out['othersKept'], repr(out['othersKept']))
     check('an ordinary reply is silent', out['ubNone'] is None)
     check('a good marker beside a broken one only flags the broken one',
           out['ubMixed'] is not None and out['ubMixed'].count('_(') == 1, out['ubMixed'])

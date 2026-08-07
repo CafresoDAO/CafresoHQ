@@ -1740,7 +1740,7 @@ ${d.text}` : d.text,
          then silently overwritten one frame later — which is why the fix
          above looked like it had done nothing. */
       flush.cancel();
-      const cleaned = HQ.visibleReply(buf);
+      const cleaned = HQ.visibleReply(buf, agent && agent.name);
       setChat(prev => prev.map(m => m.id === agentMsgId
         ? { ...m, text: cleaned }
         : m));
@@ -2688,7 +2688,7 @@ ${d.text}` : d.text,
       flush.flushNow();
       /* Third dispatch path, same gap the task path had: no ACK stripping,
          so a bare marker reached the bubble and the journal. */
-      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf));
+      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf, a && a.name));
       /* …and into the bubble. cleanBuf already fed the desk monitor, the
          activity detail, the journal and the approval scan — every record
          EXCEPT the one the boss is actually reading, which kept whatever
@@ -3058,7 +3058,7 @@ ${d.text}` : d.text,
          scaffolding, not work. One strip here covers all four. It has to
          run before visibleReply, whose \n{3,} collapse would edit the echo
          out from under the exact-string match. */
-      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo))));
+      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
       // Same gap as the dispatch path: every record got cleanBuf, the bubble did not.
       flush.cancel();
       setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanBuf } : m));

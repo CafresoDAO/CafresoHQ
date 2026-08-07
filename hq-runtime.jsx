@@ -400,8 +400,32 @@ function vaultPaths(list) {
    emits it, so a markdown reference definition (`[1]: http://…`), a
    checkbox, or a real tool marker cannot match. Start of text only — a
    mid-reply quotation of someone else stays. */
-function stripSelfLabel(text) {
-  return String(text || '').replace(/^\s*\[[^\]\n]*\s·\s[^\]\n]*\]\s*:\s*/, '');
+function stripSelfLabel(text, selfName) {
+  let out = String(text || '');
+  /* When the office knows WHO is replying it can do better than "first line
+     only". A label naming somebody else is content — a coworker quoting what
+     Mika said. A label naming the SPEAKER is never content, wherever it
+     lands, because a person does not announce themselves mid-sentence.
+
+     A real task delivery made the difference concrete. Asked for one fruit,
+     Llama filed:
+
+       The boss likes figs.
+
+       [Llama · Generalist]: Grape.
+
+     — a stale line from earlier context, then its own label, then the actual
+     answer. Anchored at the start of TEXT the label survived; anchored at
+     the start of a LINE, with the speaker's own name required, it goes and
+     "Grape." is what the boss reads. */
+  const self = String(selfName || '').trim();
+  if (self) {
+    const esc = self.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp('^[ \\t]*\\[\\s*' + esc + '[^\\]\\n]*\\]\\s*:[ \\t]*', 'gim'), '');
+  }
+  /* Fallback for callers that cannot name the speaker: the office's own
+     `${name} · ${role}` template at the very start of the reply. */
+  return out.replace(/^\s*\[[^\]\n]*\s·\s[^\]\n]*\]\s*:\s*/, '');
 }
 
 function stripOrphanTags(text) {
@@ -563,14 +587,14 @@ function unsentBlocks(text) {
   return notes.length ? notes.join('\n') : null;
 }
 
-function visibleReply(text) {
+function visibleReply(text, selfName) {
   const raw = String(text || '');
   // Blocks first: their delimiters are also whole-line markers, so letting
   // stripOrphanTags run first would remove the tags this needs to find the
   // payload by, and strand the body exactly as before.
   // stripSelfLabel FIRST: while the echoed label is still there the marker
   // is not at column zero, and the line-anchored strip below cannot see it.
-  const cleaned = stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(raw))))
+  const cleaned = stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(raw, selfName))))
     .replace(/\n{3,}/g, '\n\n').trim();
   if (cleaned) return cleaned;
   /* Nothing survived the strip. `stripAcks` matches ANY lowercase state
