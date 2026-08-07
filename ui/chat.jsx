@@ -1022,7 +1022,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       <button title="Quote-reply" onClick={quoteReply}>↩</button>
                       {m.from !== 'user' ? (
                         <>
-                          <button title="Re-run this prompt" onClick={() => {
+                          <button title="Ask this again" onClick={() => {
                             /* Scan only THIS message's thread — the chat array
                                interleaves all threads, so an unscoped walk could
                                grab a user prompt from a different room. */

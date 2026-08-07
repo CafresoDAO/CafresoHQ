@@ -885,7 +885,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*GENERATE_IMAGE\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_IMAGE\s*\]/i,
     requires: () => true,
     doc:
-      '- [GENERATE_IMAGE: <vault path, e.g. Images/concept.png>]\n<image prompt>\n[/GENERATE_IMAGE] — generate a real image and save to the vault.\n' +
+      '- [GENERATE_IMAGE: <vault path, e.g. Images/concept.png>]\n<what the image should show>\n[/GENERATE_IMAGE] — generate a real image and save to the vault.\n' +
       '  Uses the provider/model from Settings → Media. Returns the saved vault path.',
     docShort: 'Generate a real image using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {
@@ -898,7 +898,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*GENERATE_VIDEO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_VIDEO\s*\]/i,
     requires: () => true,
     doc:
-      '- [GENERATE_VIDEO: <vault path, e.g. Videos/demo.mp4>]\n<video prompt>\n[/GENERATE_VIDEO] — generate a real video and save to the vault.\n' +
+      '- [GENERATE_VIDEO: <vault path, e.g. Videos/demo.mp4>]\n<what the video should show>\n[/GENERATE_VIDEO] — generate a real video and save to the vault.\n' +
       '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved vault path.',
     docShort: 'Generate a real video using the configured provider and save to the vault.',
     run: async (path, _ctx, body) => {

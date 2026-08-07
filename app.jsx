@@ -1451,7 +1451,7 @@ ${d.text}` : d.text,
         },
       });
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `(DM chain between ${dmFrom ? dmFrom.name : 'sender'} and ${agent.name} stopped — depth ${dmDepth} > cap ${DM_DEPTH_CAP}. Re-prompt directly to continue.)`,
+        text: `(DM chain between ${dmFrom ? dmFrom.name : 'sender'} and ${agent.name} stopped — depth ${dmDepth} > cap ${DM_DEPTH_CAP}. Ask them directly to continue.)`,
         thread: 'team' }]);
       return;
     }
@@ -4461,7 +4461,7 @@ ${d.text}` : d.text,
               title="Memory shelf, stand-up, research missions, meeting rooms, workflows"
               items={[
                 { key: 'memory',   label: '📁 Memory shelf', count: 0,
-                  title: 'Long-term notes folded into every prompt',
+                  title: 'Long-term notes your coworkers carry into every job',
                   onClick: () => goTo('memory') },
                 { key: 'standup',  label: '🌅 Stand-up', count: 0,
                   title: 'End-of-day stand-up (U)', onClick: onOpenStandup },

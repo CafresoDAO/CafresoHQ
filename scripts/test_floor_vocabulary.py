@@ -81,6 +81,23 @@ AGENT_WHY = ('means the person here — the office calls them coworkers. If it '
              'genuinely means a runtime, a CLI tool or a folder path, add it '
              'to AGENT_OK with a note.')
 
+# Boss-facing surfaces ONLY — see the boss_facing flag in the scan loop.
+# Found on the first-run path: the New Meeting modal's Topic field read
+# "(optional — included in opening prompt context)", two banned words in
+# five, on a modal reachable from the Tools drawer. Three more were live at
+# the same time: "Re-run this prompt" on the chat retry button, "folded into
+# every prompt" on the Memory tile, and "Re-prompt directly" in a system
+# message about a stopped DM chain.
+#
+# Deliberately NOT applied to prompt prose. "<image prompt>" in the
+# GENERATE_IMAGE instruction is the correct term for what an image model
+# takes, and banning it there would be the rule over-claiming its scope —
+# the same fault as the 221-hit scan this suite rejected for noise.
+PROMPT_WORD_RE = re.compile(r'\bre-?prompts?\b|\bprompts?\b', re.I)
+PROMPT_WHY = ('names the machinery. A boss gives an assignment, asks a '
+              'question, or writes a brief. Reserve "prompt" for text the '
+              'MODEL reads.')
+
 # Files allowed to NAME the banned words while explaining why they were
 # removed. Their comments are stripped anyway; this covers the rare case of
 # a word inside a string that is documentation (e.g. a test fixture).
@@ -229,18 +246,26 @@ def main():
                 continue
             body = blank_comments(path.read_text(encoding='utf-8'))
             checked += 1
-            spots = [(m.start(), m.group(0)) for m in DISPLAY_RE.finditer(body)]
-            spots += [(m.start(1), m.group(1)) for m in JSX_TEXT_RE.finditer(body)]
-            spots += [(m.start(1), m.group(1)) for m in JSX_BETWEEN_RE.finditer(body)
+            # Third element: does a BOSS read this, or only the model?
+            # Most rules apply to both — the model must not learn "sub-agent"
+            # any more than the floor may print it. `prompt` is the exception
+            # and the reason this flag exists: it is banned copy on a human
+            # surface and the CORRECT word in an instruction to an image
+            # model ("<image prompt>"). One list, two audiences.
+            spots = [(m.start(), m.group(0), True) for m in DISPLAY_RE.finditer(body)]
+            spots += [(m.start(1), m.group(1), True) for m in JSX_TEXT_RE.finditer(body)]
+            spots += [(m.start(1), m.group(1), True) for m in JSX_BETWEEN_RE.finditer(body)
                       if _reads_like_copy(m.group(1))]
-            spots += [(m.start(1), m.group(1)) for m in DIALOG_RE.finditer(body)]
-            spots += list(_fallback_spots(body))
-            spots += list(_prompt_spots(body))
-            for start, raw in spots:
+            spots += [(m.start(1), m.group(1), True) for m in DIALOG_RE.finditer(body)]
+            spots += [(s, r, True) for s, r in _fallback_spots(body)]
+            spots += [(s, r, False) for s, r in _prompt_spots(body)]
+            for start, raw, boss_facing in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)
                 if rel not in CONFIG_SURFACES and not any(ok in raw for ok in AGENT_OK):
                     checks.append((AGENT_RE, AGENT_WHY))
+                if boss_facing:
+                    checks.append((PROMPT_WORD_RE, PROMPT_WHY))
                 for pattern, why in checks:
                     m = pattern.search(prose)
                     if not m:

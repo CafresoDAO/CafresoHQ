@@ -209,7 +209,12 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
           />
         </label>
         <label>
-          Topic <span style={{opacity:0.5,fontSize:9,marginLeft:4}}>(optional — included in opening prompt context)</span>
+          {/* §6. Was "(optional — included in opening prompt context)":
+              two banned words in five, on a modal a first-run boss reaches
+              from the Tools drawer. It also described the plumbing rather
+              than the effect — what a boss wants to know is who sees it
+              and when, not which part of the machinery it is folded into. */}
+          Topic <span style={{opacity:0.5,fontSize:9,marginLeft:4}}>(optional — everyone in the room sees this when it opens)</span>
           <input
             value={topic}
             onChange={e => setTopic(e.target.value)}
