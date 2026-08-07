@@ -3210,7 +3210,23 @@ ${d.text}` : d.text,
         ? { status: 'idle', mood: 'idle', task: '' }
         : { status: 'idle', mood: 'stuck', task: snagSentence(err && err.message || String(err)) });
       // Aborted task should go back to inbox so the user can re-drop it; failed tasks too.
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'inbox'), assignedTo: null } : t));
+      /* Keep the assignee when the BOSS stopped it. Every other line in this
+         handler distinguishes a user-stop from a failure — mood stays 'idle'
+         rather than 'stuck' two lines up, §5 keeps it off the XP ledger — and
+         then this one treated both the same and unclaimed the work.
+
+         Sending someone for coffee says "pause them", not "this is no longer
+         theirs". Measured: started a task, clicked the mug, and the card came
+         back unassigned, so ▶ START had vanished (it is gated on a resolved
+         coworker) and the boss had to re-pick the same person before they
+         could resume.
+
+         A genuine failure still clears it, deliberately: there the office's
+         §7 advice is to try someone else, and an empty assignee is what makes
+         that the easy next move. */
+      setTasks(prev => prev.map(t => t.id === taskId
+        ? { ...applyStatus(t, 'inbox'), assignedTo: aborted ? t.assignedTo : null }
+        : t));
       logActivity(aborted
         ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: `run stopped — "${task.title}" back to inbox` }
         : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'failed', priority: 'attention', text: `failed "${task.title}" — back to inbox`, detail: (err && err.message || String(err)).slice(0, 240) });
