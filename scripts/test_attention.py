@@ -99,6 +99,22 @@ R.noAgent = groupAttention([
   { id:'2', text:'something', priority:'attention', unread:true },
 ]).length;
 
+// ── ghosts: items from coworkers who were let go ────────────────────────
+const ROSTER = [{ id: 'a1', name: 'Llama' }, { id: 'a2', name: 'Claude' }];
+const MIXED = [
+  { id: 'e1', agentId: 'a1', agentName: 'Llama', text: 'snag', priority: 'attention', unread: true },
+  { id: 'e2', agentId: 'gone', agentName: 'Aiko', text: 'snag', priority: 'attention', unread: true },
+  { id: 'e3', agentName: 'Kenji', text: 'snag', priority: 'attention', unread: true },
+  { id: 'e4', text: 'office-level notice', priority: 'attention', unread: true },
+];
+R.ghostFiltered   = onRoster(MIXED, ROSTER).map(e => e.id);
+R.ghostNoRoster   = onRoster(MIXED, undefined).map(e => e.id);
+R.ghostEmptyRost  = onRoster(MIXED, []).map(e => e.id);
+R.ghostByName     = onRoster([{ id: 'x', agentName: 'llama', priority:'attention', unread:true }], ROSTER).length;
+R.ghostNullList   = onRoster(null, ROSTER);
+R.countWithRoster = attentionCount(MIXED, [], ROSTER);
+R.countNoRoster   = attentionCount(MIXED, [], undefined);
+R.countApprovals  = attentionCount(MIXED, [{id:'p1'}], ROSTER);
 console.log(JSON.stringify(R));
 '''
 
@@ -138,6 +154,24 @@ def main():
           out['holeyGroups'] == 1, repr(out['holeyGroups']))
     check('an entry with no agent still groups by text',
           out['noAgent'] == 1, repr(out['noAgent']))
+
+    # ghosts — a let-go coworker's item is not the boss's problem
+    check('items from departed coworkers leave the queue',
+          out['ghostFiltered'] == ['e1', 'e4'], str(out['ghostFiltered']))
+    check('an office-level item (no coworker) always survives',
+          'e4' in out['ghostFiltered'])
+    check('no roster passed changes nothing — under-claim, never over-hide',
+          out['ghostNoRoster'] == ['e1', 'e2', 'e3', 'e4'], str(out['ghostNoRoster']))
+    check('an EMPTY roster still keeps office-level items',
+          out['ghostEmptyRost'] == ['e4'], str(out['ghostEmptyRost']))
+    check('name match is case-insensitive', out['ghostByName'] == 1)
+    check('a null list is safe', out['ghostNullList'] == [])
+    check('the count drops the ghosts too', out['countWithRoster'] == 2,
+          str(out['countWithRoster']))
+    check('…and counts them when no roster is known', out['countNoRoster'] == 4,
+          str(out['countNoRoster']))
+    check('pending approvals still add on top', out['countApprovals'] == 3,
+          str(out['countApprovals']))
 
     print()
     if FAILS:

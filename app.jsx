@@ -3784,7 +3784,7 @@ ${d.text}` : d.text,
      one decision). Approvals are folded in here so the pill and the
      inbox tab agree on a single number. */
   const attentionCount = useMemoA(
-    () => attentionCountOf(activity, approvals), [activity, approvals]);
+    () => attentionCountOf(activity, approvals, agents), [activity, approvals, agents]);
   const openAttention = useCallbackA(() => {
     navTo('team');
     setTimeout(() => window.dispatchEvent(new CustomEvent('cafresohq:openAgentInbox')), 60);

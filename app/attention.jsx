@@ -54,14 +54,52 @@ function groupAttention(entries) {
   return order.map(k => byKey.get(k));
 }
 
+/* ── Ghosts ───────────────────────────────────────────────────────────────
+   An item raised by a coworker who has since been let go is not the boss's
+   problem any more. Measured on a real floor: the pill read **15 need you**,
+   and 12 of them belonged to Aiko, Kenji, Sora, Miko, Taro and Hana — six
+   coworkers no longer on the roster. Every one was unactionable by
+   construction: you cannot retry a run for someone who does not work here,
+   and "that brain isn't signed in yet" pointed at a brain nobody uses.
+
+   A queue that only grows, and mostly with things you cannot act on, is a
+   queue a boss stops reading — which costs them the one item that IS real.
+
+   The ACTIVITY LOG keeps every entry: this filters the queue, not the
+   history. Same split as the grouping above — "what needs me" is a
+   different question from "what happened".
+
+   Two deliberate refusals to over-filter:
+   - No roster passed (undefined) → change nothing. Under-claiming beats
+     wrongly hiding the boss's work.
+   - An entry with no coworker on it is office-level and always survives;
+     it belongs to the office, which has not been let go. */
+function onRoster(entries, agents) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!Array.isArray(agents)) return list;
+  const ids = new Set();
+  const names = new Set();
+  for (const a of agents) {
+    if (!a) continue;
+    if (a.id) ids.add(a.id);
+    if (a.name) names.add(String(a.name).toLowerCase());
+  }
+  return list.filter(e => {
+    if (!e) return false;
+    if (e.agentId) return ids.has(e.agentId);
+    if (e.agentName) return names.has(String(e.agentName).toLowerCase());
+    return true;
+  });
+}
+
 /* How many things need the boss, counting each distinct problem once.
    Pending approvals are always their own item — two stamps waiting are two
    decisions even when they read alike. */
-function attentionCount(activity, approvals) {
-  const unread = (Array.isArray(activity) ? activity : [])
+function attentionCount(activity, approvals, agents) {
+  const unread = onRoster(activity, agents)
     .filter(e => e && e.priority === 'attention' && e.unread);
   const pending = Array.isArray(approvals) ? approvals.length : 0;
   return groupAttention(unread).length + pending;
 }
 
-export { attentionCount, attentionKey, groupAttention };
+export { attentionCount, attentionKey, groupAttention, onRoster };

@@ -3,7 +3,7 @@ import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
 import { brainName, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
-import { attentionCount as attentionCountOf, groupAttention } from '../app/attention.jsx';
+import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
 const MEM_CAP = HQ.MEMORY_PROMPT_CAP;
@@ -226,8 +226,8 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
   /* Same rule as the office pill and the nav badge — one shared helper, so
      the three can't drift apart (app/attention.jsx). */
   const attentionCount = React.useMemo(
-    () => attentionCountOf(activity, pendingApprovals),
-    [activity, pendingApprovals]);
+    () => attentionCountOf(activity, pendingApprovals, agents),
+    [activity, pendingApprovals, agents]);
   const doneCount = React.useMemo(
     () => activity.filter(e => e.action === 'done').length, [activity]);
 
@@ -245,11 +245,14 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     let xs = activity;
     if (selectedAgentId) xs = xs.filter(e => e.agentId === selectedAgentId);
     if (tab === 'attention') {
-      return groupAttention(xs.filter(e => e.priority === 'attention'));
+      /* onRoster here as well as in the count — if the pill filtered ghosts
+         and this list didn't, the badge would say 3 over a list of 15, which
+         is a worse bug than the one being fixed. One rule, both surfaces. */
+      return groupAttention(onRoster(xs, agents).filter(e => e.priority === 'attention'));
     }
     if (tab === 'done') xs = xs.filter(e => e.action === 'done');
     return xs.map(e => ({ key: e.id, entry: e, count: 1, ids: [e.id] }));
-  }, [activity, selectedAgentId, tab]);
+  }, [activity, selectedAgentId, tab, agents]);
 
   /* Opening a group marks every occurrence read, not just the newest —
      otherwise the count would drop by one and the same row would come

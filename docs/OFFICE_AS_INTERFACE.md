@@ -1260,6 +1260,32 @@ settings — never on the floor, the cards, or onboarding.
 > inbox tab, so the three can't drift. Verified live: 21 → 13 on all three
 > at once, a `×2` row reads "latest of 2", opening it moves 13 → 12 (one
 > item, not two), and both underlying entries persist as read.
+>
+> ✅ **…and most of the rest were ghosts (2026-08-06).** Grouping fixed the
+> double-counting; it didn't ask whether the items were the boss's problem
+> at all. The pill had climbed back to **⚠ 15 need you**. Counted them: 12
+> belonged to **Aiko, Kenji, Sora, Miko, Taro and Hana** — six coworkers no
+> longer on the roster.
+>
+> Every one was unactionable *by construction*: you cannot retry a run for
+> someone who does not work here, and "that brain isn't signed in yet"
+> pointed at a brain nobody uses any more. A queue that only grows, and
+> mostly with things you can't act on, is a queue a boss stops reading —
+> which costs them the one item that is real.
+>
+> `onRoster()` drops them from the **queue**, never from the log — the same
+> split grouping already relies on: *"what needs me"* is a different
+> question from *"what happened"*. Two deliberate refusals to over-filter:
+> a missing roster changes nothing (under-claiming beats wrongly hiding the
+> boss's work), and an entry with no coworker on it is office-level and
+> always survives, because the office hasn't been let go.
+>
+> **The filter had to land on the list as well as the count.** A pill
+> reading 3 over a list of 15 would be a worse bug than the one being
+> fixed, so `onRoster` runs in `AgentInbox`'s attention tab too.
+> Verified live, all four surfaces at once: office pill **15 → 3**, nav
+> badge 3, tab "Needs attention · 3", and exactly 3 rows listed — every one
+> of them Llama, who is still on the payroll and whose failures retry.
 
 > ✅ **Walked §3 "first run" for real (2026-08-06).** Every check this
 > session had been run against an environment full of accumulated test
