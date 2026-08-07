@@ -3083,7 +3083,13 @@ ${d.text}` : d.text,
      `tasks` closure yet. Callers that just minted one pass it directly; the
      setTasks calls below still key off taskId and run against fresh state,
      so nothing else changes. */
-  const onTaskDropOnAgent = async (taskId, agent, taskFresh) => {
+  /* `opts.auto`     — a chain step, not a boss dropping a folder. Never
+                       prompts, and never displaces: automation must not
+                       stop to ask a question the boss did not initiate,
+                       and it must not bin a running job to make room.
+     `opts.priorResult` — the previous step's output, carried into the
+                       brief. See triggerChainStep for why this exists. */
+  const onTaskDropOnAgent = async (taskId, agent, taskFresh, opts = {}) => {
     const task = taskFresh || tasks.find(t => t.id === taskId);
     if (!task) return;
 
@@ -3103,6 +3109,17 @@ ${d.text}` : d.text,
        the displaced card why it moved. */
     const displaced = tasks.find(t =>
       t && t.id !== taskId && t.assignedTo === agent.id && t.status === 'doing');
+    if (displaced && opts.auto) {
+      /* A chain step landing on someone mid-run. Don't ask, don't displace
+         — leave it in the inbox saying so, and let the boss start it. */
+      setTasks(prev => prev.map(t => t.id === taskId
+        ? { ...t, assignedTo: agent.id,
+            stalledNote: `${agent.name} was still on "${displaced.title}" when this step came up — start it when they're free` }
+        : t));
+      logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
+        action: 'progress', text: `couldn't pick up "${task.title}" — still on "${displaced.title}"` });
+      return;
+    }
     if (displaced) {
       const ok = window.confirm(
         `${agent.name} is working on "${displaced.title}".\n\n` +
@@ -3123,7 +3140,13 @@ ${d.text}` : d.text,
     logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'assigned', taskId, text: `picked up "${task.title}" 📁` });
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
 
-    const brief = task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title;
+    /* A chained step gets the previous step's output. Without it the second
+       half of a workflow runs as though the first half never happened —
+       which is the whole point of chaining. See triggerChainStep. */
+    const brief = (task.detail ? `${task.title}\n\nDetails: ${task.detail}` : task.title)
+      + (opts.priorResult
+          ? `\n\nWhat the previous step produced:\n${String(opts.priorResult).slice(0, 800)}`
+          : '');
     // "started" for a starter card (the user clicked), "dropped" for a drag.
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You',
       text: `(${taskFresh ? 'started' : 'dropped'} "${task.title}" on ${agent.name}'s desk)` };
@@ -3371,11 +3394,18 @@ ${d.text}` : d.text,
       agents.find(a => a.id === nextTask.assignedTo) ||
       agents.find(a => a.status === 'idle');
     if (!agent) return; // no agent available — task stays in inbox
-    const prompt = [
-      nextTask.detail || nextTask.title,
-      priorResult ? `\n\nContext from previous step:\n${priorResult.slice(0, 800)}` : '',
-    ].join('').trim();
-    onTaskDropOnAgent(nextTask.id, agent);
+    /* This used to build a `prompt` here — the next step's brief WITH the
+       previous step's output appended — and then call onTaskDropOnAgent
+       without it. The variable was assigned and never read, so every
+       chained workflow ran step two on its own title alone, as though step
+       one had never happened. A chain that carries nothing between its
+       links is just two unrelated tasks that happen to run in order.
+
+       Sixth instance of computed-and-discarded, and the most expensive:
+       the others dropped a label or a counter, this one dropped the entire
+       reason the feature exists. Now handed over explicitly, and built
+       inside onTaskDropOnAgent so the brief has one author. */
+    onTaskDropOnAgent(nextTask.id, agent, null, { auto: true, priorResult });
   }, [agents, onTaskDropOnAgent]);
 
   // Memory
