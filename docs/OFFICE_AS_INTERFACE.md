@@ -829,6 +829,14 @@ should extend that boundary, not blur it.
   is not, it is what the lifecycle does in normal use. Closing it means
   deciding what resolves a wait — the reply landing, a timeout, or the boss —
   which is a comms-lifecycle decision rather than a one-line fix.
+  Checked the escape hatch too, and there is none: the Inbox modal's only
+  controls are four filter tabs and CLOSE. Expanding a thread does show each
+  message's real state (`AWAITING REPLY` is right there, honestly labelled),
+  so the DETAIL is truthful — but nothing in the UI can resolve, dismiss or
+  close a message. The boss can watch the number and cannot touch it. One
+  more oddity while looking: under the ACTIVE filter the single visible row
+  is badged COMPLETED, because a thread shows its root's state while the
+  active messages are the replies nested inside it.
 - **The boss is typed `agent` on the vault map**, so the analysis panel counts
   the office's owner among its coworkers — "3 coworkers" for two hired. The
   node itself now reads *"You (boss)"* rather than a mysterious colleague
