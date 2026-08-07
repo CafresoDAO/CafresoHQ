@@ -204,7 +204,7 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
             <span className="tree-chev">{isOpen ? '▾' : '▸'}</span>
             <span className="tree-icon">{isOpen ? '📂' : '📁'}</span>
             <span className="tree-name">{e.name}</span>
-            {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by an agent">A</span>}
+            {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by a coworker">A</span>}
             {rowActions(e)}
           </div>
           {isOpen && kids && renderEntries(kids, depth + 1)}
@@ -215,7 +215,7 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     return (
       <div key={e.path} className={'tree-row tree-file' + (pulsePaths && pulsePaths.has(e.path) ? ' agent-wrote' : '')} style={{paddingLeft: 10 + depth * 14 + 14}} onClick={() => onSelectFile && onSelectFile(e.path)}>
         <span className="tree-name">{e.name}</span>
-        {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by an agent">A</span>}
+        {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by a coworker">A</span>}
         {e.size > 0 && <span className="tree-size">{e.size < 1024 ? `${e.size} B` : `${(e.size / 1024).toFixed(1)} KB`}</span>}
         {rowActions(e)}
       </div>

@@ -1301,7 +1301,7 @@ function RoomInvite({ allAgents, currentIds, onInvite }) {
   const remaining = (allAgents || []).filter(a => !currentIds.includes(a.id));
   return (
     <span className="room-invite-wrap" ref={wrapRef}>
-      <button className="room-invite-btn" onClick={() => setOpen(o => !o)} title="Invite another agent">
+      <button className="room-invite-btn" onClick={() => setOpen(o => !o)} title="Invite another coworker">
         + invite
       </button>
       {open && (

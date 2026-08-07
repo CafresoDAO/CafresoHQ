@@ -929,7 +929,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                      e.dataTransfer.setData('task', t.id);
                      e.dataTransfer.effectAllowed = 'move';
                    }}
-                   title="Drag to an agent's desk to delegate">
+                   title="Drag to a coworker's desk to delegate">
                 <div className="otr-card-row">
                   <span className={`otr-pri pri-${t.priority || 'med'}`}>{t.priority || 'med'}</span>
                   <div className="otr-card-title">{t.title}</div>
@@ -955,7 +955,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                               if (a && onTaskDropOnAgent) onTaskDropOnAgent(t.id, a);
                               else if (onAssignTask) onAssignTask(t.id, id);
                             }}
-                            title="Assign to an agent">
+                            title="Assign to a coworker">
                       <option value="">Assign to…</option>
                       {agents.map(a => (
                         <option key={a.id} value={a.id}>{a.name}</option>
@@ -991,7 +991,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 <span style={{ fontSize: 10 }}>{MOOD_ICON[a.mood] || ''}</span>
               </div>
             ))}
-            <div className="mas-plus" onClick={onHire} title="Hire agent">+</div>
+            <div className="mas-plus" onClick={onHire} title="Hire a coworker">+</div>
           </div>
         </div>
       )}
@@ -1129,7 +1129,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <div className="px-tank" aria-hidden="true" />
               <Px n="sign_hq" s={2} className="px-sign" />
               {anyLive && (
-                <span className="px-livelamp" title="An agent is working right now">
+                <span className="px-livelamp" title="Someone is working right now">
                   ● {vocab.live}
                 </span>
               )}

@@ -4053,7 +4053,7 @@ ${d.text}` : d.text,
             <div className="chip mobile-hidden"><span className="dot"/> LIVE</div>
             <div className="chip mobile-hidden">{agents.filter(a=>a.status==='busy'||a.status==='active').length} WORKING</div>
             <div className="chip mobile-hidden">{agents.length} HIRED</div>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · agent message registry (active handoffs, blocked tasks, failures)">
+            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · what your coworkers have handed to each other — live handoffs, blocked jobs, failures">
               📬 INBOX{inboxActiveCount > 0 ? ` · ${inboxActiveCount}` : ''}
             </Btn>
             {/* Six launchers folded into one menu. The strip needed 1024px

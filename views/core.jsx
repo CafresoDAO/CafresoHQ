@@ -523,7 +523,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
             color: 'var(--brand-coffee)',
             marginRight: 8,
           }}
-          title="Toggle agent activity inbox"
+          title="Show what your coworkers have been doing"
         >📥 INBOX</button>
         <button
           onClick={onHire}
@@ -605,7 +605,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                   className="px-btn ghost team-inbox-btn"
                   style={{fontSize: 'var(--text-9)', position: 'absolute', top: 6, right: 6}}
                   onClick={(e)=>{ e.stopPropagation(); setShowInbox(true); setSelectedAgentId(a.id); }}
-                  title="Show this agent's activity"
+                  title="Show what this coworker has been doing"
                 >📥</button>
                 {lastFailed && onRetry ? (
                   <div className="team-card-actions">

@@ -848,7 +848,7 @@ function MorningReportModal({ report, onClose }) {
         <div className="cb-panel" style={{ marginBottom: 'var(--sp-4)' }}>
           <div className="lbl">🌙 NIGHT SHIFT — THE LEAD STORY</div>
           <div className="tiny" style={{ marginTop: 2 }}>
-            Your agents worked while you were gone: {report.nightRuns.length} run{report.nightRuns.length === 1 ? '' : 's'},
+            Your coworkers worked while you were gone: {report.nightRuns.length} run{report.nightRuns.length === 1 ? '' : 's'},
             {' '}{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0)} note{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0) === 1 ? '' : 's'} written to the vault.
           </div>
           {report.nightRuns.slice(0, 5).map(r => (

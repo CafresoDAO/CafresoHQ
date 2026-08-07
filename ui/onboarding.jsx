@@ -11,7 +11,7 @@ const NOTIF_FILTERS = [
   { value: 'all',      label: 'All' },
   { value: 'approval', label: 'Approvals' },
   { value: 'receipt',  label: 'Receipts' },
-  { value: 'agent',    label: 'Agents' },
+  { value: 'agent',    label: 'Coworkers' },
   { value: 'mission',  label: 'Missions' },
   { value: 'system',   label: 'System' },
 ];
@@ -287,7 +287,7 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
-    { k: 'build', done: !!built,    n: 5, label: 'Create your first Project',  hint: 'Agents build docs, decks, code & sites here — preview them live.', act: onProjects, cta: 'New Project' },
+    { k: 'build', done: !!built,    n: 5, label: 'Create your first Project',  hint: 'Your coworkers build docs, decks, code & sites here — preview them live.', act: onProjects, cta: 'New Project' },
     { k: 'watch', done: !!sawWork,  n: 6, label: 'Watch them work',           hint: 'Desks light up; the Team inbox logs every action.', act: onWatch, cta: 'Open office' },
   ];
   const doneCount = steps.filter(s => s.done).length;

@@ -255,7 +255,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     <div className="ws-root">
       <div className="ws-topbar">
         <div className="ws-seg ws-modeseg">
-          <button className={mode === 'workspace' ? 'on' : ''} onClick={() => flipMode('workspace')} title="Unified Workspace — files, editor, terminal & agents on one screen">Workspace</button>
+          <button className={mode === 'workspace' ? 'on' : ''} onClick={() => flipMode('workspace')} title="Unified Workspace — files, editor, terminal and your coworkers on one screen">Workspace</button>
           <button className={mode === 'classic' ? 'on' : ''} onClick={() => flipMode('classic')} title="The original Projects view">Classic</button>
         </div>
         {mode === 'workspace' && project && (
