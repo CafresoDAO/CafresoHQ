@@ -505,6 +505,14 @@ is wrong, suspect delivery before logic — and note that the same run also
 exposed a queued `requestAnimationFrame` repainting raw text one frame after
 the fix, so "the code is in the bundle" is not evidence either.
 
+**A failed edit does not stop the commit that follows it.** Chaining a
+`python3 - <<PY` edit and a `git commit` in one shell call means the commit
+runs even when the script raises: the assertion fired, the message still went
+out describing a change that was not in the file. Do the edit, CHECK it
+landed (`grep` for the new text), then commit as a separate step. This is the
+same failure the app keeps having — a claim outliving the thing it described
+— and the commit message is as much a surface as the floor is.
+
 **`innerText` is not the layout.** Text extraction flattens the DOM and drops
 inter-element whitespace, so it invents defects that are not on screen. Three
 near-misses in one session: a bare `·` under each coworker that reads as a
