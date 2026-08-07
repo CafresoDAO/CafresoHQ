@@ -8472,6 +8472,34 @@ body:not(.night) .ide-minimap-thumb {
   transform: translate(-1px, -1px);
   box-shadow: 1px 1px 0 var(--ink);
 }
+/* START is the only button here that actually does something to the world;
+   the other two draft. Filled rather than outlined so the difference is
+   visible before you read the labels. */
+.task-card .tc-action-btn.start {
+  background: var(--accent-sun, #d4a648);
+  font-weight: bold;
+}
+.task-card .tc-action-btn.start:hover { background: var(--accent-leaf, #7ea04d); }
+
+/* "Is anybody on this?" — the honest line on a DOING card. Quiet when a
+   coworker really is mid-run, and only raises its voice for a job sitting
+   with nobody on it. Not an error colour: an unpicked-up job has not
+   failed at anything (§5). */
+.task-card .tc-worklog {
+  margin-top: 4px;
+  padding-top: 3px;
+  border-top: 1px dashed rgba(0,0,0,0.12);
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink-soft, rgba(0,0,0,0.55));
+}
+.task-card .tc-worklog.is-idle {
+  color: var(--ink);
+  background: var(--accent-sun-wash, rgba(212,166,72,0.16));
+  border-radius: var(--radius-1);
+  padding: 3px 5px;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    MOBILE PATCH v2 — comprehensive touch & responsive fixes

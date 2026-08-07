@@ -9,6 +9,7 @@ import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
+import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
@@ -1687,21 +1688,21 @@ ${d.text}` : d.text,
           if (!upd) return t;
           if (upd.action === 'done') {
             if (toast) toast.success(`✓ ${agent.name} completed "${t.title.slice(0, 36)}"`);
-            return { ...t, status: 'done',
+            return { ...applyStatus(t, 'done'),
                      result: upd.result || t.result || '',
                      completedAt: Date.now(),
                      completedBy: agent.id };
           }
           if (upd.action === 'blocked') {
             if (toast) toast.warn(`⚠ ${agent.name} blocked on "${t.title.slice(0, 36)}": ${upd.note || '(no reason)'}`);
-            return { ...t, status: 'doing',  // tasks.json doesn't have a 'blocked' col yet — keep in doing but tag
+            return { ...applyStatus(t, 'doing'),  // tasks.json doesn't have a 'blocked' col yet — keep in doing but tag
                      blockedReason: upd.note || '',
                      blockedAt: Date.now() };
           }
           if (upd.action === 'progress') {
             if (toast) toast.info(`${agent.name}: ${upd.note || '(progress note)'}`);
             const log = (t.progressLog || []).concat([{ at: Date.now(), by: agent.id, note: upd.note || '' }]);
-            return { ...t, progressLog: log.slice(-10), status: t.status === 'inbox' ? 'doing' : t.status };
+            return { ...applyStatus(t, t.status === 'inbox' ? 'doing' : t.status), progressLog: log.slice(-10) };
           }
           return t;
         }));
@@ -2660,7 +2661,18 @@ ${d.text}` : d.text,
 
   // Tasks
   const onAddTask = (t) => { setTasks(prev => [t, ...prev]); say('Task added', 'TASK'); };
-  const onMoveTask = (id, status) => setTasks(prev => prev.map(t => t.id===id?{...t, status}:t));
+  /* Moving a task also stamps WHEN it started, because the board could not
+     answer the first question a boss asks about an in-progress job: how
+     long has this been sitting? Measured — one task sat in DOING for a
+     whole session with nobody on it and the card looked identical to one
+     picked up a second ago.
+
+     Centralised here so every route stamps it: drag between columns, the
+     out-tray drop, the chat-send inference. Cleared on the way out of
+     `doing` so a re-opened task doesn't inherit a stale age. Only set when
+     absent, so re-entering `doing` mid-run doesn't reset the clock. */
+  const onMoveTask = (id, status) =>
+    setTasks(prev => prev.map(t => t.id === id ? applyStatus(t, status) : t));
 
   /* Task → chat bridge. Replaces drag-onto-desk delegation now that the
      office floor isn't drawn. Pops the floating chat, drops a fan-out
@@ -2722,7 +2734,7 @@ ${d.text}` : d.text,
       const id = e && e.detail;
       if (!id) return;
       setTasks(prev => prev.map(t =>
-        (t.id === id && t.status === 'inbox') ? { ...t, status: 'doing' } : t));
+        (t.id === id && t.status === 'inbox') ? applyStatus(t, 'doing') : t));
     };
     window.addEventListener('cafresohq:taskMeetingStarted', onRoom);
     return () => window.removeEventListener('cafresohq:taskMeetingStarted', onRoom);
@@ -2769,7 +2781,7 @@ ${d.text}` : d.text,
   const onTaskDropOnAgent = async (taskId, agent, taskFresh) => {
     const task = taskFresh || tasks.find(t => t.id === taskId);
     if (!task) return;
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agent.id, status: 'doing' } : t));
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'doing'), assignedTo: agent.id } : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
     logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'assigned', taskId, text: `picked up "${task.title}" 📁` });
     say(`${agent.name} is on "${task.title}"`, 'DELEGATE');
@@ -2840,7 +2852,7 @@ ${d.text}` : d.text,
         tasksDone: (agent.tasksDone || 0) + 1,
       });
       settleAfterRun(agent.id);
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', result: cleanBuf.slice(0, 600) } : t));
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'done'), result: cleanBuf.slice(0, 600) } : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
       recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
@@ -2909,7 +2921,7 @@ ${d.text}` : d.text,
         ? { status: 'idle', mood: 'idle', task: '' }
         : { status: 'idle', mood: 'stuck', task: snagSentence(err && err.message || String(err)) });
       // Aborted task should go back to inbox so the user can re-drop it; failed tasks too.
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'inbox', assignedTo: null } : t));
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'inbox'), assignedTo: null } : t));
       logActivity(aborted
         ? { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'progress', text: `run stopped — "${task.title}" back to inbox` }
         : { agentId: agent.id, agentName: agent.name, color: agent.color, taskId, action: 'failed', priority: 'attention', text: `failed "${task.title}" — back to inbox`, detail: (err && err.message || String(err)).slice(0, 240) });
@@ -3425,8 +3437,8 @@ ${d.text}` : d.text,
           return;
         }
         setTasks(prev => prev.map(t => t.id === taskId
-          ? { ...t, assignedTo: agentId,
-              status: t.status === 'inbox' ? 'doing' : t.status }
+          ? { ...applyStatus(t, t.status === 'inbox' ? 'doing' : t.status),
+              assignedTo: agentId }
           : t));
         const target = agents.find(a => a.id === agentId);
         if (target) say(`Auto-assigned "${task.title.slice(0,24)}" to ${target.name}`, 'TASK');
@@ -3473,7 +3485,7 @@ ${d.text}` : d.text,
               onOpenMeeting={onOpenMeeting}
               onTaskDropOnAgent={onTaskDropOnAgent}
               tasks={tasks}
-              onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: agentId, status: 'doing' } : t))}
+              onAssignTask={(taskId, agentId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'doing'), assignedTo: agentId } : t))}
               onGoToTasks={() => navTo('tasks')}
               onOpenArtifact={openVaultNote}
               maxSlots={5}
@@ -3526,6 +3538,12 @@ ${d.text}` : d.text,
           }}
           onAssignToChat={onAssignTaskToChat}
           onMakeRoomFromTask={onMakeRoomFromTask}
+          /* The explicit act. Assigning names an owner and deliberately
+             starts nothing, which left the board with no way to actually
+             put someone to work — the only real dispatch lived on the
+             office out-tray. Same handler the out-tray drop uses, so
+             START and a desk-drop are the identical code path. */
+          onStartTask={onTaskDropOnAgent}
         />;
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;

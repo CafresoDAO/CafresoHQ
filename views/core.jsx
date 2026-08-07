@@ -72,7 +72,7 @@ const VIEW_LABELS = {
 };
 
 /* ---------------- Tasks (full board with filter + search) ---------------- */
-function TasksView({ tasks, agents, onAdd, onMove, onDelete, onDropTaskOnAgent, onAssign, onAssignToChat, onMakeRoomFromTask, experience = [] }) {
+function TasksView({ tasks, agents, onAdd, onMove, onDelete, onDropTaskOnAgent, onAssign, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [] }) {
   const [q, setQ] = useSV('');
   const [showDone, setShowDone] = useSV(true);
 
@@ -111,6 +111,7 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onDropTaskOnAgent, 
         onAssign={onAssign}
         onAssignToChat={onAssignToChat}
         onMakeRoomFromTask={onMakeRoomFromTask}
+        onStartTask={onStartTask}
         experience={experience}
       />
     </div>

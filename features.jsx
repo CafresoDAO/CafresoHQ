@@ -4,6 +4,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { floorEmit, snagSentence } from './app/floor.jsx';
 import { xpLastAttempt, xpLastAttemptText } from './app/experience.jsx';
 import { brainName } from './app/cast.jsx';
+import { worklogLine } from './app/worklog.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -69,7 +70,7 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
   );
 }
 
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, experience = [] }) {
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [] }) {
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
   const [expanded, setExpanded] = useSF({});
@@ -138,16 +139,41 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                       ) : a ? (
                         <span className="tc-assigned"><Sprite data={a.color} scale={1}/> {a.name}</span>
                       ) : (
-                        <span className="tc-unassigned">{onAssignToChat ? 'unassigned · use → CHAT' : '↕ drag to a desk'}</span>
+                        <span className="tc-unassigned">{onStartTask ? 'unassigned · pick someone, then ▶ START' : onAssignToChat ? 'unassigned · use → CHAT' : '↕ drag to a desk'}</span>
                       )}
                       <span className={`pri pri-${t.priority}`}>{t.priority.toUpperCase()}</span>
                     </div>
-                    {/* New chat-bridge actions: → CHAT fans the task out as
-                        an @mention in the DIRECT thread; 📋 ROOM opens
-                        the meeting-create modal pre-populated with the
-                        task title + topic. Both move the task to DOING. */}
-                    {(onAssignToChat || onMakeRoomFromTask) && t.status !== 'done' && (
+                    {/* Is anybody actually on this? A DOING card used to look
+                        identical whether a coworker was mid-run or the job
+                        had been abandoned there for hours. §4: `agent.status`
+                        is the only authority, so that is what this reads —
+                        never the task's own status. */}
+                    {(() => {
+                      const line = worklogLine(t, a);
+                      if (!line) return null;
+                      const idle = line.indexOf('nobody') === 0;
+                      return <div className={'tc-worklog' + (idle ? ' is-idle' : '')}>
+                        {idle ? '⏸' : '⚡'} {line}
+                      </div>;
+                    })()}
+                    {/* → CHAT drafts the task as an @mention in the DIRECT
+                        thread; 📋 ROOM opens the meeting-create modal
+                        pre-populated. Neither starts work — they hand the
+                        boss something to review, and the task only moves to
+                        DOING once the message is really sent / the room is
+                        really created. ▶ START is the explicit act this
+                        board was always missing: the assignee dropdown
+                        deliberately only names an owner, which left no way
+                        to actually put someone to work from here. */}
+                    {(onAssignToChat || onMakeRoomFromTask || onStartTask) && t.status !== 'done' && (
                       <div className="tc-actions">
+                        {onStartTask && a && (
+                          <button
+                            className="tc-action-btn start"
+                            title={`Put ${a.name} to work on this now`}
+                            onClick={(e) => { e.stopPropagation(); onStartTask(t.id, a); }}
+                          >▶ START</button>
+                        )}
                         {onAssignToChat && (
                           <button
                             className="tc-action-btn"

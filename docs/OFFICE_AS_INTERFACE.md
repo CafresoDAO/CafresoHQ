@@ -709,6 +709,36 @@ append-only).
 > (`onInferTaskAssignment`, keyed on the `_(from task …)_` footer), 📋 ROOM
 > via `cafresohq:taskMeetingStarted`, fired from the modal's `create()`
 > rather than its `open()`.
+>
+> **"Is anybody actually on this?"** — the follow-on, same session. Once
+> `doing` stopped over-claiming, the opposite gap showed: a DOING card was
+> pixel-identical whether a coworker was mid-run or the job had been
+> abandoned there for hours. Two of them had. An office where jobs rot
+> invisibly in progress is not an operating business.
+>
+> `app/worklog.jsx` (pure, `scripts/test_worklog.py`, 33 checks) adds two
+> honest facts:
+>
+> - **When it started.** `startedAt`, stamped entering `doing`, cleared
+>   leaving it, and never re-stamped mid-run — a job sitting two hours must
+>   not report itself fresh every time it is touched. Enforced by
+>   `applyStatus()`, which now owns **all nine** status writes; an
+>   invariant applied at eight of nine sites is not an invariant.
+> - **Whether anyone is on it now.** §4 is binding: `agent.status` is the
+>   only authority. It deliberately does NOT try to prove the agent is on
+>   *this* task — nothing links a run to a task id, and inventing that link
+>   is exactly the confident-but-wrong claim §4 exists to stop.
+>
+> Tasks predating `startedAt` show the state without a duration rather than
+> guessing from `createdAt` (when the job was *written down*, not started).
+> The line never says "stuck": that word belongs to a coworker who tried
+> and snagged (§5), and a job nobody picked up has failed at nothing.
+>
+> **▶ START closes the loop.** The board's assignee dropdown deliberately
+> only names an owner ("dispatch is a separate, explicit act") — but the
+> explicit act existed nowhere on the board, only as a drop on the office
+> out-tray. So the honest flag had no honest remedy beside it. START is
+> that act, on the same handler as a desk-drop.
 
 ## 6. Jargon translation table (binding for all UI copy)
 
