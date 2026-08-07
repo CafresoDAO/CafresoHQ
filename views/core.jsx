@@ -598,9 +598,26 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                       </div>
                     );
                   })()}
-                </div>
-                <div className="team-tools">
-                  {(a.tools||[]).map(t => <span key={t}>{t}</span>)}
+                  {/* The twin of the inspect panel's row, missed when that
+                      one was renamed off "Tools used" to "Can use" earlier
+                      today. This card lists five stats as label/value pairs
+                      — Brain, Effort, Payroll, Jobs, Remembers — and then
+                      ended with a bare `WEB` and no tooltip, so the one item
+                      on the card that is a PERMISSION read like an
+                      unlabelled achievement. Same words and same tooltip as
+                      the panel, because it is the same fact.
+
+                      Inside `.team-stats`, not after it: `.lbl` and the
+                      column layout are scoped to that container, so the
+                      first cut put a correctly-worded label outside the only
+                      rule that styles it. */}
+                  {(a.tools||[]).length > 0 && (
+                    <div><span className="lbl">Can use</span>
+                      <span className="team-tools" title="What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.">
+                        {(a.tools||[]).map(t => <span key={t}>{t}</span>)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <button
                   className="px-btn ghost team-inbox-btn"

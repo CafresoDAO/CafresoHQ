@@ -547,6 +547,32 @@ once. The clean passes are what make the rest findings rather than taste:
 `Remembers` counts real vault files and names them in its tooltip, and the
 wall's `HQ` and `SEARCH` lamps say exactly what they probe.
 
+**A selector that matches nothing looks exactly like a broken app.** Five
+times on 2026-08-07 a probe did this:
+
+    const b = [...document.querySelectorAll('button')].find(x => /^PROJECTS$/i.test(x.innerText));
+    b.click();                       // b is undefined — nothing happened
+    // …then read the screen and conclude the nav is mis-wired
+
+Every one produced a confident false finding: a nav that "landed on the
+wrong view" (the label is `🗂\nPROJECTS`, so `^PROJECTS$` never matched), a
+board that "already guarded busy desks" (done cards carry no `done` class,
+so the filter matched all twelve), a file tree that "would not expand"
+(clicked a wrapper `<div>` with no handler). Two of them nearly went into
+this document as fixed behaviour.
+
+The habit that ends it costs one line — **assert the match before believing
+the outcome**, and return what you found when you didn't:
+
+    const b = [...document.querySelectorAll('button')].find(…);
+    if (!b) return JSON.stringify({ ERROR: 'no match', saw: […].map(x => x.innerText) });
+
+Return the candidates on failure, not just the miss: that is what turns
+"nothing happened" into "the label has an emoji and a newline in it". And
+prefer driving the flow through the affordance a user would actually press
+— the onboarding checklist's own button found the Projects dead end that
+clicking the nav directly had hidden.
+
 **When two branches produce the same value, make one produce an impossible
 one.** Unifying the office Effort total meant proving a new prop actually
 reached the wall — but the prop and the fallback it replaced both evaluate
