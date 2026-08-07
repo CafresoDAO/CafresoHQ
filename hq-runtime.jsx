@@ -1150,7 +1150,17 @@ function toolsPromptSnippet(tools) {
   return [
     'TOOL CALLS — you have these real tools available. To invoke one, output the bracketed call on its own line and STOP. The boss will execute it and append the result; then you continue.',
     ...tools.map(t => t.doc),
+    /* "STOP" is procedural and small models read straight past it. The
+       failure it is meant to prevent has a name, so name it: writing the
+       answer you expect. Observed live — a coworker emitted [MEMORY_LIST]
+       and, in the same breath, listed three files for a vault created
+       minutes earlier. The runtime now truncates at the marker
+       (upToToolCall), which stops that reaching the next turn; this is the
+       cheaper half, asking the model not to write it at all so the boss
+       never watches it stream past either. */
     'Rules: only one tool call per turn; only invoke tools listed above; if a question needs no tool, just answer.',
+    'NEVER write a tool\'s result yourself. After the call, stop. If you have not been handed a result, you do not have one — do not guess it, summarise it, or list what you think it contains.',
+    'Use the real value, never the example: [BROWSER_FETCH: <url>] is the shape, not a request. A call whose argument is still a placeholder is refused and nothing is looked up.',
   ].join('\n');
 }
 
@@ -1164,6 +1174,7 @@ function toolsPromptSnippetJson(tools) {
     'Available tools:',
     ...tools.map(t => `  ${t.name}: ${t.docShort || t.doc.replace(/^- /, '').split('\n')[0]}`),
     'Rules: emit exactly one <<<TOOL>>>…<<<END_TOOL>>> block per turn, on its own lines, then stop and wait for the result.',
+    'NEVER write the result yourself. If you have not been handed one, you do not have one — do not guess it or list what you think it contains.',
   ].join('\n');
 }
 

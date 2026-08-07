@@ -1272,6 +1272,39 @@ append-only).
 > driving a real task end to end — the row appeared as `📦 1`, singular,
 > at the moment the file landed.
 
+> ◐ **The prompt half of the honesty problem (2026-08-06).** Everything
+> above hardened what the *office* says. This is the other lever, and it is
+> weaker by nature: what the *coworker* says.
+>
+> Two changes, both naming a failure the instructions previously only
+> gestured at:
+>
+> - The tool snippet said "output the call and STOP". Procedural, and small
+>   models read straight past it. It now names the actual failure —
+>   **"NEVER write a tool's result yourself. If you have not been handed a
+>   result, you do not have one — do not guess it, summarise it, or list
+>   what you think it contains."** — plus a line that the bracketed example
+>   is a shape, not a request, since a placeholder call is now refused.
+> - The task prompt asked for "what you'll do (1 sentence)", which is what
+>   produced memos opening *"I will use the BROWSER_FETCH tool to…"* — §6
+>   jargon in a file the boss keeps. Now: **"1 sentence, plain words —
+>   don't name your tools."**
+>
+> **Measured, one run each way.** The next delivery opened *"I will check my
+> private notes folder to see if I have previously recorded any information
+> about primary colors"* — no tool name, where the previous two memos both
+> named theirs.
+>
+> **Not fixed, and worth being plain about:** the same memo also says *"I do
+> have a note on the colors of the rainbow"* when the lookup returned
+> nothing. The fabricated *tool result* is gone; a fabricated *claim* is
+> not. Prompt wording shifts probabilities — it does not make a small model
+> honest, and no amount of instruction will. What the office can guarantee
+> is its own record: the visit block is structurally separate, unforgeable,
+> and sat directly above that sentence saying the read found nothing. **The
+> boss can always check the office against the coworker.** That is the
+> guarantee worth having, and it is the one that is actually enforced.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

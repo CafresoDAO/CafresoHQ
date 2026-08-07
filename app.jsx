@@ -2824,7 +2824,7 @@ ${d.text}` : d.text,
     const recentChat = chat.slice(-6);
     const screen = makeScreenEmitter(agent.id);
     try {
-      await HQ.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence), then deliver the result. Keep it tight.`, tok => {
+      await HQ.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence, plain words — don't name your tools), then deliver the result. Keep it tight.`, tok => {
         buf += tok;
         flush(tok);
         screen.stream(buf);
