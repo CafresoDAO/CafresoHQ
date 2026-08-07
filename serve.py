@@ -2957,7 +2957,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if method == 'GET':
             if not filepath.exists():
-                return self._send_json(404, {'error': 'not found', 'key': name})
+                # "nothing saved yet" is a NORMAL state, not an error. A first
+                # run has no receipts, pins, workflows, projects or meetings,
+                # so a 404 here painted six red lines into the console on every
+                # single load — which is exactly how a real error gets missed
+                # (it hid these from me until I went looking).
+                #
+                # The client already treats a missing body as "use the
+                # default" (`r.ok ? r.json() : null` then `if (data == null)
+                # return` in useFileStored), so 200 + null is byte-for-byte the
+                # same behaviour with no false alarm. The one server-side
+                # consumer, the night runner's activity append, already guards
+                # with `if not isinstance(cur, list)`.
+                return self._send_json(200, None)
             try:
                 data = filepath.read_text(encoding='utf-8')
                 self.send_response(200)
