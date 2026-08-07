@@ -273,7 +273,10 @@ async function runMissionIteration(ctx) {
   setChat(prev => [...prev, {
     id: msgId,
     from: 'agent',
-    name: `${agent.name} · iter ${mission.iterations + 1} · ${mission.topic.slice(0, 40)}${mission.topic.length > 40 ? '…' : ''}`,
+    /* §6: this byline is KEPT — it rides the chat record, not just a
+       hover — so "iter 3" would outlive the session in a stored surface.
+       Same word as the Night Shift card, for the same reason. */
+    name: `${agent.name} · round ${mission.iterations + 1} · ${mission.topic.slice(0, 40)}${mission.topic.length > 40 ? '…' : ''}`,
     text: '', streaming: true,
     thread: 'research',
     missionId: mission.id,
@@ -831,7 +834,7 @@ function NightShiftSection({ agents }) {
           <select value={interval} onChange={e => setNsInterval(parseInt(e.target.value))}>
             {[5, 10, 20].map(m => <option key={m} value={m * MIN}>every {m} min</option>)}
           </select>
-          <span className="hint">{Math.round(duration / interval)} iterations · night tools only (no wallet/publish/shell)</span>
+          <span className="hint">{Math.round(duration / interval)} rounds · night tools only (no wallet/publish/shell)</span>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
@@ -912,6 +915,13 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
   };
   const fmtRemaining = (m) => {
     const left = m.startedAt + m.durationMs - Date.now();
+    /* A missing or corrupt durationMs makes `left` NaN, and `NaN > 0` is
+       false — so the card fell through to "time up" and stated, with total
+       confidence, that a mission had expired when it simply had no end time
+       recorded. Seen on a hand-built probe mission printing "time up" next
+       to "next round in 59m": two claims on one card that cannot both hold.
+       An unknown is not an expiry. Say which one it is. */
+    if (!Number.isFinite(left)) return 'no end time set';
     return left > 0 ? fmtTime(left) + ' left' : 'time up';
   };
   const submit = () => {
@@ -1006,11 +1016,11 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                     const ago = m.lastIterationAt ? Math.max(0, Date.now() - m.lastIterationAt) : null;
                     const dt = next - Date.now();
                     if (m.iterations === 0) {
-                      nextLabel = 'first iteration starting…';
+                      nextLabel = 'first round starting…';
                     } else if (dt <= 0) {
-                      nextLabel = 'next iteration any moment now…';
+                      nextLabel = 'next round any moment now…';
                     } else {
-                      nextLabel = `next in ${fmtTime(dt)}` + (ago !== null ? ` · last ran ${fmtTime(ago)} ago` : '');
+                      nextLabel = `next round in ${fmtTime(dt)}` + (ago !== null ? ` · last ran ${fmtTime(ago)} ago` : '');
                     }
                   }
                   return (
@@ -1130,7 +1140,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
               <select value={interval} onChange={e=>setInterval_(parseInt(e.target.value))}>
                 {INTERVAL_PRESETS.map(p => <option key={p.label} value={p.ms}>{p.label}</option>)}
               </select>
-              <span className="hint">{Math.round(duration / interval)} iterations total</span>
+              <span className="hint">{Math.round(duration / interval)} rounds total</span>
             </div>
             <div className="form-row full">
               <label>EARLY STOP</label>
