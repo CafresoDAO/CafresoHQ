@@ -547,6 +547,31 @@ once. The clean passes are what make the rest findings rather than taste:
 `Remembers` counts real vault files and names them in its tooltip, and the
 wall's `HQ` and `SEARCH` lamps say exactly what they probe.
 
+**When two branches produce the same value, make one produce an impossible
+one.** Unifying the office Effort total meant proving a new prop actually
+reached the wall — but the prop and the fallback it replaced both evaluate
+to 7,824 while `ceoTokens` is zero, so seeing the right number on screen
+would have proved nothing about which branch ran. That is failure shape (4)
+wearing a green result. The fix took ten seconds: set the fallback to a
+sentinel (`999999`), rebuild, confirm the wall does NOT show it, restore,
+rebuild. Reach for this whenever a change is invisible under current state —
+it beats reasoning about which path executed, and it beats constructing the
+state that would separate them when that state is expensive to reach.
+
+**A clean census, written down: the ledger's snag rule.** `jobs` counts
+task completions and missions; `snags` are written on the task path only.
+That asymmetry looks like the §5 failure in the flattering direction — a
+coworker who fails every dispatch keeping a perfect streak — but it is
+correct, and the ledger's own header says why: a chat reply or a DM is not
+a job, so a failed conversation is not a failed job. Checked the one case
+that would break it, a task run routed through `dispatchToAgent`: all four
+callers pass `{ taskId: null }`, so no task ever takes that path. The
+`recordXp({outcome:'done'})` inside the dispatch path is a `[TASK_DONE:…]`
+marker closing a real task, which is a task completion by another door.
+Nothing to fix. Recorded so the next reader does not re-derive it — and
+because the asymmetry is genuinely suspicious-looking, which is exactly the
+kind of clean answer that goes unrecorded and gets re-investigated.
+
 **Two of the six started as wording and ended as behaviour.** "Tools used"
 was a heading over a permission list; `⚡ … this session` was a span over a
 lifetime counter. In both cases the sentence that made the label honest also
