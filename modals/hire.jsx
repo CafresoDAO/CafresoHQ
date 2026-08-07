@@ -209,7 +209,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     <Modal
       open={open}
       onClose={onClose}
-      title={showBoard ? 'JOB POSTINGS' : 'HIRE A SUB-AGENT'}
+      title={showBoard ? 'JOB POSTINGS' : 'BRING IN A HELPER'}
       subtitle={showBoard ? 'pick a saved role · or start from scratch' : 'New hire · character creation'}
       size="lg"
       headerActions={

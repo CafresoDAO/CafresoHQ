@@ -1139,7 +1139,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                 <span className="hint">
                   {localProjects.length === 0
                     ? 'no local projects added yet — add one in the Projects tab first'
-                    : 'agent will read project files and write structured notes about how it works'}
+                    : 'they will read project files and write structured notes about how it works'}
                 </span>
               </div>
             )}
@@ -1192,7 +1192,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
               </label>
               <span className="hint">
                 {allowSelfComplete
-                  ? `agent may emit [MISSION_COMPLETE] after ~${Math.floor((duration/interval) * 0.6)} iterations if all angles feel covered`
+                  ? `they may finish early, after about ${Math.floor((duration/interval) * 0.6)} rounds, if every angle feels covered`
                   : `agent runs until time elapses; deeper coverage instead of finishing early`}
               </span>
             </div>
@@ -1235,7 +1235,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             <div className="hint" style={{marginRight:'auto'}}>{
               mode === 'project-study'
                 ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + vault writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
-                : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 elevated agent' : ''}` : 'enter a topic to start')
+                : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 file & shell access' : ''}` : 'enter a topic to start')
             }</div>
             {/* canDoMode is in here because the dropdown alone does not hold
                 the line. Disabling an <option> stops it being CHOSEN; it does

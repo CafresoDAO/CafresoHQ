@@ -2089,7 +2089,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
         } else {
           const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
           emit(peek ? `_(empty after cleaning. Raw: "${peek}…")_`
-            : '_(no response from the model. On a free model this usually means the prompt was too large — try **Settings → Connections → Agent capability → "Lite"**, or pick a smaller/paid model.)_');
+            : '_(no response from the model. On a free model this usually means the prompt was too large — try **Settings → Connections → Coworker capability → "Lite"**, or pick a smaller/paid model.)_');
         }
       }
       return;

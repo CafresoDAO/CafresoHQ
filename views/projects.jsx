@@ -233,7 +233,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
           </div>
         </>
       ) : (
-        <div className="ws-stage-empty">{_isMobile ? 'Tap a file in the Files tab — or watch your agents build one.' : 'Open a file from the tree — or watch your agents build one.'}<br /><span className="dim">Code · Preview · live as it's written</span></div>
+        <div className="ws-stage-empty">{_isMobile ? 'Tap a file in the Files tab — or watch your coworkers build one.' : 'Open a file from the tree — or watch your coworkers build one.'}<br /><span className="dim">Code · Preview · live as it's written</span></div>
       )}
     </div>
   );

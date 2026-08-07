@@ -1572,7 +1572,7 @@ ${d.text}` : d.text,
       return `\n\n📁 ACTIVE PROJECT: ${proj.name}\n` +
         (proj.path ? `   Working directory: ${proj.path}\n` : '') +
         (proj.source ? `   Source: ${proj.source}\n` : '') +
-        (teammates.length ? `   Other agents on this project: ${teammates.join(', ')}\n` : '') +
+        (teammates.length ? `   Other coworkers on this project: ${teammates.join(', ')}\n` : '') +
         `You are working ON this project. Scope your file/shell tools to this directory unless the task explicitly requires reaching outside. ` +
         `When you reference files in your reply, use paths relative to the project root (or fully qualified with the working directory above). ` +
         `Vault writes, however, still go to the boss's notes vault — use the project as the SOURCE OF CODE, the vault as the DESTINATION FOR FINDINGS.`;
@@ -3059,7 +3059,7 @@ ${d.text}` : d.text,
       const failed = agentId ? pool.filter(x => x.toAgentId === agentId) : pool;
       if (!failed.length) {
         window.cafresohqToast && window.cafresohqToast.warn(
-          agentId ? 'No failed message on record for this agent to retry.'
+          agentId ? 'No failed message on record for this coworker to retry.'
                   : 'No failed messages to retry.');
         return;
       }

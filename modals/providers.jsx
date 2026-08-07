@@ -309,8 +309,8 @@ function ApiTab() {
             <div className="lbl">Helper brain</div>
             <div className="sub">
               {s.subagentModel === 'inherit'
-                ? 'Sub-agents inherit the spawner\'s model.'
-                : `All sub-agents pinned to: ${s.subagentModel}`}
+                ? 'Helpers inherit the model of whoever brought them in.'
+                : `All helpers pinned to: ${s.subagentModel}`}
             </div>
           </div>
           {s.subagentModel === 'inherit' ? (

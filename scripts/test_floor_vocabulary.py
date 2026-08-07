@@ -229,6 +229,36 @@ def _after_expr_spots(body):
             yield (m.start(1), frag)
 
 
+def _ternary_copy_spots(body):
+    """Copy on BOTH arms of a ternary: `{x ? 'A' : 'B'}`.
+
+    REFUSED TWICE before this, and the refusals were right at the time: a
+    bare ternary carries no audience signal, and the first two attempts
+    flooded at 22 and 28 hits across object literals and prompt bodies.
+    What made it shippable was borrowing the code-shaped reject from
+    _after_expr_spots and adding a minimum length — flags like 'on'/'md'
+    are not copy — then marking these spots NOT boss-facing, so the two
+    words banned only on boss surfaces (prompt, context) do not fire here.
+
+    That combination took it to ten locations and zero false positives,
+    every one a real §6 violation, including "HIRE A SUB-AGENT" as a modal
+    TITLE on a primary flow.
+
+    The lesson is not that the earlier judgement was wrong. It is that
+    "this rule cannot be scoped" was really "I have not found the axis
+    yet" — and the axis came from a different rule written an hour later.
+    """
+    rx = re.compile(r'\?\s*(' + _STR + r')\s*:\s*(' + _STR + r')')
+    code = re.compile(r'[;=]|\b(?:const|let|var|function|return|null|undefined)\b')
+    for m in rx.finditer(body):
+        for g in (1, 2):
+            frag = m.group(g)
+            inner = frag[1:-1]
+            if len(inner) < 12 or code.search(inner) or not _reads_like_copy(inner):
+                continue
+            yield (m.start(g), frag)
+
+
 def _fallback_spots(body):
     for m in FALLBACK_RE.finditer(body):
         inner = m.group(1)[1:-1]
@@ -321,6 +351,7 @@ def main():
             spots += [(m.start(1), m.group(1), True) for m in DIALOG_RE.finditer(body)]
             spots += [(s, r, True) for s, r in _fallback_spots(body)]
             spots += [(s, r, True) for s, r in _after_expr_spots(body)]
+            spots += [(s, r, False) for s, r in _ternary_copy_spots(body)]
             spots += [(s, r, False) for s, r in _prompt_spots(body)]
             for start, raw, boss_facing in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
