@@ -54,7 +54,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
   );
 }
 
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -1110,7 +1110,24 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         {showDelegate && (
           <div className="delegate-pop">
             <div className="title">HAND OFF TO…</div>
-            {agents.length === 0 && <div className="muted" style={{padding:'6px',fontSize:15}}>No coworkers yet.</div>}
+            {/* §7: this is the ONE empty state the boss reaches by
+                actively trying to delegate — they opened a hand-off picker.
+                It used to say "No coworkers yet." and stop, which is the
+                worst place in the office to be told no and offered nothing.
+                The stand-up sheet already had the right shape (a line that
+                explains, then the button that fixes it); this now matches
+                it. */}
+            {agents.length === 0 && (
+              <div className="muted" style={{padding:'6px',fontSize:15}}>
+                Nobody to hand off to yet.
+                {onHire && (
+                  <button className="px-btn primary" style={{marginTop:8,width:'100%'}}
+                          onClick={()=>{ setShowDelegate(false); onHire(); }}>
+                    + HIRE YOUR FIRST COWORKER
+                  </button>
+                )}
+              </div>
+            )}
             {agents.map(a => (
               <div key={a.id} className="item" onClick={()=>{ onDelegate(a); setShowDelegate(false); }}>
                 <Sprite data={a.color} scale={1}/>

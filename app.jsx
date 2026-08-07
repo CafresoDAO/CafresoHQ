@@ -3701,7 +3701,7 @@ ${d.text}` : d.text,
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
-      onPinAsTask={onPinChatAsTask}
+      onPinAsTask={onPinChatAsTask} onHire={() => setHireOpen(true)}
       onInferTaskAssignment={(taskId, agentId) => {
         const task = tasks.find(x => x.id === taskId);
         if (!task) return;
