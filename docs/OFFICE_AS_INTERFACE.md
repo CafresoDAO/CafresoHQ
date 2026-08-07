@@ -448,6 +448,31 @@ does "no other pane has this" mean anything.
 Current result, with that check done: **no oversized panes** across all eight
 views or with the chat window open.
 
+**snagCause is a BRAIN classifier — do not point it at anything else.** §7
+says every failure is one honest sentence, and `snagCause` is the office's
+shared way of producing one, so it is very tempting to route every raw error
+through it. It only knows one domain. Pointed at a web page or a token ledger
+it produces fluent nonsense about the wrong subject:
+
+| raw | snagCause says | actual subject |
+|---|---|---|
+| `HTTP 401 Unauthorized` | "that brain isn't signed in yet — add it in Settings" | the *page* wants auth |
+| `429 Too Many Requests` | "that brain is rate-limited" | the *site* is throttling |
+| `insufficient funds: balance 0 < 100` | "that brain's account is out of credit — top it up" | a *token ledger* |
+
+The last one is the one to remember: an AI-billing sentence for a money
+failure, in the office's own voice. `SNAG_CAUSES` already carries the rule
+that decides this — "a wrong-but-confident diagnosis is worse than a vague
+honest one" — and it applies to the classifier's *scope*, not just its
+fallback. I applied it to BROWSER_FETCH, BROWSER_SCREENSHOT and WALLET_SEND
+and had to take it back out of all three.
+
+For non-brain tools the honest move is to **attribute, not classify**: office
+voice on the label, the source's own words for the cause ("Couldn't read that
+page — …", `the ledger said: "…"`). Those backend messages are authored in
+serve.py and already read as English; the machine-ish part was only ever the
+label.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only

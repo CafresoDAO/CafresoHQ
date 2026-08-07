@@ -1,5 +1,5 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
-import { snagCause, stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
+import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
@@ -751,7 +751,18 @@ const TOOL_REGISTRY = {
       const u = `/browser/fetch?url=${encodeURIComponent(url.trim())}&max_chars=8000`;
       const r = await fetch(u, { signal });
       const j = await r.json();
-      if (j.error) return `Browser fetch error: ${j.error}`;
+      /* §7 wants an honest sentence, and the label was the machine-ish part
+         ("Browser fetch error:"), not the message — `j.error` is authored by
+         our own serve.py and already reads as English.
+
+         Do NOT route this through snagCause. That classifier is tuned for
+         BRAIN failures, and a page is not a brain: a site answering 401 came
+         back as "that brain isn't signed in yet — add it in Settings", 429 as
+         "that brain is rate-limited", 503 as "that brain's service is having
+         trouble". All confidently wrong about the wrong subject, which
+         SNAG_CAUSES' own comment calls worse than a vague honest one. I had
+         applied it here and had to take it back out. */
+      if (j.error) return `Couldn't read that page — ${j.error}`;
       const head = `URL: ${j.url}\nStatus: ${j.status}\nTitle: ${j.title || '(none)'}\n${'─'.repeat(40)}\n`;
       return head + (j.text || '(no body)');
     },
@@ -766,13 +777,10 @@ const TOOL_REGISTRY = {
       const u = `/browser/screenshot?url=${encodeURIComponent(url.trim())}`;
       const r = await fetch(u, { signal });
       const j = await r.json();
-      /* §7: no raw error dumps on a user surface, and a tool result IS one —
-         it lands verbatim in the visit block. `j.error` is whatever the
-         backend said. snagCause is the classifier the chat bubble, the desk
-         and the inbox already share, so this failure now reads the same way
-         they do rather than in the browser service's own words. The backend
-         hint is kept: §7 wants the route out, and that is what it carries. */
-      if (j.error) return `Couldn't take that screenshot — ${snagCause(String(j.error))}` +
+      /* Office voice on the label, the backend's own words for the cause —
+         see the note on BROWSER_FETCH above for why snagCause must NOT be
+         used here. The hint is kept: §7 wants the route out. */
+      if (j.error) return `Couldn't take that screenshot — ${j.error}` +
         (j.hint ? `\n${j.hint}` : '');
       // Embed as markdown — chat renders the data: URL inline
       return `Screenshot of ${j.url} (${j.width}×${j.height}):\n\n![screenshot](${j.png})`;
@@ -1144,7 +1152,15 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
           case 'declined': return `The boss declined the ${amount} ${token} send to ${to}.`;
           case 'paused': return `Wallet spending is paused — ask the boss to un-pause before sending.`;
           case 'noWallet': return `You don't have a wallet yet — the boss can set one up in Settings → ICP Services.`;
-          case 'error': return `Send failed: ${res.error}`;
+          /* Attributed, not classified. snagCause read "insufficient funds"
+             as "that brain's account is out of credit — top it up" — an AI
+             billing sentence for a TOKEN LEDGER failure, which is the worst
+             place in the office to be confidently wrong. Quoting the ledger
+             says exactly as much as we actually know.
+             Also deliberately does not add "nothing was sent": a failed send
+             is not proof the ledger was untouched, and this office does not
+             guess about money. */
+          case 'error': return `That send didn't go through — the ledger said: "${res.error}"`;
           default: return `Send result: ${JSON.stringify(res)}`;
         }
       },
