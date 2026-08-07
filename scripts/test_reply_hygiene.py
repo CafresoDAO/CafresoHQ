@@ -274,6 +274,38 @@ def check_every_reply_path():
     return paths
 
 
+def check_raw_buffer_shown():
+    """The census above asks whether `visibleReply` appears within 150 lines
+    of a stream opening. That is crude on purpose -- and on 2026-08-07 it was
+    crude enough to be WRONG. It stayed green while the dispatch path, the
+    office's most-used route, built its final text with `cleanHarmony(buf)`
+    alone: some other `visibleReply` in the window satisfied the search, and
+    the one that mattered was never called. The rule under-claimed its scope,
+    which this repo already warns is as misleading as over-claiming.
+
+    So this checks the ANTI-PATTERN directly rather than the presence of a
+    cure somewhere nearby: no reply-path file may hand the raw accumulated
+    buffer to `cleanHarmony`, because the recipe is always
+    `cleanHarmony(visibleReply(...))`. Narrow, and honest about being narrow
+    -- it catches the exact shape that shipped, not the idea.
+
+    hq-runtime.jsx is excluded: `cleanHarmony(buf)` there is the streaming
+    internals cleaning their own buffer, not a path showing text to a person.
+    """
+    import re as _re
+    bad = []
+    for rel in ('app.jsx', 'features.jsx', 'missions.jsx', 'ui/chat.jsx'):
+        f = ROOT / rel
+        if not f.exists():
+            continue
+        text = f.read_text(encoding='utf-8')
+        text = _re.sub(r'/\*.*?\*/', '', text, flags=_re.S)
+        for i, line in enumerate(text.split('\n')):
+            if _re.search(r'cleanHarmony\s*\(\s*buf\s*\)', line):
+                bad.append(f'{rel}:{i + 1}')
+    return bad
+
+
 def main():
     print('reply hygiene — no protocol markers on user surfaces')
     if not shutil.which('node'):
@@ -493,6 +525,10 @@ def main():
     check('the request-class guards all still exist',
           {'DM_TO', 'HANDOFF_TO', 'HIRE_AGENT', 'HIRE_ASSISTANT',
            'REQUEST_ELEVATION', 'SPAWN_SUBAGENT'} <= guarded)
+
+    raw = check_raw_buffer_shown()
+    check('no reply path shows the RAW buffer — cleanHarmony(buf) without visibleReply',
+          not raw, ', '.join(raw))
 
     paths = check_every_reply_path()
     missing = [f'{r}:{n}' for r, n, ok in paths if not ok]
