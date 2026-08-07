@@ -397,6 +397,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | what each run is HANDED — audited, 2026-08-07 | third use of the entry-point census, this time on context rather than cleaning: of six `agentStream` callers only the two conversational ones should carry chat history, and only the TASK path wrongly did (fixed — it produced a delivery about the wrong subject). Missions pass `onUsage`/`onTool` and run on their own prompt; the meeting turn carries the transcript it needs; the stand-up passes `signal` and `maxTokens` and nothing else. One defect, five confirmed clean |
 | the office survives ordinary accidents, 2026-08-07 | five checked, three were broken. **Reload mid-run**: the stream dies with the page and the task sat under DOING forever — now scrubbed to `inbox` on load, the way `missionsOnLoad` has always handled a dead mission. **Coffee**: stopped the run correctly but unclaimed the work, so resuming meant re-picking the person you had only paused — the assignee now survives a boss-stop, and a genuine failure still clears it so §7's "try someone else" stays the easy move. **Delete while running**: the worst — no confirmation (the guard keyed on `t.result`, which live work has not got), the desk stayed lit for a task that no longer existed, and the run went on to FILE A DELIVERY for work the boss had removed. Now it names the coworker, asks, and aborts. **Letting someone go**: the stream was already killed and the displays already degraded honestly on a dangling id; dismissal now also releases their tasks, including ones assigned but never started. **Happy path re-checked after all of it**: create → assign → ▶ START → done in 20s → filed, delivery reading "Purple" and nothing else |
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
+| §7 holds when the DEFAULT brain is the thing that dies, 2026-08-07 | the CEO's own brain, not a coworker's — the case §7's third route was written for. Sent "Say the single word: hello" on a fresh office whose managed Gemma endpoint this machine cannot reach. The office showed an honest waiting state first (*"still waiting on that brain — it may be warming up"*, not a spinner implying progress), then after ~60s: **"⚠ hit a snag — couldn't reach that brain — it looks offline from here. Llama is still working, though — @mention them and they can pick this up."** One sentence, no raw error, a retry control, and the third route naming the coworker who really can work — `handoffHint` picking the local brain over the dead default. Nothing to fix; recorded so the next reader does not re-derive it |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
 ### The executable rules — and what a rule can and cannot be
@@ -982,6 +983,20 @@ should extend that boundary, not blur it.
   is the drift this document is mostly about. Flagged rather than changed:
   the role titles beside it are deliberate product naming, so which register
   the hiring screen speaks in is a product call, not a defect to patch.
+
+- **The CEO's opening line promises a brain nobody has checked.** The
+  first message a new boss ever reads says *"I'm already running on
+  Cafreso's Gemma 4 brain — nothing to sign up for."* It is canned text,
+  printed before any probe, and on this machine the managed endpoint is
+  unreachable — so the office's first sentence is a promise it then fails
+  ~60s later. The failure itself is exemplary (see the §7 row in the
+  verified table), which is why this is flagged rather than patched: the
+  greeting is a first-impression product decision, the environment here is
+  known-unreachable for local reasons, and hedging it on every machine to
+  cover the machines where it breaks would cost the confidence it buys on
+  the machines where it works. The options, for whoever decides: probe
+  before claiming, soften to "should be ready", or leave it and rely on
+  the §7 route — which does work.
 
 - **"Workspace" still means two things, down from three.** The nav label
   for the `projects` view was renamed to **Projects** on 2026-08-07 — the
