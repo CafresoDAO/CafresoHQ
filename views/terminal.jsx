@@ -100,6 +100,21 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
     };
     containerRef.current.addEventListener('mouseup', onMouseUp);
 
+    /* Reconnect backoff. This was a flat setTimeout(connect, 2000) with no
+       cap and no ceiling: with the terminal service genuinely down, an open
+       Terminal retried 30 times a minute forever and wrote "[reconnecting…]"
+       into the pane on every single attempt, so the transcript filled with
+       one repeated line and the boss was never told it had settled into a
+       state rather than being about to succeed.
+
+       Backoff to a 30s ceiling instead, and say so ONCE. A service that
+       comes back (serve.py restarting, which is the common case) is still
+       picked up within half a minute; a service that is not coming back
+       stops shouting about it. */
+    let attempt = 0;
+    const RETRY_MS = [2000, 4000, 8000, 15000, 30000];
+    const nextDelay = () => RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
+
     const connect = async () => {
       if (cancelled) return;
       // Skip if already open or mid-handshake.
@@ -141,6 +156,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       // The server waits up to 2 s for this frame before spawning the PTY;
       // sending it right away eliminates the 2-second blank-screen delay.
       ws.onopen = async () => {
+        attempt = 0;                       // connected — start the ladder over
         const oc = CafresoHQClient;
         let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
@@ -191,9 +207,17 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       ws.onclose = () => {
         if (cancelled) return;
         if (document.visibilityState === 'visible') {
-          // Page is in the foreground — reconnect after a short delay.
-          term.writeln('\r\n\x1b[2m[reconnecting…]\x1b[0m');
-          setTimeout(() => { if (!cancelled) connect(); }, 2000);
+          const wait = nextDelay();
+          /* Announce the first retry, and the moment it settles at the
+             ceiling — not the twenty in between. */
+          if (attempt === 0) {
+            term.writeln('\r\n\x1b[2m[reconnecting…]\x1b[0m');
+          } else if (attempt === RETRY_MS.length - 1) {
+            term.writeln('\r\n\x1b[2m[still trying every ' + (wait / 1000) +
+                         's — it will pick up on its own if the service comes back]\x1b[0m');
+          }
+          attempt++;
+          setTimeout(() => { if (!cancelled) connect(); }, wait);
         }
         // If hidden, visibilitychange below will reconnect when the user returns.
       };
