@@ -452,7 +452,7 @@ function InboxModal({ open, onClose }) {
         ))}
         <select value={filterAgent} onChange={e => setFilterAgent(e.target.value)}
                 style={{marginLeft:'auto',fontSize:11,padding:'3px 6px',border:'2px solid var(--ink)',background:'var(--paper)',color:'var(--ink)'}}>
-          {agentList.map(a => <option key={a} value={a}>{a === 'all' ? 'all agents' : a}</option>)}
+          {agentList.map(a => <option key={a} value={a}>{a === 'all' ? 'everyone' : a}</option>)}
         </select>
       </div>
       {visibleThreads.length === 0 ? (

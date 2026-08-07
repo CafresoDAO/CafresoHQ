@@ -1258,7 +1258,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
               disabled={mode === 'project-study'
                 ? (!projectId || !agentId || !canDoMode(selectedAgent) || (isElevated && !elevatedAuth))
                 : (!topic.trim() || !agentId || !canDoMode(selectedAgent) || (isElevated && !elevatedAuth))}
-              title={isElevated && !elevatedAuth ? 'Tick the elevated authorization checkbox first' : ''}>
+              title={isElevated && !elevatedAuth ? 'Tick the file and shell access box first' : ''}>
               {mode === 'project-study' ? '▶ START STUDY' : '▶ START RESEARCH'}
             </button>
           </div>

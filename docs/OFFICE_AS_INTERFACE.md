@@ -415,6 +415,33 @@ written only after the same class of bug was fixed by hand three or four times:
 | `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
 | `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
 
+**A rule with no audience signal cannot be scoped, so it cannot ship.**
+The Inbox's coworker filter shipped reading **"all agents"** — a banned
+word on a control the boss uses, in a file this suite already scanned. It
+was invisible because the string lives inside a JSX ternary
+(`{a === 'all' ? 'all agents' : a}`): the `>text<` pattern cannot see
+into an interpolation and the `|| 'fallback'` pattern does not match `?:`.
+
+Tried to close it and rejected the attempt. A first cut flooded — 22 hits
+across object literals and prompt bodies. Narrowing to "both arms are
+string literals", which is the exact shape that shipped, made it *worse*
+(28), because the real problem is not the pattern's precision. Every other
+spot source in this suite is keyed on something that implies an AUDIENCE —
+`title:`, `hint:`, `emptyHint=`, a `window.confirm` argument. A bare
+ternary carries no such signal, so it fires identically inside a prompt
+being assembled for a model and a label being rendered for a person, and
+the `boss_facing` flag has nothing to read.
+
+So the gap stays open and is written down here instead: **copy inside a
+JSX ternary is unscanned.** The one real violation the attempt surfaced
+(`missions.jsx` — "Tick the elevated authorization checkbox first") was
+fixed by hand on the way past.
+
+That is the same verdict this document already reached on a 221-hit scan,
+reached again from the opposite direction: there the rule was too broad to
+be useful, here it is unscopeable to be safe. A rule you cannot scope
+honestly is worse than a paragraph telling the next reader where to look.
+
 **Check for the DEFECT, not for the fix.** The sharpest lesson of
 2026-08-07, and it came from a rule in this very table.
 `check_every_reply_path` asks whether `visibleReply` appears within 150
