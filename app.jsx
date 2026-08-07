@@ -4501,9 +4501,32 @@ ${d.text}` : d.text,
                 six jobs on their own local brains. It sits in the PINNED
                 cluster so it can never scroll away, which makes a false
                 alarm here more expensive than anywhere else on the floor. */}
-            {!officeCanWork && (
+            {/* Two different blockers, and they used to wear one label.
+                `officeCanWork` is false when the office has no default key
+                AND no hired coworker with a working brain — so on a FIRST
+                RUN, where the only true statement is "you haven't hired
+                anyone yet", the pinned alarm said ADD AI KEY and sent the
+                new boss to Settings → Connections.
+
+                Measured on a fresh state dir: the CEO's opening line says
+                "nothing to sign up for", the candidate book opens by itself,
+                and four of its candidates are FOUND on this machine and need
+                no key at all — while the loudest, reddest, unscrollable
+                thing on screen pointed the other way. The alarm was not
+                false, it was answering the wrong question, which on the one
+                screen that decides whether someone stays is worse.
+
+                Empty office → say so, and open the front desk. */}
+            {!officeCanWork && agents.length === 0 && (
+              <button className="chip chip-warn" onClick={()=>setHireOpen(true)}
+                title="Your desks are empty. Hire someone at the front desk — several candidates are already on this machine and need no setup at all."
+                style={{cursor:'pointer', background:'rgba(232,169,169,0.16)', borderColor:'rgba(232,169,169,0.5)', color:'#E8A9A9'}}>
+                ⚠ NOBODY HIRED
+              </button>
+            )}
+            {!officeCanWork && agents.length > 0 && (
               <button className="chip chip-warn" onClick={()=>openSettings('keys')}
-                title="No brain is signed in yet — you can hire coworkers, but nobody can start work until you add one. Click to open Settings → Connections."
+                title="No brain is signed in yet — your coworkers are hired, but nobody can start work until you add one. Click to open Settings → Connections."
                 style={{cursor:'pointer', background:'rgba(232,169,169,0.16)', borderColor:'rgba(232,169,169,0.5)', color:'#E8A9A9'}}>
                 ⚠ ADD AI KEY
               </button>
