@@ -732,9 +732,9 @@ function CalendarView({ tasks, agents, missions = [] }) {
         <div className="empty-state onboard">
           <div className="empty-title">🗓 Nothing on the calendar yet</div>
           <div className="empty-sub">
-            Your business by day. Raise a task in the <strong>Tasks</strong> tab (or drop one on
-            an agent's desk in the office) and it lands here — so does a research mission,
-            on the day it's due to wrap up.
+            Your business by day. Add a task on the <strong>board</strong> (or drop one on
+            a coworker's desk in the office) and it lands here — so does a research
+            mission, on the day it's due to wrap up.
           </div>
         </div>
       )}

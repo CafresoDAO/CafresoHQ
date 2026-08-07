@@ -158,7 +158,13 @@ DISPLAY_KEYS = ('text|desc|label|hint|doc|docShort|summary|placeholder|title|'
 DISPLAY_RE = re.compile(r'\b(?:' + DISPLAY_KEYS + r')\s*(?::|=)\s*\{?(' + _STR + r')', re.S)
 
 # JSX text nodes: >Some words< — the other way copy reaches the screen.
-JSX_TEXT_RE = re.compile(r'>\s*([A-Za-z][^<>{}]{2,120}?)\s*<')
+# 120 was too short, and the Calendar's empty state proved it: "…drop one on
+# an agent's desk in the office) and it lands here — so does a research
+# mission, on the day it's due to wrap up." is 150-odd characters of ordinary
+# sentence between two tags, so the fragment never matched and a banned word
+# sat in a view this suite scans. Raised to 400 — a paragraph of UI copy is
+# still UI copy, and the character class already refuses code punctuation.
+JSX_TEXT_RE = re.compile(r'>\s*([A-Za-z][^<>{}]{2,400}?)\s*<')
 
 # …and the third way, which is how "3 iter · 5 notes" stayed on screen: text
 # sandwiched BETWEEN two interpolations — `{r.iterations} iter · {n} notes`.

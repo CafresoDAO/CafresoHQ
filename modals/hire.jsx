@@ -410,7 +410,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 <span>
                   <b style={{color: elevated ? '#c44' : 'inherit'}}>🛡 ELEVATED — computer access</b><br/>
                   <span className="hint" style={{display:'block',marginTop:2}}>
-                    Backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. DMs blocked, missions opt-in, every action logged.
+                    Backed by a CafresoHQ session with file and shell access on this machine. DMs blocked, missions opt-in, every action logged.
                   </span>
                 </span>
               </label>

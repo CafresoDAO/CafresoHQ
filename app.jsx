@@ -5345,7 +5345,7 @@ class RootErrorBoundary extends React.Component {
             💥 THE OFFICE HIT A SNAG
           </div>
           <div style={{fontSize: 'var(--text-11, 11px)', lineHeight: 1.5, marginBottom: 8}}>
-            Something crashed while drawing the screen. Your projects, agents, and
+            Something crashed while drawing the screen. Your projects, coworkers, and
             wallets are safe — this is only a display error.
           </div>
           <pre style={{

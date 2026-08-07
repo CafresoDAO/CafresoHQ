@@ -928,7 +928,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           <div className="thread-empty">
             {activeThread === 'direct'   && <>No messages yet — type below to message CafresoHQ.</>}
             {activeThread === 'team'     && <>No team chatter yet. When coworkers DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
-            {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each iteration's output lands here.</>}
+            {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each round's output lands here.</>}
             {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message everyone assigned at once, or @-mention just some of them.</>}
             {activeRoom && activeRoom.kind === 'meeting' && <>No messages in this meeting yet. Type below to send to all attendees, or @-mention specific people.</>}
           </div>

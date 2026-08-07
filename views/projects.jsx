@@ -241,7 +241,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     <div className="ws-pane ws-agent">
       <div className="ws-pane-hd">Coworkers · working together<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open this project's room, where the team works together">TALK ↗</button></div></div>
       <div className="ws-ledger">
-        {ledger.length === 0 && <div className="ws-led-empty">Your agents share this filesystem &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
+        {ledger.length === 0 && <div className="ws-led-empty">Your coworkers share this folder &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
         {ledger.map(l => (
           <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
             <span className="v">{l.kind}</span><span className="lb">{l.label}</span>

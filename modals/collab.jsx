@@ -655,7 +655,7 @@ function FurnishModal({ agent, onClose, onUpdate }) {
       )}
       <div style={{ fontFamily: 'Inter', fontSize: 10, marginTop: 10, opacity: 0.55, lineHeight: 1.5 }}>
         Every purchase is a real, user-signed sGLDT transfer to the Cafreso DAO treasury — the shell always asks first,
-        and declining costs nothing. Items are cosmetic and stay owned by this agent.
+        and declining costs nothing. Items are cosmetic and stay owned by this coworker.
       </div>
     </Modal>
   );

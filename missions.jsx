@@ -1204,9 +1204,9 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                   <span>
                     <b style={{color:'#c44'}}>Authorize {selectedAgent.name} for unattended computer access</b><br/>
                     <span className="hint" style={{display:'block',marginTop:2}}>
-                      This mission runs for {fmtTime(duration)} ({Math.round(duration/interval)} iterations). During that window
+                      This mission runs for {fmtTime(duration)} ({Math.round(duration/interval)} rounds). During that window
                       {' '}<b>{selectedAgent.name}</b> may read/write files and run shell commands on this computer without per-action approval.
-                      Only check this if you trust the topic + the agent's prompt.
+                      Only check this if you trust the topic and the brief you gave them.
                     </span>
                   </span>
                 </label>
