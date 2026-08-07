@@ -906,7 +906,7 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
               ? 'No tasks waiting — add one in the Tasks tab.'
               : (isMobileOffice
                   ? 'tap the picker to assign'
-                  : 'drag a card onto an agent\'s desk')}
+                  : 'drag a card onto a coworker\'s desk')}
           </span>
           <span className="otr-count">{inboxTasks.length}</span>
           {attentionCount > 0 && onOpenAttention && (

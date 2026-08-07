@@ -106,8 +106,12 @@ _STR = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)"""
 # template literals — none of which anybody reads. A property is the
 # mechanism; these positions are the claim.
 DISPLAY_RE = re.compile(
+    # `body` earned its place the hard way: the entire onboarding tour —
+    # both variants, 15 of its 17 strings — sat behind it, teaching every
+    # new boss "agents" and "sub-agent" on the first screen, under step
+    # titles that already said "coworkers".
     r'(?:\b(?:text|desc|label|hint|doc|docShort|summary|placeholder|title|'
-    r'empty|emptySub|cta|hireTitle|tip)\s*:\s*' + _STR + r')'
+    r'body|subtitle|empty|emptySub|cta|hireTitle|tip)\s*:\s*' + _STR + r')'
     r'|(?:\b(?:title|placeholder|aria-label)\s*=\s*\{?' + _STR + r')',
     re.S)
 

@@ -416,6 +416,15 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+*Cleaning up needs BOTH, and the mirror is the one that survives.* Restoring
+only the file looks like it worked — the file reads clean — while the tab
+still holds the fixture and `mergeByIdCap` merges it straight back on the next
+mount. A Gazette probe of 150 rows was gone from `activity.json` and still
+scrolling past on the office ticker two reloads later, because 150 of the 200
+rows in `localStorage` were fixture. Clear the mirror key as well, reload, and
+confirm on the surface rather than in the file you just fixed — for a merge,
+the file going clean is not evidence that the state did.
+
 **Hit-testing the floor: a rect is not what you can see.** Occlusion — a
 control the user can see but cannot click — is worth sweeping for, because
 each instance is silent (nothing errors, the click just goes nowhere). The

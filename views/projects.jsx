@@ -172,7 +172,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const openChat = () => { if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id })); };
   const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); setTermMounted(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
 
-  const statusLabel = agentStatus === 'working' ? 'agent working…' : 'agent idle';
+  const statusLabel = agentStatus === 'working' ? 'coworker working…' : 'coworker standing by';
 
   /* ── pane bodies, reused by the desktop grid AND the mobile pane-switcher.
      Defined as functions so they're only evaluated when a project exists. ── */

@@ -655,7 +655,7 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       onClose={onClose}
       title="🌅 END-OF-DAY STAND-UP"
       subtitle={phase === 'idle' ? 'click START to gather reports'
-        : phase === 'running' ? 'agents are reporting…'
+        : phase === 'running' ? 'your team is reporting…'
         : phase === 'summarizing' ? 'CafresoHQ is synthesizing…'
         : 'done — archive or copy'}
       size="lg"

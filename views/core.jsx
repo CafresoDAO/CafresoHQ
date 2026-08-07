@@ -353,7 +353,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
         ))}
         {filtered.length === 0 && pendingApprovals.length === 0 && (
           <div className="proj-empty-msg">
-            {tab === 'attention' ? 'Nothing needs you right now. 🎉' : tab === 'done' ? 'No completed work yet.' : 'No agent activity yet.'}<br/>
+            {tab === 'attention' ? 'Nothing needs you right now. 🎉' : tab === 'done' ? 'No completed work yet.' : 'Nothing from your team yet.'}<br/>
             <span style={{fontSize:'var(--text-9)',opacity:0.7}}>
               {tab === 'attention'
                 ? 'Failures, blocks, and approval requests surface here.'
