@@ -719,11 +719,31 @@ should extend that boundary, not blur it.
 - **A coworker can still assert something false in prose**, and that prose
   reaches the filed memo. Prompt wording moved it (three deliveries' worth of
   before/after in §6), but no instruction makes a small model honest. The
-  office's own record is the mitigation, not a fix.
+  office's own record is the mitigation, not a fix — and since 2026-08-07 it
+  is an explicit one: the delivery's **Working** footer is always written, so
+  a note that consulted nothing says *"Nothing opened, saved or looked up for
+  this one."* A real filing carried an invented
+  `[Vault path: Research/lemon-colour.md]` four lines above exactly that
+  sentence. Neither line is edited; they simply both appear, and the reader
+  can see they disagree.
 - **Unverified branches**, called out where they live: the specialist
   filing-deferral path (needs a cloud brain), and the Gazette's
   *"+N more coworkers"* line (needs five hires and a four-hour absence).
   Both rest on unit tests.
+- **The boss is typed `agent` on the vault map**, so the analysis panel counts
+  the office's owner among its coworkers — "3 coworkers" for two hired. The
+  node itself now reads *"You (boss)"* rather than a mysterious colleague
+  called `boss`, and the boss genuinely belongs on a map of who talks to whom.
+  Making the TALLY right means either a distinct node type or a special-cased
+  label, which is a decision about what the map is for.
+- **The meeting door sits below the fold at 1440×900**, a very common laptop
+  size. `.px-scene` scrolls (142px), so the door is reachable and fully
+  clickable once scrolled — measured, not assumed — but the floor's own banner
+  advertises it in the same breath as two controls that are always visible.
+  Whether the lobby should be above the fold is a layout call.
+- **Two names on the floor still use the banned word deliberately**: the
+  `AGENT OFFICE` header and the `Coding Agent` / `Slides Agent` role titles.
+  Left alone on purpose — they are product naming, not leaked vocabulary.
 
 **Recurring failure shapes, for whoever reviews the next change:**
 
