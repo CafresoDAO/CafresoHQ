@@ -867,11 +867,25 @@ function MorningReportModal({ report, onClose, onGoToOffice }) {
        duration; `end` is scheduled past the last event's own 450ms
        tail so the band outlives the last light. */
     const REPLAY_MS = evs.length * 600 + 700;
-    try {
-      window.dispatchEvent(new CustomEvent('cafresohq:replay', { detail: { phase: 'start' } }));
-      setTimeout(() => window.dispatchEvent(
-        new CustomEvent('cafresohq:replay', { detail: { phase: 'end' } })), REPLAY_MS);
-    } catch (_e) {}
+    /* MOUNT_MS, and the first cut did not have it. `onGoToOffice()` and
+       `onClose()` are React state updates, so the office view is not on
+       screen yet when this function continues — dispatching the band's
+       start event synchronously fired it into a floor whose listener had
+       not mounted, and the band never appeared. Measured: navigation
+       landed on OFFICE correctly, band false at 1200ms.
+
+       The same beat matters for the re-enactment itself: the first
+       synthetic tool events go out at i * 600, so i = 0 would have been
+       swallowed by the same unmounted floor. Delaying the whole sequence
+       fixes both. */
+    const MOUNT_MS = 350;
+    setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('cafresohq:replay', { detail: { phase: 'start' } }));
+        setTimeout(() => window.dispatchEvent(
+          new CustomEvent('cafresohq:replay', { detail: { phase: 'end' } })), REPLAY_MS);
+      } catch (_e) {}
+    }, MOUNT_MS);
     evs.forEach((a, i) => {
       setTimeout(() => {
         try {
@@ -884,7 +898,7 @@ function MorningReportModal({ report, onClose, onGoToOffice }) {
             }));
           }, 450);
         } catch (_e) {}
-      }, i * 600);
+      }, MOUNT_MS + i * 600);
     });
   };
   return (
