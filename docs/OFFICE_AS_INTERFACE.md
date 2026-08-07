@@ -506,6 +506,30 @@ is wrong, suspect delivery before logic — and note that the same run also
 exposed a queued `requestAnimationFrame` repainting raw text one frame after
 the fix, so "the code is in the bundle" is not evidence either.
 
+**The best detector this codebase has is one question, asked by a person:
+what is this label actually reading?** It found three defects in three passes
+when the scripted sweeps had gone quiet, and it found them on surfaces every
+suite passes:
+
+- `MED` on every task card — a control with no lever behind it, while
+  `pri-high` and `pri-low` sat fully styled and had never once rendered;
+- four class bars stacked directly above two earned counters, judgement and
+  measurement with nothing on screen telling them apart;
+- **"Tools used"** over `agent.tools` — a permission list under a past-tense
+  heading, so enabling a tool in Settings retroactively changed what a
+  coworker had "done".
+
+None of these is wrong in the code. Each is wrong in what it lets a person
+conclude, which is why no test catches them and no regex finds them: the
+mismatch is between a WORD and a SOURCE, and only a reader holds both at
+once. The fourth pass came back clean — `Remembers` counts real vault files
+and names them in its tooltip — and that clean answer is what makes the first
+three findings rather than taste.
+
+Ask it of anything a boss reads as fact — every counter, every badge, every
+past-tense heading. Then fix the claim, not the data: the data has usually
+been right every time.
+
 **A failed edit does not stop the commit that follows it.** Chaining a
 `python3 - <<PY` edit and a `git commit` in one shell call means the commit
 runs even when the script raises: the assertion fired, the message still went
