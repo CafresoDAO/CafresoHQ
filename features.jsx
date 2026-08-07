@@ -777,7 +777,16 @@ function MorningReportModal({ report, onClose }) {
     const nm = a.agentName || 'HQ';
     (byAgent[nm] = byAgent[nm] || []).push(a);
   });
-  const cols = Object.entries(byAgent).slice(0, 4);
+  /* Four columns is a layout cap, not a claim that four coworkers were
+     active. Nothing said so, and a boss with six hires saw four panels and
+     no hint the other two existed — a silent truncation on the one screen
+     that exists to summarise the whole night. Same rule this repo already
+     applies elsewhere: bound coverage if you must, but say what was
+     dropped. (The per-coworker event list caps at 5 and is already
+     self-labelling — its header prints the TRUE total, `NAME · 12`.) */
+  const allAgents = Object.entries(byAgent);
+  const cols = allAgents.slice(0, 4);
+  const hiddenAgents = allAgents.length - cols.length;
   const anchored = report.receipts.filter(r => r.verifyUrl);
   const reduced = typeof window !== 'undefined' && window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -830,10 +839,22 @@ function MorningReportModal({ report, onClose }) {
           <div className="lbl">ACTIONS</div>
           <div style={{ fontSize: 22 }}>{report.activity.length}</div>
         </div>
+        {/* DELIVERABLES counted `report.receipts.length` — RECEIPTS, which
+            are approval and tool records, not things filed to the cabinet.
+            Measured on a real night: six notes landed in `Deliveries/`, the
+            activity log held six `artifact` rows, and this tile read **0**.
+            The one screen whose whole job is "what did my business produce
+            while I was away" reported that it produced nothing.
+
+            Deliveries are `action: 'artifact'` — the same events the
+            Situation Wall's 📦 counter uses, and they are only logged when
+            `fileDelivery` really returned a path. The anchored sub-line
+            stays on receipts, because that one genuinely is about
+            receipts. */}
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
           <div className="lbl">DELIVERABLES</div>
-          <div style={{ fontSize: 22 }}>{report.receipts.length}</div>
-          {anchored.length > 0 && <div className="tiny">⛓ {anchored.length} anchored on-chain</div>}
+          <div style={{ fontSize: 22 }}>{report.activity.filter(a => a.action === 'artifact').length}</div>
+          {anchored.length > 0 && <div className="tiny">⛓ {anchored.length} receipt{anchored.length === 1 ? '' : 's'} anchored on-chain</div>}
         </div>
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
           <div className="lbl">MONEY</div>
@@ -853,6 +874,11 @@ function MorningReportModal({ report, onClose }) {
               ))}
             </div>
           ))}
+          {hiddenAgents > 0 && (
+            <div className="tiny" style={{ alignSelf: 'center', opacity: 0.8 }}>
+              +{hiddenAgents} more coworker{hiddenAgents === 1 ? '' : 's'} were busy — full log in the Team inbox
+            </div>
+          )}
         </div>
       )}
       {anchored.length > 0 && (

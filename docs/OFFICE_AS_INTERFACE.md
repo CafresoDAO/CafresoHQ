@@ -1384,6 +1384,39 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> 🚨 **The morning report said the business produced nothing (2026-08-06).**
+> Exercised the day-2 surface for the first time — the HQ Gazette, shown
+> once on return after >4h away. Forced one by backdating `lastSeen`.
+>
+> Its headline tiles read **ACTIONS 27 · DELIVERABLES 0**. Six notes had
+> been filed to `Deliveries/` in that window; the activity log held six
+> `artifact` rows. The one screen whose entire job is *"what did my business
+> produce while I was away"* reported that it produced nothing.
+>
+> `DELIVERABLES` counted `report.receipts.length` — **receipts**, which are
+> approval and tool records, not things filed to the cabinet. It now counts
+> `action: 'artifact'` events, the same source the Situation Wall's 📦
+> counter uses, and those are logged only when `fileDelivery` really
+> returned a path. The anchored sub-line stays on receipts, relabelled, since
+> that one genuinely is about receipts. Verified: the same gazette now reads
+> **DELIVERABLES 6**.
+>
+> **Verified negative, same surface:** `▶ REPLAY THE NIGHT` dispatches
+> synthetic `cafresohq:agentTool` events to re-enact the night on the floor,
+> which looked like a §4 violation ("a prop visit plays only while that tool
+> is REALLY running"). Measured during a replay: `0 WORKING` stays 0 and the
+> status pip stays `idle`. The re-enactment moves sprites but never touches
+> `agent.status`, so the office never claims current work. Correct as built.
+>
+> Also, a smaller silent cap on the same screen: the per-coworker columns
+> `slice(0, 4)` with nothing saying so, on the one screen meant to summarise
+> the whole night. It now appends *"+N more coworkers were busy — full log in
+> the Team inbox"*. **That branch is unverified** — reaching it needs five
+> hires and a four-hour absence, and this session runs one free local model.
+> The modal was confirmed to still render, and the line correctly stays
+> hidden at one coworker. (The per-coworker event list also caps at 5, but
+> is self-labelling: its header prints the true total, `LLAMA · 27`.)
+
 > ✅ **Swept the dead-end class (2026-08-06).** The mission block turned out
 > to be one of a family: **a refusal that states the reason and not the
 > route**. Swept the other blocked and empty states.
