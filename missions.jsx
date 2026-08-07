@@ -346,7 +346,33 @@ async function runMissionIteration(ctx) {
 
   setChat(prev => prev.map(m => m.id === msgId ? { ...m, streaming: false } : m));
 
-  const cleaned = HQ.cleanHarmony(buf);
+  /* The fourth reply path, and it was the only one still handing the boss
+     raw text. `cleaned` below has always existed here, but it fed
+     isMissionComplete() and nothing else — the MESSAGE kept whatever the
+     throttled stream last wrote, markers and all.
+
+     Same defect the three dispatch paths had, found the same way: not by a
+     test, which stays green because visibleReply is correct, but by asking
+     which paths had never been watched end to end. A night shift runs while
+     the boss is asleep, so its transcript is read the morning after in the
+     Gazette — the surface least likely to have anyone watching when it goes
+     wrong, and the one that most needs to read like a report.
+
+     cancel() first for the reason the other three needed it: flush() clears
+     its own `scheduled` flag but leaves the queued frame, which would
+     repaint raw text over this one frame later. */
+  const cleaned = HQ.cleanHarmony(HQ.visibleReply(buf, agent && agent.name));
+  /* [MISSION_COMPLETE] deliberately survives visibleReply — it is not a tool
+     call, it is the coworker saying the research is finished, and
+     isMissionComplete() below reads it from `cleaned`. But it is still
+     machine syntax, and writing `cleaned` straight to the message would have
+     put it on the boss's morning transcript: a marker I would have shipped
+     to the screen while fixing markers on the screen. Detection keeps it;
+     the display does not. */
+  const shown = cleaned.replace(/\[\s*MISSION_COMPLETE\s*\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n').trim();
+  flush.cancel();
+  setChat(prev => prev.map(m => m.id === msgId ? { ...m, text: shown } : m));
   /* Self-completion is OFF by default. When a mission has it enabled, we
      also require the agent to have actually run a meaningful number of
      iterations — at least 60% of the planned schedule — before honoring

@@ -217,6 +217,32 @@ console.log(JSON.stringify(R));
 '''
 
 
+def check_every_reply_path():
+    """Every agentStream() caller is a reply path, and each one has to run its
+    final text through visibleReply before a person sees it.
+
+    This exists because six paths existed and three cleaned. The suite was
+    green throughout, because it tests visibleReply — which was correct — and
+    nothing tested whether a path CALLS it. Finding the other three meant
+    enumerating callers by hand; this does that automatically.
+
+    Deliberately crude: it asks whether visibleReply appears within 150 lines
+    after the stream opens, not whether it is wired correctly. A new path that
+    forgets entirely is the failure this catches; one that calls it wrongly is
+    what the live run is for.
+    """
+    import re as _re
+    paths = []
+    for rel in ('app.jsx', 'features.jsx', 'missions.jsx'):
+        text = (ROOT / rel).read_text(encoding='utf-8')
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if _re.search(r'\bagentStream\s*\(', line) and 'function agentStream' not in line:
+                window = '\n'.join(lines[i:i + 150])
+                paths.append((rel, i + 1, 'visibleReply' in window))
+    return paths
+
+
 def main():
     print('reply hygiene — no protocol markers on user surfaces')
     if not shutil.which('node'):
@@ -402,6 +428,11 @@ def main():
     check('the request-class guards all still exist',
           {'DM_TO', 'HANDOFF_TO', 'HIRE_AGENT', 'HIRE_ASSISTANT',
            'REQUEST_ELEVATION', 'SPAWN_SUBAGENT'} <= guarded)
+
+    paths = check_every_reply_path()
+    missing = [f'{r}:{n}' for r, n, ok in paths if not ok]
+    check(f'all {len(paths)} reply paths clean their final text',
+          not missing, 'uncleaned: ' + ', '.join(missing) if missing else '')
 
     print()
     if FAILS:

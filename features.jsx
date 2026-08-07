@@ -342,7 +342,10 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent })
                    floorEmit('screen', { agentId: ph.agentRef.id, tail: buf.slice(-240), phase: 'stream' }); },
           { signal: controller.signal }
         );
-        updateById(ph.id, { text: buf });  // final flush
+        /* Clean the final text, same as every other reply path. A meeting
+           turn is a coworker speaking to the whole room, so a stray marker
+           lands in the transcript the others then read back as context. */
+        updateById(ph.id, { text: HQ.visibleReply(buf, ph.agentRef && ph.agentRef.name) });
       } catch (err) {
         const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';
         /* §7: no raw error dumps on a user surface. This read
@@ -566,10 +569,15 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
           tok => { buf += tok; updateReport(buf); },
           { signal: perAgent.signal, maxTokens: STANDUP_MAX_TOKENS }
         );
-        // Final non-throttled flush so the displayed text matches buf exactly.
-        setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, text: buf } : r));
+        /* Final non-throttled flush, cleaned. This ran `text: buf` — the raw
+           stream — on the one ritual the comment below calls "the whole team
+           checking in", so a coworker who emitted a marker checked in with
+           machine syntax. The archive gets the same text as the screen;
+           they used to be the same only because neither was cleaned. */
+        const said = HQ.visibleReply(buf, a && a.name);
+        setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, text: said } : r));
         setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, streaming: false } : r));
-        finished.push({ name: a.name, role: a.role, text: buf });
+        finished.push({ name: a.name, role: a.role, text: said });
       } catch (err) {
         const userStopped = controller.signal.aborted;
         const timedOut = !userStopped && perAgent.signal.aborted;
