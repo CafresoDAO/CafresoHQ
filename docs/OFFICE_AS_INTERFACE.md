@@ -1325,6 +1325,33 @@ append-only).
 >
 > Same shape as the payroll and FUEL findings: not a broken number, a number
 > wearing a claim it hadn't earned.
+>
+> **The adjacency check, run deliberately.** That bug was only visible
+> because the two props sit *next to each other* — either label alone reads
+> as plausible. So the same check was pointed at every other pair of numbers
+> describing one thing, and the rest came back clean: the Team card's
+> **Jobs = 2** matches the two completed tasks (not the five journal
+> entries), **Remembers = 0 notes** matches an empty `Agents/Llama/`, and
+> the office HUD's **⛽ 12.6K** matches the per-agent **12,617**. Worth
+> recording the negatives: §5's ledger and §2's card were already honest,
+> and the papers pile was the only outlier.
+
+> ✅ **One ticker row was eating the strip (2026-08-06).** The office pulse
+> printed
+>
+> > `filed "Deliveries/check-your-memory-then-name-a-primary-colour.md" to the cabinet 🗄`
+>
+> — wide enough on its own to push every other event off the ticker, and the
+> row directly above it already read `finished "Check your memory then name
+> a primary colour" ✓`. The boss got the same title twice: once in prose,
+> once as a hyphenated slug with a file extension, which is the *machine's*
+> name for it (§6). Every other activity row is capped; this was the only
+> one that wasn't.
+>
+> Now `filed to Deliveries 🗄` — **where** it landed is the part the boss
+> doesn't already know from the line above, and the file itself is one click
+> away on the desk out-tray. The pulse reads as a sequence again:
+> *picked up …* → *finished … ✓* → *filed to Deliveries 🗄*.
 
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)

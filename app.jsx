@@ -2893,7 +2893,19 @@ ${d.text}` : d.text,
         if (filedPath) {
           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
           logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
-            action: 'artifact', taskId, text: `filed "${filedPath}" to the cabinet 🗄` });
+            /* The FOLDER, not the whole path. This printed
+               `filed "Deliveries/check-your-memory-then-name-a-primary-colour.md"
+               to the cabinet` — one ticker row wide enough to push every
+               other event off the strip, and the row directly above it
+               already said `finished "Check your memory then name a primary
+               colour" ✓`. The boss got the same title twice: once in prose,
+               once as a hyphenated slug with a file extension, which is the
+               machine's name for it (§6). Where it landed is the part they
+               don't already know; the file itself is one click away on the
+               desk out-tray. Every other activity row is capped — this was
+               the only one that wasn't. */
+            action: 'artifact', taskId,
+            text: `filed to ${String(filedPath).split('/')[0] || 'the cabinet'} 🗄` });
           try {
             floorEmit('artifact', { agentId: agent.id });
           } catch (_e) {}
