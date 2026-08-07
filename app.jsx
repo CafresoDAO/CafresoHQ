@@ -997,7 +997,7 @@ ${d.text}` : d.text,
 
   const onHire = (a) => {
     const firstEver = agents.length === 0 && tasks.length === 0;
-    setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, tasksDone: 0, recent: 'just arrived, finding their desk' }]);
+    setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'hired', text: 'walked onto the floor' });
     /* First micro-delight: the new coworker literally walks onto the floor.
@@ -1836,7 +1836,6 @@ ${d.text}` : d.text,
            An empty reply is its own honest sentence. */
         recent: cleanBuf.slice(0, 140) || 'finished without saying anything',
         tokens: (agent.tokens || 0) + usedTokens,
-        tasksDone: (agent.tasksDone || 0) + 1,
         task: 'reporting back',
       });
       settleAfterRun(agent.id);
@@ -2121,7 +2120,7 @@ ${d.text}` : d.text,
         hiredAt: Date.now(),
         lastRun: 'just hired (transient)',
         nextRun: 'one-shot',
-        mood: 'idle', tokens: 0, tasksDone: 0,
+        mood: 'idle', tokens: 0,
         recent: `spawned by ${agent.name}` + (perSpawnModel ? ` · model:${perSpawnModel}` : ''),
       };
       // Visible in UI immediately.
@@ -3047,7 +3046,6 @@ ${d.text}` : d.text,
         recent: cleanBuf.slice(0, 140) || task.title,
         task: 'reporting back',
         tokens: (agent.tokens || 0) + usedTokens,
-        tasksDone: (agent.tasksDone || 0) + 1,
       });
       settleAfterRun(agent.id);
       setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'done'), result: cleanBuf.slice(0, 600) } : t));

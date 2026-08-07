@@ -18,6 +18,14 @@
 
    Entry: { at, agentId, kind, outcome, taskId?, title? }               */
 
+/* `agent.tasksDone` is RETIRED, not merely unused. Three sites still
+   incremented it after this ledger replaced it, and nothing anywhere read
+   it back — a counter whose only surviving property was that it was
+   wrong, sitting in the agent object waiting to look authoritative to
+   whoever needed a jobs number next. The writes are gone; stale values on
+   already-persisted coworkers are harmless because no surface reads them.
+   If you want jobs completed, it is `xpStats(experience, agentId)`. */
+
 /* Kind → [singular, plural]. Kinds mirror the starter cards
    (modals/starter.jsx) plus the two host-minted ones. Unknown kinds are
    preserved verbatim in the ledger (Phase C forward-compat) and label as

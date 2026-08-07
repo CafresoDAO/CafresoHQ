@@ -364,7 +364,6 @@ async function runMissionIteration(ctx) {
     status: 'active', mood: 'done',
     recent: cleaned.slice(0, 140) || `mission iter ${mission.iterations + 1}`,
     tokens: (agent.tokens || 0) + usedTokens,
-    tasksDone: (agent.tasksDone || 0) + 1,
     task: 'on mission',
   });
   if (cleaned.trim()) {
