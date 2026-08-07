@@ -2,6 +2,7 @@ import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
 import { brainName, EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
+import { officeDate } from '../app/artifacts.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -189,7 +190,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             <div className="journal">
               {agent.journal.slice(0, 8).map((e, i) => (
                 <div key={i} className="jrow">
-                  <span className="jdate">{e.date || new Date(e.at||0).toISOString().slice(0,10)}</span>
+                  <span className="jdate">{e.date || officeDate(new Date(e.at||0))}</span>
                   <span className="jsum">{e.summary}</span>
                 </div>
               ))}

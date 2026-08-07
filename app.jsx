@@ -9,7 +9,7 @@ import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { officeHasBrain } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
-import { agentFiledPath, cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
+import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, floorEmit, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
@@ -1278,7 +1278,9 @@ ${d.text}` : d.text,
       if (a.id !== agentId) return a;
       const entry = {
         at,
-        date: new Date(at).toISOString().slice(0, 10),
+        /* Local, not UTC — this is the date the boss reads on a work-log
+           entry, and the calendar had the same bug (see officeDate). */
+        date: officeDate(new Date(at)),
         summary: summary.slice(0, 240),
         task: taskTitle || null,
       };

@@ -2,6 +2,7 @@ import { CafresoHQV2 } from '../features.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
+import { officeDate } from '../app/artifacts.jsx';
 import { brainName, EFFORT_TIP, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
@@ -657,8 +658,19 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
 function CalendarView({ tasks, agents, missions = [] }) {
   const groups = useMV(() => {
     const out = new Map();
+    /* officeDate, not toISOString — the office runs on the BOSS'S clock.
+       artifacts.jsx already carries this scar: "a delivery filed at 8pm in
+       New York was dated TOMORROW in its own header". The calendar had the
+       same UTC bug and it reads worse here, because this view's whole job is
+       to answer "what did we get done today".
+
+       Measured on a live floor at Aug 7, 2:30 AM local: three tasks raised
+       the previous evening (11:18, 11:26, 11:32 PM on Aug 6) were filed
+       under "Today · 4" alongside one genuinely from Aug 7. West of UTC, last
+       night's late work carries today's UTC date, so a boss checking the
+       morning's numbers sees yesterday's evening folded into them. */
     const push = (ts, entry) => {
-      const key = new Date(ts).toISOString().slice(0,10);
+      const key = officeDate(new Date(ts));
       if (!out.has(key)) out.set(key, []);
       out.get(key).push(entry);
     };
@@ -677,7 +689,7 @@ function CalendarView({ tasks, agents, missions = [] }) {
 
   const fmt = (k) => {
     const d = new Date(k + 'T12:00:00');
-    const today = new Date().toISOString().slice(0,10);
+    const today = officeDate();          // local, matching the keys above
     if (k === today) return 'Today';
     return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
   };

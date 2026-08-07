@@ -1,6 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
+import { officeDate } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -1625,7 +1626,9 @@ function journalSummary(agent) {
   const recent = j.slice(0, 3);
   const lines = ['Your recent work log (for memory only — do NOT re-litigate past tasks):'];
   for (const e of recent) {
-    const when = e.date || (e.at ? new Date(e.at).toISOString().slice(0, 10) : '');
+    // Matches the date STORED on the entry (app.jsx), so the work log the
+    // coworker reads and the one the boss reads agree on what day it was.
+    const when = e.date || (e.at ? officeDate(new Date(e.at)) : '');
     lines.push(`  [${when}] ${(e.summary || '').slice(0, 120)}`);
   }
   return lines.join('\n');
