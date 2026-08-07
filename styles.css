@@ -3113,6 +3113,17 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   width: 6px; height: 6px; background: var(--ink);
   animation: blink 1s infinite;
 }
+/* Shown beside the dots when the first byte is taking a while. Quiet — it
+   is a status note, not a warning; nothing has gone wrong yet. */
+.msg-waiting {
+  display: block;
+  margin-top: 3px;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink-soft, rgba(0,0,0,0.5));
+  font-style: italic;
+}
 .typing span:nth-child(2) { animation-delay: 0.15s; }
 .typing span:nth-child(3) { animation-delay: 0.3s; }
 @keyframes blink { 0%, 60%, 100% { opacity: 0.2; } 30% { opacity: 1; } }

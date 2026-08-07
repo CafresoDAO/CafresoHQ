@@ -1,3 +1,4 @@
+import { headTimeoutMs, SLOW_HEAD_MS } from './app/patience.jsx';
 /* ==========================================================================
    CafresoHQ — real backend client
    Dispatches streaming chat to:
@@ -465,10 +466,25 @@ async function fetchStreamHead(url, init = {}, headMs = 20000) {
       try { ctl.abort(new DOMException(`backend did not start responding within ${Math.round(headMs / 1000)}s`, 'TimeoutError')); }
       catch (_e) { try { ctl.abort(); } catch (_e2) {} }
     }, headMs);
+    /* Say something before the budget runs out. A streaming bubble shows
+       three animated dots and nothing else while we wait for the first
+       byte — fine for a second or two, but a cold local brain can be
+       loading gigabytes off disk, and silence that long reads as broken.
+       Raising the local budget without this would only make the blank
+       stare longer. Fires once; the UI decides what to do with it. */
+    const slow = setTimeout(() => {
+      if (typeof window === 'undefined' || !window.dispatchEvent) return;
+      try {
+        window.dispatchEvent(new CustomEvent('cafresohq:brainSlow', {
+          detail: { waitedMs: SLOW_HEAD_MS, budgetMs: headMs },
+        }));
+      } catch (_e) {}
+    }, SLOW_HEAD_MS);
     try {
       return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
     } finally {
       clearTimeout(t);
+      clearTimeout(slow);
       if (outer) { try { outer.removeEventListener('abort', propagate); } catch (_e) {} }
     }
   };
@@ -568,7 +584,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
 /* Shared OpenAI-compatible streaming. Used by both LM Studio and Ollama.
    noStreamOptions: suppress `stream_options` for backends that
    reject that field with InvalidParameter. */
-async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions }) {
+async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions, local }) {
   const root = (base || '').replace(/\/+$/, '');
   if (!root) throw new Error(`No ${label} URL set — open Settings → API`);
   if (requireKey && !apiKey) throw new Error(`No ${label} API key set — open Settings → API`);
@@ -588,11 +604,16 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   const headers = { 'content-type': 'application/json' };
   if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
   if (extraHeaders) Object.assign(headers, extraHeaders);
+  /* A cold local model loads its weights before the first token; a hosted
+     API that hasn't answered in 20s is simply not coming. Same code path,
+     two honest budgets — `local` is what the driver KNOWS (ollama/lmstudio
+     proxy to this machine), `root` catches a custom endpoint the user
+     pointed at their own box. */
   const res = await fetchStreamHead(root + '/chat/completions', {
     method: 'POST', signal,
     headers,
     body: JSON.stringify(body),
-  });
+  }, headTimeoutMs({ local, url: root }));
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
@@ -633,6 +654,7 @@ function streamLMStudio(opts) {
     base: _settings.lmstudioUrl,
     label: 'LM Studio',
     defaultModel: _settings.lmstudioModel,
+    local: true,          // weights load off this machine's disk
   });
 }
 
@@ -642,6 +664,10 @@ function streamOllama(opts) {
     base: _settings.ollamaUrl,
     label: 'Ollama',
     defaultModel: _settings.ollamaModel,
+    /* The default `ollamaUrl` is '/ollama/v1' — serve.py's same-origin
+       proxy — so the URL alone cannot reveal that the daemon is local.
+       The driver knows, so the driver says so. */
+    local: true,
   });
 }
 

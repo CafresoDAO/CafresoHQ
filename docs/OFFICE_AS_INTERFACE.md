@@ -484,6 +484,38 @@ no keys pasted in this path.
 5. **Watch the work.** The animation layer (§4) plays the task honestly.
    If the task needs a permission, the coworker walks over and asks — the
    user's first approval is diegetic, not a modal ambush.
+   > ⚠ **A local brain must be given time to wake up** (found 2026-08-06).
+   > One head timeout — 20s to the first byte — served every provider. That
+   > is right for a hosted API and wrong for a local one: the first call
+   > after a model is evicted loads gigabytes off disk before it can emit a
+   > token. Measured — the same task failed **three times in a row** with
+   > "that brain didn't answer in time" while Ollama was healthy and
+   > answering a one-word prompt in 0.8s. The zero-config first hire, the
+   > one most users will make, looked broken on its first job.
+   >
+   > `app/patience.jsx` (pure, `scripts/test_patience.py`, 31 checks) splits
+   > it: **20s remote, 90s local**. "Local" is what the driver KNOWS —
+   > ollama/lmstudio proxy to this machine through a same-origin path, so
+   > the URL alone can't reveal it — with a loopback/RFC1918/`.local` URL
+   > check as the fallback for a custom endpoint the user pointed at their
+   > own box. The host check parses the URL rather than substring-matching:
+   > `localhost.evil.com` and `evil.com/#localhost` are not local, and
+   > `172.32.x` is not in `172.16/12`.
+   >
+   > **The longer budget required the waiting line, not the other way
+   > round.** A streaming bubble shows three animated dots and nothing else
+   > until the first byte. Raising the budget without saying anything would
+   > only have made the blank stare longer — the fix would have felt like a
+   > regression. So the stream head fires `cafresohq:brainSlow` at 6s and
+   > the bubble adds "still waiting on that brain — it may be warming up".
+   > It is shown only on a bubble that is streaming AND still empty, so the
+   > sentence is true of that message no matter which run was slow, and it
+   > clears the instant text arrives — a bubble that starts flowing stops
+   > apologising.
+   >
+   > Verified live against an evicted model: dots at 0s, the line at 12s,
+   > gone the moment content flowed — and the task that had failed three
+   > times completed and filed.
 6. **The artifact lands.** Out-tray → filing cabinet, with an open sheet.
    First delight + the trust story in one beat.
    > ✅ **Shipped 2026-08-05** — `app/artifacts.jsx` + `modals/delivery.jsx`.

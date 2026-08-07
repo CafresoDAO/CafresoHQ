@@ -56,6 +56,22 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
+  /* A brain has gone quiet past the point where dots alone stay honest.
+     claude-client fires this from inside the stream-head wait; it clears
+     itself so a bubble that starts flowing stops apologising. */
+  const [brainSlow, setBrainSlow] = useState(false);
+  useEffect(() => {
+    let clearTimer = null;
+    const onSlow = () => {
+      setBrainSlow(true);
+      clearTimeout(clearTimer);
+      /* Long enough to outlive the local budget, so the notice doesn't
+         blink off while the model is genuinely still loading. */
+      clearTimer = setTimeout(() => setBrainSlow(false), 120000);
+    };
+    window.addEventListener('cafresohq:brainSlow', onSlow);
+    return () => { window.removeEventListener('cafresohq:brainSlow', onSlow); clearTimeout(clearTimer); };
+  }, []);
   /* activeThread persists across reloads / view switches so navigating away
      from chat and back doesn't dump the user into the 'direct' thread. */
   const _ACTIVE_THREAD_KEY = 'cafresohq_chat_active_thread_v1';
@@ -926,6 +942,16 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                 <div className="msg-body">
                   <MessageBody text={m.text} />
                   {m.streaming ? <span className="typing"><span/><span/><span/></span> : null}
+                  {/* Still waiting on the first byte. Only ever shown on a
+                      bubble that is streaming AND has produced no text yet,
+                      so the sentence is true of THIS message regardless of
+                      which run was slow — a bubble with nothing in it
+                      really is still waiting. Three dots alone read as
+                      broken once a cold local brain starts loading
+                      gigabytes off disk. */}
+                  {m.streaming && !m.text && brainSlow ? (
+                    <span className="msg-waiting">still waiting on that brain — it may be warming up</span>
+                  ) : null}
                 </div>
                 {!m.streaming && m.text ? (
                   <>
