@@ -1023,12 +1023,35 @@ append-only).
 > off the bottom of the screen. Fixing the harm without that regression
 > meant pinning, not reflowing.
 >
-> **Not fixed, and worth its own pass:** the tool row is *overloaded*, not
-> merely tight. At 1400px it needs 1024px of space and gets 637 — it does
-> not fit at any width, so INBOX · MEMORY · STAND-UP · RESEARCH · MEETING ·
-> WORKFLOW · DAY/NIGHT always live partly behind a scroll. That's a
-> grouping decision (an overflow menu, or folding launchers into the
-> existing `Apps ▾`), not a CSS fix.
+> ~~**Not fixed, and worth its own pass:** the tool row is *overloaded*.~~
+> ✅ **Fixed next pass — `⌗ ROOMS`.** The row needed 1024px and had 637 even
+> at 1400px wide, so those launchers were behind a hidden scroll at *every*
+> width, not just narrow ones.
+>
+> Six of them — Memory shelf · Stand-up · Research missions · Meeting rooms
+> · Workflows · Day/Night — now live in one `TopbarMenu`. **INBOX stays
+> out** because it carries attention; the six are rooms and facilities you
+> *go to*, which is also why the button is `⌗ ROOMS` rather than a bare `⋯`.
+>
+> Grouped by **nature, not by measurement**. A priority-plus toolbar that
+> re-measures on every resize is a lot of machinery to decide something that
+> doesn't change — the split between "an alert" and "a place you visit" is
+> stable, so it belongs in the markup, not in a ResizeObserver.
+>
+> **Folding a launcher away must not fold its COUNT away.** Hiding live
+> state is precisely what this whole thread of work exists to stop, so the
+> menu button carries the total (`⌗ ROOMS ▾ 2`), its tooltip enumerates
+> them ("1 meeting rooms, 1 workflows"), and every row shows its own.
+>
+> Result, measured: at 1400px the strip needs 637 and has 637 — no overflow,
+> no fade, nothing off-screen; same at 760px (740/740). The fade machinery
+> from the previous pass stays for genuinely tight cases. `Apps ▾` was
+> considered as a home and rejected: it belongs to the outer Cafreso
+> eco-bar and switches *products*, not HQ facilities.
+>
+> Verified by driving it: picking "Memory shelf" closes the menu and lands
+> on the Memory view; Esc closes and returns focus to the button; an
+> outside click closes it.
 
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)

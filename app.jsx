@@ -21,7 +21,7 @@ import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
@@ -3924,18 +3924,36 @@ ${d.text}` : d.text,
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · agent message registry (active handoffs, blocked tasks, failures)">
               📬 INBOX{inboxActiveCount > 0 ? ` · ${inboxActiveCount}` : ''}
             </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>goTo('memory')}>📁 MEMORY</Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={onOpenStandup} title="End-of-day stand-up (U)">🌅 STAND-UP</Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setMissionsOpen(true)} title="Long-running research missions">
-              🔬 RESEARCH{missions.filter(m=>m.status==='running').length > 0 ? ` · ${missions.filter(m=>m.status==='running').length}` : ''}
-            </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setChatMeetingModalOpen(true)} title="Spin up a multi-agent meeting room">
-              📋 MEETING{meetings.length > 0 ? ` · ${meetings.length}` : ''}
-            </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setWorkflowOpen(true)} title="Chain tasks into a pipeline">
-              WORKFLOW{workflows.length > 0 ? ` · ${workflows.length}` : ''}
-            </Btn>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setNight(v=>!v)}>{night?'☀':'☾'} {night?'DAY':'NIGHT'}</Btn>
+            {/* Six launchers folded into one menu. The strip needed 1024px
+                and had 637 even at 1400px wide, so these were ALWAYS partly
+                behind a hidden scroll. INBOX stays out because it carries
+                attention; these are rooms and facilities you go to.
+                Counts ride the menu button — folding them away would hide
+                live state, which is the opposite of the point. */}
+            <TopbarMenu
+              label="⌗ ROOMS"
+              title="Memory shelf, stand-up, research missions, meeting rooms, workflows"
+              items={[
+                { key: 'memory',   label: '📁 Memory shelf', count: 0,
+                  title: 'Long-term notes folded into every prompt',
+                  onClick: () => goTo('memory') },
+                { key: 'standup',  label: '🌅 Stand-up', count: 0,
+                  title: 'End-of-day stand-up (U)', onClick: onOpenStandup },
+                { key: 'research', label: '🔬 Research missions',
+                  count: missions.filter(m=>m.status==='running').length,
+                  title: 'Long-running research missions',
+                  onClick: () => setMissionsOpen(true) },
+                { key: 'meeting',  label: '📋 Meeting rooms', count: meetings.length,
+                  title: 'Spin up a multi-agent meeting room',
+                  onClick: () => setChatMeetingModalOpen(true) },
+                { key: 'workflow', label: '⛓ Workflows', count: workflows.length,
+                  title: 'Chain tasks into a pipeline',
+                  onClick: () => setWorkflowOpen(true) },
+                { key: 'night',    label: night ? '☀ Switch to day' : '☾ Switch to night', count: 0,
+                  title: 'Toggle the floor lighting',
+                  onClick: () => setNight(v => !v) },
+              ]}
+            />
           </div>
           {/* ── Pinned. Never scrolls. ────────────────────────────────────
               `.status` above is a horizontal scroller whose scrollbar is

@@ -5,7 +5,7 @@ import { AgentCards, ChatPanel } from './ui/chat.jsx';
 import { Btn, Card, Checkbox, Field, Ico, NAV_ITEMS, SearchField, Select, Tabs, TextArea, TextField, Toggle, VocabCtx, getVocab } from './ui/primitives.jsx';
 import { CommandPaletteProvider, PaletteFab, ToastProvider, useCommands, useToast } from './ui/feedback.jsx';
 import { GettingStarted, NotificationBell, NotificationCenter, OnboardingKeyStep, OnboardingTour } from './ui/onboarding.jsx';
-import { CEOPanel, InspectPanel, ShortcutHud, Toast, TokenHUD } from './ui/panels.jsx';
+import { CEOPanel, InspectPanel, ShortcutHud, Toast, TokenHUD, TopbarMenu } from './ui/panels.jsx';
 
 const CafresoHQUI = {
   Rail,
@@ -42,6 +42,7 @@ const CafresoHQUI = {
   CEOPanel,
   InspectPanel,
   TokenHUD,
+  TopbarMenu,
   ShortcutHud,
   Toast,
 };

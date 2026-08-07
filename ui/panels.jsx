@@ -403,4 +403,69 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
 
 
 
-export { CEOPanel, InspectPanel, ShortcutHud, Toast, TokenHUD };
+
+/* ── Topbar overflow menu ─────────────────────────────────────────────────
+   The status strip never fit. Measured at 1400px: it needed 1024px of room
+   and got 637, so INBOX · MEMORY · STAND-UP · RESEARCH · MEETING · WORKFLOW
+   · DAY/NIGHT always lived partly behind a hidden scroll — at EVERY width,
+   not just narrow ones. Pinning the alarms (previous pass) stopped the
+   dangerous part; this stops the row being overloaded in the first place.
+
+   Grouping is deterministic — by nature, not by measurement. A
+   priority-plus toolbar that re-measures on every resize is a lot of
+   machinery to decide something that doesn't actually change: these six are
+   room-and-facility launchers, INBOX is attention-bearing and stays out.
+
+   `badge` matters. Folding RESEARCH · MEETING · WORKFLOW behind a menu
+   would otherwise HIDE their counts, and hiding live state is the thing
+   this whole thread of work exists to stop. The button carries the total
+   and every row carries its own. */
+function TopbarMenu({ label, title, items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const btnRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      /* Focus goes back where it came from — closing a menu should not
+         dump the boss at the top of the document. */
+      if (btnRef.current) btnRef.current.focus();
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  const live = items.filter(i => i.count > 0);
+  const total = live.reduce((n, i) => n + i.count, 0);
+
+  return (
+    <div className="topbar-menu" ref={ref}>
+      <button ref={btnRef} className="px-btn ghost sz-sm topbar-menu-btn"
+        aria-haspopup="true" aria-expanded={open ? 'true' : 'false'}
+        title={total > 0
+          ? `${title} — ${live.map(i => `${i.count} ${i.label.toLowerCase()}`).join(', ')}`
+          : title}
+        onClick={() => setOpen(v => !v)}>
+        {label} ▾{total > 0 ? <span className="topbar-menu-badge">{total}</span> : null}
+      </button>
+      {open && (
+        <div className="topbar-menu-pop" role="menu">
+          {items.map(i => (
+            <button key={i.key} role="menuitem" className="topbar-menu-item"
+              title={i.title || ''}
+              onClick={() => { setOpen(false); i.onClick(); }}>
+              <span className="tmi-label">{i.label}</span>
+              {i.count > 0 ? <span className="tmi-count">{i.count}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export { CEOPanel, InspectPanel, ShortcutHud, Toast, TokenHUD, TopbarMenu };

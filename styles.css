@@ -2014,6 +2014,60 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
   flex: 0 0 auto;
 }
 
+/* Topbar overflow menu — see the TopbarMenu comment in ui/panels.jsx. */
+.topbar-menu { position: relative; flex-shrink: 0; }
+.topbar-menu-btn { display: inline-flex; align-items: center; gap: 6px; }
+.topbar-menu-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 15px; height: 15px; padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent-sun, #d4a648);
+  color: #1a1408;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1;
+}
+.topbar-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 208px;
+  padding: 5px;
+  background: var(--paper, #f6efdd);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-2, 6px);
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.25);
+  /* Above the chat window, like the rest of the chrome's menus. */
+  z-index: var(--z-dropdown);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.topbar-menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-1, 4px);
+  background: transparent;
+  color: var(--ink);
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  line-height: 1.1;
+  text-align: left;
+  cursor: pointer;
+}
+.topbar-menu-item:hover, .topbar-menu-item:focus-visible {
+  background: var(--accent-sun-wash, rgba(212,166,72,0.22));
+  outline: none;
+}
+.topbar-menu-item .tmi-count {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 2px 5px;
+  border-radius: 7px;
+  background: var(--accent-sun, #d4a648);
+  color: #1a1408;
+}
+
 /* An honest edge. The scrollbar is hidden by design (it would otherwise
    force the page's minimum width), which left overflowing chips with NO
    indication they existed. This fade is applied only while the strip
