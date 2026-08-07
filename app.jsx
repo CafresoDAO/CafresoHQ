@@ -3673,6 +3673,14 @@ ${d.text}` : d.text,
   const navTo = useCallbackA((view) => {
     if (desktopMode) {
       if (view === 'chat') { setChatWinOpen(true); return; }
+      /* "The office is the wallpaper" — openOrRaise('visual') minimizes
+         every window so the floor is visible. The chat panel is a
+         fixed-position div outside the .hq-window system, so it alone
+         survived that sweep and sat parked over the middle of the floor:
+         clicking OFFICE did not show you the office. Nothing decided that,
+         it just wasn't in the set being minimized. Chat reopens the moment
+         the boss clicks CHAT, and the thread is untouched. */
+      if (view === 'visual') setChatWinOpen(false);
       openOrRaise(view);
     } else {
       setActiveView(view);
@@ -3873,8 +3881,18 @@ ${d.text}` : d.text,
         setActive={setActiveView}
         collapsed={railCollapsed}
         onToggle={() => setRailCollapsed(v => !v)}
-        onLaunch={desktopMode ? openOrRaise : undefined}
+        /* navTo, not openOrRaise — the rail was the one surface still
+           calling the lower-level verb directly, so the "clear the floor
+           when you go to the Office" rule never fired from the rail, which
+           is where a boss actually clicks Office. Same reason the comment
+           on navTo exists: one navigation verb for every surface. */
+        onLaunch={desktopMode ? navTo : undefined}
         runningViews={desktopMode ? (openWindows || []).filter(w => !w.minimized).map(w => w.view) : undefined}
+        /* navTo, not setChatWinOpen — it already routes chat correctly in
+           BOTH modes (desktop opens the floating panel, narrow switches the
+           view), so the rail can't drift from the rest of the app. */
+        onOpenChat={() => navTo('chat')}
+        chatOpen={desktopMode ? chatWinOpen : activeView === 'chat'}
       />
       {CafresoHQUI && CafresoHQUI.MobileTabBar ? (
         <CafresoHQUI.MobileTabBar
@@ -4048,10 +4066,20 @@ ${d.text}` : d.text,
 
         </div>
 
-        {/* Floating chat window — desktop only. On mobile the 'chat' view
-            renders the panel inline so the floating window is suppressed.
-            Also hide on all mobile views so it doesn't overlay Projects/Vault etc. */}
-        {activeView !== 'chat' && !isNarrowViewport && (
+        {/* Floating chat window — desktop only. The floating window is
+            suppressed exactly when the chat is being rendered INLINE
+            instead, which is a non-desktop concern; hidden on narrow
+            viewports so it can't overlay Projects/Vault etc.
+
+            The gate used to be a bare `activeView !== 'chat'`, and that is
+            a trap in desktop mode: there the content area renders
+            `renderViewBody('visual')` unconditionally, so `activeView` is a
+            LEFTOVER with no effect on what you see — except here. A stale
+            `activeView === 'chat'` (carried over from a narrow session, and
+            it is persisted) suppressed the floating window forever while
+            the office rendered regardless. Measured live: chat unreachable,
+            zero visible ways back, surviving reloads. */}
+        {(desktopMode || activeView !== 'chat') && !isNarrowViewport && (
           <ChatWindow
             open={chatWinOpen}
             setOpen={setChatWinOpen}

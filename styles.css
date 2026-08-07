@@ -2014,6 +2014,11 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
   flex: 0 0 auto;
 }
 
+/* Chat lives with the brand in the rail — the line to the chief of staff.
+   Matches the nav anchors so it reads as one list, not a bolt-on. */
+.rail .rail-chat { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.rail .rail-chat .rail-ico { font-size: 14px; line-height: 1; }
+
 /* Topbar overflow menu — see the TopbarMenu comment in ui/panels.jsx. */
 .topbar-menu { position: relative; flex-shrink: 0; }
 .topbar-menu-btn { display: inline-flex; align-items: center; gap: 6px; }

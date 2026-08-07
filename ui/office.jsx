@@ -28,7 +28,7 @@ function Tab({
   );
 }
 
-function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle, onLaunch, runningViews }) {
+function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false, onToggle, onLaunch, runningViews, onOpenChat, chatOpen = false }) {
   // Brand card doubles as the CEO entry-point — clicking it opens the
   // CEOPanel modal (mini office + arcade + quick actions). Keyboard users
   // get the same behavior via Enter / Space.
@@ -60,6 +60,28 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
       </div>
       <nav>
+        {/* Chat sits with the brand, not in NAV_ITEMS, for two reasons.
+            NAV_ITEMS drives the 1-8 keyboard shortcuts and the mobile tab
+            bar, so inserting into it renumbers every shortcut a boss has
+            learned. And more importantly this is the line to the chief of
+            staff — it belongs next to their nameplate.
+
+            It exists at all because closing the chat window in desktop mode
+            was a ONE-WAY DOOR: measured live, with the window shut there
+            were zero visible ways back anywhere in the UI, and `chatWinOpen`
+            is persisted, so a single ✕ lost the boss their chief of staff
+            across reloads too. */}
+        {onOpenChat && (
+          <a
+            className={'rail-chat' + (chatOpen ? ' active' : '')}
+            onClick={onOpenChat}
+            title="Talk to CafresoHQ"
+            {...pressable(onOpenChat, 'Chat')}
+          >
+            <span className="rail-ico" aria-hidden="true">💬</span>
+            {!collapsed && <span>Chat</span>}
+          </a>
+        )}
         {NAV_ITEMS.map(([k, label], i) => {
           // In desktop (window) mode the rail is a launcher: clicking opens
           // or raises that app's window instead of switching the full view.

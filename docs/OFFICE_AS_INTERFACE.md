@@ -1053,6 +1053,43 @@ append-only).
 > on the Memory view; Esc closes and returns focus to the button; an
 > outside click closes it.
 
+> 🚨 **Chat could be lost permanently (2026-08-06).** Kept looking at the
+> floor and noticed the chat panel parked over the middle of the office —
+> clicking **Office** did not show you the office. Pulling that thread
+> found something far worse underneath.
+>
+> **The gate.** The floating chat window was rendered behind
+> `activeView !== 'chat'`. In desktop mode the content area renders
+> `renderViewBody('visual')` *unconditionally*, so `activeView` is a
+> leftover with no effect on what you see — **except there**. A stale
+> `activeView === 'chat'`, carried over from a narrow-viewport session and
+> **persisted to localStorage**, suppressed the floating window forever
+> while the office rendered regardless.
+>
+> Measured in that state: chat unreachable, **zero** visible ways back
+> anywhere in the UI, surviving reloads. The boss loses their chief of
+> staff and the app offers no route home. The gate now asks the real
+> question — is chat being rendered *inline* instead? — as
+> `(desktopMode || activeView !== 'chat')`.
+>
+> **The missing door.** `NAV_ITEMS` never contained chat, so the rail — the
+> app's navigation — had no entry for the single most important
+> destination; the only affordance was a mobile tab bar that is
+> `display: none` on desktop. Chat now sits in the rail beside the brand,
+> *not* inside `NAV_ITEMS`, because that list drives the 1–8 keyboard
+> shortcuts and inserting into it would renumber every shortcut a boss has
+> learned. It belongs next to the chief of staff's nameplate anyway.
+>
+> **One navigation verb, actually.** `navTo`'s own comment says every
+> surface must route through it — and the rail was still calling
+> `openOrRaise` directly, so the new "going to the Office clears the floor"
+> rule never fired from the one place a boss actually clicks Office. Fixed
+> by passing `navTo` as the rail's launcher.
+>
+> Verified end to end: the stranded state recovers on load; Chat opens from
+> the rail; **Office clears the floor and the office is visible**; Chat
+> comes back; Tasks still opens its window and does *not* disturb chat.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw
