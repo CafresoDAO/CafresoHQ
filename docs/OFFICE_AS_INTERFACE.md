@@ -491,6 +491,26 @@ page — …", `the ledger said: "…"`). Those backend messages are authored in
 serve.py and already read as English; the machine-ish part was only ever the
 label.
 
+**The automation pane is not a browser: it toggles visibility ~96×/min.**
+Measured directly — 16 `visibilitychange` events in 10 seconds, alternating
+hidden/visible. Anything gated on visibility therefore behaves nothing like it
+does for a person, and three separate measurements in one session were
+distorted by it before the cause was found:
+
+- the approvals poll appeared to run at 2× its intended rate (each "return to
+  front" legitimately triggers a fast poll — the harness just returns to front
+  constantly);
+- a reconnect ladder could not be driven to its ceiling, because `onclose`
+  only schedules a retry while the tab is visible;
+- and a `TypeError` that looked like a real bug turned out to come from the
+  `WebSocket` shim installed to measure the ladder.
+
+So: **when a measurement disagrees with a carefully-documented design, suspect
+the instrument before the code.** Reload without the probe and see if the
+symptom survives. For visibility-gated code, reason from the diff — a constant
+array and a reset-on-open have little room to be wrong — rather than trying to
+out-measure the harness.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
