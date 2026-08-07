@@ -4269,7 +4269,17 @@ ${d.text}` : d.text,
             </div>
             <div className="chip mobile-hidden">{agents.filter(a=>a.status==='busy'||a.status==='active').length} WORKING</div>
             <div className="chip mobile-hidden">{agents.length} HIRED</div>
-            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · what your coworkers have handed to each other — live handoffs, blocked jobs, failures">
+            {/* The tooltip described the CONTENTS honestly and said nothing
+                about the NUMBER, which is the part that makes a claim. A
+                badge on an inbox reads as "8 things for you" in every product
+                anyone has used; this one counts messages in a non-terminal
+                state — coworker-to-coworker traffic still in flight. Seen
+                live at "📬 INBOX · 8" with no bell badge and no "needs you"
+                anywhere: eight waiting, nothing wanting the boss. And they do
+                not drain on their own, so it sits lit.
+                The count stays (it is true of what is inside), and now says
+                what it counts and where the things that DO need you live. */}
+            <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setInboxOpen(true)} title="Inbox · what your coworkers have handed to each other — live handoffs, blocked jobs, failures. The number is how many are still in flight, not how many need you: anything waiting on your decision shows on the 🔔 bell and as ⚠ needs you on the floor.">
               📬 INBOX{inboxActiveCount > 0 ? ` · ${inboxActiveCount}` : ''}
             </Btn>
             {/* Six launchers folded into one menu. The strip needed 1024px
