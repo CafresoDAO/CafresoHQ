@@ -176,14 +176,18 @@ function payrollLabel(agent) {
    It has to do two jobs: say what the number IS in office words, and say
    what it ISN'T. On the card it sits inches from "Jobs" (work delivered)
    and "Payroll" (what it costs), and it is neither of those. */
-const EFFORT_TIP = "Effort: how much reading and writing this coworker has done this session. It is not a count of jobs — Jobs is that — and it is not a cost; Payroll is.";
+/* "this session" was false, and measurably so: the count lives in the
+   file-backed roster record, so a full page reload returned it byte for
+   byte (7,824 before and after). It has only ever been reset at hire, and
+   — until that was removed — by a coffee break. Say the real span. */
+const EFFORT_TIP = "Effort: how much reading and writing this coworker has done since you hired them. It is not a count of jobs — Jobs is that — and it is not a cost; Payroll is.";
 
 /* The office-wide total wears the same word. Two surfaces show it — the
    Situation Wall and the topbar HUD — and when I renamed the per-coworker
    ones to "Effort" I updated the wall and missed the HUD, which sat there
    still saying "Work done across the office". Third copy, so it lives here
    now. */
-const OFFICE_EFFORT_TIP = "Effort across the whole office this session — reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.";
+const OFFICE_EFFORT_TIP = "Effort across the whole office since each coworker was hired — reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.";
 
 /* ── Can this office actually work? ───────────────────────────────────────
    `hasUsableKey()` with no argument answers one narrow question: is the

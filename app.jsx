@@ -2836,7 +2836,19 @@ ${d.text}` : d.text,
        was machine vocabulary sitting in their status line.
        The button's own tooltip already had the office phrase — "clears their
        desk for the next job" — so the desk is the metaphor everywhere. */
-    onUpdateAgent(a.id, { status: 'idle', tokens: 0, recent: 'back from a coffee break — desk clear', mood: 'idle', task: null });
+    /* `tokens: 0` used to be here. It dates from when this button was
+       "REFRESH CTX" and the number meant context-window occupancy — zeroing
+       it said "the window is empty again". The number has since been
+       relabelled Effort on all four surfaces that show it (the wall's ⚡,
+       the topbar HUD, the roster card, the Team detail row), and NOTHING
+       reads it as occupancy any more. So the reset had no consumer left; it
+       only erased the record of reading and writing the coworker had really
+       done. §5 in the under-reporting direction — and `payrollLabel()`
+       points a provider-billed coworker's boss straight at "the work-done
+       count beside this" as the honest stand-in for a cost figure, so a
+       coffee break was quietly wiping the one number standing in for the
+       bill. A break clears the desk, not the timesheet. */
+    onUpdateAgent(a.id, { status: 'idle', recent: 'back from a coffee break — desk clear', mood: 'idle', task: null });
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee',
       text: wasRunning ? 'stopped mid-run for a coffee — desk cleared ☕'
                        : 'took a coffee break — desk cleared ☕' });
