@@ -266,6 +266,10 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
    Filters by state (active / blocked / failed / completed / all) and by
    counterpart agent. Threads can be expanded to see the full child chain.
    ───────────────────────────────────────────────────────────────────── */
+/* The states that need no action from the boss. Anything else is still
+   counted in the topbar badge, so anything else gets a way to clear it. */
+const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed']);
+
 function InboxModal({ open, onClose }) {
   // Pick up an initial filter from sessionStorage when the modal is
   // opened via the palette commands `Show blockers` / `Show failed` etc.
@@ -403,6 +407,33 @@ function InboxModal({ open, onClose }) {
           {m.failureCause.message && (
             <div style={{opacity:0.6,fontFamily:'monospace',fontSize:9,marginTop:3}}>{m.failureCause.message}</div>
           )}
+        </div>
+      )}
+      {/* The boss's own lever. The registry counts non-terminal messages
+          into the topbar badge, and until now nothing in this modal could
+          resolve, dismiss or close one — the boss could watch the number
+          and not touch it. Live example, still on screen when this was
+          added: a Nova → Llama ask stranded at AWAITING REPLY by a race
+          since fixed, with no way to clear it.
+
+          Deliberately the BOSS's action and labelled as one. The office
+          closing a wait on its own is only honest when the awaited thing
+          actually happened (see the fan-out closer in app.jsx); this is
+          the other case — the boss deciding they have dealt with it. The
+          history keeps who did it, so the record never claims a coworker
+          finished something they did not. */}
+      {!TERMINAL_STATES.has(m.state) && (
+        <div style={{marginTop:6}}>
+          <button
+            className="px-btn secondary"
+            style={{fontSize:8, padding:'3px 6px'}}
+            title="Close this off in your inbox. It does not stop or change anything the coworker is doing."
+            onClick={(e) => {
+              e.stopPropagation();
+              reg.transition(m.id, 'completed', { by: 'you', note: 'closed by you' });
+              setTick(v => v + 1);
+            }}
+          >✓ CLEAR THIS</button>
         </div>
       )}
       {m.artifacts && m.artifacts.length > 0 && (
