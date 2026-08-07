@@ -11,7 +11,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
+import { floorEmit, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -1620,7 +1620,7 @@ ${d.text}` : d.text,
               elevationRequestQueue.push({ reason: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'start') {
-            onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
+            onUpdateAgent(agent.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
             pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
             pulseGraph(ev, agent);
@@ -2505,8 +2505,8 @@ ${d.text}` : d.text,
         onTool: ev => {
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
-            onUpdateAgent(a.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
+            onUpdateAgent(a.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
+            logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: (visitLine(ev.name, ev.arg, 'past', 40) || visitPlace(ev.name, 'past')).toLowerCase() });
             pulseGraph(ev, a);
           } else if (ev.phase === 'done') {
             onUpdateAgent(a.id, { task: 'reading results…' });
@@ -2812,8 +2812,8 @@ ${d.text}` : d.text,
         onTool: ev => {
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
-            onUpdateAgent(agent.id, { task: `🔍 ${ev.name.toLowerCase()}: ${String(ev.arg).slice(0, 24)}` });
-            logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
+            onUpdateAgent(agent.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
+            logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: (visitLine(ev.name, ev.arg, 'past', 40) || visitPlace(ev.name, 'past')).toLowerCase() });
             pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
             toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });

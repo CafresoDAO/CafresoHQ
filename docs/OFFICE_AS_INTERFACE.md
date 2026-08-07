@@ -805,6 +805,67 @@ append-only).
 > Tooltips claim no unit. Token counts are not word counts, and "words read
 > and written" would be a small lie told confidently.
 
+> ✅ **Pass four — the tool-visit row, and what it exposed (2026-08-06).**
+> The table's `tool call` row — *"shown as the action itself: reading files,
+> searching"* — was broken on **four** surfaces at once, each with its own
+> hand-rolled string:
+>
+> | surface | was | is |
+> |---|---|---|
+> | desk bubble | `🔍 memory_read: facts/france.md` | `opening facts/france.md` |
+> | activity row | `memory_read("facts/france.md")` | `opened facts/france.md` |
+> | chat echo | `📡 MEMORY_READ("facts/france.md") →` | `📁 Opened facts/france.md` |
+> | delivery note | `- Read facts/france.md` | (unchanged — it was the only honest one) |
+>
+> One table now (`visitLine` in `app/floor.jsx`, same taxonomy and same
+> search-before-web order as `toolProp`); the tenses differ only because the
+> surfaces do — a bubble says what is happening *now*, a log and a filed
+> note say what happened. `app/artifacts.jsx` had grown its own copy of the
+> phrasing, which is how one filing-cabinet trip ended up described four
+> ways; that copy is gone.
+>
+> The model's own raw invocation lines (`[BROWSER_FETCH: …]`) now join the
+> orphan-tag strip, so the KEPT record doesn't carry the same call twice —
+> once as the coworker's syntax, once as the office's line. Whole-line only:
+> a marker *inside* a sentence stays, because removing it leaves a broken
+> sentence.
+>
+> ### ⚠ The office's voice is not the coworker's to borrow
+>
+> Verifying the new wording turned up the worst thing found on this floor.
+> Asked a local model to check its memory, the chat returned **two** visit
+> blocks:
+>
+> ```
+> 📡 MEMORY_READ("facts/france.md") →
+> Found note on French capitals in memory!
+> [Vault path: Research/capitals-of-europe.md]
+>
+> 📁 Opened facts/france.md
+> (no memory at "facts/france.md")
+> ```
+>
+> The second is the office reporting what really happened. The first is the
+> **model writing a tool visit that never occurred**, in the office's own
+> format, with an invented result and an invented vault path. To the boss
+> both read as the office speaking, and one of them is a fabricated fact
+> attributed to their own filing cabinet.
+>
+> It learned the format from us: every visit is stored in the chat message
+> text, and `chatToMessages` fed that text straight back as conversation
+> history. `stripOfficeVoice` now runs at that one choke point — the office's
+> report of its own actions never re-enters the model's context as something
+> the model said. Only the head line goes; result bodies stay, because they
+> are real information the next turn needs. Verified: the same prompt now
+> produces no forged block.
+>
+> **Not yet closed.** The coworker can still *claim* in prose that it found
+> something it didn't — that is model confabulation, and the office's line
+> sitting right below it now contradicts it, which is the honest outcome.
+> But the real hardening is structural: the visit should be a rendered
+> element attached to the message, not text inside the bubble, so nothing
+> the model types can look like the office speaking. Filed as the next pass.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

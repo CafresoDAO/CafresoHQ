@@ -1,4 +1,5 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
+import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -282,8 +283,47 @@ function stripAcks(text) {
    Deliberately narrow: only this file's own marker vocabulary, only when
    the tag stands alone on its line. An agent writing about `[DM_TO: …]` in
    the middle of a sentence keeps it — we remove scaffolding, not content. */
+/* The EXECUTED tools belong here too. A model that calls one emits its
+   invocation line, the runtime runs it, and the office appends the visit
+   — so the kept record carried the same call twice, once as the coworker's
+   raw syntax and once as the office's own line. Measured: a stored task
+   result read
+
+     I will use the BROWSER_FETCH tool to fetch a webpage…
+     [BROWSER_FETCH: https://en.wikipedia.org/wiki/Primary_color]
+     🌐 Read en.wikipedia.org/wiki/Primary_color
+     …
+
+   Same watching-vs-keeping split as the tool echo (§3.6): the live
+   transcript still shows the coworker's literal output, because that is
+   what watching someone work looks like. What gets KEPT — task result,
+   journal, `recent`, filed note — is the record, and an invocation line is
+   scaffolding in it.
+
+   Still whole-line only: the memo above also contained "I will use
+   [MEMORY_READ: decisions/buildings.md] to check…", a marker INSIDE a
+   sentence. Removing that would leave a broken sentence, so it stays; the
+   model narrating its own tooling is a prompt problem, not a strip one. */
 const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|VAULT_NEW|VAULT_APPEND)\b[^\]\n]*\]\s*$/gim;
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\]\s*$/gim;
+
+/* The header line above a tool result in the live transcript.
+
+   Was `📡 MEMORY_READ("facts/france.md") →` — §6's table bans exactly that
+   ("tool call → shown as the action itself"), and the row below it in the
+   same bubble was the model's own raw `[MEMORY_READ: facts/france.md]`, so
+   the boss read the same call twice, in machine syntax both times.
+
+   Now `📁 Opened facts/france.md`, from the one floor vocabulary that also
+   writes the desk bubble, the activity row and the filed note. The RESULT
+   underneath is untouched — that is the work, and watching it arrive is
+   the point of showing the visit at all. A visit with no argument keeps a
+   bare verb rather than inventing a subject. */
+function toolEchoHead(name, arg) {
+  const w = visitWords(name);
+  const line = visitLine(name, arg, 'past', 60) || visitPlace(name, 'past');
+  return `${w.icon} ${line}`;
+}
 
 function stripOrphanTags(text) {
   return String(text || '').replace(ORPHAN_TAG_RE, '');
@@ -1347,10 +1387,18 @@ function chatToMessages(chat, { omitLastCeo = false } = {}) {
     ? chat.slice(0, -1) : chat;
   const out = [];
   for (const m of src) {
-    if (!m.text || !String(m.text).trim()) continue;
-    if (m.from === 'user') out.push({ role: 'user', content: m.text });
-    else if (m.from === 'ceo') out.push({ role: 'assistant', content: m.text });
-    else out.push({ role: 'user', content: `[${m.name}]: ${m.text}` });
+    /* stripOfficeVoice: the office's report of its OWN actions must not
+       re-enter the model's context as prior conversation. Measured — a
+       coworker that had seen real `📡 …→` echoes in history wrote its own,
+       with a fabricated result and an invented vault path, in a bubble
+       where the real read had just returned nothing. This is the single
+       choke point where stored chat becomes prompt, so it is the place to
+       stop it. Result bodies survive; only the template goes. */
+    const text = stripOfficeVoice(m.text);
+    if (!text) continue;
+    if (m.from === 'user') out.push({ role: 'user', content: text });
+    else if (m.from === 'ceo') out.push({ role: 'assistant', content: text });
+    else out.push({ role: 'user', content: `[${m.name}]: ${text}` });
   }
   return out;
 }
@@ -1504,7 +1552,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     let result;
     try { result = await call.tool.run(call.arg, { signal }, call.body); }
     catch (err) { result = `Error: ${err.message}`; }
-    const banner = `\n\n📡 ${call.tool.name}("${call.arg.trim().slice(0, 60)}") →\n${result}\n\n`;
+    const banner = `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n`;
     if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
     onToken(banner);
 
@@ -1677,7 +1725,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
        if it gets the exact string. So the format lives here, at the one site
        that owns it, and travels with the event instead of being re-derived
        (and eventually mis-derived) by the code that has to undo it. */
-    const banner = `\n\n📡 ${call.tool.name}("${call.arg.trim().slice(0, 60)}") →\n${result}\n\n`;
+    const banner = `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n`;
     if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
     onToken(banner);
 

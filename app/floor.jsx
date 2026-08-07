@@ -29,6 +29,119 @@ const PROP_PLACARD = {
   phone:     'on the phone',
 };
 
+/* ── One vocabulary for a tool visit ──────────────────────────────────────
+   §6's table has a binding row: `tool call` → "shown as the action itself:
+   reading files, searching". FOUR surfaces were breaking it, each with its
+   own hand-rolled string:
+
+     desk bubble    🔍 memory_read: facts/france.md
+     activity row   memory_read("facts/france.md")
+     chat echo      📡 MEMORY_READ("facts/france.md") →
+     delivery note  - Read facts/france.md         ← the only honest one
+
+   The first three print the tool's internal name on the floor, in the most
+   prominent place a coworker has (their own speech bubble). One table now,
+   and the tenses differ only because the surfaces do: a bubble describes
+   what is happening NOW, a log and a filed note describe what happened.
+
+   Same taxonomy and same order as toolProp above — search before web,
+   because WEB_SEARCH contains both words and is a trip to the bookshelf. */
+const VISIT_WORDS = [
+  [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', icon: '🔎' }],
+  [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      icon: '🌐' }],
+  [/VAULT|FILE|DIR|MEMORY|NOTE/, { now: 'opening',       past: 'Opened',    icon: '📁' }],
+];
+/* Anything we don't recognise still gets an ACTION, never the tool's name.
+   "Checked X" claims less than a wrong-but-confident verb would. */
+const VISIT_DEFAULT = { now: 'checking', past: 'Checked', icon: '🗒' };
+
+function visitWords(name) {
+  const n = String(name || '').toUpperCase();
+  for (const [re, words] of VISIT_WORDS) if (re.test(n)) return words;
+  return VISIT_DEFAULT;
+}
+
+/* What they visited, said plainly. The scheme is plumbing to a reader who
+   can see it's a web address, and quotes around it are machine syntax. */
+function visitSubject(arg, cap) {
+  const s = String(arg || '').trim().replace(/^https?:\/\//i, '').replace(/\s+/g, ' ');
+  const max = cap || 88;
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+}
+
+/* The one-liner each surface composes from. `tense` is 'now' for a live
+   bubble, 'past' for a log line or a filed note. Returns null when there's
+   no subject to name — a visit with no argument has nothing honest to say
+   beyond the walk the sprite is already doing. */
+function visitLine(name, arg, tense, cap) {
+  const subject = visitSubject(arg, cap);
+  if (!subject) return null;
+  const w = visitWords(name);
+  return `${tense === 'now' ? w.now : w.past} ${subject}`;
+}
+
+/* Some tools take no argument at all — MEMORY_LIST is "show me everything
+   on the shelf". `visitLine` returns null for those (a filed-note line
+   reading "Opened" with no target is useless), and the live surfaces used
+   to fall back to "checked something", which was measured on a real run
+   and says nothing.
+
+   But the office DOES know something: which prop they walked to. So the
+   fallback is the placard the floor already shows above their empty desk —
+   the same words, in the same voice, for the same trip. */
+function visitPlace(name, tense) {
+  const prop = toolProp(name);
+  if (prop && PROP_PLACARD[prop]) return PROP_PLACARD[prop];
+  return tense === 'now' ? 'looking something up' : 'looked something up';
+}
+
+/* ── The office's voice is not the coworker's to borrow ───────────────────
+   Caught live, and it is the worst thing found on this floor so far. Asked
+   a local model to check its memory, the chat came back:
+
+     📡 MEMORY_READ("facts/france.md") →
+     Found note on French capitals in memory!
+     [Vault path: Research/capitals-of-europe.md]
+
+     📁 Opened facts/france.md
+     (no memory at "facts/france.md")
+
+   The second block is the office reporting what really happened. The FIRST
+   is the model writing a tool visit that never occurred, in the office's
+   own format, complete with an invented result and an invented vault path.
+   To the boss the two are the same kind of line, and one of them is a
+   fabricated fact attributed to their own filing cabinet.
+
+   It learned the format from us: every past visit is stored in the chat
+   message text, and that text goes straight back as conversation history.
+   So the fix is at the source — the office's report of its own actions
+   never re-enters the model's context as something the model said.
+
+   Only the HEAD line goes. The result body underneath stays: it is real
+   information the model legitimately needs, and stripping it would make
+   the next turn dumber to no purpose. What's removed is the TEMPLATE.
+
+   The legacy `📡 NAME("arg") →` shape is matched too, because histories
+   written before the office changed its wording still carry it — and it is
+   the exact shape the forgery above imitated. */
+const _VISIT_VERBS = (() => {
+  const words = VISIT_WORDS.map(([, w]) => w).concat([VISIT_DEFAULT]);
+  const all = [];
+  for (const w of words) for (const v of [w.past, w.now]) if (all.indexOf(v) === -1) all.push(v);
+  return all;
+})();
+const _VISIT_ICONS = VISIT_WORDS.map(([, w]) => w.icon).concat([VISIT_DEFAULT.icon]);
+
+function _officeVoiceRe() {
+  const icons = _VISIT_ICONS.map(i => i.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const verbs = _VISIT_VERBS.map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(`^[ \\t]*(?:📡[^\\n]*→|(?:${icons})[ \\t]+(?:${verbs})\\b[^\\n]*)[ \\t]*$`, 'gm');
+}
+
+function stripOfficeVoice(text) {
+  return String(text || '').replace(_officeVoiceRe(), '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /* What a coworker says when a run fails (§4 error row, §7 "no raw error
    dumps — every failure is one honest sentence plus try again / ask
    differently / pick another coworker").
@@ -170,4 +283,4 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, toolProp };
+export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, visitLine, visitPlace, visitSubject, visitWords };

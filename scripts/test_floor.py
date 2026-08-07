@@ -152,6 +152,45 @@ R.evAcceptsId    = (() => { const w = []; const o = console.warn; console.warn =
 // Headless (no window) returns false rather than exploding.
 R.evHeadlessSafe = floorEmit('coffee', { agentId: 'a1' }) === false;
 R.onHeadlessSafe = typeof floorOn('coffee', () => {}) === 'function';
+// ── visit vocabulary (§6 "tool call → the action itself") ───────────────
+R.vWeb    = visitLine('BROWSER_FETCH', 'https://en.wikipedia.org/wiki/Paris', 'past');
+R.vWebNow = visitLine('BROWSER_FETCH', 'https://en.wikipedia.org/wiki/Paris', 'now');
+R.vSearch = visitLine('WEB_SEARCH', 'primary colours', 'past');
+R.vVault  = visitLine('MEMORY_READ', 'facts/france.md', 'past');
+R.vVaultNow = visitLine('MEMORY_READ', 'facts/france.md', 'now');
+R.vUnknown  = visitLine('WEIRD_THING', 'stuff', 'past');
+R.vNoArg    = visitLine('MEMORY_READ', '   ', 'past');
+R.vNullArg  = visitLine('MEMORY_READ', null, 'now');
+R.vCapped   = visitLine('BROWSER_FETCH', 'x'.repeat(200), 'past');
+R.vNewlines = visitLine('MEMORY_READ', 'a\n\nb', 'past');
+R.vIconWeb   = visitWords('BROWSER_FETCH').icon;
+R.vIconSearch= visitWords('WEB_SEARCH').icon;
+R.vIconVault = visitWords('VAULT_READ').icon;
+R.vIconOther = visitWords('NOPE').icon;
+R.vSubjScheme = visitSubject('https://example.com/a');
+R.vSubjHttp   = visitSubject('http://example.com/a');
+// Every surface's copy must be free of the tool's own name (§6).
+R.vNoToolName = ['BROWSER_FETCH','WEB_SEARCH','MEMORY_READ','VAULT_READ']
+  .map(n => [visitLine(n,'x','past'), visitLine(n,'x','now')].join(' '))
+  .join(' ');
+// ── the office's voice must not re-enter the model's context ────────────
+R.ovForged = stripOfficeVoice('\u{1F4E1} MEMORY_READ("facts/france.md") \u2192\nFound note!\n\n\u{1F4C1} Opened facts/france.md\n(no memory)');
+R.ovKeepsResult = /no memory|Found note!/.test(R.ovForged);
+R.ovHeadsGone   = /\u{1F4E1}|\u{1F4C1} Opened/u.test(R.ovForged);
+R.ovAllIcons    = stripOfficeVoice('a\n\u{1F310} Read x.com\n\u{1F50E} Looked up y\n\u{1F4C1} Opened z\n\u{1F5D2} Checked w\nb');
+R.ovPresent     = stripOfficeVoice('a\n\u{1F4C1} opening z\nb');
+R.ovProseSafe   = stripOfficeVoice('I opened the door and read the sign.');
+R.ovIconInProse = stripOfficeVoice('Send \u{1F310} to the team about the launch plan');
+R.ovIndented    = stripOfficeVoice('a\n   \u{1F310} Read x.com   \nb');
+R.ovEmpty       = stripOfficeVoice('');
+R.ovNull        = stripOfficeVoice(null);
+// ── argument-less visits fall back to the placard, not to nothing ───────
+R.vpCabinet = visitPlace('MEMORY_LIST', 'past');
+R.vpShelf   = visitPlace('SEARCH', 'now');
+R.vpPhone   = visitPlace('BROWSER_FETCH', 'past');
+R.vpUnknown = visitPlace('WEIRD_THING', 'now');
+R.vpUnknownPast = visitPlace('WEIRD_THING', 'past');
+R.vpMatchesPlacard = visitPlace('MEMORY_LIST', 'past') === PROP_PLACARD.cabinet;
 console.log(JSON.stringify(R));
 ''')
 
@@ -262,6 +301,53 @@ console.log(JSON.stringify(R));
     check('walkIn\'s `id` counts as placeable', out['evAcceptsId'])
     check('emitting headless returns false, never throws', out['evHeadlessSafe'])
     check('subscribing headless returns an unsubscribe', out['onHeadlessSafe'])
+
+    # visit vocabulary — one table for bubble, log, echo and filed note
+    check('a fetch reads its source', out['vWeb'] == 'Read en.wikipedia.org/wiki/Paris', str(out['vWeb']))
+    check('…and reads it in the present tense on a live bubble',
+          out['vWebNow'] == 'reading en.wikipedia.org/wiki/Paris', str(out['vWebNow']))
+    check('a search looks something up', out['vSearch'] == 'Looked up primary colours', str(out['vSearch']))
+    check('search wins over web on WEB_SEARCH', 'Read' not in str(out['vSearch']))
+    check('a memory read opens a file', out['vVault'] == 'Opened facts/france.md', str(out['vVault']))
+    check('…present tense for the bubble', out['vVaultNow'] == 'opening facts/france.md', str(out['vVaultNow']))
+    check('an unknown tool still names an action', out['vUnknown'] == 'Checked stuff', str(out['vUnknown']))
+    check('a visit with no subject says nothing', out['vNoArg'] is None and out['vNullArg'] is None)
+    check('a runaway subject is capped', len(out['vCapped']) <= 94 and out['vCapped'].endswith('\u2026'),
+          str(len(out['vCapped'])))
+    check('newlines never break the one-liner', '\n' not in out['vNewlines'])
+    check('each visit kind has its own icon',
+          len({out['vIconWeb'], out['vIconSearch'], out['vIconVault'], out['vIconOther']}) == 4)
+    check('the scheme is dropped from a url', out['vSubjScheme'] == 'example.com/a' and out['vSubjHttp'] == 'example.com/a')
+    check('no phrasing anywhere names the tool (\u00a76)',
+          not any(n in out['vNoToolName'] for n in ('BROWSER_FETCH','WEB_SEARCH','MEMORY_READ','VAULT_READ')),
+          out['vNoToolName'])
+
+    # the office's voice never becomes the model's
+    check('a forged echo head is removed', out['ovHeadsGone'] is False, repr(out['ovForged']))
+    check('…but the result bodies survive as context', out['ovKeepsResult'] is True,
+          repr(out['ovForged']))
+    check('every visit icon+verb head is caught', out['ovAllIcons'] == 'a\n\nb',
+          repr(out['ovAllIcons']))
+    check('the present-tense form is caught too', out['ovPresent'] == 'a\n\nb',
+          repr(out['ovPresent']))
+    check('ordinary prose using the same verbs is untouched',
+          out['ovProseSafe'] == 'I opened the door and read the sign.')
+    check('an icon mid-sentence is not a head line',
+          out['ovIconInProse'] == 'Send \U0001F310 to the team about the launch plan',
+          repr(out['ovIconInProse']))
+    check('leading/trailing whitespace does not hide a head', out['ovIndented'] == 'a\n\nb',
+          repr(out['ovIndented']))
+    check('empty and null are safe', out['ovEmpty'] == '' and out['ovNull'] == '')
+
+    # argument-less tools still say where they went
+    check('MEMORY_LIST reads as the cabinet trip it is',
+          out['vpCabinet'] == 'at the filing cabinet', str(out['vpCabinet']))
+    check('a bare SEARCH is a bookshelf trip', out['vpShelf'] == 'at the bookshelf')
+    check('a bare fetch is a phone call', out['vpPhone'] == 'on the phone')
+    check('an unplaceable tool still says something true',
+          out['vpUnknown'] == 'looking something up' and out['vpUnknownPast'] == 'looked something up')
+    check('the fallback IS the floor placard, not a second wording',
+          out['vpMatchesPlacard'] is True)
 
     print()
     if FAILS:

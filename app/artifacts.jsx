@@ -1,4 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
+import { visitLine } from './floor.jsx';
 
 /* ── Artifact landing (OFFICE_AS_INTERFACE §1 "out-tray → filing cabinet",
    §3 step 6) ──────────────────────────────────────────────────────────────
@@ -96,25 +97,17 @@ function stripToolEcho(text, echoes) {
    than the transcript was, not more. So the visits come back as a short
    footer in office words (§6): what they consulted, never which tool.
 
-   Search is tested before web for the same reason floor.jsx's `toolProp`
-   does it in that order: WEB_SEARCH contains both words, and it is a trip to
-   the bookshelf, not a page the coworker read. */
-const VISIT_PHRASE = [
-  [/SEARCH|LIBRARY|RESEARCH/,    'Looked up'],
-  [/WEB|HTTP|FETCH|URL|BROWSE/,  'Read'],
-  [/VAULT|FILE|DIR|MEMORY|NOTE/, 'Opened'],
-];
-
+   The phrasing is `visitLine` from app/floor.jsx — the same table that
+   writes the desk bubble, the activity row and the chat echo. This module
+   had its own copy of it, which is how the office ends up describing one
+   filing-cabinet trip four different ways. */
 function workingNotes(visits) {
   const seen = [];
   for (const v of (visits || [])) {
-    const name = String((v && v.name) || '').toUpperCase();
-    const arg = String((v && v.arg) || '').trim().replace(/^https?:\/\//, '');
-    if (!arg) continue;
-    let verb = 'Checked';
-    for (const [re, word] of VISIT_PHRASE) { if (re.test(name)) { verb = word; break; } }
-    const line = `- ${verb} ${arg.length > 88 ? arg.slice(0, 87) + '…' : arg}`;
-    if (seen.indexOf(line) === -1) seen.push(line);
+    const line = visitLine(v && v.name, v && v.arg, 'past');
+    if (!line) continue;
+    const row = `- ${line}`;
+    if (seen.indexOf(row) === -1) seen.push(row);
   }
   return seen;
 }

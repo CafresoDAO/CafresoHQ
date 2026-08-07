@@ -86,6 +86,15 @@ R.unknownState = visibleReply('[ACK: banana: hm]');
 // so extractDM never matched and the opener reached the boss as prose.
 R.orphanDm   = visibleReply('[DM_TO: Claude]\nCan you help?\n\n[ACK: in_progress: awaiting_reply]');
 R.orphanOnly = visibleReply('[DM_TO: Claude]');
+// Executed tools: the office already appends its own visit line, so the
+// coworker's raw invocation is scaffolding in the KEPT record.
+R.orphanFetch = visibleReply('Looking it up.\n[BROWSER_FETCH: https://a.com/x]\n\n\u{1F310} Read a.com/x\nParis.');
+R.orphanMem   = visibleReply('[MEMORY_READ: facts/france.md]\n[/MEMORY_READ]\n\nResult: Paris.');
+R.orphanBash  = visibleReply('[BASH: ls -la]\ndone');
+// …but a marker INSIDE a sentence is content; removing it breaks the line.
+R.orphanInline = visibleReply('I will use [MEMORY_READ: decisions/x.md] to check.');
+// A lookalike that is not one of ours stays put.
+R.orphanNotOurs = visibleReply('[TODO: buy milk]\nreal text');
 // A tag mid-sentence is the agent TALKING about the protocol, not using it.
 R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
 console.log(JSON.stringify(R));
@@ -118,6 +127,17 @@ def main():
           out['orphanDm'] == 'Can you help?', repr(out['orphanDm']))
     check('a reply that is only an orphan tag falls back, not blank',
           out['orphanOnly'] == '[DM_TO: Claude]', repr(out['orphanOnly']))
+    check('an executed BROWSER_FETCH line is dropped from the record',
+          out['orphanFetch'] == 'Looking it up.\n\n\U0001F310 Read a.com/x\nParis.',
+          repr(out['orphanFetch']))
+    check('MEMORY_READ open+close lines both go',
+          out['orphanMem'] == 'Result: Paris.', repr(out['orphanMem']))
+    check('a BASH invocation line goes', out['orphanBash'] == 'done', repr(out['orphanBash']))
+    check('a marker inside a sentence is left alone',
+          out['orphanInline'] == 'I will use [MEMORY_READ: decisions/x.md] to check.',
+          repr(out['orphanInline']))
+    check('a bracketed line that is not one of our tools survives',
+          out['orphanNotOurs'] == '[TODO: buy milk]\nreal text', repr(out['orphanNotOurs']))
     check('a tag mid-sentence is content, not scaffolding',
           out['inlineKept'] == 'Use [DM_TO: name] to reach someone.', repr(out['inlineKept']))
 

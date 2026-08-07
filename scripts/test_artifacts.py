@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'app' / 'artifacts.jsx'
+FLOOR = ROOT / 'app' / 'floor.jsx'
 
 FAILS = []
 
@@ -30,12 +31,20 @@ def check(name, cond, detail=''):
         print(f'  FAIL  {name}{("  — " + detail) if detail else ""}')
 
 
+def _strip_module_lines(path):
+    return '\n'.join(ln for ln in path.read_text(encoding='utf-8').split('\n')
+                     if not ln.startswith('import ') and not ln.startswith('export '))
+
+
 def pure_source():
-    """The source minus its import/export lines — the pure half runs as-is."""
-    text = SRC.read_text(encoding='utf-8')
-    kept = [ln for ln in text.split('\n')
-            if not ln.startswith('import ') and not ln.startswith('export ')]
-    src = '\n'.join(kept)
+    """The source minus its import/export lines — the pure half runs as-is.
+
+    floor.jsx is prepended because artifacts imports `visitLine` from it:
+    the delivery footer, the desk bubble, the activity row and the chat echo
+    all share one phrasing table now, so the test runs the REAL one rather
+    than a stand-in that could drift from it.
+    """
+    src = _strip_module_lines(FLOOR) + '\n' + _strip_module_lines(SRC)
     # cabinetIsEncrypted/fileDelivery close over browser globals; drop them so
     # the rest evaluates standalone. Everything else is pure string work.
     for fn in ('function cabinetIsEncrypted', 'async function fileDelivery'):
