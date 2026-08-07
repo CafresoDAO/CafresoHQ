@@ -43,8 +43,23 @@ def _graph_node_type(path: str, tags=None) -> str:
         return 'project'
     if 'task' in tagset or 'tasks/' in p or 'todo' in name:
         return 'task'
-    if 'agent' in tagset or 'agents/' in p or name.startswith('agent-'):
+    if 'agent' in tagset or name.startswith('agent-'):
         return 'agent'
+    if 'agents/' in p:
+        # `Agents/<name>/…` is a coworker's PRIVATE NOTES folder, not a note
+        # ABOUT a coworker. Typing the whole subtree 'agent' meant every note
+        # a coworker ever wrote became a person: the vault's own analysis
+        # panel read "4 coworkers" for an office with two, the extras being
+        # `Agents/Llama/notes/olives.md` and the boss. It scales with use —
+        # ten private notes, ten phantom colleagues — and it is the panel a
+        # boss reads to understand their own business.
+        #
+        # A file sitting DIRECTLY in agents/ is still a profile note about
+        # someone; anything deeper belongs to that someone.
+        parts = [x for x in p.split('/') if x]
+        if 'agents' in parts and len(parts) - parts.index('agents') == 2:
+            return 'agent'
+        return 'memory'
     if 'decision' in tagset or 'decisions/' in p or 'decision' in name:
         return 'decision'
     if 'proposal' in tagset or 'proposal' in name or '/proposals/' in p:
