@@ -537,6 +537,33 @@ Two corrections it needs, both learned by getting them wrong:
   entirely off it; intersect with every clipping ancestor before believing the
   rect.
 
+Both corrections belong in the snippet, not in this paragraph. They were
+prose here for a day, and the next sweep — mine, 2026-08-07 — ran the naive
+version anyway, re-derived the meeting-room door, and got as far as measuring
+the ticker overlap before remembering this note existed. A recipe you have to
+remember to apply is a recipe that will be skipped, so here it is whole:
+
+```js
+const clipped = (el) => {                    // painted nowhere, whatever the rect says
+  const r = el.getBoundingClientRect();
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const cs = getComputedStyle(p);
+    if (!/auto|scroll|hidden/.test(cs.overflowY + cs.overflowX)) continue;
+    const pr = p.getBoundingClientRect();
+    if (r.bottom <= pr.top || r.top >= pr.bottom ||
+        r.right <= pr.left || r.left >= pr.right) return true;
+  }
+  return false;
+};
+const occluded = [...document.querySelectorAll('button,a,select,[role=button],.clickable')]
+  .filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+  .filter(el => !clipped(el))
+  .filter(el => { const r = el.getBoundingClientRect();
+                  if (r.width < 4 || r.height < 4) return false;
+                  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                  return hit && hit !== el && !el.contains(hit) && !hit.contains(el); });
+```
+
 Result after both corrections: zero occluded controls across all eight views
 at 1440px. A `pointer-events: none` on the ticker was written and then
 reverted — the change was harmless but the failure it claimed to fix does not
