@@ -448,11 +448,30 @@ function stripOrphanTags(text) {
    note itself had already been written — this was a second, unasked-for copy
    of it pasted into the conversation.
 
-   Closed blocks only. An UNCLOSED one never parsed, so its tool never ran,
-   and `unsentBlocks` still needs to see the opener to say so — stripping to
-   end-of-text on a missing closer would also eat whatever real answer came
-   after it. Same 16 names the comment on unsentBlocks enumerates, plus the
-   ORPHAN list's `HANDOFF` spelling alongside `HANDOFF_TO`.
+   Closed blocks only, for the PAYLOAD. An UNCLOSED one never parsed, so its
+   tool never ran, and stripping to end-of-text on a missing closer would
+   also eat whatever real answer came after it. Same 16 names the comment on
+   unsentBlocks enumerates, plus the ORPHAN list's `HANDOFF` spelling
+   alongside `HANDOFF_TO`.
+
+   The lone OPENER is a different question from its payload, and keeping it
+   was wrong. Measured on the first-run path, on the very first deliverable
+   a new boss ever receives: Llama answered a Research brief with
+
+     **Vault Path:** [VAULT_NEW: Research/sourdough_starter.md]
+
+     Sourdough bread needs a starter because…
+
+   and that line went into the filed .md in the cabinet — a kept file
+   asserting a vault path that does not exist and was never written.
+   ORPHAN_TAG_RE would have caught it, but it is whole-line by design and
+   this marker sat mid-line behind a label the model invented.
+
+   So: remove the unclosed opener TAG, never the text after it. That keeps
+   the reason the original rule existed (the real answer survives) and drops
+   the part that lies. `unsentBlocks` is unaffected — every caller runs it on
+   the RAW buffer, not on this output, so the honest "no file reached the
+   cabinet" note still fires from the same opener this now hides.
 
    The name list lives INSIDE the function for the same reason unsentBlocks'
    does: scripts/test_reply_hygiene.py lifts named functions out of this file
@@ -464,7 +483,19 @@ function stripBlocks(text) {
     'EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO';
   const re = new RegExp(
     '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][\\s\\S]*?\\[\\s*\\/\\s*\\1\\s*\\]', 'gi');
-  return String(text || '').replace(re, '');
+  /* Closed blocks and their payload go first. Whatever opener survives that
+     pass had no closer, so its tool never ran: drop the tag, keep the line.
+
+     Anchored to END OF LINE, and that anchor is the whole rule. A first cut
+     stripped the tag anywhere and broke a case that was already in the
+     suite — `Use [DM_TO: Mika] to reach someone.` is a coworker EXPLAINING
+     the marker, and eating it there turns an explanation into "Use  to
+     reach someone." The two forms are told apart by what follows on the
+     line: a marker the model meant as an instruction ends the line, one it
+     is talking about has a sentence after it. */
+  const lone = new RegExp(
+    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)', 'gi');
+  return String(text || '').replace(re, '').replace(lone, '');
 }
 
 /* ── A handoff that never left the building ───────────────────────────────

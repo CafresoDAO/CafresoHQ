@@ -94,6 +94,18 @@ R.realBlockLeak = visibleReply(
    must still be able to see the opener. Stripping to end-of-text would also
    swallow any real answer that followed. */
 R.unclosedKept = stripBlocks('Sure.\n[HIRE_AGENT: designer]\nname: Vee');
+
+/* Verbatim off the FIRST-RUN path, 2026-08-07: a fresh office, one hire
+   (Llama, local), the "Research brief" starter card. This exact line was
+   written into the filed .md in the boss's cabinet — a kept file naming a
+   vault path that does not exist. The marker is mid-line, behind a label
+   the model invented, which is why the whole-line orphan strip missed it. */
+R.inlineVaultLeak = visibleReply(
+  '**Vault Path:** [VAULT_NEW: Research/sourdough_starter.md]\n\n' +
+  'Sourdough bread needs a starter because wild yeast tolerates acidity.');
+R.inlineVaultNote = unsentBlocks(
+  '**Vault Path:** [VAULT_NEW: Research/sourdough_starter.md]\n\n' +
+  'Sourdough bread needs a starter because wild yeast tolerates acidity.');
 /* Verbatim off the floor, 2026-08-07. Three runs asked Llama to save a note;
    all three emitted an unclosed [MEMORY_WRITE:…] — so nothing was written —
    and all three announced success in their own ACK. The office said nothing,
@@ -275,8 +287,26 @@ def main():
           'name one color' in out['realBlockLeak']
           and out['realBlockLeak'].endswith('The article defines them.'),
           repr(out['realBlockLeak']))
-    check('an UNCLOSED block keeps its opener so unsentBlocks can report it',
-          'HIRE_AGENT' in out['unclosedKept'], repr(out['unclosedKept']))
+    # Contract CHANGED deliberately, 2026-08-07. It used to require the
+    # opener be KEPT so unsentBlocks could report it. That was a misreading
+    # of its own rule: unsentBlocks runs on the RAW buffer at every call
+    # site, never on this output, so hiding the tag here cannot blind it —
+    # and keeping it put a live-looking [VAULT_NEW: …] into a filed
+    # deliverable, asserting a cabinet path that was never written. The tag
+    # goes; the text after it stays, which was the real reason the original
+    # rule existed.
+    check('an UNCLOSED opener is dropped — its tool never ran',
+          'HIRE_AGENT' not in out['unclosedKept'], repr(out['unclosedKept']))
+    check('…but the text after the unclosed opener survives',
+          'name: Vee' in out['unclosedKept'] and 'Sure.' in out['unclosedKept'],
+          repr(out['unclosedKept']))
+    check('the real first-run leak: an inline VAULT_NEW never reaches the file',
+          'VAULT_NEW' not in out['inlineVaultLeak']
+          and 'Sourdough bread needs a starter' in out['inlineVaultLeak'],
+          repr(out['inlineVaultLeak']))
+    check('…and the office still says the file was never written',
+          bool(out['inlineVaultNote']) and 'cabinet' in out['inlineVaultNote'],
+          repr(out['inlineVaultNote']))
     check('an unclosed WRITE is called out, not left to an absent visit block',
           bool(out['unsentWrite']) and 'saved' in out['unsentWrite'],
           repr(out['unsentWrite']))
