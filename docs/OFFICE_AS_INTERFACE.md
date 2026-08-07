@@ -511,6 +511,27 @@ symptom survives. For visibility-gated code, reason from the diff — a constant
 array and a reset-on-open have little room to be wrong — rather than trying to
 out-measure the harness.
 
+**Persisted state is read through a normaliser — verify against the SCREEN.**
+Several writers deliberately scrub state on the way in or out, which is correct
+behaviour and a trap for anyone verifying against storage:
+
+- `persistableAgents` forces `status: 'idle'`, `mood: 'idle'`,
+  `task: 'standing by'` before saving, so a coworker mid-meeting *persists* as
+  idle at their desk;
+- `missionsOnLoad` rewrites a persisted `running` mission to `paused`, so
+  spend is never resumed without a click;
+- the `$CAFRESOHQ_HQ_STATE_DIR` files rehydrate over localStorage on load.
+
+Each is right. Together they mean **localStorage is not a mirror of what the
+office is currently doing**. I reported "the meeting room cleans up after
+itself, both coworkers back at their desks" on the strength of reading
+`status`/`task` from storage — while the meeting was still open, and the floor
+placards and the modal both said so and agreed with each other.
+
+The reliable signals are the rendered ones: placards, tooltips, chip text,
+`elementFromPoint`. If a check reads storage, ask first which writer last
+touched that field and what it did to it on the way through.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
