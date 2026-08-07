@@ -483,32 +483,32 @@ already had one (text between tags in a view), so raising it was safe and
 immediately productive. Widen a rule along an axis it already reasons
 about; refuse to widen it along one it cannot.
 
-**A rule with no audience signal cannot be scoped, so it cannot ship.**
-The Inbox's coworker filter shipped reading **"all agents"** — a banned
-word on a control the boss uses, in a file this suite already scanned. It
-was invisible because the string lives inside a JSX ternary
-(`{a === 'all' ? 'all agents' : a}`): the `>text<` pattern cannot see
-into an interpolation and the `|| 'fallback'` pattern does not match `?:`.
+**A refused rule is worth re-probing when the toolkit around it changes.**
+The JSX-ternary rule was refused twice on 2026-08-07 and shipped on the
+third attempt the same day. The refusals were correct: a bare ternary
+carries no audience signal, and both early versions flooded — 22 hits,
+then 28 — across object literals and prompt bodies. Shipping either would
+have been worse than the gap.
 
-Tried to close it and rejected the attempt. A first cut flooded — 22 hits
-across object literals and prompt bodies. Narrowing to "both arms are
-string literals", which is the exact shape that shipped, made it *worse*
-(28), because the real problem is not the pattern's precision. Every other
-spot source in this suite is keyed on something that implies an AUDIENCE —
-`title:`, `hint:`, `emptyHint=`, a `window.confirm` argument. A bare
-ternary carries no such signal, so it fires identically inside a prompt
-being assembled for a model and a label being rendered for a person, and
-the `boss_facing` flag has nothing to read.
+What changed was not the pattern but the filters available to it. Three
+arrived from work done in between:
 
-So the gap stays open and is written down here instead: **copy inside a
-JSX ternary is unscanned.** The one real violation the attempt surfaced
-(`missions.jsx` — "Tick the elevated authorization checkbox first") was
-fixed by hand on the way past.
+- the **code-shaped reject** (`[;=]`, `const`, `return`) written for
+  `_after_expr_spots` an hour later
+- a **minimum length**, because `'on'` / `'md'` / `'off'` are flags
+- marking those spots **not boss-facing**, so `prompt` and `context` —
+  banned only on boss surfaces — stop firing on prompt bodies
 
-That is the same verdict this document already reached on a 221-hit scan,
-reached again from the opposite direction: there the rule was too broad to
-be useful, here it is unscopeable to be safe. A rule you cannot scope
-honestly is worse than a paragraph telling the next reader where to look.
+Ten locations, zero false positives, every one real: `HIRE A SUB-AGENT`
+as a **modal title**, two sub-agent lines in the provider picker, the
+Night Shift form's "~N iterations" and "🛡 elevated agent", the Workspace
+empty state on both viewports, a retry toast, and the CEO's
+out-of-tokens note.
+
+So "this cannot be scoped" meant "I have not found the axis yet". Hold
+both halves: refuse a rule that floods **and** re-probe it when a new
+filter shows up, because the reason for the refusal may have expired
+without anyone noticing.
 
 **Check for the DEFECT, not for the fix.** The sharpest lesson of
 2026-08-07, and it came from a rule in this very table.
