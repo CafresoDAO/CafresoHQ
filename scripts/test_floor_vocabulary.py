@@ -206,6 +206,29 @@ FALLBACK_RE = re.compile(r"\|\|\s*('(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\")")
 SLUG_RE = re.compile(r"replace\(\s*/\[\^A-Za-z0-9_-\]")
 
 
+def _after_expr_spots(body):
+    """Copy that FOLLOWS a JSX expression and runs to the next tag.
+
+    `blank_comments` blanks a {/* … */} in place but leaves its braces, so
+    a sentence written after one is preceded by `}` — not the `>` that
+    JSX_TEXT_RE needs, and not the `{` that JSX_BETWEEN_RE needs. The
+    Memory view's entire empty state lived in that seam, telling every
+    boss their notes go "into every prompt".
+
+    The code-shaped reject is doing real work: without it this also
+    matched a line of hq-runtime JS that happens to sit between a brace
+    and an angle bracket. Copy does not contain semicolons or `const`.
+    """
+    rx = re.compile(r'\}\s*([A-Za-z][^<>{}]{2,400}?)\s*<')
+    code = re.compile(r'[;=]|\b(?:const|let|var|function|return)\b')
+    for m in rx.finditer(body):
+        frag = m.group(1)
+        if code.search(frag):
+            continue
+        if _reads_like_copy(frag):
+            yield (m.start(1), frag)
+
+
 def _fallback_spots(body):
     for m in FALLBACK_RE.finditer(body):
         inner = m.group(1)[1:-1]
@@ -297,6 +320,7 @@ def main():
                       if _reads_like_copy(m.group(1))]
             spots += [(m.start(1), m.group(1), True) for m in DIALOG_RE.finditer(body)]
             spots += [(s, r, True) for s, r in _fallback_spots(body)]
+            spots += [(s, r, True) for s, r in _after_expr_spots(body)]
             spots += [(s, r, False) for s, r in _prompt_spots(body)]
             for start, raw, boss_facing in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))

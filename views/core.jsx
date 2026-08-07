@@ -150,8 +150,8 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
             Say which ones, and only once it matters. */}
         <span className="tag">
           {memory.length > MEM_CAP
-            ? `${memory.length} saved · the newest ${MEM_CAP} go into every prompt CafresoHQ and the team see`
-            : `${memory.length} ${memory.length === 1 ? 'entry' : 'entries'} · folded into every prompt CafresoHQ and the team see`}
+            ? `${memory.length} saved · the newest ${MEM_CAP} go out with every job CafresoHQ and the team pick up`
+            : `${memory.length} ${memory.length === 1 ? 'entry' : 'entries'} · carried into every job CafresoHQ and the team pick up`}
         </span>
       </div>
       <div className="view-toolbar">
@@ -173,7 +173,7 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
                   paragraph later. The cap is not mentioned here on purpose:
                   this only renders at zero entries, where it would be noise,
                   and the header starts saying it the moment it matters. */}
-              Long-term memory goes into every prompt your CEO and crew see — facts,
+              Long-term memory goes out with every job your CEO and crew pick up — facts,
               preferences, rules, people. Add your first note below and the whole team works from it.
             </div>
             <div className="empty-cta-hint">↓ start typing in the box below</div>
