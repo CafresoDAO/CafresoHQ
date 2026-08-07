@@ -508,7 +508,7 @@ exposed a queued `requestAnimationFrame` repainting raw text one frame after
 the fix, so "the code is in the bundle" is not evidence either.
 
 **The best detector this codebase has is one question, asked by a person:
-what is this label actually reading?** It found three defects in three passes
+what is this label actually reading?** It found six defects in seven passes
 when the scripted sweeps had gone quiet, and it found them on surfaces every
 suite passes:
 
@@ -520,12 +520,40 @@ suite passes:
   heading, so enabling a tool in Settings retroactively changed what a
   coworker had "done".
 
+Asking it row by row down the Situation Wall — five rows, three findings —
+added three more, and the wall is the densest run of them because every row
+there is a number a boss reads as fact:
+
+- **`⚒ 3/4`** against a roster of one. The wall's only staffing-shaped row
+  read the DETECTION result — agent runtimes installed on this machine —
+  and appended `· N busy`, where busy counts hired coworkers. One row, one
+  separator, two unrelated populations. It now counts the office.
+- **`📦 10` "finished tasks"** over a filter that is `t.artifactPath` with no
+  test on status. Cards are draggable, so pulling a delivered task back to
+  redo it keeps the path set — rightly — and the wall would go on calling it
+  finished while the board showed it in progress. Second pass on this one
+  label; the first had already moved it off counting files.
+- **`⚡ 7.8K` "this session"** on a count that survived a full reload byte
+  for byte. That one opened a real defect underneath the wording: the coffee
+  break was zeroing it, left over from when the button was `REFRESH CTX` and
+  the number meant context occupancy. Nothing had read it as occupancy in a
+  long time, so the reset had no consumer — it only erased work the coworker
+  really did.
+
 None of these is wrong in the code. Each is wrong in what it lets a person
 conclude, which is why no test catches them and no regex finds them: the
 mismatch is between a WORD and a SOURCE, and only a reader holds both at
-once. The fourth pass came back clean — `Remembers` counts real vault files
-and names them in its tooltip — and that clean answer is what makes the first
-three findings rather than taste.
+once. The clean passes are what make the rest findings rather than taste:
+`Remembers` counts real vault files and names them in its tooltip, and the
+wall's `HQ` and `SEARCH` lamps say exactly what they probe.
+
+**Two of the six started as wording and ended as behaviour.** "Tools used"
+was a heading over a permission list; `⚡ … this session` was a span over a
+lifetime counter. In both cases the sentence that made the label honest also
+made it obvious the state was wrong — a past-tense heading over a settable
+list, a per-session total that a reload could not reset. Write the true
+sentence first. If it comes out awkward, the awkwardness is usually the
+defect, not the prose.
 
 Ask it of anything a boss reads as fact — every counter, every badge, every
 past-tense heading. Then fix the claim, not the data: the data has usually
