@@ -2276,6 +2276,23 @@ ${d.text}` : d.text,
      cadence — a ref, not state, because the poll effect mounts once and a
      re-render on every tick is exactly the cost being avoided. */
   const lastAskRef = useRefA(0);
+
+  /* The status strip hides its scrollbar on purpose (a visible one would
+     force the page's minimum width), so overflowing chips had no tell at
+     all. Mark it while it genuinely overflows and CSS fades the right edge;
+     when everything fits, no hint is shown — a permanent fade would imply
+     more content that isn't there, which is the same species of small lie
+     as a gauge with no scale. */
+  useEffectA(() => {
+    const el = document.querySelector('.topbar .status');
+    if (!el) return;
+    const sync = () => el.classList.toggle('is-scrollable', el.scrollWidth > el.clientWidth + 1);
+    sync();
+    const ro = (typeof ResizeObserver !== 'undefined') ? new ResizeObserver(sync) : null;
+    if (ro) { ro.observe(el); for (const c of el.children) ro.observe(c); }
+    window.addEventListener('resize', sync);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', sync); };
+  });
   const missionsRef = useRefA(missions); missionsRef.current = missions;
   useMissionRunner(missions, setMissions, {
     setChat, appendJournal, onUpdateAgent, pulseGraph, recordXp,
@@ -3919,6 +3936,22 @@ ${d.text}` : d.text,
               WORKFLOW{workflows.length > 0 ? ` · ${workflows.length}` : ''}
             </Btn>
             <Btn variant="ghost" size="sm" className="mobile-hidden" onClick={()=>setNight(v=>!v)}>{night?'☀':'☾'} {night?'DAY':'NIGHT'}</Btn>
+          </div>
+          {/* ── Pinned. Never scrolls. ────────────────────────────────────
+              `.status` above is a horizontal scroller whose scrollbar is
+              deliberately hidden, so anything past the right edge is not
+              merely awkward to reach — it is invisible. Measured at a 718px
+              viewport: 189px of chrome hidden, and what was hidden were the
+              three things a boss must never lose:
+
+                ⚠ ADD AI KEY  — nothing will run until you fix this
+                ■ STOP ALL    — the emergency brake, hidden exactly when
+                                agents are running and it is needed
+                🔔 26         — every unread notification
+
+              Informational chips and secondary tools may scroll. An alarm
+              may not. */}
+          <div className="status-pinned">
             {!hasKey && (
               <button className="chip chip-warn" onClick={()=>openSettings('keys')}
                 title="No AI key for the active provider yet — your agents can't run until you add one. Click to open Settings → Connections."

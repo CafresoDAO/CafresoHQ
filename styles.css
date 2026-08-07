@@ -2000,6 +2000,29 @@ body.night .cf-mark--dark  { display: block; filter: drop-shadow(0 1px 0 rgba(0,
 }
 .topbar .status::-webkit-scrollbar { display: none; }
 .topbar .status > * { flex-shrink: 0; }
+/* The scroller must be the thing that gives way when the bar is tight —
+   never the pinned alarms beside it. */
+.topbar .status { flex: 1 1 auto; }
+
+/* Pinned cluster: the controls a boss must never lose to an off-screen
+   scroll. See the comment at its JSX. Sits outside `.status`, so it is
+   unaffected by that strip's overflow. */
+.topbar .status-pinned {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+/* An honest edge. The scrollbar is hidden by design (it would otherwise
+   force the page's minimum width), which left overflowing chips with NO
+   indication they existed. This fade is applied only while the strip
+   really does overflow — `is-scrollable` is set from JS against
+   scrollWidth, so a bar with room to spare shows no phantom hint. */
+.topbar .status.is-scrollable {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
 .topbar .status .chip {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 10px;

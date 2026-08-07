@@ -993,6 +993,43 @@ append-only).
 > reintroducing both bugs and watching it report them by file and line —
 > a tripwire that has only ever passed proves nothing.
 
+> ⚠ **An alarm may not scroll (2026-08-06).** Stopped auditing code and just
+> *looked* at the floor at a laptop width. `.topbar .status` is a horizontal
+> scroller whose scrollbar is **deliberately** hidden — a visible one would
+> force the page's minimum width, which is a fair trade — but nothing
+> replaced the affordance, so anything past the right edge wasn't merely
+> awkward to reach, it was invisible. Measured at a 718px viewport: **189px
+> of chrome hidden**, and what was hidden were the three controls a boss
+> must never lose:
+>
+> | hidden | why it matters |
+> |---|---|
+> | `⚠ ADD AI KEY` | nothing will run until it's fixed — the blocking condition |
+> | `■ STOP ALL` | the emergency brake, hidden *exactly* when agents are running and it's needed |
+> | `🔔 26` | every unread notification |
+>
+> `■ STOP ALL` is the sharp one: it renders only while work is in flight, so
+> it was guaranteed to be missing at the one moment it exists for.
+>
+> Now a `.status-pinned` sibling holds those three. It sits outside the
+> scroller and never shrinks. **Informational chips and secondary tools may
+> scroll; an alarm may not.** The strip also gains a right-edge fade, applied
+> only while it genuinely overflows (`is-scrollable`, set from JS against
+> `scrollWidth`) — a permanent fade would imply content that isn't there,
+> the same species of small lie as a gauge with no scale.
+>
+> Wrapping was the obvious alternative and is wrong here: two views size
+> themselves with `calc(100vh - 110px)`, so a taller header would push them
+> off the bottom of the screen. Fixing the harm without that regression
+> meant pinning, not reflowing.
+>
+> **Not fixed, and worth its own pass:** the tool row is *overloaded*, not
+> merely tight. At 1400px it needs 1024px of space and gets 637 — it does
+> not fit at any width, so INBOX · MEMORY · STAND-UP · RESEARCH · MEETING ·
+> WORKFLOW · DAY/NIGHT always live partly behind a scroll. That's a
+> grouping decision (an overflow menu, or folding launchers into the
+> existing `Apps ▾`), not a CSS fix.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw
