@@ -3722,6 +3722,12 @@ ${d.text}` : d.text,
             </div>
             <OfficeView
               agents={agents}
+              /* One truth for "is the container reachable". The wall runs its
+                 own 30s poll; during a real outage that left the topbar
+                 saying OFFLINE while the wall still said "Container healthy"
+                 — two health indicators contradicting each other on the same
+                 screen. app-level backendDown wins when it is true. */
+              backendDown={backendDown}
               onHire={() => setHireOpen(true)}
               onAgentClick={onInspect}
               onInspect={onInspect}

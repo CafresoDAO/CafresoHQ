@@ -357,7 +357,7 @@ function freshCacheEntries(bucket) {
   return out;
 }
 
-function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
+function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -1048,8 +1048,15 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             instead of a floating box. */}
         <div className="px-hud right sit-wall" title="Situation Wall — live office telemetry">
             <div className="sw-title">◉ SITUATION</div>
-            <div className="sw-row" title={wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
-              <span className={`sw-lamp ${wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
+            {/* `backendDown` is the app-level probe and it wins when true.
+                This row polls on its own 30s clock, so during a real outage
+                it went on saying "Container healthy" while the topbar chip
+                had already flipped to OFFLINE — the boss reading both saw
+                the office contradict itself about whether it was reachable.
+                The local poll still drives the healthy/checking states; it
+                just can no longer out-vote a known outage. */}
+            <div className="sw-row" title={backendDown ? 'Container unreachable' : wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
+              <span className={`sw-lamp ${backendDown ? 'red' : wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
             </div>
             {wallSearch !== null && (
               <div className="sw-row" title={`Search network: ${wallSearch.ok ? (wallSearch.detail || 'up') : 'unavailable'} — click to re-check`}
