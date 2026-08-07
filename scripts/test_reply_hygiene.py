@@ -44,13 +44,17 @@ def run_js(cases_js):
     wanted = []
     # The orphan-tag regex is a module-level const, not a function — pull it
     # first so stripOrphanTags can see it.
+    pconst = re.search(r'^const PLACEHOLDER_ARG\s*=.*?;$', text, re.M)
+    if not pconst:
+        raise SystemExit('could not find PLACEHOLDER_ARG')
+    wanted.append(pconst.group(0))
     mconst = re.search(r'^const ORPHAN_TAG_RE\s*=\s*$\n\s*/.*?/gim;', text, re.M | re.S)
     if not mconst:
         mconst = re.search(r'^const ORPHAN_TAG_RE\s*=.*?;', text, re.M | re.S)
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -117,6 +121,19 @@ R.cutNullText = upToToolCall(null, '[X]');
 // Only the FIRST occurrence bounds it — a marker repeated later must not
 // let the guess back in.
 R.cutFirstOnly = upToToolCall('a [X] b [X] c', '[X]');
+// placeholderRefusal — a template copied out of the tool docs is not a value.
+R.phUrl    = placeholderRefusal('BROWSER_FETCH', '<url>');
+R.phPath   = placeholderRefusal('MEMORY_READ', '<path>');
+R.phSpaced = placeholderRefusal('MEMORY_READ', '  <your-file.md>  ');
+R.phReal   = placeholderRefusal('BROWSER_FETCH', 'https://example.com');
+R.phPathReal = placeholderRefusal('MEMORY_READ', 'decisions/art.md');
+R.phPartial  = placeholderRefusal('SEARCH', 'compare <a> and <b> tags');
+R.phInner    = placeholderRefusal('SEARCH', 'a<b');
+R.phEmpty    = placeholderRefusal('MEMORY_LIST', '');
+R.phNull     = placeholderRefusal('MEMORY_LIST', null);
+R.phNested   = placeholderRefusal('SEARCH', '<<url>>');
+R.phSaysNotRun = /Nothing was looked up/.test(R.phUrl || '');
+R.phNamesTool  = /BROWSER_FETCH/.test(R.phUrl || '');
 // A tag mid-sentence is the agent TALKING about the protocol, not using it.
 R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
 console.log(JSON.stringify(R));
@@ -166,6 +183,17 @@ def main():
     check('a null list is safe', out['vpNull'] == [])
     check('the result supports startsWith — the call that was crashing',
           out['vpStartsWith'] == 1)
+    check('an angle-bracket template is refused', bool(out['phUrl']) and bool(out['phPath']))
+    check('surrounding whitespace does not hide one', bool(out['phSpaced']))
+    check('a real url runs', out['phReal'] is None)
+    check('a real path runs', out['phPathReal'] is None)
+    check('brackets INSIDE a real query are left alone',
+          out['phPartial'] is None and out['phInner'] is None)
+    check('an argument-less tool is not mistaken for a template',
+          out['phEmpty'] is None and out['phNull'] is None)
+    check('a nested-bracket oddity is not refused (narrow rule)', out['phNested'] is None)
+    check('the refusal says plainly that nothing ran', out['phSaysNotRun'] is True)
+    check('…and names the tool so the model can retry it', out['phNamesTool'] is True)
     check('the ask survives the cut', out['cutKeepsAsk'] is True, repr(out['cutFab']))
     check('the invented result is cut away', out['cutDropsGuess'] is False, repr(out['cutFab']))
     check('the marker itself is kept, so the model sees what it asked for',

@@ -1217,6 +1217,42 @@ append-only).
 > Verifying it therefore required wiping state first — testing against
 > poisoned state would have looked like a failure and hidden a working fix.
 
+> ✅ **A template is not an argument (2026-08-06).** The same clean run threw
+> up a smaller sibling: a coworker emitted `[BROWSER_FETCH: <url>]` —
+> copying the shape straight out of its own tool docs — and the office
+> executed it, spent one of four tool hops, and played
+>
+> > 🌐 Read \<url\>
+> > `Browser fetch error: url must start with http:// or https://`
+>
+> on the floor as a real visit. It was never a real attempt, and §4 says a
+> prop visit plays only while that tool is *really* running.
+>
+> `placeholderRefusal()` declines before any event fires, so the floor plays
+> nothing, and hands the model a correction instead of silence — the point
+> being that an unexecuted call which says nothing is exactly what invites
+> the coworker to invent the result (see `upToToolCall` above).
+>
+> The rule is **narrow on purpose**: the whole argument must be a single
+> angle-bracket token. `<url>`, `<path>`, `<your-file.md>` are unambiguously
+> template syntax; anything with content outside the brackets — `a<b`,
+> `compare <a> and <b> tags` — runs untouched, because a wrong refusal costs
+> the boss a real tool call. 10 checks cover the near misses.
+>
+> **Evidence, stated honestly: the refusal path was never observed live.**
+> Two attempts to provoke a placeholder produced a real fetch and a
+> `[VAULT_NEW:…]` instead — coaxing a specific token out of a stochastic
+> model is not a reliable experiment. The rule is unit-tested and the wiring
+> is a three-line guard, but "no phantom visit appeared" is equally
+> consistent with no placeholder having been emitted. A `console.warn` now
+> marks each refusal so the next person can tell those two apart.
+>
+> Method note, twice over: **both** live readings this session were first
+> taken with the wrong scope — one sampled mid-stream and called a
+> fabrication fixed, the other queried `.msg-visit` across *all* bubbles and
+> attributed a pre-fix run's phantom visit to the current one. Scope a
+> measurement to the run you are actually testing.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

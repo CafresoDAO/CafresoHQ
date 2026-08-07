@@ -1253,6 +1253,35 @@ function detectJsonToolCall(text, tools) {
    `raw` is the exact matched text and every detector path supplies it
    (bracket, JSON and harmony), so an unrecognised shape leaves the buffer
    untouched rather than truncating something real. */
+/* ── A template is not an argument ────────────────────────────────────────
+   Caught on a clean run: a coworker emitted `[BROWSER_FETCH: <url>]` —
+   copying the shape straight out of its own tool docs — and the office
+   dutifully executed it, spent one of the four tool hops, and put
+
+     🌐 Read <url>
+     Browser fetch error: url must start with http:// or https://
+
+   on the floor as a real visit. It was never a real attempt. §4 says a prop
+   visit plays only while that tool is REALLY running; running a placeholder
+   makes the animation honest about something that shouldn't have happened.
+
+   The rule is deliberately narrow: the WHOLE argument is a single
+   angle-bracket token. `<url>`, `<path>`, `<your-file.md>` are unambiguously
+   template syntax — no real path, query or URL is shaped that way. Anything
+   with content outside the brackets ("see <a>", "a<b") is left alone,
+   because a wrong refusal costs the boss a real tool call.
+
+   The model gets a correction rather than silence, which is the whole
+   point: an unexecuted call that says nothing invites the coworker to
+   invent the result (see upToToolCall above). */
+const PLACEHOLDER_ARG = /^\s*<[^<>]*>\s*$/;
+
+function placeholderRefusal(name, arg) {
+  if (!PLACEHOLDER_ARG.test(String(arg == null ? '' : arg))) return null;
+  return `[NOT RUN] "${String(arg).trim()}" is the example from the ${name} instructions, not a real value. `
+       + `Nothing was looked up. Send ${name} again with the actual value, or answer without it.`;
+}
+
 function upToToolCall(text, raw) {
   const s = String(text || '');
   if (!raw) return s;
@@ -1771,6 +1800,23 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
       return;
     }
 
+    /* Refuse a template before it becomes a visit — no start/done events,
+       so the floor never plays a trip that didn't happen. */
+    const refusal = placeholderRefusal(call.tool.name, call.arg);
+    if (refusal) {
+      /* Deliberately silent on the FLOOR — nothing happened, so §4 says
+         play nothing. But a refusal that leaves no trace anywhere is
+         unverifiable: proving one occurred was impossible when checking
+         this live, and "no phantom visit appeared" is equally consistent
+         with the model simply not emitting a placeholder that time. One
+         console line, for the developer, not the boss. */
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn(`[tools] refused ${call.tool.name}(${String(call.arg).trim()}) — template, not a value`);
+      }
+      messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
+      messages.push({ role: 'user', content: refusal });
+      continue;
+    }
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
     try {
