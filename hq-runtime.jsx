@@ -1486,8 +1486,30 @@ function toolsPromptSnippet(tools) {
        Seen in a filed deliverable — the note a boss opens months later:
        "I've created a new note at [VAULT_NEW: projects/local_file_access.md]
        to store my thoughts". The marker is not a call there, it is the
-       coworker narrating its own plumbing into a kept record. */
-    'Never write marker syntax inside a sentence. A marker is a call, on its own line — if you are telling the boss what you did, name the file or the page in plain words instead ("saved it to projects/notes.md"), because that sentence is kept and they should not have to read machine syntax to understand it.',
+       coworker narrating its own plumbing into a kept record.
+
+       Led on "inside a sentence" until 2026-08-07, and a local model read
+       that narrowly: asked to file, it produced
+
+         **Vault Path:** [VAULT_NEW: Research/pears.md]
+
+       — not a sentence, so not covered, and the delivery kept it. The rule
+       now leads with POSITION instead of grammar, because a label, a bullet,
+       a heading and a table cell are all "not a sentence" and all put the
+       marker off column zero, where the line-anchored strip cannot reach it
+       and the parser never sees a call.
+
+       RE-TESTED after this rewrite, and it changed nothing: the same 8B local
+       model produced "**Vault Path:** [VAULT_APPEND: Research/pears.md]" on
+       the very next task, and bled the previous task's pears into a request
+       about plums. The rule is more precise and a capable model should follow
+       it — but do not read it as a fix. It is another data point for the
+       standing note that no instruction makes a small model honest.
+
+       What held again, unprompted, is downstream: the delivery carried
+       "Nothing opened, saved or looked up for this one." four lines under the
+       invented path. */
+    'A marker must be ALONE on its line: nothing before it, nothing after — no label, no bullet, no heading, no bold, no quotes. "**Vault Path:** [VAULT_NEW: notes.md]" is not a call; it is machine syntax in a record the boss keeps, and the file never gets written. If you are TELLING the boss what you did rather than doing it, use plain words instead ("saved it to projects/notes.md").',
   ].join('\n');
 }
 
