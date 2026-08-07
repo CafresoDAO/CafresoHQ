@@ -229,7 +229,13 @@ function TokenHUD({ tokens, budget=null, className='' }) {
        nobody was spending. A total across brains that charge differently —
        or not at all — is not a number that exists; the work done is. */
     <div className={`token-hud${className ? ' '+className : ''}`} title={OFFICE_EFFORT_TIP}>
-      <span>⛽</span>
+      {/* ⚡, not ⛽. The dollar figure and the budget bar were both removed
+          from this HUD as invented numbers, and the fuel PUMP outlived them:
+          fuel implies a tank and a level remaining, when this is effort
+          already spent and nothing caps it. The Situation Wall shows the
+          same number as ⚡ — one number should not wear two icons, and
+          certainly not one that argues with its own tooltip. */}
+      <span>⚡</span>
       <span>{(tokens/1000).toFixed(1)}K</span>
       {hasBudget && <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>}
     </div>
