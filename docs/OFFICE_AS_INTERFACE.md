@@ -412,8 +412,31 @@ written only after the same class of bug was fixed by hand three or four times:
 |---|---|
 | `scripts/test_no_invented_numbers.py` | a hardcoded per-token price; a percentage against a phantom 1,000,000-token budget |
 | `scripts/test_floor_vocabulary.py` | `sub-agent`, `elevated`, `tok`, `iteration`/`iter` — and `agent` meaning a person — in any string a person reads, **including the prompt**, since the prompt teaches the model the word and the model says it back. Config surfaces and genuine technical nouns are exempt *by name, with reasons* |
-| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
+| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
 | `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
+
+**Check for the DEFECT, not for the fix.** The sharpest lesson of
+2026-08-07, and it came from a rule in this very table.
+`check_every_reply_path` asks whether `visibleReply` appears within 150
+lines of a stream opening — the presence of the cure, near the wound. It
+was green through the entire period the dispatch path, the office's
+most-used route, built its final text with `cleanHarmony(buf)` alone:
+some OTHER `visibleReply` in the window satisfied the search, and the one
+that mattered was never called. A tool marker plus the registry's own doc
+string reached the boss's chat while the suite said all six paths were
+clean.
+
+Its replacement, `check_raw_buffer_shown`, looks for the anti-pattern
+itself — a raw accumulated buffer handed to `cleanHarmony` — and cannot
+be satisfied by an unrelated occurrence, because there is no unrelated
+occurrence of a defect. Proven the only way that claim can be proven:
+revert the real fix, run the suite, watch the new check FAIL naming
+`app.jsx:1531` while the old census still reports "all 6 reply paths
+clean their final text". Two rules over the same code, disagreeing.
+
+Where both framings are available, take the negative one. A rule that
+hunts for a cure can be fooled by a coincidence; a rule that hunts for a
+wound cannot.
 
 How to re-derive that list rather than trust the number: a *rule* asserts
 about source it is not the unit test of. Two scan the repo (`ROOT.glob`); one
