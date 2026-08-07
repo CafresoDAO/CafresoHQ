@@ -578,7 +578,12 @@ const occluded = [...document.querySelectorAll('button,a,select,[role=button],.c
 ```
 
 Result after both corrections: zero occluded controls across all eight views
-at 1440px. A `pointer-events: none` on the ticker was written and then
+at 1440px — **with no windows open**, which is the third correction and the
+one that bites next. In desktop mode a view IS a window, so a scan taken with
+three of them stacked correctly reports the rail beneath as occluded: 41
+controls, every one of them genuinely covered and none of them a bug. Close
+the windows, or scan a single view, before reading the number. Re-measured
+2026-08-07: 41 with windows open, 0 with a clear floor. A `pointer-events: none` on the ticker was written and then
 reverted — the change was harmless but the failure it claimed to fix does not
 exist, and a comment in this codebase is supposed to record a measurement,
 not a hypothesis.
