@@ -175,7 +175,22 @@ function buildDelivery(task, agent, text, visits) {
     '---',
     '',
     body,
-    ...(working.length ? ['', '---', '', '**Working**', '', ...working] : []),
+    /* The Working footer is ALWAYS written, even empty. It used to be
+       omitted when there were no visits, which made "this coworker consulted
+       nothing" and "this delivery predates the footer" look identical, and
+       left an absence where the honest thing is a sentence.
+
+       That matters because of what models actually file. A real delivery came
+       back "Yellow." followed by "[Vault path: Research/banana-colour.md]" —
+       an invented filing, no Research folder anywhere. The office cannot
+       detect the claim: it is prose, it carries no marker, and guessing which
+       sentences are claims would mean editing a coworker's words. But the
+       office knows exactly what IT did, and stating that plainly puts the
+       record directly beneath the claim, where a reader can see they
+       disagree. Same principle as the unclosed-write guard: an absence loses
+       against a confident sentence, so turn the absence into a statement. */
+    '', '---', '', '**Working**', '',
+    ...(working.length ? working : ['- Nothing opened, saved or looked up for this one.']),
     '',
   ].join('\n');
   return { path: `${home}/${slug}.md`, content, kind: 'note' };

@@ -276,8 +276,18 @@ console.log(JSON.stringify(R));
           '📡' not in out['withWorking'] and 'Status: 200' not in out['withWorking'])
     check('a body that was ONLY a tool echo files nothing',
           out['echoOnlyBody'] is None, repr(out['echoOnlyBody']))
-    check('a delivery with no visits gets no empty Working section',
-          '**Working**' not in out['noWorkingSection'])
+    # SUPERSEDED 2026-08-07, by evidence rather than taste. This asserted the
+    # opposite: no visits meant no Working section. The omission made "this
+    # coworker consulted nothing" indistinguishable from "this file predates
+    # the footer", and left an absence exactly where a claim needs answering.
+    # A real delivery filed "Yellow." followed by an invented
+    # "[Vault path: Research/banana-colour.md]" with no Research folder in
+    # existence. The office cannot detect that claim — it is prose with no
+    # marker — but it CAN state what it actually did, directly beneath it.
+    check('a delivery with no visits still says so, in words',
+          '**Working**' in out['noWorkingSection']
+          and 'Nothing opened, saved or looked up' in out['noWorkingSection'],
+          out['noWorkingSection'])
 
     # agentFiledPath — defer to a coworker that filed its own deliverable
     check('an ordinary tool visit is not a filing', out['afNone'] is None)
