@@ -449,6 +449,18 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+*Not every repeated bug has a single detectable shape.* "Computed and then
+discarded" turned up three times in one session — `agent.tasksDone` written
+by three sites and read by none, a `userText` parameter accepted and ignored
+until three surfaces said "a job", and a friendly label `('boss', 'You
+(boss)', …)` unpacked and dropped so the map drew a node called "boss". Same
+mistake, three different syntactic forms: a field, a parameter, a loop
+target. An AST rule for the third found exactly one more instance and that
+one was harmless. Shipping it would have implied coverage of the pattern
+while catching a third of it — the mirror of the 221-hit scan that was
+rejected for noise. A rule that under-claims its scope is as misleading as
+one that over-claims. Some patterns are for a reader to carry, not a script.
+
 *Census beats sweep, and a clean census still earns its keep.* The reply-path
 census found three uncleaned paths under a green suite; the desk-clearing
 census that followed found nothing. Both were worth running, and the second

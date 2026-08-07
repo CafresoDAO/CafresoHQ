@@ -1022,7 +1022,7 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
                                  f'thread artifact ({kind})')
 
     # ── Synthesise agent nodes from everything that referenced them ────
-    for slug, rec in agents_by_slug.items():
+    for rec in agents_by_slug.values():
         meta = rec.get('meta') or {}
         roles = sorted(rec['roles'])
         # Display title: 'Selvin · Code Gremlin' when role is known, else just name.
