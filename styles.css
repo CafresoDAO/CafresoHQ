@@ -6598,7 +6598,10 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
 .ws-pip.working .dot { background: #241a0e; animation: ws-blink 1s infinite; }
 @keyframes ws-blink { 50% { opacity: 0.35; } }
 .ws-classic { flex: 1; min-height: 0; }
-.ws-noproj { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); font-size: 13px; }
+/* Was a single centred line ("switch to Classic to create one"). Now a
+   short explanation above a real button, so it stacks. */
+.ws-noproj { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--ink-3); font-size: 13px; text-align: center; padding: 0 24px; }
+.ws-noproj-copy { max-width: 42ch; line-height: 1.5; }
 .ws-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px 1fr 264px; }
 .ws-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--rule); }
 .ws-pane-hd { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--rule); flex-shrink: 0; }

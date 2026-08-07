@@ -275,7 +275,27 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       {mode === 'classic' ? (
         <div className="ws-classic"><ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={onSwitchView} /></div>
       ) : !project ? (
-        <div className="ws-noproj">No project yet — switch to <button className="px-btn" onClick={() => flipMode('classic')}>Classic</button> to create one.</div>
+        /* This is where the onboarding checklist's "New Project →" lands,
+           and it used to read "No project yet — switch to [Classic] to
+           create one." Measured on a fresh office: step 5 of 6 was the only
+           step left, its own button brought the boss here, and the screen
+           answered with the name of a mode. "Classic" means nothing to
+           someone who has been in the building for four minutes, and the
+           sentence describes the app's internal shape instead of offering
+           the thing they came for.
+
+           The button already flipped modes, so this was never a hard dead
+           end — it was a CTA named after the office's plumbing. Now it says
+           what a project IS and does the thing it is named after. */
+        <div className="ws-noproj">
+          <div className="ws-noproj-copy">
+            No projects yet. A project is a folder your coworkers can build
+            in — docs, pages, code — and you can watch them work in it.
+          </div>
+          <button className="px-btn primary" onClick={() => flipMode('classic')}>
+            Create your first project
+          </button>
+        </div>
       ) : _isMobile ? (
         <>
           <div className="ws-mbody">
