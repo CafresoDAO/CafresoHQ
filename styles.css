@@ -3115,6 +3115,39 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
 }
 /* Shown beside the dots when the first byte is taking a while. Quiet — it
    is a status note, not a warning; nothing has gone wrong yet. */
+/* A tool visit, as the OFFICE's own record of it. Deliberately looks
+   nothing like a speech bubble: inset, ruled on the left, its own type.
+   The point is that the boss can tell at a glance which lines the office
+   is vouching for and which lines the coworker merely typed. */
+.msg-visit {
+  margin: 6px 0 2px;
+  border-left: 3px solid var(--accent-sun, #d4a648);
+  background: var(--paper-2, rgba(0,0,0,0.035));
+  border-radius: 0 var(--radius-1) var(--radius-1) 0;
+  padding: 5px 8px;
+}
+.msg-visit-head {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  color: var(--ink);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.msg-visit-icon { font-size: 11px; }
+.msg-visit-body {
+  margin-top: 4px;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--ink-soft, rgba(0,0,0,0.62));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 9.5em;
+  overflow-y: auto;
+}
 .msg-waiting {
   display: block;
   margin-top: 3px;

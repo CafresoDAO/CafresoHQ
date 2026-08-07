@@ -865,6 +865,49 @@ append-only).
 > But the real hardening is structural: the visit should be a rendered
 > element attached to the message, not text inside the bubble, so nothing
 > the model types can look like the office speaking. Filed as the next pass.
+>
+> ### ✅ Closed — the visit left the text channel (2026-08-06)
+>
+> **Everything in the text channel is forgeable.** Stripping the office's
+> voice out of the model's context removed the *incentive*; this removes the
+> *possibility*. The runtime no longer injects the visit into the token
+> stream at all — it rides the `done` event as structured data (`toVisit`),
+> `attachVisit` hangs it on the streaming message, and the bubble renders it
+> as office chrome: inset, ruled, its own type, deliberately nothing like a
+> speech bubble. The boss can tell at a glance which lines the office
+> vouches for and which the coworker merely typed.
+>
+> Checked first that nothing depended on the inline text: all five stream
+> consumers already read tool results from `onTool`, not from the buffer.
+> `echo` stays on the event because histories written before this change
+> still carry the banner inline and filing removes it by exact match.
+>
+> One trap on the way: the direct-agent path had both `messageId` (the
+> comms-registry record) and `agentMsgId` (the chat bubble) in scope, and
+> passing the wrong one attaches nothing, silently. Verified by rendering.
+>
+> ### 🐛 …and it immediately exposed a dead feature
+>
+> The first real visit rendered as:
+>
+> > 📁 at the filing cabinet
+> > `Error: d.startsWith is not a function`
+>
+> `/vault/list` returns records — `{path, title, mtime, size}` — and every
+> consumer in the app reads `f.path`. The two MEMORY_* sites read the
+> entries as plain strings. So **`[MEMORY_LIST]` threw on every call since
+> it was written**, and `memorySummary()` threw the same inside a
+> `try/catch` that swallowed it — meaning `agentMemoryNote` was *always*
+> empty and **no coworker was ever told what was in its own memory folder**.
+> The entire private-memory feature was dead, silently.
+>
+> It stayed hidden precisely because the thrown message was buried in a tool
+> echo spliced into a chat bubble, among the model's own prose. It surfaced
+> the instant a visit became its own element with the result on its own
+> line. That is the argument for this change restated as a bug: **when the
+> office's own account is structurally separate, its failures are legible.**
+> `vaultPaths()` now normalises both shapes; pinned in
+> `scripts/test_reply_hygiene.py`.
 
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)

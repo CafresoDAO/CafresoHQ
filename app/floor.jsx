@@ -95,6 +95,34 @@ function visitPlace(name, tense) {
   return tense === 'now' ? 'looking something up' : 'looked something up';
 }
 
+/* A visit, as structured data for the UI to render — never as text.
+   Capped here rather than at each render site so one long page fetch can't
+   push the coworker's actual answer off the screen. */
+const VISIT_RESULT_CAP = 600;
+
+function toVisit(ev) {
+  if (!ev || !ev.name) return null;
+  const head = visitLine(ev.name, ev.arg, 'past', 60) || visitPlace(ev.name, 'past');
+  const raw = String(ev.result === undefined || ev.result === null ? '' : ev.result);
+  const body = raw.length > VISIT_RESULT_CAP
+    ? raw.slice(0, VISIT_RESULT_CAP).trimEnd() + '\n…'
+    : raw;
+  return { icon: visitWords(ev.name).icon, head, body: body.trim(), at: ev.at || null };
+}
+
+/* Attach a visit to the message currently streaming. One helper because
+   five call sites need it, and five hand-rolled copies is how the office
+   ends up describing the same trip five ways (it already did, four times,
+   before `visitLine`). */
+function attachVisit(setChat, msgId, ev) {
+  const visit = toVisit(ev);
+  if (!visit || !setChat || !msgId) return false;
+  setChat(prev => prev.map(m => m.id === msgId
+    ? Object.assign({}, m, { visits: (m.visits || []).concat([visit]) })
+    : m));
+  return true;
+}
+
 /* ── The office's voice is not the coworker's to borrow ───────────────────
    Caught live, and it is the worst thing found on this floor so far. Asked
    a local model to check its memory, the chat came back:
@@ -283,4 +311,4 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

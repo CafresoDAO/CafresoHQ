@@ -191,6 +191,17 @@ R.vpPhone   = visitPlace('BROWSER_FETCH', 'past');
 R.vpUnknown = visitPlace('WEIRD_THING', 'now');
 R.vpUnknownPast = visitPlace('WEIRD_THING', 'past');
 R.vpMatchesPlacard = visitPlace('MEMORY_LIST', 'past') === PROP_PLACARD.cabinet;
+// ── toVisit: structured data, never text ────────────────────────────────
+R.tvHead = toVisit({ name: 'MEMORY_READ', arg: 'facts/france.md', result: 'nothing here' });
+R.tvNoArg = toVisit({ name: 'MEMORY_LIST', arg: '', result: 'a\nb' });
+R.tvNoName = toVisit({ arg: 'x', result: 'y' });
+R.tvNull   = toVisit(null);
+R.tvEmptyResult = toVisit({ name: 'MEMORY_READ', arg: 'x', result: '' }).body;
+R.tvNullResult  = toVisit({ name: 'MEMORY_READ', arg: 'x', result: null }).body;
+R.tvCapped = toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5000) }).body.length;
+R.tvCappedEllipsis = /\u2026$/.test(toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5000) }).body);
+// A visit object must expose no field a model could have authored as prose.
+R.tvKeys = Object.keys(toVisit({ name: 'MEMORY_READ', arg: 'x', result: 'y' })).sort().join(',');
 console.log(JSON.stringify(R));
 ''')
 
@@ -348,6 +359,22 @@ console.log(JSON.stringify(R));
           out['vpUnknown'] == 'looking something up' and out['vpUnknownPast'] == 'looked something up')
     check('the fallback IS the floor placard, not a second wording',
           out['vpMatchesPlacard'] is True)
+
+    # toVisit — the office's record as data
+    check('a visit carries icon + office-words head',
+          out['tvHead']['icon'] == '\U0001F4C1' and out['tvHead']['head'] == 'Opened facts/france.md',
+          str(out['tvHead']))
+    check('…and the real result as its body', out['tvHead']['body'] == 'nothing here')
+    check('an argument-less visit falls back to the placard',
+          out['tvNoArg']['head'] == 'at the filing cabinet', str(out['tvNoArg']))
+    check('a nameless or missing event yields no visit',
+          out['tvNoName'] is None and out['tvNull'] is None)
+    check('empty and null results become an empty body, not "null"',
+          out['tvEmptyResult'] == '' and out['tvNullResult'] == '')
+    check('a huge result is capped so it cannot bury the answer',
+          out['tvCapped'] <= 620 and out['tvCappedEllipsis'] is True, str(out['tvCapped']))
+    check('the visit shape is exactly {at, body, head, icon}',
+          out['tvKeys'] == 'at,body,head,icon', out['tvKeys'])
 
     print()
     if FAILS:

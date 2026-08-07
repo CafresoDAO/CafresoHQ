@@ -1,7 +1,7 @@
 import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
-import { snagCause, snagSentence } from '../app/floor.jsx';
+import { attachVisit, snagCause, snagSentence } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
@@ -515,6 +515,10 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     const onTool = (ev) => {
       if (ev.phase === 'dm') ceoDms.push({ to: ev.arg, body: ev.body });
       else if (ev.phase === 'handoff') ceoHandoff = { to: ev.arg, body: ev.body };
+      /* The visit rides on the message, not in its text — see floor.jsx.
+         The CEO looks things up too, and its bubble was the one where a
+         forged visit was first caught. */
+      else if (ev.phase === 'done') attachVisit(setChat, ceoId, ev);
     };
     try {
       await HQ.ceoStream(text, flush, { chat: pendingChat, agents, signal: controller.signal,
@@ -645,6 +649,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               try {
                 await HQ.ceoStream(synthPrompt, synthFlush, { chat: synthChat, agents, signal: controller.signal,
                      onUsage: u => onCeoUsage && onCeoUsage(u),
+                     onTool: ev => { if (ev.phase === 'done') attachVisit(setChat, synthId, ev); },
                      onHint: synthFlush.note });
                 synthFlush.flushNow();
               } catch (_synthErr) {
@@ -952,6 +957,20 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                   {m.streaming && !m.text && brainSlow ? (
                     <span className="msg-waiting">still waiting on that brain — it may be warming up</span>
                   ) : null}
+                  {/* What the office actually did, rendered as office
+                      chrome. This used to be text spliced into the bubble,
+                      which meant a coworker could WRITE one — and one did,
+                      inventing a result and a vault path for a lookup that
+                      returned nothing. Structured data can't be typed. */}
+                  {(m.visits || []).map((v, i) => (
+                    <div className="msg-visit" key={i}>
+                      <div className="msg-visit-head">
+                        <span className="msg-visit-icon" aria-hidden="true">{v.icon}</span>
+                        {v.head}
+                      </div>
+                      {v.body ? <div className="msg-visit-body">{v.body}</div> : null}
+                    </div>
+                  ))}
                 </div>
                 {!m.streaming && m.text ? (
                   <>

@@ -50,7 +50,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -95,6 +95,14 @@ R.orphanBash  = visibleReply('[BASH: ls -la]\ndone');
 R.orphanInline = visibleReply('I will use [MEMORY_READ: decisions/x.md] to check.');
 // A lookalike that is not one of ours stays put.
 R.orphanNotOurs = visibleReply('[TODO: buy milk]\nreal text');
+// vaultPaths — /vault/list returns records, not strings. Reading them as
+// strings killed [MEMORY_LIST] and silently emptied every agent's memory
+// summary; both failures were invisible for the same reason.
+R.vpRecords = vaultPaths([{path:'Agents/Llama/a.md'},{path:'Deliveries/b.md'}]);
+R.vpStrings = vaultPaths(['Agents/Llama/a.md']);
+R.vpMixed   = vaultPaths([{path:'a.md'}, 'b.md', {title:'no path'}, null, '']);
+R.vpNull    = vaultPaths(null);
+R.vpStartsWith = vaultPaths([{path:'Agents/Llama/a.md'}]).filter(x => x.startsWith('Agents/Llama/')).length;
 // A tag mid-sentence is the agent TALKING about the protocol, not using it.
 R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
 console.log(JSON.stringify(R));
@@ -136,6 +144,14 @@ def main():
     check('a marker inside a sentence is left alone',
           out['orphanInline'] == 'I will use [MEMORY_READ: decisions/x.md] to check.',
           repr(out['orphanInline']))
+    check('vault records become path strings',
+          out['vpRecords'] == ['Agents/Llama/a.md', 'Deliveries/b.md'], str(out['vpRecords']))
+    check('bare strings still work', out['vpStrings'] == ['Agents/Llama/a.md'])
+    check('pathless / null / empty entries are dropped',
+          out['vpMixed'] == ['a.md', 'b.md'], str(out['vpMixed']))
+    check('a null list is safe', out['vpNull'] == [])
+    check('the result supports startsWith — the call that was crashing',
+          out['vpStartsWith'] == 1)
     check('a bracketed line that is not one of our tools survives',
           out['orphanNotOurs'] == '[TODO: buy milk]\nreal text', repr(out['orphanNotOurs']))
     check('a tag mid-sentence is content, not scaffolding',

@@ -325,6 +325,28 @@ function toolEchoHead(name, arg) {
   return `${w.icon} ${line}`;
 }
 
+/* `/vault/list` returns records — `{path, title, mtime, size}` — and every
+   consumer in the app reads `f.path`. The two MEMORY_* sites below read the
+   entries as plain strings and called `.startsWith` on them, so:
+
+     · [MEMORY_LIST] threw `d.startsWith is not a function` on every call;
+     · memorySummary() threw the same inside a try/catch that swallowed it,
+       so `agentMemoryNote` was ALWAYS empty and no coworker was ever told
+       what was in its own memory folder.
+
+   That is the whole private-memory feature dead, silently, and it stayed
+   hidden because the thrown message was buried in the tool echo spliced
+   into a chat bubble. It surfaced the moment a visit became its own
+   rendered element with the result on its own line — which is the argument
+   for that change, restated as a bug.
+
+   Tolerates both shapes: a record, or a bare string from any older path. */
+function vaultPaths(list) {
+  return (list || [])
+    .map(f => (f && typeof f === 'object') ? String(f.path || '') : String(f || ''))
+    .filter(Boolean);
+}
+
 function stripOrphanTags(text) {
   return String(text || '').replace(ORPHAN_TAG_RE, '');
 }
@@ -970,8 +992,8 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     out.push({
       ...TOOL_REGISTRY.memory_list,
       run: async () => {
-        const all = await CafresoHQClient.vaultList();
-        const mine = (all || []).filter(p => p.startsWith(root + '/'));
+        const all = vaultPaths(await CafresoHQClient.vaultList());
+        const mine = all.filter(p => p.startsWith(root + '/'));
         if (!mine.length) return `(your memory is empty — write your first note with [MEMORY_WRITE: notes/foo.md]…[/MEMORY_WRITE])`;
         return mine.map(p => '• ' + p.slice(root.length + 1)).join('\n');
       },
@@ -1552,9 +1574,23 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     let result;
     try { result = await call.tool.run(call.arg, { signal }, call.body); }
     catch (err) { result = `Error: ${err.message}`; }
-    const banner = `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n`;
-    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
-    onToken(banner);
+    /* The visit does NOT go into the token stream any more.
+
+       Everything in the text channel is forgeable, and a local model
+       proved it: having seen real visits in its history it wrote its own,
+       office format and all, with an invented result and an invented vault
+       path, in a bubble where the real read had returned nothing. Stripping
+       the office's voice out of the model's CONTEXT removed the incentive;
+       this removes the possibility. A visit is now structured data on the
+       `done` event, the UI renders it as its own element, and no sentence
+       the coworker can type will ever render as the office speaking.
+
+       `echo` stays on the event: histories written before this change still
+       carry the banner inline, and filing removes it by exact match. */
+    if (onTool) {
+      onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+               echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
+    }
 
     messages.push({ role: 'assistant', content: buf });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Do NOT repeat the tool call.` });
@@ -1590,8 +1626,8 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   try {
     const safeName = String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
     const root = `Agents/${safeName}/`;
-    const all = await CafresoHQClient.vaultList();
-    const mine = (all || []).filter(p => p.startsWith(root)).map(p => p.slice(root.length));
+    const all = vaultPaths(await CafresoHQClient.vaultList());
+    const mine = all.filter(p => p.startsWith(root)).map(p => p.slice(root.length));
     if (mine.length) {
       const shown = mine.slice(0, 12).map(p => '• ' + p).join('\n');
       const more = mine.length > 12 ? `\n…and ${mine.length - 12} more (use [MEMORY_LIST] to see all)` : '';
@@ -1725,9 +1761,23 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
        if it gets the exact string. So the format lives here, at the one site
        that owns it, and travels with the event instead of being re-derived
        (and eventually mis-derived) by the code that has to undo it. */
-    const banner = `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n`;
-    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
-    onToken(banner);
+    /* The visit does NOT go into the token stream any more.
+
+       Everything in the text channel is forgeable, and a local model
+       proved it: having seen real visits in its history it wrote its own,
+       office format and all, with an invented result and an invented vault
+       path, in a bubble where the real read had returned nothing. Stripping
+       the office's voice out of the model's CONTEXT removed the incentive;
+       this removes the possibility. A visit is now structured data on the
+       `done` event, the UI renders it as its own element, and no sentence
+       the coworker can type will ever render as the office speaking.
+
+       `echo` stays on the event: histories written before this change still
+       carry the banner inline, and filing removes it by exact match. */
+    if (onTool) {
+      onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+               echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
+    }
 
     messages.push({ role: 'assistant', content: buf });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Now write a concise answer for the user using these results. Do NOT repeat the tool call. Do NOT emit any more bracketed markers or harmony commentary unless you genuinely need another search/lookup.` });
