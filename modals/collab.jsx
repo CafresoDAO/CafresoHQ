@@ -468,6 +468,26 @@ function InboxModal({ open, onClose }) {
                      style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                   <span style={{fontSize:10,opacity:0.6}}>{isOpen ? '▼' : '▶'}</span>
                   <span style={{fontSize:11,fontWeight:700,flex:1}}>{summary}</span>
+                  {/* A thread is listed when ANY message matches the filter,
+                      but the pill shows the LAST message's state — so under
+                      "ACTIVE · 8" the one visible row read COMPLETED, because
+                      the thread had finished while eight replies inside it sit
+                      awaiting_reply. The view that exists to explain the badge
+                      opened on a word contradicting it.
+
+                      When a filter is on, say how many messages in HERE
+                      matched. The tail pill stays: it is the honest answer to
+                      "where did this thread get to". */}
+                  {filterState !== 'all' && (() => {
+                    const hits = msgs.filter(m => matchesState(m) && matchesAgent(m)).length;
+                    return hits ? (
+                      <span style={{fontSize:9,opacity:0.75,border:'1px solid var(--rule)',
+                                    borderRadius:3,padding:'1px 5px',marginRight:6}}
+                            title={`${hits} message${hits === 1 ? '' : 's'} in this thread match the current filter`}>
+                        {hits} here
+                      </span>
+                    ) : null;
+                  })()}
                   {statePill(tail.state)}
                   <span style={{fontSize:10,opacity:0.55,marginLeft:6}}>{fmtTs(tail.updatedAt || tail.createdAt)}</span>
                 </div>
