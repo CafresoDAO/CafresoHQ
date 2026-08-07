@@ -2995,6 +2995,10 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   display: flex; flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  /* Fill the container rather than growing to content — see the note on the
+     chat window body in app/windows.jsx. Without this the pane measured
+     10,144px inside a 417px window and pushed the composer off the screen. */
+  flex: 1 1 0;
 }
 .monitor .bezel {
   background: linear-gradient(180deg, hsl(36 67% 96% / 0.96), hsl(36 60% 92% / 0.92));

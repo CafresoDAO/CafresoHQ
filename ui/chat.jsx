@@ -325,6 +325,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         try {
           await Promise.all(recipients.map(a =>
             onDispatchToAgent(a, body, {
+              /* `userText` existed for exactly this and no caller ever set
+                 it, so every downstream surface that wanted "what the boss
+                 asked" had to slice the ASSEMBLED prompt instead. Here the
+                 boss's own words are right there. */
+              userText: body,
               suppressUserEcho: true,
               threadOverride: activeThread,
               coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
@@ -445,6 +450,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           // in the room and can write a complementary (not duplicate) reply.
           await Promise.all(dedup.map(a =>
             onDispatchToAgent(a, mentionAll.body, {
+              userText: mentionAll.body,        // see the note on the sibling call
               suppressUserEcho: true,
               threadOverride: targetThread,
               coParticipants: dedup.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),

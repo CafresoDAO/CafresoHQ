@@ -461,8 +461,21 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
           }}
         >✕</button>
       </div>
-      {/* Body */}
-      <div style={{flex: 1, overflow: 'auto', padding: 8, minHeight: 0}}>
+      {/* Body — a flex COLUMN, not a block.
+          As a block it gave .monitor no height to flex against, so the chat
+          pane sized to its content: measured 10,144px tall inside a 417px
+          window, which put the composer at y=10,401 in a 900px viewport.
+          .screen was already doing everything right (overflow-y:auto,
+          flex:1 1 0, min-height:0) — `flex:1` against an unbounded parent
+          just resolves to "as tall as the messages".
+
+          This scales with USE. A fresh install has three messages and looks
+          fine; the pane grows with every exchange until the box you type
+          into is a thousand scrolls below the window. The way you talk to
+          your team is the one thing that must not degrade the more you use
+          the office. Same shape as the note on .px-scene in styles.css: a
+          pane must FILL its container, never grow past it. */}
+      <div style={{flex: 1, overflow: 'auto', padding: 8, minHeight: 0, display: 'flex', flexDirection: 'column'}}>
         {tab === 'chat' ? chatPanel : rosterPanel}
       </div>
       {/* Resize handles — desktop / pointer devices only */}
