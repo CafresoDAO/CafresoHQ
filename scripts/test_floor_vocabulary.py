@@ -142,6 +142,34 @@ def _reads_like_copy(t):
 # who can do…". Same command, two vocabularies.
 DIALOG_RE = re.compile(r'window\.(?:confirm|alert|prompt)\s*\(\s*(' + _STR + r')', re.S)
 
+# The fifth way, and the one that hid on an APPROVAL CARD: a fallback. Not a
+# display prop and not JSX text — a default that only appears when the real
+# value is missing, which is exactly when nobody is looking.
+#
+# `by: d.agentName || 'agent'` sat on the card where the boss stamps a
+# publish to the public internet, and the emitter and the renderer defaulted
+# to the same banned word, so all three layers agreed on the wrong noun.
+#
+# Slug-building is excluded, and it is recognisable rather than guessed at:
+# `String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_')` is making
+# an identifier, not a sentence. Those were the only three false positives in
+# 169 fallbacks, and each carries that replace on the same line.
+FALLBACK_RE = re.compile(r"\|\|\s*('(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\")")
+SLUG_RE = re.compile(r"replace\(\s*/\[\^A-Za-z0-9_-\]")
+
+
+def _fallback_spots(body):
+    for m in FALLBACK_RE.finditer(body):
+        inner = m.group(1)[1:-1]
+        if len(inner) < 2 or not re.search(r'[A-Za-z]', inner):
+            continue
+        ls = body.rfind('\n', 0, m.start(1)) + 1
+        le = body.find('\n', m.start(1))
+        if SLUG_RE.search(body[ls:le if le > 0 else len(body)]):
+            continue          # building an id, not copy
+        yield m.start(1), m.group(1)
+
+
 # SPAWN_SUBAGENT, HIRE_AGENT, MEMORY_LIST… — the wire protocol. Stripped
 # before matching so the tokens can never trip this test.
 TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9_]{3,}\b')
@@ -175,6 +203,7 @@ def main():
             spots += [(m.start(1), m.group(1)) for m in JSX_BETWEEN_RE.finditer(body)
                       if _reads_like_copy(m.group(1))]
             spots += [(m.start(1), m.group(1)) for m in DIALOG_RE.finditer(body)]
+            spots += list(_fallback_spots(body))
             for start, raw in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)

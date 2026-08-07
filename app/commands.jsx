@@ -140,7 +140,7 @@ function AppGlobalCommands({
     /* Recent chat (last 25 messages) — palette doubles as chat search. */
     ...((chat || []).slice(-25).reverse().map(m => ({
       id: 'chat.jump.' + m.id,
-      label: (m.from === 'user' ? 'You: ' : (m.name || 'Agent') + ': ') + String(m.text || '').replace(/\s+/g, ' ').slice(0, 80),
+      label: (m.from === 'user' ? 'You: ' : (m.name || 'A coworker') + ': ') + String(m.text || '').replace(/\s+/g, ' ').slice(0, 80),
       section: 'Recent chat',
       icon: m.from === 'user' ? '🅱' : '💬',
       run: () => onJumpToMessage && onJumpToMessage(m),

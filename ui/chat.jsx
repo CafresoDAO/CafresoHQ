@@ -954,7 +954,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             ? 'You'
             : m.from === 'ceo'
               ? 'CafresoHQ-CEO'
-              : (m.name || 'Agent');
+              : (m.name || 'A coworker');
           const msgContent = (
             <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}`}>
               <div className="who" title={_whoLabel}>

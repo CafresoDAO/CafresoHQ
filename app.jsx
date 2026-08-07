@@ -871,7 +871,7 @@ function App() {
       if (now - prev < 4000) return;
       lastByNode.set(kk, now);
       logActivity({
-        agentId: d.agentId, agentName: d.agentName || 'Agent', color: d.color,
+        agentId: d.agentId, agentName: d.agentName || 'A coworker', color: d.color,
         action: 'vault', nodeId: d.nodeId,
         text: `${d.kind === 'write' ? 'wrote' : d.kind === 'link' ? 'linked' : 'read'} ${d.nodeId || 'a note'}`,
       });
@@ -879,7 +879,13 @@ function App() {
     const onRunnerErr = (e) => {
       const d = e.detail || {};
       logActivity({
-        agentName: 'agent runner', action: 'failed', priority: 'attention',
+        /* No agentName: this is the office's own machinery failing, not a
+           coworker. The ticker and the Gazette both render `agentName ||
+           'HQ'`, so omitting it attributes the failure to HQ — where it
+           belongs. It used to say 'agent runner', which put a colleague
+           nobody hired on the floor, under a §6-banned name, and would
+           have opened an AGENT RUNNER column in the morning report. */
+        action: 'failed', priority: 'attention',
         text: `That didn't work${d.kind ? ` — ${d.kind}` : ''}`,
       });
     };
@@ -889,7 +895,7 @@ function App() {
       setChat(prev => [...prev, {
         id: HQ.uid('m'),
         from: 'agent',
-        name: `${d.agentName || 'Graph Agent'} · ${d.agentRole || 'summarizer'}`,
+        name: `${d.agentName || 'HQ'} · ${d.agentRole || 'summarizer'}`,
         text: d.nodeId ? `**Summary of ${d.nodeId}**
 
 ${d.text}` : d.text,
@@ -1858,7 +1864,7 @@ ${d.text}` : d.text,
         finalNote = (acks.find(a => a.state === 'completed')?.note) || cleanBuf.slice(0, 120);
       } else if (ackedBlocked && !willFanOut) {
         finalState = 'blocked';
-        finalNote = (acks.find(a => a.state === 'blocked')?.note) || 'agent blocked';
+        finalNote = (acks.find(a => a.state === 'blocked')?.note) || 'blocked, no reason given';
       } else if (willFanOut) {
         finalState = 'awaiting_reply';
         finalNote = `chained to ${dmQueue.length} recipient${dmQueue.length === 1 ? '' : 's'}`;
@@ -3207,7 +3213,7 @@ ${d.text}` : d.text,
     const id = HQ.uid('ap');
     setApprovals(prev => [...prev, { id, ...req }]);
     say(`Approval requested: ${req.title.slice(0, 30)}…`, 'STAMP');
-    logActivity({ agentName: req.by || 'agent', action: 'attention', priority: 'attention',
+    logActivity({ agentName: req.by || 'a coworker', action: 'attention', priority: 'attention',
       text: `requests approval: ${String(req.title || '').slice(0, 48)}`, taskId: req.taskId });
   };
   const onApprovalRequestRef = useRefA(null);
@@ -3224,7 +3230,7 @@ ${d.text}` : d.text,
       if (!d.path) return;
       onApprovalRequestRef.current({
         title: `publish "${String(d.path).slice(0, 60)}" to the public internet`,
-        by: d.agentName || 'agent',
+        by: d.agentName || 'a coworker',
         kind: 'publish',
         agentId: d.agentId || undefined,
         publishRequest: { path: d.path, tip: !!d.tip, agentId: d.agentId, agentName: d.agentName },
@@ -3425,7 +3431,7 @@ ${d.text}` : d.text,
               : 'a local preview link (public hosting needs the shell)';
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
               text: `🚀 Shipped — ${where}:\n${r.url}\nClickable link filed at ${r.file}` }]);
-            logActivity({ agentId: p.agentId, agentName: p.agentName || 'agent', action: 'artifact',
+            logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'artifact',
               text: `shipped "${String(p.path).slice(0, 40)}" ${r.mode === 'canister' ? 'to the Internet Computer 🚀' : 'as a preview link'}` });
             say('Shipped', 'PUBLISH');
           } catch (err) {
@@ -3435,7 +3441,7 @@ ${d.text}` : d.text,
                inbox-row bug two commits ago. Same clause, no fragile strip. */
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
               text: `⚠ The publish didn't make it out — ${snagCause(err && err.message || String(err))}` }]);
-            logActivity({ agentId: p.agentId, agentName: p.agentName || 'agent', action: 'failed',
+            logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'failed',
               priority: 'attention', text: 'publish failed after approval',
               detail: (err && err.message || String(err)).slice(0, 240) });
           }
@@ -4036,7 +4042,7 @@ ${d.text}` : d.text,
         msg: `${e.agentName || 'HQ'} ${e.text}`,
         ts: e.ts,
         unread: e.unread && (e.ts || 0) > notifSeenAt,
-        source: e.agentName || 'agent',
+        source: e.agentName || 'a coworker',
         icon: e.priority === 'attention' ? '⚠' : undefined,
       });
     }

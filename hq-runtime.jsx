@@ -962,7 +962,11 @@ const TOOL_REGISTRY = {
       const raw = String(arg || '').replace(/\s*:\s*tip\s*=\s*(on|off)\s*$/i, '').trim();
       try {
         window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
-          detail: { agentId: null, agentName: 'agent', path: raw, tip: false },
+          /* agentName null, not 'agent': this tool genuinely does not know
+             who invoked it (agentId is null too), and a placeholder that
+             names nobody is more honest than one that names a fake. The
+             approval card falls back on its own. */
+          detail: { agentId: null, agentName: null, path: raw, tip: false },
         }));
       } catch (e) { return `Couldn't queue that publish — ${e && e.message || e}`; }
       return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
@@ -1295,7 +1299,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   // tail-anchored regex — never split the arg on ':' (C:\... paths survive).
   if (icpPublishEnabled()) {
     const pubAgentId = agent.id || String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
-    const pubAgentName = String(agent.name || 'Agent');
+    const pubAgentName = String(agent.name || 'a coworker');
     out.push({
       ...TOOL_REGISTRY.publish_site,
       run: async (arg) => {

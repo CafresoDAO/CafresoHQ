@@ -375,7 +375,7 @@ function InboxModal({ open, onClose }) {
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
         {statePill(m.state)}
         <span style={{fontWeight:600,fontSize:11}}>
-          <span style={{opacity:0.7}}>{m.fromAgentName || 'Agent'}</span>
+          <span style={{opacity:0.7}}>{m.fromAgentName || 'A coworker'}</span>
           <span style={{opacity:0.4,margin:'0 4px'}}>→</span>
           <span>{m.toAgentName || '?'}</span>
         </span>

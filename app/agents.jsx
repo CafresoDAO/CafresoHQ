@@ -17,7 +17,7 @@ function downgradeElevatedModel(model, settings) {
     if (settings && settings.anthropicKey) swap = 'anthropic:' + settings.anthropicModel;
     else if (settings && settings.claudecodeModel) swap = 'claudecode:' + settings.claudecodeModel;
     else swap = 'haiku';
-    why = (why || 'elevation-only model') + '; falling back to user default';
+    why = (why || 'a model that only runs with file and shell access') + '; falling back to user default';
   }
   return { model: swap, swapped: true, why };
 }
