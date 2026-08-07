@@ -217,4 +217,46 @@ function officeHasBrain(agents, C) {
   return (agents || []).some(a => agentBrainReady(a, C));
 }
 
-export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, memoryLabel, memoryNotes, memoryRoot, officeHasBrain, payrollLabel, poweredBy, specialtyTag, statBars };
+/* §7's third route — "pick another coworker". A failure that only offers
+   "try again" is a dead end when the thing that failed is the CEO's brain:
+   the CEO runs on the DEFAULT provider and a hired coworker pins their own,
+   so the chief of staff being unreachable says nothing about the floor.
+   Measured on a live office: the boss got "couldn't reach that brain — it
+   looks offline from here" and a RETRY that could only fail again, while two
+   coworkers sat at their desks on working local brains.
+
+   Returns '' when there is nobody to hand to, so callers can append blindly.
+   Lives here, beside agentBrainReady, because THREE surfaces need it and the
+   first two copies of this idea had already drifted apart. */
+const nameList = (names) => (
+  names.length <= 1 ? (names[0] || '')
+  : names.length === 2 ? `${names[0]} and ${names[1]}`
+  : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+);
+
+/* Append the route-out to a diagnosis, closing the clause first. The
+   diagnosis ends mid-thought ("…it looks offline from here"), so butting the
+   hint straight on produced a run-on the first time this shipped:
+   "…offline from here Llama and Mika are still working". chatErrorText had
+   punctuation handling and the CEO path did not — centralising the SENTENCE
+   but not the JOIN just moved the bug to whichever caller I wrote second.
+   Callers get one function and cannot get it wrong. */
+function withHandoff(text, agents, C) {
+  const hint = handoffHint(agents, C);
+  if (!hint) return text;
+  let out = String(text || '');
+  if (out && !/[.!?…]$/.test(out)) out += '.';
+  return out + hint;
+}
+
+function handoffHint(agents, C) {
+  const ready = (Array.isArray(agents) ? agents : []).filter(a => agentBrainReady(a, C));
+  if (!ready.length) return '';
+  /* Three names max — a route out the boss has to read twice is not a route. */
+  const names = nameList(ready.slice(0, 3).map(a => a.name));
+  return ready.length === 1
+    ? ` ${names} is still working, though — @mention them and they can pick this up.`
+    : ` ${names} are still working, though — @mention one of them and they can pick this up.`;
+}
+
+export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };

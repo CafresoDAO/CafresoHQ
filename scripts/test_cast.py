@@ -154,6 +154,19 @@ R.brainNoModel    = officeHasBrain([{ }], fakeC);
 R.brainNoClient   = officeHasBrain([], null);
 R.brainThrows     = officeHasBrain([], { hasUsableKey: () => { throw new Error('x'); } });
 R.brainGlobalOk   = officeHasBrain([], Object.assign({}, fakeC, { hasUsableKey: () => true }));
+
+/* §7's third route. The diagnosis ends mid-thought, so the JOIN is the part
+   that goes wrong — it shipped as a run-on the first time. */
+const ROSTER = [{ name: 'Llama', model: 'ollama:llama3.1' }, { name: 'Mika', model: 'ollama:llama3.1:latest' }];
+const DEAD   = [{ name: 'Ghost', model: 'anthropic:claude' }];
+R.hintTwo    = handoffHint(ROSTER, fakeC);
+R.hintOne    = handoffHint([ROSTER[0]], fakeC);
+R.hintNone   = handoffHint(DEAD, fakeC);
+R.hintFour   = handoffHint(ROSTER.concat([{name:'Sora',model:'ollama:x'},{name:'Kip',model:'ollama:y'}]), fakeC);
+R.joinOpen   = withHandoff('⚠ it looks offline from here', ROSTER, fakeC);
+R.joinClosed = withHandoff('⚠ it looks offline from here.', ROSTER, fakeC);
+R.joinEllip  = withHandoff('⚠ give this to someone else…', ROSTER, fakeC);
+R.joinNone   = withHandoff('⚠ it looks offline from here', DEAD, fakeC);
 console.log(JSON.stringify(R));
 ''')
 
@@ -257,6 +270,26 @@ console.log(JSON.stringify(R));
     check('unknowable never fires the alarm (no client)', out['brainNoClient'] is True)
     check('unknowable never fires the alarm (client throws)', out['brainThrows'] is True)
     check('a configured default short-circuits to yes', out['brainGlobalOk'] is True)
+
+    # handoffHint / withHandoff — §7's "pick another coworker"
+    check('two working coworkers are named and joined with "and"',
+          out['hintTwo'].strip().startswith('Llama and Mika are still working'), out['hintTwo'])
+    check('one coworker reads in the singular',
+          'Llama is still working' in out['hintOne'], out['hintOne'])
+    check('nobody working offers no route at all', out['hintNone'] == '')
+    # counts the NAME list only — the sentence has its own comma in
+    # "working, though", which the first version of this check tripped over
+    check('never names more than three',
+          out['hintFour'].split(' are still working')[0].strip() == 'Llama, Mika and Sora'
+          and 'Kip' not in out['hintFour'],
+          out['hintFour'])
+    check('an unpunctuated diagnosis gets closed before the hint',
+          'here. Llama' in out['joinOpen'], out['joinOpen'])
+    check('…and an already-closed one is not double-punctuated',
+          'here. Llama' in out['joinClosed'] and 'here.. ' not in out['joinClosed'], out['joinClosed'])
+    check('an ellipsis counts as closed', 'else… Llama' in out['joinEllip'], out['joinEllip'])
+    check('no hint means the text is returned untouched',
+          out['joinNone'] == '⚠ it looks offline from here')
 
     print()
     if FAILS:

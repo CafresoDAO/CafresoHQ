@@ -1839,7 +1839,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
         : m));
       const raw = err && err.message || String(err);
       // The snag bubble is one honest sentence on the floor (§4/§7); an
@@ -2567,7 +2567,15 @@ ${d.text}` : d.text,
             logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: (visitLine(ev.name, ev.arg, 'past', 40) || visitPlace(ev.name, 'past')).toLowerCase() });
             pulseGraph(ev, a);
           } else if (ev.phase === 'done') {
-            attachVisit(setChat, agentMsgId, ev);
+            /* `agentId` here is the CHAT MESSAGE id (see HQ.uid('m') above and
+               its use in throttleTokens) — not a coworker id. The name reads
+               like the wrong thing, which is presumably why this line was
+               written as `agentMsgId`, the identifier the two OTHER attachVisit
+               sites use. There is no such variable in this scope, so every tool
+               visit on the delegate path threw a ReferenceError inside the
+               onTool callback and no visit block was ever attached here.
+               Found by eslint no-undef, not by looking. */
+            attachVisit(setChat, agentId, ev);
             onUpdateAgent(a.id, { task: 'reading results…' });
             pulseGraph(ev, a);
             recordToolReceipt(a, ev);
@@ -2602,7 +2610,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
         : m));
       onUpdateAgent(a.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }
@@ -3021,7 +3029,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
         : m));
       onUpdateAgent(agent.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }

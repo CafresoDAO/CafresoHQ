@@ -1,4 +1,5 @@
 import { floorEmit, snagCause } from './floor.jsx';
+import { handoffHint, withHandoff } from './cast.jsx';   // import-free module — no cycle
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 
@@ -246,17 +247,30 @@ const makeScreenEmitter = (agentId) => {
    and keep the shared-brain line for what it's genuinely good for — telling
    a zero-config user that BYOK is a way out. Advice, after the diagnosis,
    not instead of it. */
-const chatErrorText = (err) => {
+const chatErrorText = (err, agents) => {
   const raw = (err && err.message) || String(err);
   const because = snagCause(raw);
   let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
   try {
     const C = CafresoHQClient;
-    if (C && C.hasUsableKey && !C.hasUsableKey()) {
-      // The cause is a clause, not a sentence — it ends mid-thought ("…give
-      // this to someone else"). Butting the advice straight onto it reads as
-      // one long run-on, so close the diagnosis first.
-      if (!/[.!?…]$/.test(out)) out += '.';
+    /* §7's third route — "pick another coworker" — was the one this never
+       offered, and on the failure it fires for most it is the only one that
+       works. The CEO runs on the DEFAULT brain; a hired coworker pins their
+       own. So the chief of staff being unreachable says nothing about the
+       floor, and the office watched a boss get "couldn't reach that brain,
+       it looks offline from here" plus a RETRY button that could only fail
+       again — while two coworkers sat at their desks on working local
+       brains. Naming them is both truer and more useful than repeating the
+       diagnosis.
+
+       Same probe as the topbar alarm (agentBrainReady), so the two surfaces
+       cannot disagree about who can work. */
+    const hint = handoffHint(agents, C);
+    const close = () => { if (!/[.!?…]$/.test(out)) out += '.'; };
+    if (hint) {
+      out = withHandoff(out, agents, C);   // closes the clause for us
+    } else if (C && C.hasUsableKey && !C.hasUsableKey()) {
+      close();
       out += ' You’re on the shared Cafreso brain — you can add your own AI key ' +
              'in Settings → Keys to run independently of it.';
     }

@@ -2,6 +2,8 @@ import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { attachVisit, snagCause, snagSentence } from '../app/floor.jsx';
+import { withHandoff } from '../app/cast.jsx';
+import { CafresoHQClient } from '../claude-client.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
@@ -540,7 +542,20 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       const stopped = err.name === 'AbortError';
       // Same raw-dump bug fixed everywhere else a run can fail this session (§7).
       setChat(prev => prev.map(m => m.id === ceoId
-        ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`, error: !stopped}
+        /* §7 wants try again / ask differently / PICK ANOTHER COWORKER, and
+           this is the surface where the third route matters most: it is the
+           CEO failing, i.e. the front door, and the CEO's brain is the one
+           thing a working floor tells you nothing about. Verified by driving
+           the real failure — the boss got "couldn't reach that brain" and a
+           RETRY that could only fail again, with Llama and Mika idle and
+           working two feet away.
+
+           Caught only because I reproduced the failure instead of assuming
+           my edit to chatErrorText covered it: agent dispatches and the CEO
+           stream have always been two different error-copy paths. */
+        ? {...m, text: stopped ? (m.text + ' …(stopped)')
+             : withHandoff(`⚠ ${snagSentence(err && err.message || String(err))}`, agents, CafresoHQClient),
+           error: !stopped}
         : m));
     }
     /* Deliberately NOT clearing abortRef here — the DM fan-out and synthesis
