@@ -1,7 +1,7 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
-import { brainName, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
+import { brainName, EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -126,8 +126,10 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             payroll". Same numbers, office words. Renaming Cost → Payroll
             also un-collides it with the Cost stat-bar two rows down, which
             means something else entirely (value, not spend). */}
-        <div className="stat"><span className="lbl">Work done</span>
-          <span title="How much reading and writing this coworker has done this session">{agent.tokens?.toLocaleString() || '0'}</span></div>
+        {/* Same number, same word as the roster card — see the note there
+            on why "Work done" was the wrong name for it. */}
+        <div className="stat"><span className="lbl">Effort</span>
+          <span title={EFFORT_TIP}>{agent.tokens?.toLocaleString() || '0'}</span></div>
         <div className="stat"><span className="lbl">Payroll</span>
           <span title={payrollLabel(agent).title}>{payrollLabel(agent).text}</span></div>
         {/* The cast (§2): four bars, no more — honest class judgements,

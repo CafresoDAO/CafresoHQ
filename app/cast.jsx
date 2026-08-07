@@ -170,4 +170,12 @@ function payrollLabel(agent) {
   return { text: '—', title: 'Billed per word by the provider. No rate is configured here, and a made-up one would be worse than none — see the work-done count beside this.' };
 }
 
-export { brainName, CAST_CLASSES, CAST_DEFAULT, memoryLabel, memoryNotes, memoryRoot, payrollLabel, poweredBy, specialtyTag, statBars };
+/* §6, binding. Three surfaces show the same token count — the roster card,
+   the coworker detail panel and the office total on the Situation Wall — so
+   the sentence explaining it lives once, here, next to payrollLabel.
+   It has to do two jobs: say what the number IS in office words, and say
+   what it ISN'T. On the card it sits inches from "Jobs" (work delivered)
+   and "Payroll" (what it costs), and it is neither of those. */
+const EFFORT_TIP = "Effort: how much reading and writing this coworker has done this session. It is not a count of jobs — Jobs is that — and it is not a cost; Payroll is.";
+
+export { brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, memoryLabel, memoryNotes, memoryRoot, payrollLabel, poweredBy, specialtyTag, statBars };

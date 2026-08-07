@@ -1025,7 +1025,15 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                       </div>
                       <div className="mc-meta">
                         <span><b>{ag ? ag.name : '(unknown)'}</b> · {m.vaultFolder}/</span>
-                        <span>iter {m.iterations} · {writes} note{writes===1?'':'s'} · {(m.tokensUsed||0).toLocaleString()} tok</span>
+                        {/* §6, binding: "iter" and "tok" are machine units,
+                            and the Night Shift board is ON the floor. What a
+                            boss wants from a night shift is how many times it
+                            went round and what it left behind; the effort it
+                            burned doing so is detail, so it moves into the
+                            tooltip rather than sitting on the card competing
+                            with the notes count. */}
+                        <span title={`Effort this run: ${(m.tokensUsed||0).toLocaleString()} — reading and writing, not notes saved.`}>
+                          round {m.iterations} · {writes} note{writes===1?'':'s'} saved</span>
                         <span>
                           {m.status === 'running' ? fmtRemaining(m) :
                            m.status === 'paused' ? 'paused' :

@@ -386,6 +386,18 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
 | refusal | a mission that cannot write notes will not start, and now says where to fix it |
 
+**Testing a state-dependent branch: localStorage is a mirror, not the store.**
+A surface that only renders past a threshold (`{xp.snags > 0 && …}`) is exactly
+the kind that can silently never fire, so it has to be *seen*, not reasoned
+about. Injecting the state through `localStorage` does not work: when
+`CAFRESOHQ_HQ_STATE_DIR` is set the server-side JSON is the source of truth and
+rehydrates over the mirror on load — twice in a row the probe entry vanished
+and the row "correctly" didn't render, which would have read as a passing test
+of a branch that was never actually entered. That is failure shape (4), a
+measurement taken against a precondition never established. Write the
+`$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
+the DOM, then restore and reload again to confirm the surface goes back.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only

@@ -2,7 +2,7 @@ import { CafresoHQV2 } from '../features.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
-import { brainName, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
+import { brainName, EFFORT_TIP, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
@@ -554,9 +554,29 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                       a coworker card — brain · work done · payroll. The id
                       stays in the tooltip so debugging doesn't lose it. */}
                   <div><span className="lbl">Brain</span><span className="val" title={a.model || 'no brain assigned'}>{brainName(a)}</span></div>
-                  <div><span className="lbl">Work done</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
+                  {/* "Work done" for a TOKEN COUNT, sitting directly above
+                      "Jobs" — the actual count of work done. Two labels on
+                      one card claiming the same thing, and only one of them
+                      earned it. §6 banned the word "tokens" here and the
+                      rename obeyed the letter of that while making the
+                      collision worse: the number stopped saying what it was
+                      and started saying what Jobs says.
+                      Effort and delivery are different claims. */}
+                  <div><span className="lbl">Effort</span><span className="val" title={EFFORT_TIP}>{(a.tokens||0).toLocaleString()}</span></div>
                   <div><span className="lbl">Payroll</span><span className="val" title={pay.title}>{pay.text}</span></div>
                   <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
+                  {/* Reliability. xpStats has always computed snags and no
+                      surface showed it, so a boss could see how much a
+                      coworker delivered but never how often they came back
+                      empty. Shown only when there ARE snags: Jobs already
+                      carries the denominator, and a standing "Snags 0" on
+                      every card is noise, not reassurance.
+                      §5: a run the USER stopped is never recorded as a snag —
+                      taking the folder back is not their failure. */}
+                  {xp.snags > 0 && (
+                    <div><span className="lbl">Snags</span>
+                      <span className="val" title={`${xp.snags} run${xp.snags === 1 ? '' : 's'} came back empty or failed. Runs you stopped yourself are not counted.`}>{xp.snags}</span></div>
+                  )}
                   {/* Their notebook. Hidden entirely when the cabinet is
                       unreadable — see the comment on vaultPaths. */}
                   {(() => {
