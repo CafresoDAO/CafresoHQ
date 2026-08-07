@@ -342,7 +342,40 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   choosing exactly which one), same as Settings. */}
               <label>BRAIN</label>
               <ModelPicker value={model} onChange={setModel} />
-              <span className="hint">each option is one real brain, grouped by who runs it</span>
+              {/* The guided front desk only ever offers brains it FOUND on
+                  this machine ("We found your Claude subscription…"). This
+                  manual form offers all 27 and defaults to
+                  `anthropic:claude-haiku-…` — so on a fresh install, where
+                  the topbar is already showing ⚠ ADD AI KEY, a boss could
+                  build a coworker, hire them, drop a task on their desk and
+                  only then learn the brain was never signed in.
+
+                  The office already knows the answer: `hasUsableKey` is what
+                  drives that very chip. Applying it here costs nothing, and
+                  §7 says a block names its route out. */}
+              {(() => {
+                const { provider, model: pinned } = CafresoHQClient.parseModelId(model) || {};
+                if (!provider) return null;
+                /* `hasUsableKey` answers "is this provider configured as the
+                   DEFAULT", and for the local ones that means "has a model
+                   been picked in Settings". A per-agent brain pins its own
+                   model in the id (`ollama:llama3.1:latest`), so the global
+                   setting is irrelevant — feed the pinned model in, or the
+                   warning fires on a brain that runs perfectly well.
+
+                   Caught by checking: the first version of this warning did
+                   not clear when the local brain was selected, which would
+                   have put a false alarm on every hire. */
+                const probe = Object.assign({}, CafresoHQClient.getSettings(), { provider });
+                if (pinned && provider === 'ollama')   probe.ollamaModel = pinned;
+                if (pinned && provider === 'lmstudio') probe.lmstudioModel = pinned;
+                const ready = CafresoHQClient.hasUsableKey(probe);
+                return ready
+                  ? <span className="hint">each option is one real brain, grouped by who runs it</span>
+                  : <span className="hint" style={{color:'#E8A9A9'}}>
+                      ⚠ this brain isn't signed in yet — they can be hired, but can't work until you add it in Settings → Connections
+                    </span>;
+              })()}
             </div>
             <div className="form-row">
               <label>TEMPERATURE · {temp.toFixed(2)}</label>

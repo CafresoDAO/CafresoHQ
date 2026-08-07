@@ -1438,6 +1438,33 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> 🚨 **The manual hire form ignored what the office knew (2026-08-07).** Set
+> out to verify multi-agent — the north star is *"all your AIs work
+> together"* and this session had only ever run **one** coworker — and hit
+> this on the way to hiring a second.
+>
+> §3's front desk is honest: it offers only brains it **found on this
+> machine** ("We found your Claude subscription…"). `NEW HIRE →`, the manual
+> form behind it, offers all **27** and defaults to
+> `anthropic:claude-haiku-4-5`. On a fresh install — the exact state where
+> the topbar is already showing **⚠ ADD AI KEY** — a boss could build a
+> coworker, hire them, drop a task on their desk, and only then learn the
+> brain was never signed in. The one locally-runnable option was a single
+> entry among 27, and nothing marked it.
+>
+> The office already had the answer: `hasUsableKey` is what drives that very
+> chip. The form now asks it, and names the route out (§7).
+>
+> **The first version of this fix was wrong, and only checking cleared it.**
+> `hasUsableKey({provider:'ollama'})` answers *"is Ollama configured as the
+> DEFAULT provider"* — i.e. has a model been chosen in Settings — which is
+> empty here. But a per-agent brain **pins its own model in the id**
+> (`ollama:llama3.1:latest`), so the global setting is irrelevant. The
+> warning therefore did **not** clear when the working local brain was
+> selected: a false alarm on every hire, which is worse than no warning.
+> Feeding the pinned model into the probe fixes it. Verified both states:
+> the unsigned default warns, the local brain shows the ordinary hint.
+
 > 🚨 **The morning report said the business produced nothing (2026-08-06).**
 > Exercised the day-2 surface for the first time — the HQ Gazette, shown
 > once on return after >4h away. Forced one by backdating `lastSeen`.
