@@ -1438,6 +1438,41 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> ✅ **Multi-agent verified — the north star's actual claim (2026-08-07).**
+> Every run in this session until now used **one** coworker, which meant
+> *"one office where all your AIs work together"* had never been tested.
+> Hired a second free local coworker (Mika, on the same Ollama brain) and
+> fanned one request to both.
+>
+> It works, and it stays honest under load:
+>
+> - **`2 WORKING`** while both ran, **`0 WORKING`** when they finished — the
+>   §4 authority tracked two concurrent runs correctly.
+> - Both replied into the same thread under distinct labels (*Llama ·
+>   Generalist*, *Mika · Head of Inbox Wrangling*).
+> - Each got its **own** attributed visit block — `🌐 Read
+>   en.wikipedia.org/wiki/Blue` twice, one per coworker — so the office's
+>   record of who did what survives concurrency.
+> - Mika's empty bubble showed *"still waiting on that brain — it may be
+>   warming up"* while the second local model cold-loaded. That fix was
+>   built for one model and held for two.
+>
+> **One finding, recorded not fixed.** Llama tried to delegate:
+> `[DM_TO: Mika] Can you provide your perspective on this request?` —
+> written **inline**, with no newline and no closing `[/DM_TO]`. The parser
+> requires the documented block form, so it never matched, was never
+> dispatched, and remained on screen as raw syntax. The boss sees a handoff
+> that reads as sent and never happened.
+>
+> The parser is right to be strict — a loose one would fire on prose that
+> merely mentions the marker. The honest fix is to *notice*: the office
+> knows the DM queue was empty while the reply contains an opening `DM_TO`,
+> and could say so in one sentence, exactly as `placeholderRefusal` does for
+> a template argument. **Not shipped here**, because verifying it needs a
+> model to reproduce a malformed marker on demand, and coaxing specific
+> tokens out of a stochastic model has already proved unreliable twice in
+> this document. Next actionable item, with its cause already diagnosed.
+
 > 🚨 **The manual hire form ignored what the office knew (2026-08-07).** Set
 > out to verify multi-agent — the north star is *"all your AIs work
 > together"* and this session had only ever run **one** coworker — and hit
