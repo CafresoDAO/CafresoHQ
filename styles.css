@@ -10163,6 +10163,41 @@ body.night .px-canopy { filter: brightness(0.55) saturate(0.8); }
 .pxhq .px-hud.right { right: 10px; }
 
 /* ── Scene / building shell ── */
+/* "There is more office below." Lives on .pxhq, which does NOT scroll — an
+   ::after on .px-scene itself would scroll away with the content and vanish
+   exactly when it is needed. Only rendered while `.has-more` is set, which
+   the scene measures for itself and clears at the bottom, so the floor never
+   suggests depth it does not have.
+
+   pointer-events:none is load-bearing: this sits over the lobby band, and the
+   occlusion sweep in docs/OFFICE_AS_INTERFACE.md §0 exists because decorative
+   overlays that swallow clicks are silent — nothing errors, the click just
+   goes nowhere. */
+.pxhq { position: relative; }
+.pxhq.has-more::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0; height: 44px;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(to bottom, transparent, rgba(10, 8, 18, 0.55));
+  animation: pxhq-more-fade 220ms ease-out;
+}
+.pxhq.has-more::before {
+  content: '▾';
+  position: absolute; left: 50%; bottom: 6px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+  font-size: 12px; line-height: 1;
+  color: var(--text-dim, #cabfa9);
+  opacity: 0.75;
+  animation: pxhq-more-fade 220ms ease-out;
+}
+@keyframes pxhq-more-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .pxhq.has-more::after, .pxhq.has-more::before { animation: none; }
+}
+
 .px-scene {
   position: relative; z-index: 3;
   height: 100%;

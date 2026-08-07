@@ -802,6 +802,37 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
        · Σ agents.tokens → office fuel bar (same math as TokenHUD)
        · Σ sGLDT wallets → treasury tile (exposed as goldTreasury for the
                            Vault Room to reuse — fetch once, cache 60s) */
+  /* The floor scrolls, and nothing said so. `.px-building` is bottom-aligned
+     in a `overflow-y:auto` scene, so when the building outgrows the viewport
+     it is the LOBBY that falls below the fold — the meeting door, the water
+     cooler, the arcade. At 1440×900, a very ordinary laptop, that is 142px of
+     office the boss has no reason to know exists, while the banner overhead
+     advertises the meeting door beside two controls that are always visible.
+     Measured, not assumed: scroll the scene and elementFromPoint returns the
+     door, so it was always reachable — just unadvertised.
+
+     The cue only appears when there IS more, and disappears at the bottom, so
+     it never claims depth the floor does not have. */
+  const sceneRef = React.useRef(null);
+  const [moreBelow, setMoreBelow] = React.useState(false);
+  React.useEffect(() => {
+    const el = sceneRef.current;
+    if (!el) return;
+    const measure = () => {
+      const room = el.scrollHeight - el.clientHeight;
+      setMoreBelow(room > 8 && el.scrollTop < room - 8);
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild); }
+    window.addEventListener('resize', measure);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+      if (ro) ro.disconnect();
+    };
+  }, []);
   const [wallHealth, setWallHealth] = React.useState(null);   // null checking | true | false
   const [wallSearch, setWallSearch] = React.useState(null);   // null unknown | {ok}
   const [wallCrew, setWallCrew] = React.useState(null);       // {installed, total} | null
@@ -1024,7 +1055,7 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
           from the old floor survives with identical wiring; only the paint
           changed. Day/night pairs (sun+moon, window day+night) both render
           and body.night picks one in CSS. */}
-      <div className="pxhq">
+      <div className={`pxhq${moreBelow ? ' has-more' : ''}`}>
         <div className="px-sky" aria-hidden="true" />
         <div className="px-stars" aria-hidden="true" />
         <Px n="sun" s={3} className="px-sun" />
@@ -1156,7 +1187,7 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
             )}
         </div>
 
-        <div className="px-scene">
+        <div className="px-scene" ref={sceneRef}>
           <div className="px-building">
             {/* Rooftop — the logo sign. The lamp beside it is the honest
                 LIVE surface: lit only while an agent is really working. */}
