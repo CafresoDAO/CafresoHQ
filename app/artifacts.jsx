@@ -21,8 +21,17 @@ const STARTER_HOME = { brief: 'Research', draft: 'Drafts', page: 'Sites' };
 const DEFAULT_HOME = 'Deliveries';
 
 function slugify(s) {
+  /* Trim AFTER the cap as well as before it. The old order trimmed, then
+     sliced — so a title long enough to be cut mid-word left the hyphen
+     hanging: "Save a note to your memory saying the boss likes bullet
+     points, then confirm" filed as
+     `save-a-note-to-your-memory-saying-the-boss-likes-bullet-.md`.
+     Caught by reading a real filename rather than the function. */
   return String(s || '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 56) || 'delivery';
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 56)
+    .replace(/-+$/, '') || 'delivery';
 }
 
 /* A page deliverable is only worth saving as .html if it actually IS html.
@@ -160,6 +169,39 @@ function buildDelivery(task, agent, text, visits) {
   return { path: `${home}/${slug}.md`, content, kind: 'note' };
 }
 
+
+/* ── When the coworker filed it themselves ────────────────────────────────
+   §3.6 files host-side because filing "can't depend on the coworker
+   cooperating". True for the front-desk hires, which hold no vault tools at
+   all. But the SPECIALIST roles are the opposite case: Kip is told to save a
+   research note to `Research/<topic>.md`, Sloan to render a real `.pptx`,
+   Quill a `.docx`. They do file, deliberately, at a path they chose and told
+   the boss about.
+
+   The host then filed a SECOND copy at `Deliveries/<slug>.md`, and pointed
+   `task.artifactPath` — the out-tray's "open the latest", the delivery
+   sheet — at its own duplicate rather than at the file the specialist
+   actually produced. Two copies of one deliverable in the cabinet, and the
+   click went to the wrong one.
+
+   Only tools that write to the CABINET count. Deliberately excluded:
+   - MEMORY_WRITE / MEMORY_APPEND — the coworker's private notes folder
+     (`Agents/<name>/`), not a deliverable for the boss;
+   - FILE_WRITE — the workspace on disk, not the vault.
+   Getting that wrong would suppress the host's filing for a task that
+   produced no cabinet artifact at all, which is worse than a duplicate. */
+const CABINET_WRITE = /^(VAULT_NEW|VAULT_APPEND|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)$/i;
+
+function agentFiledPath(visits) {
+  let last = null;
+  for (const v of (visits || [])) {
+    if (!v || !CABINET_WRITE.test(String(v.name || ''))) continue;
+    const p = String(v.arg || '').trim();
+    if (p) last = p;          // the newest write wins — that's the deliverable
+  }
+  return last;
+}
+
 /* True when the cabinet really is end-to-end encrypted — i.e. this HQ is
    framed by the trusted shell that holds the user's identity and does the
    vetKeys work. A plain local vault folder is NOT encrypted, and the
@@ -192,4 +234,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, slugify, stripToolEcho, stripToolMarkers, workingNotes };

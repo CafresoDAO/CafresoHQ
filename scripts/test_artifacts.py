@@ -110,6 +110,10 @@ R.htmlNullOnProse    = extractHtml('I would build a page with a header and a foo
 R.slug               = slugify('First draft: a two-sentence welcome note!');
 R.slugEmpty          = slugify('   ');
 R.slugCapped         = slugify('x'.repeat(120)).length;
+// A title cut mid-word must not leave the hyphen hanging.
+R.slugNoTrailDash = slugify('Save a note to your memory saying the boss likes bullet points, then confirm');
+R.slugTrailsClean = /-$/.test(R.slugNoTrailDash);
+R.slugManyDashes  = slugify('a' + ' -- '.repeat(30) + 'b');
 // ── buildDelivery ───────────────────────────────────────────────────────
 R.briefHome = buildDelivery({ title: 'T', starter: 'brief' }, { name: 'A' }, 'body').path;
 R.draftHome = buildDelivery({ title: 'T', starter: 'draft' }, { name: 'A' }, 'body').path;
@@ -150,6 +154,21 @@ R.withWorking = buildDelivery({ title: 'T' }, { name: 'A' },
 R.echoOnlyBody = buildDelivery({ title: 'T' }, { name: 'A' }, fetched,
   [{ name: 'BROWSER_FETCH', arg: 'https://a.com', echo: fetched }]);
 R.noWorkingSection = buildDelivery({ title: 'T' }, { name: 'A' }, 'body').content;
+// ── agentFiledPath: did the coworker file it themselves? ────────────────
+R.afNone    = agentFiledPath([{ name: 'BROWSER_FETCH', arg: 'https://a.com' }]);
+R.afVault   = agentFiledPath([{ name: 'VAULT_NEW', arg: 'Research/topic.md' }]);
+R.afAppend  = agentFiledPath([{ name: 'VAULT_APPEND', arg: 'Research/topic.md' }]);
+R.afPptx    = agentFiledPath([{ name: 'EXPORT_PPTX', arg: 'Slides/deck.pptx' }]);
+R.afImage   = agentFiledPath([{ name: 'GENERATE_IMAGE', arg: 'Images/x.png' }]);
+R.afNewest  = agentFiledPath([{ name: 'VAULT_NEW', arg: 'a.md' }, { name: 'VAULT_NEW', arg: 'b.md' }]);
+// Private memory is NOT a deliverable — suppressing the host's filing for
+// these would lose the boss their artifact entirely.
+R.afMemWrite  = agentFiledPath([{ name: 'MEMORY_WRITE', arg: 'prefs/boss.md' }]);
+R.afMemAppend = agentFiledPath([{ name: 'MEMORY_APPEND', arg: 'prefs/boss.md' }]);
+R.afFileWrite = agentFiledPath([{ name: 'FILE_WRITE', arg: 'src/index.js' }]);
+R.afEmptyArg  = agentFiledPath([{ name: 'VAULT_NEW', arg: '   ' }]);
+R.afNull      = agentFiledPath(null);
+R.afMixed     = agentFiledPath([{ name: 'MEMORY_WRITE', arg: 'p.md' }, { name: 'VAULT_NEW', arg: 'Research/r.md' }]);
 // ── officeDate ──────────────────────────────────────────────────────────
 // 8:05pm New York on Aug 6 is Aug 7 in UTC. The header must say Aug 6.
 R.dateLocal = officeDate(new Date(2026, 7, 6, 20, 5));
@@ -187,6 +206,10 @@ console.log(JSON.stringify(R));
           out['slug'])
     check('empty title falls back', out['slugEmpty'] == 'delivery')
     check('slug is length-capped', out['slugCapped'] <= 56)
+    check('a slug cut mid-word has no dangling hyphen',
+          out['slugTrailsClean'] is False, out['slugNoTrailDash'])
+    check('…and a run of separators at the cap is cleaned too',
+          not out['slugManyDashes'].endswith('-'), out['slugManyDashes'])
 
     # buildDelivery — routing + shape
     check('brief files to Research/', out['briefHome'].startswith('Research/'))
@@ -249,6 +272,21 @@ console.log(JSON.stringify(R));
           out['echoOnlyBody'] is None, repr(out['echoOnlyBody']))
     check('a delivery with no visits gets no empty Working section',
           '**Working**' not in out['noWorkingSection'])
+
+    # agentFiledPath — defer to a coworker that filed its own deliverable
+    check('an ordinary tool visit is not a filing', out['afNone'] is None)
+    check('VAULT_NEW / VAULT_APPEND count',
+          out['afVault'] == 'Research/topic.md' and out['afAppend'] == 'Research/topic.md')
+    check('the real-file exports count',
+          out['afPptx'] == 'Slides/deck.pptx' and out['afImage'] == 'Images/x.png')
+    check('the newest write is the deliverable', out['afNewest'] == 'b.md')
+    check('PRIVATE memory is not a deliverable — the host must still file',
+          out['afMemWrite'] is None and out['afMemAppend'] is None)
+    check('a workspace file write is not a cabinet filing', out['afFileWrite'] is None)
+    check('an empty path does not suppress host filing', out['afEmptyArg'] is None)
+    check('a null visit list is safe', out['afNull'] is None)
+    check('a memory write alongside a real filing does not mask it',
+          out['afMixed'] == 'Research/r.md')
 
     # officeDate — the office runs on the boss's clock
     check('the header stamps the LOCAL date', out['dateLocal'] == '2026-08-06',

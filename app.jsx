@@ -8,7 +8,7 @@ import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
-import { cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
+import { agentFiledPath, cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, floorEmit, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
@@ -2897,7 +2897,13 @@ ${d.text}` : d.text,
          rethrows — the work is already done and recorded on the task either
          way, so a missing vault must not read as a failed task. */
       if (cleanBuf.trim()) {
-        const filedPath = await fileDelivery(task, agent, cleanBuf, toolVisits);
+        /* If the coworker already filed to the cabinet themselves — the
+           specialist roles are instructed to, at a path they chose and
+           named to the boss — that IS the deliverable. Filing a second
+           copy would put two of one thing in the cabinet and point the
+           out-tray at the host's duplicate instead of their real file. */
+        const ownPath = agentFiledPath(toolVisits);
+        const filedPath = ownPath || await fileDelivery(task, agent, cleanBuf, toolVisits);
         if (filedPath) {
           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
           logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,

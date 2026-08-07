@@ -1384,6 +1384,35 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> ✅ **Two copies of one deliverable (2026-08-06).** §3.6 files host-side
+> because filing *"can't depend on the coworker cooperating"* — true for the
+> front-desk hires, which hold no vault tools at all. But the **specialist**
+> roles are the opposite case: Kip is told to save a research note to
+> `Research/<topic>.md`, Sloan to render a real `.pptx`, Quill a `.docx`.
+> They file deliberately, at a path they chose and named to the boss.
+>
+> The host then filed a **second** copy at `Deliveries/<slug>.md` and
+> pointed `task.artifactPath` — the out-tray's "open the latest", the
+> delivery sheet — at its own duplicate rather than the specialist's real
+> file. `agentFiledPath()` now defers to the coworker when the run actually
+> wrote to the cabinet.
+>
+> Only cabinet writes count. **`MEMORY_WRITE` / `MEMORY_APPEND` are
+> excluded** (the coworker's private `Agents/<name>/` folder is not a
+> deliverable) and so is `FILE_WRITE` (workspace, not vault). Getting that
+> wrong would suppress filing for a task that produced no artifact at all —
+> worse than a duplicate — so it is pinned by 9 checks.
+>
+> **Verification is partial, and honestly so.** The default path was
+> confirmed live: a Llama task still filed to `Deliveries/` with
+> `artifactPath` set. The *deferral* path was not — it needs a specialist on
+> a cloud brain, and this session is restricted to the free local model. It
+> rests on unit tests.
+>
+> Reading that run's real filename also turned up a small bug the function
+> hid: `slugify` trimmed hyphens **before** capping at 56, so a title cut
+> mid-word filed as `…the-boss-likes-bullet-.md`. It trims after the cap now.
+
 > 🚨 **The office deleted the thing it demanded (2026-08-06).** Applied the
 > same lens — *where else does the office ask a coworker for something it
 > already has?* — to the ACK protocol, and found something worse than
