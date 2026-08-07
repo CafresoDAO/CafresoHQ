@@ -743,9 +743,13 @@ should extend that boundary, not blur it.
   sentence. Neither line is edited; they simply both appear, and the reader
   can see they disagree.
 - **Unverified branches**, called out where they live: the specialist
-  filing-deferral path (needs a cloud brain), and the Gazette's
-  *"+N more coworkers"* line (needs five hires and a four-hour absence).
-  Both rest on unit tests.
+  filing-deferral path still rests on unit tests (it needs a cloud brain).
+  The Gazette's *"+N more coworkers"* line is now **verified** (2026-08-07) —
+  it needed neither five hires nor a real absence, because the columns are
+  grouped from ACTIVITY NAMES rather than the roster: six seeded names and a
+  back-dated `lastSeen` produced four columns and "+2 MORE COWORKERS WERE
+  BUSY — FULL LOG IN THE TEAM INBOX". The arithmetic is right and the
+  overflow line carries its own route out.
 - **A front-desk hire cannot run a Night Shift.** Detected brains get their
   tools by kind — a local model `['web']`, a CLI agent `['files','shell','web']`
   — and none of them include Vault Notes, which a research mission requires
