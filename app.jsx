@@ -4575,7 +4575,7 @@ ${d.text}` : d.text,
         notifications={mergedNotifications}
         onMarkAllRead={() => { setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}
         onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
-        emptyHint="Nothing pending. Approvals, agent activity, and receipts will land here."
+        emptyHint="Nothing pending. Approvals, your team's activity, and receipts will land here."
       />
       {!gsDismissed && !tourOpen && (
         <GettingStarted

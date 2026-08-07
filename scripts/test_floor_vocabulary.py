@@ -105,15 +105,21 @@ _STR = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)"""
 # ("elevated-badge"), a syntax-highlighter's own regex, and className
 # template literals — none of which anybody reads. A property is the
 # mechanism; these positions are the claim.
-DISPLAY_RE = re.compile(
-    # `body` earned its place the hard way: the entire onboarding tour —
-    # both variants, 15 of its 17 strings — sat behind it, teaching every
-    # new boss "agents" and "sub-agent" on the first screen, under step
-    # titles that already said "coworkers".
-    r'(?:\b(?:text|desc|label|hint|doc|docShort|summary|placeholder|title|'
-    r'body|subtitle|empty|emptySub|cta|hireTitle|tip)\s*:\s*' + _STR + r')'
-    r'|(?:\b(?:title|placeholder|aria-label)\s*=\s*\{?' + _STR + r')',
-    re.S)
+# ONE list, both syntaxes. This was two arms with two different key lists —
+# a colon form that knew about `hint`, `body` and `label`, and an equals form
+# that knew only `title|placeholder|aria-label`. So the same word was banned
+# in `hint: '…'` and allowed in `emptyHint="…"`, and the Team inbox sat there
+# reading "Nothing pending. Approvals, agent activity, and receipts will land
+# here." The rule had the exact defect it exists to catch: two lists that had
+# to agree by hand, and only one of them ever moved.
+#
+# `body` earned its place the hard way — the entire onboarding tour, both
+# variants, 15 of its 17 strings, taught every new boss "agents" and
+# "sub-agent" on the first screen under titles that already said "coworkers".
+DISPLAY_KEYS = ('text|desc|label|hint|doc|docShort|summary|placeholder|title|'
+                'body|subtitle|empty|emptySub|emptyHint|cta|hireTitle|tip|aria-label')
+
+DISPLAY_RE = re.compile(r'\b(?:' + DISPLAY_KEYS + r')\s*(?::|=)\s*\{?(' + _STR + r')', re.S)
 
 # JSX text nodes: >Some words< — the other way copy reaches the screen.
 JSX_TEXT_RE = re.compile(r'>\s*([A-Za-z][^<>{}]{2,120}?)\s*<')
