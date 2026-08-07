@@ -384,7 +384,14 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
   // show in the rail. The drop handler on agent desks moves the task to
   // status:'doing' and sets assignedTo, so it disappears from the rail
   // automatically once delegated.
-  const inboxTasks = (tasks || []).filter(t => t && (t.status === 'inbox' || !t.assignedTo));
+  // ...but FINISHED work is not waiting for anyone. `!t.assignedTo` catches
+  // any unassigned task regardless of status, and the archived end-of-day
+  // stand-up is exactly that: `status: 'done'`, `assignedTo: null`. Measured
+  // on a populated floor — the strip read "1" waiting and offered to
+  // delegate a completed report to Llama or Mika, which would have re-run a
+  // finished document as fresh work. A terminal task is never in the queue.
+  const inboxTasks = (tasks || []).filter(t =>
+    t && t.status !== 'done' && (t.status === 'inbox' || !t.assignedTo));
 
   /* ── Honest ambient movement ──────────────────────────────────────────
      Walker sprites stroll across the open floor in response to REAL state:

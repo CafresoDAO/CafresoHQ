@@ -1438,6 +1438,27 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> 🚨 **Finished work was queuing itself for delegation (2026-08-07).** Looked
+> at the floor with a genuinely populated office for the first time — two
+> coworkers, six deliveries, a stand-up archived — and the Inbox strip read
+> **1 waiting**, offering to delegate *"Stand-up — Aug 7"* to Llama or Mika.
+> A completed end-of-day report, with an **Assign to…** dropdown on it.
+>
+> The filter was `status === 'inbox' || !t.assignedTo`. The `||` is
+> deliberate — it surfaces unassigned tasks that somehow aren't in `inbox`
+> — but an archived stand-up is `status: 'done'`, `assignedTo: null`, so it
+> matched. Dropping it on a desk would have re-run a finished document as
+> fresh work.
+>
+> **A terminal task is never in the queue.** The filter now excludes `done`,
+> keeping the original intent for everything in flight. Verified: the strip
+> went from *1 waiting* to *"No tasks waiting"* with count **0**, and the
+> report is still on the board under **DONE · 4** — out of the queue, not out
+> of the record.
+>
+> This one only appeared once the office had a *history*. Every earlier check
+> ran against a floor where finished work had been deleted or wiped.
+
 > 🚨 **"✓ archived to Docs" was archiving nowhere near Docs (2026-08-07).**
 > Two coworkers unlocked the end-of-day **stand-up**, which a one-coworker
 > office could never exercise. Ran one end to end and it works: preflight
