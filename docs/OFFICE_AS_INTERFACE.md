@@ -1182,6 +1182,41 @@ append-only).
 > belongs in the prompt and in giving an unexecuted tool call an explicit
 > refusal rather than silence.
 
+> ✅ **Don't hand a coworker back its own guesswork (2026-08-06).** Chased
+> the fabrication above to its mechanism, and it was ours.
+>
+> Every tool hop pushed the model's whole buffer back as its own turn,
+> followed by the real `[TOOL_RESULT: …]`. Correct for the text *before* the
+> marker; wrong for everything after it. Anything written after a call was
+> produced **before the tool ran**, so it cannot be based on the result —
+> and a small model will cheerfully write the result it expects. The old
+> behaviour then replayed that invention as something the coworker had
+> *said* and put the true listing underneath as a contradiction: the worst
+> available framing, establishing the fabrication as prior context and
+> asking the model to reconcile.
+>
+> `upToToolCall()` cuts the hop buffer at the marker. The coworker still
+> sees that it asked; what it never sees is the answer it made up. `raw` is
+> the exact matched text and all three detector paths (bracket, JSON,
+> harmony) supply it, so an unrecognised shape leaves the buffer untouched
+> — never truncate blind.
+>
+> **Evidence, and its limits.** Same prompt, clean journal, before vs after:
+> the pre-fix run invented `decisions/auth.md · preferences.md ·
+> projects/mdc.md` for a vault minutes old; the post-fix run wrote
+> "*empty memory folder Agents/Llama/*" and then "my memory is empty, so I
+> have no notes to list." That is one run of a stochastic model — evidence,
+> not proof. The mechanism is unit-tested (7 checks); the live run is
+> consistent with it.
+>
+> **A fabrication that reaches a stored record becomes context.** Re-running
+> the prompt against the *poisoned* state reproduced the invented filenames
+> exactly, because the pre-fix delivery had been written into the filed
+> note, the task result and the activity log, and the journal feeds the
+> prompt. The fix prevents new fabrications; it cannot un-write an old one.
+> Verifying it therefore required wiping state first — testing against
+> poisoned state would have looked like a failure and hidden a working fix.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

@@ -1230,6 +1230,37 @@ function detectJsonToolCall(text, tools) {
 
 /* Find the first tool call in `text`. Returns {tool, arg, body, raw} or null.
    Tries JSON format first (capable models), then bracket regex, then harmony. */
+/* ── Don't hand a coworker back its own guesswork ─────────────────────────
+   Every tool hop pushes the model's text back as its own turn, immediately
+   followed by the real `[TOOL_RESULT: …]`. That is right for the text
+   BEFORE the tool marker. It is wrong for everything after it.
+
+   Anything the model wrote after emitting a call was produced before the
+   tool ran, so by construction it cannot be based on the result — and a
+   small model will happily write the result it expects. Caught on a clean
+   first run: Llama emitted `[MEMORY_LIST]` and, in the same breath,
+   "Here are the notes in my private memory folder: decisions/auth.md,
+   preferences.md, projects/mdc.md" — three files invented for a vault
+   created minutes earlier.
+
+   The old behaviour then fed that invention back as something the coworker
+   had SAID, and put the true (empty) listing underneath it as a
+   contradiction. That is the worst available framing: it establishes the
+   fabrication as prior context and asks the model to reconcile.
+
+   Cutting at the marker is the honest boundary. The coworker still sees it
+   asked for the listing; what it never sees is the answer it made up.
+   `raw` is the exact matched text and every detector path supplies it
+   (bracket, JSON and harmony), so an unrecognised shape leaves the buffer
+   untouched rather than truncating something real. */
+function upToToolCall(text, raw) {
+  const s = String(text || '');
+  if (!raw) return s;
+  const i = s.indexOf(raw);
+  if (i === -1) return s;
+  return s.slice(0, i + String(raw).length);
+}
+
 function detectToolCall(text, tools) {
   const jsonCall = detectJsonToolCall(text, tools);
   if (jsonCall) return jsonCall;
@@ -1592,7 +1623,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 
-    messages.push({ role: 'assistant', content: buf });
+    messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Do NOT repeat the tool call.` });
   }
   if (onHint) onHint(`_(per-turn tool budget exhausted (${MAX_TOOL_HOPS} hops); ask again to continue)_`);
@@ -1779,7 +1810,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 
-    messages.push({ role: 'assistant', content: buf });
+    messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Now write a concise answer for the user using these results. Do NOT repeat the tool call. Do NOT emit any more bracketed markers or harmony commentary unless you genuinely need another search/lookup.` });
   }
   /* Hop budget exhausted. Out-of-band hint so it doesn't end up in the

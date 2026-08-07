@@ -50,7 +50,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -103,6 +103,20 @@ R.vpStrings = vaultPaths(['Agents/Llama/a.md']);
 R.vpMixed   = vaultPaths([{path:'a.md'}, 'b.md', {title:'no path'}, null, '']);
 R.vpNull    = vaultPaths(null);
 R.vpStartsWith = vaultPaths([{path:'Agents/Llama/a.md'}]).filter(x => x.startsWith('Agents/Llama/')).length;
+// upToToolCall — a coworker must never be handed back the result it guessed.
+// The real case: [MEMORY_LIST] followed by three invented file names.
+const FAB = "I'll check what's saved: [MEMORY_LIST]\n\nHere are the notes:\n* decisions/auth.md\n* preferences.md";
+R.cutFab      = upToToolCall(FAB, '[MEMORY_LIST]');
+R.cutKeepsAsk = /I'll check what's saved/.test(R.cutFab);
+R.cutDropsGuess = /decisions\/auth\.md|preferences\.md/.test(R.cutFab);
+R.cutKeepsMarker = /\[MEMORY_LIST\]$/.test(R.cutFab);
+R.cutNoRaw    = upToToolCall(FAB, null);
+R.cutAbsent   = upToToolCall('plain prose', '[NOPE]');
+R.cutEmpty    = upToToolCall('', '[X]');
+R.cutNullText = upToToolCall(null, '[X]');
+// Only the FIRST occurrence bounds it — a marker repeated later must not
+// let the guess back in.
+R.cutFirstOnly = upToToolCall('a [X] b [X] c', '[X]');
 // A tag mid-sentence is the agent TALKING about the protocol, not using it.
 R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
 console.log(JSON.stringify(R));
@@ -152,6 +166,16 @@ def main():
     check('a null list is safe', out['vpNull'] == [])
     check('the result supports startsWith — the call that was crashing',
           out['vpStartsWith'] == 1)
+    check('the ask survives the cut', out['cutKeepsAsk'] is True, repr(out['cutFab']))
+    check('the invented result is cut away', out['cutDropsGuess'] is False, repr(out['cutFab']))
+    check('the marker itself is kept, so the model sees what it asked for',
+          out['cutKeepsMarker'] is True, repr(out['cutFab']))
+    check('no raw match leaves the text untouched — never truncate blind',
+          out['cutNoRaw'] == out['cutFab'] or len(out['cutNoRaw']) > len(out['cutFab']))
+    check('an absent marker changes nothing', out['cutAbsent'] == 'plain prose')
+    check('empty and null inputs are safe', out['cutEmpty'] == '' and out['cutNullText'] == '')
+    check('a repeated marker cuts at the FIRST one', out['cutFirstOnly'] == 'a [X]',
+          repr(out['cutFirstOnly']))
     check('a bracketed line that is not one of our tools survives',
           out['orphanNotOurs'] == '[TODO: buy milk]\nreal text', repr(out['orphanNotOurs']))
     check('a tag mid-sentence is content, not scaffolding',
