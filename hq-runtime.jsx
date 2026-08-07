@@ -404,15 +404,24 @@ function unsentElevation(text, raised) {
 
 /* The rest of the "request that leaves someone waiting" class.
    DM_TO and REQUEST_ELEVATION each got a bespoke guard after being caught in
-   the wild; sweeping the registry showed 13 block-form markers and four more
-   with the same consequence — a coworker believes they asked for something,
-   and nobody is coming.
+   the wild; sweeping the registry showed four more with the same
+   consequence — a coworker believes they asked for something, and nobody
+   is coming.
 
    The WRITE markers (VAULT_NEW, MEMORY_WRITE, FILE_WRITE, EXPORT_*) are
    deliberately NOT here. When one of those fails to parse the tool simply
    never ran, and the office already has an honest record of that: no visit
    block. These four are different because a person is left expecting
    something — a hire, a helper, a colleague picking work up.
+
+   The arithmetic, so a reader can check it rather than trust it:
+   16 block-form markers = 6 request-class (DM_TO, HANDOFF_TO, HIRE_AGENT,
+   HIRE_ASSISTANT, REQUEST_ELEVATION, SPAWN_SUBAGENT — all guarded now) +
+   10 write-class (VAULT_NEW, VAULT_APPEND, MEMORY_WRITE, MEMORY_APPEND,
+   FILE_WRITE, EXPORT_PPTX/DOCX/PDF, GENERATE_IMAGE/VIDEO — none, on
+   purpose). The commit that added this said 13; that was a miscount off a
+   printed list, found by re-running the classifier during an audit of my
+   own comments.
 
    Unlike unsentHandoff this needs no "did anything land" flag: a marker
    opened with no closing tag of its own is proof THAT ONE did not parse,
