@@ -908,12 +908,12 @@ const TOOL_REGISTRY = {
     re: /\[\s*SPAWN_SUBAGENT\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*SPAWN_SUBAGENT\s*\]/i,
     requires: () => true,
     doc:
-      '- [SPAWN_SUBAGENT: <role / specialty>]\n<task description>\n[/SPAWN_SUBAGENT] — spin up a transient one-shot sub-agent for a focused task.\n' +
+      '- [SPAWN_SUBAGENT: <role / specialty>]\n<task description>\n[/SPAWN_SUBAGENT] — bring in a one-shot helper for a focused task.\n' +
       '  The role tells the host what kind of agent to create (e.g. "code reviewer", "summarizer", "fact-checker", "JSON wrangler").\n' +
       '  The task is what they should do. Write it like you\'d brief a fresh coworker — clear scope, expected output.\n' +
-      '  Sub-agents are sandboxed: NEVER elevated, can\'t fan out further, auto-dismissed when done. Use sparingly (budget caps apply).\n' +
+      '  Helpers are sandboxed: NEVER elevated, can\'t bring in helpers of their own, and leave when the job is done. Use sparingly (budget caps apply).\n' +
       '  Optional per-spawn model override: `[SPAWN_SUBAGENT: code-reviewer | model:claudecode:sonnet]` — pin a specific model id for this one sub-agent (overrides the global "Sub-agent model" setting). Useful when a particular task warrants a stronger or cheaper model than the spawner uses.',
-    docShort: 'Spawn a transient one-shot sub-agent for a focused task.',
+    docShort: 'Bring in a one-shot helper for a focused task.',
     run: async () => '(SPAWN_SUBAGENT is dispatched by the host)',
   },
   /* REQUEST_ELEVATION — assistants and sub-agents are non-elevated by
@@ -950,9 +950,9 @@ const TOOL_REGISTRY = {
       '- [HIRE_ASSISTANT: <name> · <role>]\n<rationale: what routine work they\'ll absorb, suggested model/tools>\n[/HIRE_ASSISTANT] — propose hiring a PERMANENT assistant who reports to YOU.\n' +
       '  REQUIRED: name AND role in the marker header (e.g. `[HIRE_ASSISTANT: Quill · Senior Editor]`). Without a name, the request is dropped with a warning.\n' +
       '  If using JSON tool format, include both fields explicitly: `{"tool":"HIRE_ASSISTANT","name":"Quill","role":"Senior Editor","rationale":"..."}`.\n' +
-      '  Requires boss APPROVAL. Cap of 2 active assistants per senior. They CAN message peers and spawn one-shot sub-agents, but CANNOT propose further hires of their own (depth=1 hierarchy).\n' +
+      '  Requires boss APPROVAL. Cap of 2 active assistants per senior. They CAN message peers and bring in one-shot helpers, but CANNOT propose further hires of their own (the team is one level deep).\n' +
       '  Difference vs. HIRE_AGENT: assistants are subordinates (you brief them, they report findings to you). HIRE_AGENT proposes a peer for the team.\n' +
-      '  Difference vs. SPAWN_SUBAGENT: assistants are permanent and remember your work between turns; sub-agents are one-shot.',
+      '  Difference vs. SPAWN_SUBAGENT: assistants stay and remember your work between turns; a helper is one-shot and starts fresh.',
     docShort: 'Propose hiring a permanent assistant/apprentice who reports to YOU (boss approval required).',
     run: async () => '(HIRE_ASSISTANT is dispatched by the host after boss approval)',
   },
@@ -983,7 +983,7 @@ const TOOL_REGISTRY = {
     name: 'DM_TO',
     re: /\[\s*DM_TO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*DM_TO\s*\]/i,
     requires: () => true,
-    doc: '- [DM_TO: <coworker name>]\n<message>\n[/DM_TO] — direct-message another sub-agent on the team. Use this when you need their expertise or to hand off a sub-task. Stop after the block; the host will deliver it and continue the chain.',
+    doc: '- [DM_TO: <coworker name>]\n<message>\n[/DM_TO] — direct-message another coworker on the team. Use this when you need their expertise or to hand off a sub-task. Stop after the block; the host will deliver it and continue the chain.',
     docShort: 'Send a direct message to another sub-agent on the team to hand off a task.',
     run: async (_to, _ctx, _body) => {
       // The host catches DM_TO before this runs; this is a sentinel that
@@ -1598,8 +1598,12 @@ function chatToMessages(chat, { omitLastCeo = false } = {}) {
 }
 
 function rosterSummary(agents) {
-  if (!agents || !agents.length) return 'No sub-agents hired yet.';
-  return 'Hired sub-agents:\n' + agents.map(a =>
+  /* §6 starts HERE. The office scrubbed "sub-agent" from its own copy, but
+     kept TELLING the model that is what its colleagues are — so the model
+     echoed it straight back onto the floor. Protocol tokens below stay
+     verbatim (SPAWN_SUBAGENT is wire format); only the English changes. */
+  if (!agents || !agents.length) return 'No coworkers hired yet.';
+  return 'Your coworkers:\n' + agents.map(a =>
     `- ${a.name} (${a.role}) — status: ${a.status}, tools: ${(a.tools||[]).join(', ') || 'none'}`
   ).join('\n');
 }

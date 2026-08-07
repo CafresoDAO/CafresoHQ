@@ -165,8 +165,15 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
           <div className="empty-state onboard">
             <div className="empty-title">🧠 Teach your HQ</div>
             <div className="empty-sub">
-              Long-term memory is folded into every prompt your CEO and crew see — facts,
-              preferences, rules, people. Add your first note below and the team remembers it forever.
+              {/* "remembers it forever" was false twice over: nothing is
+                  forever, and a note stops reaching any prompt at all once it
+                  falls past the newest MEM_CAP — which is precisely the drift
+                  the header above this guards against, contradicted one
+                  paragraph later. The cap is not mentioned here on purpose:
+                  this only renders at zero entries, where it would be noise,
+                  and the header starts saying it the moment it matters. */}
+              Long-term memory goes into every prompt your CEO and crew see — facts,
+              preferences, rules, people. Add your first note below and the whole team works from it.
             </div>
             <div className="empty-cta-hint">↓ start typing in the box below</div>
           </div>

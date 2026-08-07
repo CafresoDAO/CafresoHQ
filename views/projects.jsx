@@ -810,7 +810,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     <div className="view-projects">
       <div className="section-title">
         🗂 PROJECTS
-        <span className="tag">{projects.length} project(s)</span>
+        <span className="tag">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</span>
       </div>
       <div style={{display: 'flex', gap: 0, height: 'calc(100% - 48px)', overflow: 'hidden'}}>
         {/* Left: project list */}
