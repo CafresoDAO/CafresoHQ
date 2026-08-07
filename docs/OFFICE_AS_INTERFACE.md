@@ -532,6 +532,27 @@ The reliable signals are the rendered ones: placards, tooltips, chip text,
 `elementFromPoint`. If a check reads storage, ask first which writer last
 touched that field and what it did to it on the way through.
 
+**Testing a backend outage: patch `fetch`, don't stop the server.** Stopping
+the real server is the obvious move and it does prove the BUG — the office
+sat through 62 seconds with no backend and said nothing. It cannot prove the
+FIX, because the detector skips hidden tabs and browsers throttle background
+timers, and this pane is hidden most of the time.
+
+What works: reject `/health` at the `fetch` layer and nudge the probe.
+
+    window.fetch = (u, ...r) => /\/health\b/.test(String(u))
+      ? Promise.reject(new TypeError('simulated'))
+      : orig(u, ...r);
+    document.dispatchEvent(new Event('visibilitychange'));   // when not hidden
+
+That drove the whole chain in seconds — chip → OFFLINE, banner up — and
+restoring `fetch` drove the recovery path back to LIVE.
+
+Note the failed attempt first: setting `window._API_BASE` to a dead port did
+nothing, because `backendHealth()` closes over a MODULE-scoped `_API_BASE`.
+The banner's own text reads `window._API_BASE`, so both exist and only one is
+the one that matters — patch the seam the code actually uses.
+
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
 coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
