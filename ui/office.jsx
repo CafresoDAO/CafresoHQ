@@ -1081,8 +1081,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                 on disk. Hidden at zero rather than showing `📦 0`: a fresh
                 office has shipped nothing, and saying so on the wall is
                 noise, not news. */}
+            {/* It counts TASKS carrying an artifactPath — the office's
+                record of what its team produced, NOT an inventory of the
+                cabinet. Those diverge: deleting a task orphans its file,
+                which stays on disk. Measured on a lived-in floor — six
+                notes in `Deliveries/`, three surviving task records, and
+                this row (written in an earlier pass) claimed "3
+                deliverables filed to the cabinet". Under-claiming, but
+                still a claim about the wrong thing. The Vault view is the
+                inventory; this row is the scoreboard. */}
             {filedCount > 0 && (
-              <div className="sw-row" title={`${filedCount} deliverable${filedCount === 1 ? '' : 's'} filed to the cabinet`}>
+              <div className="sw-row" title={`${filedCount} deliver${filedCount === 1 ? 'y' : 'ies'} your team filed · open the Vault to browse the cabinet itself`}>
                 📦 {filedCount}
               </div>
             )}
