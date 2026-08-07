@@ -1723,15 +1723,28 @@ ${d.text}` : d.text,
       //       clean text with state badges in the inbox, not raw brackets.
       // We do NOT re-transition here; that would duplicate history entries.
       const acks = (HQ.extractAcks ? HQ.extractAcks(buf) : []);
-      if (acks.length) {
-        /* `cleaned || m.text` used to sit here, and when the whole reply
-           WAS one ACK it restored the raw bracket — see visibleReply. */
-        const cleaned = HQ.visibleReply(buf);
-        setChat(prev => prev.map(m => m.id === agentMsgId
-          ? { ...m, text: cleaned }
-          : m));
-        buf = cleaned;
-      }
+      /* Clean the bubble ALWAYS, not only when an ACK happened to appear.
+         The strip that matters most here is the marker, and a reply can
+         carry a marker without carrying an ACK — which is exactly what a
+         real one did: "[MEMORY_WRITE: notes/citrus.md] / The boss likes
+         lemons." reached the boss with the bracket still on it, because
+         the only thing that would have cleaned it was gated on an ACK that
+         this reply happened to include but others do not.
+
+         `cleaned || m.text` used to sit here, and when the whole reply WAS
+         one ACK it restored the raw bracket — see visibleReply. */
+      /* Cancel the throttle before the final write. flush() clears its own
+         `scheduled` flag but never cancels the requestAnimationFrame it
+         already queued, so that frame fires AFTER this and repaints the
+         message with the raw buffer. The clean text was being written and
+         then silently overwritten one frame later — which is why the fix
+         above looked like it had done nothing. */
+      flush.cancel();
+      const cleaned = HQ.visibleReply(buf);
+      setChat(prev => prev.map(m => m.id === agentMsgId
+        ? { ...m, text: cleaned }
+        : m));
+      buf = cleaned;
       /* Extract task-state markers the agent emitted (TASK_DONE,
          TASK_PROGRESS, TASK_BLOCKED) and apply them to tasks.json. The
          regexes are deliberately permissive — agents stumble on quoting/
@@ -2676,6 +2689,12 @@ ${d.text}` : d.text,
       /* Third dispatch path, same gap the task path had: no ACK stripping,
          so a bare marker reached the bubble and the journal. */
       const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf));
+      /* …and into the bubble. cleanBuf already fed the desk monitor, the
+         activity detail, the journal and the approval scan — every record
+         EXCEPT the one the boss is actually reading, which kept whatever
+         the throttled stream last wrote. */
+      flush.cancel();
+      setChat(prev => prev.map(m => m.id === agentId ? { ...m, text: cleanBuf } : m));
       screen.done(cleanBuf);
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
@@ -3040,6 +3059,9 @@ ${d.text}` : d.text,
          run before visibleReply, whose \n{3,} collapse would edit the echo
          out from under the exact-string match. */
       const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo))));
+      // Same gap as the dispatch path: every record got cleanBuf, the bubble did not.
+      flush.cancel();
+      setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanBuf } : m));
       screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
