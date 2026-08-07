@@ -1455,7 +1455,7 @@ async function localModelOptions() {
         options: CLAUDECODE_MODELS.map(m => ({ id: 'claudecode:' + m, label: m })),
       });
       groups.push({
-        label: 'CafresoHQ · elevated (Claude Code + tools)',
+        label: 'CafresoHQ · file & shell access (Claude Code + tools)',
         provider: 'cafresohq',
         options: CAFRESOHQ_MODELS.map(m => ({ id: 'cafresohq:' + m, label: m })),
       });
@@ -1467,7 +1467,7 @@ async function localModelOptions() {
     const cx = await codexStatus();
     if (cx.configured) {
       groups.push({
-        label: 'Codex · elevated (OpenAI Codex CLI + tools)',
+        label: 'Codex · file & shell access (OpenAI Codex CLI + tools)',
         provider: 'codex',
         options: CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })),
       });

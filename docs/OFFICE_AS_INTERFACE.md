@@ -415,6 +415,24 @@ written only after the same class of bug was fixed by hand three or four times:
 | `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
 | `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
 
+**The third bound: which FILES a rule looks at.** `GLOBS` in the vocabulary
+suite lists nine paths and has never listed `claude-client.jsx`. Probing it
+found ten hits, of which exactly two were copy — the provider picker's
+`label: 'CafresoHQ · elevated (Claude Code + tools)'` and its Codex twin,
+which a boss reads while choosing a brain. Both fixed by hand.
+
+The file is **not** added to `GLOBS`, and the reason is the same standard
+that refused the ternary rule: the other eight hits are identifiers —
+`'hermes-agent'`, `'elevated-agent'`, a bare `'agent'` mode string — in a
+transport module that is dense with them. Covering two findings would cost
+eight hand-written exemptions, and an exemption list that long stops being
+a rule and becomes a second copy of the file.
+
+So the gap is written down instead: **`claude-client.jsx` is unscanned,
+and its `label:` fields are boss-facing.** If provider labels multiply,
+the right move is a narrow scan of that file's DISPLAY_KEYS only — not
+the whole-file glob.
+
 **A rule's BOUNDS are as much a claim as its pattern.** The vocabulary
 scanner's JSX-text rule capped fragments at 120 characters. Nobody chose
 that number for the copy it was guarding; it was a reasonable-looking
