@@ -1276,7 +1276,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                   {/* Sticky notes — pinned context. */}
                   <div className="px-stickies">
                     {stickies.slice(0, 3).map(s => (
-                      <div key={s.id} className="px-sticky" title="Pinned context">
+                      <div key={s.id} className="px-sticky" title="Pinned to the board">
                         <span className="px-sticky-x" onClick={(e)=>{e.stopPropagation(); onRemoveSticky(s.id);}}
                             {...pressable(()=>onRemoveSticky(s.id), 'Remove this note')}>✕</span>
                         {s.text}

@@ -98,6 +98,21 @@ PROMPT_WHY = ('names the machinery. A boss gives an assignment, asks a '
               'question, or writes a brief. Reserve "prompt" for text the '
               'MODEL reads.')
 
+# Same treatment, same reason: "context" was the OTHER half of the New
+# Meeting modal's "opening prompt context". Only three uses existed and
+# none survived review — a sticky note on the cork board titled "Pinned
+# context", and two tool docs telling a coworker to brief a peer "with
+# context" or hand off with "<one-line context>". Every one reads better
+# as what it actually is: pinned to the board, what has happened so far,
+# what they are picking up.
+#
+# Kept boss-facing-only for the same reason as PROMPT_WORD_RE, though as
+# with that word no exemption turned out to be needed.
+CONTEXT_RE = re.compile(r'\bcontexts?\b', re.I)
+CONTEXT_WHY = ('machine vocabulary for "what they know so far". Say what it '
+               'is: the brief, the background, what has happened so far, '
+               'what is on their desk.')
+
 # Files allowed to NAME the banned words while explaining why they were
 # removed. Their comments are stripped anyway; this covers the rare case of
 # a word inside a string that is documentation (e.g. a test fixture).
@@ -266,6 +281,7 @@ def main():
                     checks.append((AGENT_RE, AGENT_WHY))
                 if boss_facing:
                     checks.append((PROMPT_WORD_RE, PROMPT_WHY))
+                    checks.append((CONTEXT_RE, CONTEXT_WHY))
                 for pattern, why in checks:
                     m = pattern.search(prose)
                     if not m:
