@@ -1,5 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
-import { visitLine } from './floor.jsx';
+import { visitLine, visitPlace } from './floor.jsx';
 
 /* ── Artifact landing (OFFICE_AS_INTERFACE §1 "out-tray → filing cabinet",
    §3 step 6) ──────────────────────────────────────────────────────────────
@@ -104,8 +104,18 @@ function stripToolEcho(text, echoes) {
 function workingNotes(visits) {
   const seen = [];
   for (const v of (visits || [])) {
-    const line = visitLine(v && v.name, v && v.arg, 'past');
-    if (!line) continue;
+    if (!v || !v.name) continue;
+    /* visitPlace for the argument-less tools. MEMORY_LIST takes no argument,
+       so `visitLine` returns null for it and this loop used to `continue` —
+       silently dropping a real visit from the record. Caught on a clean
+       first run: a delivery whose footer listed one source when the
+       coworker had visited two.
+
+       Under-reporting the working is the same failure as over-reporting it.
+       The live surfaces already fell back to the floor's placard; the filed
+       note is the one that outlives the session, so it least of all should
+       be the surface that forgets. */
+    const line = visitLine(v.name, v.arg, 'past') || visitPlace(v.name, 'past');
     const row = `- ${line}`;
     if (seen.indexOf(row) === -1) seen.push(row);
   }

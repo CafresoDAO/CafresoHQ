@@ -139,6 +139,9 @@ R.notesOther = workingNotes([{ name: 'WEIRD_TOOL', arg: 'thing' }]);
 R.notesDedup = workingNotes([{ name: 'BROWSER_FETCH', arg: 'https://a.com' },
                              { name: 'BROWSER_FETCH', arg: 'https://a.com' }]);
 R.notesNoArg = workingNotes([{ name: 'BROWSER_FETCH', arg: '  ' }]);
+R.notesArgless  = workingNotes([{ name: 'MEMORY_LIST', arg: '' }]);
+R.notesArglessMix = workingNotes([{ name: 'MEMORY_READ', arg: 'a.md' }, { name: 'MEMORY_LIST', arg: '' }]).length;
+R.notesNoName   = workingNotes([{ arg: 'x' }]);
 R.notesNone  = workingNotes([]);
 R.notesJargon= workingNotes([{ name: 'BROWSER_FETCH', arg: 'https://a.com' }]).join('\n');
 // ── buildDelivery with visits ───────────────────────────────────────────
@@ -224,7 +227,14 @@ console.log(JSON.stringify(R));
     check('an unknown tool still reads as an action',
           out['notesOther'] == ['- Checked thing'], repr(out['notesOther']))
     check('the same source twice is listed once', len(out['notesDedup']) == 1)
-    check('a visit with no argument is skipped', out['notesNone'] == [] and out['notesNoArg'] == [])
+    check('an argument-less tool is still recorded, by where it went',
+          out['notesArgless'] == ['- at the filing cabinet'], str(out['notesArgless']))
+    check('…and does not displace the visits that do have a subject',
+          out['notesArglessMix'] == 2, str(out['notesArglessMix']))
+    check('a visit with no tool name at all is skipped',
+          out['notesNone'] == [] and out['notesNoName'] == [])
+    check('an empty-string argument falls back rather than vanishing',
+          out['notesNoArg'] == ['- on the phone'], str(out['notesNoArg']))
     check('the footer never names the tool (§6)',
           'BROWSER_FETCH' not in out['notesJargon'] and 'http' not in out['notesJargon'],
           out['notesJargon'])

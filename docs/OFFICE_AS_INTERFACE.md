@@ -1149,6 +1149,39 @@ append-only).
 > `.px-couch` and `.px-meetdoor`. **A DOM query that finds nothing is not
 > evidence of absence until the selector is verified.**
 
+> ✅ **Walked the first run again, on a genuinely wiped install
+> (2026-08-06).** Everything fixed in this session had been measured on a
+> floor full of test debris — eight ex-coworkers, dozens of activity rows,
+> a full vault. Wiped both halves (localStorage *and* the file-backed state
+> dir) and walked §3 as a new boss.
+>
+> **The promise holds.** Front desk offers Claude · Codex · Llama · Hermes,
+> each with a plain-words found-line and a `powered by` chip, and a scan for
+> the §6 banned terms (*system prompt · API key · model: · temperature ·
+> token · backend · driver · inference*) came back **clean**. Hired Llama
+> → `1 HIRED`; created a task, assigned, **▶ START** → `1 WORKING`; the
+> delivery filed itself as a 718-byte note with the local date and a
+> Working footer. Also correct on a clean floor: `⌗ ROOMS` with **no**
+> badge, **no** attention pill, and the out-tray's single true empty line.
+>
+> **What it caught.** The Working footer listed *one* source when the
+> coworker had made *two* visits. `workingNotes` fell back to `continue`
+> for argument-less tools — `MEMORY_LIST` takes no argument, so
+> `visitLine` returns null and the visit vanished from the record. The live
+> surfaces had already been given the placard fallback; the filed note, the
+> one record that outlives the session, was the surface still forgetting.
+> **Under-reporting the working is the same failure as over-reporting it.**
+>
+> **Still open, now with a concrete instance.** The same delivery contains a
+> *fabricated file listing* — Llama wrote `[MEMORY_LIST]` and then invented
+> three notes (`decisions/auth.md`, `preferences.md`, `projects/mdc.md`) for
+> a vault created minutes earlier. This is the model confabulation logged
+> as unclosed above: the office's own visit block reports the truth, and
+> nothing the coworker types can forge that block, but its **prose** still
+> reaches the cabinet. Stripping model prose is not the answer; the fix
+> belongs in the prompt and in giving an unexecuted tool call an explicit
+> refusal rather than silence.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw
