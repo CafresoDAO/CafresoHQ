@@ -1018,7 +1018,7 @@ const HQSH_COMMANDS = {
         if (!runs || !runs.length) return '(no night runs yet)';
         return runs.slice(-10).reverse().map(r =>
           `  ${r.lastError ? '⚠' : '✓'} ${fmtT(r.startedAt)}  ${r.agentName || r.agentId} · ${String(r.topic).slice(0, 40)}` +
-          `  ${r.iterations} iter · ${(r.writes || []).length} notes${r.lastError ? ' · ' + String(r.lastError).slice(0, 50) : ''}`).join('\n');
+          `  ${r.iterations} rounds · ${(r.writes || []).length} notes${r.lastError ? ' · ' + String(r.lastError).slice(0, 50) : ''}`).join('\n');
       }
       if (args[0] === 'cancel') {
         if (!args[1]) return 'usage: hq night cancel <scheduleId>';

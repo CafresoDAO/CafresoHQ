@@ -146,7 +146,7 @@ function buildProjectStudyPrompt(mission, agent, notesIndex, fileTree) {
 
   if (mission.allowSelfComplete) {
     lines.push(
-      `  - ONLY if you've thoroughly documented ALL major aspects AND completed at least ${Math.floor(totalIters * 0.6)} iterations, write a final ${folder}/_index.md (table of contents linking all notes) and emit [MISSION_COMPLETE].`
+      `  - ONLY if you've thoroughly documented ALL major aspects AND completed at least ${Math.floor(totalIters * 0.6)} rounds, write a final ${folder}/_index.md (table of contents linking all notes) and emit [MISSION_COMPLETE].`
     );
   } else {
     lines.push(
@@ -200,7 +200,7 @@ function buildResearchPrompt(mission, agent, notesIndex) {
 
   if (mission.allowSelfComplete) {
     lines.push(
-      `  - ONLY if you've genuinely exhausted ALL new angles AND completed at least ${Math.floor(totalIters * 0.6)} iterations, write a final ${folder}/_index.md and emit [MISSION_COMPLETE]. Otherwise keep going.`
+      `  - ONLY if you've genuinely exhausted ALL new angles AND completed at least ${Math.floor(totalIters * 0.6)} rounds, write a final ${folder}/_index.md and emit [MISSION_COMPLETE]. Otherwise keep going.`
     );
   } else {
     lines.push(
@@ -866,7 +866,7 @@ function NightShiftSection({ agents }) {
           {runs.map(r => (
             <div key={r.id} className="hint" style={{ marginTop: 3 }}>
               {r.lastError ? '⚠' : '✓'} {fmtT(r.startedAt)} · <b>{r.agentName || r.agentId}</b> · {r.topic.slice(0, 40)} ·
-              {' '}{r.iterations} iter · {(r.writes || []).length} note{(r.writes || []).length === 1 ? '' : 's'}
+              {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} note{(r.writes || []).length === 1 ? '' : 's'}
               {r.lastError ? ` · ${String(r.lastError).slice(0, 60)}` : ''}
             </div>
           ))}
@@ -1199,8 +1199,8 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
           }}>
             <div className="hint" style={{marginRight:'auto'}}>{
               mode === 'project-study'
-                ? (projectId ? `${Math.round(duration / interval)} iterations × file reads + vault writes${isElevated ? ' · 🛡 elevated agent' : ''}` : 'select a project to start')
-                : (topic.trim() ? `${Math.round(duration / interval)} iterations × ~3 LLM calls each${isElevated ? ' · 🛡 elevated agent' : ''}` : 'enter a topic to start')
+                ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + vault writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
+                : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 elevated agent' : ''}` : 'enter a topic to start')
             }</div>
             <button className="px-btn primary" onClick={submit}
               disabled={mode === 'project-study' ? (!projectId || !agentId || (isElevated && !elevatedAuth)) : (!topic.trim() || !agentId || (isElevated && !elevatedAuth))}

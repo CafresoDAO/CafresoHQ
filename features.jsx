@@ -854,7 +854,7 @@ function MorningReportModal({ report, onClose }) {
           {report.nightRuns.slice(0, 5).map(r => (
             <div key={r.id} className="tiny" style={{ marginTop: 3 }}>
               {r.lastError ? '⚠' : '✓'} <b>{r.agentName || r.agentId}</b> · {String(r.topic || '').slice(0, 50)} ·
-              {' '}{r.iterations} iter · {(r.writes || []).length} notes
+              {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} notes
               {r.summary ? ` — ${String(r.summary).slice(0, 80)}` : r.lastError ? ` — ${String(r.lastError).slice(0, 60)}` : ''}
             </div>
           ))}
@@ -863,7 +863,13 @@ function MorningReportModal({ report, onClose }) {
       <div className="row" style={{ gap: 'var(--sp-4)', flexWrap: 'wrap', marginBottom: 'var(--sp-4)' }}>
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
           <div className="lbl">ACTIONS</div>
-          <div style={{ fontSize: 22 }}>{report.activity.length}</div>
+          {/* `activityTotal`, not `activity.length` — the latter is the
+              80-row display slice, so a long absence reported the CAP as
+              the count. `??` keeps a replayed older report readable. */}
+          <div style={{ fontSize: 22 }}>{report.activityTotal ?? report.activity.length}</div>
+          {report.activityHidden > 0 && (
+            <div className="tiny">showing the {report.activity.length} most recent below</div>
+          )}
         </div>
         {/* DELIVERABLES counted `report.receipts.length` — RECEIPTS, which
             are approval and tool records, not things filed to the cabinet.
@@ -879,7 +885,7 @@ function MorningReportModal({ report, onClose }) {
             receipts. */}
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>
           <div className="lbl">DELIVERABLES</div>
-          <div style={{ fontSize: 22 }}>{report.activity.filter(a => a.action === 'artifact').length}</div>
+          <div style={{ fontSize: 22 }}>{report.artifactTotal ?? report.activity.filter(a => a.action === 'artifact').length}</div>
           {anchored.length > 0 && <div className="tiny">⛓ {anchored.length} receipt{anchored.length === 1 ? '' : 's'} anchored on-chain</div>}
         </div>
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>

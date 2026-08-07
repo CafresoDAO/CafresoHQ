@@ -1866,7 +1866,7 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const enabledTools = await toolsForAgent(agent, { peers });
   const enabledNames = enabledTools.map(t => t.name).join(', ') || 'none';
 
-  const base = agent.systemPrompt || `You are ${agent.name}, a specialist sub-agent at CafresoHQ. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
+  const base = agent.systemPrompt || `You are ${agent.name}, a specialist coworker at CafresoHQ. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
 
 FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`;
   const toolsNote = enabledTools.length

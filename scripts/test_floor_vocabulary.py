@@ -49,7 +49,11 @@ BANNED = [
     (re.compile(r'\btok\b|\btok/'),
      'a machine unit on a human surface. Say "effort", or put the exact '
      'figure in a tooltip (see EFFORT_TIP / OFFICE_EFFORT_TIP in cast.jsx).'),
-    (re.compile(r'\biterations?\b', re.I),
+    # `iter` is here because banning only the full word missed the shorter,
+    # WORSE form: the Gazette shipped "3 iter · 5 notes" for months. An
+    # abbreviation of a banned word is not a loophole — it is the same jargon
+    # with the readable part removed.
+    (re.compile(r'\biterations?\b|\biters?\b', re.I),
      'the Night Shift board calls these rounds.'),
 ]
 
@@ -110,6 +114,22 @@ DISPLAY_RE = re.compile(
 # JSX text nodes: >Some words< — the other way copy reaches the screen.
 JSX_TEXT_RE = re.compile(r'>\s*([A-Za-z][^<>{}]{2,120}?)\s*<')
 
+# …and the third way, which is how "3 iter · 5 notes" stayed on screen: text
+# sandwiched BETWEEN two interpolations — `{r.iterations} iter · {n} notes`.
+# It never touches a `>` or a `<`, so both patterns above walk straight past
+# it, even though it is as visible as any other label.
+#
+# Excluding code punctuation and requiring the fragment to read like prose (a
+# space or a separator dot) is what keeps this from matching every `import …
+# from` line and every object literal. A few object literals survive that
+# filter; they are harmless, because a scanned fragment only FAILS when it
+# contains a banned word.
+JSX_BETWEEN_RE = re.compile(r'\}([^\n<>{}=;\'"`()\[\]]{2,120}?)\{')
+
+
+def _reads_like_copy(t):
+    return bool(re.search(r'[A-Za-z]', t)) and (' ' in t.strip() or '·' in t)
+
 # SPAWN_SUBAGENT, HIRE_AGENT, MEMORY_LIST… — the wire protocol. Stripped
 # before matching so the tokens can never trip this test.
 TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9_]{3,}\b')
@@ -140,6 +160,8 @@ def main():
             checked += 1
             spots = [(m.start(), m.group(0)) for m in DISPLAY_RE.finditer(body)]
             spots += [(m.start(1), m.group(1)) for m in JSX_TEXT_RE.finditer(body)]
+            spots += [(m.start(1), m.group(1)) for m in JSX_BETWEEN_RE.finditer(body)
+                      if _reads_like_copy(m.group(1))]
             for start, raw in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)

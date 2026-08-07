@@ -813,7 +813,7 @@ function App() {
     const inflight = agentAbortersRef.current.size;
     const running = missions.filter(m => m.status === 'running').length;
     if (inflight === 0 && running === 0) { say('Nothing to stop', 'STOP'); return; }
-    if (!window.confirm(`STOP ALL?\n\nThis will abort ${inflight} in-flight agent stream${inflight===1?'':'s'} and pause ${running} running mission${running===1?'':'s'}.`)) return;
+    if (!window.confirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`)) return;
     for (const c of agentAbortersRef.current.values()) {
       try { c.abort(); } catch (_e) {}
     }
@@ -2573,9 +2573,23 @@ ${d.text}` : d.text,
           nightRuns = (j.runs || []).filter(x => (x.finishedAt || 0) > prevSeen);
         } catch (_e) {}
         if (!acts.length && !recs.length && !nightRuns.length) return;
+        /* Count from the FULL list, then truncate for display — not the
+           other way round. The three tiles below read straight off
+           `report.activity`, which is the 80-row slice, so a boss who was
+           away long enough to fill the 200-row activity store came back to
+           "ACTIONS 80" — a cap wearing the name of a count. MONEY was
+           always right (tips/paydays are filtered from `acts` up here),
+           which is exactly why the wrong two looked plausible beside it.
+
+           Same failure the DELIVERABLES tile already had once: the number
+           was real, the noun on it wasn't. */
+        const shown = acts.slice(0, 80);
         setGazette({
           since: prevSeen, generatedAt: Date.now(),
-          activity: acts.slice(0, 80),
+          activity: shown,
+          activityTotal: acts.length,
+          artifactTotal: acts.filter(a => a.action === 'artifact').length,
+          activityHidden: Math.max(0, acts.length - shown.length),
           receipts: recs.slice(0, 30),
           tips: acts.filter(a => a.action === 'tip'),
           paydays: acts.filter(a => a.action === 'payday'),
