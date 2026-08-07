@@ -399,7 +399,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | §7 holds when the DEFAULT brain is the thing that dies, 2026-08-07 | the CEO's own brain, not a coworker's — the case §7's third route was written for. Sent "Say the single word: hello" on a fresh office whose managed Gemma endpoint this machine cannot reach. The office showed an honest waiting state first (*"still waiting on that brain — it may be warming up"*, not a spinner implying progress), then after ~60s: **"⚠ hit a snag — couldn't reach that brain — it looks offline from here. Llama is still working, though — @mention them and they can pick this up."** One sentence, no raw error, a retry control, and the third route naming the coworker who really can work — `handoffHint` picking the local brain over the dead default. Nothing to fix; recorded so the next reader does not re-derive it |
 | the office's side of the handoff — audited, 2026-08-07 | after two live attempts to make one local coworker hand off to another both produced prose instead of a `[DM_TO:]` block, I audited the office rather than blaming the model on a hunch. Every link holds: `const peers = agents.filter(a => a.id !== agent.id)` is populated; all three `agentStream` callers pass it (the dispatch path by shorthand, which is why a first read of the options object missed it); `toolsForAgent` adds `dm_to` whenever `peers.length`, with `requires: () => true`; and the doc it adds carries the full block form **plus** a generated `Coworkers you can DM: Nova (Generalist)` line. So the model was handed the syntax, the tool and the names, and answered in English anyway. The office is not the defect here — which is worth having checked, because the alternative reading (a tool silently gated off, contradicting the framing's "teammates available via DM_TO") would have been a serious office bug and looked identical from outside |
-| the badge comes back down, 2026-08-07 | `awaiting_reply` had no closer, so the topbar count climbed by one for every hand-off that ended in a question and never fell. Fixed and then driven, on a chain I did not stage: delegating from the chat composer to Nova set off a real coworker-to-coworker exchange, and the new closer fired **four times**. End state **19 messages, 19 completed, 0 stuck**, four carrying `all 1 reply came back`, topbar showing no pending count. The same run is also the third data point on handoff reliability, and the one that matters most: the boss's own delegate route produced the `DM_TO` blocks that two direct instructions to the model could not |
+| the badge comes back down, 2026-08-07 | `awaiting_reply` had no closer, so the topbar count climbed by one for every hand-off that ended in a question and never fell. Fixed and then driven, on a chain I did not stage: delegating from the chat composer to Nova set off a real coworker-to-coworker exchange, and the new closer fired **four times**. End state **19 messages, 19 completed, 0 stuck**, four carrying `all 1 reply came back`, topbar showing no pending count. **CORRECTED an hour later**: I first wrote that this run was a third data point on handoff reliability, the delegate route succeeding where two direct instructions failed. It was not. `onDelegate` ignored the composer and re-sent the last user message, which was itself my instruction to *"delegate this using the DM_TO block, addressed to Nova"* — the office handed a coworker an order to delegate, and it delegated. The chain was real and the closer really fired; the inference about handoff reliability was worthless, and the 17-message ping-pong it produced was me delegating a delegation order. Reliability stands at one success, two failures, all on direct asks |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
 ### The executable rules — and what a rule can and cannot be
@@ -598,6 +598,35 @@ Return the candidates on failure, not just the miss: that is what turns
 prefer driving the flow through the affordance a user would actually press
 — the onboarding checklist's own button found the Projects dead end that
 clicking the nav directly had hidden.
+
+**A green result produced by a race is indistinguishable from a correct
+one, and it will not stay green.** The `awaiting_reply` closer asked
+`MessageRegistry.getMessage` for the message's current state. That reads
+React state, and the write it was checking for happens in the same run
+through `setMessages`, which is async.
+
+It looked verified. On a live chain it fired **four times**, every one
+correct, and the office ended 19-for-19 completed. What made those four
+work was invisible: the fan-out loop had `await`ed real child dispatches,
+React flushed in the gaps, and the read happened to see fresh state. The
+fifth case had no awaits at all — a self-DM, a name matching nobody hired
+— nothing flushed, the read returned the STALE state, and the message
+stuck at `awaiting_reply` forever. The closer reproduced, through its own
+race, the exact bug it was written to fix.
+
+Two things to take from it. **Do not stop driving a thing at its first
+confirmation** — four successes said "works", and the mechanism was wrong
+throughout. And **never read back state your own run just wrote through an
+async setter**; carry it in a run-scoped local (`markedAwaiting`,
+`dmDelivered`) where the value cannot be stale by construction.
+
+**A synthetic message that looks like a user message will be read as one.**
+`onDelegate` posts `(delegated "…" to Nova)` into chat as `from: 'user'`,
+and separately picks "the last user message" as the brief. So each
+delegation wrapped the previous one: found four deep on the floor, with
+the coworker receiving the whole stack. Any record the office writes into a
+stream it also READS from needs a mark saying who wrote it — here
+`delegated: true`, checked when scanning back for the boss's last real ask.
 
 **When two branches produce the same value, make one produce an impossible
 one.** Unifying the office Effort total meant proving a new prop actually
