@@ -2931,6 +2931,14 @@ ${d.text}` : d.text,
          hand-off that never parsed. Each leaves a person waiting. */
       const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
       if (missBlocks && flush && flush.note) flush.note(missBlocks);
+      /* Same guard as the dispatch path: a coworker writing the office's
+         own `[A \u2192 B]:` relay label around words it invented, when the
+         office delivered nothing this run. It was wired into one path of
+         three -- and the run that first exposed the fabrication was a TASK
+         run, which was one of the two without it. */
+      const missRelay = HQ.fabricatedRelay
+        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
+      if (missRelay && flush && flush.note) flush.note(missRelay);
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
@@ -3511,6 +3519,14 @@ ${d.text}` : d.text,
          hand-off that never parsed. Each leaves a person waiting. */
       const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
       if (missBlocks && flush && flush.note) flush.note(missBlocks);
+      /* Same guard as the dispatch path: a coworker writing the office's
+         own `[A \u2192 B]:` relay label around words it invented, when the
+         office delivered nothing this run. It was wired into one path of
+         three -- and the run that first exposed the fabrication was a TASK
+         run, which was one of the two without it. */
+      const missRelay = HQ.fabricatedRelay
+        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
+      if (missRelay && flush && flush.note) flush.note(missRelay);
     }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());

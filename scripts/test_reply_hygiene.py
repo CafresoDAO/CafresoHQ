@@ -306,6 +306,33 @@ def check_raw_buffer_shown():
     return bad
 
 
+def check_guards_cover_every_path():
+    """A guard wired into one path of three protects one path of three.
+
+    Found by census on 2026-08-07: `fabricatedRelay` was added to the
+    dispatch path only, and the run that first exposed the fabrication it
+    catches was a TASK run -- one of the two paths without it. `unsentAsk`
+    is legitimately dispatch-only (it reads parsed ACK states, and only that
+    path parses them), so this pins the guards that need nothing but the
+    buffer and the roster.
+
+    `unsentHandoff` is the baseline: it has been in every path since before
+    any of this. Any sibling that takes the same inputs should appear the
+    same number of times. Counts calls, not definitions.
+    """
+    import re as _re
+    text = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    text = _re.sub(r'/\*.*?\*/', '', text, flags=_re.S)
+    def count(name):
+        return len(_re.findall(r'HQ\.' + name + r'\s*&&\s*HQ\.' + name + r'\s*\(', text)) or \
+               len(_re.findall(r'HQ\.' + name + r'\b\s*$', text, _re.M))
+    base = count('unsentHandoff')
+    out = {}
+    for g in ('unsentBlocks', 'fabricatedRelay'):
+        out[g] = (count(g), base)
+    return out
+
+
 def main():
     print('reply hygiene — no protocol markers on user surfaces')
     if not shutil.which('node'):
@@ -525,6 +552,11 @@ def main():
     check('the request-class guards all still exist',
           {'DM_TO', 'HANDOFF_TO', 'HIRE_AGENT', 'HIRE_ASSISTANT',
            'REQUEST_ELEVATION', 'SPAWN_SUBAGENT'} <= guarded)
+
+    cover = check_guards_cover_every_path()
+    thin = [f'{g}: {n}/{b} paths' for g, (n, b) in cover.items() if n < b]
+    check('every buffer-and-roster guard runs in every reply path',
+          not thin, ', '.join(thin))
 
     raw = check_raw_buffer_shown()
     check('no reply path shows the RAW buffer — cleanHarmony(buf) without visibleReply',
