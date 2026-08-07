@@ -1842,7 +1842,21 @@ body.night .rail-toggle { background: var(--paper); color: var(--ink); }
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--brand-coffee);
+  /* Yield before the pinned cluster does. `.status-pinned` is flex:0 0 auto,
+     which only reserves its width if its SIBLINGS can give ground — and a
+     flex item defaults to min-width:auto, so the crumbs refused to shrink
+     below their content and pushed the cluster off the right edge instead.
+     Measured at 800px with the alarm and STOP ALL both showing: the
+     notification bell landed at 786–814 against a 800px viewport, i.e. off
+     screen, with the bar's overflow-x visible so there was no scrolling to
+     it either. Exactly the case the pinned cluster exists for — things are
+     going wrong, and the count of what needs attention is what vanishes.
+     A truncated breadcrumb costs nothing; a lost alarm costs everything. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
+.topbar .crumbs > * { overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── EcosystemNav (Cafreso wordmark + Apps dropdown) ─────────────── */
 .ecosystem-nav {
@@ -7739,6 +7753,18 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     display: flex; align-items: center;
   }
   .topbar-activity > * { transform: scale(0.85); transform-origin: center right; }
+  /* …but "survives layout changes" cuts both ways: taken out of flow, the
+     bell is invisible to everything still IN flow, so the pinned chips slide
+     straight under it. Measured at 700px with agents running: ■ STOP ALL
+     occupied 572–690 against the bell's 538–582 — a 10px overlap, and the
+     bell's z-index 146 puts it ON TOP of the abort button's left edge. The
+     one control you reach for when something is wrong, partly covered by the
+     badge telling you something is wrong.
+
+     Reserve the bell's footprint so flow content stops short of it:
+       118px (its right offset) + 44px (its own width) − 10px (topbar padding,
+       already inside .status-pinned's right edge) = 152px. */
+  .topbar .status-pinned { padding-right: 152px; }
 
   /* Topbar: collapse the dense status row, keep the title compact */
   .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
