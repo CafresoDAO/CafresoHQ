@@ -845,7 +845,7 @@ function AccountTab({ usageTokens = 0 }) {
       when: new Date().toISOString(),
       apiBase: apiBase || '(same origin)',
       health: health || 'unreachable',
-      usageTokensThisSession: usageTokens,
+      usageTokensSinceHire: usageTokens,   // NOT per-session — see the label above
       ua: navigator.userAgent,
       url: location.href.split('?')[0],
     };
@@ -889,7 +889,19 @@ function AccountTab({ usageTokens = 0 }) {
           <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'Gemma (Cafreso)'}</span>
         </div>
         <div className="row-knob">
-          <div><div className="lbl">Usage this session</div><div className="sub">tokens your crew has spent since this tab loaded</div></div>
+          {/* Third place this false span has been found today, after the
+              roster card and the Situation Wall. `usageTokens` is
+              app.jsx's `totalTokens` — ceoTokens plus the sum of every
+              coworker's `tokens`, all of which live in the file-backed
+              roster record and survive a reload byte for byte. It was
+              labelled "this session", and the sub-line narrowed the lie
+              further to "since this tab loaded".
+
+              "tokens" stays: Settings is the config surface where naming
+              the real unit is the point, the same reasoning that leaves
+              raw model IDs visible here and banned on the floor. Only the
+              SPAN was wrong, and it was wrong in both lines. */}
+          <div><div className="lbl">Usage so far</div><div className="sub">tokens your crew has spent since you hired them</div></div>
           <span className="tiny">{fmtTokens(usageTokens || 0)} tokens</span>
         </div>
       </div>
