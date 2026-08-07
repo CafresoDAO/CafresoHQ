@@ -670,6 +670,32 @@ throughout. And **never read back state your own run just wrote through an
 async setter**; carry it in a run-scoped local (`markedAwaiting`,
 `dmDelivered`) where the value cannot be stale by construction.
 
+**Nothing you do synchronously after a `setState` can see its result — in
+either direction.** Two bugs on 2026-08-07, opposite faces of one mistake:
+
+- **Reading**: the `awaiting_reply` closer asked the registry for a state
+  its own run had just written. When the code happened to `await` something
+  first, React flushed and the read worked; when it did not, the read was
+  stale and the message stuck forever.
+- **Writing**: the Gazette's REPLAY called `onGoToOffice()` and then
+  dispatched an event the office's listener was supposed to catch. The
+  office had not mounted, the band never appeared, and the first
+  re-enactment event of every replay was swallowed too.
+
+The cures differ but the question is the same — *what has actually
+rendered by now?* For reads, carry the value in a run-scoped local where it
+cannot be stale by construction. For writes into something a state update
+is supposed to mount, wait one beat (`MOUNT_MS`) before dispatching.
+
+**Measure what defeated the precondition, do not guess at it.** The Gazette
+would not re-fire for two attempts and I put it down to the
+mirror-versus-store trap already recorded above. It was not that: the live
+page's 60-second heartbeat overwrote `lastSeen` **within 2.5 seconds** of
+the write — measured by writing the key, waiting, and reading it back. The
+working procedure is to write the key and navigate in the SAME tick, which
+leaves no window for the beat. A wrong diagnosis that names a real
+documented trap is the hardest kind to notice, because it sounds correct.
+
 **A synthetic message that looks like a user message will be read as one.**
 `onDelegate` posts `(delegated "…" to Nova)` into chat as `from: 'user'`,
 and separately picks "the last user message" as the brief. So each
