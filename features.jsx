@@ -878,9 +878,12 @@ function MorningReportModal({ report, onClose }) {
             The one screen whose whole job is "what did my business produce
             while I was away" reported that it produced nothing.
 
-            Deliveries are `action: 'artifact'` — the same events the
-            Situation Wall's 📦 counter uses, and they are only logged when
-            `fileDelivery` really returned a path. The anchored sub-line
+            Deliveries are `action: 'artifact'`, logged only when
+            `fileDelivery` really returned a path. (This comment used to
+            claim the Situation Wall's 📦 counter reads the same events. It
+            does not — it counts tasks carrying an `artifactPath`. Two
+            different sources over two different windows, so the numbers
+            are not expected to agree.) The anchored sub-line
             stays on receipts, because that one genuinely is about
             receipts. */}
         <div className="cb-panel" style={{ flex: 1, minWidth: 120 }}>

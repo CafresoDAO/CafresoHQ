@@ -1104,7 +1104,13 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
                 still a claim about the wrong thing. The Vault view is the
                 inventory; this row is the scoreboard. */}
             {filedCount > 0 && (
-              <div className="sw-row" title={`${filedCount} deliver${filedCount === 1 ? 'y' : 'ies'} your team filed · open the Vault to browse the cabinet itself`}>
+              /* Counts TASKS that produced a filing, so deleting a finished
+                 card takes one off — while the file itself stays in the
+                 cabinet. The old wording ("N deliveries your team filed")
+                 claimed a history this number does not keep, and pointed
+                 straight at the Vault, where the boss would have counted
+                 more. Say what it measures. */
+              <div className="sw-row" title={`${filedCount} finished task${filedCount === 1 ? '' : 's'} filed a delivery · the Vault holds the files themselves`}>
                 📦 {filedCount}
               </div>
             )}

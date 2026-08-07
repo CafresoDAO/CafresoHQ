@@ -2950,7 +2950,7 @@ ${d.text}` : d.text,
     if (!t) return;
     // Guard against losing real output: archived stand-ups / agent results
     // are valuable and shouldn't disappear from a stray click.
-    if (t.result && !window.confirm(`Delete "${t.title}"? This task has agent output that will be lost.`)) return;
+    if (t.result && !window.confirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`)) return;
     setTasks(prev => prev.filter(x => x.id !== id));
     say(`Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };

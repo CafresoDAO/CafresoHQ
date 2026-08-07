@@ -130,6 +130,14 @@ JSX_BETWEEN_RE = re.compile(r'\}([^\n<>{}=;\'"`()\[\]]{2,120}?)\{')
 def _reads_like_copy(t):
     return bool(re.search(r'[A-Za-z]', t)) and (' ' in t.strip() or '·' in t)
 
+
+# The fourth way copy reaches a person, and the loudest: a blocking dialog.
+# These are not props and not JSX text, so every pattern above walked past
+# them — which is how "/who-can" shipped with the label "find the right
+# coworker for a job" sitting one line above a prompt reading "Find agents
+# who can do…". Same command, two vocabularies.
+DIALOG_RE = re.compile(r'window\.(?:confirm|alert|prompt)\s*\(\s*(' + _STR + r')', re.S)
+
 # SPAWN_SUBAGENT, HIRE_AGENT, MEMORY_LIST… — the wire protocol. Stripped
 # before matching so the tokens can never trip this test.
 TOKEN_RE = re.compile(r'\b[A-Z][A-Z0-9_]{3,}\b')
@@ -162,6 +170,7 @@ def main():
             spots += [(m.start(1), m.group(1)) for m in JSX_TEXT_RE.finditer(body)]
             spots += [(m.start(1), m.group(1)) for m in JSX_BETWEEN_RE.finditer(body)
                       if _reads_like_copy(m.group(1))]
+            spots += [(m.start(1), m.group(1)) for m in DIALOG_RE.finditer(body)]
             for start, raw in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)

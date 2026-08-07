@@ -183,7 +183,7 @@ function AppGlobalCommands({
     { id: 'comms.who-can', label: '/who-can — find the right coworker for a job',
       section: 'Comms', icon: '🔎',
       run: () => {
-        const q = window.prompt('Find agents who can do…\n(e.g. "code review", "docs", "deployment")', '');
+        const q = window.prompt('Find coworkers who can do…\n(e.g. "code review", "docs", "deployment")', '');
         if (!q || !q.trim()) return;
         const hits = whoCan(agents, q);
         const toast = window.cafresohqToast;
