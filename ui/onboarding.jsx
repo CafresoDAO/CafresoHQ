@@ -302,7 +302,11 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
   }, [allDone]);
 
   const card = {
-    position: 'fixed', left: 14, bottom: 14, zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
+    /* No `left` here on purpose — .gs-coach in styles.css owns it, so the
+       offset stays next to the grid-template-columns it has to clear. See
+       the note there: at left:14 this sat squarely on the rail's SETTINGS
+       button. */
+    position: 'fixed', bottom: 14, zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
     background: 'rgba(24,20,14,0.95)', backdropFilter: 'blur(8px)',
     border: '1px solid rgba(245,210,93,0.28)', borderRadius: 12, padding: '12px 13px',
     color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', boxShadow: '0 14px 44px rgba(0,0,0,0.42)',
@@ -310,11 +314,12 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
   if (collapsed) {
     return React.createElement('button', {
       onClick: () => setCollapsed(false),
-      style: { position: 'fixed', left: 14, bottom: 14, zIndex: 40, cursor: 'pointer', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 20, padding: '7px 12px', background: 'rgba(24,20,14,0.95)', color: '#F5D25D', font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' },
+      className: 'gs-coach',
+      style: { position: 'fixed', bottom: 14, zIndex: 40, cursor: 'pointer', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 20, padding: '7px 12px', background: 'rgba(24,20,14,0.95)', color: '#F5D25D', font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' },
       title: 'Getting started',
     }, '✦ Getting started · ' + doneCount + '/' + steps.length);
   }
-  return React.createElement('div', { style: card },
+  return React.createElement('div', { className: 'gs-coach', style: card },
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
       React.createElement('div', { style: { fontWeight: 700, color: '#F5D25D', flex: 1 } }, allDone ? "You're all set 🎉" : 'Getting started'),
       React.createElement('span', { style: { color: '#8f8676' } }, doneCount + '/' + steps.length),

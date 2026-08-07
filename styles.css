@@ -1779,6 +1779,21 @@ body.theme-coffeeshop .desk::after {
 
 /* ─── Collapsed rail ────────────────────────────────────────────── */
 .app.rail-collapsed { grid-template-columns: 56px minmax(0, 1fr); }
+
+/* ── Getting started coach ────────────────────────────────────────────────
+   It is position:fixed, so it sits outside the grid and knows nothing about
+   the rail. At its old inline `left: 14px` it landed squarely on the rail's
+   SETTINGS button: measured 100% covered, and elementFromPoint at the
+   button's centre returned the coach, so Settings was genuinely unclickable
+   — while the coach's own first step reads "Brain settings →". A coach that
+   blocks the door it is pointing at.
+
+   Both the rail and the coach are bottom-anchored, so they collide by
+   construction; the fix is to clear the rail's column entirely. These
+   offsets mirror the grid-template-columns above and must move with them. */
+.gs-coach { left: 246px; }                                  /* 232 rail + 14 */
+@media (max-width: 1100px) { .gs-coach { left: 214px; } }    /* 200 rail + 14 */
+.app.rail-collapsed .gs-coach { left: 70px; }                /*  56 rail + 14 */
 .rail.collapsed { padding: 16px 4px; gap: 6px; }
 .rail.collapsed .brand { padding: 6px 4px 8px; }
 .rail.collapsed nav a {
@@ -7859,6 +7874,9 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     text-overflow: ellipsis;
     max-width: 80px;
   }
+
+  /* No rail on mobile, so the coach takes the screen edge back. */
+  .gs-coach { left: 14px; }
 
   /* Topbar: hide token HUD and crumb on mobile — tab bar already shows view name */
   .token-hud { display: none; }
