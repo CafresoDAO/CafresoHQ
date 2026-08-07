@@ -171,14 +171,26 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
     return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchend', onEnd); };
   }, [active, setActive]);
 
+  /* Two VIEWS live here alongside the tools, because on a narrow viewport
+     they had no visible door at all. Measured at 718px: the whole nav rail
+     computes to zero size, the tab bar carries five bookmarks (Chat,
+     Office, Team, Vault, Projects), and this drawer held only tools — so
+     Calendar and Terminal were reachable exclusively by a horizontal swipe
+     on `.view-area`, a gesture with no affordance anywhere on screen.
+
+     Tasks was the one I expected to find stranded and it is fine: the
+     floor's task rail carries a visible "Board →". Checking that before
+     reporting it is what kept a real finding from becoming three. */
   const toolItems = [
     { icon: '📬', label: 'Inbox',    badge: inboxCount || 0,   action: onOpenInbox },
+    { icon: '🗓', label: 'Calendar', badge: 0,                  action: () => setActive('calendar') },
     { icon: '📁', label: 'Memory',   badge: 0,                  action: onOpenMemory },
     { icon: '🌅', label: 'Stand-up', badge: 0,                  action: onOpenStandup },
     { icon: '🔬', label: 'Research', badge: missionCount || 0,  action: onOpenResearch },
     { icon: '📋', label: 'Meeting',  badge: meetingCount || 0,  action: onOpenMeeting },
     { icon: '⚡', label: 'Workflow', badge: 0,                  action: onOpenWorkflow },
     { icon: night ? '☀' : '☾', label: night ? 'Day' : 'Night', badge: 0, action: onToggleNight },
+    { icon: '⌨', label: 'Terminal', badge: 0,                  action: () => setActive('terminal') },
     { icon: '⚙️', label: 'Settings', badge: 0,                  action: onOpenSettings },
   ];
 
