@@ -1253,6 +1253,25 @@ append-only).
 > attributed a pre-fix run's phantom visit to the current one. Scope a
 > measurement to the run you are actually testing.
 
+> ✅ **The wall reports the business now, not just the plumbing
+> (2026-08-06).** Stopped bug-hunting and read the Situation Wall as a boss
+> would. Four rows: **HQ** healthy · **SEARCH** reachable · **⚒ 3/4**
+> runtimes installed · **⚡ work done**. All true, all *infrastructure* —
+> a control room that says the lights are on and nothing about whether the
+> business produced anything.
+>
+> Added **📦 N** — deliverables filed to the cabinet. Counted from
+> `task.artifactPath`, which is set only when `fileDelivery` actually
+> returned a path, so the wall cannot claim a delivery that isn't on disk.
+> Hidden at zero rather than showing `📦 0`: a fresh office has shipped
+> nothing and saying so on the wall is noise, not news — the same rule the
+> attention pill and the payroll row already follow.
+>
+> This is the out-tray → cabinet loop (§3.6) made visible at a glance, which
+> is the north star's actual payoff: work comes in, work ships. Verified by
+> driving a real task end to end — the row appeared as `📦 1`, singular,
+> at the moment the file landed.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

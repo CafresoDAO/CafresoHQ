@@ -834,6 +834,8 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
     return () => { dead = true; };
   }, [walletServiceOn, isMobileOffice, plWallets]);
   const officeTokens = agents.reduce((s, a) => s + (a.tokens || 0), 0);
+  /* Deliveries that really reached the cabinet — see the wall row below. */
+  const filedCount = (tasks || []).filter(t => t && t.artifactPath).length;
   const busyCount = agents.filter(a => a.status === 'busy').length;
 
   /* ── Vault Room data — BANK prestige balance (read-only, feature-detected:
@@ -1058,6 +1060,23 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
             {wallCrew && wallCrew.total > 0 && (
               <div className="sw-row" title={`${wallCrew.installed}/${wallCrew.total} agent runtimes installed · ${busyCount} working now`}>
                 ⚒ {wallCrew.installed}/{wallCrew.total}{busyCount > 0 ? ` · ${busyCount} busy` : ''}
+              </div>
+            )}
+            {/* What the office has actually SHIPPED. The wall reported
+                infrastructure — search reachable, runtimes installed, work
+                done — and nothing about the business. A boss glancing at
+                their own control room could not see whether anything had
+                come out the other end.
+
+                Counted from `task.artifactPath`, which is set only when a
+                file really landed in the cabinet (fileDelivery returns the
+                path or null), so this cannot claim a delivery that isn't
+                on disk. Hidden at zero rather than showing `📦 0`: a fresh
+                office has shipped nothing, and saying so on the wall is
+                noise, not news. */}
+            {filedCount > 0 && (
+              <div className="sw-row" title={`${filedCount} deliverable${filedCount === 1 ? '' : 's'} filed to the cabinet`}>
+                📦 {filedCount}
               </div>
             )}
             {officeTokens > 0 && (
