@@ -1873,6 +1873,14 @@ ${d.text}` : d.text,
        Unknown names become system notes; self-DMs are skipped. Per-chain
        depth (dmDepth > 100) bounds ping-pong; consumeDmBudget caps fanout
        across all chains in a 60s rolling window. */
+    /* An opening DM_TO the parser never matched — the coworker tried to
+       hand off, the office delivered nothing, and without this the boss
+       reads a handoff that was never sent. Silent whenever anything WAS
+       delivered. */
+    {
+      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
+      if (miss && flush && flush.note) flush.note(miss);
+    }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
       if (!targetName) continue;
@@ -2577,6 +2585,14 @@ ${d.text}` : d.text,
       endAgentRun(a.id, controller);
     }
     setChat(prev => prev.map(m => m.id === agentId ? { ...m, streaming: false } : m));
+    /* An opening DM_TO the parser never matched — the coworker tried to
+       hand off, the office delivered nothing, and without this the boss
+       reads a handoff that was never sent. Silent whenever anything WAS
+       delivered. */
+    {
+      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
+      if (miss && flush && flush.note) flush.note(miss);
+    }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
@@ -2985,6 +3001,14 @@ ${d.text}` : d.text,
       endAgentRun(agent.id, controller);
     }
     setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, streaming: false } : m));
+    /* An opening DM_TO the parser never matched — the coworker tried to
+       hand off, the office delivered nothing, and without this the boss
+       reads a handoff that was never sent. Silent whenever anything WAS
+       delivered. */
+    {
+      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
+      if (miss && flush && flush.note) flush.note(miss);
+    }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== agent.id) {

@@ -352,6 +352,34 @@ function stripOrphanTags(text) {
   return String(text || '').replace(ORPHAN_TAG_RE, '');
 }
 
+/* ── A handoff that never left the building ───────────────────────────────
+   Caught driving the first real two-coworker run: Llama replied
+
+     • Blue is a primary color. [DM_TO: Mika] Can you provide your
+       perspective on this request?
+
+   written INLINE — no newline, no closing `[/DM_TO]`. The parser requires
+   the documented block form, so it never matched, was never dispatched, and
+   sat in the boss's chat as raw syntax. To the boss that reads as a handoff
+   that was sent. Nothing was.
+
+   The parser stays strict on purpose: a loose one would fire on prose that
+   merely mentions the marker. What was missing is that the office KNOWS —
+   it can see an opening DM_TO in the reply while its delivery queue came
+   back empty. Same shape as `placeholderRefusal`: an unactioned request
+   that says nothing invites a false belief.
+
+   Deliberately conservative. If ANYTHING was delivered this run we say
+   nothing, so a well-formed handoff alongside a malformed one is missed
+   rather than risking a false alarm on a run that really did delegate. */
+function unsentHandoff(text, deliveredCount) {
+  if (deliveredCount > 0) return null;
+  const m = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]/i.exec(String(text || ''));
+  if (!m) return null;
+  const who = String(m[1]).trim().slice(0, 40);
+  return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+}
+
 function visibleReply(text) {
   const raw = String(text || '');
   const cleaned = stripOrphanTags(stripAcks(raw)).replace(/\n{3,}/g, '\n\n').trim();
@@ -1907,7 +1935,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

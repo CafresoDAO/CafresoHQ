@@ -1465,13 +1465,26 @@ append-only).
 > that reads as sent and never happened.
 >
 > The parser is right to be strict — a loose one would fire on prose that
-> merely mentions the marker. The honest fix is to *notice*: the office
-> knows the DM queue was empty while the reply contains an opening `DM_TO`,
-> and could say so in one sentence, exactly as `placeholderRefusal` does for
-> a template argument. **Not shipped here**, because verifying it needs a
-> model to reproduce a malformed marker on demand, and coaxing specific
-> tokens out of a stochastic model has already proved unreliable twice in
-> this document. Next actionable item, with its cause already diagnosed.
+> merely mentions the marker. The fix is to *notice*: the office knows the DM
+> queue came back empty while the reply contains an opening `DM_TO`.
+>
+> ✅ **Shipped next pass (2026-08-07).** `unsentHandoff()` says one sentence —
+> *"the handoff to Mika didn't go out … Nothing was sent; ask them yourself
+> with @Mika"* — wired at all three agent paths. Same shape as
+> `placeholderRefusal`: an unactioned request that says nothing invites a
+> false belief.
+>
+> **Deliberately conservative:** if *anything* was delivered on that run it
+> stays silent, so a well-formed handoff alongside a malformed one is missed
+> rather than risking a false alarm on a run that really did delegate.
+>
+> Both directions verified live, which mattered: an ordinary reply produced
+> **no** warning, and a genuine unsent handoff produced one. In between, a
+> run that appeared to be a false negative turned out to be the conservatism
+> working — that reply said *"[Llama · Generalist] was DM'd for context
+> before this request"*, i.e. a handoff **had** been delivered, so the rule
+> correctly stayed quiet. **I had labelled it a bug before reading the
+> surrounding sentence.**
 
 > 🚨 **The manual hire form ignored what the office knew (2026-08-07).** Set
 > out to verify multi-agent — the north star is *"all your AIs work

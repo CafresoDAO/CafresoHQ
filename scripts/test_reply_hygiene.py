@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -133,6 +133,17 @@ R.phEmpty    = placeholderRefusal('MEMORY_LIST', '');
 R.phNull     = placeholderRefusal('MEMORY_LIST', null);
 R.phNested   = placeholderRefusal('SEARCH', '<<url>>');
 R.phSaysNotRun = /Nothing was looked up/.test(R.phUrl || '');
+// unsentHandoff — the exact reply from the first two-coworker run.
+const INLINE_DM = '• Blue is a primary color. [DM_TO: Mika] Can you provide your perspective?';
+R.uhInline    = unsentHandoff(INLINE_DM, 0);
+R.uhNamesWho  = /Mika/.test(R.uhInline || '');
+R.uhDelivered = unsentHandoff(INLINE_DM, 1);      // something went out → silent
+R.uhWellFormed = unsentHandoff('[DM_TO: Mika]\nplease help\n[/DM_TO]', 1);
+R.uhNoMarker  = unsentHandoff('Blue is a primary color.', 0);
+R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
+R.uhEmpty     = unsentHandoff('', 0);
+R.uhNull      = unsentHandoff(null, 0);
+R.uhLongName  = (unsentHandoff('[DM_TO: ' + 'x'.repeat(200) + ']', 0) || '').length < 260;
 // The protocol must not ask for anything it then deletes. Pin the property
 // rather than the wording: a result placed inside an ACK is unreachable.
 R.ackEatsResult = visibleReply('Here is what I found.\n\n[ACK: completed: • red • blue • yellow]');
@@ -188,6 +199,16 @@ def main():
     check('a null list is safe', out['vpNull'] == [])
     check('the result supports startsWith — the call that was crashing',
           out['vpStartsWith'] == 1)
+    check('an inline DM_TO that never dispatched is reported',
+          bool(out['uhInline']) and out['uhNamesWho'], repr(out['uhInline']))
+    check('…and it says plainly that nothing was sent',
+          'Nothing was sent' in (out['uhInline'] or ''), repr(out['uhInline']))
+    check('a run that DID deliver stays silent',
+          out['uhDelivered'] is None and out['uhWellFormed'] is None)
+    check('an ordinary reply is never flagged', out['uhNoMarker'] is None)
+    check('an own-line marker still counts as unsent', bool(out['uhOwnLine']))
+    check('empty and null are safe', out['uhEmpty'] is None and out['uhNull'] is None)
+    check('a runaway name cannot blow up the note', out['uhLongName'] is True)
     check('a result placed inside an ACK is NOT shown — the reason the '
           'instruction to put one there had to go',
           out['ackEatsResult'] == 'Here is what I found.', repr(out['ackEatsResult']))
