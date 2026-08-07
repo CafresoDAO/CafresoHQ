@@ -49,7 +49,20 @@ const NAV_ITEMS = [
   ['vault', 'Vault'],
   ['team', 'Team'],
   ['terminal', 'Terminal'],
-  ['projects', 'Workspace'],
+  /* One destination had two names. The mobile tab bar, the command
+     palette's own `nav.projects` entry, and the onboarding step all say
+     "Projects"; this rail and the palette's view-switch list said
+     "Workspace" — and `commands.jsx` managed both, for the same id, sixty
+     lines apart.
+
+     Worse, "Workspace" is ALSO one of the two layout modes INSIDE this
+     view ("Workspace | Classic"), so a desktop boss clicked Workspace and
+     landed somewhere offering to switch them to Workspace.
+
+     Settled on Projects: it matches the majority of surfaces, it is what
+     the onboarding tells a new boss they are making, and it frees
+     "Workspace" to mean the one thing it already names in there. */
+  ['projects', 'Projects'],
 ];
 
 /* ─────────────────────────────────────────────────────────────────────

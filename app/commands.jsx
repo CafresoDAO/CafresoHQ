@@ -63,7 +63,10 @@ function AppGlobalCommands({
     /* Open a specific app as a window (desktop mode). */
     ...(onOpenWindow ? [
       ['tasks','Tasks'],['memory','Memory'],['team','Team'],['calendar','Calendar'],
-      ['vault','Vault'],['projects','Workspace'],['terminal','Terminal'],
+      /* 'Projects', matching nav.projects thirty lines above — this file
+         had both names for the same id. See NAV_ITEMS for why Projects
+         won. */
+      ['vault','Vault'],['projects','Projects'],['terminal','Terminal'],
     ].map(([v, lbl]) => ({
       id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
       run: () => onOpenWindow(v),

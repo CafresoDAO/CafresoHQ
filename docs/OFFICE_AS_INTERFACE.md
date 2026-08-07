@@ -957,6 +957,18 @@ should extend that boundary, not blur it.
   the role titles beside it are deliberate product naming, so which register
   the hiring screen speaks in is a product call, not a defect to patch.
 
+- **"Workspace" still means two things, down from three.** The nav label
+  for the `projects` view was renamed to **Projects** on 2026-08-07 — the
+  mobile tab bar, the command palette's own `nav.projects` entry and the
+  onboarding step all already said Projects, and `commands.jsx` carried
+  both names for the same id sixty lines apart. Two uses remain and they
+  are unrelated: the **layout mode** inside that view (`Workspace |
+  Classic`), and **saved UI layouts** (`savedWorkspaces`, which toasts
+  `Workspace: <name>`). Renaming a whole feature is a product call, so it
+  is flagged, not patched. The collision that mattered is gone: a boss no
+  longer clicks "Workspace" and lands somewhere offering to switch them to
+  Workspace.
+
 - **Candidate cards show `4 TOOLS`, a bare count.** The roster card's
   equivalent was renamed to **Can use** on 2026-08-07, because "Tools used"
   read as a past-tense record of work when it is a permission list. The
