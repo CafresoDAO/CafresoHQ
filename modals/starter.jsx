@@ -1,3 +1,4 @@
+import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
@@ -19,7 +20,11 @@ const STARTER_TASKS = [
     key: 'brief',
     icon: '🔎',
     name: 'Research brief',
-    outcome: 'A short, sourced brief you can act on.',
+    /* The only outcome line that is a function: "sourced" is a capability
+       claim, and the other two cards promise things any brain can do. */
+    outcome: (caps) => (caps && caps.canSearch)
+      ? 'A short, sourced brief you can act on.'
+      : 'A short brief you can act on, from what they already know.',
     ask: 'What should they look into?',
     placeholder: 'how small teams price a new product',
     title: (s) => `Research brief: ${s}`,
@@ -91,6 +96,37 @@ function canFileToVault(agent) {
   return !!(agent && (agent.tools || []).includes('vault'));
 }
 
+/* Same honesty rule as canFileToVault, applied to the OUTCOME LINE rather
+   than the brief. `build` already adapts what it asks for — "if you
+   searched, name the source; if it came from what you already know, say so
+   plainly" — and it says "Never invent a citation" outright. The card the
+   boss reads did not adapt: it promised "A short, sourced brief" on any
+   machine.
+
+   Measured on the first-run path with no search key: the delivered brief
+   cited "a study by the University of California, Davis" with a fabricated
+   department reference. The model ignoring an instruction is the documented
+   thing the office cannot catch — but the office CAN stop promising the
+   part it has no way to deliver, and that promise is what made the invented
+   citation look like the feature working.
+
+   Two conditions, because there are two ways to not have search. The
+   office-level one covers the task board, where no coworker is assigned yet
+   and the honest answer to "who will source this" is nobody-known-yet.
+   Unknowable → do NOT promise: the mirror of officeHasBrain's
+   unknowable → do not alarm. Both say don't assert what you can't stand
+   behind. */
+function officeCanSearch() {
+  try {
+    const s = CafresoHQClient.getSettings();
+    return !!(s && s.braveEnabled && s.braveKey);
+  } catch (_e) { return false; }
+}
+function canSearchFor(agent) {
+  if (!officeCanSearch()) return false;
+  return agent ? (agent.tools || []).includes('web') : true;
+}
+
 /* Build the real task object a starter card produces. Exported so the task
    board's empty state and the first-run sheet mint identical tasks. */
 function buildStarterTask(starter, subject, agent) {
@@ -114,7 +150,7 @@ function buildStarterTask(starter, subject, agent) {
    submitting calls onPick(starter, subject). The host decides what happens
    next — the sheet dispatches to the new hire, the board files it to the
    inbox for the user to drag. */
-function StarterCards({ onPick, who = '', compact = false }) {
+function StarterCards({ onPick, who = '', compact = false, canSearch = false }) {
   const [picked, setPicked] = useStateS(null);
   const [subject, setSubject] = useStateS('');
   const inputRef = useRefS(null);
@@ -143,7 +179,9 @@ function StarterCards({ onPick, who = '', compact = false }) {
           >
             <span className="starter-icon" aria-hidden="true">{s.icon}</span>
             <span className="starter-name">{s.name}</span>
-            <span className="starter-outcome">{s.outcome}</span>
+            <span className="starter-outcome">
+              {typeof s.outcome === 'function' ? s.outcome({ canSearch }) : s.outcome}
+            </span>
           </button>
         ))}
       </div>
@@ -204,7 +242,7 @@ function StarterTasksModal({ open, agent, onClose, onStart }) {
           floor — you can always ask for something else in chat.
         </div>
       </div>
-      <StarterCards who={who} onPick={(starter, subject) => {
+      <StarterCards who={who} canSearch={canSearchFor(agent)} onPick={(starter, subject) => {
         const task = buildStarterTask(starter, subject, agent);
         if (task) onStart(task, agent);
       }} />
@@ -212,4 +250,4 @@ function StarterTasksModal({ open, agent, onClose, onStart }) {
   );
 }
 
-export { STARTER_TASKS, StarterCards, StarterTasksModal, buildStarterTask };
+export { STARTER_TASKS, StarterCards, StarterTasksModal, buildStarterTask, canSearchFor };

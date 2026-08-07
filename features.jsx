@@ -237,7 +237,11 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                        tasks. An empty column is not a new office. */
                     ? <div className="tb-empty onboard">
                       No tasks yet — start from one of these:
-                      <StarterCards compact onPick={(starter, subject) => {
+                      {/* No assignee yet, so canSearch asks only the
+                          office-level question: is search wired at all. If
+                          it isn't, no coworker this card lands on could
+                          source anything. */}
+                      <StarterCards compact canSearch={CafresoHQModals.canSearchFor(null)} onPick={(starter, subject) => {
                         const t = buildStarterTask(starter, subject, null);
                         if (t) onAdd(t);
                       }} />
