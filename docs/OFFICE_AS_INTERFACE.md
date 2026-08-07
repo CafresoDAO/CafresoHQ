@@ -446,6 +446,18 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+*A function can be right and unused.* The reply-hygiene suite was green
+through the whole of the worst bug this session: `visibleReply` was correct,
+and its output never reached the chat bubble on two of three dispatch paths.
+The cleaned text went to the desk monitor, the activity detail, the journal
+and the approval scan — every record except the one a person reads. Unit
+tests prove a transform; they say nothing about whether the transform is
+wired to the screen. The only thing that found it was sending a real message
+to a real model and reading the bubble. When a rule is green and the screen
+is wrong, suspect delivery before logic — and note that the same run also
+exposed a queued `requestAnimationFrame` repainting raw text one frame after
+the fix, so "the code is in the bundle" is not evidence either.
+
 *`innerText` is not the layout.* Text extraction flattens the DOM and drops
 inter-element whitespace, so it invents defects that are not on screen. Three
 near-misses in one session: a bare `·` under each coworker that reads as a
