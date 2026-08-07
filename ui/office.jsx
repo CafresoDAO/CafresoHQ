@@ -1032,7 +1032,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               /* §6 names the floor explicitly: never "tokens" here. Same
                  number, office words — and no invented unit ("words" would
                  overstate it), just what the figure means. */
-              <div className="sw-row" title={`Work done across the office this session — about $${(officeTokens*0.0000015).toFixed(2)} in payroll`}>
+              <div className="sw-row" title="Work done across the office this session. Payroll is per coworker — a single total across brains that bill differently (or not at all) isn't a real number.">
                 <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
               </div>
             )}

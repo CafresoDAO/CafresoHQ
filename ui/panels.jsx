@@ -1,7 +1,7 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
-import { brainName, poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
+import { brainName, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
 function ElevatedToolkit() {
@@ -129,7 +129,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         <div className="stat"><span className="lbl">Work done</span>
           <span title="How much reading and writing this coworker has done this session">{agent.tokens?.toLocaleString() || '0'}</span></div>
         <div className="stat"><span className="lbl">Payroll</span>
-          <span title="Estimated spend on this coworker this session">${((agent.tokens||0)*0.0000015).toFixed(4)}</span></div>
+          <span title={payrollLabel(agent).title}>{payrollLabel(agent).text}</span></div>
         {/* The cast (§2): four bars, no more — honest class judgements,
             not benchmark cosplay. Cost reads as value (4 = costs nothing). */}
         <div className="stat-bars">
@@ -214,11 +214,15 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
 function TokenHUD({ tokens, budget=1000000, className='' }) {
   const pct = Math.min(100, (tokens/budget)*100);
   return (
-    <div className={`token-hud${className ? ' '+className : ''}`} title={`Work done across the office this session · about $${(tokens*0.0000015).toFixed(2)} in payroll`}>
+    /* The dollar figure is gone, and deliberately. It multiplied every
+       coworker's tokens by one hardcoded rate, so an office running a free
+       local model and a flat-rate CLI hire was shown a bill for money
+       nobody was spending. A total across brains that charge differently —
+       or not at all — is not a number that exists; the work done is. */
+    <div className={`token-hud${className ? ' '+className : ''}`} title="Work done across the office this session. Payroll is per coworker — see their cards.">
       <span>⛽</span>
       <span>{(tokens/1000).toFixed(1)}K</span>
       <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>
-      <span>${(tokens*0.0000015).toFixed(2)}</span>
     </div>
   );
 }

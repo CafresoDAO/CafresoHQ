@@ -113,6 +113,21 @@ R.mlTwo    = memoryLabel({ name: 'Llama' }, PATHS);
 R.mlOne    = memoryLabel({ name: 'Llamabot' }, PATHS);
 R.mlZero   = memoryLabel({ name: 'Nobody' }, PATHS);
 R.mlUnread = memoryLabel({ name: 'Llama' }, null);
+// ── payroll: three honest answers, no invented fourth ───────────────────
+R.payLocalOllama = payrollLabel({ model: 'ollama:llama3.1' }).text;
+R.payLocalLm     = payrollLabel({ model: 'lmstudio:qwen' }).text;
+R.payClaudeCode  = payrollLabel({ model: 'claudecode:sonnet' }).text;
+R.payCodex       = payrollLabel({ model: 'codex:gpt-5' }).text;
+R.payHouse       = payrollLabel({ model: 'cafresohq:default' }).text;
+R.payMetered     = payrollLabel({ model: 'openrouter:google/gemma-3-27b-it' }).text;
+R.payAnthropic   = payrollLabel({ model: 'anthropic:claude-sonnet-5' }).text;
+R.payNoBrain     = payrollLabel({}).text;
+R.payNoBrainTitle= payrollLabel({}).title;
+R.payAllTitles   = ['ollama:x','claudecode:x','openrouter:x',''].map(m => payrollLabel({model:m}).title).join(' | ');
+// A local brain must never be described as costing money.
+R.payLocalTitle  = payrollLabel({ model: 'ollama:llama3.1' }).title;
+// Case shouldn't matter — prefixes are written by config, not by us.
+R.payUpper       = payrollLabel({ model: 'Ollama:Llama3.1' }).text;
 console.log(JSON.stringify(R));
 ''')
 
@@ -181,6 +196,25 @@ console.log(JSON.stringify(R));
     check('nothing saved reads as 0 notes', out['mlZero'] == '0 notes')
     check('an UNREADABLE cabinet reads as nothing at all, not "0 notes"',
           out['mlUnread'] is None, str(out['mlUnread']))
+
+    # payroll
+    check('a local brain is in-house, not a dollar figure',
+          out['payLocalOllama'] == 'in-house' and out['payLocalLm'] == 'in-house',
+          str(out['payLocalOllama']))
+    check('…and its tooltip never implies a charge',
+          'no per-word charge' in out['payLocalTitle'], out['payLocalTitle'])
+    check('a CLI/subscription hire is on your plan',
+          out['payClaudeCode'] == 'on your plan' and out['payCodex'] == 'on your plan')
+    check('the house brain is on your plan too', out['payHouse'] == 'on your plan')
+    check('a metered brain shows no invented number',
+          out['payMetered'] == '—' and out['payAnthropic'] == '—')
+    check('no brain assigned bills nothing', out['payNoBrain'] == '—')
+    check('the no-brain tooltip says WHY, not just a dash',
+          'nothing to bill' in out['payNoBrainTitle'], out['payNoBrainTitle'])
+    check('no payroll tooltip anywhere invents a rate',
+          '0.0000015' not in out['payAllTitles'] and '$' not in out['payAllTitles'],
+          out['payAllTitles'])
+    check('the prefix match is case-insensitive', out['payUpper'] == 'in-house')
 
     print()
     if FAILS:

@@ -2,7 +2,7 @@ import { CafresoHQV2 } from '../features.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
-import { brainName, memoryLabel, memoryNotes } from '../app/cast.jsx';
+import { brainName, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
@@ -520,7 +520,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
       <div style={{display: 'flex', flex: 1, minHeight: 0, gap: 0}}>
         <div className="team-grid" style={{flex: 1, minWidth: 0, overflowY: 'auto', alignContent: 'start'}}>
           {agents.map(a => {
-            const cost = ((a.tokens||0) * 0.0000015).toFixed(4);
+            const pay = payrollLabel(a);
             // Experience (§5): jobs from the ledger, not a.tasksDone — that
             // legacy counter also counted chat replies, which aren't jobs.
             const xp = xpStats(experience, a.id);
@@ -548,7 +548,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                       stays in the tooltip so debugging doesn't lose it. */}
                   <div><span className="lbl">Brain</span><span className="val" title={a.model || 'no brain assigned'}>{brainName(a)}</span></div>
                   <div><span className="lbl">Work done</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
-                  <div><span className="lbl">Payroll</span><span className="val">${cost}</span></div>
+                  <div><span className="lbl">Payroll</span><span className="val" title={pay.title}>{pay.text}</span></div>
                   <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
                   {/* Their notebook. Hidden entirely when the cabinet is
                       unreadable — see the comment on vaultPaths. */}

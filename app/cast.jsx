@@ -131,4 +131,43 @@ function memoryLabel(agent, paths) {
   return n === 1 ? '1 note' : `${n} notes`;
 }
 
-export { brainName, CAST_CLASSES, CAST_DEFAULT, memoryLabel, memoryNotes, memoryRoot, poweredBy, specialtyTag, statBars };
+
+/* ── Payroll (§6: "Payroll shows real numbers") ───────────────────────────
+   It didn't. FIVE surfaces multiplied the agent's token count by one
+   hardcoded rate — 0.0000015 — regardless of which brain it ran on. On the
+   live floor that produced **$0.0533 of payroll for a local Ollama that
+   costs nothing at all**, and a dollar figure for a Claude Code hire whose
+   billing is a flat monthly subscription with no per-word component.
+
+   The rate is also wrong even where the shape is right: models this office
+   routes to differ by roughly two orders of magnitude per token, so one
+   constant is not an estimate, it is a number with a currency symbol.
+
+   Three honest answers, and no invented fourth:
+
+     local        — runs on the boss's own hardware; the marginal cost is
+                    zero, and that IS a real number.
+     subscription — a CLI hire billed by a flat plan; per-job payroll is
+                    not a thing that exists, so we say so.
+     metered      — genuinely costs per word, and we do not carry a rate
+                    table. `—` with a tooltip beats a confident wrong
+                    figure; the token count next to it is still true.
+
+   Deliberately keyed on the ROUTING PREFIX, which is how the agent's brain
+   is actually dispatched, not on the display name. */
+const PAYROLL_LOCAL = /^(ollama|lmstudio):/i;
+const PAYROLL_PLAN  = /^(claudecode|codex|cafresohq|hermes):/i;
+
+function payrollLabel(agent) {
+  const model = String((agent && agent.model) || '');
+  if (!model) return { text: '—', title: 'No brain assigned yet, so nothing to bill.' };
+  if (PAYROLL_LOCAL.test(model)) {
+    return { text: 'in-house', title: 'Runs on your own hardware — no per-word charge.' };
+  }
+  if (PAYROLL_PLAN.test(model)) {
+    return { text: 'on your plan', title: 'Covered by a subscription, not billed per word.' };
+  }
+  return { text: '—', title: 'Billed per word by the provider. No rate is configured here, and a made-up one would be worse than none — see the work-done count beside this.' };
+}
+
+export { brainName, CAST_CLASSES, CAST_DEFAULT, memoryLabel, memoryNotes, memoryRoot, payrollLabel, poweredBy, specialtyTag, statBars };

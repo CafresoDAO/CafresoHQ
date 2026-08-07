@@ -821,7 +821,9 @@ append-only).
 > brain the coworker isn't running; no model at all reads "not set yet"
 > rather than inventing a default. Renaming Cost → Payroll also un-collides
 > it with the Cost *stat-bar*, which means the opposite thing (value, not
-> spend). And the card's `☕ REFRESH CTX` button — jargon, and it zeroed the
+> spend) — though see **pass five**, which retracts this note's implicit
+> claim that Payroll was showing real numbers. And the card's
+> `☕ REFRESH CTX` button — jargon, and it zeroed the
 > counter while leaving an in-flight run streaming — is now `☕ COFFEE
 > BREAK` on the floor's own `onCoffee` handler: one gesture, one behaviour.
 >
@@ -931,6 +933,42 @@ append-only).
 > office's own account is structurally separate, its failures are legible.**
 > `vaultPaths()` now normalises both shapes; pinned in
 > `scripts/test_reply_hygiene.py`.
+
+> ✅ **Pass five — Payroll was not a real number (2026-08-06).** §6's own
+> note above said "Payroll shows real numbers; the bar is a vibe." It
+> didn't. **Five** surfaces multiplied an agent's token count by one
+> hardcoded rate — `0.0000015` — regardless of which brain ran the work.
+> On the live floor that meant:
+>
+> | coworker | brain | showed | truth |
+> |---|---|---|---|
+> | Llama | local Ollama | **$0.0533** | costs nothing at all |
+> | Claude | Claude Code | **$0.0011** | flat monthly plan, no per-word component |
+> | — | office FUEL row | "about $X in payroll" | a total across brains that bill differently, or not at all |
+>
+> The rate is wrong even where the *shape* is right: the models this office
+> routes to differ by roughly two orders of magnitude per token, so one
+> constant isn't an estimate — it's a number with a currency symbol on it.
+> This is the boss's money, on the surface §6 renamed specifically to be
+> honest about money.
+>
+> `payrollLabel()` gives three answers and refuses to invent a fourth,
+> keyed on the **routing prefix** (how the brain is actually dispatched),
+> not the display name:
+>
+> - **local** (`ollama:` · `lmstudio:`) → `in-house` — "runs on your own
+>   hardware, no per-word charge". Zero *is* a real number.
+> - **subscription** (`claudecode:` · `codex:` · the house brain) → `on
+>   your plan` — per-job payroll isn't a thing that exists for these.
+> - **metered** (everything else) → `—`, with a tooltip saying it's billed
+>   per word and no rate is configured. A dash plus the true work-done
+>   count beats a confident wrong figure.
+>
+> The two office-wide dollar totals are gone rather than repaired: a single
+> payroll number spanning free, flat-rate and metered coworkers is not a
+> quantity that exists. The FUEL bar still shows work done, which is true.
+> 10 checks in `scripts/test_cast.py`, including that no payroll tooltip
+> anywhere contains a `$`.
 
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
