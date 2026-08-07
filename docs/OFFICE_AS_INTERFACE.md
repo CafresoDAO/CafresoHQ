@@ -503,6 +503,41 @@ no keys pasted in this path.
    > `[Customer Name]` placeholders survive. Covered by
    > `scripts/test_artifacts.py`.
    >
+   > **The transcript is not the deliverable** (found 2026-08-06, driving a
+   > real filing end to end for the first time). A task "Three primary
+   > colours" filed **8,833 bytes**. The coworker's actual answer was one
+   > sentence. The rest was the tool echo the runtime streams inline —
+   > `📡 BROWSER_FETCH("https://…")`, `URL:`, `Status: 200`, `Title:`, a
+   > rule, Wikipedia's page text, and `[…truncated, 79626 more chars]`.
+   > Every one of those is §6-banned jargon, in a file the boss *keeps*.
+   >
+   > The split is **watching vs. keeping**, and it is now a rule:
+   >
+   > - **The live screen shows the whole tool visit.** That is what watching
+   >   someone work looks like, and removing it would make the floor read as
+   >   idle while the coworker is mid-fetch — a §4 honesty failure.
+   > - **Every record the boss reads later is the memo**: the task card's
+   >   result, the coworker's `recent` line, the journal entry, the filed
+   >   note. `stripToolEcho` runs once, before `visibleReply`, and covers
+   >   all four.
+   > - **But deleting the working outright would launder the sources.** A
+   >   memo reporting Wikipedia's answer as the coworker's own is *less*
+   >   honest than the transcript was. So the visits come back as a
+   >   **Working** footer in office words — `- Read en.wikipedia.org/…`,
+   >   `- Looked up …`, `- Opened …` — naming what was consulted, never
+   >   which tool.
+   >
+   > Mechanically: the echo format is defined at the one site that owns it
+   > (`hq-runtime.jsx`) and travels **with the `done` event** as `ev.echo`,
+   > so filing removes it by literal string match. It is not re-derived by a
+   > regex downstream — a fetched page contains blank lines, so the block's
+   > end is genuinely ambiguous in the flat buffer, and a greedy pattern
+   > would eat the coworker's answer.
+   >
+   > **The office runs on the boss's clock.** The same filing was dated
+   > `2026-08-07` at 8pm on the 6th: `toISOString()` stamps UTC. Every other
+   > date on the floor is local, so `officeDate()` is too.
+   >
    > **The trust line is conditional, and that is the point.** "The cabinet
    > is encrypted — only you can open it" is true only when HQ is framed by
    > the shell that holds the user's identity and does the vetKeys work
@@ -651,6 +686,29 @@ append-only).
 > the specialty label only appears once earned (≥ 2 of a real task type —
 > generic jobs are never a "specialty"). Covered by
 > `scripts/test_experience.py` (32 checks).
+>
+> **`doing` is a claim, and only starting work may make it** (found
+> 2026-08-06). Two controls moved a task to `doing` before anything had
+> been started:
+>
+> - **→ CHAT** drafts the task into the composer and waits for Enter. It
+>   also flipped the task to `doing`. Measured: a task read `doing` while
+>   its message was still unsent text in a textarea, and an earlier task
+>   had been stuck that way all session with nobody working on it.
+> - **📋 ROOM** opens the new-meeting *modal* — which the boss can cancel —
+>   and flipped the task the same way.
+>
+> The tell: the → CHAT **toast copy had already been fixed** for exactly
+> this reason ("Sent" → "Drafted … press Enter to send"), and the line that
+> lied about the state was sitting two lines above it. Honest sentence,
+> dishonest state — the same shape as the `agent.task` bubble bug in §4.
+> **Fixing the copy is not fixing the claim.** When a §4/§5 honesty rule
+> catches a sentence, check what the surrounding code writes down.
+>
+> Both now move on the real event: → CHAT via the existing send path
+> (`onInferTaskAssignment`, keyed on the `_(from task …)_` footer), 📋 ROOM
+> via `cafresohq:taskMeetingStarted`, fired from the modal's `create()`
+> rather than its `open()`.
 
 ## 6. Jargon translation table (binding for all UI copy)
 

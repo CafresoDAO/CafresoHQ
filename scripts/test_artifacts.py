@@ -110,6 +110,39 @@ R.plainHome = buildDelivery({ title: 'T' }, { name: 'A' }, 'body').path;
 R.emptyBody = buildDelivery({ title: 'T' }, { name: 'A' }, '   ');
 R.markerOnly= buildDelivery({ title: 'T' }, { name: 'A' }, '[ACK: done]');
 R.headerHas = buildDelivery({ title: 'My Task' }, { name: 'Llama' }, 'body').content;
+// ── stripToolEcho ───────────────────────────────────────────────────────
+// The exact shape hq-runtime.jsx appends and hands back as ev.echo.
+const echo = (n, a, r) => `\n\n📡 ${n}("${a}") →\n${r}\n\n`;
+const fetched = echo('BROWSER_FETCH', 'https://en.wikipedia.org/wiki/Primary_color',
+  'URL: https://en.wikipedia.org/wiki/Primary_color\nStatus: 200\n\nPage body\n\nmore body\n[…truncated, 79626 more chars]');
+R.echoGone      = stripToolEcho(`I'll look it up.${fetched}Red, yellow and blue.`, [fetched]);
+R.echoMultiline = /Status: 200|truncated|📡/.test(R.echoGone);
+R.echoNoVisits  = stripToolEcho('just prose', []);
+R.echoNullSafe  = stripToolEcho('just prose', [null, undefined, '']);
+R.echoTwice     = stripToolEcho(`a${fetched}b${fetched}c`, [fetched]);
+R.echoUnmatched = stripToolEcho('prose only', [echo('X', 'y', 'z')]);
+R.echoRegexSafe = stripToolEcho('a\n\n📡 F("a.b(c)[d]*") →\nr\n\nb', ['\n\n📡 F("a.b(c)[d]*") →\nr\n\n']);
+// ── workingNotes ────────────────────────────────────────────────────────
+R.notesWeb   = workingNotes([{ name: 'BROWSER_FETCH', arg: 'https://example.com/x' }]);
+R.notesSearch= workingNotes([{ name: 'WEB_SEARCH', arg: 'primary colours' }]);
+R.notesVault = workingNotes([{ name: 'VAULT_READ', arg: 'Research/notes.md' }]);
+R.notesOther = workingNotes([{ name: 'WEIRD_TOOL', arg: 'thing' }]);
+R.notesDedup = workingNotes([{ name: 'BROWSER_FETCH', arg: 'https://a.com' },
+                             { name: 'BROWSER_FETCH', arg: 'https://a.com' }]);
+R.notesNoArg = workingNotes([{ name: 'BROWSER_FETCH', arg: '  ' }]);
+R.notesNone  = workingNotes([]);
+R.notesJargon= workingNotes([{ name: 'BROWSER_FETCH', arg: 'https://a.com' }]).join('\n');
+// ── buildDelivery with visits ───────────────────────────────────────────
+R.withWorking = buildDelivery({ title: 'T' }, { name: 'A' },
+  `Answer.${fetched}`, [{ name: 'BROWSER_FETCH', arg: 'https://a.com', echo: fetched }]).content;
+R.echoOnlyBody = buildDelivery({ title: 'T' }, { name: 'A' }, fetched,
+  [{ name: 'BROWSER_FETCH', arg: 'https://a.com', echo: fetched }]);
+R.noWorkingSection = buildDelivery({ title: 'T' }, { name: 'A' }, 'body').content;
+// ── officeDate ──────────────────────────────────────────────────────────
+// 8:05pm New York on Aug 6 is Aug 7 in UTC. The header must say Aug 6.
+R.dateLocal = officeDate(new Date(2026, 7, 6, 20, 5));
+R.dateUtcWouldSay = new Date(2026, 7, 6, 20, 5).toISOString().slice(0, 10);
+R.datePadded = officeDate(new Date(2026, 0, 3, 9, 0));
 console.log(JSON.stringify(R));
 ''')
 
@@ -157,6 +190,57 @@ console.log(JSON.stringify(R));
     check('marker-only body files nothing', out['markerOnly'] is None)
     check('markdown gets a title + attribution header',
           out['headerHas'].startswith('# My Task') and 'Delivered by Llama' in out['headerHas'])
+
+    # stripToolEcho — the transcript is not the deliverable
+    check('removes the whole tool echo, blank lines and all',
+          out['echoMultiline'] is False, repr(out['echoGone']))
+    check('keeps the prose either side of the echo',
+          out['echoGone'] == "I'll look it up.\n\nRed, yellow and blue.", repr(out['echoGone']))
+    check('no visits is a no-op', out['echoNoVisits'] == 'just prose')
+    check('null/empty echoes are skipped', out['echoNullSafe'] == 'just prose')
+    check('removes every occurrence of a repeated echo',
+          out['echoTwice'] == 'a\n\nb\n\nc', repr(out['echoTwice']))
+    check('an echo that is not present changes nothing',
+          out['echoUnmatched'] == 'prose only')
+    check('regex metacharacters in the echo are literal, not a pattern',
+          out['echoRegexSafe'] == 'a\n\nb', repr(out['echoRegexSafe']))
+
+    # workingNotes — provenance survives, in office words
+    check('a fetch reads a source', out['notesWeb'] == ['- Read example.com/x'],
+          repr(out['notesWeb']))
+    check('a search looks something up',
+          out['notesSearch'] == ['- Looked up primary colours'], repr(out['notesSearch']))
+    check('a vault visit opens a file',
+          out['notesVault'] == ['- Opened Research/notes.md'], repr(out['notesVault']))
+    check('an unknown tool still reads as an action',
+          out['notesOther'] == ['- Checked thing'], repr(out['notesOther']))
+    check('the same source twice is listed once', len(out['notesDedup']) == 1)
+    check('a visit with no argument is skipped', out['notesNone'] == [] and out['notesNoArg'] == [])
+    check('the footer never names the tool (§6)',
+          'BROWSER_FETCH' not in out['notesJargon'] and 'http' not in out['notesJargon'],
+          out['notesJargon'])
+
+    # buildDelivery — the memo, with its sources
+    check('a delivery with visits gets a Working footer',
+          '**Working**' in out['withWorking'] and '- Read a.com' in out['withWorking'],
+          out['withWorking'])
+    check('the filed note no longer carries the raw tool echo',
+          '📡' not in out['withWorking'] and 'Status: 200' not in out['withWorking'])
+    check('a body that was ONLY a tool echo files nothing',
+          out['echoOnlyBody'] is None, repr(out['echoOnlyBody']))
+    check('a delivery with no visits gets no empty Working section',
+          '**Working**' not in out['noWorkingSection'])
+
+    # officeDate — the office runs on the boss's clock
+    check('the header stamps the LOCAL date', out['dateLocal'] == '2026-08-06',
+          out['dateLocal'])
+    check('single-digit month/day are padded', out['datePadded'] == '2026-01-03',
+          out['datePadded'])
+    if out['dateUtcWouldSay'] != out['dateLocal']:
+        check('…where UTC would have said the wrong day',
+              out['dateUtcWouldSay'] == '2026-08-07', out['dateUtcWouldSay'])
+    else:
+        print('  ok    (machine is at/near UTC — no date skew to exercise here)')
 
     print()
     if FAILS:

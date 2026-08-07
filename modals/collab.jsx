@@ -149,6 +149,10 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
   const [name, setName] = useStateM('');
   const [topic, setTopic] = useStateM('');
   const [selectedIds, setSelectedIds] = useStateM([]);
+  /* The task this room was raised from, if any. Held until create() so the
+     task moves to `doing` when the room really opens — opening a modal the
+     boss can still cancel is not work starting. */
+  const [srcTaskId, setSrcTaskId] = useStateM(null);
   useEffectM(() => {
     if (open) {
       /* If something stashed a prefill on window (Tasks "📋 ROOM" button
@@ -159,9 +163,11 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
         setName(pre.name);
         setTopic(pre.topic || '');
         setSelectedIds(Array.isArray(pre.agentIds) ? pre.agentIds : []);
+        setSrcTaskId(pre.taskId || null);
         try { delete window._cafresohqMeetingPrefill; } catch (_) { window._cafresohqMeetingPrefill = null; }
         return;
       }
+      setSrcTaskId(null);
       const stamp = new Date();
       const hh = String(stamp.getHours()).padStart(2, '0');
       const mm = String(stamp.getMinutes()).padStart(2, '0');
@@ -184,6 +190,9 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
       createdAt: Date.now(),
     };
     setMeetings(prev => [...(prev || []), meeting]);
+    if (srcTaskId && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cafresohq:taskMeetingStarted', { detail: srcTaskId }));
+    }
     onClose && onClose();
     if (onOpenMeeting) onOpenMeeting(id);
   };

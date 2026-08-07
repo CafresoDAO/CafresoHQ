@@ -8,7 +8,7 @@ import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
-import { cabinetIsEncrypted, fileDelivery } from './app/artifacts.jsx';
+import { cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { floorEmit, snagCause, snagSentence } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
@@ -2267,6 +2267,10 @@ ${d.text}` : d.text,
      + pulseGraph after they're defined. Refs let it see latest agent and
      mission state without we re-mounting timers on every render. */
   const agentsRef = useRefA(agents);  agentsRef.current = agents;
+  /* When the external-approval poll last saw an ask. Drives its fast/idle
+     cadence — a ref, not state, because the poll effect mounts once and a
+     re-render on every tick is exactly the cost being avoided. */
+  const lastAskRef = useRefA(0);
   const missionsRef = useRefA(missions); missionsRef.current = missions;
   useMissionRunner(missions, setMissions, {
     setChat, appendJournal, onUpdateAgent, pulseGraph, recordXp,
@@ -2675,11 +2679,18 @@ ${d.text}` : d.text,
     /* Cross-component bridge — ChatPanel listens and prefills its
        composer, focuses, ready for the boss to hit Enter. */
     window.dispatchEvent(new CustomEvent('cafresohq:prefill-composer', { detail: text }));
-    if (task.status === 'inbox') onMoveTask(task.id, 'doing');
-    /* "Sent" was the wrong verb for the same reason the Tasks header was:
-       this drafts into the composer and waits for the boss to hit Enter.
-       Nothing has gone to a coworker yet, and saying it has invites the
-       boss to close the tab believing the work is away. */
+    /* The status does NOT move here — and that is the whole fix.
+       "Sent" was corrected to "Drafted" below for exactly this reason, but
+       the line that moved the task to `doing` was left sitting right above
+       it: honest sentence, dishonest state. Measured on the floor — a task
+       read `doing` while its message was still unsent text in a textarea,
+       and one earlier task had been stuck that way for the whole session.
+       `doing` is a claim that a coworker is working on it (§4/§5), and the
+       only thing that makes that true is pressing Enter.
+
+       Nothing is lost by dropping it: the send path already moves
+       inbox → doing once the message actually goes out, in
+       onInferTaskAssignment via the `_(from task …)_` footer below. */
     say(`Drafted "${task.title.slice(0, 30)}" in chat — press Enter to send`, 'TASK');
   };
 
@@ -2696,10 +2707,26 @@ ${d.text}` : d.text,
       name: task.title.slice(0, 60),
       topic: task.detail || task.title,
       agentIds: task.assignedTo ? [task.assignedTo] : [],
+      /* Carried so the task can move to `doing` when the room is really
+         created — see below. Same honesty fix as → CHAT: opening a modal
+         the boss can still cancel is not work starting. */
+      taskId: task.id,
     };
     setChatMeetingModalOpen(true);
-    if (task.status === 'inbox') onMoveTask(task.id, 'doing');
   };
+
+  /* The room actually opened. NOW the task is under way — MeetingRoomModal
+     fires this from its create(), not from its open(). */
+  useEffectA(() => {
+    const onRoom = (e) => {
+      const id = e && e.detail;
+      if (!id) return;
+      setTasks(prev => prev.map(t =>
+        (t.id === id && t.status === 'inbox') ? { ...t, status: 'doing' } : t));
+    };
+    window.addEventListener('cafresohq:taskMeetingStarted', onRoom);
+    return () => window.removeEventListener('cafresohq:taskMeetingStarted', onRoom);
+  }, []);
 
   /* Chat → task bridge. Turn any chat message (typically a request the
      boss wants to track) into a backlog task. Uses the message text as
@@ -2757,6 +2784,7 @@ ${d.text}` : d.text,
     let buf = '';
     let usedTokens = 0;
     const dmQueue = [];
+    const toolVisits = [];      // what they consulted, for the delivery footer
     const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     const recentChat = chat.slice(-6);
@@ -2776,6 +2804,7 @@ ${d.text}` : d.text,
             logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: `${ev.name.toLowerCase()}("${String(ev.arg).slice(0, 40)}")` });
             pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
+            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
             onUpdateAgent(agent.id, { task: 'reading results…' });
             pulseGraph(ev, agent);
             recordToolReceipt(agent, ev);
@@ -2790,8 +2819,18 @@ ${d.text}` : d.text,
          markers at all, so `[ACK: in_progress: …]` landed in the chat
          bubble and was stored as the task's `result` — the deliverable the
          boss opens was protocol scaffolding. Caught on a real successful
-         run against a local model. */
-      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf));
+         run against a local model.
+
+         stripToolEcho FIRST, for the same reason one layer down: the live
+         chat already streamed every tool visit past, which is what watching
+         someone work looks like. What gets KEPT is a different question —
+         the task card's result, the coworker's `recent` line, the journal
+         entry and the filed note are all records the boss reads later, and
+         a record that opens on `📡 BROWSER_FETCH("https://…")` is
+         scaffolding, not work. One strip here covers all four. It has to
+         run before visibleReply, whose \n{3,} collapse would edit the echo
+         out from under the exact-string match. */
+      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo))));
       screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
@@ -2812,7 +2851,7 @@ ${d.text}` : d.text,
          rethrows — the work is already done and recorded on the task either
          way, so a missing vault must not read as a failed task. */
       if (cleanBuf.trim()) {
-        const filedPath = await fileDelivery(task, agent, cleanBuf);
+        const filedPath = await fileDelivery(task, agent, cleanBuf, toolVisits);
         if (filedPath) {
           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
           logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
@@ -2963,6 +3002,7 @@ ${d.text}` : d.text,
         if (!r.ok) return;
         const { pending = [] } = await r.json();
         if (stopped) return;
+        if (pending.length) lastAskRef.current = Date.now();   // stay fast
         setApprovals(prev => {
           const haveIds = new Set(prev.filter(p => p.externalId).map(p => p.externalId));
           const liveIds = new Set(pending.map(p => p.id));
@@ -3012,9 +3052,47 @@ ${d.text}` : d.text,
         });
       } catch (_e) { /* server probably restarting; ignore */ }
     };
-    poll();
-    const t = setInterval(poll, 1500);
-    return () => { stopped = true; clearInterval(t); };
+
+    /* Cadence. This ran at a flat setInterval(1500) forever: 2,400 requests
+       an hour on an office the boss is meant to leave open all day, and it
+       kept polling a hidden tab that cannot show the tray anyway. Measured
+       on the live floor — the network log was ~95% this one endpoint.
+
+       setInterval is also wrong shape here: it fires on a clock regardless
+       of whether the previous fetch came back, so a slow server gets its
+       queue deepened by the client waiting on it. Self-rescheduling from
+       the END of each poll can't stack.
+
+       Two speeds, because the two cases are genuinely different:
+       - FAST while an ask is on screen or one landed in the last minute —
+         a blocked CLI agent is sitting there waiting for a yes, and that
+         has to feel instant.
+       - IDLE otherwise. The worst case is that a NEW ask takes up to 5s to
+         reach the tray, and the boss's other cue — the coworker walking to
+         the desk — is driven by the same poll, so nothing claims the ask
+         arrived earlier than it did. */
+    const FAST = 1500, IDLE = 5000, STAY_FAST_MS = 60000;
+    let timer = null;
+    const tick = async () => {
+      await poll();
+      if (stopped) return;
+      const busy = Date.now() - lastAskRef.current < STAY_FAST_MS;
+      timer = setTimeout(tick, busy ? FAST : IDLE);
+    };
+    const onVisible = () => {
+      if (stopped) return;
+      if (document.hidden) { clearTimeout(timer); timer = null; return; }
+      /* Back in front: poll NOW rather than serving a stale tray for a
+         beat, then resume the ladder. */
+      if (timer === null) { lastAskRef.current = Date.now(); tick(); }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const decideExternal = (externalId, decision, reason) => {

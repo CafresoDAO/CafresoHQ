@@ -1504,9 +1504,8 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     let result;
     try { result = await call.tool.run(call.arg, { signal }, call.body); }
     catch (err) { result = `Error: ${err.message}`; }
-    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result });
-
     const banner = `\n\n📡 ${call.tool.name}("${call.arg.trim().slice(0, 60)}") →\n${result}\n\n`;
+    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
     onToken(banner);
 
     messages.push({ role: 'assistant', content: buf });
@@ -1665,10 +1664,21 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
       result = `Error: ${err.message}`;
     }
     toolsExecuted++;
-    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result });
 
-    // Stream the result inline so the user sees what the agent is reading.
+    /* Stream the result inline so the user sees what the agent is reading —
+       then hand the SAME string back on the done event as `echo`.
+
+       The boss watching a coworker work wants the whole tool visit on screen.
+       The boss opening the filing cabinet a month later does not: a filed
+       "Three primary colours" came back 8.8KB, of which the coworker's own
+       answer was one sentence and the rest was a URL, `Status: 200`, and
+       Wikipedia's page text — jargon §6 bans, on a surface the boss keeps.
+       Filing strips the echo out again, and exact-string removal only works
+       if it gets the exact string. So the format lives here, at the one site
+       that owns it, and travels with the event instead of being re-derived
+       (and eventually mis-derived) by the code that has to undo it. */
     const banner = `\n\n📡 ${call.tool.name}("${call.arg.trim().slice(0, 60)}") →\n${result}\n\n`;
+    if (onTool) onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result, echo: banner });
     onToken(banner);
 
     messages.push({ role: 'assistant', content: buf });

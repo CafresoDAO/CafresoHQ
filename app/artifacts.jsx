@@ -67,20 +67,82 @@ function stripToolMarkers(text) {
     .trim();
 }
 
+/* ── The transcript is not the deliverable ────────────────────────────────
+   While a coworker works, the floor streams every tool visit inline — the
+   fetched page, the search hits, the file it opened. That is right for the
+   screen: the boss is watching them work.
+
+   It is wrong for the cabinet. A real "Three primary colours" delivery came
+   back 8,833 bytes: one sentence of Llama's own answer wrapped around a
+   URL, `Status: 200`, `Title: …`, a rule, Wikipedia's body text, and
+   `[…truncated, 79626 more chars]`. Every one of those is §6-banned jargon,
+   sitting in a file the boss keeps.
+
+   `echoes` are the exact strings the runtime appended (handed over on the
+   tool `done` event, so the format is defined once and undone by literal
+   match — no regex hunting for a block whose end is genuinely ambiguous,
+   since a fetched page contains blank lines too). */
+function stripToolEcho(text, echoes) {
+  let out = String(text || '');
+  for (const echo of (echoes || [])) {
+    if (!echo) continue;
+    out = out.split(echo).join('\n\n');   // literal removal; keeps the break
+  }
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* …but deleting the working outright would launder the sources. A memo that
+   silently reports Wikipedia's answer as the coworker's own is LESS honest
+   than the transcript was, not more. So the visits come back as a short
+   footer in office words (§6): what they consulted, never which tool.
+
+   Search is tested before web for the same reason floor.jsx's `toolProp`
+   does it in that order: WEB_SEARCH contains both words, and it is a trip to
+   the bookshelf, not a page the coworker read. */
+const VISIT_PHRASE = [
+  [/SEARCH|LIBRARY|RESEARCH/,    'Looked up'],
+  [/WEB|HTTP|FETCH|URL|BROWSE/,  'Read'],
+  [/VAULT|FILE|DIR|MEMORY|NOTE/, 'Opened'],
+];
+
+function workingNotes(visits) {
+  const seen = [];
+  for (const v of (visits || [])) {
+    const name = String((v && v.name) || '').toUpperCase();
+    const arg = String((v && v.arg) || '').trim().replace(/^https?:\/\//, '');
+    if (!arg) continue;
+    let verb = 'Checked';
+    for (const [re, word] of VISIT_PHRASE) { if (re.test(name)) { verb = word; break; } }
+    const line = `- ${verb} ${arg.length > 88 ? arg.slice(0, 87) + '…' : arg}`;
+    if (seen.indexOf(line) === -1) seen.push(line);
+  }
+  return seen;
+}
+
+/* The office runs on the boss's clock. `toISOString()` stamps UTC, so a
+   delivery filed at 8pm in New York was dated TOMORROW in its own header —
+   caught on a real filing. Every other date on the floor is local. */
+function officeDate(now) {
+  const d = now || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /* Build the note that lands in the cabinet. Markdown gets a small header so
    the file stands on its own months later in Obsidian; html is written raw
    so it renders when opened. */
-function buildDelivery(task, agent, text) {
-  const body = stripToolMarkers(text);
+function buildDelivery(task, agent, text, visits) {
+  const body = stripToolMarkers(stripToolEcho(text, (visits || []).map(v => v && v.echo)));
   if (!body) return null;
   const home = STARTER_HOME[task && task.starter] || DEFAULT_HOME;
   const slug = slugify(task && task.title);
   const who = (agent && agent.name) || 'your team';
-  const when = new Date().toISOString().slice(0, 10);
+  const when = officeDate();
 
   const html = (task && task.starter === 'page') ? extractHtml(body) : null;
   if (html) return { path: `${home}/${slug}.html`, content: html, kind: 'page' };
 
+  const working = workingNotes(visits);
   const content = [
     `# ${(task && task.title) || 'Delivery'}`,
     '',
@@ -89,6 +151,7 @@ function buildDelivery(task, agent, text) {
     '---',
     '',
     body,
+    ...(working.length ? ['', '---', '', '**Working**', '', ...working] : []),
     '',
   ].join('\n');
   return { path: `${home}/${slug}.md`, content, kind: 'note' };
@@ -107,9 +170,9 @@ function cabinetIsEncrypted() {
 /* File a finished task's deliverable. Resolves to the vault path, or null if
    there's nothing to file / no cabinet configured. NEVER throws: a filing
    failure must not take down task completion, which already succeeded. */
-async function fileDelivery(task, agent, text) {
+async function fileDelivery(task, agent, text, visits) {
   try {
-    const built = buildDelivery(task, agent, text);
+    const built = buildDelivery(task, agent, text, visits);
     if (!built) return null;
     const st = await CafresoHQClient.vaultStatus();
     if (!st || !st.configured || !st.exists) return null;   // no cabinet yet
@@ -123,4 +186,7 @@ async function fileDelivery(task, agent, text) {
   }
 }
 
-export { buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, slugify, stripToolMarkers };
+/* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
+   file by dropping lines that START with `export`, so a wrapped export list
+   leaves an orphan line behind and the harness won't parse. */
+export { buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, slugify, stripToolEcho, stripToolMarkers, workingNotes };
