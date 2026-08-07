@@ -249,8 +249,15 @@ console.log(JSON.stringify(R));
 
 
 def check_every_reply_path():
-    """Every agentStream() caller is a reply path, and each one has to run its
+    """Every stream caller is a reply path, and each one has to run its
     final text through visibleReply before a person sees it.
+
+    Counts ceoStream too, and scans ui/chat.jsx, since 2026-08-07. The
+    census had enumerated `agentStream` callers only — so the CEO, the
+    coworker a boss talks to most, was never in it. Its reply was cleaned
+    only when it happened to emit a handoff or a DM, by a local regex that
+    knew two marker types out of sixteen. A census is only as wide as the
+    entry point it knows to look for.
 
     This exists because six paths existed and three cleaned. The suite was
     green throughout, because it tests visibleReply — which was correct — and
@@ -264,11 +271,11 @@ def check_every_reply_path():
     """
     import re as _re
     paths = []
-    for rel in ('app.jsx', 'features.jsx', 'missions.jsx'):
+    for rel in ('app.jsx', 'features.jsx', 'missions.jsx', 'ui/chat.jsx'):
         text = (ROOT / rel).read_text(encoding='utf-8')
         lines = text.split('\n')
         for i, line in enumerate(lines):
-            if _re.search(r'\bagentStream\s*\(', line) and 'function agentStream' not in line:
+            if _re.search(r'\b(?:agentStream|ceoStream)\s*\(', line) and 'function agentStream' not in line and 'function ceoStream' not in line:
                 window = '\n'.join(lines[i:i + 150])
                 paths.append((rel, i + 1, 'visibleReply' in window))
     return paths

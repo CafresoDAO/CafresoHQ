@@ -578,16 +578,26 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     /* Strip raw routing markers from the rendered CEO bubble so the user sees
        a clean reply, not bracket syntax. The markers were already captured
        above via onTool. */
-    if (ceoHandoff || ceoDms.length) {
-      setChat(prev => prev.map(m => {
-        if (m.id !== ceoId) return m;
-        let cleaned = String(m.text || '')
-          .replace(/\[\s*HANDOFF_TO\s*:\s*[^\]\n]+\][\s\S]*?\[\s*\/\s*HANDOFF_TO\s*\]/gi, '')
-          .replace(/\[\s*DM_TO\s*:\s*[^\]\n]+\][\s\S]*?\[\s*\/\s*DM_TO\s*\]/gi, '');
-        cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-        return { ...m, text: cleaned };
-      }));
-    }
+    /* The CEO is a reply path too, and it was the one nobody counted.
+       This ran ONLY when the CEO had emitted a handoff or a DM, and even
+       then it stripped exactly two marker types with a local regex pair.
+       Every other marker the office defines — an ACK, a VAULT_NEW, an
+       orphaned tool tag, the echoed speaker label — reached the boss as
+       raw syntax in the bubble of the coworker they talk to most.
+
+       It went unnoticed because the reply-hygiene census enumerates
+       `agentStream` callers, and the CEO runs on `ceoStream`. A census is
+       only as wide as the entry point it knows to look for.
+
+       Now the same `visibleReply` + `cleanHarmony` recipe as the other six
+       paths, run unconditionally. Guarded so a reply that is nothing but
+       markers is left alone rather than blanked — the same trap
+       `visibleReply` documents internally. */
+    setChat(prev => prev.map(m => {
+      if (m.id !== ceoId) return m;
+      const cleaned = HQ.cleanHarmony(HQ.visibleReply(String(m.text || ''), 'CafresoHQ'));
+      return (cleaned && cleaned !== m.text) ? { ...m, text: cleaned } : m;
+    }));
 
     /* HANDOFF_TO — switch the active responder to the specialist and have
        them open the conversation with the boss directly. */
@@ -688,6 +698,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                      onTool: ev => { if (ev.phase === 'done') attachVisit(setChat, synthId, ev); },
                      onHint: synthFlush.note });
                 synthFlush.flushNow();
+                /* throttleTokens runs cleanHarmony but NOT visibleReply, so
+                   markers survived into this bubble. Same recipe as the
+                   main CEO reply above. */
+                setChat(prev => prev.map(m => {
+                  if (m.id !== synthId) return m;
+                  const c = HQ.cleanHarmony(HQ.visibleReply(String(m.text || ''), 'CafresoHQ'));
+                  return (c && c !== m.text) ? { ...m, text: c } : m;
+                }));
               } catch (_synthErr) {
                 /* Best-effort — if synthesis fails, the raw specialist replies
                    are already visible in the thread. */

@@ -398,7 +398,9 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent })
           tok => { buf += tok; update(buf); },
           { agents: participants, signal: controller.signal }
         );
-        updateById(ceoPlaceholder.id, { text: buf });
+        /* The CEO's own words reach the boss here, and this set the RAW
+           buffer. Same recipe as every other reply path now. */
+        updateById(ceoPlaceholder.id, { text: HQ.cleanHarmony(HQ.visibleReply(buf, 'CafresoHQ')) || buf });
       } catch (err) {
         const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';
         updateById(ceoPlaceholder.id, {
@@ -635,6 +637,10 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
         tok => { buf += tok; setSummary(buf); },
         { agents, signal: controller.signal, maxTokens: 200 }
       );
+      /* …and the same for the stand-up's closing summary, which the boss
+         reads as the CEO's read of the day. */
+      const cleanedSummary = HQ.cleanHarmony(HQ.visibleReply(buf, 'CafresoHQ'));
+      if (cleanedSummary && cleanedSummary !== buf) setSummary(cleanedSummary);
     } catch (err) {
       const stopped = controller.signal.aborted;
       // Same raw-dump bug as the per-agent reports above, one function down.
