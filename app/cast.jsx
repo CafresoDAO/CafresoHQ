@@ -187,7 +187,7 @@ const EFFORT_TIP = "Effort: how much reading and writing this coworker has done 
    ones to "Effort" I updated the wall and missed the HUD, which sat there
    still saying "Work done across the office". Third copy, so it lives here
    now. */
-const OFFICE_EFFORT_TIP = "Effort across the whole office since each coworker was hired — reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.";
+const OFFICE_EFFORT_TIP = "Effort across the whole office — every coworker since you hired them, plus your own time with the CEO. Reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.";
 
 /* ── Can this office actually work? ───────────────────────────────────────
    `hasUsableKey()` with no argument answers one narrow question: is the

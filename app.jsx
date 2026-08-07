@@ -3908,6 +3908,16 @@ ${d.text}` : d.text,
             </div>
             <OfficeView
               agents={agents}
+              /* The wall's ⚡ row summed `agents` only, while the topbar HUD
+                 showed `ceoTokens + Σ agents` — and the two wear the SAME
+                 tooltip, because I hoisted it into one shared constant when
+                 the third copy appeared. Two surfaces, one sentence, two
+                 sums: they agree at zero and drift apart the moment the boss
+                 sits with the CEO, which is the most ordinary thing in the
+                 office. Sitting with the CEO is real reading and writing the
+                 office did, so the total that includes it is the right one —
+                 the wall now reads the same value the HUD does. */
+              officeEffort={totalTokens}
               /* One truth for "is the container reachable". The wall runs its
                  own 30s poll; during a real outage that left the topbar
                  saying OFFLINE while the wall still said "Container healthy"

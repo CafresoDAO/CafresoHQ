@@ -359,7 +359,7 @@ function freshCacheEntries(bucket) {
   return out;
 }
 
-function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
+function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -801,7 +801,12 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
        · agents (props)  → crew row. Reads the roster, NOT agentsStatus():
                            what the machine could run is a hiring question,
                            and the front desk already asks it.
-       · Σ agents.tokens → office fuel bar (same math as TokenHUD)
+       · officeEffort    → office fuel bar. Handed in from app.jsx so it IS
+                           the HUD's number rather than a second sum of the
+                           same name. This line used to claim "same math as
+                           TokenHUD" while summing agents only and omitting
+                           the CEO — a comment asserting the very equality
+                           that was broken.
        · Σ sGLDT wallets → treasury tile (exposed as goldTreasury for the
                            Vault Room to reuse — fetch once, cache 60s) */
   /* The floor scrolls, and nothing said so. `.px-building` is bottom-aligned
@@ -884,7 +889,13 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
     })();
     return () => { dead = true; };
   }, [walletServiceOn, isMobileOffice, plWallets]);
-  const officeTokens = agents.reduce((s, a) => s + (a.tokens || 0), 0);
+  /* Handed in by app.jsx so this row and the topbar HUD show ONE number.
+     It used to be `agents.reduce(...)` here, which silently omitted the
+     CEO's own chat. The fallback keeps the row honest if the prop is ever
+     dropped: a smaller true number beats a crash. */
+  const officeTokens = officeEffort !== null && officeEffort !== undefined
+    ? officeEffort
+    : agents.reduce((s, a) => s + (a.tokens || 0), 0);
   /* Deliveries that really reached the cabinet — see the wall row below. */
   const filedCount = (tasks || []).filter(t => t && t.artifactPath).length;
   const busyCount = agents.filter(a => a.status === 'busy').length;
