@@ -11,6 +11,7 @@ import json
 import shutil
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -290,6 +291,21 @@ console.log(JSON.stringify(R));
     check('an ellipsis counts as closed', 'else… Llama' in out['joinEllip'], out['joinEllip'])
     check('no hint means the text is returned untouched',
           out['joinNone'] == '⚠ it looks offline from here')
+
+    # ── the call site, not the helper ────────────────────────────────────
+    # handoffHint only asks whose brain is ready; it cannot know that one of
+    # them just refused the job. So the exclusion has to live where the
+    # failure is known, and only a source check can defend it.
+    #
+    # Without the filter the office answers "Llama couldn't take the handoff"
+    # with "Llama and Mika are still working, though — @mention one of them",
+    # naming the coworker who just said no. That is worse than offering no
+    # route at all, which is the one outcome §7 was written to prevent.
+    chat = (ROOT / 'ui' / 'chat.jsx').read_text(encoding='utf-8')
+    m = re.search(r"couldn't take the handoff[\s\S]{0,400}?\}\]\);", chat)
+    check("the refused coworker is left out of their own hand-off hint",
+          bool(m) and 'agents.filter(a => a.id !== target.id)' in m.group(0),
+          'ui/chat.jsx: withHandoff must get a roster without `target`')
 
     print()
     if FAILS:

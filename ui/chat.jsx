@@ -604,13 +604,28 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             threadOverride: activeThread,
           });
         } catch (err) {
+          /* §7: the work is now stuck and the boss did not ask for it to be
+             — CafresoHQ chose this hand-off. Saying only what went wrong
+             leaves them holding a job with nowhere to put it.
+
+             The failed target is filtered OUT of the hint. handoffHint only
+             checks whose brain is ready, so without this the office would
+             answer "Llama couldn't take the handoff" with "Llama is still
+             working, though — @mention them", which is worse than silence. */
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: `(${target.name} couldn't take the handoff — ${snagCause(err && err.message || String(err))})`,
+            text: withHandoff(
+              `(${target.name} couldn't take the handoff — ${snagCause(err && err.message || String(err))})`,
+              agents.filter(a => a.id !== target.id), CafresoHQClient),
             thread: activeThread }]);
         }
       } else {
+        /* Nobody was excluded here: the named teammate was never hired, so
+           everyone on the roster is still a candidate. The hint names who
+           actually is. */
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(CafresoHQ tried to hand off to "${ceoHandoff.to}" but no such teammate is hired)`,
+          text: withHandoff(
+            `(CafresoHQ tried to hand off to "${ceoHandoff.to}" but no such teammate is hired)`,
+            agents, CafresoHQClient),
           thread: activeThread }]);
       }
     } else if (ceoDms.length && onDispatchToAgent) {
