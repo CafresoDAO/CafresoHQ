@@ -1033,7 +1033,13 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                  number, office words — and no invented unit ("words" would
                  overstate it), just what the figure means. */
               <div className="sw-row" title="Work done across the office this session. Payroll is per coworker — a single total across brains that bill differently (or not at all) isn't a real number.">
-                <span className="sw-fuel"><i style={{width:`${Math.min(100,(officeTokens/1000000)*100)}%`}}/></span> FUEL
+                {/* Was a FUEL bar filling toward a hardcoded 1,000,000.
+                    Nothing sets that ceiling and nothing enforces it, so
+                    the gauge read "4% used" of a tank that does not exist —
+                    and "FUEL" implies depletion on top of it. Its
+                    neighbours on this wall all show a real quantity; now
+                    this one does too. */}
+                ⚡ {officeTokens >= 1000 ? (officeTokens/1000).toFixed(1) + 'K' : officeTokens}
               </div>
             )}
             {goldTreasury !== null && goldTreasury > BigInt(0) && (

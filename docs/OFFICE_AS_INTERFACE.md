@@ -969,6 +969,29 @@ append-only).
 > quantity that exists. The FUEL bar still shows work done, which is true.
 > 10 checks in `scripts/test_cast.py`, including that no payroll tooltip
 > anywhere contains a `$`.
+>
+> **The same shape, one surface over: a gauge with no scale.** Sweeping for
+> siblings of the payroll bug turned up the **FUEL bar**, on the Situation
+> Wall and in the token HUD, filling toward a hardcoded **1,000,000**
+> tokens. Nothing sets that ceiling and nothing enforces it — no caller has
+> *ever* passed a budget, so the default WAS the scale. At 38.8K it drew a
+> 4%-full bar, which reads as "you have 96% of your budget left" against a
+> budget that does not exist, and the word *FUEL* implies depletion on top
+> of it.
+>
+> A bar is a claim about a limit. `TokenHUD`'s `budget` is opt-in now
+> (`null` by default) and it draws no bar without one; the Situation Wall
+> row shows `⚡ 38.8K`, a real quantity, like every other row on that wall.
+>
+> **`scripts/test_no_invented_numbers.py` is the tripwire.** Neither bug was
+> catchable by a unit test — both were *plausible* numbers inside otherwise
+> correct code, which is exactly why they survived. So the guard is
+> source-level: the banned shapes (a hardcoded per-token price, a percentage
+> against a 1,000,000 ceiling, a defaulted token budget) fail the suite with
+> the reason attached. `app/cast.jsx` may still *name* the old constant in
+> the comment explaining why it went. Verified the guard fires by
+> reintroducing both bugs and watching it report them by file and line —
+> a tripwire that has only ever passed proves nothing.
 
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)

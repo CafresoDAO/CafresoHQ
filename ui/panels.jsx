@@ -211,8 +211,14 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
 }
 
 /* ------------ Token HUD (persistent) ------------ */
-function TokenHUD({ tokens, budget=1000000, className='' }) {
-  const pct = Math.min(100, (tokens/budget)*100);
+/* `budget` is opt-in on purpose. It used to default to 1,000,000 and no
+   caller has ever passed one, so the bar was always measuring against a
+   ceiling nobody set — a gauge with no scale, which reads as "you have 96%
+   of something left". Given a real budget it draws a real bar; without one
+   it shows the work done and no bar at all. */
+function TokenHUD({ tokens, budget=null, className='' }) {
+  const hasBudget = typeof budget === 'number' && isFinite(budget) && budget > 0;
+  const pct = hasBudget ? Math.min(100, (tokens/budget)*100) : 0;
   return (
     /* The dollar figure is gone, and deliberately. It multiplied every
        coworker's tokens by one hardcoded rate, so an office running a free
@@ -222,7 +228,7 @@ function TokenHUD({ tokens, budget=1000000, className='' }) {
     <div className={`token-hud${className ? ' '+className : ''}`} title="Work done across the office this session. Payroll is per coworker — see their cards.">
       <span>⛽</span>
       <span>{(tokens/1000).toFixed(1)}K</span>
-      <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>
+      {hasBudget && <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>}
     </div>
   );
 }
