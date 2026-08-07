@@ -704,9 +704,24 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
             <div>
               <div className="standup-preflight">
                 <div className="empty-title">Run today's stand-up?</div>
-                <div className="empty-sub">
-                  {participating.length} of {agents.length} agent{agents.length===1?'':'s'} · cap {STANDUP_MAX_TOKENS} tok/each · {(STANDUP_TIMEOUT_MS/1000)|0}s timeout
-                  {localCount > 0 && <span className="warn"> · ⚠ {localCount} local model{localCount===1?'':'s'} — heavy on a VM</span>}
+                {/* The empty-state branch immediately above was rewritten
+                    for §6/§7, and its own comment quotes the string it was
+                    replacing: "0 of 0 agents · cap 1200 tok/each · 45s
+                    timeout … a technical readout about a meeting with nobody
+                    in it". The very next branch — the one that actually runs
+                    — was still that readout, word for word. Fixing the empty
+                    case and leaving the populated one is the same shape as
+                    renaming "iter" on the night-shift card and leaving four
+                    siblings standing.
+
+                    Calling your team together should not read like a config
+                    dump. The numbers a boss actually needs are who is coming
+                    and how long it might take; the exact cap stays in the
+                    tooltip for anyone who wants it. */}
+                <div className="empty-sub"
+                     title={`Each coworker gets up to ${STANDUP_MAX_TOKENS} tokens and ${(STANDUP_TIMEOUT_MS/1000)|0} seconds to report.`}>
+                  {participating.length} of {agents.length} coworker{agents.length===1?'':'s'} · a short report from each · up to {(STANDUP_TIMEOUT_MS/1000)|0}s before someone is counted as not reporting
+                  {localCount > 0 && <span className="warn"> · ⚠ {localCount} of them run{localCount===1?'s':''} on your own machine, so this may be slow</span>}
                 </div>
               </div>
               <div className="standup-list" style={{marginTop:10}}>

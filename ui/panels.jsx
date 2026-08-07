@@ -204,7 +204,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
               Same gesture, same surface, one handler. */}
           <button className="px-btn secondary" style={{fontSize:8,flex:1}}
                   title="Stops anything they're running and clears their desk for the next job"
-                  onClick={()=>(onCoffee ? onCoffee(agent) : onUpdate(agent.id, { tokens: 0, recent: 'context cleared ☕' }))}>☕ COFFEE BREAK</button>
+                  onClick={()=>(onCoffee ? onCoffee(agent) : onUpdate(agent.id, { tokens: 0, recent: 'back from a coffee break — desk clear' }))}>☕ COFFEE BREAK</button>
           <button className="px-btn danger" style={{fontSize:8}} onClick={()=>{onDismiss(agent.id); onClose();}}>LET GO</button>
         </div>
       </div>

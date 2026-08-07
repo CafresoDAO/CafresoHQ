@@ -1388,11 +1388,21 @@ ${d.text}` : d.text,
     }
     const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true, thread, agentId: agent.id }]);
-    onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: prompt.slice(0, 40) });
+    /* `prompt` is the ASSEMBLED prompt — the office prepends its own voice
+       to it ("[Llama · Generalist] was DM'd for context before this
+       request"), so slicing it drops scaffolding into the desk bubble and
+       the activity log. `userText` is the boss's actual words and is what
+       these surfaces mean. When there is no userText the dispatch came from
+       another coworker, and naming the sender is both truer and shorter than
+       any slice of the prompt would be. */
+    const humanText = userText || null;
+    onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking',
+      task: dmFrom ? `answering ${dmFrom.name}` : (humanText || 'on a job').slice(0, 40) });
     logActivity({
       agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
       action: dmFrom ? 'dm' : 'assigned',
-      text: dmFrom ? `received a DM from ${dmFrom.name}` : `picked up "${prompt.slice(0, 48)}…"`,
+      text: dmFrom ? `received a DM from ${dmFrom.name}`
+                   : (humanText ? `picked up "${humanText.slice(0, 48)}…"` : 'picked up a job'),
     });
 
     const peers = agents.filter(a => a.id !== agent.id);
@@ -1758,7 +1768,18 @@ ${d.text}` : d.text,
       screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
-        recent: cleanBuf.slice(0, 140) || prompt.slice(0, 80),
+        /* `recent` is the line under a coworker's name on the floor — what
+           they last DID. Falling back to the prompt put the BOSS'S OWN
+           QUESTION there, rendered as if the coworker had said it, and the
+           prompt is the assembled one: Mika's line on a live floor read
+           "[Llama · Generalist] was DM'd for context before this request.
+           [DM_TO: Llama] What is your favorite color?" — office scaffolding
+           and a tool marker, in a record that persists across reloads.
+           Everything else that reaches a kept surface goes through
+           stripOfficeVoice/stripToolEcho first; this path skipped all of it
+           because the fallback was never meant to be shown.
+           An empty reply is its own honest sentence. */
+        recent: cleanBuf.slice(0, 140) || 'finished without saying anything',
         tokens: (agent.tokens || 0) + usedTokens,
         tasksDone: (agent.tasksDone || 0) + 1,
         task: 'reporting back',
@@ -1768,7 +1789,9 @@ ${d.text}` : d.text,
         agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
         action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300),
       });
-      if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, prompt.slice(0, 60));
+      /* Same reason as the desk bubble above — the journal is a KEPT record,
+         so it least of all should hold the office's own scaffolding. */
+      if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, (userText || 'a job').slice(0, 60));
       const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Message lifecycle resolution. The mid-stream scanner already
@@ -2630,13 +2653,22 @@ ${d.text}` : d.text,
 
        `task` is "what they're working on" — parking a joke there left an
        idle coworker's desk bubble claiming a job that doesn't exist. */
-    onUpdateAgent(a.id, { status: 'idle', tokens: 0, recent: 'context cleared ☕', mood: 'idle', task: null });
+    /* §6: the BUTTON was renamed off "REFRESH CTX" (see the note at its JSX)
+       and every string it writes still said "context" — the floor line, the
+       activity entry and the announcement, five of them in this handler.
+       Failure shape (2), copy fixed with the state left behind: the control
+       stopped saying it, then wrote it into three kept records anyway.
+       `recent` is what shows under a coworker's name on the floor, so this
+       was machine vocabulary sitting in their status line.
+       The button's own tooltip already had the office phrase — "clears their
+       desk for the next job" — so the desk is the metaphor everywhere. */
+    onUpdateAgent(a.id, { status: 'idle', tokens: 0, recent: 'back from a coffee break — desk clear', mood: 'idle', task: null });
     logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'coffee',
-      text: wasRunning ? 'stopped mid-run for a coffee — context cleared ☕'
-                       : 'refreshed context at the coffee machine ☕' });
+      text: wasRunning ? 'stopped mid-run for a coffee — desk cleared ☕'
+                       : 'took a coffee break — desk cleared ☕' });
     floorEmit('coffee', { agentId: a.id });
-    say(wasRunning ? `Stopped ${a.name} and cleared their context`
-                   : `Cleared ${a.name}'s context`, 'COFFEE');
+    say(wasRunning ? `Stopped ${a.name} and cleared their desk`
+                   : `Cleared ${a.name}'s desk`, 'COFFEE');
   };
   const onAddSticky = () => {
     const text = prompt('New sticky note for CafresoHQ:');
