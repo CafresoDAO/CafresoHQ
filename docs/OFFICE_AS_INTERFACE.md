@@ -1384,6 +1384,36 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> ✅ **Stopped asking coworkers to narrate (2026-08-06).** Read the filed
+> notes as a boss opening them, and every one began the same way:
+>
+> > *I will look up a reliable source for colors to find one that is not blue.*
+> > *The color "Green" is often cited as an example…*
+>
+> The answer was the **second** line, in every delivery, because the task
+> prompt asked for it: *"Report: what you'll do (1 sentence), then deliver
+> the result."*
+>
+> That clause was buying nothing. The office already reports what a coworker
+> is doing, and reports it better: the desk bubble says what they are doing
+> **now**, the visit block records **where they went** and cannot be forged,
+> and the ticker carries both. Asking the coworker to narrate it as well
+> produced a second, worse copy of a signal we already had — and the second
+> copy is the one that gets **filed and kept**.
+>
+> The prompt now asks for the result and says why: *"that is what gets filed
+> and kept. Don't narrate your steps; the office already shows the boss what
+> you're doing."* Next delivery, in full:
+>
+> > `# Name the capital of Japan`
+> > `*Delivered by Llama · 2026-08-06*`
+> > `Tokyo is the capital of Japan.`
+>
+> **Counter-checked, because the claim was "the boss loses nothing":** the
+> activity log for that same task still reads *picked up … 📁* → *finished …
+> ✓* → *filed to Deliveries 🗄*. The office narrated the work; only the
+> duplicate inside the artifact went away.
+
 > ✅ **The cabinet works (2026-08-06).** Verified the payoff surface end to
 > end for the first time: the vault tree expands `📁 Deliveries`, lists all
 > three notes, and clicking one opens `vault-edit-pane` + `vault-preview`

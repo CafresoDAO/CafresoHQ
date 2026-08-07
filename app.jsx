@@ -2824,7 +2824,15 @@ ${d.text}` : d.text,
     const recentChat = chat.slice(-6);
     const screen = makeScreenEmitter(agent.id);
     try {
-      await HQ.agentStream(agent, `New task on your desk: ${brief}\n\nReport: what you'll do (1 sentence, plain words — don't name your tools), then deliver the result. Keep it tight.`, tok => {
+      await HQ.agentStream(agent, /* No "say what you'll do first". That clause is why EVERY filed memo
+         opened on the coworker's plan rather than their answer — "I will
+         look up a reliable source for colors…" above the one line the boss
+         came for. It also duplicated a signal the office already gives
+         better: the desk bubble says what they're doing NOW, the visit
+         block records where they went, and the ticker carries both. Asking
+         the coworker to narrate it as well produced a second, worse copy —
+         and the second copy is the one that gets filed and kept. */
+        `New task on your desk: ${brief}\n\nDeliver the result — that is what gets filed and kept. Don't narrate your steps; the office already shows the boss what you're doing. Keep it tight.`, tok => {
         buf += tok;
         flush(tok);
         screen.stream(buf);
