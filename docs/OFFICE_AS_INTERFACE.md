@@ -817,6 +817,18 @@ should extend that boundary, not blur it.
   blocked rather than running a doomed mission, so this is friction rather
   than a trap. Whether a detected brain should arrive with Vault Notes on is a
   permissions decision: it is write access to the boss's cabinet.
+- **`awaiting_reply` never resolves, so the inbox badge only ever grows.**
+  A coworker who asks someone and posts `[ACK: awaiting_reply: asked Nova…]`
+  leaves that message non-terminal. When the answer arrives it creates a NEW
+  message; all eight `MessageRegistry.transition` call sites act on the
+  sender's OWN message, and none closes the one that was waiting. So the
+  topbar count — which counts non-terminal messages — climbs by one for every
+  hand-off that ends in a question, permanently. Measured here: 32 messages,
+  24 completed, **8 stuck in awaiting_reply**, badge reading 8 with nothing
+  needing the boss. I first wrote this off as litter from my own DM tests; it
+  is not, it is what the lifecycle does in normal use. Closing it means
+  deciding what resolves a wait — the reply landing, a timeout, or the boss —
+  which is a comms-lifecycle decision rather than a one-line fix.
 - **The boss is typed `agent` on the vault map**, so the analysis panel counts
   the office's owner among its coworkers — "3 coworkers" for two hired. The
   node itself now reads *"You (boss)"* rather than a mysterious colleague
