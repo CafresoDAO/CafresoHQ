@@ -1911,6 +1911,16 @@ ${d.text}` : d.text,
     {
       const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
       if (miss && flush && flush.note) flush.note(miss);
+      /* Same guard for the security request. extractApproval is pure on the
+         same buffer the tray was filled from, so this asks exactly "did an
+         approval get raised this run" — a well-formed ask stays silent, only
+         a malformed one is called out. (Re-derived rather than reusing
+         approvalDesc, which lives in a different block — no-undef caught
+         that, which is the second time this session that tripwire has paid
+         for itself.) */
+      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
+      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
+      if (missAsk && flush && flush.note) flush.note(missAsk);
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
@@ -2636,6 +2646,16 @@ ${d.text}` : d.text,
     {
       const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
       if (miss && flush && flush.note) flush.note(miss);
+      /* Same guard for the security request. extractApproval is pure on the
+         same buffer the tray was filled from, so this asks exactly "did an
+         approval get raised this run" — a well-formed ask stays silent, only
+         a malformed one is called out. (Re-derived rather than reusing
+         approvalDesc, which lives in a different block — no-undef caught
+         that, which is the second time this session that tripwire has paid
+         for itself.) */
+      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
+      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
+      if (missAsk && flush && flush.note) flush.note(missAsk);
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
@@ -3061,6 +3081,16 @@ ${d.text}` : d.text,
     {
       const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
       if (miss && flush && flush.note) flush.note(miss);
+      /* Same guard for the security request. extractApproval is pure on the
+         same buffer the tray was filled from, so this asks exactly "did an
+         approval get raised this run" — a well-formed ask stays silent, only
+         a malformed one is called out. (Re-derived rather than reusing
+         approvalDesc, which lives in a different block — no-undef caught
+         that, which is the second time this session that tripwire has paid
+         for itself.) */
+      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
+      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
+      if (missAsk && flush && flush.note) flush.note(missAsk);
     }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());

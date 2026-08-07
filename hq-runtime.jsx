@@ -307,7 +307,7 @@ function stripAcks(text) {
    sentence. Removing that would leave a broken sentence, so it stays; the
    model narrating its own tooling is a prompt problem, not a strip one. */
 const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\]\s*$/gim;
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\]\s*$/gim;
 
 /* The header line above a tool result in the live transcript.
 
@@ -379,6 +379,27 @@ function unsentHandoff(text, deliveredCount) {
   if (!m) return null;
   const who = String(m[1]).trim().slice(0, 40);
   return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+}
+
+/* Same shape as unsentHandoff, for the one marker where silence is worst.
+   [REQUEST_ELEVATION] only parses in its BLOCK form — opening tag, a line of
+   detail, closing tag — and a model that writes just the opening line has
+   asked for nothing. Driven live: a coworker emitted
+   "[REQUEST_ELEVATION: need to read a local file]" on its own, the parser
+   correctly ignored it, and the boss was left reading a sentence that says a
+   request was made while the approvals tray stayed empty. Both of them then
+   wait for the other.
+
+   Deliberately conservative in the same way: if an approval really was
+   raised this run, say nothing. `raised` is what the caller actually
+   queued, so a well-formed request alongside a malformed one is missed
+   rather than risking a false alarm on a run that really did ask. */
+function unsentElevation(text, raised) {
+  if (raised) return null;
+  const t = String(text || '');
+  if (!/\[\s*REQUEST_ELEVATION\s*:/i.test(t)) return null;
+  if (/\[\s*\/\s*REQUEST_ELEVATION\s*\]/i.test(t)) return null;   // well-formed
+  return '_(that request for file and shell access never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Roster.)_';
 }
 
 function visibleReply(text) {
@@ -1998,7 +2019,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

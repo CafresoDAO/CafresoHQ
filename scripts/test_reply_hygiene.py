@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -140,6 +140,17 @@ R.uhNamesWho  = /Mika/.test(R.uhInline || '');
 R.uhDelivered = unsentHandoff(INLINE_DM, 1);      // something went out → silent
 R.uhWellFormed = unsentHandoff('[DM_TO: Mika]\nplease help\n[/DM_TO]', 1);
 R.uhNoMarker  = unsentHandoff('Blue is a primary color.', 0);
+
+// unsentElevation — same shape, for the request where silence is worst.
+// Driven live: a coworker wrote the opening tag alone, the parser correctly
+// ignored it, and the boss read "I'm requesting access" with an empty tray.
+const BARE_ASK = '[REQUEST_ELEVATION: need to read a local file]\n\nI will use it carefully.';
+const FULL_ASK = '[REQUEST_ELEVATION: need to read a local file]\nI need FILE_READ on ./notes\n[/REQUEST_ELEVATION]';
+R.ueBare      = unsentElevation(BARE_ASK, false);
+R.ueRaised    = unsentElevation(BARE_ASK, true);       // one really did land → silent
+R.ueWellFormed= unsentElevation(FULL_ASK, true);
+R.ueNoMarker  = unsentElevation('Here are three colours.', false);
+R.ueSaysRoute = /approvals|Settings/i.test(unsentElevation(BARE_ASK, false) || '');
 R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
 R.uhEmpty     = unsentHandoff('', 0);
 R.uhNull      = unsentHandoff(null, 0);
@@ -206,6 +217,13 @@ def main():
     check('a run that DID deliver stays silent',
           out['uhDelivered'] is None and out['uhWellFormed'] is None)
     check('an ordinary reply is never flagged', out['uhNoMarker'] is None)
+
+    # unsentElevation — §7 on the security request
+    check('a bare REQUEST_ELEVATION is called out', bool(out['ueBare']))
+    check('…and it names a route out', out['ueSaysRoute'] is True)
+    check('a request that really landed stays silent', out['ueRaised'] is None)
+    check('a well-formed block stays silent', out['ueWellFormed'] is None)
+    check('no marker at all says nothing', out['ueNoMarker'] is None)
     check('an own-line marker still counts as unsent', bool(out['uhOwnLine']))
     check('empty and null are safe', out['uhEmpty'] is None and out['uhNull'] is None)
     check('a runaway name cannot blow up the note', out['uhLongName'] is True)
