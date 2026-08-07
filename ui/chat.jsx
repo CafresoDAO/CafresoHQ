@@ -1184,7 +1184,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           <button key={t.id}
             className={`thread-tab ${activeThread === t.id ? 'active' : ''}${t.kind === 'meeting' ? ' meeting-tab' : ''}${t.kind === 'project' ? ' project-tab' : ''}`}
             onClick={() => setActiveThread(t.id)}
-            title={t.desc}>
+            /* The count is EVERY message in the thread, not unread ones —
+               and a number badged on a tab reads as unread by every
+               convention there is. The tooltip explained the thread ("You
+               & CafresoHQ") and never the number, so 33 sat there looking
+               like 33 things wanting attention when it was the whole
+               conversation, most of it read hours ago. Say which. */
+            title={threadCounts[t.id] > 0
+              ? `${t.desc} · ${threadCounts[t.id]} message${threadCounts[t.id] === 1 ? '' : 's'} in this thread, read and unread`
+              : t.desc}>
             <span className="tt-icon">{t.icon}</span>
             <span className="tt-label">{t.label}</span>
             {threadCounts[t.id] > 0 && <span className="tt-count">{threadCounts[t.id]}</span>}
