@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
-import { officeDate } from './app/artifacts.jsx';
+import { officeDate, officeStamp } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -1102,7 +1102,9 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
       ...TOOL_REGISTRY.memory_append,
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
-        const stamped = `\n\n## ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\n${body || ''}\n`;
+        // A heading inside the coworker's own note — the boss reads these
+        // in the vault, so the boss's clock. Seconds dropped with the UTC.
+        const stamped = `\n\n## ${officeStamp()}\n${body || ''}\n`;
         const r = await CafresoHQClient.vaultWrite(target, stamped, 'append');
         return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
       },

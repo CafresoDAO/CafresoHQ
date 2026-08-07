@@ -174,6 +174,12 @@ R.afMixed     = agentFiledPath([{ name: 'MEMORY_WRITE', arg: 'p.md' }, { name: '
 R.dateLocal = officeDate(new Date(2026, 7, 6, 20, 5));
 R.dateUtcWouldSay = new Date(2026, 7, 6, 20, 5).toISOString().slice(0, 10);
 R.datePadded = officeDate(new Date(2026, 0, 3, 9, 0));
+
+// ── officeStamp — same rule, with a clock on it (filed-note headers) ──────
+R.stampLocal   = officeStamp(new Date(2026, 7, 6, 20, 5));
+R.stampPadded  = officeStamp(new Date(2026, 0, 3, 9, 4));
+R.stampMidnight= officeStamp(new Date(2026, 7, 7, 0, 0));
+R.stampAgrees  = officeStamp(new Date(2026, 7, 6, 20, 5)).startsWith(officeDate(new Date(2026, 7, 6, 20, 5)));
 console.log(JSON.stringify(R));
 ''')
 
@@ -293,6 +299,15 @@ console.log(JSON.stringify(R));
           out['dateLocal'])
     check('single-digit month/day are padded', out['datePadded'] == '2026-01-03',
           out['datePadded'])
+    check('the filed-note stamp is local, with the time',
+          out['stampLocal'] == '2026-08-06 20:05', out['stampLocal'])
+    check('hours and minutes are padded', out['stampPadded'] == '2026-01-03 09:04',
+          out['stampPadded'])
+    check('midnight is 00:00, not blank or 24:00',
+          out['stampMidnight'] == '2026-08-07 00:00', out['stampMidnight'])
+    check('the stamp and the date never disagree about the day',
+          out['stampAgrees'] is True)
+
     if out['dateUtcWouldSay'] != out['dateLocal']:
         check('…where UTC would have said the wrong day',
               out['dateUtcWouldSay'] == '2026-08-07', out['dateUtcWouldSay'])

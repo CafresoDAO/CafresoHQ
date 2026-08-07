@@ -1,4 +1,5 @@
 import { CafresoHQClient } from './claude-client.jsx';
+import { officeStamp } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — Agent Runner Shim
    --------------------------------------------------------------------------
@@ -138,7 +139,7 @@ let CafresoHQAgentRunner;
       emitChatResponse({ text: summary, nodeId, agent, kind: 'summarize' });
       return;
     }
-    const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const ts = officeStamp();   // the boss's clock — see officeStamp
     const path = `Summaries/${slug(nodeId.split('/').pop())}-summary.md`;
     const out =
       `---\nsource: "[[${nodeId}]]"\ngenerated: ${ts}\nagent: ${agent ? agent.name : 'auto'}\n---\n\n` +
@@ -168,7 +169,7 @@ let CafresoHQAgentRunner;
     if (!Array.isArray(tags) || tags.length === 0) tags = [raw.split(/\s+/).slice(0,5).join(' ')];
     const path = `Suggestions/${slug(nodeId.split('/').pop())}-tags.md`;
     const out =
-      `---\nsource: "[[${nodeId}]]"\ngenerated: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n---\n\n` +
+      `---\nsource: "[[${nodeId}]]"\ngenerated: ${officeStamp()}\n---\n\n` +
       `# Suggested tags for ${nodeId.split('/').pop()}\n\n` +
       tags.map(t => `- ${t}`).join('\n') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
@@ -200,7 +201,7 @@ let CafresoHQAgentRunner;
     } catch (_) {}
     const path = `Suggestions/${slug(nodeId.split('/').pop())}-missing-links.md`;
     const out =
-      `---\nsource: "[[${nodeId}]]"\ngenerated: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n---\n\n` +
+      `---\nsource: "[[${nodeId}]]"\ngenerated: ${officeStamp()}\n---\n\n` +
       `# Suggested links from ${nodeId.split('/').pop()}\n\n` +
       (suggestions.length ? suggestions.map(t => `- [[${t}]]`).join('\n') : '_No suggestions._') + '\n\n' +
       `## Source\n[[${nodeId}]]\n`;
@@ -258,7 +259,7 @@ let CafresoHQAgentRunner;
     const explanation = await ask({ system, prompt, agent });
     const path = `Summaries/${slug(nodeId.split('/').pop())}-connections.md`;
     const out =
-      `---\nsource: "[[${nodeId}]]"\ngenerated: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n---\n\n` +
+      `---\nsource: "[[${nodeId}]]"\ngenerated: ${officeStamp()}\n---\n\n` +
       `# How [[${nodeId}]] connects\n\n${explanation}\n`;
     emitActivity(path, agent, 'write');
     await CafresoHQClient.vaultWrite(path, out, 'write');

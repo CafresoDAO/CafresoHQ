@@ -140,6 +140,18 @@ function officeDate(now) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/* The same rule with a clock time on it, for stamps a human reads INSIDE a
+   filed note — the `generated:` frontmatter, a memory append's heading. Those
+   were UTC too, so a note written at 2:30 AM in California claimed 09:30 in
+   its own header, right under a filename the office had already dated
+   locally. Nothing parses these stamps; they exist to tell the boss when the
+   note was written, which makes the boss's clock the only correct one. */
+function officeStamp(now) {
+  const d = now || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${officeDate(d)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /* Build the note that lands in the cabinet. Markdown gets a small header so
    the file stands on its own months later in Obsidian; html is written raw
    so it renders when opened. */
@@ -234,4 +246,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { agentFiledPath, buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
