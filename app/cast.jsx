@@ -94,4 +94,41 @@ function specialtyTag(agent, xpAffinityText) {
   return (xpAffinityText && String(xpAffinityText)) || statBars(agent).tag;
 }
 
-export { brainName, CAST_CLASSES, CAST_DEFAULT, poweredBy, specialtyTag, statBars };
+
+/* ── The coworker's notebook (§2, and §3.6's cabinet) ─────────────────────
+   Where a coworker's private notes live. The path was built by hand in two
+   places in hq-runtime and nowhere else knew the rule, which is why the
+   boss had no way to see what their own employee had written down — the
+   notes existed only as a folder in the vault.
+
+   One definition now: the runtime writes there, the roster reads from it. */
+function memoryRoot(agent) {
+  const safe = String((agent && agent.name) || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
+  return `Agents/${safe}`;
+}
+
+/* Which of the vault's paths belong to this coworker, as their own
+   relative names ("prefs/boss.md", not "Agents/Llama/prefs/boss.md").
+   Takes already-normalised path strings — see vaultPaths in hq-runtime;
+   `/vault/list` hands back records, and reading those as strings is what
+   killed this feature in the first place. */
+function memoryNotes(agent, paths) {
+  const root = memoryRoot(agent) + '/';
+  return (paths || [])
+    .filter(p => typeof p === 'string' && p.startsWith(root))
+    .map(p => p.slice(root.length))
+    .filter(Boolean)
+    .sort();
+}
+
+/* What the card says. `paths` null means we could not read the cabinet —
+   and "0 notes" would then be a lie of exactly the kind §4 exists to stop:
+   it claims the coworker has saved nothing when the truth is that nobody
+   looked. Returns null so the row renders nothing at all. */
+function memoryLabel(agent, paths) {
+  if (!paths) return null;
+  const n = memoryNotes(agent, paths).length;
+  return n === 1 ? '1 note' : `${n} notes`;
+}
+
+export { brainName, CAST_CLASSES, CAST_DEFAULT, memoryLabel, memoryNotes, memoryRoot, poweredBy, specialtyTag, statBars };

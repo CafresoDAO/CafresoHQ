@@ -1,7 +1,8 @@
 import { CafresoHQV2 } from '../features.jsx';
+import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
-import { brainName } from '../app/cast.jsx';
+import { brainName, memoryLabel, memoryNotes } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
@@ -435,6 +436,28 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
     return m;
   }, [activity]);
 
+  /* What each coworker has written down. The notes have always existed —
+     `Agents/<name>/` in the vault — but no boss-facing surface ever showed
+     them, so the office's one persistent, across-sessions fact about an
+     employee was invisible unless you went digging in the file tree.
+
+     One list for the whole roster, not one fetch per card. `null` means the
+     cabinet could not be read, and that is deliberately NOT the same as an
+     empty list: rendering "0 notes" when nobody looked would claim the
+     coworker has saved nothing, which is the exact shape of dishonesty §4
+     forbids. memoryLabel returns null for it and the row disappears. */
+  const [vaultPaths, setVaultPaths] = useSV(null);
+  React.useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const list = await CafresoHQClient.vaultList();
+        if (!dead) setVaultPaths((list || []).map(f => (f && typeof f === 'object') ? String(f.path || '') : String(f || '')).filter(Boolean));
+      } catch (_e) { if (!dead) setVaultPaths(null); }
+    })();
+    return () => { dead = true; };
+  }, [agents.length]);
+
   // The office attention pill / nav badge fires this to force the inbox open.
   React.useEffect(() => {
     const open = () => setShowInbox(true);
@@ -527,6 +550,18 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                   <div><span className="lbl">Work done</span><span className="val">{(a.tokens||0).toLocaleString()}</span></div>
                   <div><span className="lbl">Payroll</span><span className="val">${cost}</span></div>
                   <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
+                  {/* Their notebook. Hidden entirely when the cabinet is
+                      unreadable — see the comment on vaultPaths. */}
+                  {(() => {
+                    const label = memoryLabel(a, vaultPaths);
+                    if (!label) return null;
+                    const notes = memoryNotes(a, vaultPaths);
+                    return (
+                      <div><span className="lbl">Remembers</span>
+                        <span className="val" title={notes.length ? notes.slice(0, 12).join('\n') : 'nothing saved yet'}>{label}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="team-tools">
                   {(a.tools||[]).map(t => <span key={t}>{t}</span>)}

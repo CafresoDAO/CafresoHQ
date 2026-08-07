@@ -449,6 +449,29 @@ charming; the coworkers are competent.
 > succeeds, mood clears and the badge should go with it, the same honesty
 > rule as a prop visit only playing while the tool call is really running.
 
+> ✅ **Their notebook, shipped 2026-08-06.** Fixing the dead private-memory
+> feature (§6 pass four) left it working but *invisible*: a coworker's
+> notes live in `Agents/<name>/` in the vault, and no boss-facing surface
+> ever mentioned them. The one thing the office knows about an employee
+> that survives across sessions was something you had to go digging in a
+> file tree to find — which is not what having staff feels like.
+>
+> The card grows a **Remembers** row: `1 note`, with the note names on
+> hover. One `vaultList()` for the whole roster, not one per card.
+>
+> **Unreadable is not the same as empty.** If the cabinet can't be read the
+> row renders *nothing* — `memoryLabel` returns null. "0 notes" would claim
+> the coworker has saved nothing when the truth is that nobody looked, and
+> that is the same shape of lie §4 exists to stop. A coworker who really
+> has saved nothing does read `0 notes`, because that claim is true.
+>
+> `memoryRoot()` now lives here rather than being spelled out by hand in
+> two places in `hq-runtime` — the runtime writes to that folder, the
+> roster reads from it, and a boss-facing count that disagreed with where
+> the agent actually saves would be worse than no count. Verified end to
+> end on a live local model: write → the index reaching the next prompt
+> (captured off the wire) → read → the coworker answering from it.
+
 ## 3. First run — five minutes to first delight
 
 The protected front door (North Star §3.6). No settings pages, no model IDs,

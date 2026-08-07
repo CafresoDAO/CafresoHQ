@@ -1,5 +1,6 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
+import { memoryRoot } from './app/cast.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -981,8 +982,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   // can't read another agent's notes by accident.
   const memReady = await TOOL_REGISTRY.memory_list.requires();
   if (memReady) {
-    const safeName = String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
-    const root = `Agents/${safeName}`;
+    const root = memoryRoot(agent);
     const scope = (rel) => {
       const p = String(rel || '').replace(/^[./\\]+/, '').replace(/\\/g, '/');
       // Refuse path-traversal attempts.
@@ -1624,8 +1624,8 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
      size reasonable. */
   let agentMemoryNote = '';
   try {
-    const safeName = String(agent.name || 'agent').replace(/[^A-Za-z0-9_-]+/g, '_');
-    const root = `Agents/${safeName}/`;
+    const safeName = memoryRoot(agent).slice('Agents/'.length);
+    const root = memoryRoot(agent) + '/';
     const all = vaultPaths(await CafresoHQClient.vaultList());
     const mine = all.filter(p => p.startsWith(root)).map(p => p.slice(root.length));
     if (mine.length) {

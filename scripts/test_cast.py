@@ -98,6 +98,21 @@ R.bnKeepsAll = ['gemma','3','27']
 R.bnNoPrefixLeak = ['openrouter','ollama','gemini-api','google/','meta-llama/']
   .every(p => !brainName(A('openrouter:google/gemma-3-27b-it')).toLowerCase().includes(p)
            && !brainName(A('ollama:llama-3.3-70b-instruct')).toLowerCase().includes(p));
+// ── the coworker's notebook ─────────────────────────────────────────────
+R.mrPlain  = memoryRoot({ name: 'Llama' });
+R.mrSpaces = memoryRoot({ name: 'Ada Lovelace' });
+R.mrPunct  = memoryRoot({ name: 'K.I.T.T./9' });
+R.mrEmpty  = memoryRoot({});
+const PATHS = ['Agents/Llama/prefs/boss.md', 'Agents/Llama/decisions/x.md',
+               'Agents/Llamabot/other.md', 'Deliveries/note.md', 'Agents/Llama/'];
+R.mnMine   = memoryNotes({ name: 'Llama' }, PATHS);
+R.mnNoBleed= memoryNotes({ name: 'Llamabot' }, PATHS);
+R.mnNone   = memoryNotes({ name: 'Nobody' }, PATHS);
+R.mnNull   = memoryNotes({ name: 'Llama' }, null);
+R.mlTwo    = memoryLabel({ name: 'Llama' }, PATHS);
+R.mlOne    = memoryLabel({ name: 'Llamabot' }, PATHS);
+R.mlZero   = memoryLabel({ name: 'Nobody' }, PATHS);
+R.mlUnread = memoryLabel({ name: 'Llama' }, null);
 console.log(JSON.stringify(R));
 ''')
 
@@ -148,6 +163,24 @@ console.log(JSON.stringify(R));
     check('every identity token of the id survives', out['bnKeepsAll'])
     check('no routing prefix or org path ever leaks to the card',
           out['bnNoPrefixLeak'])
+
+    # the coworker's notebook
+    check('memory root is the agent folder', out['mrPlain'] == 'Agents/Llama')
+    check('spaces become underscores', out['mrSpaces'] == 'Agents/Ada_Lovelace')
+    check('punctuation is collapsed, not dropped silently',
+          out['mrPunct'] == 'Agents/K_I_T_T_9', out['mrPunct'])
+    check('a nameless agent still gets a folder', out['mrEmpty'] == 'Agents/agent')
+    check('notes are relative to their own folder',
+          out['mnMine'] == ['decisions/x.md', 'prefs/boss.md'], str(out['mnMine']))
+    check('a same-prefix neighbour does not bleed in',
+          out['mnNoBleed'] == ['other.md'], str(out['mnNoBleed']))
+    check('the folder entry itself is not a note', 'Agents/Llama/' not in str(out['mnMine']))
+    check('an agent with nothing saved has no notes', out['mnNone'] == [])
+    check('an unreadable cabinet yields no notes', out['mnNull'] == [])
+    check('the label pluralises', out['mlTwo'] == '2 notes' and out['mlOne'] == '1 note')
+    check('nothing saved reads as 0 notes', out['mlZero'] == '0 notes')
+    check('an UNREADABLE cabinet reads as nothing at all, not "0 notes"',
+          out['mlUnread'] is None, str(out['mlUnread']))
 
     print()
     if FAILS:
