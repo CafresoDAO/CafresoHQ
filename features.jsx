@@ -829,7 +829,7 @@ function ReceiptTray({ receipts, onOpen }) {
    money box, and REPLAY — which closes the paper and re-enacts the night on
    the office floor by re-dispatching condensed cafresohq:agentTool events.
    Reduced-motion users just read the list. */
-function MorningReportModal({ report, onClose }) {
+function MorningReportModal({ report, onClose, onGoToOffice }) {
   if (!report) return null;
   const fmtT = (ts) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const byAgent = {};
@@ -851,8 +851,27 @@ function MorningReportModal({ report, onClose }) {
   const reduced = typeof window !== 'undefined' && window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const replay = () => {
-    onClose(); // the office needs to be visible for the re-enactment
+    /* The re-enactment plays on the FLOOR, and closing the paper only
+       reveals whatever was behind it. A boss who opened the Gazette from
+       Chat, Tasks or the Vault got 15 seconds of animation on a view they
+       were not looking at — a button that appears to do nothing. Go to the
+       office first, then close. */
+    if (onGoToOffice) onGoToOffice();
+    onClose();
     const evs = report.activity.slice(0, 24).reverse();
+    /* §4: an animation must never claim work that is not happening. This
+       re-enactment drives the SAME desk lights and visit lines as a live
+       run, and until now it did so with nothing on screen to say so — a
+       boss who clicked REPLAY watched their coworkers appear to work on
+       jobs that finished hours ago. The floor now shows a band for the
+       duration; `end` is scheduled past the last event's own 450ms
+       tail so the band outlives the last light. */
+    const REPLAY_MS = evs.length * 600 + 700;
+    try {
+      window.dispatchEvent(new CustomEvent('cafresohq:replay', { detail: { phase: 'start' } }));
+      setTimeout(() => window.dispatchEvent(
+        new CustomEvent('cafresohq:replay', { detail: { phase: 'end' } })), REPLAY_MS);
+    } catch (_e) {}
     evs.forEach((a, i) => {
       setTimeout(() => {
         try {
@@ -872,8 +891,14 @@ function MorningReportModal({ report, onClose }) {
     <OcModal open onClose={onClose} title="🗞 HQ GAZETTE" subtitle={`morning report · while you were away since ${fmtT(report.since)}`} size="lg"
       footer={
         <>
+          {/* "THE NIGHT" is only true when a night shift actually ran. This
+              button is gated on activity, not on nightRuns, so on an office
+              that has never run one it promised a night that did not
+              happen. Say which it is. */}
           {!reduced && report.activity.length > 0 && (
-            <button className="px-btn secondary" style={{ marginRight: 'auto' }} onClick={replay}>▶ REPLAY THE NIGHT</button>
+            <button className="px-btn secondary" style={{ marginRight: 'auto' }} onClick={replay}>
+              {(report.nightRuns || []).length > 0 ? '▶ REPLAY THE NIGHT' : '▶ REPLAY WHAT HAPPENED'}
+            </button>
           )}
           <button className="px-btn primary" onClick={onClose}>TO WORK</button>
         </>

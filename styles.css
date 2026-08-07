@@ -4021,6 +4021,17 @@ body.night .settings-shell .cb-panel {
 .tc-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .tc-assigned { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; color: var(--ink); }
 .tc-unassigned { color: var(--ink-3); font-size: 14px; font-style: italic; }
+/* The Gazette's re-enactment drives real desk animations, so the floor has
+   to say so. Deliberately plain and non-alarming: nothing is wrong, the
+   boss is watching a recording. */
+.px-replay-band {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 40; padding: 4px 10px;
+  font-family: 'Press Start 2P'; font-size: 8px; letter-spacing: 0.08em;
+  color: var(--ink); background: var(--accent-lav);
+  border: 2px solid var(--ink); white-space: nowrap;
+}
+
 /* Why a card came back to the inbox on its own. Quiet — it explains, it
    does not alarm: nothing went wrong, the job just stopped being run. */
 .tc-stalled {

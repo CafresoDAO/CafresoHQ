@@ -4988,7 +4988,7 @@ ${d.text}` : d.text,
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
       {/* ApprovalTray moved inline into view-area */}
       <ReceiptTray receipts={receipts} onOpen={()=>setReceiptsOpen(true)}/>
-      <MorningReportModal report={gazette} onClose={()=>setGazette(null)} />
+      <MorningReportModal report={gazette} onClose={()=>setGazette(null)} onGoToOffice={()=>navTo('visual')} />
       <ReceiptsModal open={receiptsOpen} onClose={()=>setReceiptsOpen(false)} receipts={receipts} onClear={onClearReceipts}
         onPin={(r) => onPin({ kind:'receipt', text:`${r.decision === 'approved' ? '✓' : '✕'} ${r.title}`, sourceId: r.id })}/>
       <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)}/>

@@ -843,6 +843,18 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
   const [wallHealth, setWallHealth] = React.useState(null);   // null checking | true | false
   const [wallSearch, setWallSearch] = React.useState(null);   // null unknown | {ok}
   const [goldTreasury, setGoldTreasury] = React.useState(null); // BigInt raw e8s | null
+
+  /* §4: the Gazette's REPLAY drives the SAME desk lights and visit lines as
+     a live run. Without this the floor was indistinguishable from real work
+     — coworkers appearing to work on jobs that finished hours ago, which is
+     precisely the animation this document forbids. The band says what the
+     boss is looking at, for exactly as long as the re-enactment runs. */
+  const [replaying, setReplaying] = React.useState(false);
+  React.useEffect(() => {
+    const on = (e) => setReplaying(!!(e && e.detail && e.detail.phase === 'start'));
+    window.addEventListener('cafresohq:replay', on);
+    return () => window.removeEventListener('cafresohq:replay', on);
+  }, []);
   /* Runs on phones too. The wall was un-gated from `!isMobileOffice` so a
      phone could tell a healthy office from a dead one — but THIS, the fetch
      that answers the question, kept its gate. Half a change: the wall
@@ -1105,6 +1117,11 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
             being able to tell a healthy office from a dead one. It renders
             everywhere now; CSS lays it out as a strip on narrow screens
             instead of a floating box. */}
+        {replaying && (
+          <div className="px-replay-band" role="status">
+            ↺ REPLAYING — this already happened
+          </div>
+        )}
         <div className="px-hud right sit-wall" title="Situation Wall — live office telemetry">
             <div className="sw-title">◉ SITUATION</div>
             {/* `backendDown` is the app-level probe and it wins when true.
