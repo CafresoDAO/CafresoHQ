@@ -1415,9 +1415,17 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               <div className="px-awning" aria-hidden="true" />
               <Px n="cooler" className="px-lobbycooler" title="Water cooler" style={{ left: 18, bottom: 10 }} />
               <Px n="doors" className="px-doors" />
+              {/* The label below was '…— start a stand-up'. The office
+                  banner was corrected for exactly this (the door seats the
+                  team in the MEETING ROOM; the stand-up is a separate modal
+                  behind 🌅 STAND-UP / `u`) — but the fix landed on the
+                  banner and never on this control's own label, so the wrong
+                  sentence kept shipping to screen readers, the one audience
+                  that cannot see the banner that replaced it. Same shape as
+                  fixing a toast and leaving the state it described. */}
               <Px n="meetdoor" className="px-meetdoor clickable" title="Open meeting room"
                   onClick={(e)=>{e.stopPropagation(); onOpenMeeting();}}
-                  {...pressable(()=>onOpenMeeting(), 'Open the meeting room — start a stand-up')}
+                  {...pressable(()=>onOpenMeeting(), 'Open the meeting room — seats the team')}
                   style={{ right: 24, bottom: 10 }} />
               <div className="px-label" style={{ right: 20, bottom: 2 }}>MEETING</div>
               {ambientOk && meetingActive && meetingIds.length > 0 && (

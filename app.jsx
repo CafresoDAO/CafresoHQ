@@ -3493,7 +3493,15 @@ ${d.text}` : d.text,
                   The stand-up is a different modal behind 🌅 STAND-UP / `u`.
                   The banner is always on screen, so it was the app's most
                   repeated wrong sentence. */}
-              <span className="tag">drop task cards on desks to delegate · click guest chair for 1:1 · meeting door seats the team</span>
+              {/* "guest chair" named a piece of furniture the floor does
+                  not have. The 1:1 prop is a COUCH, and the floor labels it
+                  `1:1 SOFA` in its own pixel type — so a boss reading this
+                  banner went looking for a chair. The banner now uses the
+                  floor's own word; the room is the source of truth for what
+                  is in it. (The CEO panel's mini-office does have a
+                  `.guest-chair`, which is where the wording came from — but
+                  that is a different surface, behind a modal.) */}
+              <span className="tag">drop task cards on desks to delegate · click the 1:1 sofa for a one-to-one · meeting door seats the team</span>
             </div>
             <OfficeView
               agents={agents}

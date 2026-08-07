@@ -1121,6 +1121,34 @@ append-only).
 > Gone. The hint already names the real next action. Measured: the rail
 > drops 80px → **53px** and the floor gains 26px of height (top 182 → 156).
 
+> ✅ **The banner named furniture the room doesn't have (2026-08-06).**
+> Same technique again — read an instruction, check the code does it. The
+> office banner is on screen at all times and makes three promises. An
+> earlier pass audited what the three controls *do*; it never asked whether
+> they are **on this surface**.
+>
+> - **"click guest chair for 1:1"** — there is no guest chair on the floor.
+>   The 1:1 prop is a couch, and the floor labels it **`1:1 SOFA`** in its
+>   own pixel type. A boss reading the banner went hunting for a chair. The
+>   wording came from the CEO panel's mini-office, which really does have a
+>   `.guest-chair` — but that is a different surface, behind a modal. The
+>   banner now uses the floor's own word: **the room is the source of truth
+>   for what is in it.**
+> - **The meeting door's accessible label still read "— start a stand-up".**
+>   The banner had been corrected for precisely this error (the door seats
+>   the team in the *meeting room*; the stand-up is a separate modal behind
+>   🌅 STAND-UP / `u`) — but the correction landed on the banner and never
+>   on the control's own label. So the wrong sentence kept shipping to
+>   **screen readers: the one audience that cannot see the banner that
+>   replaced it.** Same shape as fixing a toast and leaving the state it
+>   described (§5's `doing` bug).
+>
+> Method note: the first pass of this check used the CEO panel's class
+> names (`.guest-chair`, `.meeting-door`) against the floor and concluded
+> both were missing entirely. They weren't — the floor classes them
+> `.px-couch` and `.px-meetdoor`. **A DOM query that finds nothing is not
+> evidence of absence until the selector is verified.**
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw
