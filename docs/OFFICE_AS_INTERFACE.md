@@ -416,6 +416,18 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+*The tell for a broken fixture is a result too uniform to be informative.*
+Failure shape (4) has now surfaced three ways in one session, and each time
+the bad measurement looked calm rather than wrong: three `withHandoff` cases
+that returned byte-identical strings (the stub `C` never satisfied
+`agentBrainReady`, so the hint was `''` every time); a Gazette probe reading
+26 rows against an 80-row cap it was meant to exceed; a Situation Wall
+"missing" on mobile when the office view simply wasn't open. None of them
+errored. Before believing a comparison, check that the arms actually
+DIFFER — if every branch agrees, suspect the fixture before the code, and
+prove the precondition is real (`brainReady: [true, true]`, `0 HIRED`,
+`onOffice: true`) rather than assuming the setup took.
+
 *Cleaning up needs BOTH, and the mirror is the one that survives.* Restoring
 only the file looks like it worked — the file reads clean — while the tab
 still holds the fixture and `mergeByIdCap` merges it straight back on the next

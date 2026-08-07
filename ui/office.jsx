@@ -806,8 +806,21 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
   const [wallSearch, setWallSearch] = React.useState(null);   // null unknown | {ok}
   const [wallCrew, setWallCrew] = React.useState(null);       // {installed, total} | null
   const [goldTreasury, setGoldTreasury] = React.useState(null); // BigInt raw e8s | null
+  /* Runs on phones too. The wall was un-gated from `!isMobileOffice` so a
+     phone could tell a healthy office from a dead one — but THIS, the fetch
+     that answers the question, kept its gate. Half a change: the wall
+     arrived on mobile and its lamp never resolved.
+
+     Measured at 375px on the office view: HQ sat amber on "Checking
+     container…" indefinitely, and the SEARCH and crew rows were absent
+     because their state stayed null. A lamp stuck on "checking" is a claim
+     that something is in progress when nothing is running at all — worse
+     than the red it would have shown for a genuinely dead container.
+
+     The 30s poll already skips while `document.hidden`, so a backgrounded
+     phone still costs nothing; that guard is what makes the original
+     battery gate unnecessary rather than merely inconvenient. */
   React.useEffect(() => {
-    if (isMobileOffice) return;
     const client = CafresoHQClient;
     if (!client) return;
     let dead = false;
@@ -829,7 +842,7 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
       } catch (_e) {}
     })();
     return () => { dead = true; clearInterval(t); };
-  }, [isMobileOffice]);
+  }, []);
   React.useEffect(() => {
     if (!walletServiceOn || isMobileOffice || !plWallets || !plWallets.length) return;
     let dead = false;
