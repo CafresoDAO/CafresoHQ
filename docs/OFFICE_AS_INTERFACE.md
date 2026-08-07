@@ -496,6 +496,29 @@ fabricated filing shows up as a claim with no matching line. That is a weak
 signal against a confident sentence, and it is the correct amount of
 certainty the office actually has.
 
+**…and the line moved once, on 2026-08-07, which shows where it really
+sits.** Driving two local coworkers and failing twice to make one hand off
+to the other turned up a third residue that looked like the two above: the
+coworker told the boss it had asked a teammate, and nothing had been sent.
+The first attempt was pure prose ("Nova, can you name one colour of a ripe
+lemon?") and belongs squarely on the cannot-catch side — no marker, nothing
+structural, and reading it would mean guessing at sentences.
+
+The second attempt was different, and the difference is the whole rule. It
+ACKed the state `awaiting_reply` while the delivery queue came back empty.
+A state the model **chose from a fixed set** is not prose — it is a claim in
+the office's own vocabulary, checkable against the office's own record. So
+`unsentAsk` catches it, on exactly the same terms as its siblings: silent if
+anything was delivered, silent unless the wait was actually declared, and it
+takes the PARSED STATES rather than the text so a sentence containing the
+word cannot trigger it.
+
+The boundary is not "claims the model makes" versus "claims it doesn't". It
+is **claims made in a vocabulary the office defines** — markers, ACK states,
+tool visits — versus claims made in English. The first kind is checkable and
+every one of them should be checked. The second is not, and pretending
+otherwise is how a guard starts guessing.
+
 **A function can be right and unused.** The reply-hygiene suite was green
 through the whole of the worst bug this session: `visibleReply` was correct,
 and its output never reached the chat bubble on two of three dispatch paths.
@@ -937,7 +960,22 @@ should extend that boundary, not blur it.
   blocked rather than running a doomed mission, so this is friction rather
   than a trap. Whether a detected brain should arrive with Vault Notes on is a
   permissions decision: it is write access to the boss's cabinet.
-- **`awaiting_reply` never resolves, so the inbox badge only ever grows.**
+- **`awaiting_reply` — the common case now closes; the rest is still open.**
+  UPDATE 2026-08-07: the fan-out loop AWAITS every child dispatch, so when it
+  exits, each recipient has run to a terminal state and the awaited thing has
+  happened. A message still sitting in `awaiting_reply` at that point is now
+  closed with "all N replies came back" — a statement of fact, needing none
+  of the policy below. Narrow on purpose: it fires only when this run really
+  dispatched somebody, so a fan-out that matched no hired teammate still
+  reads as waiting, because it is. **NOT DRIVEN LIVE** — two attempts to make
+  one local coworker hand off to another both failed to produce a `DM_TO`
+  block at all, so the branch was never entered. It cannot fire when the
+  queue is empty, so the risk of it being wrong is that it does nothing.
+  Still open, and still a decision rather than a fix: a recipient who never
+  answers, and a boss who wants to clear one by hand. The original writeup
+  follows.
+
+- **~~`awaiting_reply` never resolves, so the inbox badge only ever grows.~~**
   A coworker who asks someone and posts `[ACK: awaiting_reply: asked Nova…]`
   leaves that message non-terminal. When the answer arrives it creates a NEW
   message; all eight `MessageRegistry.transition` call sites act on the
