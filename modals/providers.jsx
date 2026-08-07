@@ -306,7 +306,7 @@ function ApiTab() {
         <h4>SUB-AGENT MODEL</h4>
         <div className="row-knob">
           <div>
-            <div className="lbl">Sub-agent model</div>
+            <div className="lbl">Helper brain</div>
             <div className="sub">
               {s.subagentModel === 'inherit'
                 ? 'Sub-agents inherit the spawner\'s model.'
@@ -329,7 +329,7 @@ function ApiTab() {
           <div className="row-knob">
             <div>
               <div className="lbl">Pinned model</div>
-              <div className="sub">used for every transient sub-agent</div>
+              <div className="sub">used for every one-shot helper</div>
             </div>
             <ModelPicker value={s.subagentModel}
                          onChange={(id) => update({ subagentModel: id || 'inherit' })} />
@@ -365,7 +365,7 @@ function ApiTab() {
             <select value={s.anthropicModel} onChange={e=>update({anthropicModel: e.target.value})}>
               {CafresoHQClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
-            <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
+            <span className="hint">used for the CEO and any helper without a brain of their own</span>
           </div>
         </div>
       )}
@@ -384,7 +384,7 @@ function ApiTab() {
             <select value={s.googleModel} onChange={e=>update({googleModel: e.target.value})}>
               {CafresoHQClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
-            <span className="hint">used for CEO + any sub-agent whose model isn't pinned</span>
+            <span className="hint">used for the CEO and any helper without a brain of their own</span>
           </div>
         </div>
       )}

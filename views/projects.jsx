@@ -991,7 +991,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                       key={a.id}
                       className={'proj-agents-row' + (checked ? ' checked' : '')}
                       onClick={() => toggleAgent(a.id)}
-                      title={`${a.role}${a.elevated ? ' · elevated (computer access)' : ''}`}
+                      title={`${a.role}${a.elevated ? ' · has file and shell access' : ''}`}
                     >
                       <span className={'proj-agents-checkbox' + (checked ? ' checked' : '')}>
                         {checked ? '✓' : ''}

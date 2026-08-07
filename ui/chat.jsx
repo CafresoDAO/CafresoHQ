@@ -8,7 +8,7 @@ const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, us
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
   { id: 'team',     label: 'TEAM',     icon: '💬', desc: 'Your coworkers talking to each other' },
-  { id: 'research', label: 'RESEARCH', icon: '🔬', desc: 'Research mission iterations' },
+  { id: 'research', label: 'RESEARCH', icon: '🔬', desc: 'Research mission rounds' },
 ];
 
 /* ---- Swipe-to-reply/DM wrapper for mobile chat messages ---- */
@@ -912,7 +912,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         {visibleChat.length === 0 && !searchQuery && (
           <div className="thread-empty">
             {activeThread === 'direct'   && <>No messages yet — type below to message CafresoHQ.</>}
-            {activeThread === 'team'     && <>No team chatter yet. When sub-agents DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
+            {activeThread === 'team'     && <>No team chatter yet. When coworkers DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
             {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each iteration's output lands here.</>}
             {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message all assigned agents at once, or @-mention a subset.</>}
             {activeRoom && activeRoom.kind === 'meeting' && <>No messages in this meeting yet. Type below to send to all attendees, or @-mention specific people.</>}
@@ -1110,7 +1110,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         {showDelegate && (
           <div className="delegate-pop">
             <div className="title">HAND OFF TO…</div>
-            {agents.length === 0 && <div className="muted" style={{padding:'6px',fontSize:15}}>No sub-agents yet.</div>}
+            {agents.length === 0 && <div className="muted" style={{padding:'6px',fontSize:15}}>No coworkers yet.</div>}
             {agents.map(a => (
               <div key={a.id} className="item" onClick={()=>{ onDelegate(a); setShowDelegate(false); }}>
                 <Sprite data={a.color} scale={1}/>

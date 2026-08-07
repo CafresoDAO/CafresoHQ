@@ -928,10 +928,10 @@ const TOOL_REGISTRY = {
     re: /\[\s*REQUEST_ELEVATION\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*REQUEST_ELEVATION\s*\]/i,
     requires: () => true,
     doc:
-      '- [REQUEST_ELEVATION: <one-line reason>]\n<details: which tools you need (file/shell), what specifically you\'ll do with them, why your current toolset isn\'t enough>\n[/REQUEST_ELEVATION] — request elevated capabilities (file/shell access).\n' +
+      '- [REQUEST_ELEVATION: <one-line reason>]\n<details: which tools you need (file/shell), what specifically you\'ll do with them, why your current toolset isn\'t enough>\n[/REQUEST_ELEVATION] — ask the boss for file and shell access.\n' +
       '  Requires boss APPROVAL. Use ONLY when ordinary tools (vault, web) genuinely cannot complete the task. Most work doesn\'t need this.\n' +
-      '  Approval applies to FUTURE dispatches — your current reply ends with whatever non-elevated tools you already have. Tell the boss what you\'d do once approved so they can decide.',
-    docShort: 'Ask the boss to grant you elevated (file/shell) access.',
+      '  Approval applies to your NEXT job — this reply finishes with the tools you already have. Tell the boss what you\'d do once approved so they can decide.',
+    docShort: 'Ask the boss for file and shell access.',
     run: async () => '(REQUEST_ELEVATION is dispatched by the host after boss approval)',
   },
   /* HIRE_ASSISTANT — propose hiring a PERMANENT assistant (secretary or

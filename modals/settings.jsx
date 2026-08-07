@@ -30,7 +30,7 @@ const SETTINGS_INDEX = [
   { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
-  { tab:'agents', label:'Elevated · computer access', hint:'file/shell access per agent', kw:'elevated computer shell files access security' },
+  { tab:'agents', label:'File and shell access', hint:'file/shell access per agent', kw:'elevated computer shell files access security' },
   { tab:'agents', label:'Dismiss an agent', hint:'remove a hire from the roster', kw:'dismiss fire let go remove' },
   { tab:'appearance', label:'Theme & vocabulary', hint:'reskin the whole OS — office, coffee shop, trading floor…', kw:'theme skin vocabulary preset sepia solarized dracula high contrast coffeeshop wallstreet barista broker customize personalize' },
   { tab:'appearance', label:'Density', hint:'compact · comfortable · spacious', kw:'density compact comfortable spacious spacing size' },
@@ -675,7 +675,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
               <div className="cb-panel">
                 <h4>ROSTER</h4>
                 <div className="stack">
-                  {agents.length === 0 && <div className="muted">No sub-agents hired.</div>}
+                  {agents.length === 0 && <div className="muted">No coworkers hired.</div>}
                   {agents.map(a => (
                     <div key={a.id} className={`row`} style={{
                       padding: '6px 8px',
@@ -731,7 +731,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                       <div>
                         <div className="lbl" style={{color: sel.elevated ? '#c44' : 'inherit'}}>🛡 Elevated · computer access</div>
                         <div className="sub" style={{maxWidth:240,marginTop:2}}>
-                          Elevated session with file/shell access. DMs blocked, missions opt-in, actions logged.
+                          Has file and shell access. DMs blocked, missions opt-in, every action logged.
                         </div>
                       </div>
                       <div className={`pxswitch ${sel.elevated?'on':''}`} onClick={()=>{

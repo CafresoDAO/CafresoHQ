@@ -336,7 +336,7 @@ async function runMissionIteration(ctx) {
        used everywhere else a surface brings its own icon or subject. */
     const cause = snagCause(err && err.message || String(err));
     setChat(prev => prev.map(m => m.id === msgId
-      ? { ...m, text: `⚠ Mission iteration failed — ${cause}`, error: true, streaming: false }
+      ? { ...m, text: `⚠ That round of the mission failed — ${cause}`, error: true, streaming: false }
       : m));
     setMissions(prev => prev.map(x => x.id === mission.id
       ? { ...x, errors: (x.errors || 0) + 1, lastError: cause }

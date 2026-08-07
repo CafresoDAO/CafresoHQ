@@ -2261,7 +2261,7 @@ ${d.text}` : d.text,
       pendingElevationRef.current.add(agent.id);
       const reason = String(req.reason || '').trim().slice(0, 80) || '(no reason given)';
       onApprovalRequest({
-        title: `🛡 Grant elevation to ${agent.name}: ${reason}`,
+        title: `🛡 Give ${agent.name} file and shell access: ${reason}`,
         by: agent.name,
         kind: 'grant-elevation',
         agentId: agent.id,
