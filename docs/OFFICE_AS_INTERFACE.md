@@ -369,6 +369,60 @@
 
 ---
 
+## 0. Where this stands (read this first)
+
+This document has grown a long chronological tail of ✅ notes — useful as a
+record of *why* each rule exists, unusable as a map. This section is the map.
+It is a **status summary, not a spec**; the sections below remain the spec.
+
+**Verified end to end, by driving the real app against a live local model:**
+
+| loop | evidence |
+|---|---|
+| first run on a wiped install | front desk → hire → task → **▶ START** → delivery filed, zero §6 jargon in the hiring copy |
+| work in → work out | task assigned → visit block → memo filed to `Deliveries/` with the local date and a Working footer |
+| the cabinet | vault tree → note → editor + preview render the filed note |
+| private memory | write → the index reaching the next prompt (captured off the wire) → read → the coworker answering from it |
+| day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
+| refusal | a mission that cannot write notes will not start, and now says where to fix it |
+
+**The honesty boundary — the thing to preserve.** Everything the *office*
+asserts is enforced in code and tested: the tool visit is structured data the
+coworker cannot forge (§6 pass four), payroll and the FUEL gauge state only
+what is true (§6 pass five), the attention queue counts problems that are
+still yours, and `doing` means someone is actually on it. Everything the
+*coworker* asserts is contextualised by an office record sitting beside it.
+**A boss can always check the office against the coworker.** New surfaces
+should extend that boundary, not blur it.
+
+**Known open, honestly:**
+
+- **A coworker can still assert something false in prose**, and that prose
+  reaches the filed memo. Prompt wording moved it (three deliveries' worth of
+  before/after in §6), but no instruction makes a small model honest. The
+  office's own record is the mitigation, not a fix.
+- **Unverified branches**, called out where they live: the specialist
+  filing-deferral path (needs a cloud brain), and the Gazette's
+  *"+N more coworkers"* line (needs five hires and a four-hour absence).
+  Both rest on unit tests.
+
+**Recurring failure shapes, for whoever reviews the next change:**
+
+1. **A number wearing a claim it hadn't earned** — payroll priced a free
+   local model, a gauge filled toward a budget nobody set, a desk counted
+   chat replies as "filed reports".
+2. **Copy fixed, state left behind** — the "Sent → Drafted" toast was
+   corrected while the line that moved the task to `doing` sat two lines
+   above it; the meeting-door banner was corrected while its `aria-label`
+   kept the old sentence.
+3. **The office asking a coworker for what it already has** — narration of
+   work the floor already shows, and an ACK that demanded a summary the
+   office then stripped.
+4. **A measurement taken against a precondition never established** — most
+   of the false alarms in this doc, and every one is labelled.
+
+---
+
 ## 1. The principle: the metaphor does the teaching
 
 Every AI concept a newcomer finds alien gets a physical counterpart they
