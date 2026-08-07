@@ -1290,10 +1290,20 @@ append-only).
 >   jargon in a file the boss keeps. Now: **"1 sentence, plain words —
 >   don't name your tools."**
 >
-> **Measured, one run each way.** The next delivery opened *"I will check my
-> private notes folder to see if I have previously recorded any information
-> about primary colors"* — no tool name, where the previous two memos both
-> named theirs.
+> **Measured — and later strengthened to three runs.** The filed notes are
+> themselves an auditable record, and the cabinet already held a natural
+> experiment: same model, same machine, three deliveries spanning the
+> change.
+>
+> | filed | opening line |
+> |---|---|
+> | before | "I will use the **[MEMORY_WRITE] tool** to create a note…" |
+> | after | "I will check my **private notes folder**…" |
+> | after | "I will look up a **reliable source**…" |
+>
+> Two after, both free of tool names; one before, carrying one. Still a
+> small sample of a stochastic model, but a better one than the single run
+> first reported here — and it cost no new runs, only reading the cabinet.
 >
 > **Not fixed, and worth being plain about:** the same memo also says *"I do
 > have a note on the colors of the rainbow"* when the lookup returned
@@ -1373,6 +1383,13 @@ append-only).
 > nothing. `totalCount` is now passed unfiltered and is the only thing that
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
+>
+> ✅ **The cabinet works (2026-08-06).** Verified the payoff surface end to
+> end for the first time: the vault tree expands `📁 Deliveries`, lists all
+> three notes, and clicking one opens `vault-edit-pane` + `vault-preview`
+> with the note rendered. Before a note is selected the graph pane takes the
+> full width, which is why the layout first *looked* like a 3-column layout
+> missing a column — it isn't. No changes needed.
 >
 > Method note, a third time: two readings during this check were taken
 > against a precondition that was never established. Deleting the tasks
