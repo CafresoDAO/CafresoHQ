@@ -7,7 +7,7 @@ const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, us
 
 /* ------------ Theme vocabulary system ------------ */
 const THEME_VOCAB = {
-  default:      { agent: 'Agent',   agents: 'Agents',   office: 'Office',        corner: 'CEO',           hire: 'HIRE',     vacant: 'VACANT', live: 'LIVE',     hireTitle: 'Hire a sub-agent' },
+  default:      { agent: 'Agent',   agents: 'Agents',   office: 'Office',        corner: 'CEO',           hire: 'HIRE',     vacant: 'VACANT', live: 'LIVE',     hireTitle: 'Hire a coworker' },
   sepia:        null,
   solarized:    null,
   dracula:      null,

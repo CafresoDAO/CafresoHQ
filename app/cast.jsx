@@ -178,6 +178,13 @@ function payrollLabel(agent) {
    and "Payroll" (what it costs), and it is neither of those. */
 const EFFORT_TIP = "Effort: how much reading and writing this coworker has done this session. It is not a count of jobs — Jobs is that — and it is not a cost; Payroll is.";
 
+/* The office-wide total wears the same word. Two surfaces show it — the
+   Situation Wall and the topbar HUD — and when I renamed the per-coworker
+   ones to "Effort" I updated the wall and missed the HUD, which sat there
+   still saying "Work done across the office". Third copy, so it lives here
+   now. */
+const OFFICE_EFFORT_TIP = "Effort across the whole office this session — reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.";
+
 /* ── Can this office actually work? ───────────────────────────────────────
    `hasUsableKey()` with no argument answers one narrow question: is the
    DEFAULT provider configured. That is the right question for the CEO's own
@@ -259,4 +266,4 @@ function handoffHint(agents, C) {
     : ` ${names} are still working, though — @mention one of them and they can pick this up.`;
 }
 
-export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };
+export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };

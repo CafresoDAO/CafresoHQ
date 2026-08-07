@@ -7,7 +7,7 @@ import { CafresoHQClient } from '../claude-client.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
   { id: 'direct',   label: 'DIRECT',   icon: '📞', desc: 'You & CafresoHQ' },
-  { id: 'team',     label: 'TEAM',     icon: '💬', desc: 'Sub-agents talking to each other' },
+  { id: 'team',     label: 'TEAM',     icon: '💬', desc: 'Your coworkers talking to each other' },
   { id: 'research', label: 'RESEARCH', icon: '🔬', desc: 'Research mission iterations' },
 ];
 
@@ -1052,7 +1052,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             input. Small pills that respect their content width; they push
             to the right via flex auto. */}
         <div className="actions">
-          <button className="composer-mini composer-mini--ghost" onClick={()=>setShowDelegate(s=>!s)} title="Hand off to a sub-agent">
+          <button className="composer-mini composer-mini--ghost" onClick={()=>setShowDelegate(s=>!s)} title="Hand this to one of your coworkers">
             <Ico kind="delegate" size={11}/> Delegate
           </button>
           {backendDown && !streaming && (

@@ -3,6 +3,7 @@ import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico, NAV_ITEMS, useVocab } from './primitives.jsx';
 import { deskKit, floorOn, PROP_PLACARD, toolProp } from '../app/floor.jsx';
 import { xpLastAttempt, xpLastAttemptText } from '../app/experience.jsx';
+import { OFFICE_EFFORT_TIP } from '../app/cast.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 function Tab({
   value, label, badge, icon, disabled,
@@ -1102,7 +1103,7 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
               /* §6 names the floor explicitly: never "tokens" here. Same
                  number, office words — and no invented unit ("words" would
                  overstate it), just what the figure means. */
-              <div className="sw-row" title="Effort across the whole office this session — reading and writing, not jobs finished. Payroll stays per coworker: one total across brains that bill differently (or not at all) isn't a real number.">
+              <div className="sw-row" title={OFFICE_EFFORT_TIP}>
                 {/* Was a FUEL bar filling toward a hardcoded 1,000,000.
                     Nothing sets that ceiling and nothing enforces it, so
                     the gauge read "4% used" of a tank that does not exist —

@@ -7,7 +7,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
-import { officeHasBrain } from './app/cast.jsx';
+import { brainName, officeHasBrain } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
@@ -1612,21 +1612,21 @@ ${d.text}` : d.text,
             // us we're already in a sub-agent context.
             if (agent.transient) {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${agent.name} tried to spawn a further sub-agent; blocked — sub-agents can't spawn)`, thread: 'team' }]);
+                text: `(${agent.name} tried to bring in another helper — a helper can't bring in helpers of their own.)`, thread: 'team' }]);
             } else {
               subSpawnQueue.push({ role: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'hire-agent') {
             if (agent.transient || agent.assistant) {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${agent.name} tried to propose a peer hire; blocked — ${agent.transient ? 'transient sub-agents' : 'assistants'} cannot propose hires)`, thread: 'team' }]);
+                text: `(${agent.name} tried to suggest a new hire — ${agent.transient ? 'a helper' : 'an assistant'} can't suggest hires.)`, thread: 'team' }]);
             } else {
               hireRequestQueue.push({ nameAndRole: ev.arg, body: ev.body });
             }
           } else if (ev.phase === 'hire-assistant') {
             if (agent.transient || agent.assistant) {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${agent.name} tried to hire an assistant; blocked — ${agent.transient ? 'transient sub-agents' : 'assistants'} cannot have their own assistants — depth-1 hierarchy)`, thread: 'team' }]);
+                text: `(${agent.name} tried to hire an assistant — ${agent.transient ? 'a helper' : 'an assistant'} can't have assistants of their own; your team is one level deep.)`, thread: 'team' }]);
             } else {
               hireAssistantQueue.push({ nameAndRole: ev.arg, body: ev.body });
             }
@@ -1953,7 +1953,7 @@ ${d.text}` : d.text,
     for (const sub of subSpawnQueue) {
       if (!consumeSubSpawnBudget(agent.id)) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(${agent.name}'s sub-agent spawn budget exhausted — limit ${SUB_SPAWN_MAX} per ${SUB_SPAWN_WINDOW_MS/1000}s)`, thread: 'team' }]);
+          text: `(${agent.name} has brought in as many helpers as they're allowed for now — ${SUB_SPAWN_MAX} every ${SUB_SPAWN_WINDOW_MS/1000} seconds.)`, thread: 'team' }]);
         break;
       }
       /* Existing-assistant overlap check: if this senior already has a
@@ -1982,7 +1982,7 @@ ${d.text}` : d.text,
         });
       if (matchingAssistant) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `🔁 ${agent.name} tried to SPAWN_SUBAGENT for "${sub.role}" but already has assistant ${matchingAssistant.name} (${matchingAssistant.role}) covering this. Redirecting to DM_TO instead — assistants keep memory, sub-agents don't.`,
+          text: `🔁 ${agent.name} asked for a helper on "${sub.role}", but ${matchingAssistant.name} (${matchingAssistant.role}) already covers that — passing it to them instead. An assistant remembers past work; a helper starts fresh each time.`,
           thread: 'team' }]);
         // Re-dispatch as a DM to the existing assistant. Use the same
         // budget bucket as the spawn would have (we already consumed one
@@ -2026,7 +2026,12 @@ ${d.text}` : d.text,
       const downgrade = downgradeElevatedModel(subModel, settings);
       if (downgrade.swapped) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `🔁 Sub-agent model swapped: ${subModel} → ${downgrade.model} (${downgrade.why} — sub-agents can't be elevated).`,
+          /* §6: this named two RAW MODEL IDS to the boss, which the table
+             bans outright, and called them a "Sub-agent model swap". brainName
+             is the office's word for a brain; `downgrade.why` stays out of the
+             bubble because "elevation-only provider" explains nothing to a boss
+             — the reason that matters is what a helper is and isn't allowed. */
+          text: `🔁 That helper is on ${brainName({ model: downgrade.model })} rather than ${brainName({ model: subModel })} — that brain is only for coworkers with file and shell access, and a helper never gets those.`,
           thread: 'team' }]);
         subModel = downgrade.model;
       }
@@ -2055,7 +2060,7 @@ ${d.text}` : d.text,
       // Visible in UI immediately.
       setAgents(prev => [...prev, transientAgent]);
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `🌱 ${agent.name} spawned ${transientAgent.name} (${role}) for: "${(sub.body||'').split('\n')[0].slice(0, 80)}"`,
+        text: `🌱 ${agent.name} brought in ${transientAgent.name} (${role}) to help with: "${(sub.body||'').split('\n')[0].slice(0, 80)}"`,
         thread: 'team' }]);
       // Create a parent message record explicitly so the inbox shows the spawn.
       const spawnMsgId = MessageRegistry.createMessage({

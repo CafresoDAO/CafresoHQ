@@ -1,7 +1,7 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
-import { brainName, EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
+import { brainName, EFFORT_TIP, OFFICE_EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
 import { officeDate } from '../app/artifacts.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
@@ -228,7 +228,7 @@ function TokenHUD({ tokens, budget=null, className='' }) {
        local model and a flat-rate CLI hire was shown a bill for money
        nobody was spending. A total across brains that charge differently —
        or not at all — is not a number that exists; the work done is. */
-    <div className={`token-hud${className ? ' '+className : ''}`} title="Work done across the office this session. Payroll is per coworker — see their cards.">
+    <div className={`token-hud${className ? ' '+className : ''}`} title={OFFICE_EFFORT_TIP}>
       <span>⛽</span>
       <span>{(tokens/1000).toFixed(1)}K</span>
       {hasBudget && <div className="bar"><div className="fill" style={{width: pct+'%'}}/></div>}
@@ -245,7 +245,7 @@ function ShortcutHud({ open, setOpen }) {
           <h5>⌨ SHORTCUTS</h5>
           <div className="kbrow">
             <kbd>⌘K</kbd><span>Toggle shortcuts</span>
-            <kbd>H</kbd><span>Hire sub-agent</span>
+            <kbd>H</kbd><span>Hire a coworker</span>
             <kbd>S</kbd><span>Open settings</span>
             <kbd>M</kbd><span>Memory shelf</span>
             <kbd>N</kbd><span>Add sticky note</span>

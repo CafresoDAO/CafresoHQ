@@ -522,7 +522,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
           onClick={onHire}
           className="px-btn primary"
           style={{ fontSize: 'var(--text-10)', padding: '6px 12px' }}
-          title="Hire a new sub-agent"
+          title="Hire a new coworker"
         >+ HIRE</button>
       </div>
       <div style={{display: 'flex', flex: 1, minHeight: 0, gap: 0}}>
