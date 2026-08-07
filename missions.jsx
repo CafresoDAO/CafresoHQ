@@ -730,13 +730,20 @@ function NightShiftSection({ agents }) {
           startAt: startAtMs, recurrence, durationMs: duration, intervalMs: interval,
         }),
       });
-      if (res.error) { setMsg(res.error); return; }
+      /* §7: label it in office words, but do NOT run it through snagCause —
+         that classifier only knows brain failures and would report a
+         scheduler error as "that brain isn't signed in yet". Attribute the
+         cause instead of diagnosing it. */
+      if (res.error) { setMsg(`Couldn't schedule that — ${res.error}`); return; }
       // Mirror future/recurring schedules only — a RUN NOW (startAt 0) proves
       // the container is already awake, so a chain wake would be wasted.
       if (recurrence === 'daily' || startAtMs > Date.now() + 60000) mirrorPut(res.schedule);
       setTopic(''); setMsg('Scheduled 🌙 — runs even with this tab closed.');
       load();
-    } catch (e) { setMsg(String(e.message || e)); }
+      /* Same as above. Deliberately does not say "nothing was saved" — the
+         request may have reached the server before this threw; the list
+         below is the honest answer to that. */
+    } catch (e) { setMsg(`Couldn't schedule that — ${String(e.message || e)}`); }
   };
   const cancel = async (id) => {
     try {

@@ -848,7 +848,7 @@ const TOOL_REGISTRY = {
         window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
           detail: { agentId: null, agentName: 'agent', path: raw, tip: false },
         }));
-      } catch (e) { return `Publish failed to queue: ${e && e.message || e}`; }
+      } catch (e) { return `Couldn't queue that publish — ${e && e.message || e}`; }
       return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
     },
   },
@@ -1192,7 +1192,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
           window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
             detail: { agentId: pubAgentId, agentName: pubAgentName, path: raw, tip },
           }));
-        } catch (e) { return `Publish failed to queue: ${e && e.message || e}`; }
+        } catch (e) { return `Couldn't queue that publish — ${e && e.message || e}`; }
         return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
       },
     });
@@ -1747,7 +1747,14 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
     try { result = await call.tool.run(call.arg, { signal }, call.body); }
-    catch (err) { result = `Error: ${err.message}`; }
+    /* Every tool failure in the office lands here, and the string goes to
+       BOTH readers: the coworker, who needs the detail to try something
+       else, and the boss, who sees it in the visit block. So keep the
+       message — it is all anyone knows — but attribute it rather than
+       letting the office appear to be announcing "Error:" in its own voice.
+       NOT snagCause: that only classifies brain failures and would label a
+       vault or shell error as a sign-in problem. */
+    catch (err) { result = `That didn't work — ${err.message}`; }
     /* The visit does NOT go into the token stream any more.
 
        Everything in the text channel is forgeable, and a local model
@@ -1936,7 +1943,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     try {
       result = await call.tool.run(call.arg, { signal, cwd }, call.body);
     } catch (err) {
-      result = `Error: ${err.message}`;
+      result = `That didn't work — ${err.message}`;   // see the note on the sibling path
     }
     toolsExecuted++;
 
