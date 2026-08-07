@@ -1438,7 +1438,28 @@ ${d.text}` : d.text,
        record at `delivered` forever. The `consumeDmBudget` rolling-window
        cap is the OTHER safeguard — it stops fork-bombs from any single
        turn fanning out too fast. */
-    const DM_DEPTH_CAP = 100;
+    /* Was 100, while the comment on `consumeDmBudget` above described "the
+       per-chain depth cap (4)" as the thing that bounds a single ping-pong.
+       One of them was wrong, and 100 is indistinguishable from no cap for
+       two coworkers talking to each other.
+
+       Measured 2026-08-07, and it is what sent me looking: the boss asked
+       ONE trivial question — "name one colour of a ripe fig" — via the
+       chat Delegate button, and Nova and Llama exchanged 17 messages about
+       it. Nothing stopped them; the chain simply ran out of steam. The
+       rolling budget did not fire either, because it allows 10 per rolling
+       minute and the exchange outlived the window.
+
+       Set to the documented 4, rather than inventing a third number. Four
+       hops is a question, an answer, a follow-up and a reply — past that,
+       two coworkers are talking rather than working, and on a metered
+       brain the boss is paying for it. The cap already fails honestly: it
+       cancels the message with a stated cause and tells the boss they can
+       carry on with either coworker directly.
+
+       Raise it if a real workflow needs more depth; it is one number, and
+       the failure it produces is visible rather than silent. */
+    const DM_DEPTH_CAP = 4;
     if (dmDepth > DM_DEPTH_CAP) {
       MessageRegistry.transition(messageId, 'cancelled', {
         by: 'host',
@@ -1447,7 +1468,7 @@ ${d.text}` : d.text,
           kind: 'depth-cap',
           message: `DM chain reached depth ${dmDepth}; cap is ${DM_DEPTH_CAP}.`,
           retryable: false,
-          actionNeeded: 'Boss can re-prompt either agent directly to continue the topic.',
+          actionNeeded: 'Ask either coworker directly if you want them to carry on.',
         },
       });
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
@@ -1965,7 +1986,7 @@ ${d.text}` : d.text,
       // instead of raw error strings.
       const classify = (s) => {
         if (/401|invalid bearer|unauthor/i.test(s))
-          return { kind: 'auth', retryable: true, actionNeeded: 'Refresh agent auth (logout/login the upstream API)' };
+          return { kind: 'auth', retryable: true, actionNeeded: 'Sign that brain in again — Settings → Connections' };
         if (/quota|rate limit|429/i.test(s))
           return { kind: 'rate-limit', retryable: true, actionNeeded: 'Wait or upgrade plan' };
         if (/credit balance/i.test(s))

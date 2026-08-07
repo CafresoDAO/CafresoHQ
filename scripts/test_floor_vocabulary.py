@@ -148,8 +148,12 @@ _STR = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)"""
 # `body` earned its place the hard way — the entire onboarding tour, both
 # variants, 15 of its 17 strings, taught every new boss "agents" and
 # "sub-agent" on the first screen under titles that already said "coworkers".
+# `actionNeeded` earned its place the same way `body` did: it is rendered
+# as **Action:** in the Inbox thread view (modals/collab.jsx), so it is
+# the sentence a boss reads when a run failed — and it was carrying
+# 'Boss can re-prompt either agent directly' and 'Refresh agent auth'.
 DISPLAY_KEYS = ('text|desc|label|hint|doc|docShort|summary|placeholder|title|'
-                'body|subtitle|empty|emptySub|emptyHint|cta|hireTitle|tip|aria-label')
+                'body|subtitle|empty|emptySub|emptyHint|cta|hireTitle|tip|aria-label|actionNeeded')
 
 DISPLAY_RE = re.compile(r'\b(?:' + DISPLAY_KEYS + r')\s*(?::|=)\s*\{?(' + _STR + r')', re.S)
 
