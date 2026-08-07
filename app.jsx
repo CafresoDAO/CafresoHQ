@@ -3660,7 +3660,15 @@ ${d.text}` : d.text,
       else if (e.key === 'f') setFocus(v => !v);
       else if (e.key === 'u') onOpenStandup();
       // 1-8 jump straight to a view, same order as the rail (NAV_ITEMS)
-      else if (/^[1-8]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      /* 1-9, not 1-8. The rail and the bottom nav both label an item
+         "— press ${i + 1}", so the range of keys that WORK has to follow the
+         length of NAV_ITEMS rather than a number typed here. At 8 items the
+         two agreed; a ninth would have shipped a tooltip promising a key
+         that did nothing, which is the quietest kind of broken promise.
+         `NAV_ITEMS[n - 1]` is already bounds-checked below, so widening the
+         range costs nothing and a tenth item simply gets no key — see the
+         label, which stops offering one past 9. */
+      else if (/^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const item = NAV_ITEMS[parseInt(e.key, 10) - 1];
         if (item) goTo(item[0]);
       }
@@ -4476,7 +4484,7 @@ ${d.text}` : d.text,
                collides with the attention badge the same way. Parentheses
                after a noun mean "how many" everywhere else in this office;
                spell the key out instead. */
-            title={`${label} — press ${i + 1}`} aria-current={activeView===k ? 'page' : undefined}
+            title={i < 9 ? `${label} — press ${i + 1}` : label} aria-current={activeView===k ? 'page' : undefined}
             style={{ position: 'relative' }}>
             <Ico kind={k} size={18}/>
             <span className="bn-label">{label}</span>

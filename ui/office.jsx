@@ -95,7 +95,9 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
               /* Collapsed, this is the only label the icon has, so it must
                  carry the name AND the key without looking like a count —
                  see the bottom-nav note in app.jsx. */
-              title={collapsed ? `${label} — press ${i + 1}` : `Shortcut: ${i + 1}`}
+              /* Past the 9th there is no single-key shortcut, so the label
+                 stops offering one — see the note on the keydown handler. */
+              title={i >= 9 ? label : collapsed ? `${label} — press ${i + 1}` : `Shortcut: ${i + 1}`}
               aria-current={active===k ? 'page' : undefined}
               {...pressable(()=> onLaunch ? onLaunch(k) : setActive(k), label)}
             >
