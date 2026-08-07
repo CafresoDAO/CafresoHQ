@@ -744,7 +744,18 @@ should extend that boundary, not blur it.
   sentence. Neither line is edited; they simply both appear, and the reader
   can see they disagree.
 - **Unverified branches**, called out where they live: the specialist
-  filing-deferral path still rests on unit tests (it needs a cloud brain).
+  filing-deferral path still rests on unit tests. ATTEMPTED 2026-08-07 with a
+  local brain once Vault Notes was enabled on it, and it did not reach the
+  branch — asked to file with VAULT_NEW, Llama wrote
+  `**Vault Path:** [VAULT_NEW: Research/pears.md]`, describing the marker
+  inside a bold line instead of emitting it as a block. Mid-line, so correctly
+  not stripped; never parsed, so no file; `agentFiledPath` saw no cabinet
+  write and the host filed to `Deliveries/` as designed. The branch needs a
+  model that emits block markers reliably, which is what "needs a cloud brain"
+  meant. What the attempt DID confirm is the mitigation: the delivery carries
+  the invented path and, four lines below it, "Nothing opened, saved or looked
+  up for this one." — the two disagreeing on the page, on a case nobody
+  staged.
   The Gazette's *"+N more coworkers"* line is now **verified** (2026-08-07) —
   it needed neither five hires nor a real absence, because the columns are
   grouped from ACTIVITY NAMES rather than the roster: six seeded names and a
