@@ -352,7 +352,21 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
              "Notes: 38". Concept mode really is concepts, so it keeps its
              word; the links map gets one that covers what it holds, with
              the actual mix spelled out below. */
-          [[source === 'concepts' ? 'Concepts' : 'On the map', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Components', m.components], ['Modularity', (m.modularity || 0).toFixed(2)], ['Avg degree', (m.avgDegree || 0).toFixed(1)]]
+          /* Modularity is GONE, and the two graph-theory words are
+             translated. This panel already had the "Notes was a lie" fix
+             below; the metrics row kept three terms a boss cannot act on.
+
+             Modularity is the worst of them because it is redundant AND
+             unreadable: analytics.worker.js decides the verdict chip from
+             it (`modularity < 0.2 → 'biased'`), so the sentence directly
+             above this row — "One dominant topic — add contrasting ideas" —
+             IS the modularity, said in words. Showing 0.25 as well adds a
+             number with no visible scale, which is the same shape as the
+             FUEL gauge that filled toward a budget nobody set.
+
+             Components and avg degree are real and worth keeping; they just
+             needed the names a boss would use. */
+          [[source === 'concepts' ? 'Concepts' : 'On the map', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Separate clusters', m.components], ['Links per item', (m.avgDegree || 0).toFixed(1)]]
             .map(([k, v]) => React.createElement('div', { key: k }, React.createElement('span', { style: { color: '#8f8676' } }, k + ': '), React.createElement('b', null, v)))),
 
         /* The mix, in office words. Says nothing when a kind is absent, so
