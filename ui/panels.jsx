@@ -171,9 +171,17 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             for debugging, but §6 keeps it off the card face. */}
         <div className="stat"><span className="lbl">Brain</span>
           <span title={agent.model || 'no brain assigned'}>{brainName(agent)}</span></div>
+        {/* Was "Tools used" — past tense, a record — over `agent.tools`,
+            which is the permission list. So the card said Llama had USED the
+            vault when Llama had never written a thing; enabling Vault Notes
+            in Settings changed the "record" of what they had already done.
+
+            Renamed rather than rebuilt: a real used-list is derivable from
+            the activity log, but that is a different feature, and the label
+            was the part that was lying. */}
         <div>
-          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Tools used</div>
-          <div className="tools-used">
+          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Can use</div>
+          <div className="tools-used" title="What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.">
             {(agent.tools||[]).map(t => <span key={t}>{t.toUpperCase()}</span>)}
           </div>
         </div>
