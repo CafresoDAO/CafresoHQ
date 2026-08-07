@@ -1171,8 +1171,16 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
                  cabinet. The old wording ("N deliveries your team filed")
                  claimed a history this number does not keep, and pointed
                  straight at the Vault, where the boss would have counted
-                 more. Say what it measures. */
-              <div className="sw-row" title={`${filedCount} finished task${filedCount === 1 ? '' : 's'} filed a delivery · the Vault holds the files themselves`}>
+                 more. Say what it measures.
+
+                 "finished" was the last word still claiming more than the
+                 filter checks: it is `t.artifactPath`, with no test on
+                 status. Cards are draggable, so pulling a delivered task
+                 back to redo it leaves the path set — rightly, the file is
+                 genuinely in the cabinet — and the wall would have gone on
+                 calling it finished while the board showed it in progress.
+                 The count is correct either way; only the word was wrong. */
+              <div className="sw-row" title={`${filedCount} task card${filedCount === 1 ? '' : 's'} produced a delivery · the Vault holds the files themselves`}>
                 📦 {filedCount}
               </div>
             )}
