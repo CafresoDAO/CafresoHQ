@@ -91,7 +91,10 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
               key={k}
               className={(onLaunch ? (running ? 'running' : '') : (active===k?'active':''))}
               onClick={()=> onLaunch ? onLaunch(k) : setActive(k)}
-              title={collapsed ? `${label} (${i + 1})` : `Shortcut: ${i + 1}`}
+              /* Collapsed, this is the only label the icon has, so it must
+                 carry the name AND the key without looking like a count —
+                 see the bottom-nav note in app.jsx. */
+              title={collapsed ? `${label} — press ${i + 1}` : `Shortcut: ${i + 1}`}
               aria-current={active===k ? 'page' : undefined}
               {...pressable(()=> onLaunch ? onLaunch(k) : setActive(k), label)}
             >

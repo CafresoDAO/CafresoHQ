@@ -4275,7 +4275,13 @@ ${d.text}` : d.text,
       <nav className="bottom-nav">
         {NAV_ITEMS.map(([k, label], i) => (
           <button key={k} className={`bn-item${activeView===k?' active':''}`} onClick={()=>setActiveView(k)}
-            title={`${label} (${i + 1})`} aria-current={activeView===k ? 'page' : undefined}
+            /* "Vault (5)" is the SHORTCUT, but on a floor whose cabinet held
+               six files it reads as a count — I misread my own tooltip as a
+               wrong file counter and went looking for the bug. "Team (2)"
+               collides with the attention badge the same way. Parentheses
+               after a noun mean "how many" everywhere else in this office;
+               spell the key out instead. */
+            title={`${label} — press ${i + 1}`} aria-current={activeView===k ? 'page' : undefined}
             style={{ position: 'relative' }}>
             <Ico kind={k} size={18}/>
             <span className="bn-label">{label}</span>
