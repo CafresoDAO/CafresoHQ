@@ -415,6 +415,32 @@ written only after the same class of bug was fixed by hand three or four times:
 | `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
 | `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
 
+**A rule's BOUNDS are as much a claim as its pattern.** The vocabulary
+scanner's JSX-text rule capped fragments at 120 characters. Nobody chose
+that number for the copy it was guarding; it was a reasonable-looking
+default that quietly redefined "copy" as "short copy". Seven boss-facing
+violations lived behind it, and they were the *longest* strings in the
+product — which is exactly what a boss reads when something matters:
+
+- the **crash screen** ("Your projects, agents, and…")
+- the **unattended-access consent** ("Only check this if you trust the
+  topic + the agent's prompt", over "N iterations") — the most
+  safety-critical sentence in the app, in machine vocabulary
+- the hire modal's permission card, the Workspace ledger, the shop, the
+  research thread
+
+Raised to 400 and all seven surfaced at once. When a rule is green for a
+long time, check what its *limits* exclude before congratulating it: a
+threshold, a window, a truncation and a name list are all assertions
+about where the problem cannot be, and none of them was tested.
+
+Note the contrast with the ternary rule rejected the same hour. Both were
+attempts to widen the same suite. The ternary form had **no audience
+signal** and flooded, so it was refused; the length cap sat on a form that
+already had one (text between tags in a view), so raising it was safe and
+immediately productive. Widen a rule along an axis it already reasons
+about; refuse to widen it along one it cannot.
+
 **A rule with no audience signal cannot be scoped, so it cannot ship.**
 The Inbox's coworker filter shipped reading **"all agents"** — a banned
 word on a control the boss uses, in a file this suite already scanned. It
