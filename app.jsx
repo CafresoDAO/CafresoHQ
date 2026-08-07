@@ -1960,7 +1960,21 @@ ${d.text}` : d.text,
       settleAfterRun(agent.id);
       logActivity({
         agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
-        action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300),
+        action: 'done',
+        /* The Gazette lists these back to the boss the next morning, and
+           without a subject Nova's five runs read as five identical lines
+           of "finished and reported back ✓" while Llama's carried titles —
+           the task path has `task.title`, this path had nothing. Seen on a
+           real morning report.
+
+           `userText` is the boss's own words, not the assembled prompt, and
+           the journal one line below has used it as a subject all along. A
+           DM-originated run has no `userText`, so it keeps the plain line
+           rather than borrowing another coworker's message. */
+        text: userText
+          ? `finished "${String(userText).replace(/\s+/g, ' ').trim().slice(0, 40)}" ✓`
+          : 'finished and reported back ✓',
+        detail: cleanBuf.slice(0, 300),
       });
       /* Same reason as the desk bubble above — the journal is a KEPT record,
          so it least of all should hold the office's own scaffolding. */
