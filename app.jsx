@@ -670,7 +670,26 @@ function App() {
   const [toast, setToast] = useStateA(null);
 
   // V2 state
-  const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS);
+  /* Load-scrub, same reasoning as missionsOnLoad below: a run lives in the
+     page, so any task still marked 'doing' at load time is a run that died
+     with the last tab. Nothing is streaming for it and nothing ever will be,
+     but the board went on showing it under DOING — §4's rule ("never claim
+     work that isn't happening") broken on the surface where the boss reads
+     what their business is doing right now.
+
+     Reproduced before fixing: started a task, reloaded five seconds in, and
+     found it on disk as status 'doing' with result null and artifactPath
+     null. It would have sat there forever.
+
+     Back to `inbox`, keeping the assignee, so it returns to the board as
+     ready-to-start rather than pretending to be underway — and the boss
+     presses ▶ START when they want it, which is the office's model for who
+     decides that. */
+  const tasksOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
+    .map(t => t && t.status === 'doing'
+      ? { ...t, status: 'inbox', stalledNote: 'the run stopped when the page reloaded — start it again when you want it' }
+      : t), []);
+  const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS, tasksOnLoad);
   /* Experience ledger (OFFICE_AS_INTERFACE §5) — append-only job history,
      the Phase B→C résumé bridge. xpRecord enforces append-only + one 'done'
      per job; nothing else writes this. */
