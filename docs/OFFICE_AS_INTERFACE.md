@@ -445,6 +445,18 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
+*`innerText` is not the layout.* Text extraction flattens the DOM and drops
+inter-element whitespace, so it invents defects that are not on screen. Three
+near-misses in one session: a bare `·` under each coworker that reads as a
+dangling separator and is the idle MOOD glyph; "GENERALISTpowered by your
+hardware", which renders as a distinct pill with a 6px margin, its own border
+and an 8px font; and a name plate that looked unclickable because the handler
+sits on the parent `.px-room`. Before filing anything about spacing, runs-on
+text or a dead control, measure it — `getComputedStyle`, `getBoundingClientRect`,
+a Range around the sibling text node — or take a screenshot. The mirror image
+of the trap below: there, identical output hid a broken fixture; here, a
+difference in the text is not a difference on the screen.
+
 *The tell for a broken fixture is a result too uniform to be informative.*
 Failure shape (4) has now surfaced three ways in one session, and each time
 the bad measurement looked calm rather than wrong: three `withHandoff` cases
