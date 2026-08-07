@@ -398,6 +398,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | the office survives ordinary accidents, 2026-08-07 | five checked, three were broken. **Reload mid-run**: the stream dies with the page and the task sat under DOING forever — now scrubbed to `inbox` on load, the way `missionsOnLoad` has always handled a dead mission. **Coffee**: stopped the run correctly but unclaimed the work, so resuming meant re-picking the person you had only paused — the assignee now survives a boss-stop, and a genuine failure still clears it so §7's "try someone else" stays the easy move. **Delete while running**: the worst — no confirmation (the guard keyed on `t.result`, which live work has not got), the desk stayed lit for a task that no longer existed, and the run went on to FILE A DELIVERY for work the boss had removed. Now it names the coworker, asks, and aborts. **Letting someone go**: the stream was already killed and the displays already degraded honestly on a dangling id; dismissal now also releases their tasks, including ones assigned but never started. **Happy path re-checked after all of it**: create → assign → ▶ START → done in 20s → filed, delivery reading "Purple" and nothing else |
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | §7 holds when the DEFAULT brain is the thing that dies, 2026-08-07 | the CEO's own brain, not a coworker's — the case §7's third route was written for. Sent "Say the single word: hello" on a fresh office whose managed Gemma endpoint this machine cannot reach. The office showed an honest waiting state first (*"still waiting on that brain — it may be warming up"*, not a spinner implying progress), then after ~60s: **"⚠ hit a snag — couldn't reach that brain — it looks offline from here. Llama is still working, though — @mention them and they can pick this up."** One sentence, no raw error, a retry control, and the third route naming the coworker who really can work — `handoffHint` picking the local brain over the dead default. Nothing to fix; recorded so the next reader does not re-derive it |
+| the office's side of the handoff — audited, 2026-08-07 | after two live attempts to make one local coworker hand off to another both produced prose instead of a `[DM_TO:]` block, I audited the office rather than blaming the model on a hunch. Every link holds: `const peers = agents.filter(a => a.id !== agent.id)` is populated; all three `agentStream` callers pass it (the dispatch path by shorthand, which is why a first read of the options object missed it); `toolsForAgent` adds `dm_to` whenever `peers.length`, with `requires: () => true`; and the doc it adds carries the full block form **plus** a generated `Coworkers you can DM: Nova (Generalist)` line. So the model was handed the syntax, the tool and the names, and answered in English anyway. The office is not the defect here — which is worth having checked, because the alternative reading (a tool silently gated off, contradicting the framing's "teammates available via DM_TO") would have been a serious office bug and looked identical from outside |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
 ### The executable rules — and what a rule can and cannot be
@@ -1021,6 +1022,33 @@ should extend that boundary, not blur it.
   is the drift this document is mostly about. Flagged rather than changed:
   the role titles beside it are deliberate product naming, so which register
   the hiring screen speaks in is a product call, not a defect to patch.
+
+- **Coworker-to-coworker delegation is best-effort, and the north star
+  rests on it.** "One office where all your AIs work together" needs a
+  coworker to hand work to a coworker, and that runs entirely on the model
+  emitting a `[DM_TO:]` block. The office supplies everything (audited —
+  see the verified table). Observed reliability on `ollama:llama3.1`: it
+  worked once on 2026-08-06 (a real three-hop chain, recorded above), and
+  failed twice on 2026-08-07 — once unprompted, once after being told in
+  the boss's own message to use the block and not answer itself. Small
+  local models are the zero-config default, so this is the default
+  experience.
+
+  What is already true: the failure is caught and named (`unsentHandoff`
+  for a malformed block, `unsentAsk` for a declared wait that sent
+  nothing), and the boss's own routes — @mention, the Delegate button,
+  dropping a card on a desk — are reliable because the OFFICE performs
+  them, not the model.
+
+  The decision, which is a product one: whether the office should ever
+  interpret a prose handoff. It knows the peer names, so "Nova, can you
+  …?" is matchable. It is deliberately NOT done — that is guessing at
+  sentences, which is the line drawn in the boundary section above, and a
+  wrong guess sends a real message to a real coworker. The alternatives
+  are to leave it best-effort with honest failure (today), to lean harder
+  on the prompt (tried once already, recorded null result), or to make
+  the boss's routes so prominent that coworker-initiated handoff is a
+  bonus rather than the path.
 
 - **The CEO's opening line promises a brain nobody has checked.** The
   first message a new boss ever reads says *"I'm already running on
