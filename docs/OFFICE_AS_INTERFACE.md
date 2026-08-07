@@ -385,6 +385,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | private memory | write → the index reaching the next prompt (captured off the wire) → read → the coworker answering from it |
 | day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
 | refusal | a mission that cannot write notes will not start, and now says where to fix it |
+| work in → work out, re-verified 2026-08-07 | after the reply-pipeline repairs: task created → assigned → **▶ START** → done in 10s → filed to `Deliveries/` reading "Yellow." and nothing else. Assignment and dispatch are deliberately separate; a task waits at ▶ START until the boss says go |
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
@@ -445,6 +446,20 @@ of a branch that was never actually entered. That is failure shape (4), a
 measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
+
+*What the office cannot catch, and should not pretend to.* Two residues in
+filed deliverables came from the model, not the pipeline: a stale sentence
+replayed out of earlier context ("The boss likes figs." on a task about
+fruit), and an invented `[Vault path: Research/banana-colour.md]` for a file
+that does not exist. Both LOOK like office chrome and neither carries a
+marker, so no structural rule reaches them — the guard for unclosed writes
+works only because there is an opener to see. Filtering on shape would mean
+guessing which of a coworker's sentences it meant, which is worse than
+leaving them visible. The honest posture is the one already built: the
+delivery's **Working** footer lists visits that really happened, so a
+fabricated filing shows up as a claim with no matching line. That is a weak
+signal against a confident sentence, and it is the correct amount of
+certainty the office actually has.
 
 *A function can be right and unused.* The reply-hygiene suite was green
 through the whole of the worst bug this session: `visibleReply` was correct,
