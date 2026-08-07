@@ -133,6 +133,11 @@ R.phEmpty    = placeholderRefusal('MEMORY_LIST', '');
 R.phNull     = placeholderRefusal('MEMORY_LIST', null);
 R.phNested   = placeholderRefusal('SEARCH', '<<url>>');
 R.phSaysNotRun = /Nothing was looked up/.test(R.phUrl || '');
+// The protocol must not ask for anything it then deletes. Pin the property
+// rather than the wording: a result placed inside an ACK is unreachable.
+R.ackEatsResult = visibleReply('Here is what I found.\n\n[ACK: completed: • red • blue • yellow]');
+R.ackOnlyFallsBack = visibleReply('[ACK: blocked: need vault access]');
+R.ackKeepsProse = visibleReply('The capital is Tokyo.\n[ACK: awaiting_reply: checking with Kenji]');
 R.phNamesTool  = /BROWSER_FETCH/.test(R.phUrl || '');
 // A tag mid-sentence is the agent TALKING about the protocol, not using it.
 R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
@@ -183,6 +188,13 @@ def main():
     check('a null list is safe', out['vpNull'] == [])
     check('the result supports startsWith — the call that was crashing',
           out['vpStartsWith'] == 1)
+    check('a result placed inside an ACK is NOT shown — the reason the '
+          'instruction to put one there had to go',
+          out['ackEatsResult'] == 'Here is what I found.', repr(out['ackEatsResult']))
+    check('an ACK-only reply still falls back to its note rather than blank',
+          'need vault access' in out['ackOnlyFallsBack'], repr(out['ackOnlyFallsBack']))
+    check('prose survives alongside a state marker',
+          out['ackKeepsProse'] == 'The capital is Tokyo.', repr(out['ackKeepsProse']))
     check('an angle-bracket template is refused', bool(out['phUrl']) and bool(out['phPath']))
     check('surrounding whitespace does not hide one', bool(out['phSpaced']))
     check('a real url runs', out['phReal'] is None)

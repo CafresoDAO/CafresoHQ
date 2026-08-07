@@ -1384,6 +1384,44 @@ append-only).
 > may trigger it. Verified all three: cleared, filtered-to-nothing, and
 > genuinely empty — the starter cards return only in the last.
 >
+> 🚨 **The office deleted the thing it demanded (2026-08-06).** Applied the
+> same lens — *where else does the office ask a coworker for something it
+> already has?* — to the ACK protocol, and found something worse than
+> duplication.
+>
+> The instruction ended: *"ALWAYS end completed handoffs with a
+> `[ACK: completed: …]` containing a 3-bullet result + risks + next-action
+> so the boss can move fast."* The office then **stripped it**. `stripAcks`
+> removes every marker before a reply is shown, stored or filed, and
+> `visibleReply` only falls back to an ack note when everything else is
+> empty. Run against the real helper:
+>
+> | given | boss sees |
+> |---|---|
+> | `Here is what I found.`<br>`[ACK: completed: • red • blue • yellow]` | `Here is what I found.` |
+>
+> The result, the risk and the next action — the three things the
+> instruction demanded — deleted by the office that asked for them. Every
+> coworker that obeyed faithfully lost its own summary.
+>
+> Applying the lens to the four states: **`in_progress` and `completed`
+> duplicate `agent.status`**, which §4 makes the *only* authority on whether
+> someone is working — and neither drives any UI (`extractAcks` is consulted
+> solely to decide whether to clean the text; the code says "we do NOT
+> re-transition here"). **`blocked` and `awaiting_reply` are the real half**:
+> a coworker who needs vault access, or is waiting on someone, knows
+> something the floor cannot see.
+>
+> ACK now asks only for that half, and ends with the correction that
+> matters: *"Put your ANSWER in the reply itself, never inside a marker:
+> markers are stripped before the boss reads it."* The old states stay
+> **parseable** — histories contain them — but are no longer taught.
+>
+> Verified live on a task that invites a summary: the three bullets landed
+> in the delivery, where they survive. A test now pins the *property* rather
+> than the wording, so the instruction can never drift back toward a
+> container the office empties.
+
 > ✅ **Stopped asking coworkers to narrate (2026-08-06).** Read the filed
 > notes as a boss opening them, and every one began the same way:
 >

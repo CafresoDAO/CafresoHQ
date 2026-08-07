@@ -819,14 +819,37 @@ const TOOL_REGISTRY = {
     name: 'ACK',
     re: /\[\s*ACK\s*:\s*[a-z_]+\s*(?::\s*[^\]]*)?\]/i,
     requires: () => true,
+    /* This instruction used to end: "ALWAYS end completed handoffs with a
+       [ACK: completed: …] containing a 3-bullet result + risks +
+       next-action so the boss can move fast."
+
+       The office then STRIPPED it. `stripAcks` removes every marker before
+       the reply is shown, stored or filed, and `visibleReply` only falls
+       back to an ack note when everything else is empty. Verified against
+       the real helper: given
+
+         "Here is what I found.\n\n[ACK: completed: • Primary colours are
+          red, blue, yellow. • Risk: unsourced. • Next: verify…]"
+
+       the boss sees exactly "Here is what I found." The result, the risk
+       and the next action — the three things the instruction demanded —
+       are deleted by the office that asked for them.
+
+       Same lens as the narration fix: the office was asking coworkers for
+       things it already had (`in_progress` and `completed` duplicate
+       `agent.status`, which §4 makes the ONLY authority on whether someone
+       is working). Those states stay PARSEABLE, because old histories
+       contain them, but are no longer taught. What remains is the half a
+       coworker genuinely knows and the floor cannot see: that they are
+       stuck, or waiting on somebody. */
     doc:
-      '- [ACK: <state>: <one-line note>] — post a status update on the message you\'re currently handling, without breaking your reply.\n' +
-      '  Allowed states: in_progress, blocked, awaiting_reply, completed.\n' +
+      '- [ACK: <state>: <one-line note>] — tell the boss something they CANNOT see from the floor.\n' +
+      '  Use it for: blocked (you need something to continue), awaiting_reply (you are waiting on someone).\n' +
       '  Examples:\n' +
-      '    [ACK: in_progress: skimming the file now]\n' +
       '    [ACK: blocked: need vault access — please grant]\n' +
-      '    [ACK: completed: 3 bullets of summary go here]\n' +
-      '  ALWAYS end completed handoffs with a [ACK: completed: …] containing a 3-bullet result + risks + next-action so the boss can move fast.',
+      '    [ACK: awaiting_reply: asked Kenji which draft is current]\n' +
+      '  Do NOT report starting or finishing — the office already shows the boss both.\n' +
+      '  Put your ANSWER in the reply itself, never inside a marker: markers are stripped before the boss reads it.',
     docShort: 'Post a state update on the current message (in_progress / blocked / awaiting_reply / completed).',
     run: async () => '(ACK is captured by the host; this run is a no-op)',
   },
