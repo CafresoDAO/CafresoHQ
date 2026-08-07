@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -76,6 +76,24 @@ R.bareAck      = visibleReply('[ACK: in_progress: gathering context for regressi
 R.bareAckNoNote= visibleReply('[ACK: in_progress]');
 R.mixed        = visibleReply('[ACK: in_progress: thinking]\nRed, green, blue.');
 R.trailing     = visibleReply('Red, green, blue. [ACK: completed: done]');
+
+/* Verbatim off the floor, 2026-08-07. The boss asked for one colour; the
+   reply carried a whole [MEMORY_WRITE] block whose delimiters were stripped
+   while its BODY stayed as prose, and an [ACK: completed: …] whose nested
+   markers defeated a `[^\]]*` detail match and stranded "]]" mid-line. Both
+   were live in shipped code, both invisible to every check above, because
+   every check above used a single-line marker. */
+R.realBlockLeak = visibleReply(
+  "I'll use this note as a reference, but I need to create it first.\n" +
+  '[MEMORY_WRITE: projects/local_file_access.md]\n<content>\n' +
+  'Local file access is required for reading the file.\n[/MEMORY_WRITE]\n\n' +
+  'The boss asked me to name one color, so I\'ll provide that directly.\n\n' +
+  '[ACK: completed: • [BROWSER_FETCH: https://en.wikipedia.org/wiki/Primary_color]' +
+  ' • [MEMORY_READ: projects/local_file_access.md]]The article defines them.');
+/* An UNCLOSED block never parsed, so its tool never ran and unsentBlocks
+   must still be able to see the opener. Stripping to end-of-text would also
+   swallow any real answer that followed. */
+R.unclosedKept = stripBlocks('Sure.\n[HIRE_AGENT: designer]\nname: Vee');
 R.noMarkers    = visibleReply('Red, green, blue.');
 R.empty        = visibleReply('');
 R.nullIn       = visibleReply(null);
@@ -197,6 +215,20 @@ def main():
     check('empty stays empty', out['empty'] == '')
     check('null tolerated', out['nullIn'] == '')
     check('NO shape ever leaks a bracket', out['noBrackets'])
+    # The two failures that were live on the floor on 2026-08-07.
+    check('a MEMORY_WRITE block leaves no body and no <content> behind',
+          '<content>' not in out['realBlockLeak']
+          and 'Local file access is required' not in out['realBlockLeak'],
+          repr(out['realBlockLeak']))
+    check('an ACK with nested markers strands nothing mid-line',
+          '[' not in out['realBlockLeak'] and ']' not in out['realBlockLeak'],
+          repr(out['realBlockLeak']))
+    check('…and the prose either side of both survives intact',
+          'name one color' in out['realBlockLeak']
+          and out['realBlockLeak'].endswith('The article defines them.'),
+          repr(out['realBlockLeak']))
+    check('an UNCLOSED block keeps its opener so unsentBlocks can report it',
+          'HIRE_AGENT' in out['unclosedKept'], repr(out['unclosedKept']))
     check('an unrecognised ACK state stays as ordinary text',
           '[ACK: banana: hm]' in out['unknownState'], repr(out['unknownState']))
     check('an unclosed DM_TO opener is scrubbed, its text kept',

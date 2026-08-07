@@ -254,8 +254,19 @@ function extractAcks(text) {
 }
 /* Strip every [ACK: …] marker from `text` (used to clean the agent's
    visible output before it lands in chat / journal). Idempotent. */
+/* `[^\]]*` for the trailing detail stopped at the FIRST `]`, which a real
+   reply beat by nesting markers inside the ACK:
+
+     [ACK: completed: • [BROWSER_FETCH: …/Primary_color] • [MEMORY_READ: …]]
+
+   That removed everything up to the first inner `]` and left
+   " • [MEMORY_READ: …]]" sitting mid-line — where ORPHAN_TAG_RE, which is
+   line-anchored, could never reach it. Allowing one level of nesting covers
+   the shape models actually emit (a list of the calls they made) without
+   turning this into a full bracket matcher. */
 function stripAcks(text) {
-  return String(text || '').replace(/\[\s*ACK\s*:\s*[a-z_]+\s*(?::\s*[^\]]*)?\]\s*/gi, '');
+  return String(text || '')
+    .replace(/\[\s*ACK\s*:\s*[a-z_]+\s*(?::\s*(?:[^\[\]]|\[[^\[\]]*\])*)?\]\s*/gi, '');
 }
 
 /* The reply as the BOSS should see it — protocol markers gone.
@@ -351,6 +362,41 @@ function vaultPaths(list) {
 
 function stripOrphanTags(text) {
   return String(text || '').replace(ORPHAN_TAG_RE, '');
+}
+
+/* ORPHAN_TAG_RE is whole-line, which is right for the one-line markers but
+   wrong for the 16 BLOCK-form ones, because those carry a payload between
+   two delimiters. Stripping both delimiters and keeping what they wrapped is
+   the worst of the three options — the office looked like it had cleaned up
+   after the coworker while leaving the machinery on the floor.
+
+   Seen on the real transcript: the boss asked for one colour and got
+
+     <content>
+     Local file access is required for reading the file.
+
+   the body of a [MEMORY_WRITE: projects/local_file_access.md] block whose
+   opening and closing tags had both been tidied away above and below it. The
+   note itself had already been written — this was a second, unasked-for copy
+   of it pasted into the conversation.
+
+   Closed blocks only. An UNCLOSED one never parsed, so its tool never ran,
+   and `unsentBlocks` still needs to see the opener to say so — stripping to
+   end-of-text on a missing closer would also eat whatever real answer came
+   after it. Same 16 names the comment on unsentBlocks enumerates, plus the
+   ORPHAN list's `HANDOFF` spelling alongside `HANDOFF_TO`.
+
+   The name list lives INSIDE the function for the same reason unsentBlocks'
+   does: scripts/test_reply_hygiene.py lifts named functions out of this file
+   to run under node, and a module-level const beside one is invisible to it.
+   Written as a const first, which cost a red suite to remember. */
+function stripBlocks(text) {
+  const NAMES = 'DM_TO|HANDOFF_TO|HANDOFF|HIRE_AGENT|HIRE_ASSISTANT|REQUEST_ELEVATION|' +
+    'SPAWN_SUBAGENT|VAULT_NEW|VAULT_APPEND|MEMORY_WRITE|MEMORY_APPEND|FILE_WRITE|' +
+    'EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO';
+  const re = new RegExp(
+    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][\\s\\S]*?\\[\\s*\\/\\s*\\1\\s*\\]', 'gi');
+  return String(text || '').replace(re, '');
 }
 
 /* ── A handoff that never left the building ───────────────────────────────
@@ -450,7 +496,10 @@ function unsentBlocks(text) {
 
 function visibleReply(text) {
   const raw = String(text || '');
-  const cleaned = stripOrphanTags(stripAcks(raw)).replace(/\n{3,}/g, '\n\n').trim();
+  // Blocks first: their delimiters are also whole-line markers, so letting
+  // stripOrphanTags run first would remove the tags this needs to find the
+  // payload by, and strand the body exactly as before.
+  const cleaned = stripOrphanTags(stripAcks(stripBlocks(raw))).replace(/\n{3,}/g, '\n\n').trim();
   if (cleaned) return cleaned;
   /* Nothing survived the strip. `stripAcks` matches ANY lowercase state
      while `extractAcks` only accepts the four real ones, so a typo'd
