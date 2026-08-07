@@ -412,8 +412,32 @@ written only after the same class of bug was fixed by hand three or four times:
 |---|---|
 | `scripts/test_no_invented_numbers.py` | a hardcoded per-token price; a percentage against a phantom 1,000,000-token budget |
 | `scripts/test_floor_vocabulary.py` | `sub-agent`, `elevated`, `tok`, `iteration`/`iter` — and `agent` meaning a person — in any string a person reads, **including the prompt**, since the prompt teaches the model the word and the model says it back. Config surfaces and genuine technical nouns are exempt *by name, with reasons* |
-| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
+| `scripts/test_reply_hygiene.py` | protocol markers reaching the boss as syntax — across **all 11** stream callers since 2026-08-07 (`agentStream` **and** `ceoStream`, the latter having been outside the census entirely, with the CEO's own chat reply cleaned only when it happened to emit a handoff) — and, since 2026-08-07, **a coworker inventing a colleague's words in the office's own handwriting** (`fabricatedRelay`: a `[Llama → Nova]:` relay label when nothing was delivered), a **declared wait with nothing sent** (`unsentAsk`), and a reply path that shows the **raw buffer** (`check_raw_buffer_shown`, which replaced a census that had been green through the defect it existed to catch) — including a block marker's **payload**, since stripping a `[MEMORY_WRITE: …]` opener and closer while keeping what they wrapped leaves the note body sitting in the reply as prose, a second unasked-for copy of a note already filed — and **requests that vanish**: a block-form marker opened without its closing tag never parses, so the coworker believes they asked and nobody is coming (`unsentHandoff`, `unsentElevation`, `unsentBlocks`) |
 | `scripts/test_cast.py` | the shared cast vocabulary, and one rule the helper cannot defend itself: `handoffHint` only knows whose brain is ready, so the call site must exclude the coworker who just refused — otherwise a failed hand-off answers "Llama couldn't take it" with "Llama is still working, @mention them" |
+
+**A census is only as wide as the entry point it knows to look for, and
+the name you happened to be looking at becomes the definition.** The
+reply-hygiene census enumerated `agentStream` callers. That was never a
+definition of "reply path" — it was the function in front of me when the
+rule was written — and it quietly became one. The CEO runs on
+`ceoStream`, so the coworker a boss talks to most sat outside the rule
+that exists to keep protocol markers off their screen.
+
+Four uncleaned paths were behind it, and the main chat reply is the one
+to remember: it was cleaned **only when the CEO happened to emit a
+handoff or a DM**, by a local regex that knew two marker types out of
+sixteen. A reply with an `[ACK: …]` and no handoff went to the boss as
+raw syntax, every time, for as long as that code has existed.
+
+Widening the census to both stream functions took 7 paths to 11 and
+found three of the four new ones broken. Then check there is no third
+door: `HQ.*Stream` callers across the repo are exactly 6 + 5, and
+`mockStream` is an alias of `ceoStream`, so 11 is the whole set.
+
+The check that generalises: **enumerate by CAPABILITY, not by function
+name.** "What can put model text on a person's screen" is the real
+question; `agentStream(` was a proxy for it that silently stopped being
+true.
 
 **The third bound: which FILES a rule looks at.** `GLOBS` in the vocabulary
 suite lists nine paths and has never listed `claude-client.jsx`. Probing it
