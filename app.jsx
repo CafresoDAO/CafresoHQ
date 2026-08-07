@@ -3256,23 +3256,53 @@ ${d.text}` : d.text,
          arrived earlier than it did. */
     const FAST = 1500, IDLE = 5000, STAY_FAST_MS = 60000;
     let timer = null;
-    const tick = async () => {
+    /* Exactly one chain may be live. `tick` reschedules itself from the END
+       of each poll, so between a poll resolving and the next setTimeout
+       being assigned there is a window where `timer === null` while a chain
+       is very much still running — and onVisible below used that as its
+       "nothing is scheduled, start one" signal. A visibilitychange landing
+       in that gap forks a SECOND chain, and both then reschedule forever.
+
+       Measured on this floor with nothing pending and nobody working:
+       23.6 requests a minute against an intended 12 (IDLE = 5s). Exactly
+       double. The gap histogram agreed — a cluster near 2s where 5s was
+       intended, which is what two independent 5s chains at drifting
+       offsets look like.
+
+       A generation counter is the fix rather than a smarter null-check: any
+       new chain retires every older one by construction, so this cannot
+       fork again however it is entered. */
+    let chain = 0;
+    const tick = async (mine) => {
       await poll();
-      if (stopped) return;
+      if (stopped || mine !== chain) return;
       const busy = Date.now() - lastAskRef.current < STAY_FAST_MS;
-      timer = setTimeout(tick, busy ? FAST : IDLE);
+      timer = setTimeout(() => tick(mine), busy ? FAST : IDLE);
     };
+    const start = () => { clearTimeout(timer); timer = null; tick(++chain); };
+    /* Only resume if we actually PAUSED. A visibilitychange that arrives
+       while nothing was paused is not a return-to-front, and treating it as
+       one pushes lastAskRef forward — which pins the ladder in FAST for the
+       next minute, every time. Measured: this pane fires 16 visibility
+       events in 10 seconds, and with an unconditional refresh the poll never
+       reaches IDLE at all. A real user toggles tabs; a harness toggles
+       constantly, and the code should not care which it is. */
+    let paused = false;
     const onVisible = () => {
       if (stopped) return;
-      if (document.hidden) { clearTimeout(timer); timer = null; return; }
-      /* Back in front: poll NOW rather than serving a stale tray for a
-         beat, then resume the ladder. */
-      if (timer === null) { lastAskRef.current = Date.now(); tick(); }
+      if (document.hidden) { paused = true; chain++; clearTimeout(timer); timer = null; return; }
+      if (!paused) return;
+      paused = false;
+      /* Back in front after a real pause: poll NOW rather than serving a
+         stale tray for a beat, then resume the ladder. */
+      lastAskRef.current = Date.now();
+      start();
     };
     document.addEventListener('visibilitychange', onVisible);
-    tick();
+    start();
     return () => {
       stopped = true;
+      chain++;                     // retire any in-flight poll's continuation
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
