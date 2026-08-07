@@ -75,7 +75,7 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
    office is new. `totalCount` is the unfiltered figure and is the only
    thing allowed to trigger onboarding — otherwise a search matching
    nothing would greet an established boss with "No tasks yet". */
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [] }) {
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [] }) {
   const officeIsNew = (totalCount === null ? tasks.length : totalCount) === 0;
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
@@ -147,7 +147,16 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onDragSta
                       ) : (
                         <span className="tc-unassigned">{onStartTask ? 'unassigned · pick someone, then ▶ START' : onAssignToChat ? 'unassigned · use → CHAT' : '↕ drag to a desk'}</span>
                       )}
-                      <span className={`pri pri-${t.priority}`}>{t.priority.toUpperCase()}</span>
+                      {/* The lever, not just the label. Stops on the card so
+                          it never opens/collapses the row underneath. */}
+                      <span className={`pri pri-${t.priority}`}
+                            role={onCyclePriority ? 'button' : undefined}
+                            tabIndex={onCyclePriority ? 0 : undefined}
+                            title={onCyclePriority ? 'Priority — click to change' : undefined}
+                            style={onCyclePriority ? { cursor: 'pointer' } : undefined}
+                            onClick={onCyclePriority ? (e)=>{ e.stopPropagation(); onCyclePriority(t.id); } : undefined}
+                            onKeyDown={onCyclePriority ? (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); e.stopPropagation(); onCyclePriority(t.id);} } : undefined}
+                      >{t.priority.toUpperCase()}</span>
                     </div>
                     {/* Is anybody actually on this? A DOING card used to look
                         identical whether a coworker was mid-run or the job

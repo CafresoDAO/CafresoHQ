@@ -2878,6 +2878,27 @@ ${d.text}` : d.text,
   const onMoveTask = (id, status) =>
     setTasks(prev => prev.map(t => t.id === id ? applyStatus(t, status) : t));
 
+  /* Priority was a badge with no lever behind it. Every task was born 'med'
+     and stayed there — 20 cards on the board, 20 reading MED, none clickable
+     — while `pri-high` and `pri-low` sat fully styled in the stylesheet with
+     their own colours on both the board card and the floor's task rail, and
+     had therefore never once rendered.
+
+     So this is finishing something half-built rather than adding a feature:
+     the design shipped three priorities and one way to reach them. Cycles
+     low → med → high → low, which is the whole interaction. Deliberately does
+     NOT reorder anything: the office's model is that the boss decides what to
+     START, and a board that quietly resequenced itself would be taking that
+     back. What it changes is what the boss sees at a glance, and what the
+     coworker is told — the brief already carries `[MED]`, and now that can
+     say something true. */
+  const onCycleTaskPriority = (id) => {
+    const NEXT = { low: 'med', med: 'high', high: 'low' };
+    setTasks(prev => prev.map(t => t.id === id
+      ? { ...t, priority: NEXT[t.priority] || 'high' }
+      : t));
+  };
+
   /* Task → chat bridge. Replaces drag-onto-desk delegation now that the
      office floor isn't drawn. Pops the floating chat, drops a fan-out
      message into the DIRECT thread. If the task has an assignee, the
@@ -3830,7 +3851,7 @@ ${d.text}` : d.text,
         );
       case 'tasks':
         return <TasksView tasks={tasks} agents={agents} experience={experience}
-          onAdd={onAddTask} onMove={onMoveTask} onDelete={onDeleteTask}
+          onAdd={onAddTask} onMove={onMoveTask} onDelete={onDeleteTask} onCyclePriority={onCycleTaskPriority}
           /* Chat bridges — let a task fan out to chat or to a fresh
              meeting room without a kanban-drag affordance. The drag-
              onto-desks UX assumed an isometric office that never
