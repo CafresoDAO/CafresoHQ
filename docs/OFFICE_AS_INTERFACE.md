@@ -385,6 +385,7 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | private memory | write → the index reaching the next prompt (captured off the wire) → read → the coworker answering from it |
 | day 2 | the HQ Gazette summarises the night; **DELIVERABLES** counts filings, not receipts |
 | refusal | a mission that cannot write notes will not start, and now says where to fix it |
+| the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
 
 **Which rules are executable now.** Most of this document is prose a reader has
