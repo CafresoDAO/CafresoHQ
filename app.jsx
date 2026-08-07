@@ -3014,9 +3014,31 @@ ${d.text}` : d.text,
     if (!t) return;
     // Guard against losing real output: archived stand-ups / agent results
     // are valuable and shouldn't disappear from a stray click.
-    if (t.result && !window.confirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`)) return;
+    //
+    // A RUNNING task needs the same guard and never had it: the old check
+    // keyed on `t.result`, which a task in flight has not got yet, so live
+    // work was the one kind you could delete without being asked.
+    const running = t.status === 'doing' && !!t.assignedTo;
+    if (running) {
+      const who = (agents.find(a => a.id === t.assignedTo) || {}).name || 'someone';
+      if (!window.confirm(`${who} is working on "${t.title}" right now.\n\nDelete it and stop them?`)) return;
+    } else if (t.result && !window.confirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`)) {
+      return;
+    }
+    /* Stop the run, don't just drop the card. Deleting a running task used to
+       leave the stream alive: measured, the desk stayed lit (WORKING 1, status
+       busy) for a task that no longer existed, and a minute later the run
+       finished and FILED A DELIVERY into the cabinet for work the boss had
+       explicitly removed. A deliverable arriving for a deleted task is the
+       office contradicting the boss's own decision.
+
+       Aborting by assignee is right because a coworker runs one thing at a
+       time — starting a new run aborts the prior — so their in-flight stream
+       IS this task's. The abort branch then does its usual work; the task it
+       would return to inbox is already gone, and that map is a no-op. */
+    if (running) abortAgentRun(t.assignedTo);
     setTasks(prev => prev.filter(x => x.id !== id));
-    say(`Deleted "${t.title.slice(0, 30)}"`, 'TASK');
+    say(running ? `Deleted "${t.title.slice(0, 30)}" and stopped the run` : `Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };
   /* taskFresh: a task created in THIS tick (starter cards) isn't in the
      `tasks` closure yet. Callers that just minted one pass it directly; the
