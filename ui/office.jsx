@@ -798,7 +798,9 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
        · backendHealth() → container lamp (poll 30s, cheap /health)
        · braveProbe()    → Search Network bars. Runs a REAL Brave search, so
                            it fires ONCE on mount + manual click only.
-       · agentsStatus()  → crew dial (installed CLI runtimes)
+       · agents (props)  → crew row. Reads the roster, NOT agentsStatus():
+                           what the machine could run is a hiring question,
+                           and the front desk already asks it.
        · Σ agents.tokens → office fuel bar (same math as TokenHUD)
        · Σ sGLDT wallets → treasury tile (exposed as goldTreasury for the
                            Vault Room to reuse — fetch once, cache 60s) */
@@ -835,7 +837,6 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
   }, []);
   const [wallHealth, setWallHealth] = React.useState(null);   // null checking | true | false
   const [wallSearch, setWallSearch] = React.useState(null);   // null unknown | {ok}
-  const [wallCrew, setWallCrew] = React.useState(null);       // {installed, total} | null
   const [goldTreasury, setGoldTreasury] = React.useState(null); // BigInt raw e8s | null
   /* Runs on phones too. The wall was un-gated from `!isMobileOffice` so a
      phone could tell a healthy office from a dead one — but THIS, the fetch
@@ -864,13 +865,6 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
     (async () => {
       try { const p = await client.braveProbe(); if (!dead) setWallSearch(p); }
       catch (_e) { if (!dead) setWallSearch({ ok: false }); }
-    })();
-    (async () => {
-      try {
-        const s = await client.agentsStatus();
-        const list = (s && s.agents) || [];
-        if (!dead) setWallCrew({ installed: list.filter(x => x.installed).length, total: list.length });
-      } catch (_e) {}
     })();
     return () => { dead = true; clearInterval(t); };
   }, []);
@@ -1129,9 +1123,25 @@ function OfficeView({ agents, backendDown = false, onHire, onAgentClick, onCoffe
                 <span className={`sw-bars ${wallSearch.ok ? 'up' : 'down'}`} aria-hidden="true"><i/><i/><i/></span> SEARCH
               </div>
             )}
-            {wallCrew && wallCrew.total > 0 && (
-              <div className="sw-row" title={`${wallCrew.installed}/${wallCrew.total} agent runtimes installed · ${busyCount} working now`}>
-                ⚒ {wallCrew.installed}/{wallCrew.total}{busyCount > 0 ? ` · ${busyCount} busy` : ''}
+            {/* This row used to read `⚒ {installed}/{total}` off `wallCrew`,
+                which is the DETECTION result — how many agent runtimes are
+                installed on this machine, out of all the ones the office
+                knows how to look for. Measured on the floor: the wall said
+                `⚒ 3/4` while the office had exactly one coworker.
+
+                It is the only row on the wall that looks like staffing, it
+                sits between the health lamps and the treasury, and it had
+                `· N busy` appended — where busy counts hired coworkers. One
+                row, one separator, two unrelated populations.
+
+                The wall is the office's telemetry, so it now counts the
+                office: coworkers hired, and how many are working. What the
+                machine could run is a hiring question, and the front desk
+                already answers it. `wallCrew` still feeds nothing else, so
+                its fetch is gone with it. */}
+            {agents.length > 0 && (
+              <div className="sw-row" title={`${agents.length} coworker${agents.length === 1 ? '' : 's'} on the payroll · ${busyCount} working right now`}>
+                ⚒ {agents.length}{busyCount > 0 ? ` · ${busyCount} working` : ''}
               </div>
             )}
             {/* What the office has actually SHIPPED. The wall reported
