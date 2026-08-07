@@ -1305,6 +1305,27 @@ append-only).
 > boss can always check the office against the coworker.** That is the
 > guarantee worth having, and it is the one that is actually enforced.
 
+> ✅ **The desk contradicted itself out loud (2026-08-06).** Read a
+> coworker's desk as a boss walking past would. Two props, two counts, side
+> by side:
+>
+> > 📄 **5 filed reports** — click to read
+> > 📦 **2 deliveries filed** — click to open the latest
+>
+> Both said "filed"; they disagreed. Measured: Llama's journal held **5**
+> entries, of which **2** were tasks and **3** were chat replies.
+>
+> §5 already settled this for jobs — *"a chat reply or a DM is not a job,
+> same as it is not an artifact"*, which is why `agent.tasksDone` left the
+> cards — but the rule had never been carried to the papers pile. The
+> journal is a legitimate work **log** and chat belongs in it: **the count
+> was never wrong, the word was.** The pile now reads *"5 notes in Llama's
+> work log"*, and **only the out-tray may say "filed"**, because it is the
+> only one counting files that exist on disk.
+>
+> Same shape as the payroll and FUEL findings: not a broken number, a number
+> wearing a claim it hadn't earned.
+
 > ✅ **Pass two — hiring and the door plate (2026-08-06).** Walking the
 > actual first-run path (empty roster, the Job Postings sheet auto-opens)
 > turned up the rest of it. The candidate cards printed prefix-stripped raw

@@ -1325,11 +1325,26 @@ function OfficeView({ agents, onHire, onAgentClick, onCoffee, onInspect, stickie
                               (capped at 5 sheets so a busy desk stays legible)
                               — this counter was already computed and thrown
                               away, rendering one sheet for 1 report or 30. */}
+                          {/* "filed reports" was an over-claim, and the desk
+                              contradicted itself out loud: this pile read
+                              "5 filed reports" while the out-tray beside it
+                              read "2 deliveries filed". Measured — Llama's
+                              journal held 5 entries, of which 2 were tasks
+                              and 3 were chat replies.
+
+                              §5 already settled this for jobs: "a chat reply
+                              or a DM is not a job, same as it is not an
+                              artifact", which is why `agent.tasksDone` left
+                              the cards. The journal is a legitimate work LOG
+                              and chat belongs in it — the count was never
+                              wrong, the WORD was. Only the out-tray may say
+                              "filed", because only it counts files that
+                              exist. */}
                           {paperCount > 0 && (
                             <div className="px-paperstack clickable"
-                                 title={`${(a.journal || []).length} filed report${(a.journal || []).length === 1 ? '' : 's'} — click to read`}
+                                 title={`${(a.journal || []).length} note${(a.journal || []).length === 1 ? '' : 's'} in ${a.name}'s work log — click to read`}
                                  onClick={(e)=>{ e.stopPropagation(); onInspect(a); }}
-                                 {...pressable(()=>onInspect(a), `${(a.journal || []).length} filed reports by ${a.name} — open`)}>
+                                 {...pressable(()=>onInspect(a), `${a.name}'s work log, ${(a.journal || []).length} notes — open`)}>
                               {Array.from({ length: paperCount }).map((_, pi) => (
                                 <Px key={pi} n="papers"
                                     style={{ position: 'absolute', left: (pi % 2) * 2, bottom: pi * 3 }} />
