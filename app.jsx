@@ -1682,6 +1682,7 @@ ${d.text}` : d.text,
        STALE state, and the message stayed stuck at `awaiting_reply`
        forever — the exact bug the closer exists to fix, reproduced by the
        closer's own race. */
+    const toolVisits = [];                   // what they consulted this run
     let dmDelivered = 0;                     // children actually dispatched
     let markedAwaiting = false;              // this run set awaiting_reply
     const subSpawnQueue = [];                // [{role, body}]
@@ -1739,6 +1740,11 @@ ${d.text}` : d.text,
         onUsage: u => { usedTokens = u.total; },
         onHint: flush.note,
         onTool: ev => {
+          /* Collected here for the same reason the task path collects them:
+             a tool that RAN leaves an echo, and the echo has to come out of
+             the visible reply. Only the task path did this, so the most-used
+             route in the office had the weakest cleaning. */
+          if (ev.echo) toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
           if (ev.phase === 'dm') {
             dmQueue.push({ to: ev.arg, body: ev.body });
           } else if (ev.phase === 'spawn-subagent') {
@@ -1914,7 +1920,25 @@ ${d.text}` : d.text,
           : m));
         buf = spoken;
       }
-      const cleanBuf = HQ.cleanHarmony(buf);
+      /* The full recipe, matching the task path. This read
+         `cleanHarmony(buf)` alone — no `visibleReply`, no `stripToolEcho` —
+         so the office's most-used route had its weakest cleaning.
+
+         Measured on the @mention route, which is the cure three different
+         failure notes tell the boss to use. Asked "@Llama what colour is a
+         ripe lemon? One word." and the bubble came back opening with
+
+           [BROWSER_FETCH: https://en.wikipedia.org/wiki/Lemon] — fetch a URL
+           and return its readable text content.
+           (Note: I will continue with the next step once I have the result
+           from the tool call.)
+
+         The tool really ran — the visit block below it says so — so that
+         line is redundant scaffolding by definition, and the model had
+         copied the tool's own documentation text after the marker, which is
+         why the whole-line orphan strip walked past it. */
+      const cleanBuf = HQ.cleanHarmony(
+        HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
       screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',

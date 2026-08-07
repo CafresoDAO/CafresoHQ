@@ -337,8 +337,25 @@ function stripAcks(text) {
    [MEMORY_READ: decisions/buildings.md] to check…", a marker INSIDE a
    sentence. Removing that would leave a broken sentence, so it stays; the
    model narrating its own tooling is a prompt problem, not a strip one. */
+/* Anchored at line START, and now consuming the REST of the line.
+   It used to require the marker to be the whole line (`\s*$`), which the
+   models defeated by copying the tool's own documentation after it.
+   Measured twice on the @mention route, the cure three failure notes tell
+   the boss to use:
+
+     [BROWSER_FETCH: https://en.wikipedia.org/wiki/Lime] — fetch a URL and
+     return its readable text content.
+
+   The tool RAN — the visit block underneath says so — so the line is
+   redundant scaffolding, and the trailing words are the registry's own doc
+   string echoed back.
+
+   The line-START anchor is what keeps this safe, and the suite already
+   pins it: "Use [DM_TO: Mika] to reach someone." has prose BEFORE the
+   marker, so it is a coworker explaining and survives untouched. A line
+   that OPENS with a protocol marker is machine syntax by construction. */
 const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\]\s*$/gim;
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][^\n]*$/gim;
 
 /* The header line above a tool result in the live transcript.
 
