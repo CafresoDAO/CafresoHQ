@@ -1429,13 +1429,21 @@ ${d.text}` : d.text,
     }
     const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true, thread, agentId: agent.id }]);
-    /* `prompt` is the ASSEMBLED prompt — the office prepends its own voice
-       to it ("[Llama · Generalist] was DM'd for context before this
-       request"), so slicing it drops scaffolding into the desk bubble and
-       the activity log. `userText` is the boss's actual words and is what
-       these surfaces mean. When there is no userText the dispatch came from
-       another coworker, and naming the sender is both truer and shorter than
-       any slice of the prompt would be. */
+    /* CORRECTION to what this comment used to say. It claimed `prompt` is
+       an ASSEMBLED prompt that "the office prepends its own voice to",
+       quoting a line seen on a live floor: "[Llama · Generalist] was DM'd
+       for context before this request". Searching every .jsx, .py and .js
+       in the repo finds that sentence ONLY in comments and docs — nothing
+       generates it. It was the model's own words, describing its situation
+       in the vocabulary its system prompt taught it. The office was
+       faithfully storing what the coworker said.
+
+       The reason not to slice `prompt` here stands on its own and is
+       simpler: `task` and the activity line mean "what they are working
+       on", and the prompt is the QUESTION, not the work — for a DM dispatch
+       it is another coworker's message, and naming the sender is truer and
+       shorter than any slice of it. `userText` is the boss's actual words
+       and is what these surfaces mean. */
     const humanText = userText || null;
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking',
       task: dmFrom ? `answering ${dmFrom.name}` : (humanText || 'on a job').slice(0, 40) });
