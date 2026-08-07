@@ -15,7 +15,21 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const [preview, setPreview] = useSV(true);
   const [graphMinimized, setGraphMinimized] = useSV(false);
   const _isMobileV = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
-  const [vaultTab, setVaultTab] = useSV(_isMobileV ? 'graph' : null); // 'tree' | 'graph' | 'editor'
+  /* Opens on FILES, not the graph. It used to default to 'graph' on any
+     viewport under 768px, which is the phone AND a narrow window.
+
+     Measured on a fresh office right after the first delivery landed: the
+     boss taps the filing cabinet to look at the thing their coworker just
+     filed, and gets a network diagram plus an analysis panel telling them
+     the cabinet is "Dispersed — many scattered topics, consider bridging
+     them", with "Separate clusters: 2" and a "Structural gap" between the
+     one note and the coworker who wrote it. On a cabinet containing one
+     file.
+
+     A filing cabinet's job is to show you your files. The graph is a
+     genuinely good power feature and it is one tap away — but it cannot be
+     the answer to "where is my document". */
+  const [vaultTab, setVaultTab] = useSV(_isMobileV ? 'tree' : null); // 'tree' | 'graph' | 'editor'
 
   // ── Bridge mode: when running inside the SvelteKit shell iframe, all vault
   // reads/writes go through VaultBridge (postMessage → parent decrypts).
