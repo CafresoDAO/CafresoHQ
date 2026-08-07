@@ -807,6 +807,45 @@ nothing, because `backendHealth()` closes over a MODULE-scoped `_API_BASE`.
 The banner's own text reads `window._API_BASE`, so both exist and only one is
 the one that matters — patch the seam the code actually uses.
 
+### Testing the office a new user actually meets
+
+**A first-run bug is only visible from a first run, and the working office
+actively hides it.** Every measurement in this document until 2026-08-07 was
+taken against the same long-lived state dir — one with coworkers, tasks, a
+filled cabinet and a session of history. That office cannot show you what a
+new boss sees, because every zero-state branch is false in it.
+
+Standing up a second server on an empty `CAFRESOHQ_HQ_STATE_DIR` (same repo,
+different port) took one launch entry and immediately produced findings that
+no amount of reading would have: the pinned alarm answering the wrong
+question, a `[VAULT_NEW: …]` marker in the first deliverable a boss ever
+receives, and a card promising "sourced" on a machine with no search. Three
+defects in one sitting, on the one screen that decides whether someone stays.
+
+Keep the fresh dir as a standing instrument, not a one-off. The cost is a
+port and a directory. What it buys is the only honest answer to "what does
+this look like to someone who has never seen it", which is a question the
+developer's own office is structurally incapable of answering.
+
+**Do not promise what you cannot deliver — the mirror of do not alarm.**
+`officeHasBrain` returns true when the answer is unknowable, because an alarm
+you cannot justify must not fire. The starter card's "sourced" claim needed
+the same rule pointing the other way: with no assignee, the honest answer to
+"who will source this" is nobody-known-yet, so the card must NOT promise it.
+Same principle — never assert what you can't stand behind — and which
+direction it falls depends only on whether the claim reassures or worries.
+
+Worth stating because the two look like opposites and get argued as such. If
+a surface is unsure, it should be quiet about the *claim*, not default to the
+scarier or the friendlier reading.
+
+**And the office's own promises are the ones to audit first.** All three
+first-run findings were the office speaking in its own voice — a chip, a
+filed file's contents, a card. None was a coworker's output. The model's
+sentences are the part that cannot be enforced (§7 of this section); the
+office's sentences are the part that can, which makes them the ones with no
+excuse.
+
 ### The boundary to preserve, and what is still open
 
 **The honesty boundary — the thing to preserve.** Everything the *office*
@@ -909,6 +948,21 @@ should extend that boundary, not blur it.
   `AGENT OFFICE` header and the `Coding Agent` / `Slides Agent` role titles.
   Left alone on purpose — they are product naming, not leaked vocabulary.
 
+- **The candidate book names brains two different ways.** The FOUND cards
+  read `POWERED BY CLAUDE` / `POWERED BY OLLAMA`; the CANDIDATE cards below
+  read `SONNET`. Both are on the first screen, inches apart. `SONNET` is a
+  brand rather than a raw id like `claude-sonnet-5`, so it does not breach
+  §6's letter — but two vocabularies for one fact, on the onboarding screen,
+  is the drift this document is mostly about. Flagged rather than changed:
+  the role titles beside it are deliberate product naming, so which register
+  the hiring screen speaks in is a product call, not a defect to patch.
+
+- **Candidate cards show `4 TOOLS`, a bare count.** The roster card's
+  equivalent was renamed to **Can use** on 2026-08-07, because "Tools used"
+  read as a past-tense record of work when it is a permission list. The
+  hiring card has the same content and still shows only a number. Same
+  question, unanswered: four of what, and used when?
+
 **Recurring failure shapes, for whoever reviews the next change:**
 
 1. **A number wearing a claim it hadn't earned** — payroll priced a free
@@ -923,6 +977,22 @@ should extend that boundary, not blur it.
    office then stripped.
 4. **A measurement taken against a precondition never established** — most
    of the false alarms in this doc, and every one is labelled.
+5. **Computed and then discarded** — six instances by 2026-08-07, and the
+   syntactic form differs every time: a field (`agent.tasksDone`), a
+   parameter (`userText`), a loop target (the dropped display name), a
+   written-but-unread record (`stalledNote`, mine, same day I added it), a
+   value shadowed by a second write, and — the expensive one —
+   `triggerChainStep` building the next step's brief WITH the previous
+   step's output and then calling the dispatcher without it, so every
+   chained workflow ran step two as though step one had never happened.
+
+   Ranked by cost, not frequency: the first five dropped a label or a
+   counter. The sixth dropped the entire reason its feature exists, and no
+   surface anywhere looked wrong — the chain ran, both steps completed, both
+   filed. **A feature can be fully wired, green, and pointless.** The only
+   way this surfaced was running the feature end to end and checking whether
+   the OUTPUT of step one appears in step two, which is a different question
+   from whether step two ran.
 
 ---
 
