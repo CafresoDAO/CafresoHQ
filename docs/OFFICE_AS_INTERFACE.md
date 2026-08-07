@@ -375,6 +375,8 @@ This document has grown a long chronological tail of ✅ notes — useful as a
 record of *why* each rule exists, unusable as a map. This section is the map.
 It is a **status summary, not a spec**; the sections below remain the spec.
 
+### What has actually been driven, end to end
+
 **Verified end to end, by driving the real app against a live local model:**
 
 | loop | evidence |
@@ -390,6 +392,8 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | every stamp does something — audited, 2026-08-07 | an approval the boss can stamp that quietly does nothing is the worst dead end in the app. `onApprove`/`onReject` are symmetric: both drop the card, record a receipt, and post the decision into chat, so the kind-specific branches (publish, hire-agent, hire-assistant, grant-elevation, workflow-step) only ADD side effects. `awaiting stamp` has no branch and needs none — the stamp itself is the outcome, and it reaches the coworker as chat context on their next turn |
 | the floor's three promises | the banner names three gestures and all three are real: a task card's `dataTransfer` key matches the desk's reader (and the office carries its own draggable rail, so delegation never needs the board open); the 1:1 couch opens **1:1 WITH CAFRESOHQ · QUIET ROOM**; the meeting door opens **3 IN THE ROOM · CAFRESOHQ MODERATING** with both coworkers already seated |
 | first run, re-checked | after ~40 commits of vocabulary/layout change: front desk → hire → the ⚠ ADD AI KEY alarm firing with nothing hired and clearing on a local-brain hire → "Your AI brain" ticking itself |
+
+### The executable rules — and what a rule can and cannot be
 
 **Which rules are executable now.** Most of this document is prose a reader has
 to remember. Four parts are not, and that is where the leverage is — each was
@@ -412,7 +416,7 @@ exactly one file, its own.
 The pattern behind all four: when you catch yourself doing the same sweep a
 third time, **the sweep is the deliverable, not the fix**.
 
-*A rule is usually right about WHAT and wrong about WHERE.* The vocabulary
+**A rule is usually right about WHAT and wrong about WHERE.** The vocabulary
 ban never changed; the list of places it looks has been wrong five times, and
 each new surface was found by a leak, not by design. It started on display
 props and JSX text, and has since had to learn: text sandwiched between two
@@ -427,7 +431,7 @@ the public internet, where the emitter, the builder and the renderer all
 independently defaulted to the same banned word. When a rule passes clean,
 ask what it cannot see before believing the surface is clean.
 
-*Not every gap is worth a rule.* A sixth surface — string literals inside JSX
+**Not every gap is worth a rule.** A sixth surface — string literals inside JSX
 child expressions — returned 221 hits, mostly code fragments a regex misread
 as strings. That needs a real parser, and a tripwire nobody trusts is worse
 than none, so it was left out deliberately rather than exempted into
@@ -436,6 +440,8 @@ first run is about the detector — two of these returned confident garbage
 before they were useful, so prove one against a bug you can reproduce (0 → 1 →
 0) before trusting a zero from it.
 
+
+### Measuring this app without fooling yourself
 
 **Testing a state-dependent branch: localStorage is a mirror, not the store.**
 A surface that only renders past a threshold (`{xp.snags > 0 && …}`) is exactly
@@ -449,7 +455,7 @@ measurement taken against a precondition never established. Write the
 `$CAFRESOHQ_HQ_STATE_DIR/*.json` file instead, keep a `.probebak`, reload, read
 the DOM, then restore and reload again to confirm the surface goes back.
 
-*Not every repeated bug has a single detectable shape.* "Computed and then
+**Not every repeated bug has a single detectable shape.** "Computed and then
 discarded" turned up three times in one session — `agent.tasksDone` written
 by three sites and read by none, a `userText` parameter accepted and ignored
 until three surfaces said "a job", and a friendly label `('boss', 'You
@@ -461,7 +467,7 @@ while catching a third of it — the mirror of the 221-hit scan that was
 rejected for noise. A rule that under-claims its scope is as misleading as
 one that over-claims. Some patterns are for a reader to carry, not a script.
 
-*Census beats sweep, and a clean census still earns its keep.* The reply-path
+**Census beats sweep, and a clean census still earns its keep.** The reply-path
 census found three uncleaned paths under a green suite; the desk-clearing
 census that followed found nothing. Both were worth running, and the second
 is worth WRITING DOWN — otherwise the next reader re-derives it, or worse,
@@ -469,7 +475,7 @@ assumes it was never checked. Enumerate by ENTRY POINT (every
 `agentStream(` caller) rather than by grepping for the fix: grepping for the
 fix can only ever find the places that already have it.
 
-*What the office cannot catch, and should not pretend to.* Two residues in
+**What the office cannot catch, and should not pretend to.** Two residues in
 filed deliverables came from the model, not the pipeline: a stale sentence
 replayed out of earlier context ("The boss likes figs." on a task about
 fruit), and an invented `[Vault path: Research/banana-colour.md]` for a file
@@ -483,7 +489,7 @@ fabricated filing shows up as a claim with no matching line. That is a weak
 signal against a confident sentence, and it is the correct amount of
 certainty the office actually has.
 
-*A function can be right and unused.* The reply-hygiene suite was green
+**A function can be right and unused.** The reply-hygiene suite was green
 through the whole of the worst bug this session: `visibleReply` was correct,
 and its output never reached the chat bubble on two of three dispatch paths.
 The cleaned text went to the desk monitor, the activity detail, the journal
@@ -495,7 +501,7 @@ is wrong, suspect delivery before logic — and note that the same run also
 exposed a queued `requestAnimationFrame` repainting raw text one frame after
 the fix, so "the code is in the bundle" is not evidence either.
 
-*`innerText` is not the layout.* Text extraction flattens the DOM and drops
+**`innerText` is not the layout.** Text extraction flattens the DOM and drops
 inter-element whitespace, so it invents defects that are not on screen. Three
 near-misses in one session: a bare `·` under each coworker that reads as a
 dangling separator and is the idle MOOD glyph; "GENERALISTpowered by your
@@ -507,7 +513,7 @@ a Range around the sibling text node — or take a screenshot. The mirror image
 of the trap below: there, identical output hid a broken fixture; here, a
 difference in the text is not a difference on the screen.
 
-*The tell for a broken fixture is a result too uniform to be informative.*
+**The tell for a broken fixture is a result too uniform to be informative.**
 Failure shape (4) has now surfaced three ways in one session, and each time
 the bad measurement looked calm rather than wrong: three `withHandoff` cases
 that returned byte-identical strings (the stub `C` never satisfied
@@ -519,7 +525,7 @@ DIFFER — if every branch agrees, suspect the fixture before the code, and
 prove the precondition is real (`brainReady: [true, true]`, `0 HIRED`,
 `onOffice: true`) rather than assuming the setup took.
 
-*Cleaning up needs BOTH, and the mirror is the one that survives.* Restoring
+**Cleaning up needs BOTH, and the mirror is the one that survives.** Restoring
 only the file looks like it worked — the file reads clean — while the tab
 still holds the fixture and `mergeByIdCap` merges it straight back on the next
 mount. A Gazette probe of 150 rows was gone from `activity.json` and still
@@ -696,6 +702,8 @@ Note the failed attempt first: setting `window._API_BASE` to a dead port did
 nothing, because `backendHealth()` closes over a MODULE-scoped `_API_BASE`.
 The banner's own text reads `window._API_BASE`, so both exist and only one is
 the one that matters — patch the seam the code actually uses.
+
+### The boundary to preserve, and what is still open
 
 **The honesty boundary — the thing to preserve.** Everything the *office*
 asserts is enforced in code and tested: the tool visit is structured data the
