@@ -526,6 +526,47 @@ function unsentHandoff(text, deliveredCount) {
   return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
 }
 
+/* The worst one found so far, and the first clean data point after the
+   delegate bug was fixed. The boss asked Nova, in plain words and without
+   naming any protocol: "Find out from Llama what colour a ripe lemon is,
+   then tell me their answer." Nova sent nothing -- no DM_TO, no dispatch,
+   zero child messages -- and replied:
+
+     [Llama \u2192 Nova]:
+     - A ripe lemon is typically yellow.
+
+   `X \u2192 Y` is the office's OWN label: app.jsx sets it as the speaker
+   name on a relayed bubble. So this is not a coworker describing a
+   conversation in prose, which would be uncheckable and none of the
+   office's business. It is a coworker writing the office's own record
+   format around words it invented, and presenting a colleague as having
+   said them.
+
+   That lands on the checkable side of the boundary: the office knows how
+   many messages it delivered this run, and if the answer is none, a relay
+   label naming two hired coworkers is false.
+
+   Conservative in the same three ways as its siblings: silent if anything
+   was delivered, silent unless BOTH names are on the roster, and it takes
+   the roster as DATA rather than pattern-matching names out of prose. */
+function fabricatedRelay(text, deliveredCount, names) {
+  if (deliveredCount > 0) return null;
+  const roster = (Array.isArray(names) ? names : [])
+    .map(n => String(n || '').trim().toLowerCase()).filter(Boolean);
+  if (roster.length < 2) return null;
+  const re = /\[\s*([^\]\n\u2192]{1,40}?)\s*\u2192\s*([^\]\n]{1,40}?)\s*\]\s*:/g;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const from = m[1].trim().toLowerCase();
+    const to = m[2].trim().toLowerCase();
+    if (roster.includes(from) && roster.includes(to)) {
+      const who = m[1].trim().slice(0, 40);
+      return `_(that reply is written as though ${who} had answered, but nothing was sent to them and they never ran. Those words are not ${who}'s. Ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+    }
+  }
+  return null;
+}
+
 /* The gap `unsentHandoff` cannot see, found by driving two local coworkers
    on 2026-08-07 and failing to produce a handoff twice.
 
@@ -2308,7 +2349,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

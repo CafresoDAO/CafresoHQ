@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -117,6 +117,15 @@ R.inlineVaultNote = unsentBlocks(
    stayed silent — correctly. The second attempt ACKed `awaiting_reply`
    having sent nothing, which is a claim the office can prove false from
    its own structured data. */
+/* Verbatim, 2026-08-07, and the first clean handoff test after the
+   delegate bug was fixed. Asked in plain words with no protocol named,
+   Nova sent nothing and answered in the office's OWN relay format,
+   putting words in Llama's mouth. */
+R.fakeRelay      = fabricatedRelay('[Llama \u2192 Nova]:\n\u2022 A ripe lemon is typically yellow.', 0, ['Llama','Nova']);
+R.relayDelivered = fabricatedRelay('[Llama \u2192 Nova]: hi', 1, ['Llama','Nova']);
+R.relayStranger  = fabricatedRelay('[Bob \u2192 Sue]: hi', 0, ['Llama','Nova']);
+R.relayProse     = fabricatedRelay('I asked Llama about lemons.', 0, ['Llama','Nova']);
+
 R.claimedAsk     = unsentAsk(['awaiting_reply'], 0);
 R.claimedAskSent = unsentAsk(['awaiting_reply'], 1);
 R.noClaimNoNote  = unsentAsk(['completed'], 0);
@@ -317,6 +326,14 @@ def main():
     check('…and the office still says the file was never written',
           bool(out['inlineVaultNote']) and 'cabinet' in out['inlineVaultNote'],
           repr(out['inlineVaultNote']))
+    check("a FABRICATED relay in the office's own label is called out",
+          bool(out['fakeRelay']) and 'not Llama' in out['fakeRelay'],
+          repr(out['fakeRelay']))
+    check('…silent when a message really was delivered',
+          out['relayDelivered'] is None, repr(out['relayDelivered']))
+    check('…silent for names nobody hired, and for plain prose',
+          out['relayStranger'] is None and out['relayProse'] is None,
+          repr([out['relayStranger'], out['relayProse']]))
     check('a DECLARED wait with nothing sent is called out',
           bool(out['claimedAsk']) and 'nothing was sent' in out['claimedAsk'],
           repr(out['claimedAsk']))

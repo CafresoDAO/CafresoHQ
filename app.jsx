@@ -2079,6 +2079,12 @@ ${d.text}` : d.text,
          that merely mentions a colleague is left alone. */
       const missAskState = HQ.unsentAsk && HQ.unsentAsk(acks.map(a => a.state), dmQueue.length);
       if (missAskState && flush && flush.note) flush.note(missAskState);
+      /* …and the coworker who did not ask at all, but wrote the office's
+         own relay label around words it made up. Takes the roster so it
+         only fires on real colleagues. */
+      const missRelay = HQ.fabricatedRelay
+        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
+      if (missRelay && flush && flush.note) flush.note(missRelay);
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
