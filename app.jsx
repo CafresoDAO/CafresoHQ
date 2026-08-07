@@ -1110,6 +1110,25 @@ ${d.text}` : d.text,
       }
     }
     abortAgentRun(id); // kill any in-flight stream so it can't write into a dismissed agent
+    /* Hand their work back to the board. Two reasons this belongs here rather
+       than falling out of the abort path:
+
+       1. It has to cover tasks that were ASSIGNED but never started. Those
+          never touch the abort branch at all, so before this they kept
+          pointing at someone who no longer worked here.
+       2. The abort branch deliberately KEEPS the assignee now (a boss-stop is
+          not a hand-back — see the coffee note in the task catch), which is
+          right for a pause and wrong for a dismissal. Whoever is leaving has
+          to be the one to release it.
+
+       The displays already degrade honestly on a dangling id — the card reads
+       "unassigned · pick someone" and ▶ START is gated on a RESOLVED coworker
+       — so this was never a lie on screen. It is the store agreeing with what
+       the screen already said. */
+    const leaving = new Set([id, ...(cascadeAction === 'dismiss' ? assistants.map(x => x.id) : [])]);
+    setTasks(prev => prev.map(t => (t.assignedTo && leaving.has(t.assignedTo))
+      ? { ...applyStatus(t, t.status === 'doing' ? 'inbox' : t.status), assignedTo: null }
+      : t));
     if (cascadeAction === 'dismiss') {
       // Abort + remove all assistants in one pass.
       for (const x of assistants) abortAgentRun(x.id);
