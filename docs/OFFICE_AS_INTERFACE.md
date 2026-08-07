@@ -1233,3 +1233,38 @@ settings — never on the floor, the cards, or onboarding.
 > didn't answer in time — it may still be warming up, so try again in a
 > moment"* — and trying again did work. Pinned by a test using the exact
 > string the live run produced.
+
+> ✅ **Protocol markers were reaching the boss (2026-08-06).** With a free
+> local brain the full success path finally ran end to end: task → `doing`
+> → `done`, XP recorded, settle confirmed again on the task path. It also
+> exposed a class of leak that **only** appears when runs succeed — small
+> models emit bare protocol markers far more readily than large ones, so a
+> session of failure-only testing never saw any of it.
+>
+> The task's stored `result` — the deliverable the boss opens — was
+> literally `[ACK: in_progress: gathering context…]`. Three faults behind
+> it:
+>
+> - the **task-dispatch path stripped nothing at all** (`extractAcks`
+>   appeared exactly once in `app.jsx`, in the chat path);
+> - the **chat path** stripped, then fell back with `cleaned || m.text`,
+>   restoring the raw bracket precisely when the whole reply was one
+>   marker — the case stripping exists for. The task-marker strip a few
+>   lines below had the identical `stripped || m.text` shape;
+> - the **third dispatch path** (delegation) also stripped nothing.
+>
+> One `visibleReply()` now serves all three, so they cannot drift. A bare
+> ACK renders its own note (real information the agent wrote) instead of a
+> bracket or an empty bubble.
+>
+> Two edges the tests found rather than the eye:
+> - `stripAcks` matches any lowercase state while `extractAcks` allows only
+>   four, so a typo'd `[ACK: banana: …]` was **deleted without being
+>   understood** — the agent's whole reply vanished. Now only a *recognised*
+>   marker is trusted; unrecognised text stays text. Silent deletion is
+>   worse than an odd string.
+> - Every strip here is conditional on a well-formed match. A live model
+>   opened `[DM_TO: Claude]` and never closed it, so nothing matched and
+>   the opener went out as prose. `stripOrphanTags` scrubs a known tag
+>   **only when it stands alone on its line** — an agent writing *about*
+>   `[DM_TO: name]` mid-sentence keeps it. Scaffolding goes, content stays.

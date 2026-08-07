@@ -1648,9 +1648,11 @@ ${d.text}` : d.text,
       // We do NOT re-transition here; that would duplicate history entries.
       const acks = (HQ.extractAcks ? HQ.extractAcks(buf) : []);
       if (acks.length) {
-        const cleaned = HQ.stripAcks(buf).trim();
+        /* `cleaned || m.text` used to sit here, and when the whole reply
+           WAS one ACK it restored the raw bracket — see visibleReply. */
+        const cleaned = HQ.visibleReply(buf);
         setChat(prev => prev.map(m => m.id === agentMsgId
-          ? { ...m, text: cleaned || m.text }
+          ? { ...m, text: cleaned }
           : m));
         buf = cleaned;
       }
@@ -1729,10 +1731,17 @@ ${d.text}` : d.text,
           .replace(TASK_DONE_RE, '')
           .replace(TASK_LINE_RE, '')
           .trim();
+        /* Same trap as the ACK fallback: `stripped || m.text` restored the
+           raw [TASK_DONE: …] brackets whenever the reply was nothing BUT
+           markers. The content isn't lost — taskUpdates already carries the
+           result/note the agent wrote — so show that instead of scaffolding. */
+        const spoken = stripped
+          || (taskUpdates.map(u => u.result || u.note).filter(Boolean).join('\n\n').trim())
+          || (taskUpdates.length ? 'updated the board' : '');
         setChat(prev => prev.map(m => m.id === agentMsgId
-          ? { ...m, text: stripped || m.text }
+          ? { ...m, text: spoken }
           : m));
-        buf = stripped;
+        buf = spoken;
       }
       const cleanBuf = HQ.cleanHarmony(buf);
       screen.done(cleanBuf);
@@ -2505,7 +2514,9 @@ ${d.text}` : d.text,
         signal: controller.signal,
       });
       flush.flushNow();
-      const cleanBuf = HQ.cleanHarmony(buf);
+      /* Third dispatch path, same gap the task path had: no ACK stripping,
+         so a bare marker reached the bubble and the journal. */
+      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf));
       screen.done(cleanBuf);
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
@@ -2775,7 +2786,12 @@ ${d.text}` : d.text,
         signal: controller.signal,
       });
       flush.flushNow();
-      const cleanBuf = HQ.cleanHarmony(buf);
+      /* visibleReply BEFORE cleanHarmony: the task path stripped no ACK
+         markers at all, so `[ACK: in_progress: …]` landed in the chat
+         bubble and was stored as the task's `result` — the deliverable the
+         boss opens was protocol scaffolding. Caught on a real successful
+         run against a local model. */
+      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf));
       screen.done(cleanBuf);
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',

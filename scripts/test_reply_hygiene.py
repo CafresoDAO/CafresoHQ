@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""visibleReply (hq-runtime.jsx) — protocol markers must never reach the boss.
+
+Agents speak to the host in brackets: [ACK: in_progress: …] tells the inbox
+where a run is. Those are wire protocol, and §7's no-raw-dumps rule covers
+them exactly as it covers stack traces — the boss never asked to read them.
+
+Two real regressions this pins, both found by driving a SUCCESSFUL run
+against a small local model (which emits bare ACKs far more readily than a
+large one, so failure-only testing never surfaced either):
+
+  - the task-dispatch path stripped nothing, so the marker became the task's
+    stored `result` — the deliverable the boss opens
+  - the chat path stripped, then fell back with `cleaned || raw`, restoring
+    the bracket precisely when the whole reply was one
+
+Extracted with the same strip-imports/run-under-node harness as the others.
+"""
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / 'hq-runtime.jsx'
+
+FAILS = []
+
+
+def check(name, cond, detail=''):
+    if cond:
+        print(f'  ok    {name}')
+    else:
+        FAILS.append(name)
+        print(f'  FAIL  {name}{("  — " + detail) if detail else ""}')
+
+
+def run_js(cases_js):
+    """Pull just the three functions under test — hq-runtime is a large
+    browser module, so slicing beats trying to evaluate the whole file."""
+    text = SRC.read_text(encoding='utf-8')
+    wanted = []
+    # The orphan-tag regex is a module-level const, not a function — pull it
+    # first so stripOrphanTags can see it.
+    mconst = re.search(r'^const ORPHAN_TAG_RE\s*=\s*$\n\s*/.*?/gim;', text, re.M | re.S)
+    if not mconst:
+        mconst = re.search(r'^const ORPHAN_TAG_RE\s*=.*?;', text, re.M | re.S)
+    if not mconst:
+        raise SystemExit('could not find ORPHAN_TAG_RE')
+    wanted.append(mconst.group(0))
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'visibleReply'):
+        m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
+        if not m:
+            raise SystemExit(f'could not find {fn} in {SRC}')
+        wanted.append(m.group(0))
+    src = '\n'.join(wanted)
+    proc = subprocess.run(['node', '--input-type=module', '-e', src + '\n' + cases_js],
+                          cwd=ROOT, capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        print(proc.stdout)
+        print(proc.stderr, file=sys.stderr)
+        raise SystemExit('node harness failed to run')
+    return json.loads(proc.stdout.strip().split('\n')[-1])
+
+
+CASES = r'''
+const R = {};
+// The exact string a live local-model run produced.
+R.bareAck      = visibleReply('[ACK: in_progress: gathering context for regression check]');
+R.bareAckNoNote= visibleReply('[ACK: in_progress]');
+R.mixed        = visibleReply('[ACK: in_progress: thinking]\nRed, green, blue.');
+R.trailing     = visibleReply('Red, green, blue. [ACK: completed: done]');
+R.noMarkers    = visibleReply('Red, green, blue.');
+R.empty        = visibleReply('');
+R.nullIn       = visibleReply(null);
+// Never leaks a bracket, whatever the shape.
+R.noBrackets = ['[ACK: in_progress: x]', '[ACK: completed]', '[ACK: blocked: y]',
+                '[ACK: in_progress: a]\ntext', 'text [ACK: completed: b]']
+  .map(visibleReply).every(x => !/\[\s*ACK/i.test(x));
+// An unknown ACK state is not a recognised marker — extractAcks ignores it,
+// so it must survive as ordinary text rather than vanishing.
+R.unknownState = visibleReply('[ACK: banana: hm]');
+// Observed live: an 8B local model opened a DM block and never closed it,
+// so extractDM never matched and the opener reached the boss as prose.
+R.orphanDm   = visibleReply('[DM_TO: Claude]\nCan you help?\n\n[ACK: in_progress: awaiting_reply]');
+R.orphanOnly = visibleReply('[DM_TO: Claude]');
+// A tag mid-sentence is the agent TALKING about the protocol, not using it.
+R.inlineKept = visibleReply('Use [DM_TO: name] to reach someone.');
+console.log(JSON.stringify(R));
+'''
+
+
+def main():
+    print('reply hygiene — no protocol markers on user surfaces')
+    if not shutil.which('node'):
+        print('  SKIP  node not available')
+        return 0
+    out = run_js(CASES)
+
+    check('a bare ACK shows its note, not the bracket',
+          out['bareAck'] == 'gathering context for regression check', repr(out['bareAck']))
+    check('a bare ACK with no note says something plain',
+          out['bareAckNoNote'] == 'still working on it', repr(out['bareAckNoNote']))
+    check('a marker beside real text keeps only the text',
+          out['mixed'] == 'Red, green, blue.', repr(out['mixed']))
+    check('a trailing marker is removed cleanly',
+          out['trailing'] == 'Red, green, blue.', repr(out['trailing']))
+    check('text without markers is untouched',
+          out['noMarkers'] == 'Red, green, blue.')
+    check('empty stays empty', out['empty'] == '')
+    check('null tolerated', out['nullIn'] == '')
+    check('NO shape ever leaks a bracket', out['noBrackets'])
+    check('an unrecognised ACK state stays as ordinary text',
+          '[ACK: banana: hm]' in out['unknownState'], repr(out['unknownState']))
+    check('an unclosed DM_TO opener is scrubbed, its text kept',
+          out['orphanDm'] == 'Can you help?', repr(out['orphanDm']))
+    check('a reply that is only an orphan tag falls back, not blank',
+          out['orphanOnly'] == '[DM_TO: Claude]', repr(out['orphanOnly']))
+    check('a tag mid-sentence is content, not scaffolding',
+          out['inlineKept'] == 'Use [DM_TO: name] to reach someone.', repr(out['inlineKept']))
+
+    print()
+    if FAILS:
+        print(f'reply hygiene: {len(FAILS)} failure(s)')
+        return 1
+    print('reply hygiene: all checks passed')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

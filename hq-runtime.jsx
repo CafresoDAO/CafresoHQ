@@ -255,6 +255,57 @@ function stripAcks(text) {
   return String(text || '').replace(/\[\s*ACK\s*:\s*[a-z_]+\s*(?::\s*[^\]]*)?\]\s*/gi, '');
 }
 
+/* The reply as the BOSS should see it — protocol markers gone.
+
+   Two ways this went wrong, both caught by driving a real successful run
+   against a small local model (which emits bare ACKs far more readily than
+   a large one, so a session of failure-only testing never saw either):
+
+   - The task-dispatch path stripped nothing at all. `[ACK: in_progress: …]`
+     went straight into the chat bubble AND was stored as the task's
+     `result` — the deliverable the boss opens was scaffolding.
+   - The chat path stripped, then fell back with `cleaned || m.text`. When
+     the whole reply IS one ACK, `cleaned` is '' and the fallback restored
+     the raw bracket — the exact thing stripping exists to prevent.
+
+   A bare ACK still carries the agent's own note, which is real information
+   they wrote, so use it. Only when there is nothing at all do we say so
+   plainly, rather than showing an empty bubble or a bracket. */
+/* Orphaned protocol tags — an opener whose block never closed.
+
+   Every strip in this file is conditional on a WELL-FORMED match, which is
+   fine for a model that closes its blocks and useless for one that doesn't.
+   Observed live: an 8B local model emitted `[DM_TO: Claude]` with no
+   `[/DM_TO]`, so `extractDM` didn't match, nothing stripped it, and the
+   opener went to the boss as if it were prose.
+
+   Deliberately narrow: only this file's own marker vocabulary, only when
+   the tag stands alone on its line. An agent writing about `[DM_TO: …]` in
+   the middle of a sentence keeps it — we remove scaffolding, not content. */
+const ORPHAN_TAG_RE =
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|VAULT_NEW|VAULT_APPEND)\b[^\]\n]*\]\s*$/gim;
+
+function stripOrphanTags(text) {
+  return String(text || '').replace(ORPHAN_TAG_RE, '');
+}
+
+function visibleReply(text) {
+  const raw = String(text || '');
+  const cleaned = stripOrphanTags(stripAcks(raw)).replace(/\n{3,}/g, '\n\n').trim();
+  if (cleaned) return cleaned;
+  /* Nothing survived the strip. `stripAcks` matches ANY lowercase state
+     while `extractAcks` only accepts the four real ones, so a typo'd
+     marker ([ACK: banana: …]) gets deleted without ever being understood
+     — and the agent's entire reply disappears into an empty bubble.
+     Only trust the strip when a marker was genuinely recognised; if it
+     wasn't protocol, it was text, and text is the boss's to see. Showing
+     an odd string beats silently dropping what someone said. */
+  const acks = extractAcks(raw);
+  if (!acks.length) return raw.trim();
+  const note = String(acks[acks.length - 1].note || '').trim();
+  return note || 'still working on it';
+}
+
 /* Find an [DM_TO: name]\n<body>\n[/DM_TO] block. Returns {to, body} or null. */
 function extractDM(text) {
   if (!text) return null;
@@ -1637,7 +1688,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
