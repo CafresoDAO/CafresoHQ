@@ -102,7 +102,7 @@ function buildProjectStudyPrompt(mission, agent, notesIndex, fileTree) {
     ``,
     `PROJECT: ${mission.projectName}`,
     `PATH: ${mission.projectPath}`,
-    `ITERATION: ${mission.iterations + 1} of ~${totalIters} planned`,
+    `ROUND: ${mission.iterations + 1} of ~${totalIters} planned`,
     `TIME: ${elapsedMin}m elapsed · ${remainingMin}m remaining`,
     `VAULT FOLDER: ${folder}/`,
     ``,
@@ -141,7 +141,7 @@ function buildProjectStudyPrompt(mission, agent, notesIndex, fileTree) {
     `  - Wikilink to other notes you've written ([[other-note]]) to build a connected knowledge graph.`,
     `  - Include code snippets with \`\`\` fences when they clarify how something works.`,
     `  - Focus on the WHY and HOW, not just listing what exists. Explain design decisions if apparent.`,
-    `  - End your reply with: "Documented X. Next iteration could explore Y."`,
+    `  - End your reply with: "Documented X. Next round could explore Y."`,
   ];
 
   if (mission.allowSelfComplete) {
@@ -174,7 +174,7 @@ function buildResearchPrompt(mission, agent, notesIndex) {
     `You are on a long-running research mission. The host runs you on a fixed schedule; pacing matters.`,
     ``,
     `TOPIC: ${mission.topic}`,
-    `ITERATION: ${mission.iterations + 1} of ~${totalIters} planned`,
+    `ROUND: ${mission.iterations + 1} of ~${totalIters} planned`,
     `TIME: ${elapsedMin}m elapsed · ${remainingMin}m remaining`,
     `VAULT FOLDER: ${folder}/`,
     ``,
@@ -182,7 +182,7 @@ function buildResearchPrompt(mission, agent, notesIndex) {
     notesList,
     ``,
     `=== YOUR JOB THIS ITERATION ===`,
-    `Do EXACTLY ONE new search-and-write cycle. Pick a single angle you haven't covered yet, search for it, and write a focused note. Do not try to cover the whole topic — there are ~${totalIters} iterations planned, so leave plenty for future runs.`,
+    `Do EXACTLY ONE new search-and-write cycle. Pick a single angle you haven't covered yet, search for it, and write a focused note. Do not try to cover the whole topic — there are ~${totalIters} rounds planned, so leave plenty for future runs.`,
     ``,
     `Available actions (use ONE, max two):`,
     `  • [SEARCH: <specific query>] — query the web for a NEW angle. Be specific.`,
@@ -191,11 +191,11 @@ function buildResearchPrompt(mission, agent, notesIndex) {
     `  • [VAULT_APPEND: <path>]\\n<content>\\n[/VAULT_APPEND] — extend an existing note`,
     ``,
     `Rules:`,
-    `  - ONE search → ONE note. Don't chain multiple searches in a single iteration.`,
+    `  - ONE search → ONE note. Don't chain multiple searches in a single round.`,
     `  - Don't repeat searches you've already run. Don't re-write notes you've already written.`,
     `  - Use frontmatter (---\\ntags: [research]\\n---) on new notes so they integrate with Obsidian.`,
     `  - Wikilink to other notes you've written ([[other-note]]) to build the graph.`,
-    `  - End your reply with a plain-text status line: "Wrote X. Next iteration could explore Y."`,
+    `  - End your reply with a plain-text status line: "Wrote X. Next round could explore Y."`,
   ];
 
   if (mission.allowSelfComplete) {
