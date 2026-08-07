@@ -677,7 +677,7 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
     # raw reference (so unknown agents still get a node, just unbranded).
     agents_by_slug = {}  # slug → {'id', 'title', 'role', 'color', 'sourceIds', 'roles', 'meta'}
 
-    def note_agent(agent_id_or_name: str, role: str = ''):
+    def note_agent(agent_id_or_name: str, role: str = '', display: str = ''):
         """Register an agent reference; returns the slug node id. If the
         registry knows this agent, all later refs (by id or by name) collapse
         to the same slug — which is critical because tasks reference agents
@@ -693,7 +693,13 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
         if not rec:
             rec = {
                 'id': f'agent:{slug}',
-                'title': str(agent_id_or_name),
+                # `display` matters for participants the registry does NOT know —
+                # above all the boss, whose friendly name was computed as
+                # "You (boss)" and then dropped, so the map showed a node
+                # simply called "boss" among the coworkers. Registry members
+                # are relabelled below from their own record, so this only
+                # fills a gap rather than overriding anything.
+                'title': str(display or agent_id_or_name),
                 'role': '',
                 'color': None,
                 'meta': None,
@@ -993,7 +999,11 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
                 elif fid == 'boss': participants.add(('boss', 'You (boss)', 'sender'))
                 if tid_ag: participants.add((tid_ag, m.get('toAgentName') or tid_ag, 'receiver'))
             for ag_id, ag_name, role in participants:
-                aid = note_agent(ag_id, role)
+                # ag_name was unpacked and discarded — the third dead value of
+                # its kind found this session, after agent.tasksDone and the
+                # userText parameter. Computing a friendly label and then not
+                # using it is indistinguishable from never having one.
+                aid = note_agent(ag_id, role, display=ag_name)
                 if aid:
                     etype = 'sent_to' if role == 'sender' else 'received'
                     add_edge(aid, node_id, etype, 1.0,
