@@ -178,4 +178,43 @@ function payrollLabel(agent) {
    and "Payroll" (what it costs), and it is neither of those. */
 const EFFORT_TIP = "Effort: how much reading and writing this coworker has done this session. It is not a count of jobs — Jobs is that — and it is not a cost; Payroll is.";
 
-export { brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, memoryLabel, memoryNotes, memoryRoot, payrollLabel, poweredBy, specialtyTag, statBars };
+/* ── Can this office actually work? ───────────────────────────────────────
+   `hasUsableKey()` with no argument answers one narrow question: is the
+   DEFAULT provider configured. That is the right question for the CEO's own
+   chat and the wrong one for the office as a whole, because a hired coworker
+   pins their own brain in their model id (`ollama:llama3.1:latest`) and the
+   global setting has nothing to do with whether it runs.
+
+   Asking the narrow question and printing the broad answer put "⚠ ADD AI KEY
+   — your agents can't run until you add one" in the pinned alarm cluster of
+   an office whose coworkers had just finished six jobs and filed six
+   deliveries. The alarm is pinned precisely so it can never scroll away; one
+   that cries wolf is worse than none.
+
+   Same probe as the hire form's brain warning (modals/hire.jsx) — that
+   surface got this right and these two didn't, which is why the shared
+   version now lives here instead of a third copy.
+
+   The client is injected so this file stays import-free for
+   scripts/test_cast.py. */
+function agentBrainReady(agent, C) {
+  if (!agent || !C || !C.parseModelId || !C.hasUsableKey || !C.getSettings) return false;
+  const parsed = C.parseModelId(agent.model) || {};
+  const provider = parsed.provider, pinned = parsed.model;
+  if (!provider) return false;
+  const probe = Object.assign({}, C.getSettings(), { provider });
+  if (pinned && provider === 'ollama')   probe.ollamaModel   = pinned;
+  if (pinned && provider === 'lmstudio') probe.lmstudioModel = pinned;
+  return !!C.hasUsableKey(probe);
+}
+
+/* True when SOMETHING in this office can think: the default provider, or any
+   hired coworker's own brain. Unknowable → true, because an alarm you cannot
+   justify must not fire. */
+function officeHasBrain(agents, C) {
+  if (!C || !C.hasUsableKey) return true;
+  try { if (C.hasUsableKey()) return true; } catch (_e) { return true; }
+  return (agents || []).some(a => agentBrainReady(a, C));
+}
+
+export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, memoryLabel, memoryNotes, memoryRoot, officeHasBrain, payrollLabel, poweredBy, specialtyTag, statBars };

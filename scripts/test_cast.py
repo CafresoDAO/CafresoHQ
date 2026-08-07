@@ -128,6 +128,32 @@ R.payAllTitles   = ['ollama:x','claudecode:x','openrouter:x',''].map(m => payrol
 R.payLocalTitle  = payrollLabel({ model: 'ollama:llama3.1' }).title;
 // Case shouldn't matter — prefixes are written by config, not by us.
 R.payUpper       = payrollLabel({ model: 'Ollama:Llama3.1' }).text;
+
+/* officeHasBrain — gates the PINNED "add a key" alarm, so a false positive
+   here is a permanent lie on the topbar. Fake client: the default provider
+   is unconfigured, but a pinned ollama brain is usable. */
+const fakeC = {
+  getSettings: () => ({ provider: 'hermes', ollamaModel: '', lmstudioModel: '' }),
+  parseModelId: (id) => {
+    const m = /^([a-z]+):(.+)$/i.exec(String(id || ''));
+    return m ? { provider: m[1].toLowerCase(), model: m[2] } : {};
+  },
+  hasUsableKey: (s) => {
+    s = s || { provider: 'hermes' };
+    if (s.provider === 'ollama')   return !!s.ollamaModel;
+    if (s.provider === 'lmstudio') return !!s.lmstudioModel;
+    if (s.provider === 'anthropic') return !!s.anthropicKey;
+    return false;                                  // default: not signed in
+  },
+};
+R.brainNoAgents   = officeHasBrain([], fakeC);
+R.brainLocalAgent = officeHasBrain([{ model: 'ollama:llama3.1:latest' }], fakeC);
+R.brainDeadAgent  = officeHasBrain([{ model: 'anthropic:claude' }], fakeC);
+R.brainMixed      = officeHasBrain([{ model: 'anthropic:claude' }, { model: 'ollama:llama3.1' }], fakeC);
+R.brainNoModel    = officeHasBrain([{ }], fakeC);
+R.brainNoClient   = officeHasBrain([], null);
+R.brainThrows     = officeHasBrain([], { hasUsableKey: () => { throw new Error('x'); } });
+R.brainGlobalOk   = officeHasBrain([], Object.assign({}, fakeC, { hasUsableKey: () => true }));
 console.log(JSON.stringify(R));
 ''')
 
@@ -215,6 +241,22 @@ console.log(JSON.stringify(R));
           '0.0000015' not in out['payAllTitles'] and '$' not in out['payAllTitles'],
           out['payAllTitles'])
     check('the prefix match is case-insensitive', out['payUpper'] == 'in-house')
+
+    # officeHasBrain — the alarm gate
+    check('an empty office with no default brain really has none',
+          out['brainNoAgents'] is False)
+    check('ONE coworker on their own local brain means the office can work',
+          out['brainLocalAgent'] is True)
+    check('…even though the DEFAULT provider is still unconfigured',
+          out['brainNoAgents'] is False and out['brainLocalAgent'] is True)
+    check('a coworker whose brain is NOT signed in does not count',
+          out['brainDeadAgent'] is False)
+    check('one working brain among several is enough', out['brainMixed'] is True)
+    check('a coworker with no brain assigned counts for nothing',
+          out['brainNoModel'] is False)
+    check('unknowable never fires the alarm (no client)', out['brainNoClient'] is True)
+    check('unknowable never fires the alarm (client throws)', out['brainThrows'] is True)
+    check('a configured default short-circuits to yes', out['brainGlobalOk'] is True)
 
     print()
     if FAILS:

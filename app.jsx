@@ -7,6 +7,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
+import { officeHasBrain } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
@@ -512,6 +513,11 @@ function App() {
   const [settingsTab, setSettingsTab] = useStateA(null);   // deep-link target tab when opening Settings
   // Reactive "does the active provider have a usable key?" — drives the topbar nudge.
   const [hasKey, setHasKey] = useStateA(() => { try { return CafresoHQClient.hasUsableKey(); } catch (_e) { return true; } });
+  /* `hasKey` answers only "is the DEFAULT provider configured" — the right
+     question for the CEO's own chat, the wrong one for the office. A hired
+     coworker pins their own brain, so the office can be fully operational
+     while this is false. See officeHasBrain in app/cast.jsx. */
+  const officeCanWork = useMemoA(() => hasKey || officeHasBrain(agents, CafresoHQClient), [hasKey, agents]);
   React.useEffect(() => {
     const C = CafresoHQClient;
     const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
@@ -4046,9 +4052,14 @@ ${d.text}` : d.text,
               Informational chips and secondary tools may scroll. An alarm
               may not. */}
           <div className="status-pinned">
-            {!hasKey && (
+            {/* Gated on officeCanWork, not hasKey: this fired "your agents
+                can't run" over an office whose coworkers had just finished
+                six jobs on their own local brains. It sits in the PINNED
+                cluster so it can never scroll away, which makes a false
+                alarm here more expensive than anywhere else on the floor. */}
+            {!officeCanWork && (
               <button className="chip chip-warn" onClick={()=>openSettings('keys')}
-                title="No AI key for the active provider yet — your agents can't run until you add one. Click to open Settings → Connections."
+                title="No brain is signed in yet — you can hire coworkers, but nobody can start work until you add one. Click to open Settings → Connections."
                 style={{cursor:'pointer', background:'rgba(232,169,169,0.16)', borderColor:'rgba(232,169,169,0.5)', color:'#E8A9A9'}}>
                 ⚠ ADD AI KEY
               </button>
@@ -4358,7 +4369,9 @@ ${d.text}` : d.text,
       />
       {!gsDismissed && !tourOpen && (
         <GettingStarted
-          hasKey={hasKey}
+          /* The step is "Your AI brain", and a local brain doing real
+             work satisfies it — see officeCanWork. */
+          hasKey={officeCanWork}
           hired={agents.length > 0}
           chatted={(chat || []).some(m => m.from === 'user')}
           assigned={tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned')}
