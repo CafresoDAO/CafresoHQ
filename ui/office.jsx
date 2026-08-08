@@ -175,8 +175,17 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
      they had no visible door at all. Measured at 718px: the whole nav rail
      computes to zero size, the tab bar carries five bookmarks (Chat,
      Office, Team, Vault, Projects), and this drawer held only tools — so
-     Calendar and Terminal were reachable exclusively by a horizontal swipe
-     on `.view-area`, a gesture with no affordance anywhere on screen.
+     Calendar was reachable exclusively by a horizontal swipe on
+     `.view-area`, a gesture with no affordance anywhere on screen.
+
+     CALENDAR ONLY, and that is a correction. I added Terminal here in the
+     same change on the principle that no view should be unreachable — and
+     north-star §5 parks the user-facing PTY terminal off the core path on
+     purpose: "the #1 'this isn't for me' signal for non-gurus; stays in
+     Living Floor desktop mode for devs." The desktop rail still carries
+     it, which is exactly where the park list puts it. A local principle
+     ("every view needs a door") lost to a product decision that had
+     already been made and written down.
 
      Tasks was the one I expected to find stranded and it is fine: the
      floor's task rail carries a visible "Board →". Checking that before
@@ -190,7 +199,6 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
     { icon: '📋', label: 'Meeting',  badge: meetingCount || 0,  action: onOpenMeeting },
     { icon: '⚡', label: 'Workflow', badge: 0,                  action: onOpenWorkflow },
     { icon: night ? '☀' : '☾', label: night ? 'Day' : 'Night', badge: 0, action: onToggleNight },
-    { icon: '⌨', label: 'Terminal', badge: 0,                  action: () => setActive('terminal') },
     { icon: '⚙️', label: 'Settings', badge: 0,                  action: onOpenSettings },
   ];
 
