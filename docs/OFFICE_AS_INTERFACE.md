@@ -843,18 +843,42 @@ DIFFER — if every branch agrees, suspect the fixture before the code, and
 prove the precondition is real (`brainReady: [true, true]`, `0 HIRED`,
 `onOffice: true`) rather than assuming the setup took.
 
-**Clearing the mirror ALONE destroys the file — the trap runs both ways.**
-Learned by doing it: `useFileStored` seeds from `localStorage` at mount and
-fetches the file a beat later, but its debounced PUT does not wait for that
-fetch. Wipe the mirror, reload, and the app boots with empty state and
-persists the emptiness over a perfectly good file before the merge lands. A
-restored `memory/agents.json` holding two coworkers read `[]` within seconds,
-and nothing errored. Everything else in the directory survived, which is what
-makes it dangerous — the state looks broadly fine.
+**Clearing the mirror ALONE destroys the file — and this was NOT a testing
+hazard. FIXED 2026-08-08.** The entry that stood here called it a trap for
+whoever is driving the app, and told the next reader "never clear a mirror
+key to reset a file-backed value". That advice was fine and the diagnosis
+was wrong, which made it the most expensive paragraph in this document: it
+labelled a live data-loss bug as operator error and closed the question.
 
-So: never clear a mirror key to "reset" a file-backed value. Write the FILE
-(that is the source), restart the server if it caches, and reload once. If
-you must clear the mirror, stop the app first, then restore, then start.
+What it actually is: **open the office in a second browser, clear site
+data, or pick up another device, and your entire staff is deleted from
+disk.** Reproduced without touching any mirror by hand — an office with one
+hired coworker (`agents.json`, 08-07 17:10) read 2 bytes seven minutes
+after being opened in a fresh browser context. The task from that run still
+named `a_local_ollama`, a coworker who no longer existed.
+
+And the mechanism is not the one the old entry described. It is not the
+debounced PUT beating the fetch. `useFileStored` seeds from an empty
+mirror; a BOOT-TIME effect then calls the setter with that empty value —
+normalisation, not an edit — which sets `dirtyRef`; the arriving fetch sees
+dirty and **returns without adopting**, on the rule that local edits beat
+the server copy. The office is now holding `[]` *and marked dirty*, so the
+next persist writes it over the real file. **The GET was turned away; the
+PUT merely finished the job.** Fixing only the PUT (I tried) delays the
+wipe by one mutation and nothing more.
+
+The fix is two lines of principle: never write a file this session has not
+read, and treat *dirty-but-still-byte-identical-to-the-seed* as untouched,
+so the fetch is allowed to adopt. Every `useFileStored` caller was exposed
+— agents, tasks, messages, experience, missions, projects, receipts, pins,
+workflows, windows, memory — and all are covered by the shared fix.
+
+The generalisable part: **"I broke it by doing something unusual" is a
+hypothesis, not a finding.** The unusual act (clearing a mirror) and the
+ordinary one (opening a new browser) produce the identical precondition,
+and only one of them is a testing artefact. When you catch yourself writing
+a rule for the operator, check whether a user can reach the same state
+without trying.
 
 **Cleaning up needs BOTH, and the mirror is the one that survives.** Restoring
 only the file looks like it worked — the file reads clean — while the tab
