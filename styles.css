@@ -6094,6 +6094,32 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
   margin-top: auto; padding-top: 6px;
   border-top: 1px dashed var(--ink-3);
 }
+/* Section 2's four bars, shrunk for a pick-list card. Same shape and the
+   same teal as .sb-* on the hired coworker's panel, deliberately — a
+   candidate must look like the coworker they become. */
+.post-spec {
+  font-family: 'Inter'; font-size: 10px; font-style: italic;
+  color: var(--ink-2); line-height: 1.35; margin-top: 2px;
+}
+.post-bars { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 2px; }
+.pb-cell { display: flex; flex-direction: column; gap: 2px; }
+.pb-lbl {
+  font-family: 'Inter'; font-size: 7px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.pb-track { display: flex; gap: 1px; }
+.pb-seg {
+  width: 5px; height: 5px;
+  background: var(--paper-2); border: 1px solid var(--rule);
+}
+.pb-seg.on { background: var(--accent-teal, #2a9d8f); border-color: var(--accent-teal, #2a9d8f); }
+.post-vendor {
+  font-family: 'Inter'; font-size: 8px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-3); opacity: 0.85;
+  padding-top: 4px;
+}
+body.night .pb-seg { background: #241d33; border-color: #3a3050; }
+
 /* Front desk — detection-driven FOUND cards at the top of the hire board. */
 .frontdesk-head {
   font-family: 'Press Start 2P'; font-size: 9px; color: var(--ink-2);

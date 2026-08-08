@@ -88,6 +88,40 @@ function statBars(agent) {
   return { speed: row.speed, depth: row.depth, code: row.code, cost: row.cost, tag: row.tag };
 }
 
+/* What this coworker can actually DO, in the boss's words.
+   Section 6: "tool call -> shown as the action itself: reading files,
+   searching". A card that says "4 tools" has told the boss a NUMBER about
+   a machine concept -- it is not wrong, it is just not about anything they
+   care about. The catalog's own labels are no better ("Code Exec", "File
+   Access"): those are switch names for the hiring form, where a checkbox
+   list is the right shape. On a card, say the verb.
+
+   Capped at three because a card is a glance, not a spec sheet; the full
+   list stays in the title attribute for anyone who wants it. */
+const CAN_DO = {
+  web:    'search the web',
+  vault:  'read your notes',
+  files:  'work with your files',
+  code:   'run code',
+  img:    'make images',
+  email:  'send email',
+  cal:    'manage your calendar',
+  db:     'query your database',
+  slack:  'post to Slack',
+  wallet: 'spend from your wallet',
+};
+
+function canDoPhrase(tools) {
+  const list = (tools || []).map(t => CAN_DO[t]).filter(Boolean);
+  if (!list.length) return 'talk things through';
+  const shown = list.slice(0, 3);
+  const rest = list.length - shown.length;
+  let out = shown.length === 1 ? shown[0]
+          : shown.slice(0, -1).join(', ') + ' and ' + shown[shown.length - 1];
+  if (rest > 0) out += ` +${rest} more`;
+  return out;
+}
+
 /* The one-line specialty tag: an EARNED affinity beats the class default —
    "12 research briefs" is a résumé line, "cheap and tireless" is a hunch. */
 function specialtyTag(agent, xpAffinityText) {
@@ -270,4 +304,4 @@ function handoffHint(agents, C) {
     : ` ${names} are still working, though — @mention one of them and they can pick this up.`;
 }
 
-export { agentBrainReady, brainName, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };
+export { agentBrainReady, brainName, canDoPhrase, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };

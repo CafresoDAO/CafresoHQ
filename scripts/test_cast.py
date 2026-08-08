@@ -168,6 +168,21 @@ R.joinOpen   = withHandoff('⚠ it looks offline from here', ROSTER, fakeC);
 R.joinClosed = withHandoff('⚠ it looks offline from here.', ROSTER, fakeC);
 R.joinEllip  = withHandoff('⚠ give this to someone else…', ROSTER, fakeC);
 R.joinNone   = withHandoff('⚠ it looks offline from here', DEAD, fakeC);
+// ── what a coworker can DO, in the boss's words ─────────────────────────
+R.cdOne    = canDoPhrase(['web']);
+R.cdTwo    = canDoPhrase(['web','vault']);
+R.cdThree  = canDoPhrase(['files','vault','db']);
+R.cdFour   = canDoPhrase(['web','email','cal','vault']);
+R.cdNone   = canDoPhrase([]);
+R.cdNull   = canDoPhrase(null);
+R.cdJunk   = canDoPhrase(['nope','web']);
+R.cdAllJunk= canDoPhrase(['nope','zzz']);
+// The gate on the hire shelf: do the four bars tell these cards apart?
+const barKey = (t) => { const b = statBars(t); return `${b.speed}${b.depth}${b.code}${b.cost}`; };
+const SEED   = ['cafreso:sonnet','cafreso:sonnet','cafreso:sonnet'].map(m => ({ model: m }));
+const MIXED  = ['cafreso:sonnet','ollama:llama3.1','anthropic:claude-opus'].map(m => ({ model: m }));
+R.barsSeed   = new Set(SEED.map(barKey)).size > 1;
+R.barsMixed  = new Set(MIXED.map(barKey)).size > 1;
 console.log(JSON.stringify(R));
 ''')
 
@@ -331,6 +346,30 @@ console.log(JSON.stringify(R));
           and 'handoffHint(others' in m2.group(0)
           and 'withHandoff(out, others' in m2.group(0),
           'app/storage.jsx: filter `selfId` out, then hint from the remainder')
+
+    # ── what they can DO ────────────────────────────────────────────────
+    # Section 6: "tool call -> shown as the action itself". The card used to
+    # say "4 tools", which is a number about a machine concept.
+    check('one tool reads as one action', out['cdOne'] == 'search the web')
+    check('two are joined with "and"', out['cdTwo'] == 'search the web and read your notes')
+    check('three are joined with a comma then "and"',
+          out['cdThree'] == 'work with your files, read your notes and query your database')
+    check('a card is a glance, so it stops at three and counts the rest',
+          out['cdFour'] == 'search the web, send email and manage your calendar +1 more')
+    # A coworker with no tools still DOES something -- the card must not
+    # imply they are useless, and must never render an empty clause.
+    check('no tools still reads as a capability', out['cdNone'] == 'talk things through')
+    check('a null tool list does not crash the card', out['cdNull'] == 'talk things through')
+    check('an unknown tool id is dropped, not printed raw', out['cdJunk'] == 'search the web')
+    check('all-unknown falls back rather than emitting "Can "', out['cdAllJunk'] == 'talk things through')
+
+    # The bars key off the BRAIN. Every seed candidate pins one brain, so
+    # rendering them produced eight identical stat blocks on the one surface
+    # whose job is choosing. The gate must be false there and true when the
+    # shelf actually holds different brains -- both directions, because a
+    # gate that is always false is just deleted code.
+    check('identical brains: the bars are suppressed', out['barsSeed'] is False)
+    check('different brains: the bars are shown', out['barsMixed'] is True)
 
     print()
     if FAILS:

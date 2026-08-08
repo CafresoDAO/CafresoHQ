@@ -1,7 +1,7 @@
 import { CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
-import { brainName } from '../app/cast.jsx';
+import { brainName, canDoPhrase, poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
 import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
@@ -60,6 +60,52 @@ const FRONT_DESK = {
                    model: 'gemini-api:gemini-2.5-flash', tools: ['web'], cloud: true,
                    poweredBy: 'Google', found: 'Your Google AI account is connected to this workspace.' },
 };
+/* Section 2's card, on the SHELF as well as in the office. A saved
+   candidate used to advertise itself as "SONNET · 4 tools" -- the two
+   things the design system says a card must not lead with: the vendor's
+   model as the identity, and a machine count. The hired coworker's panel
+   has shown Speed/Depth/Code/Cost with a small "powered by" chip since
+   B1; the cards you pick FROM had never been brought over, which is
+   backwards -- this is the surface where the boss is actually choosing.
+
+   Same statBars() the panel uses, so a candidate cannot advertise one
+   thing and then show another the moment they are hired.
+
+   `showBars` is the correction to my first version of this card. The bars
+   key off the BRAIN, and every seed candidate pins cafresohq:sonnet -- so
+   eight cards rendered eight IDENTICAL stat blocks and eight identical
+   "strong all-rounder" lines. True, and useless: on the one surface whose
+   whole job is CHOOSING, a row that reads the same on every card is not
+   neutral, it crowds out the two things that actually differ (the role and
+   what they can do). So the block appears only when it discriminates --
+   when the cards on screen do not all share one profile. Seed roster: no
+   bars. A shelf of templates on different brains: bars. */
+function CastLine({ t, showBars }) {
+  const bars = statBars(t);
+  const vendor = poweredBy(t);
+  return (
+    <>
+      {showBars && <div className="post-spec">{specialtyTag(t)}</div>}
+      {showBars && <div className="post-bars">
+        {[['Speed', bars.speed], ['Depth', bars.depth], ['Code', bars.code], ['Cost', bars.cost]].map(([lbl, n]) => (
+          <span className="pb-cell" key={lbl} title={`${lbl}: ${n} of 4`}>
+            <span className="pb-lbl">{lbl}</span>
+            <span className="pb-track" aria-label={`${lbl}: ${n} of 4`}>
+              {[1,2,3,4].map(i => <span key={i} className={'pb-seg' + (i <= n ? ' on' : '')} />)}
+            </span>
+          </span>
+        ))}
+      </div>}
+      <div className="post-meta">
+        <span title={(t.tools||[]).join(', ') || 'no tools'}>Can {canDoPhrase(t.tools)}</span>
+      </div>
+      <div className="post-vendor" title={t.model || 'no brain assigned'}>
+        {vendor ? `powered by ${vendor}` : `brain: ${brainName(t)}`}
+      </div>
+    </>
+  );
+}
+
 function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
   const [role, setRole] = useStateM(HQ.ROLES[0]);
@@ -144,6 +190,14 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
      counted by the SEED SWARM tile. */
   const hiredNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
   const candidates = (HQ.OPENSWARM_ROSTER || []).filter(t => !hiredNames.has(t.name.toLowerCase()));
+
+  /* Do the four bars tell these cards apart, or do they say one thing eight
+     times? Computed over exactly what is on screen (candidates + saved
+     templates), so the answer follows the shelf rather than a guess. */
+  const barsDiscriminate = (() => {
+    const key = (t) => { const b = statBars(t); return `${b.speed}${b.depth}${b.code}${b.cost}`; };
+    return new Set([...candidates, ...(templates || [])].map(key)).size > 1;
+  })();
 
   /* Front-desk cards: present = installed for CLIs/hermes; for local daemons
      only a LIVE probe ('reachable') counts — their detect.installed is true
@@ -276,11 +330,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     <span className="post-tag">CANDIDATE</span>
                   </div>
                   <div className="post-role">{t.role}</div>
-                  <div className="post-meta">
-                    <span title={t.model || 'no brain assigned'}>{brainName(t)}</span>
-                    <span>·</span>
-                    <span>{(t.tools||[]).length} tool{(t.tools||[]).length===1?'':'s'}</span>
-                  </div>
+                  <CastLine t={t} showBars={barsDiscriminate} />
                 </div>
               ))}
               {templates.map(t => (
@@ -290,11 +340,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     <div className="post-name">{t.name}</div>
                   </div>
                   <div className="post-role">{t.role}</div>
-                  <div className="post-meta">
-                    <span title={t.model || 'no brain assigned'}>{brainName(t)}</span>
-                    <span>·</span>
-                    <span>{(t.tools||[]).length} tool{t.tools.length===1?'':'s'}</span>
-                  </div>
+                  <CastLine t={t} showBars={barsDiscriminate} />
                   <button className="px-btn ghost post-remove" style={{fontSize:8}} onClick={(e)=>{e.stopPropagation(); deleteTpl(t.id);}}>✕</button>
                 </div>
               ))}
