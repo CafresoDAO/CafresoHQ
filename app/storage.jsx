@@ -100,6 +100,16 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     } catch (_e) { return fallback(); }
   });
 
+  /* The value this session started with, before anything touched it.
+     `dirtyRef` alone cannot tell a real edit from a BOOT-TIME write — a
+     normalising effect that calls the setter with the same empty array
+     sets it just as surely as the boss hiring someone, and the arriving
+     fetch then refuses to adopt the real file. That is the actual wipe:
+     not the PUT racing the GET, but the GET being turned away. */
+  const seedRef = useRefA(null);
+  const valRef = useRefA(val);          // latest value, readable from the fetch callback
+  if (seedRef.current === null) { try { seedRef.current = JSON.stringify(val); } catch (_e) { seedRef.current = ''; } }
+
   const writeRef = useRefA(null);
   // Set as soon as anything in this session mutates the value. The mount fetch
   // below resolves ~100-300ms after first render, so without this flag it
@@ -108,6 +118,29 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   // edit in both places. Local changes win; the server copy is only adopted
   // when the session hasn't touched it yet.
   const dirtyRef = useRefA(false);
+
+  /* Has the mount fetch settled yet? Until it has, this session has never
+     SEEN the file, so nothing it holds is authoritative — the value is just
+     `initial`.
+
+     Measured 2026-08-08, and it is data loss on the core entity. An office
+     with one hired coworker (file written 08-07 17:10) was opened in a
+     FRESH BROWSER CONTEXT. Empty mirror → `val` seeds to []. A boot-time
+     mutation set dirtyRef, which both PUT the empty array over the file
+     AND made the arriving fetch return early rather than restore it.
+     agents.json: 2 bytes, mtime 08-08 08:50. The task from that run still
+     names `a_local_ollama` — a coworker who no longer exists.
+
+     I recorded this yesterday as MY testing mistake ("never clear a mirror
+     key to reset a file-backed value"). It is not a testing hazard. It is
+     what happens to any boss who opens their office in a second browser,
+     clears site data, or picks up a different device.
+
+     The fix is narrow: hold the FILE write until the fetch has settled.
+     localStorage still updates immediately, so nothing feels laggy, and
+     with no edit in that window dirtyRef stays false, the fetch adopts the
+     real roster, and the office comes back whole. */
+  const hydratedRef = useRefA(false);
 
   const persist = React.useCallback((v) => {
     try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (err) {
@@ -118,6 +151,8 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err } })); } catch (_e) {}
     }
     if (sensitive) return;
+    /* Never write the file we have not read. See hydratedRef above. */
+    if (!hydratedRef.current) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
       fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
@@ -133,19 +168,31 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
+        hydratedRef.current = true;     // settled: file writes may proceed
         if (data == null) return;
-        if (dirtyRef.current) return;   // the user got there first — keep theirs
+        /* Local edits win — but only REAL ones. If what this session holds
+           is still byte-identical to the seed it started with, nobody has
+           edited anything; a boot effect just wrote the initial value back.
+           Adopt the file in that case, or a fresh browser deletes the
+           office's staff. */
+        let untouched = false;
+        try { untouched = JSON.stringify(valRef.current) === seedRef.current; } catch (_e) {}
+        if (dirtyRef.current && !untouched) return;   // a real edit — keep theirs
         const merged = transform ? transform(data) : data;
+        valRef.current = merged;
         setVal(merged);
         try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
       })
-      .catch(() => {});
+      /* Unreachable server counts as settled too, or an offline office
+         could never write to disk again. */
+      .catch(() => { hydratedRef.current = true; });
   }, []);  // intentionally runs once on mount
 
   const setter = React.useCallback((updater) => {
     dirtyRef.current = true;
     setVal(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      valRef.current = next;
       persist(next);
       return next;
     });
