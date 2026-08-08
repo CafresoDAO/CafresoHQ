@@ -96,7 +96,15 @@ R.phPlain = isHandoffPlaceholder('Red.');
 // A reply that was ONLY an approval ask — the "walks to your desk" moment.
 R.apOnly  = visibleReply('[NEEDS_APPROVAL: order two pizzas — $40]');
 R.apProse = visibleReply('I can do that, but it costs money.\n[NEEDS_APPROVAL: send the newsletter]');
-R.apSpace = visibleReply('[NEEDS APPROVAL: x]');
+R.apSpace = visibleReply('[NEEDS APPROVAL: send the invoice]');
+// A stamp with no content is not a request. Watched live: the boss's tray
+// read "N/A · by Gemma · awaiting stamp".
+R.apNA    = extractApproval('[NEEDS_APPROVAL: N/A]');
+R.apNone  = extractApproval('[NEEDS_APPROVAL: none needed]');
+R.apDash  = extractApproval('[NEEDS_APPROVAL: -]');
+R.apDots  = extractApproval('[NEEDS_APPROVAL: ...]');
+R.apReal  = extractApproval('[NEEDS_APPROVAL: order two pizzas — $40]');
+R.apShort = extractApproval('[NEEDS_APPROVAL: pay $40 to Luigi]');
 
 /* Verbatim off the floor, 2026-08-07. The boss asked for one colour; the
    reply carried a whole [MEMORY_WRITE] block whose delimiters were stripped
@@ -678,6 +686,13 @@ def main():
     # "get the boss's approval" invented its own bracket, matched nothing,
     # and no tray appeared; a coworker who emitted it correctly would have
     # shown the boss raw protocol beside the tray.
+    check('"N/A" is not an authorisation request', out['apNA'] is None)
+    check('nor is "none needed"', out['apNone'] is None)
+    check('nor a dash', out['apDash'] is None)
+    check('nor an ellipsis', out['apDots'] is None)
+    check('a real ask still comes through', out['apReal'] == 'order two pizzas — $40')
+    check('...including a short real one', out['apShort'] == 'pay $40 to Luigi')
+
     check('a marker-only reply reads as the walk to the desk',
           out['apOnly'] == 'Asked for your stamp — "order two pizzas — $40". It\'s waiting on your desk.',
           repr(out['apOnly']))

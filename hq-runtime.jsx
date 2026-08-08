@@ -247,7 +247,26 @@ function throttleTokens(setChat, msgId) {
 function extractApproval(text) {
   if (!text) return null;
   const m = String(text).match(/\[\s*NEEDS[_ ]APPROVAL\s*:\s*([^\]\n]+)\]/i);
-  return m ? m[1].trim() : null;
+  if (!m) return null;
+  const desc = m[1].trim();
+  /* A stamp is a DECISION, and a decision has to say what is being decided.
+     Watched live: a coworker emitted [NEEDS_APPROVAL: N/A] alongside an
+     unrelated DM, and the boss's tray read "N/A · by Gemma · awaiting
+     stamp" — an authorisation request with no content, which is worse than
+     no request at all because the only safe answer to it is no.
+
+     Read it as what it is: the model filling the slot to say "nothing to
+     approve here". Dropping it is not a silent drop — nobody asked for
+     anything. Inventing a pending authorisation out of it would be the
+     approval-shaped version of fabricatedRelay(). */
+  /* Two guards, and they genuinely divide the work — checked by removing
+     each alone: the word list is what catches "none needed" and "tbd"
+     (long enough to pass a length test), the length floor is what catches
+     "N/A", "-" and "..." (too short to be worth listing exhaustively).
+     Neither is redundant. */
+  if (/^(?:none(?:\s+needed)?|nil|null|not applicable|tbd|to be decided)\.?$/i.test(desc)) return null;
+  if (desc.replace(/[^A-Za-z0-9]/g, '').length < 3) return null;   // "N/A", "-", "…", "??"
+  return desc;
 }
 
 /* Find ALL [ACK: <state>: <note>] markers in `text`. Returns
