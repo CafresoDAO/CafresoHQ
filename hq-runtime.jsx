@@ -118,6 +118,22 @@ const OPENSWARM_ROSTER = [
     name: 'Pixel',
     role: 'Image Generation',
     color: 'rose',
+    /* PARKED. Section 5's own line for the exporter-zoo row ends "image gen
+       can return post-core" — the same sentence that parks video gen and
+       the ComfyUI/A1111 wiring, so this is not a stretch of the row, it is
+       what the row says.
+
+       Confirmed live-relevant, not just doc-literal: `toolsForAgent` only
+       grants GENERATE_IMAGE when `getSettings().imageProvider` is set, and
+       there is NO Settings screen anywhere in the app that sets it —
+       grepped modals/settings.jsx, nothing. So for every install today,
+       Pixel's own job description below runs its last line for real: "tell
+       the boss to configure a provider" in "Settings → Media", a screen
+       that has never existed. A parked coworker isn't on the shelf to make
+       that promise to a first-run stranger in the first place — un-parking
+       Pixel is real, in-scope work (build the Settings → Media screen),
+       not a one-line flip like Reel's. */
+    parked: true,
     tools: ['vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.8,
@@ -128,6 +144,18 @@ const OPENSWARM_ROSTER = [
     name: 'Reel',
     role: 'Video Generation',
     color: 'lavender',
+    /* PARKED — north-star section 5 names this row exactly: "Exporter zoo
+       (video gen, ComfyUI/A1111 wiring) — cool, unfocused; image gen can
+       return post-core". Parked is not deleted: the template stays here,
+       complete and ready, and un-parking is deleting one line. What it
+       must not do is stand on the hire board a first-run stranger sees,
+       because the park list is about the CORE PATH, the onboarding and
+       the pitch — and the candidate shelf is all three at once.
+
+       (Note the row does NOT park pptx/docx/pdf. Sloan and Quill produce
+       real documents and stay on the shelf; only video generation and the
+       local image-backend wiring are named.) */
+    parked: true,
     tools: ['vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.7,
@@ -153,6 +181,7 @@ function spawnOpenswarmRoster(existingAgents, addAgent) {
   const have = new Set((existingAgents || []).map(a => String(a.name || '').toLowerCase()));
   let added = 0;
   for (const tpl of OPENSWARM_ROSTER) {
+    if (tpl.parked) continue;                 // section 5 — off the core path
     if (have.has(tpl.name.toLowerCase())) continue;
     const agent = {
       ...tpl,

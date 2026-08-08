@@ -189,7 +189,12 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   /* Roster specialists not yet on the team — shown as CANDIDATE cards and
      counted by the SEED SWARM tile. */
   const hiredNames = new Set((currentAgents || []).map(a => String(a.name || '').toLowerCase()));
-  const candidates = (HQ.OPENSWARM_ROSTER || []).filter(t => !hiredNames.has(t.name.toLowerCase()));
+  /* `!t.parked` — the park list (north-star section 5) is about the core
+     path, the onboarding and the pitch, and this shelf is where a first-run
+     stranger meets the cast. A parked template keeps its full definition in
+     OPENSWARM_ROSTER; it just does not get offered here. */
+  const candidates = (HQ.OPENSWARM_ROSTER || [])
+    .filter(t => !t.parked && !hiredNames.has(t.name.toLowerCase()));
 
   /* Do the four bars tell these cards apart, or do they say one thing eight
      times? Computed over exactly what is on screen (candidates + saved
@@ -359,7 +364,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     onClose();
                   }}
                   style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
-                  title="Seed openswarm-style roster: Vera, Kip, Dax, Sloan, Quill, Pixel, Reel"
+                  title={`Hire the whole shelf at once: ${candidates.map(c => c.name).join(", ")}`}
                 >
                   <div className="plus" style={{ fontSize: 18, lineHeight: 1.2, padding: 8 }}>
                     ⚡<br/>SEED<br/>SWARM<br/>

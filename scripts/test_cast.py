@@ -381,6 +381,62 @@ console.log(JSON.stringify(R));
     check('identical brains: the bars are suppressed', out['barsSeed'] is False)
     check('different brains: the bars are shown', out['barsMixed'] is True)
 
+    # ── the park list is binding (north-star section 5) ─────────────────
+    # "Exporter zoo (video gen, ComfyUI/A1111 wiring)" is parked: it must
+    # leave the core path, the onboarding and the pitch. The candidate shelf
+    # is where a first-run stranger meets the cast, so it is all three — and
+    # Reel (Video Generation) was standing on it. Parked is NOT deleted: the
+    # template keeps its full definition, it just is not offered.
+    #
+    # Read the row from the doc rather than trusting memory — the same row
+    # also does NOT park pptx/docx/pdf, which is easy to misremember and
+    # would wrongly strip Sloan and Quill off the shelf.
+    ns = (ROOT / 'docs' / 'strategy' / '08-north-star-real-product.md').read_text(encoding='utf-8')
+    row = re.search(r'\|\s*Exporter zoo \(([^)]*)\)', ns)
+    check('the park row still names what we think it names',
+          bool(row) and 'video gen' in row.group(1).lower(),
+          'north-star section 5: exporter-zoo row changed — re-read before trusting this rule')
+
+    rt = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
+    reel = re.search(r"name: 'Reel',[\s\S]{0,900}?systemPrompt", rt)
+    check('Reel (video generation) is marked parked',
+          bool(reel) and 'parked: true' in reel.group(0),
+          'hq-runtime.jsx: the parked template must say so')
+    # Pixel is parked too. Not the same row literally, but the SAME
+    # sentence: section 5's exporter-zoo row ends "image gen can return
+    # post-core" — and independent of the doc, toolsForAgent only grants
+    # GENERATE_IMAGE when getSettings().imageProvider is set, which no
+    # Settings screen in the app can ever set. A hired coworker whose job
+    # description permanently points at a settings page that does not
+    # exist is a worse failure than a capability that is honestly absent.
+    pixel = re.search(r"name: 'Pixel',[\s\S]{0,1200}?systemPrompt", rt)
+    check('Pixel (image generation) is marked parked',
+          bool(pixel) and 'parked: true' in pixel.group(0),
+          'hq-runtime.jsx: the parked template must say so')
+    settings_src = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')
+    check("the dead end is real: no Settings screen sets imageProvider",
+          'imageProvider' not in settings_src,
+          'modals/settings.jsx: a Media settings screen now exists — Pixel can be un-parked '
+          '(this check should be REMOVED, not made to pass some other way)')
+    check('the seed-swarm hire skips parked templates',
+          'if (tpl.parked) continue;' in rt,
+          'hq-runtime.jsx: spawnOpenswarmRoster must skip parked')
+
+    hire = (ROOT / 'modals' / 'hire.jsx').read_text(encoding='utf-8')
+    check('the candidate shelf skips parked templates',
+          re.search(r'OPENSWARM_ROSTER \|\| \[\]\)\s*\n?\s*\.filter\(t => !t\.parked', hire),
+          'modals/hire.jsx: the shelf must filter parked')
+    # A hand-written name list drifts the moment the shelf changes — this one
+    # already said "Vera, Kip, Dax, Sloan, Quill, Pixel, Reel" beside a count
+    # that no longer included Reel.
+    check('the seed-swarm tooltip is derived, not hand-listed',
+          'Vera, Kip, Dax' not in hire and 'candidates.map(c => c.name)' in hire,
+          'modals/hire.jsx: derive the tooltip from the same filtered list')
+    # ...and the parked one keeps its definition, so un-parking is one line.
+    check('parking did not delete the template',
+          "name: 'Reel'" in rt and 'GENERATE_VIDEO' in rt,
+          'hq-runtime.jsx: parked means shelved, not removed')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
