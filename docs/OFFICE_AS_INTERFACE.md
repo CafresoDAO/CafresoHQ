@@ -1259,6 +1259,24 @@ should extend that boundary, not blur it.
   the boss's routes so prominent that coworker-initiated handoff is a
   bonus rather than the path.
 
+- **Hermes is still the default provider in code, and the picker says so.**
+  North-star §3.1 forbids special treatment "not in code, not in copy, not
+  in defaults", and names Hermes as the original mistake; the reminder
+  confirms `HERMES_INTEGRATION_PLAN.md` now carries a superseded banner on
+  the default-runtime decision. The front-desk COPY privilege is fixed
+  (2026-08-08 — its card was the only one written as a pitch, "The house
+  agent — already moved in", role "Resident Agent", while every sibling
+  states only what was detected). What remains is the substance:
+  `claude-client.jsx` sets `provider: 'hermes'` as the default setting, and
+  the provider picker's `Hermes (default · in your container)` is therefore
+  **factually true**. Changing that label alone would make the UI lie;
+  changing the default is a product decision about which runtime a fresh
+  office falls back to, tangled with §3.3's managed trial brain (which is
+  Hermes-backed and which §3.3 explicitly endorses). Flagged, not patched:
+  the options are to leave it, to re-point the default at the managed brain
+  under a neutral name, or to make "no default until detection runs" the
+  behaviour.
+
 - **The CEO's opening line promises a brain nobody has checked.** The
   first message a new boss ever reads says *"I'm already running on
   Cafreso's Gemma 4 brain — nothing to sign up for."* It is canned text,

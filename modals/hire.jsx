@@ -28,9 +28,22 @@ const FRONT_DESK = {
   'codex':       { id: 'a_cli_codex', name: 'Codex', role: 'Coding Agent', color: 'mint',
                    model: 'codex:gpt-4.1', tools: ['files', 'shell'], elevated: true,
                    poweredBy: 'OpenAI', found: 'We found your Codex subscription on this machine.' },
-  'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Resident Agent', color: 'sky',
+  /* North-star §3.1: no runtime gets special treatment, "not in code, not in
+     copy, not in defaults" — and Hermes is the runtime that section names as
+     the original mistake. Its card was the only one written as a pitch
+     rather than a detection line: role "Resident Agent", found line "The
+     house agent — already moved in and ready to work." Every sibling states
+     what was detected and nothing more ("We found your Claude subscription
+     on this machine", "Already running on this machine — cheap and
+     tireless"). "House" and "resident" are status, not capability, and they
+     tell a newcomer which one the office prefers.
+
+     Now in the same register as the rest. The tools it actually holds
+     (web + files + shell) are what the card's stat bars and permission
+     chip already say. */
+  'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Generalist', color: 'sky',
                    model: 'hermes:hermes-agent', tools: ['web', 'files', 'shell'], elevated: true,
-                   poweredBy: 'Nous Research', found: 'The house agent — already moved in and ready to work.' },
+                   poweredBy: 'Nous Research', found: 'Already set up in your container — ready to work.' },
   'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Generalist', color: 'teal',
                    model: 'lmstudio:local-model', tools: ['web'],
                    poweredBy: 'LM Studio', found: 'Already running on this machine — cheap and tireless.' },
