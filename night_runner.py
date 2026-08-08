@@ -58,6 +58,15 @@ TOOL_RES = {k: re.compile(v, re.IGNORECASE) for k, v in _TOOL_RE_SRC.items()}
 BLOCK_TOOLS = {'VAULT_APPEND', 'VAULT_NEW'}
 MAX_TOOL_HOPS = 4          # parity with missions.jsx maxToolHops
 MAX_ITER_TOKENS = 2048     # parity with missions.jsx maxTokens
+# parity with missions.jsx's "(m.errors || 0) >= 3" auto-pause. Named, not
+# left inline where run_mission uses it, so scripts/test_night_grammar.py
+# can check it against the browser source the same way it already checks
+# _TOOL_RE_SRC -- a comment claiming parity is not parity, it is a promise
+# nothing verifies. See that file's section on why this matters: the
+# harmony-parsing gap and the dotted-tool-naming gap were both found by
+# actually running the code, not by reading a "mirrors X" comment and
+# trusting it.
+ERROR_STREAK_AUTO_PAUSE = 3
 
 
 class NightContext(object):
@@ -595,7 +604,7 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
             run['errors'] += 1
             run['lastError'] = res['error'][:300]
             error_streak += 1
-            if error_streak >= 3:   # parity with the browser runner's auto-pause
+            if error_streak >= ERROR_STREAK_AUTO_PAUSE:
                 break
         else:
             error_streak = 0

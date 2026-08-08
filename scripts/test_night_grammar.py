@@ -31,7 +31,47 @@ def extract_js_regexes(src):
 def main():
     with open(os.path.join(ROOT, 'hq-runtime.jsx'), 'r', encoding='utf-8') as f:
         js = extract_js_regexes(f.read())
+    with open(os.path.join(ROOT, 'missions.jsx'), 'r', encoding='utf-8') as f:
+        missions_src = f.read()
     failures = 0
+
+    # 0. Three numeric constants night_runner.py claims "parity with
+    # missions.jsx" for, in comments, with nothing checking it. The same
+    # gap as the tool-grammar parity below (section 1) already closes for
+    # the regex table — these three were the ones left as a promise
+    # instead of a check. Found by sweeping for the session's own recurring
+    # bug shape ("two sources, one rule") rather than by tripping over a
+    # live drift, unlike the harmony-parsing and dotted-naming gaps this
+    # file's other fixtures record.
+    m = re.search(r'maxTokens:\s*(\d+),\s*\n\s*maxToolHops:\s*(\d+),', missions_src)
+    if not m:
+        print('FAIL could not find missions.jsx\'s maxTokens/maxToolHops mission-runner call')
+        failures += 1
+    else:
+        js_tokens, js_hops = int(m.group(1)), int(m.group(2))
+        if js_tokens != night_runner.MAX_ITER_TOKENS:
+            print('FAIL MAX_ITER_TOKENS drift: missions.jsx=%d night_runner.py=%d'
+                  % (js_tokens, night_runner.MAX_ITER_TOKENS))
+            failures += 1
+        else:
+            print('PASS MAX_ITER_TOKENS parity (%d)' % night_runner.MAX_ITER_TOKENS)
+        if js_hops != night_runner.MAX_TOOL_HOPS:
+            print('FAIL MAX_TOOL_HOPS drift: missions.jsx=%d night_runner.py=%d'
+                  % (js_hops, night_runner.MAX_TOOL_HOPS))
+            failures += 1
+        else:
+            print('PASS MAX_TOOL_HOPS parity (%d)' % night_runner.MAX_TOOL_HOPS)
+
+    m = re.search(r'\(m\.errors \|\| 0\) >= (\d+)\)', missions_src)
+    if not m:
+        print('FAIL could not find missions.jsx\'s auto-pause threshold')
+        failures += 1
+    elif int(m.group(1)) != night_runner.ERROR_STREAK_AUTO_PAUSE:
+        print('FAIL ERROR_STREAK_AUTO_PAUSE drift: missions.jsx=%d night_runner.py=%d'
+              % (int(m.group(1)), night_runner.ERROR_STREAK_AUTO_PAUSE))
+        failures += 1
+    else:
+        print('PASS ERROR_STREAK_AUTO_PAUSE parity (%d)' % night_runner.ERROR_STREAK_AUTO_PAUSE)
 
     # 1. Textual parity for every night-shift tool.
     for name, py_src in night_runner._TOOL_RE_SRC.items():
