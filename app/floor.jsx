@@ -222,6 +222,30 @@ const SNAG_CAUSES = [
    'that took too long, so I stopped waiting — try again or ask for less at once'],
   [/\b5\d\d\b|internal server error|service unavailable/i,
    "that brain's service is having trouble — not something you did"],
+  /* Model-not-installed. Caught live by pointing a coworker at
+     `ollama:model-that-does-not-exist`: the raw line "Ollama 404: model …
+     not found" fell through the table and put a vendor name and an HTTP
+     code on the floor bubble, which is exactly the raw dump §7 forbids.
+
+     It earns its own sentence rather than folding into the 404-ish
+     network case, because the cure is completely different — nothing is
+     offline and retrying will never help; the brain this coworker was
+     hired with simply is not on the machine. That is also the single most
+     likely failure for the audience §08 names: a non-guru picks a model
+     they do not have. Placed AFTER the 5xx rule so a genuine server error
+     still wins, and it does not match a bare "404" alone — "not found"
+     or "no such model" has to be there too, or an unrelated 404 would be
+     mis-diagnosed with confidence, which this table's own header warns
+     is worse than a vague honest answer.
+
+     The character budget between "model" and "not found" is 60, not the
+     20 the first cut used: the real string is
+     `Ollama 404: model "model-that-does-not-exist" not found`, and the
+     quoted name alone is 28 characters. The regex read correctly and
+     missed the only case it was written for — found by unit-testing the
+     classifier against the VERBATIM error rather than a paraphrase. */
+  [/(?:\b404\b[^\n]{0,40})?(?:model[^\n]{0,60}(?:not found|does ?n[o']?t exist)|no such model|unknown model|pull the model)/i,
+   "that brain isn't installed on this machine — pick another coworker, or install it and try again"],
 ];
 
 /* Just the cause, as a clause: "that brain isn't signed in yet — …".

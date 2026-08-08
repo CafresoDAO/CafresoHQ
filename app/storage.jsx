@@ -294,7 +294,17 @@ const makeScreenEmitter = (agentId) => {
    and keep the shared-brain line for what it's genuinely good for — telling
    a zero-config user that BYOK is a way out. Advice, after the diagnosis,
    not instead of it. */
-const chatErrorText = (err, agents) => {
+/* `selfId` — the coworker who just failed. handoffHint can only ask whose
+   BRAIN is ready, and for a local model that probe says "yes" even when the
+   named model is not installed, so it cheerfully offers the coworker that
+   just fell over. test_cast.py records this exact trap for one call site:
+   "the call site must exclude the coworker who just refused — otherwise a
+   failed hand-off answers 'Llama couldn't take it' with 'Llama is still
+   working, @mention them'". This is the OTHER call site, and it had the
+   defect. Seen live: Pip failed on a missing model and the bubble read
+   "Llama and Pip are still working, though — @mention one of them". */
+const chatErrorText = (err, agents, selfId) => {
+  const others = selfId ? (agents || []).filter(a => a && a.id !== selfId) : agents;
   const raw = (err && err.message) || String(err);
   const because = snagCause(raw);
   let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
@@ -312,10 +322,10 @@ const chatErrorText = (err, agents) => {
 
        Same probe as the topbar alarm (agentBrainReady), so the two surfaces
        cannot disagree about who can work. */
-    const hint = handoffHint(agents, C);
+    const hint = handoffHint(others, C);
     const close = () => { if (!/[.!?…]$/.test(out)) out += '.'; };
     if (hint) {
-      out = withHandoff(out, agents, C);   // closes the clause for us
+      out = withHandoff(out, others, C);   // closes the clause for us
     } else if (C && C.hasUsableKey && !C.hasUsableKey()) {
       close();
       out += ' You’re on the shared Cafreso brain — you can add your own AI key ' +

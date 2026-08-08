@@ -307,6 +307,31 @@ console.log(JSON.stringify(R));
           bool(m) and 'agents.filter(a => a.id !== target.id)' in m.group(0),
           'ui/chat.jsx: withHandoff must get a roster without `target`')
 
+    # Same trap, second door. `chatErrorText` also ends in a hand-off hint,
+    # and for a long time it handed `agents` straight through — so when Pip
+    # died on a model that is not installed, the bubble read "Llama and Pip
+    # are still working, though — @mention one of them". Local brains make
+    # this easy to miss: agentBrainReady() only asks whether a key is needed,
+    # and Ollama needs none, so the dead coworker probes as READY.
+    #
+    # Pin the arity rather than the filter — the exclusion lives inside
+    # chatErrorText now, but only if every call site says who fell over.
+    app = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    calls = re.findall(r'chatErrorText\(([^()]*(?:\([^()]*\)[^()]*)*)\)', app)
+    check('every chatErrorText call names the coworker who failed',
+          bool(calls) and all(c.count(',') >= 2 for c in calls),
+          'app.jsx: chatErrorText(err, agents, <failing>.id) — %d call(s): %s'
+          % (len(calls), '; '.join(calls)))
+
+    store = (ROOT / 'app' / 'storage.jsx').read_text(encoding='utf-8')
+    m2 = re.search(r'const chatErrorText = \(([^)]*)\)[\s\S]{0,2000}', store)
+    check('chatErrorText drops the failing coworker before hinting',
+          bool(m2) and 'selfId' in m2.group(1)
+          and 'a.id !== selfId' in m2.group(0)
+          and 'handoffHint(others' in m2.group(0)
+          and 'withHandoff(out, others' in m2.group(0),
+          'app/storage.jsx: filter `selfId` out, then hint from the remainder')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))

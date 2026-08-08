@@ -2027,7 +2027,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents, agent && agent.id), error: !aborted }
         : m));
       const raw = err && err.message || String(err);
       // The snag bubble is one honest sentence on the floor (§4/§7); an
@@ -2920,7 +2920,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents, a && a.id), error: !aborted }
         : m));
       onUpdateAgent(a.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }
@@ -3486,7 +3486,7 @@ ${d.text}` : d.text,
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
-        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents), error: !aborted }
+        ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents, agent && agent.id), error: !aborted }
         : m));
       onUpdateAgent(agent.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }
