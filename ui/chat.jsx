@@ -569,7 +569,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       finalText = ceoMsg?.text || '';
       return next;
     });
-    const approvalDesc = HQ.extractApproval(finalText);
+    const approvalDesc = HQ.extractApproval(flush.raw ? flush.raw() : finalText);
     if (approvalDesc && onApprovalRequest) {
       onApprovalRequest({ title: approvalDesc, by: 'CafresoHQ', kind: 'awaiting stamp' });
     }

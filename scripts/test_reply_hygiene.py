@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'extractApproval', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -93,6 +93,10 @@ R.unknownTag   = visibleReply('[MYSTERY_TAG: x]');
 R.phRound = isHandoffPlaceholder(visibleReply('[DM_TO: Nano]\nq\n[/DM_TO]'));
 R.phTwo   = isHandoffPlaceholder(visibleReply('[DM_TO: Nano]\nq1\n[/DM_TO]\n[DM_TO: Kip]\nq2\n[/DM_TO]'));
 R.phPlain = isHandoffPlaceholder('Red.');
+// A reply that was ONLY an approval ask — the "walks to your desk" moment.
+R.apOnly  = visibleReply('[NEEDS_APPROVAL: order two pizzas — $40]');
+R.apProse = visibleReply('I can do that, but it costs money.\n[NEEDS_APPROVAL: send the newsletter]');
+R.apSpace = visibleReply('[NEEDS APPROVAL: x]');
 
 /* Verbatim off the floor, 2026-08-07. The boss asked for one colour; the
    reply carried a whole [MEMORY_WRITE] block whose delimiters were stripped
@@ -667,6 +671,52 @@ def main():
           and re.search(r'owesTheBoss = !!dmFrom && !!chainOrigin && agent\.id === chainAskedId', app_src)
           and 'report back to the person who asked you' in app_src,
           'app.jsx: the boss-asked coworker needs its own DM framing')
+
+    # ── an approval ask reads as the walk, not the protocol ────────────
+    # Every finalize listens for [NEEDS_APPROVAL], but no strip family knew
+    # the marker and only the CEO was ever taught it. A coworker told to
+    # "get the boss's approval" invented its own bracket, matched nothing,
+    # and no tray appeared; a coworker who emitted it correctly would have
+    # shown the boss raw protocol beside the tray.
+    check('a marker-only reply reads as the walk to the desk',
+          out['apOnly'] == 'Asked for your stamp — "order two pizzas — $40". It\'s waiting on your desk.',
+          repr(out['apOnly']))
+    check('prose beside the marker survives; the marker does not',
+          out['apProse'] == 'I can do that, but it costs money.', repr(out['apProse']))
+    check('the space variant is understood too',
+          'waiting on your desk' in out['apSpace'], repr(out['apSpace']))
+    rt = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
+    # The trap that ate the tray, pinned as a census: a scan that reads the
+    # CLEANED text is blind to every marker the cleaning removed. The
+    # approval scan must read the raw stream at every listener — buf before
+    # reassignment (rawReply), the un-reassigned task/delegate bufs, or the
+    # throttle's raw() on the CEO path. cleanBuf/finalText/cleaned are all
+    # post-strip and therefore always empty of markers.
+    chat_src = (ROOT / 'ui' / 'chat.jsx').read_text(encoding='utf-8')
+    bad_scans = (re.findall(r'extractApproval\((?:cleanBuf|cleaned)\)', app_src)
+                 + re.findall(r'extractApproval\(finalText\)', chat_src))
+    check('no approval scan reads post-strip text',
+          not bad_scans, 'found: %s' % bad_scans)
+    # Grepping for cleanBuf/finalText alone is WEAKER than the defect: the
+    # live bug was extractApproval(buf) AFTER `buf = cleaned` — same name,
+    # poisoned value, invisible to a token grep. So pin the exact shape:
+    # one rawReply capture, taken BEFORE the one rewrite; the dispatch scan
+    # takes rawReply; the task/delegate scans take their never-reassigned
+    # bufs — and there is exactly ONE `buf = cleaned` in the file, so a new
+    # rewrite in those functions cannot appear without failing here.
+    check('the dispatch finalize captures the raw stream before cleaning',
+          app_src.count('rawReply = buf;') == 2
+          and app_src.index('rawReply = buf;') < app_src.index('buf = cleaned;')
+          and app_src.count('const approvalDesc = HQ.extractApproval(rawReply);') == 1
+          and app_src.count('const approvalDesc = HQ.extractApproval(buf);') == 2
+          and app_src.count('buf = cleaned;') == 1,
+          'app.jsx: rawReply before the rewrite; scans pinned per path')
+
+    check('every coworker run is taught the marker, not just the CEO',
+          'const approvalNote' in rt
+          and re.search(r'toolsNote \+ elevatedNote \+ approvalNote', rt)
+          and 'NEEDS_APPROVAL' in rt.split('const approvalNote')[1][:600],
+          'hq-runtime.jsx: approvalNote must join agentStream\'s system prompt')
 
     # ── the placeholder is re-dressed per room ─────────────────────────
     # In the team room the placeholder sat NEXT TO the DM bubble it

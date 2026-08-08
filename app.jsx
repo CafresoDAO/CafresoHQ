@@ -1757,6 +1757,12 @@ ${d.text}` : d.text,
         `Your teammates (available via DM_TO): ${peerList}.` + projectFocus + assistantNote + taskNote + ackConvention;
 
     let buf = '';
+    /* The raw stream, captured at finalize BEFORE `buf = cleaned` rewrites
+       it — declared HERE because the marker-scanning guards live after the
+       try/finally, and a `const` inside the try is invisible to them.
+       (That exact scope split has produced a live ReferenceError twice now:
+       `acks`, then `rawReply` — if you move a guard, move its inputs.) */
+    let rawReply = '';
     let usedTokens = 0;
     const dmQueue = [];                      // collect every DM the agent emits
     /* Run-scoped, because the guard after the fan-out loop cannot ask the
@@ -1946,6 +1952,16 @@ ${d.text}` : d.text,
           : cleaned;
         return prev.map(m => m.id === agentMsgId ? { ...m, text } : m);
       });
+      /* Everything below that SCANS for markers must read this, not `buf`.
+         `buf = cleaned` (next line) rewrites the variable with the display
+         text — acks, DM blocks and (since the approval strip) the
+         [NEEDS_APPROVAL] marker already removed. The approval tray died of
+         exactly this: the marker was stripped for the bubble, then the
+         finalize scanned the stripped text for it. Watched live — coworker
+         says "I must get approval first", no tray. The guards want the raw
+         stream for the same reason: they judge what the coworker EMITTED,
+         not what the office chose to display. */
+      const rawReply = buf;
       buf = cleaned;
       /* Extract task-state markers the agent emitted (TASK_DONE,
          TASK_PROGRESS, TASK_BLOCKED) and apply them to tasks.json. The
@@ -2126,7 +2142,7 @@ ${d.text}` : d.text,
       /* Same reason as the desk bubble above — the journal is a KEPT record,
          so it least of all should hold the office's own scaffolding. */
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, (userText || 'a job').slice(0, 60));
-      const approvalDesc = HQ.extractApproval(buf);
+      const approvalDesc = HQ.extractApproval(rawReply);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Message lifecycle resolution. The mid-stream scanner already
       // applied any agent-emitted ACK transitions — so we only need to
@@ -2172,6 +2188,7 @@ ${d.text}` : d.text,
       const aborted = (controller && controller.signal && controller.signal.aborted) ||
         !!(err && err.name === 'AbortError');
       flush.cancel();
+      rawReply = buf;      // the error path never reaches the finalize capture
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
       setChat(prev => prev.map(m => m.id === agentMsgId
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents, agent && agent.id), error: !aborted }
@@ -2253,7 +2270,7 @@ ${d.text}` : d.text,
        reads a handoff that was never sent. Silent whenever anything WAS
        delivered. */
     {
-      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
+      const miss = HQ.unsentHandoff && HQ.unsentHandoff(rawReply, dmQueue.length);
       if (miss && flush && flush.note) flush.note(miss);
       /* Same guard for the security request. extractApproval is pure on the
          same buffer the tray was filled from, so this asks exactly "did an
@@ -2262,12 +2279,12 @@ ${d.text}` : d.text,
          approvalDesc, which lives in a different block — no-undef caught
          that, which is the second time this session that tripwire has paid
          for itself.) */
-      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
-      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
+      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(rawReply));
+      const missAsk = HQ.unsentElevation && HQ.unsentElevation(rawReply, raisedAsk);
       if (missAsk && flush && flush.note) flush.note(missAsk);
       /* …and the rest of the class: a hire, an assistant, a helper, a
          hand-off that never parsed. Each leaves a person waiting. */
-      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
+      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(rawReply);
       if (missBlocks && flush && flush.note) flush.note(missBlocks);
       /* …and the case with no marker to find at all: the coworker DECLARED
          they are waiting on a teammate while the delivery queue came back
@@ -2280,14 +2297,14 @@ ${d.text}` : d.text,
          as a live crash, "Llama bowed out — acks is not defined", on an
          ordinary @mention. extractAcks is pure on the same buffer, so
          calling it again costs nothing and cannot go out of scope. */
-      const ackStates = (HQ.extractAcks ? HQ.extractAcks(buf) : []).map(a => a.state);
+      const ackStates = (HQ.extractAcks ? HQ.extractAcks(rawReply) : []).map(a => a.state);
       const missAskState = HQ.unsentAsk && HQ.unsentAsk(ackStates, dmQueue.length);
       if (missAskState && flush && flush.note) flush.note(missAskState);
       /* …and the coworker who did not ask at all, but wrote the office's
          own relay label around words it made up. Takes the roster so it
          only fires on real colleagues. */
       const missRelay = HQ.fabricatedRelay
-        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
+        && HQ.fabricatedRelay(rawReply, dmQueue.length, agents.map(x => x.name));
       if (missRelay && flush && flush.note) flush.note(missRelay);
     }
     for (const dm of dmQueue) {
@@ -3070,7 +3087,7 @@ ${d.text}` : d.text,
       settleAfterRun(a.id);
       logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
-      const approvalDesc = HQ.extractApproval(cleanBuf);
+      const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
     } catch (err) {
       /* The controller's own signal is authoritative: an error can be
@@ -3612,7 +3629,7 @@ ${d.text}` : d.text,
           }
         }
       }
-      const approvalDesc = HQ.extractApproval(cleanBuf);
+      const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Chain: if this task has a chainTo, activate the next step
       if (task.chainTo) {
@@ -4123,7 +4140,15 @@ ${d.text}` : d.text,
       }
       if (ap.external && ap.externalId) {
         decideExternal(ap.externalId, 'allow', 'approved by boss in HQ');
-      } else if (ap.elevated && ap.agentId) {
+      } else if (ap.agentId) {
+        /* Was `ap.elevated && ap.agentId` — so an ORDINARY coworker who
+           asked for a stamp never heard the answer. Watched live: Gemma
+           raised "order two pizzas, $40", the boss approved, the receipt
+           filed — and Gemma was never told, though both the CEO protocol
+           and the coworkers' approval note promise "you'll be told once
+           it's decided". The stamp is only half the loop; the walk back
+           to the coworker's desk is the other half. Elevation is not the
+           criterion — having ASKED is. */
         const target = agents.find(a => a.id === ap.agentId);
         if (target) {
           dispatchToAgent(target,
@@ -4182,7 +4207,7 @@ ${d.text}` : d.text,
       }
       if (ap.external && ap.externalId) {
         decideExternal(ap.externalId, 'deny', 'rejected by boss in HQ');
-      } else if (ap.elevated && ap.agentId) {
+      } else if (ap.agentId) {   // same widening as approve: asked ⇒ answered
         const target = agents.find(a => a.id === ap.agentId);
         if (target) {
           dispatchToAgent(target,

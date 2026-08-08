@@ -209,6 +209,11 @@ function throttleTokens(setChat, msgId) {
     setChat(prev => prev.map(m => m.id === msgId ? { ...m, text: display } : m));
   };
   const ontok = (tok) => { raw += tok; schedule(); };
+  /* The full unstripped stream. The CEO finalize used to scan the RENDERED
+     message text for [NEEDS_APPROVAL] — which worked only while no strip
+     family knew that marker. The moment the bubble got cleaned properly,
+     the tray went blind. Scans read this; displays read the cleaned text. */
+  ontok.raw = () => raw;
   /* A note is out-of-band: it is the OFFICE speaking about a request that
      never parsed, and it arrives after the stream is done. It therefore has
      to survive `cancel()`, which the callers now use to stop a queued frame
@@ -355,7 +360,7 @@ function stripAcks(text) {
    marker, so it is a coworker explaining and survives untouched. A line
    that OPENS with a protocol marker is machine syntax by construction. */
 const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][^\n]*$/gim;
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|NEEDS[_ ]APPROVAL|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][^\n]*$/gim;
 
 /* The header line above a tool result in the live transcript.
 
@@ -768,6 +773,16 @@ function visibleReply(text, selfName) {
        "Asked Gemma - I'll come back to you", which inverts who asked whom.
        State the fact and point at where the reply actually goes. */
     return `Sent this to ${names} — their reply lands in the team room.`;
+  }
+  /* Same shape as the hand-off placeholder, one door over: a reply that
+     was ONLY an approval ask. The strip understood the marker and removed
+     it; the raw fallback would print the protocol back at the boss on
+     precisely the surface the design doc names "the coworker walks to
+     your desk and asks". The TRAY carries the request; the bubble should
+     read like the walk. */
+  const ask = extractApproval(raw);
+  if (ask) {
+    return `Asked for your stamp — "${ask}". It's waiting on your desk.`;
   }
   if (!acks.length) return raw.trim();
   const note = String(acks[acks.length - 1].note || '').trim();
@@ -2223,6 +2238,18 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   const elevatedNote = agent.elevated
     ? `\n\nELEVATED SESSION: You have native computer access through Claude Code on the proxy machine. Use your built-in agentic capabilities to work with files and run commands directly — do not claim you lack access.`
     : '';
+  /* Every finalize in the app listens for [NEEDS_APPROVAL] (chat, task,
+     delegate — extractApproval at each), but only the CEO's system prompt
+     ever taught the marker. Watched live: a coworker told to "get the
+     boss's approval" invented its own bracket — [Approval Request: …] —
+     which matched nothing, so no tray appeared and the ask silently
+     became decoration. Teach it HERE because this is the one prompt every
+     coworker run passes through, whatever door the work came in by. */
+  const approvalNote =
+    `\n\nAPPROVAL: before an action that sends anything outside the office, posts publicly, ` +
+    `schedules a commitment, or spends money — stop. End your reply with one line:\n` +
+    `[NEEDS_APPROVAL: <what you want to do, and any cost>]\n` +
+    `It lands on the boss's desk for a stamp; you'll be told once it's decided.`;
   const journalNote = journalSummary(agent);
   const mem = memorySummary(HQ && HQ._memory);
   /* Per-agent persistent memory listing — head-of-prompt so the agent
@@ -2251,7 +2278,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   } catch (_e) { /* vault not configured — skip the memory note */ }
   const useJson = agent.toolFormat === 'json' || (agent.toolFormat !== 'bracket' && supportsJsonToolFormat(agent.model));
   const toolSnippet = enabledTools.length ? (useJson ? toolsPromptSnippetJson(enabledTools) : toolsPromptSnippet(enabledTools)) : '';
-  const sys = [base + toolsNote + elevatedNote, toolSnippet, agentMemoryNote, journalNote, mem, reg].filter(Boolean).join('\n\n');
+  const sys = [base + toolsNote + elevatedNote + approvalNote, toolSnippet, agentMemoryNote, journalNote, mem, reg].filter(Boolean).join('\n\n');
 
   const messages = chat
     ? chatToMessages(chat).concat([{ role: 'user', content: prompt }])
