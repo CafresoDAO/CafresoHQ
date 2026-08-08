@@ -300,7 +300,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        tokens), so the user watched an empty bubble appear. Refuse loudly
        and keep their draft in the composer. */
     if (backendDown) {
-      if (window.cafresohqToast) window.cafresohqToast.error('Not connected to your HQ container — reconnecting…');
+      if (window.cafresohqToast) window.cafresohqToast.error('Your office is offline — reconnecting…');
       return;
     }
 
@@ -1089,14 +1089,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             <Ico kind="delegate" size={11}/> Delegate
           </button>
           {backendDown && !streaming && (
-            <span className="composer-offline" title="Chat needs your live HQ container — reconnecting automatically">
+            <span className="composer-offline" title="Chat needs your office running — reconnecting automatically">
               ⚠ offline — reconnecting…
             </span>
           )}
           {streaming
             ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Stop streaming">■ Stop</button>
             : <button className="composer-mini composer-mini--primary" onClick={send} disabled={backendDown}
-                title={backendDown ? 'Not connected to your HQ container' : 'Send (Enter)'}>Send ↵</button>}
+                title={backendDown ? 'Your office is offline' : 'Send (Enter)'}>Send ↵</button>}
         </div>
         <textarea
           ref={composerRef}

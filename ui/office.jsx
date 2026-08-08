@@ -1109,7 +1109,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
             data and gating as the old wall furniture. */}
         {!isMobileOffice && walletServiceOn && plWallets && plWallets.length > 0 && (
           <div className="px-hud left pl-frame" title="Your team's books — ▲ earned (tips + payroll) · ▼ spent (on-chain metering) · net">
-            <div className="pl-title">◈ AGENT P&L</div>
+            <div className="pl-title">◈ COWORKER P&L</div>
             {plWallets.slice(0, 3).map(w => {
               const who = agents.find(x => x.id === w.agentId);
               const name = (who ? who.name : w.agentId).slice(0, 8);
@@ -1151,7 +1151,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                 the office contradict itself about whether it was reachable.
                 The local poll still drives the healthy/checking states; it
                 just can no longer out-vote a known outage. */}
-            <div className="sw-row" title={backendDown ? 'Container unreachable' : wallHealth === null ? 'Checking container…' : wallHealth ? 'Container healthy' : 'Container unreachable'}>
+            <div className="sw-row" title={backendDown ? 'Office offline' : wallHealth === null ? 'Checking…' : wallHealth ? 'Office online' : 'Office offline'}>
               <span className={`sw-lamp ${backendDown ? 'red' : wallHealth === null ? 'amber' : wallHealth ? 'green' : 'red'}`}/> HQ
             </div>
             {wallSearch !== null && (
@@ -1715,7 +1715,15 @@ function fmtQuote(q) {
   return { price, pct, up: (q.pct || 0) >= 0 };
 }
 
-function Ticker({ items }) {
+/* `offline` — the badge is a broadcast bug, and a broadcast bug is a claim.
+   With the office down nothing is streaming and the feed below is frozen
+   history, so leaving it lit says the one thing that isn't true. This is
+   the third time two surfaces have been caught disagreeing about whether
+   the office is up (see the Situation Wall note above, and the topbar chip
+   note in app.jsx) — so it takes the SAME `backendDown` the chip and the
+   banner read, not a probe of its own. Two surfaces can only agree if
+   they are looking at one signal. */
+function Ticker({ items, offline }) {
   const vocab = useVocab();
   const quotes = useMarketQuotes(!!vocab.marketTicker);
   /* The scroll keyframes translate -50%, so the line must be two identical
@@ -1743,7 +1751,9 @@ function Ticker({ items }) {
   );
   return (
     <div className="ticker">
-      <span className="badge">{vocab.live}</span>
+      <span className="badge" style={offline ? { opacity: 0.55 } : undefined}
+        title={offline ? 'Your office is offline — this is the last activity before it went down' : undefined}>
+        {offline ? 'PAUSED' : vocab.live}</span>
       <div className="ticker-track">
         <div className="line">
           {segment('a')}

@@ -297,7 +297,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
       background: 'var(--paper)',
     }}>
       <div className="proj-section-head" style={{display:'flex', alignItems:'center', gap:'var(--sp-3)'}}>
-        <span style={{flex:1}}>📥 AGENT INBOX</span>
+        <span style={{flex:1}}>📥 COWORKER INBOX</span>
         <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{activity.length} event{activity.length===1?'':'s'}</span>
       </div>
 

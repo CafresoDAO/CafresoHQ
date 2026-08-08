@@ -145,14 +145,14 @@ function ApiTab() {
           {/* THIS browser's brain. Distinct from the Hermes brain below, which
               is what the container runs — wanting LM Studio here and OpenRouter
               in the container (or vice versa) is legitimate, so they don't merge. */}
-          <div><div className="lbl">Backend (this browser)</div><div className="sub">what the UI on this machine talks to directly</div></div>
+          <div><div className="lbl">Brain (this browser)</div><div className="sub">what the UI on this machine talks to directly</div></div>
           <select value={s.provider} onChange={e=>update({provider:e.target.value})}>
             <option value="lmstudio">LM Studio (local)</option>
             <option value="ollama">Ollama (local)</option>
             <option value="anthropic">Anthropic — API credits</option>
             <option value="google">Google (Gemini) — API credits</option>
             <option value="claudecode">Anthropic — Pro/Max (via Claude Code)</option>
-            <option value="hermes">Hermes (default · in your container)</option>
+            <option value="hermes">Hermes (default · runs in your office)</option>
             <option value="codex">OpenAI Codex CLI (local + tools)</option>
           </select>
           <span className="hint" style={{maxWidth:240}}>fallback for agents whose model isn't pinned</span>
@@ -165,7 +165,7 @@ function ApiTab() {
               <div className="lbl">Model</div>
               <div className="sub">
                 {hBusy ? 'Switching model… (~10s)'
-                  : 'Free open-weights in your container · switch anytime'}
+                  : 'Free open-weights running in your office · switch anytime'}
               </div>
             </div>
             <select value={hPresets.some(p=>p.id===hModel) ? hModel : ''}
@@ -179,7 +179,7 @@ function ApiTab() {
         {s.provider === 'hermes' && (
           <div className="row-knob">
             <div>
-              <div className="lbl">Hermes brain (in your container)</div>
+              <div className="lbl">Hermes brain (runs in your office)</div>
               <div className="sub">{HBACKENDS[hBackend]
                 ? HBACKENDS[hBackend].note + ' · runs your agents, night shifts and search worker'
                 : 'free LLM behind Hermes'}</div>
@@ -199,7 +199,7 @@ function ApiTab() {
               <div className="lbl">{hbMeta.label} endpoint</div>
               <div className="sub">
                 {keyBusy ? 'applying · gateway reloading (~15s)…'
-                  : 'where your container reaches it — must be a private or localhost address'}
+                  : 'where your office reaches it — must be a private or localhost address'}
               </div>
             </div>
             <input type="text" key={'u' + hBackend} placeholder={hbMeta.ph}

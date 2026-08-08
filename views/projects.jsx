@@ -146,7 +146,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   /* ── file-manager actions (same backbone as the classic Projects view) ── */
   const fsOK = () => (C && C.fsMkdir) ? C : null;
   const newFolder = async () => {
-    if (!project || !fsOK()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    if (!project || !fsOK()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
     const name = ((await window.hqPrompt('New folder name:')) || '').trim(); if (!name || /[\/\\]/.test(name)) return;
     try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { toast('error', e.message || String(e)); }
   };
@@ -164,7 +164,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const doUpload = async (fileList, dir) => {
     setFileDrag(false);
     if (!project) return; const files = Array.from(fileList || []).filter(Boolean); if (!files.length) return;
-    if (!C || !C.fsUpload) { toast('error', 'Upload needs the updated container.'); return; }
+    if (!C || !C.fsUpload) { toast('error', 'Uploading needs a newer HQ — update and restart.'); return; }
     try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); toast('success', `Shared ${res.count || files.length} file${(res.count || files.length) === 1 ? '' : 's'}`); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { toast('error', 'Upload failed: ' + (e.message || e)); }
   };
   const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
@@ -214,7 +214,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
               <button className="ws-save" title="Publish this site + drop a clickable .url link into the project" onClick={publishOpen}>🚀 Publish</button>}
           </div>
           {conflict && (
-            <div className="ws-conflict">⚠ The agent changed this file on disk while you had edits.
+            <div className="ws-conflict">⚠ Your coworker changed this file while you had edits.
               <button onClick={() => { setConflict(false); openPath(openFile.path); }}>Reload</button>
               <button onClick={() => save(true)}>Keep mine</button>
             </div>
@@ -525,8 +525,8 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     const files = Array.from(fileList || []).filter(Boolean);
     if (!files.length) return;
     if (!CafresoHQClient || !CafresoHQClient.fsUpload) {
-      setErr('Upload needs the updated container (ships /fs/upload) — rebuild the image.');
-      toast('error', 'Upload unavailable — container needs a rebuild.');
+      setErr('Uploading needs a newer HQ (one that serves /fs/upload) — update and restart.');
+      toast('error', 'Uploading is unavailable — this HQ needs updating.');
       return;
     }
     const dir = targetDir || project.path;
@@ -552,7 +552,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
 
   const newFolder = async () => {
     if (!project || !project.path) return;
-    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    if (!fsClient()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
     const name = ((await window.hqPrompt('New folder name:')) || '').trim();
     if (!name) return;
     if (/[\/\\]/.test(name)) { toast('error', 'Folder name can\'t contain slashes.'); return; }
@@ -566,7 +566,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   };
 
   const renameEntry = async (entry) => {
-    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    if (!fsClient()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
     const cur = entry.name;
     const next = ((await window.hqPrompt('Rename to:', { value: cur, okLabel: 'Rename' })) || '').trim();
     if (!next || next === cur) return;
@@ -589,7 +589,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
   };
 
   const deleteEntry = async (entry) => {
-    if (!fsClient()) { toast('error', 'File ops need the updated container — rebuild the image.'); return; }
+    if (!fsClient()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
     const what = entry.isDir ? 'folder' : 'file';
     const msg = `Delete ${what} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.';
     if (!(await window.hqConfirm(msg, { danger: true }))) return;

@@ -4,7 +4,7 @@ import { Sprite } from '../sprites.jsx';
 import { Modal, ModelPicker } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 const SETTINGS_TABS = [
-  { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · container · usage' },
+  { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · hosting · usage' },
   { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
   { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
   { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
@@ -19,7 +19,7 @@ const SETTINGS_TAB_ALIAS = {
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
-  { tab:'account', label:'Plan & container', hint:'your managed HQ on Cafreso cloud', kw:'plan premium account subscription container backend health status gateway api runtime connected' },
+  { tab:'account', label:'Plan & hosting', hint:'your managed HQ on Cafreso cloud', kw:'plan premium account subscription container backend health status gateway api runtime connected' },
   { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
   { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
   { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
@@ -469,7 +469,7 @@ function IcpServicesPanel({ agents }) {
       <div className="cb-panel">
         <h4>MODULES · OPTIONAL ADD-ONS</h4>
         <div className="sub" style={{ lineHeight: 1.6, marginBottom: 6 }}>
-          Your HQ runs the same everywhere — laptop, container, or on-chain. Modules
+          Your HQ runs the same everywhere — laptop, cloud, or on-chain. Modules
           add capabilities on top; everything below is opt-in and off by default.
         </div>
         {err && <div className="tiny" style={{ color: '#c44' }}>{err}</div>}
@@ -611,7 +611,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
 
   const navDot = (t) => {
     if (t.id === 'account' && navStat.backend !== undefined)
-      return <span className={`sn-dot ${navStat.backend ? 'ok' : 'err'}`} title={navStat.backend ? 'container online' : 'container unreachable'}/>;
+      return <span className={`sn-dot ${navStat.backend ? 'ok' : 'err'}`} title={navStat.backend ? 'office online' : 'office offline'}/>;
     return null;
   };
 
@@ -729,7 +729,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                     </div>
                     <div className={`row-knob elevated-opt ${sel.elevated ? 'on' : ''}`} style={{marginTop:8,alignItems:'flex-start'}}>
                       <div>
-                        <div className="lbl" style={{color: sel.elevated ? '#c44' : 'inherit'}}>🛡 Elevated · computer access</div>
+                        <div className="lbl" style={{color: sel.elevated ? '#c44' : 'inherit'}}>🛡 File &amp; shell access</div>
                         <div className="sub" style={{maxWidth:240,marginTop:2}}>
                           Has file and shell access. DMs blocked, missions opt-in, every action logged.
                         </div>
@@ -881,7 +881,7 @@ function AccountTab({ usageTokens = 0 }) {
       <div className="cb-panel">
         <h4>YOUR PLAN</h4>
         <div className="row-knob">
-          <div><div className="lbl">Cafreso HQ Premium</div><div className="sub">managed cloud — container, brain & updates included</div></div>
+          <div><div className="lbl">Cafreso HQ Premium</div><div className="sub">managed cloud — hosting, brain & updates included</div></div>
           <span className="tiny">{dot(true)}active</span>
         </div>
         <div className="row-knob">
@@ -906,14 +906,14 @@ function AccountTab({ usageTokens = 0 }) {
         </div>
       </div>
       <div className="cb-panel">
-        <h4>YOUR HQ CONTAINER</h4>
+        <h4>YOUR OFFICE</h4>
         <div className="row-knob">
           <div><div className="lbl">Status</div><div className="sub">{health === null ? 'checking…' : health ? 'online' : 'unreachable — we auto-reconnect'}</div></div>
           <span>{health === null ? '…' : dot(!!health)}</span>
         </div>
         {health && uptime && (
           <div className="row-knob">
-            <div><div className="lbl">Up for</div><div className="sub">since last container start</div></div>
+            <div><div className="lbl">Up for</div><div className="sub">since your office last started</div></div>
             <span className="tiny">{uptime}</span>
           </div>
         )}
@@ -1021,7 +1021,7 @@ function SystemTab() {
   return (
     <div className="control-board">
       <div className="cb-panel">
-        <h4>BACKEND</h4>
+        <h4>OFFICE CONNECTION</h4>
         <div className="row-knob">
           <div><div className="lbl">API base</div><div className="sub">where this UI sends requests</div></div>
           <span className="tiny" style={{maxWidth:220, textAlign:'right', wordBreak:'break-all'}}>{apiBase || '(same origin)'}</span>
@@ -1033,15 +1033,15 @@ function SystemTab() {
         {health && (
           <>
             <div className="row-knob">
-              <div><div className="lbl">Runtime</div><div className="sub">container environment</div></div>
+              <div><div className="lbl">Runtime</div><div className="sub">where it's running</div></div>
               <span className="tiny">{health.runtime_env || 'unknown'}{health.auth_required ? ' · key-gated' : ''}</span>
             </div>
             <div className="row-knob">
-              <div><div className="lbl">Hermes gateway</div><div className="sub">in-container agent runtime</div></div>
+              <div><div className="lbl">Hermes gateway</div><div className="sub">the built-in brain service</div></div>
               <span className="tiny">{dot(!!health.hermes)}{yn(!!health.hermes)}</span>
             </div>
             <div className="row-knob">
-              <div><div className="lbl">Gemini CLI</div><div className="sub">installed in container</div></div>
+              <div><div className="lbl">Gemini CLI</div><div className="sub">installed here</div></div>
               <span className="tiny">{dot(!!health.gemini)}{yn(!!health.gemini)}</span>
             </div>
           </>
@@ -1054,7 +1054,7 @@ function SystemTab() {
       <div className="cb-panel">
         <h4>HERMES PROVIDER</h4>
         <div className="row-knob">
-          <div><div className="lbl">Service</div><div className="sub">active backend behind Hermes</div></div>
+          <div><div className="lbl">Service</div><div className="sub">what Hermes is using right now</div></div>
           <span className="tiny">{prov ? prov.provider : '…'}</span>
         </div>
         <div className="row-knob">

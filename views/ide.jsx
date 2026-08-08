@@ -487,7 +487,7 @@ function FilePreview({ file, nonce }) {
     return (
       <div style={pad}>
         {imgErr
-          ? <div style={{textAlign:'center',opacity:0.6,fontSize:12}}>Couldn't load image.<br/>Needs the updated container (ships <code>/fs/file</code>) — rebuild the image.</div>
+          ? <div style={{textAlign:'center',opacity:0.6,fontSize:12}}>Couldn't load image.<br/>Needs a newer HQ (one that serves <code>/fs/file</code>) — update and restart.</div>
           : <img src={fileUrl} alt={file.path} onError={() => setImgErr(true)} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} />}
       </div>
     );

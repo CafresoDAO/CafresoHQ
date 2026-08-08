@@ -55,6 +55,20 @@ BANNED = [
     # with the readable part removed.
     (re.compile(r'\biterations?\b|\biters?\b', re.I),
      'the Night Shift board calls these rounds.'),
+    # Section 6 binds this row -- "agent runtime / backend / driver ->
+    # internal words - users see coworkers" -- and it was the one binding
+    # row with no rule behind it. What it cost: the offline banner, the
+    # surface EVERY user meets the first time their laptop sleeps, read
+    # "Not connected to your HQ backend ... need a live container" and
+    # then printed the raw origin. Three machine words and a URL, on the
+    # single most-seen error in the product.
+    (re.compile(r'\bback[- ]?ends?\b', re.I),
+     'section 6 bans it outright. The boss has an OFFICE; it is open or '
+     'it is not. Say "your office" / "the office is offline".'),
+    (re.compile(r'\bcontainers?\b', re.I),
+     'hosting vocabulary. Whatever runs the office is the office as far '
+     'as the boss is concerned -- say "your office", or name the machine '
+     '("this computer").'),
 ]
 
 # "agent" is the hardest one, so it is scoped rather than banned outright.
@@ -164,7 +178,15 @@ DISPLAY_RE = re.compile(r'\b(?:' + DISPLAY_KEYS + r')\s*(?::|=)\s*\{?(' + _STR +
 # sentence between two tags, so the fragment never matched and a banned word
 # sat in a view this suite scans. Raised to 400 — a paragraph of UI copy is
 # still UI copy, and the character class already refuses code punctuation.
-JSX_TEXT_RE = re.compile(r'>\s*([A-Za-z][^<>{}]{2,400}?)\s*<')
+# ...and it had to start with a LETTER, which quietly exempted the single
+# most important category of copy in the product: anything that opens with
+# a symbol. `<b>⚠ Not connected to your HQ backend.</b>` never matched,
+# because `⚠` is not `[A-Za-z]`. Warnings, errors and confirmations are
+# exactly the strings that lead with ⚠ ✓ • — so the suite was blind in
+# precisely the place where bad words do the most damage. Allow a short
+# run of leading symbols, then still require a letter so punctuation and
+# operators cannot pass as prose.
+JSX_TEXT_RE = re.compile(r'>\s*((?:[^\w\s<>{}]\s*){0,3}[A-Za-z][^<>{}]{2,400}?)\s*<')
 
 # …and the third way, which is how "3 iter · 5 notes" stayed on screen: text
 # sandwiched BETWEEN two interpolations — `{r.iterations} iter · {n} notes`.
@@ -290,6 +312,32 @@ PROMPT_RE = re.compile(
     r'|\bset(?:System)?Prompt\s*\(\s*(' + _STR + r')', re.S | re.I)
 
 
+def _toast_spots(body):
+    """`toast('error', 'File ops need the updated container')` — a toast is
+    the most user-facing string there is, and none of the other extractors
+    saw it. `_fallback_spots` only takes bare string literals that read like
+    copy; a toast's message is the SECOND argument of a call, so the first
+    argument ('error'/'ok') is what a naive scan picks up instead.
+
+    Found by grep, not by the rule: after this rule cleared, six live
+    `toast('error', '... updated container ...')` strings in views/
+    projects.jsx were still sitting there, unflagged. A rule that reports
+    "all checks passed" over copy it cannot see is worse than no rule,
+    because it is believed.
+
+    Also covers `window.cafresohqToast.error('…')` and `.success('…')`.
+    """
+    out = []
+    pat = re.compile(r"""\btoast\s*\(\s*['"](?:error|ok|info|warn|success)['"]\s*,\s*(['"])(.*?)\1"""
+                     r"""|[Tt]oast\s*\.\s*(?:error|success|info|warn)\s*\(\s*(['"])(.*?)\3""",
+                     re.S | re.X)
+    for m in pat.finditer(body):
+        txt = m.group(2) if m.group(2) is not None else m.group(4)
+        if txt and len(txt) > 3:
+            out.append((m.start(), txt))
+    return out
+
+
 def _prompt_spots(body):
     for m in PROMPT_RE.finditer(body):
         raw = m.group(1) or m.group(2)
@@ -402,6 +450,7 @@ def main():
             spots += [(s, r, True) for s, r in _after_expr_spots(body)]
             spots += [(s, r, False) for s, r in _ternary_copy_spots(body)]
             spots += [(s, r, False) for s, r in _prompt_spots(body)]
+            spots += [(s, r, True) for s, r in _toast_spots(body)]
             for start, raw, boss_facing in spots:
                 prose = TOKEN_RE.sub('', drop_interpolations(raw))
                 checks = list(BANNED)

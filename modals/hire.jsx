@@ -421,7 +421,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               <label style={{display:'flex',alignItems:'flex-start',gap:8,fontFamily:'VT323',fontSize:16,cursor:'pointer',lineHeight:1.3}}>
                 <input type="checkbox" checked={elevated} onChange={e=>setElevated(e.target.checked)} style={{marginTop:3}}/>
                 <span>
-                  <b style={{color: elevated ? '#c44' : 'inherit'}}>🛡 ELEVATED — computer access</b><br/>
+                  <b style={{color: elevated ? '#c44' : 'inherit'}}>🛡 FILE & SHELL ACCESS</b><br/>
                   <span className="hint" style={{display:'block',marginTop:2}}>
                     Backed by a CafresoHQ session with file and shell access on this machine. DMs blocked, missions opt-in, every action logged.
                   </span>

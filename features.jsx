@@ -58,7 +58,7 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
         }}
       >
         <option value="">{a ? 'Unassign…' : 'Assign…'}</option>
-        {agents.length === 0 && <option disabled>(no agents hired)</option>}
+        {agents.length === 0 && <option disabled>(no coworkers hired)</option>}
         {agents.map(opt => (
           <option key={opt.id} value={opt.id}>
             {opt.name}{opt.role ? ' · ' + opt.role : ''}
@@ -1096,7 +1096,7 @@ function ApprovalTray({ pending, onApprove, onReject }) {
             <div className="ap-sub">
               by {p.by} · {p.amount ? '$' + p.amount : p.kind}
               {p.cwd && <span> · in {p.cwd}</span>}
-              {p.elevated && <span style={{color:'#c44',marginLeft:6}}>· agent waiting on your call</span>}
+              {p.elevated && <span style={{color:'#c44',marginLeft:6}}>· coworker waiting on your call</span>}
             </div>
           </div>
           <div style={{display:'flex',gap:4}}>

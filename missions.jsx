@@ -798,14 +798,14 @@ function NightShiftSection({ agents }) {
     return (
       <div style={{ marginTop: 14 }}>
         <div className="missions-section-title">🌙 NIGHT SHIFT</div>
-        <div className="hint">Container backend unreachable — night shift needs a running HQ container.</div>
+        <div className="hint">Your office is offline — the night shift needs it running.</div>
       </div>
     );
   }
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ borderTop: '1px dashed var(--ink-3)', margin: '14px 0' }} />
-      <div className="missions-section-title">🌙 NIGHT SHIFT · runs in the container — close the laptop, work continues</div>
+      <div className="missions-section-title">🌙 NIGHT SHIFT · runs in your office — close the laptop, work continues</div>
 
       {schedules.length > 0 && (
         <div className="missions-list" style={{ marginTop: 8 }}>
@@ -1198,7 +1198,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             </div>
             {isElevated && (
               <div className="form-row full elevated-opt on">
-                <label style={{color:'#c44'}}>🛡 ELEVATED</label>
+                <label style={{color:'#c44'}}>🛡 FILE &amp; SHELL</label>
                 <label style={{display:'flex',alignItems:'flex-start',gap:8,fontFamily:'VT323',fontSize:16,cursor:'pointer',lineHeight:1.3}}>
                   <input type="checkbox" checked={elevatedAuth} onChange={e=>setElevatedAuth(e.target.checked)} style={{marginTop:3}}/>
                   <span>
@@ -1214,9 +1214,9 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             )}
           </div>
           <div className="hint" style={{marginTop: 'var(--sp-5)'}}>
-            ⚠ <strong>Keep this tab open</strong> — this loop runs in the browser. Closing the tab stops the mission.
-            Prevent your laptop from sleeping for the duration. Each iteration uses real LLM tokens — pin a strong model
-            (claudecode:sonnet / claude-haiku / llama-3.3-70b) on the agent for best results.
+            ⚠ <strong>Keep this tab open</strong> — this mission runs in your browser. Closing the tab stops it.
+            Stop your laptop from sleeping until it is done. Every round is real work you pay for, so give it to
+            one of your stronger coworkers.
             For work that should continue with the tab CLOSED, schedule a 🌙 Night Shift below instead.
           </div>
 

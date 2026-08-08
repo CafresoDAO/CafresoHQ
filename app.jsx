@@ -546,6 +546,13 @@ function App() {
   const [backendBannerHidden, setBackendBannerHidden] = useStateA(false);
   const [backendProbeNonce, setBackendProbeNonce] = useStateA(0);   // bump to re-probe
   const [backendProbing, setBackendProbing] = useStateA(false);
+  // Same origin, localhost or a private LAN address = the boss is running
+  // their own office. Anything else is the managed one.
+  const runsLocally = (() => {
+    const b = (typeof window !== 'undefined' && window._API_BASE) || '';
+    if (!b) return typeof location !== 'undefined' && /^(localhost|127\.|\[?::1)/.test(location.hostname);
+    return /^https?:\/\/(localhost|127\.|\[?::1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(b);
+  })();
   // hq_session cookie died mid-use (gateway returns 401). Fired once by the
   // fetch wrapper in claude-client; without this every feature just hangs.
   const [sessionExpired, setSessionExpired] = useStateA(false);
@@ -4188,7 +4195,7 @@ ${d.text}` : d.text,
               meetingActive={meetingOpen}
               meetingIds={meetingParticipants.map(p => p.id)}
             />
-            <Ticker items={tickerItems} />
+            <Ticker items={tickerItems} offline={backendDown} />
           </div>
         );
       case 'tasks':
@@ -4605,8 +4612,8 @@ ${d.text}` : d.text,
                 with the backend stopped. Now it answers the question its
                 shape implies. */}
             <div className={`chip mobile-hidden${backendDown ? ' chip-warn' : ''}`}
-                 title={backendDown ? 'No connection to your HQ backend — see the banner below'
-                                    : 'Connected to your HQ backend'}>
+                 title={backendDown ? 'Your office is offline — see the banner below'
+                                    : 'Your office is open'}>
               <span className="dot"/> {backendDown ? 'OFFLINE' : 'LIVE'}
             </div>
             <div className="chip mobile-hidden">{agents.filter(a=>a.status==='busy'||a.status==='active').length} WORKING</div>
@@ -4748,12 +4755,27 @@ ${d.text}` : d.text,
                 background:'rgba(232,169,169,0.14)', border:'1px solid rgba(232,169,169,0.5)',
                 color:'#E8A9A9', font:'13px Inter, system-ui, sans-serif' }}>
                 <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
-                  <b>⚠ Not connected to your HQ backend.</b> Chat, Vault, Graph and Terminal need a live
-                  container. Open HQ from{' '}
-                  <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
-                     style={{color:'#E8A9A9', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
-                  {' '}so it can reach your private container.
-                  <span style={{opacity:0.7}}> (backend: {window._API_BASE || 'none (canister only)'})</span>
+                  <b>⚠ Your office is offline.</b> Chat, the Vault and your projects all need it
+                  running.{' '}
+                  {/* The advice has to match how this boss actually runs HQ. This banner
+                      sent EVERYONE to ai.cafreso.com, including someone whose office is
+                      on their own machine — for them that link cannot fix anything, and
+                      section 3.5 makes self-hosting a first-class path, not a degraded
+                      one. Branch on the address we are actually calling. */}
+                  {runsLocally
+                    ? <>Start it back up on this computer, then hit Retry.</>
+                    : <>Open HQ from{' '}
+                        <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                           style={{color:'#E8A9A9', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                        {' '}so it can reach your private office.</>}
+                  <span style={{opacity:0.7}}> {window._API_BASE
+                    ? `(looking for it at ${window._API_BASE})`
+                    : runsLocally
+                      /* Empty _API_BASE means same-origin, NOT "no office". Saying
+                         "on-chain only" to someone whose office is this very origin
+                         is a wrong diagnosis printed under a red banner. */
+                      ? `(looking for it here, at ${location.origin})`
+                      : '(no address set — on-chain only)'}</span>
                 </span>
                 <button onClick={()=>{ setBackendProbeNonce(n => n + 1); }} disabled={backendProbing}
                   style={{ cursor:'pointer', background:'rgba(232,169,169,0.18)', border:'1px solid rgba(232,169,169,0.6)',

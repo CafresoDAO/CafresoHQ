@@ -122,7 +122,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.8,
     systemPrompt:
-      "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The server calls the configured backend and saves the rendered image to the vault. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image vault path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
+      "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The office calls whichever image service is set up and saves the rendered image to the vault. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image vault path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
   },
   {
     name: 'Reel',
@@ -2262,7 +2262,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
           const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
           emit(peek
             ? `_(empty after cleaning. Raw: "${peek}…")_`
-            : '_(no output from model — check the backend is reachable and not rate-limited)_');
+            : '_(no answer came back — your office may be offline, or the brain may be rate-limited)_');
         }
       }
       return;
