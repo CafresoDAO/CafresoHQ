@@ -81,6 +81,60 @@ def main():
     print('%s fixture first-match-wins' % ('PASS' if ok else 'FAIL'))
     failures += 0 if ok else 1
 
+    # 5. Harmony fallback — the gap a LIVE run found, not a hypothesis. A
+    # scheduled mission on Ollama's llama3.1 (this office's own zero-config
+    # hire) ran clean end to end — iterations: 1, errors: 0 — and wrote
+    # NOTHING, because its reply was harmony syntax this function had no
+    # regex for: "<|channel|>commentary to=browser_fetch<|message|>
+    # {"url":"..."}" . The hop loop's `if not hit: break` fired on turn
+    # one, and the run reported SUCCESS having done nothing at all — worse
+    # than an honest error, since a quiet night and a broken tool-call
+    # format read identically in the morning report. The browser side
+    # already carries this exact fix for "gpt-oss-20b, qwen-3, and other
+    # OSS models" (hq-runtime.jsx's extractHarmonyToolCalls) — both of
+    # which this machine's own LM Studio catalog actually offers, so this
+    # was the other half of a fix that had only shipped to chat.
+    harmony_fixtures = [
+        # the exact text captured from the live failing run
+        ('<|channel|>commentary to=browser_fetch <|constrain|>json<|message|>'
+         '{"url":"https://en.wikipedia.org/wiki/Meander"}',
+         'BROWSER_FETCH', 'https://en.wikipedia.org/wiki/Meander', None),
+        ('<|channel|>commentary to=vault_new <|message|>'
+         '{"path":"Research/x.md","content":"# Title\\nBody text"}',
+         'VAULT_NEW', 'Research/x.md', '# Title\nBody text'),
+        ('<|channel|>commentary to=functions.search <|message|>{"query":"river deltas"}',
+         'SEARCH', 'river deltas', None),
+    ]
+    for text, want_name, want_arg, want_body in harmony_fixtures:
+        hit = night_runner.find_first_tool(text)
+        ok = (hit is not None and hit[0] == want_name
+              and hit[1] == want_arg and hit[2] == want_body)
+        print('%s harmony fixture %-13s %r' % ('PASS' if ok else 'FAIL', want_name, text[:50]))
+        if not ok:
+            print('   got: %r' % (hit,))
+            failures += 1
+
+    # A harmony call to a tool night shift doesn't support (DM_TO, HIRE_*,
+    # anything outside TOOL_RES) must be ignored, not fabricated into one
+    # of the eight it does understand.
+    unsupported = night_runner.find_first_tool(
+        '<|channel|>commentary to=functions.dm_to <|message|>{"to":"Nano","message":"hi"}')
+    ok = unsupported is None
+    print('%s harmony call to an unsupported tool is ignored' % ('PASS' if ok else 'FAIL'))
+    if not ok:
+        print('   got: %r' % (unsupported,))
+    failures += 0 if ok else 1
+
+    # Bracket format must still win when both are present in one reply —
+    # the harmony fallback only fires when the bracket scan finds nothing.
+    both = '[SEARCH: bracket wins] <|channel|>commentary to=vault_read <|message|>{"path":"x"}'
+    hit = night_runner.find_first_tool(both)
+    ok = hit and hit[0] == 'SEARCH'
+    print('%s bracket format still wins over harmony when both present' % ('PASS' if ok else 'FAIL'))
+    if not ok:
+        print('   got: %r' % (hit,))
+    failures += 0 if ok else 1
+
     print('\n%d failure(s)' % failures)
     sys.exit(1 if failures else 0)
 

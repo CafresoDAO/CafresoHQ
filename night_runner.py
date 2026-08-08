@@ -364,16 +364,77 @@ def run_tool(ctx, name, arg, body):
         return 'Tool %s failed: %s' % (name, e)
 
 
+_HARMONY_RE = re.compile(
+    r'<\|channel\|>\s*commentary\s+to=([A-Za-z0-9_.]+)\s*'
+    r'(?:<\|constrain\|>\w+\s*)?<\|message\|>(.*?)'
+    r'(?=<\|channel\||<\|end\|>|<\|call\|>|<\|return\|>|$)',
+    re.IGNORECASE | re.DOTALL)
+
+
+def _harmony_args_for(name, payload):
+    """Map a harmony JSON payload to the (arg, body) night_runner's own
+    tool runners expect. Ported from hq-runtime.jsx's harmonyArgsFor,
+    trimmed to the 8 tools this runner actually supports (TOOL_RES) --
+    the browser's version also covers DM_TO/HIRE_AGENT/etc, which have no
+    meaning here (night shift is vault-only, see build_prompt's own
+    "no shell, no publishing, no money" line)."""
+    try:
+        parsed = json.loads(payload)
+    except Exception:
+        parsed = None
+
+    def get(*keys):
+        if not isinstance(parsed, dict):
+            return None
+        for k in keys:
+            if parsed.get(k) is not None:
+                return str(parsed[k])
+        return None
+
+    if name in ('SEARCH', 'VAULT_SEARCH'):
+        return get('query', 'q', 'search') or payload, None
+    if name in ('VAULT_READ', 'FILE_READ', 'DIR_LIST', 'BROWSER_FETCH'):
+        return get('path', 'file', 'url', 'query') or payload, None
+    if name in ('VAULT_APPEND', 'VAULT_NEW'):
+        return get('path', 'file') or '', get('content', 'body', 'text') or ''
+    return payload, None
+
+
 def find_first_tool(text):
     """Earliest bracket-marker match → (name, arg, body, span) or None.
-    Mirrors the browser runtime: one tool per hop, first match wins."""
+    Mirrors the browser runtime: one tool per hop, first match wins.
+
+    Bracket format only, until a live run proved that half a promise: an
+    Ollama llama3.1 mission ran clean -- iterations: 1, errors: 0 -- and
+    wrote NOTHING, because its reply was harmony syntax
+    ("<|channel|>commentary to=browser_fetch...") that this function had
+    no regex for. `hit` came back None, the hop loop's `if not hit: break`
+    fired on the very first turn, and the run reported SUCCESS having done
+    nothing at all -- worse than an honest error, because a quiet night and
+    a broken tool-call format are indistinguishable to the boss reading
+    the morning report. The browser side already carries this exact fix
+    (extractHarmonyToolCalls / harmonyArgsFor) for "gpt-oss-20b, qwen-3,
+    and other OSS models" -- both of which this machine's own LM Studio
+    catalog actually offers, so this is not a hypothetical, it is the
+    other half of a fix that only shipped to chat."""
     best = None
     for name, rx in TOOL_RES.items():
         m = rx.search(text or '')
         if m and (best is None or m.start() < best[3][0]):
             body = m.group(2) if name in BLOCK_TOOLS and m.lastindex and m.lastindex >= 2 else None
             best = (name, m.group(1), body, m.span())
-    return best
+    if best is not None:
+        return best
+    hm = _HARMONY_RE.search(text or '')
+    if not hm:
+        return None
+    name = re.sub(r'^functions\.', '', hm.group(1)).upper()
+    if name not in TOOL_RES:
+        return None   # a tool night shift doesn't support (e.g. DM_TO) — not ours to run
+    arg, body = _harmony_args_for(name, hm.group(2).strip())
+    if not arg:
+        return None
+    return (name, arg, body, hm.span())
 
 
 # ── Prompt (night edition of missions.jsx buildResearchPrompt/ProjectStudy) ──
