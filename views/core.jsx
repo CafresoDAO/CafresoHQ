@@ -3,7 +3,7 @@ import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
 import { officeDate } from '../app/artifacts.jsx';
-import { brainName, EFFORT_TIP, memoryLabel, memoryNotes, payrollLabel } from '../app/cast.jsx';
+import { brainName, EFFORT_TIP, memoryLabel, memoryNotes, payrollLabel, poweredBy } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
@@ -562,7 +562,24 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                   {/* §6, binding: no raw model ids and no "tokens"/"cost" on
                       a coworker card — brain · work done · payroll. The id
                       stays in the tooltip so debugging doesn't lose it. */}
-                  <div><span className="lbl">Brain</span><span className="val" title={a.model || 'no brain assigned'}>{brainName(a)}</span></div>
+                  <div><span className="lbl">Brain</span><span className="val" title={(() => {
+                    /* The VISIBLE text here was fixed once already — the card
+                       used to print `openrouter:google/gemma-3-27b-it` under a
+                       label reading "Model", and brainName() was written to
+                       stop it. The tooltip kept the raw id anyway: hovering
+                       the roster card showed `ollama:llama3.1` on the front
+                       door, which north-star §3.6 rules out in as many words
+                       ("no settings pages, no model IDs") and §6 allows only
+                       in Settings and desktop mode.
+
+                       Copy fixed, state left behind — recurring shape (2),
+                       this time hiding in an attribute rather than a
+                       variable. A `title` is copy; it just does not show up
+                       when you read the screen. */
+                    const v = poweredBy(a);
+                    return v ? `Powered by ${v} — the coworker is yours; the vendor is just the engine`
+                             : 'Runs on whatever brain you gave them';
+                  })()}>{brainName(a)}</span></div>
                   {/* "Work done" for a TOKEN COUNT, sitting directly above
                       "Jobs" — the actual count of work done. Two labels on
                       one card claiming the same thing, and only one of them
