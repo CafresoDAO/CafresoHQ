@@ -265,11 +265,24 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
   };
 
-  const openInObsidian = async () => {
-    if (!openNote) return;
-    try { await CafresoHQClient.vaultOpenInObsidian(openNote.path); }
-    catch (e) { alert('Could not open in Obsidian: ' + e.message); }
-  };
+  /* `openInObsidian` used to live here. Removed, not just unwired: the ONLY
+     backend it can ever reach is /vault/open, which 400s unconditionally
+     unless _vault_backend === 'rest' — and the one UI that could ever set
+     that (modals/providers.jsx's VaultTab, with its DETECT OBSIDIAN button
+     and REST key field) is deliberately excluded from the bundle (see
+     modals.jsx's own comment: "kept for a future self-host build flag").
+
+     So this button had a 0% success rate in every shipped build, by
+     construction, sitting on the single most-visited pane in the vault —
+     which OFFICE_AS_INTERFACE §3.6 calls "the cabinet", the story of this
+     product. Its failure path was also a native `alert()` (this app's only
+     one — everything else is cafresohqToast or an inline sentence) reading
+     "Could not open in Obsidian: open-in-Obsidian requires REST backend" —
+     raw backend cause text, "REST backend", straight at a boss with no
+     context for what that means. North-star §5: "Obsidian bridge — serves
+     a power-user 1%; vault is the story." The wiring was already correctly
+     parked; this was the one piece of it left standing on the core path.
+     Comes back trivially alongside VaultTab whenever that flag ships. */
 
   if (!status) {
     return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Loading…</div></div></div>;
@@ -385,7 +398,6 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 </label>
                 {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
                 {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
-                <button className="px-btn ghost" onClick={openInObsidian} title="Open in Obsidian">{'↗'}</button>
                 <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
                   onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
                   {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
@@ -449,7 +461,6 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             </label>
             {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
             {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
-            <button className="px-btn ghost" onClick={openInObsidian} title="Open in Obsidian">↗</button>
             <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
               onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
               {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}

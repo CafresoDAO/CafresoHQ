@@ -437,6 +437,42 @@ console.log(JSON.stringify(R));
           "name: 'Reel'" in rt and 'GENERATE_VIDEO' in rt,
           'hq-runtime.jsx: parked means shelved, not removed')
 
+    # ── CDP screenshots do not ride the default web claim (section 5) ────
+    # "CDP browser screenshots | Niche, heavy, off-thesis for v1." It was
+    # bundled onto claimed.has('web') alongside plain BROWSER_FETCH -- so
+    # any coworker with the cheapest, most-hired checkbox on the form
+    # silently also got a tool that requires the BOSS to be running Chrome
+    # with a debug flag, and can fire from an LLM's own initiative, not a
+    # menu the boss has to go find. Confirmed against the doc row, not
+    # memory.
+    row = re.search(r'\|\s*CDP browser screenshots\s*\|([^\n|]*)\|', ns)
+    check('the CDP-screenshot park row still says what we think it says',
+          bool(row) and 'niche' in row.group(1).lower(),
+          'north-star section 5: CDP row changed — re-read before trusting this rule')
+
+    grant = re.search(r"if \(agent\.elevated \|\| claimed\.has\('web'\)[\s\S]{0,80}?\{\s*\n\s*out\.push\(TOOL_REGISTRY\.browser_fetch\);", rt)
+    check('plain fetch still rides the web claim',
+          bool(grant),
+          'hq-runtime.jsx: BROWSER_FETCH has no CDP dependency and no jargon on failure — fine to bundle')
+    shot = re.search(r"if \(agent\.elevated\) \{\s*\n\s*out\.push\(TOOL_REGISTRY\.browser_screenshot\);", rt)
+    check('screenshot rides elevation, not the web claim',
+          bool(shot),
+          'hq-runtime.jsx: browser_screenshot must not be granted by claimed.has(\'web\') alone')
+
+    # ── the Obsidian bridge is parked, and nothing on the core path still
+    #    points at it (section 5) ─────────────────────────────────────────
+    modals_src = (ROOT / 'modals.jsx').read_text(encoding='utf-8')
+    check('the Obsidian settings surface is still excluded from the bundle',
+          not re.search(r"^\s*import\b[^\n]*providers\.jsx", modals_src, re.M),
+          'modals.jsx: modals/providers.jsx (VaultTab, the REST bridge UI) must stay out of the barrel')
+    vault_src = (ROOT / 'views' / 'vault.jsx').read_text(encoding='utf-8')
+    check('the vault view has no dangling "Open in Obsidian" affordance',
+          not re.search(r'onClick=\{openInObsidian\}', vault_src)
+          and not re.search(r'const openInObsidian = ', vault_src),
+          'views/vault.jsx: the wiring is parked, so the button that always 400s must not be either — '
+          'a native alert() reading raw backend cause text ("REST backend") on the single most-visited '
+          'pane in the vault (see cabinet, section 3.6)')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))

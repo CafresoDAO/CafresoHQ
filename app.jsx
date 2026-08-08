@@ -2335,7 +2335,6 @@ ${d.text}` : d.text,
       await dispatchToAgent(target, dm.body, {
         dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
         originThread: chainOrigin, originAgentId: chainAskedId,
-        originThread: chainOrigin, originAgentId: chainAskedId,
       });
       dmDelivered++;
     }

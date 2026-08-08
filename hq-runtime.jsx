@@ -1489,12 +1489,34 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
   if (agent.elevated) {
     out.push(TOOL_REGISTRY.file_read, TOOL_REGISTRY.dir_list, TOOL_REGISTRY.file_write, TOOL_REGISTRY.bash);
   }
-  // Browser tools — available to any agent that opted into 'web' OR is
-  // elevated. FETCH works everywhere (urllib); SCREENSHOT requires Brave/
-  // Chrome to be running with --remote-debugging-port=9222 (we surface
-  // the hint if it isn't).
+  // FETCH is plain HTTP (urllib) — no local dependency, no jargon if it
+  // fails, safe to bundle with the single most common claim a coworker
+  // has. Available to any agent that opted into 'web' or is elevated.
   if (agent.elevated || claimed.has('web') || claimed.has('browser')) {
-    out.push(TOOL_REGISTRY.browser_fetch, TOOL_REGISTRY.browser_screenshot);
+    out.push(TOOL_REGISTRY.browser_fetch);
+  }
+  /* SCREENSHOT is the OTHER kind of browser tool, and section 5 names it
+     specifically: "CDP browser screenshots — niche, heavy, off-thesis for
+     v1". It was bundled onto the SAME `claimed.has('web')` check as fetch
+     above — so any coworker with plain web search, the cheapest, first,
+     most-hired checkbox on the form, silently also got an autonomous tool
+     that requires the BOSS to be running Chrome with a debug flag. When it
+     fires and CDP isn't there, the failure is not office voice at all —
+     it is serve.py's own words, verbatim into the chat bubble:
+
+       "Couldn't take that screenshot — No CDP-enabled browser detected.
+        Launch Brave or Chrome with --remote-debugging-port=9222 (or set
+        CAFRESOHQ_BROWSER_CDP_URL to a different host:port)."
+
+     That is not a UI element a boss has to go find — an LLM can choose to
+     call it on its own initiative from "check out this site", so this is
+     the terminal's own "#1 this-isn't-for-me signal" with no door to
+     avoid it behind. `elevated` is the one advanced gate this app already
+     has (file/shell access, granted through the boss's own approval walk)
+     — screenshot rides that gate now, same as the desktop-mode door parks
+     the terminal, instead of riding the tool everyone has by default. */
+  if (agent.elevated) {
+    out.push(TOOL_REGISTRY.browser_screenshot);
   }
 
   // Per-agent memory — every agent gets a private vault folder regardless
