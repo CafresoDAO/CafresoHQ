@@ -774,6 +774,17 @@ function visibleReply(text, selfName) {
   return note || 'still working on it';
 }
 
+/* True when `text` is the sentence visibleReply substitutes for a reply
+   that was nothing but hand-offs. One function to WRITE it (visibleReply,
+   above) and one to RECOGNISE it, kept adjacent so they cannot drift --
+   call sites re-dress the placeholder for rooms the generic sentence
+   cannot know about (drop it beside its own DM bubble in the team room;
+   upgrade it to a promise in the thread the report-back will land in). */
+function isHandoffPlaceholder(text) {
+  return /^Sent this to [^\n]+ — their reply lands in the team room\.$/
+    .test(String(text || '').trim());
+}
+
 /* Find an [DM_TO: name]\n<body>\n[/DM_TO] block. Returns {to, body} or null. */
 function extractDM(text) {
   if (!text) return null;
@@ -2410,7 +2421,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

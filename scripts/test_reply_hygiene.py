@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -86,6 +86,13 @@ R.dmWithProse  = visibleReply('On it.\n[DM_TO: Nano]\nq\n[/DM_TO]');
 // An UNRECOGNISED marker keeps the old behaviour: show it rather than
 // silently drop what someone said.
 R.unknownTag   = visibleReply('[MYSTERY_TAG: x]');
+// Generator and recogniser must stay in sync: the recogniser is what lets
+// call sites re-dress the placeholder per room, so if someone rewords the
+// sentence in visibleReply without teaching isHandoffPlaceholder, every
+// re-dress silently stops and the stale copy ships again.
+R.phRound = isHandoffPlaceholder(visibleReply('[DM_TO: Nano]\nq\n[/DM_TO]'));
+R.phTwo   = isHandoffPlaceholder(visibleReply('[DM_TO: Nano]\nq1\n[/DM_TO]\n[DM_TO: Kip]\nq2\n[/DM_TO]'));
+R.phPlain = isHandoffPlaceholder('Red.');
 
 /* Verbatim off the floor, 2026-08-07. The boss asked for one colour; the
    reply carried a whole [MEMORY_WRITE] block whose delimiters were stripped
@@ -595,9 +602,16 @@ def main():
     # The same branch renders for a DM sent BACK, so it must not claim the
     # sender did the asking, and must not promise a follow-up this office
     # does not deliver.
-    check('the sentence promises nothing it cannot keep',
+    # The GENERIC sentence stays promise-free because visibleReply cannot
+    # know whether a report-back is armed; the promise lives at the call
+    # site, which checks chainOrigin before making it (see below).
+    check('the generic sentence promises nothing it cannot keep',
           not re.search(r"come back to you|I'?ll (?:get|let you)", out['pureDM'], re.I),
           repr(out['pureDM']))
+    check('the placeholder recogniser accepts its own generator',
+          out['phRound'] is True and out['phTwo'] is True,
+          'isHandoffPlaceholder must match what visibleReply writes')
+    check('...and only that', out['phPlain'] is False)
     check('two coworkers are both named', 'Nano and Kip' in out['pureDMTwo'], repr(out['pureDMTwo']))
     check('the same coworker twice is named once',
           out['pureDMSame'].count('Nano') == 1, repr(out['pureDMSame']))
@@ -641,8 +655,29 @@ def main():
     check('the coworker the boss asked is prompted to report back, not loop',
           'owesTheBoss' in app_src
           and re.search(r'owesTheBoss = !!dmFrom && !!chainOrigin && agent\.id === chainAskedId', app_src)
-          and 'Write your reply TO THE BOSS' in app_src,
+          and 'report back to the person who asked you' in app_src,
           'app.jsx: the boss-asked coworker needs its own DM framing')
+
+    # ── the placeholder is re-dressed per room ─────────────────────────
+    # In the team room the placeholder sat NEXT TO the DM bubble it
+    # described — two bubbles per hand-off. In the boss's thread it still
+    # said "their reply lands in the team room", copy written before the
+    # report-back existed, pointing the boss away from an answer that now
+    # comes to them.
+    check('the team room drops the placeholder beside its own DM bubble',
+          re.search(r'if \(handedOff && dmFrom\) return prev\.filter\(m => m\.id !== agentMsgId\)', app_src),
+          'app.jsx: pure hand-off in the team room keeps only the DM bubble')
+    check("the boss's thread gets the promise only when the report-back is armed",
+          re.search(r'handedOff && !dmFrom && chainOrigin', app_src)
+          and "I'll bring their answer back here" in app_src,
+          'app.jsx: promise gated on chainOrigin')
+    # A promise needs its failure notices in the SAME room it was made in.
+    check('the depth cap is announced where the promise was made',
+          re.search(r'went back and forth too long without an answer[\s\S]{0,80}thread: originThread', app_src),
+          'app.jsx: cap notice must post to originThread too')
+    check("a peer's snag is announced where the promise was made",
+          re.search(r'hit a snag on the way to your answer[\s\S]{0,60}thread: chainOrigin', app_src),
+          'app.jsx: catch must notify chainOrigin when a peer dies mid-chain')
 
     # ── the first sentence of the product ───────────────────────────────
     # The greeting promised a brain nobody had probed: "I'm already running
