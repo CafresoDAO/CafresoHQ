@@ -170,7 +170,16 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         {/* The brain, by name — the raw id stays reachable in the tooltip
             for debugging, but §6 keeps it off the card face. */}
         <div className="stat"><span className="lbl">Brain</span>
-          <span title={agent.model || 'no brain assigned'}>{brainName(agent)}</span></div>
+          {/* Twin of the roster card's Brain row, found by censusing every
+              render of `.model` after fixing that one. Same raw id
+              (`ollama:llama3.1`) in the same kind of tooltip, on a panel a
+              boss opens to read about their coworker. §3.6: no model IDs on
+              the front door. */}
+          <span title={(() => {
+            const v = poweredBy(agent);
+            return v ? `Powered by ${v} — the coworker is yours; the vendor is just the engine`
+                     : 'Runs on whatever brain you gave them';
+          })()}>{brainName(agent)}</span></div>
         {/* Was "Tools used" — past tense, a record — over `agent.tools`,
             which is the permission list. So the card said Llama had USED the
             vault when Llama had never written a thing; enabling Vault Notes

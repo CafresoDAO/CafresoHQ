@@ -327,6 +327,55 @@ def drop_interpolations(text):
     return INTERP_RE.sub(keep_strings, text)
 
 
+def check_no_raw_model_render():
+    """No display attribute may render an agent's raw `.model` field.
+
+    The vocabulary scan reads STRING LITERALS. A raw model id that arrives
+    through a variable is invisible to it, which is how
+    `title={a.model || 'no brain assigned'}` sat on the roster card showing
+    `ollama:llama3.1` on the front door — under a helper (`brainName`)
+    written specifically to keep it off. The visible text was fixed; the
+    attribute was not.
+
+    Found its twin in the inspect panel by censusing every render of
+    `.model` rather than waiting for the next sighting. This pins both.
+
+    Narrow on purpose: only DISPLAY positions (title/label/text/placeholder
+    and JSX children), only the `.model` field, and `brainName(...)` /
+    `poweredBy(...)` wrappers are the intended way to show it.
+    """
+    import re as _re
+    bad = []
+    for rel in ('app.jsx', 'features.jsx', 'missions.jsx', 'ui/panels.jsx',
+                'ui/office.jsx', 'ui/chat.jsx', 'views/core.jsx', 'modals/hire.jsx'):
+        f = ROOT / rel
+        if not f.exists():
+            continue
+        text = _re.sub(r'/\*.*?\*/', '', f.read_text(encoding='utf-8'), flags=_re.S)
+        for i, line in enumerate(text.split('\n')):
+            # Extract the ATTRIBUTE EXPRESSION, not the whole line. The
+            # first version skipped any line containing brainName() — and
+            # the real defect line was
+            #   <span title={agent.model || '…'}>{brainName(agent)}</span>
+            # where brainName is the element's CHILD. The exemption
+            # disabled the check on precisely the shape it was written for.
+            # Caught by fire-testing: reintroduced the defect, rule stayed
+            # green.
+            for m in _re.finditer(r'\b(?:title|label|placeholder|aria-label)\s*=\s*\{', line):
+                depth, j = 0, m.end() - 1
+                while j < len(line):
+                    if line[j] == '{': depth += 1
+                    elif line[j] == '}':
+                        depth -= 1
+                        if depth == 0: break
+                    j += 1
+                expr = line[m.end():j]
+                if (_re.search(r'\b(?:a|ag|x|agent|coworker)\.model\b', expr)
+                        and 'brainName' not in expr and 'poweredBy' not in expr):
+                    bad.append(f'{rel}:{i + 1}')
+    return bad
+
+
 def main():
     print('floor vocabulary')
     fails = []
@@ -369,6 +418,10 @@ def main():
                     snippet = ' '.join(raw.split())[:70]
                     fails.append(f'{rel}:{line} — {m.group(0)!r} {why}\n'
                                  f'            in: {snippet}')
+
+    for loc in check_no_raw_model_render():
+        fails.append(f'{loc} — a raw `.model` id rendered in a display attribute; '
+                     'use brainName()/poweredBy() (§3.6: no model IDs on the front door)')
 
     if fails:
         for f in fails:
