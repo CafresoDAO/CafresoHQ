@@ -97,6 +97,23 @@ R.phPlain = isHandoffPlaceholder('Red.');
 R.apOnly  = visibleReply('[NEEDS_APPROVAL: order two pizzas — $40]');
 R.apProse = visibleReply('I can do that, but it costs money.\n[NEEDS_APPROVAL: send the newsletter]');
 R.apSpace = visibleReply('[NEEDS APPROVAL: send the invoice]');
+// The unclosed-DM_TO recovery. Both real misses (an 8B model, then
+// gemma-4-e4b captured verbatim) had this exact shape: opener, own line,
+// body, then the stream just stops.
+R.dmUnclosedExtract = extractAllDMs('[DM_TO: Nano]\nWhat is 4+4?');
+R.dmUnclosedReply   = visibleReply('[DM_TO: Nano]\nWhat is 4+4?');
+// A CLOSED block earlier plus an unclosed one after — both must survive,
+// the closed one untouched, the trailing one recovered.
+R.dmMixedExtract = extractAllDMs('[DM_TO: Llama]\nQ1\n[/DM_TO]\n[DM_TO: Nano]\nQ2');
+// The model changed its mind and kept talking after the opener — a blank
+// line, then unrelated prose. Must NOT be recovered: that is abandonment,
+// not a forgotten closer.
+R.dmAbandonedExtract = extractAllDMs('[DM_TO: Nano]\nWhat is 4+4?\n\nActually never mind, I will just answer directly.');
+// Opened, nothing after it at all.
+R.dmEmptyOpenExtract = extractAllDMs('[DM_TO: Nano]');
+// A closed block with NOTHING after it — the tail-recovery path must not
+// invent a phantom second entry from empty leftover text.
+R.dmClosedOnlyExtract = extractAllDMs('[DM_TO: Nano]\nQ\n[/DM_TO]');
 // A stamp with no content is not a request. Watched live: the boss's tray
 // read "N/A · by Gemma · awaiting stamp".
 R.apNA    = extractApproval('[NEEDS_APPROVAL: N/A]');
@@ -698,6 +715,28 @@ def main():
           repr(out['apOnly']))
     check('prose beside the marker survives; the marker does not',
           out['apProse'] == 'I can do that, but it costs money.', repr(out['apProse']))
+    # ── an unclosed DM_TO is recovered, not silently dropped ────────────
+    # Both real misses captured verbatim (an 8B model, then gemma-4-e4b
+    # through the live proxy) had the SAME shape: the model opened the tag
+    # correctly and simply never emitted the closer. Before this, dispatch
+    # silently failed (dmQueue stayed empty, Nano was never asked) and
+    # display showed a non-sequitur to the boss ("Gemma: What is 4+4?").
+    check('extractAllDMs recovers a trailing unclosed opener',
+          out['dmUnclosedExtract'] == [{'to': 'Nano', 'body': 'What is 4+4?'}],
+          repr(out['dmUnclosedExtract']))
+    check('visibleReply renders the recovered hand-off as the walk, not a non-sequitur',
+          out['dmUnclosedReply'] == 'Sent this to Nano — their reply lands in the team room.',
+          repr(out['dmUnclosedReply']))
+    check('a closed block earlier is untouched, and the trailing unclosed one is added',
+          out['dmMixedExtract'] == [{'to': 'Llama', 'body': 'Q1'}, {'to': 'Nano', 'body': 'Q2'}],
+          repr(out['dmMixedExtract']))
+    check('a blank line after the opener means abandonment, not a forgotten closer',
+          out['dmAbandonedExtract'] == [], repr(out['dmAbandonedExtract']))
+    check('an opener with nothing after it recovers nothing',
+          out['dmEmptyOpenExtract'] == [], repr(out['dmEmptyOpenExtract']))
+    check('a closed block with no trailing text does not grow a phantom second entry',
+          out['dmClosedOnlyExtract'] == [{'to': 'Nano', 'body': 'Q'}], repr(out['dmClosedOnlyExtract']))
+
     check('the space variant is understood too',
           'waiting on your desk' in out['apSpace'], repr(out['apSpace']))
     rt = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
@@ -787,6 +826,21 @@ def main():
           bool(dm_sites) and all('chainState: chain' in d for d in dm_sites),
           'app.jsx: %d recursive site(s), missing chainState on some' % len(dm_sites))
     # Only the boss-level frame speaks, or a deep chain says it repeatedly.
+    # A specific failure already told the boss what happened -- the
+    # generic notice must not repeat it in weaker words. Caught live: a
+    # peer timeout raised its own snag notice AND left chain.reported
+    # false, so without this gate the boss got two system lines back to
+    # back for the one failure.
+    check('the depth cap marks the failure as already explained',
+          re.search(r'chain\.failureNoticed = true;\s*//[^\n]*\n\s*setChat[\s\S]{0,160}went back and forth too long', app_src),
+          'app.jsx: depth-cap branch must set chain.failureNoticed before its own notice')
+    check("a peer's snag marks the failure as already explained",
+          re.search(r'chain\.failureNoticed = true;[\s\S]{0,200}hit a snag on the way', app_src),
+          'app.jsx: the catch branch must set chain.failureNoticed before its own notice')
+    check('the generic notice defers to a specific one that already fired',
+          re.search(r'chain\.promised && !chain\.reported && !chain\.failureNoticed', app_src),
+          'app.jsx: the third notice must not repeat a diagnosis already given')
+
     check('only the boss-level frame announces it',
           re.search(r'if \(!dmFrom && chain\.promised', app_src),
           'app.jsx: guard on !dmFrom so a five-hop chain says this once')

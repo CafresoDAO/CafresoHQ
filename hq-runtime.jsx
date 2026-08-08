@@ -785,7 +785,26 @@ function visibleReply(text, selfName) {
   // is not at column zero, and the line-anchored strip below cannot see it.
   const cleaned = stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(raw, selfName))))
     .replace(/\n{3,}/g, '\n\n').trim();
-  if (cleaned) return cleaned;
+  /* A CLOSED [DM_TO]...[/DM_TO] block is fully consumed by stripBlocks
+     above, tag and body together -- so when a reply is prose plus a
+     well-formed hand-off ("On it.\n[DM_TO: Nano]\nq\n[/DM_TO]"), `cleaned`
+     is just the prose ("On it."), and that is correct: real content wins
+     over the placeholder below.
+
+     An UNCLOSED trailing opener is different, and `cleaned` lies about it.
+     stripBlocks can't touch it (no closer to match), so only
+     stripOrphanTags fires -- and that strips just the marker's own LINE,
+     leaving the recovered DM's body sitting in `cleaned` as if it were the
+     coworker's own words to the boss. Watched live: the boss's bubble read
+     "What is 4+4?", Gemma's question for Nano, presented as if Gemma were
+     asking the BOSS. Detected by comparing: if `cleaned` is EXACTLY the
+     recovered hand-off's body and nothing else, it isn't leftover prose,
+     it's the hand-off's own payload with its wrapper stripped -- fall
+     through to the placeholder branch below instead of returning it. */
+  const dmsForRecoveryCheck = extractAllDMs(raw);
+  const trailingDm = dmsForRecoveryCheck[dmsForRecoveryCheck.length - 1];
+  const cleanedIsOrphanedDmBody = !!trailingDm && cleaned === trailingDm.body;
+  if (cleaned && !cleanedIsOrphanedDmBody) return cleaned;
   /* Nothing survived the strip. `stripAcks` matches ANY lowercase state
      while `extractAcks` only accepts the four real ones, so a typo'd
      marker ([ACK: banana: …]) gets deleted without ever being understood
@@ -858,14 +877,48 @@ function extractDM(text) {
 /* Find ALL [DM_TO: name] blocks in `text`. Returns [{to, body}, ...] in
    order of appearance. Used by the team-chatter loop so that an agent
    sending DMs to multiple coworkers in one reply actually triggers
-   dispatch for all of them, not just the first. */
+   dispatch for all of them, not just the first -- and, since both known
+   real-world misses of this marker (an 8B Claude-family model, then
+   gemma-4-e4b, captured verbatim through the live proxy) were the model
+   opening the tag correctly and simply never emitting the closer, ALSO
+   the single authority both dispatch (detectToolCall) and display
+   (visibleReply) consult for whether a trailing unclosed opener should
+   count as a real hand-off. One rule, not two that can quietly diverge --
+   see the note in detectToolCall for what happens when they do. */
 function extractAllDMs(text) {
   if (!text) return [];
   const out = [];
   const re = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*DM_TO\s*\]/gi;
-  let m;
+  let m, lastEnd = 0;
   while ((m = re.exec(text)) !== null) {
     out.push({ to: m[1].trim(), body: (m[2] || '').trim() });
+    lastEnd = re.lastIndex;
+  }
+  /* Trailing recovery: an opener AFTER every well-formed block's end,
+     with nothing to close it. Scoped tight, on purpose --
+       - only the text after the last real closer, so a properly closed
+         block earlier in the reply is never touched;
+       - the opener must be immediately followed by its own line (the
+         shape the model actually produces, name on the tag, body below);
+       - the tail must be non-empty and read as ONE continuous message --
+         a blank line before more text means the model kept talking after
+         the opener and likely abandoned the hand-off rather than just
+         forgetting the closer, so that case is deliberately left alone
+         for ORPHAN_TAG_RE's existing cosmetic cleanup instead. */
+  const tailText = text.slice(lastEnd);
+  if (!/\[\s*\/\s*DM_TO\s*\]/i.test(tailText)) {
+    const openRe = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]/gi;
+    let lastOpen = null, om;
+    while ((om = openRe.exec(tailText)) !== null) lastOpen = om;
+    if (lastOpen) {
+      const afterOpen = tailText.slice(lastOpen.index + lastOpen[0].length);
+      if (/^\s*\n/.test(afterOpen)) {
+        const body = afterOpen.trim();
+        if (body && !/\n[ \t]*\n/.test(body)) {
+          out.push({ to: lastOpen[1].trim(), body });
+        }
+      }
+    }
   }
   return out;
 }
@@ -1916,6 +1969,39 @@ function detectToolCall(text, tools) {
   for (const t of tools) {
     const m = String(text).match(t.re);
     if (m) return { tool: t, arg: m[1], body: m[2] || '', raw: m[0] };
+  }
+  /* A [DM_TO: name] opener whose [/DM_TO] simply never got emitted.
+     Observed twice, both documented in this file: an 8B Claude-family
+     local model (the orphan-tag note above), and -- found by capturing
+     the exact bytes gemma-4-e4b streamed back through the real proxy,
+     not a guess -- 3 consecutive live misses today that looked like a
+     prompt regression and were not. The raw SSE was "[DM_TO: Nano]" on
+     its own line followed by "What is 4+4?", full stop. The model asked
+     the right question, in the right shape, and simply stopped
+     generating instead of adding the four-token closer.
+
+     The existing fix for this shape (ORPHAN_TAG_RE) only cleans it up
+     for DISPLAY -- it deletes the opener line, which quietly turned
+     Gemma's hand-off attempt into a non-sequitur: the boss saw a
+     coworker asking THEM "What is 4+4?" out of nowhere, because Nano
+     never got the question and the office never knew a hand-off had
+     been attempted at all.
+
+     Delegated to extractAllDMs (below) rather than re-implemented here,
+     so dispatch and display -- visibleReply calls the very same
+     function -- can never disagree about what counts as a recovered
+     hand-off. Third time this session a "two sources, one rule" split
+     has been the actual bug (the seed-swarm tooltip, the picker's
+     offline fallback, the approval scan reading stripped text). Safe to
+     call post-stream, which every caller of detectToolCall already is --
+     both `await` the full response before reaching this line. */
+  const recovered = extractAllDMs(text);
+  if (recovered.length) {
+    const dmTool = tools.find(t => t.name === 'DM_TO');
+    if (dmTool) {
+      const last = recovered[recovered.length - 1];
+      return { tool: dmTool, arg: last.to, body: last.body, raw: '' };
+    }
   }
   // Fall back to harmony format: gpt-oss-20b, qwen-3, and other OSS models
   // emit tool calls as <|channel|>commentary to=NAME<|message|>{…json…}

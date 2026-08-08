@@ -1511,6 +1511,9 @@ ${d.text}` : d.text,
        Raise it if a real workflow needs more depth; it is one number, and
        the failure it produces is visible rather than silent. */
     const DM_DEPTH_CAP = 4;
+    /* Hoisted above the depth-cap check (was declared further down, beside
+       `chainOrigin`) so both this failure and the cap below can mark it. */
+    const chain = chainState || { promised: false, reported: false };
     if (dmDepth > DM_DEPTH_CAP) {
       MessageRegistry.transition(messageId, 'cancelled', {
         by: 'host',
@@ -1529,6 +1532,7 @@ ${d.text}` : d.text,
          here"), so the promise breaking must be said WHERE IT WAS MADE.
          The team room keeps the technical version with the numbers. */
       if (originThread && originThread !== 'team') {
+        chain.failureNoticed = true;   // the generic notice below must not repeat this
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${dmFrom ? dmFrom.name : 'They'} and ${agent.name} went back and forth too long without an answer — ask again, or ask one of them directly.)`,
           thread: originThread }]);
@@ -1550,7 +1554,6 @@ ${d.text}` : d.text,
     /* A boss dispatch IS the origin; a DM inherits whatever it was handed. */
     const chainOrigin  = originThread  || (dmFrom ? null : thread);
     const chainAskedId = originAgentId || (dmFrom ? null : agent.id);
-    const chain = chainState || { promised: false, reported: false };
     if (userText && !suppressUserEcho) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: userText, target: agent.name, thread }]);
     }
@@ -2208,6 +2211,7 @@ ${d.text}` : d.text,
          was made; details stay with the wreckage. First hop needs nothing
          — there, this thread IS the boss's thread. */
       if (!aborted && chainOrigin && thread !== chainOrigin) {
+        chain.failureNoticed = true;   // the generic notice below must not repeat this
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} hit a snag on the way to your answer — details in the team room.)`,
           thread: chainOrigin }]);
@@ -2415,8 +2419,17 @@ ${d.text}` : d.text,
        "Nothing came back" is a fact here, not a guess that got bored of
        waiting — the same reasoning the wait-closer uses one block up.
        Only the boss-level frame reports (dmFrom is null), so a five-hop
-       chain says this at most once. */
-    if (!dmFrom && chain.promised && !chain.reported && chainOrigin) {
+       chain says this at most once.
+
+       `!chain.failureNoticed` — caught live in the same run that proved
+       the rest of this works: a peer that times out sets BOTH conditions
+       true (promised, never reported) AND raises its own specific snag
+       notice, so without this the boss got two system lines back to back
+       — "Nano hit a snag on the way to your answer" immediately followed
+       by the generic "nothing came back to pass on", saying the same
+       thing twice in two different registers. One clear notice beats
+       two that make the office look unsure of its own diagnosis. */
+    if (!dmFrom && chain.promised && !chain.reported && !chain.failureNoticed && chainOrigin) {
       setChat(prev => prev.concat([{
         id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(${agent.name} asked, but nothing came back to pass on — the team room has what was said. Ask them again, or ask someone else.)`,
