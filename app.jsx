@@ -1745,8 +1745,15 @@ ${d.text}` : d.text,
         `[DM_TO: ${dmFrom.name}]\n<your concise answer or finding>\n[/DM_TO]\n\n` +
         `If you need to ask another coworker first, send them a [DM_TO: <name>]…[/DM_TO] before replying to ${dmFrom.name}. Plain-text replies (without the DM_TO wrapper) are visible to the boss but won't reach ${dmFrom.name}'s queue, so they can't continue their work.\n\n` +
         `Your teammates (available via DM_TO): ${peerList}.` + projectFocus + assistantNote + taskNote + ackConvention
+      /* "ask Nano what 4+4 is" produced a bare echo of the question — no
+         DM, no chain — in 3 of 5 live runs, and got MORE likely at low
+         temperature. Not brain flakiness: this framing presented [DM_TO]
+         only as a skillset fallback, and 4+4 is inside every coworker's
+         skillset, so an obedient model had no licensed path to DM the
+         coworker the boss named. The instruction now covers the office's
+         most demo-critical sentence shape explicitly. */
       : `[Direct request from the boss]:\n${prompt}${coNote}\n\n` +
-        `Focus on THIS request only. Any earlier conversation in your context is background — do not assume past tasks are still active. Decompose multi-step requests: identify each discrete action, then for each one either do it directly, use a tool ([SEARCH:…], [VAULT_NEW:…], etc.), or [DM_TO: <coworker>] if it's outside your skillset.\n\n` +
+        `Focus on THIS request only. Any earlier conversation in your context is background — do not assume past tasks are still active. Decompose multi-step requests: identify each discrete action, then for each one either do it directly, use a tool ([SEARCH:…], [VAULT_NEW:…], etc.), or [DM_TO: <coworker>] if it's outside your skillset. And when the boss NAMES a coworker — \"ask Nano …\" — that IS a [DM_TO: Nano], even if you know the answer yourself: the boss chose who answers, and only a [DM_TO] actually reaches them.\n\n` +
         `Your teammates (available via DM_TO): ${peerList}.` + projectFocus + assistantNote + taskNote + ackConvention;
 
     let buf = '';

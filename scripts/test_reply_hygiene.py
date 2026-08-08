@@ -652,6 +652,16 @@ def main():
     # instructed never to, and pairs ping-ponged to the depth cap while the
     # boss's thread sat empty. Watched twice before the cause was found in
     # the PROMPT, not the plumbing.
+    # The other end of the chain: "ask Nano what 4+4 is" produced a bare
+    # echo of the question - no DM, no chain - in 3 of 5 live runs, and got
+    # MORE likely at low temperature. The boss-direct framing presented
+    # [DM_TO] only as a skillset fallback, and 4+4 is inside everyone's
+    # skillset, so an obedient model had no licensed path to DM the
+    # coworker the boss named. With the license written in: 3/3 clean runs.
+    check('naming a coworker licenses the DM, skillset or not',
+          'when the boss NAMES a coworker' in app_src and 'that IS a [DM_TO' in app_src,
+          'app.jsx: the boss-direct framing must cover "ask <name> ..." explicitly')
+
     check('the coworker the boss asked is prompted to report back, not loop',
           'owesTheBoss' in app_src
           and re.search(r'owesTheBoss = !!dmFrom && !!chainOrigin && agent\.id === chainAskedId', app_src)
