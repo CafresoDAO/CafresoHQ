@@ -510,8 +510,24 @@ function stripBlocks(text) {
      reach someone." The two forms are told apart by what follows on the
      line: a marker the model meant as an instruction ends the line, one it
      is talking about has a sentence after it. */
+  /* Consumes a short LABEL immediately before the marker on the same line.
+     Removing the marker alone left the label dangling, and it showed up in
+     five filed deliverables as
+
+       **Vault Path:**
+
+     with nothing after it — a heading for a value the office had just
+     deleted. That residue is not the model's prose to leave alone; it is
+     litter from this function's own cut, and cleaning up after yourself is
+     not guessing at sentences.
+
+     Bounded hard: the label must be short, end in a colon, and sit
+     immediately before a marker that is itself being removed. A label
+     followed by real content is untouched, because the marker regex will
+     not match there. */
   const lone = new RegExp(
-    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)', 'gi');
+    '^[ \\t]*(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?' +
+    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)', 'gim');
   return String(text || '').replace(re, '').replace(lone, '');
 }
 

@@ -2115,7 +2115,15 @@ ${d.text}` : d.text,
          they are waiting on a teammate while the delivery queue came back
          empty. Reads the parsed ACK STATES, not the reply text, so prose
          that merely mentions a colleague is left alone. */
-      const missAskState = HQ.unsentAsk && HQ.unsentAsk(acks.map(a => a.state), dmQueue.length);
+      /* RE-DERIVED, not borrowed. `acks` is declared inside the try above,
+         a different block — the comment eight lines up warns about exactly
+         this for `approvalDesc`, and I reached for `acks` here anyway.
+         `no-undef` did not catch it and neither did 21 suites; it surfaced
+         as a live crash, "Llama bowed out — acks is not defined", on an
+         ordinary @mention. extractAcks is pure on the same buffer, so
+         calling it again costs nothing and cannot go out of scope. */
+      const ackStates = (HQ.extractAcks ? HQ.extractAcks(buf) : []).map(a => a.state);
+      const missAskState = HQ.unsentAsk && HQ.unsentAsk(ackStates, dmQueue.length);
       if (missAskState && flush && flush.note) flush.note(missAskState);
       /* …and the coworker who did not ask at all, but wrote the office's
          own relay label around words it made up. Takes the roster so it
