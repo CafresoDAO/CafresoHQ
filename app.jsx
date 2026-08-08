@@ -1437,6 +1437,10 @@ ${d.text}` : d.text,
          its way home. */
       originThread = null,
       originAgentId = null,
+      /* Shared, mutable, one object per chain — rides the recursion beside
+         originThread. Records whether a promise was MADE and whether it was
+         KEPT, so the boss-level call can tell the difference at the end. */
+      chainState = null,
       taskId = null,
       // NEW: override the destination thread (project:<id>, meeting:<id>, etc.)
       // and/or suppress the user-text echo (when fanning out one user message
@@ -1546,6 +1550,7 @@ ${d.text}` : d.text,
     /* A boss dispatch IS the origin; a DM inherits whatever it was handed. */
     const chainOrigin  = originThread  || (dmFrom ? null : thread);
     const chainAskedId = originAgentId || (dmFrom ? null : agent.id);
+    const chain = chainState || { promised: false, reported: false };
     if (userText && !suppressUserEcho) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: userText, target: agent.name, thread }]);
     }
@@ -1947,7 +1952,9 @@ ${d.text}` : d.text,
         : dmNames.slice(0, -1).join(', ') + ' and ' + dmNames[dmNames.length - 1];
       setChat(prev => {
         if (handedOff && dmFrom) return prev.filter(m => m.id !== agentMsgId);
-        const text = (handedOff && !dmFrom && chainOrigin)
+        const promising = handedOff && !dmFrom && chainOrigin;
+        if (promising) chain.promised = true;   // we said we'd come back
+        const text = promising
           ? `Asked ${nameLine} — watch the team room, and I'll bring their answer back here.`
           : cleaned;
         return prev.map(m => m.id === agentMsgId ? { ...m, text } : m);
@@ -2098,6 +2105,7 @@ ${d.text}` : d.text,
          relay something they were never told is the failure mode here. */
       if (chainOrigin && thread !== chainOrigin && agent.id === chainAskedId
           && cleanBuf.trim() && !dmQueue.length) {
+        chain.reported = true;                  // ...and we came back
         setChat(prev => prev.concat([{
           id: HQ.uid('m'), from: 'agent', name: `${agent.name} · ${agent.role}`,
           text: cleanBuf, thread: chainOrigin, agentId: agent.id,
@@ -2334,7 +2342,7 @@ ${d.text}` : d.text,
       });
       await dispatchToAgent(target, dm.body, {
         dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
-        originThread: chainOrigin, originAgentId: chainAskedId,
+        originThread: chainOrigin, originAgentId: chainAskedId, chainState: chain,
       });
       dmDelivered++;
     }
@@ -2389,6 +2397,33 @@ ${d.text}` : d.text,
         note: 'nothing was sent — nobody to wait for',
       });
     }
+
+    /* ── A promise kept, or said out loud when it wasn't ──────────────
+       The boss was told "I'll bring their answer back here". Two failure
+       notices already exist for that promise — the depth cap, and a peer
+       dying mid-chain — both following the same rule: a promise's failure
+       belongs in the room where the promise was made. This is the third
+       and last member of that family, and it covers the quiet one: the
+       peer answered nothing at all, or answered in a way that never came
+       back through the coworker who was asked. Watched live earlier —
+       nemotron spent its whole budget thinking, returned no content, and
+       the boss's thread simply stayed silent forever.
+
+       No timer, and that matters: every child dispatch above is AWAITED
+       (see the note on the wait-closer), so when the boss-level call
+       reaches this line the entire chain has run to a terminal state.
+       "Nothing came back" is a fact here, not a guess that got bored of
+       waiting — the same reasoning the wait-closer uses one block up.
+       Only the boss-level frame reports (dmFrom is null), so a five-hop
+       chain says this at most once. */
+    if (!dmFrom && chain.promised && !chain.reported && chainOrigin) {
+      setChat(prev => prev.concat([{
+        id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${agent.name} asked, but nothing came back to pass on — the team room has what was said. Ask them again, or ask someone else.)`,
+        thread: chainOrigin,
+      }]));
+    }
+
 
     /* ── Sub-agent spawn fanout ─────────────────────────────────────
        After all DMs are dispatched, process any SPAWN_SUBAGENT requests
@@ -2449,7 +2484,7 @@ ${d.text}` : d.text,
         try {
           await dispatchToAgent(matchingAssistant, sub.body || '', {
             dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
-            originThread: chainOrigin, originAgentId: chainAskedId,
+            originThread: chainOrigin, originAgentId: chainAskedId, chainState: chain,
           });
         } catch (_e) {}
         continue;  // skip the actual spawn for this iteration
@@ -2528,7 +2563,7 @@ ${d.text}` : d.text,
       try {
         await dispatchToAgent(transientAgent, sub.body || '', {
           dmFrom: agent, dmDepth: dmDepth + 1, messageId: spawnMsgId,
-          originThread: chainOrigin, originAgentId: chainAskedId,
+          originThread: chainOrigin, originAgentId: chainAskedId, chainState: chain,
         });
       } catch (_e) {}
       // Schedule dismissal — 30s grace lets user see the sub-agent's reply

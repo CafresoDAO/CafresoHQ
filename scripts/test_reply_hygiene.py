@@ -754,6 +754,43 @@ def main():
           re.search(r'hit a snag on the way to your answer[\s\S]{0,60}thread: chainOrigin', app_src),
           'app.jsx: catch must notify chainOrigin when a peer dies mid-chain')
 
+    # ── the promise has three failure notices, not two ──────────────────
+    # "I'll bring their answer back here" is a promise, and a promise needs
+    # its failures announced in the room it was made in. Two notices already
+    # covered the loud failures (depth cap, peer snag). The QUIET one had
+    # nothing: the peer returns no answer at all and the boss's thread just
+    # stays silent forever — watched live when nemotron spent its whole
+    # budget thinking and returned zero content chunks.
+    check('a promise that goes unanswered is admitted, not left silent',
+          re.search(r'chain\.promised && !chain\.reported', app_src)
+          and 'nothing came back to pass on' in app_src,
+          'app.jsx: the boss-level frame must report an unkept promise')
+    # It must be a FACT, not a timeout that got bored. Every child dispatch
+    # is awaited, so at the boss-level frame the chain has terminated.
+    check('the unkept-promise notice needs no timer',
+          not re.search(r'setTimeout[^\n]{0,80}(promised|reported|came back)', app_src),
+          'app.jsx: this is decidable from awaited state — a timer would guess')
+    # Guard both halves of the bookkeeping, since either one silently
+    # disables the notice: promised is set where the promise is rendered,
+    # reported where the answer is delivered.
+    check('the promise is recorded where it is made',
+          'if (promising) chain.promised = true;' in app_src,
+          'app.jsx: chain.promised must be set at the placeholder re-dress')
+    check('keeping the promise is recorded where the answer lands',
+          'chain.reported = true;' in app_src,
+          'app.jsx: chain.reported must be set by the report-back')
+    # One object per chain, shared by reference down the recursion — if a
+    # dispatch site forgets to pass it, the deepest frame reports against a
+    # fresh object and the notice fires on a promise that WAS kept.
+    dm_sites = re.findall(r'dmFrom: \w+, dmDepth: dmDepth \+ 1[^}]*', app_src)
+    check('every recursive dispatch carries the same chain object',
+          bool(dm_sites) and all('chainState: chain' in d for d in dm_sites),
+          'app.jsx: %d recursive site(s), missing chainState on some' % len(dm_sites))
+    # Only the boss-level frame speaks, or a deep chain says it repeatedly.
+    check('only the boss-level frame announces it',
+          re.search(r'if \(!dmFrom && chain\.promised', app_src),
+          'app.jsx: guard on !dmFrom so a five-hop chain says this once')
+
     # ── the first sentence of the product ───────────────────────────────
     # The greeting promised a brain nobody had probed: "I'm already running
     # on Cafreso's Gemma 4 brain - nothing to sign up for", stated flat, one
