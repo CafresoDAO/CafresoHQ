@@ -617,15 +617,32 @@ def main():
     body = rb.group(0) if rb else ''
     # The trap, and it bit once: cleanBuf has already had the hand-off
     # STRIPPED, so asking it "did they hand off?" always answers no.
-    check('the settled-check reads the raw buffer, not the stripped one',
-          'extractAllDMs(buf)' in body and 'extractAllDMs(cleanBuf)' not in body,
-          'app.jsx: test `buf` — cleanBuf has the hand-off removed already')
+    # Two re-parses were tried here and both were wrong: cleanBuf has the
+    # hand-off stripped out already, and extractAllDMs() needs a newline
+    # after the tag so it scores a one-line DM as zero. Ask the queue the
+    # dispatcher itself iterates.
+    check('the settled-check asks the dispatcher queue, not a re-parse',
+          '!dmQueue.length' in body and 'extractAllDMs' not in body,
+          'app.jsx: use dmQueue — the one authority on whether this turn handed off')
     check('only the coworker the boss asked reports back',
           'agent.id === chainAskedId' in body,
           'app.jsx: a peer pulled into the chain does not owe the boss a reply')
     check('nothing is posted twice into the room it came from',
           'thread !== chainOrigin' in body,
           'app.jsx: guard against relaying into the originating thread')
+
+    # The other half of the loop: the coworker the boss asked, holding a
+    # peer's answer, must be TOLD to answer the boss. The generic DM framing
+    # says "You are replying to X, NOT to the boss" and mandates a closing
+    # [DM_TO: X] -- so the one coworker who could close the loop was
+    # instructed never to, and pairs ping-ponged to the depth cap while the
+    # boss's thread sat empty. Watched twice before the cause was found in
+    # the PROMPT, not the plumbing.
+    check('the coworker the boss asked is prompted to report back, not loop',
+          'owesTheBoss' in app_src
+          and re.search(r'owesTheBoss = !!dmFrom && !!chainOrigin && agent\.id === chainAskedId', app_src)
+          and 'Write your reply TO THE BOSS' in app_src,
+          'app.jsx: the boss-asked coworker needs its own DM framing')
 
     # ── the first sentence of the product ───────────────────────────────
     # The greeting promised a brain nobody had probed: "I'm already running
