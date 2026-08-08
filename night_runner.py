@@ -370,6 +370,19 @@ _HARMONY_RE = re.compile(
     r'(?=<\|channel\||<\|end\|>|<\|call\|>|<\|return\|>|$)',
     re.IGNORECASE | re.DOTALL)
 
+# The prompt's own closing rule (build_prompt) demands a status line shaped
+# like "Wrote X. Next iteration could explore Y." — X is a bare count, not
+# necessarily the word "note" ("Wrote 1. Next iteration..." was the exact
+# live-observed fabrication, and it never says "note" at all). Two shapes,
+# either one trips the honesty check in run_iteration:
+#   - the prompt's own literal format: "Wrote" + a number
+#   - a paraphrase naming what got written: wrote/saved/added/created a
+#     note/vault entry/file
+_CLAIMS_A_WRITE_RE = re.compile(
+    r'\bwrote\b\s*\d+'
+    r'|\b(?:wrote|saved|added|created)\b[^.\n]{0,40}\b(?:note|vault|file)\b',
+    re.IGNORECASE)
+
 
 def _harmony_args_for(name, payload):
     """Map a harmony JSON payload to the (arg, body) night_runner's own
@@ -428,7 +441,14 @@ def find_first_tool(text):
     hm = _HARMONY_RE.search(text or '')
     if not hm:
         return None
-    name = re.sub(r'^functions\.', '', hm.group(1)).upper()
+    # Two live-observed namings for the same tool, in two different runs of
+    # the SAME model: "browser_fetch" (underscore) and "browser.fetch"
+    # (dotted, plus an extra unrelated "id" field neither JS nor this
+    # function cares about). Strip an optional "functions." namespace
+    # prefix, then fold any remaining dots to underscores before matching
+    # TOOL_RES -- one normalization step, not a second special case bolted
+    # onto the first.
+    name = re.sub(r'^functions\.', '', hm.group(1)).replace('.', '_').upper()
     if name not in TOOL_RES:
         return None   # a tool night shift doesn't support (e.g. DM_TO) — not ours to run
     arg, body = _harmony_args_for(name, hm.group(2).strip())
@@ -463,17 +483,18 @@ def build_prompt(sched, iteration, total_iters, notes_list, allow_search):
         notes_list or '  (none yet)',
         '',
         '=== YOUR JOB THIS ITERATION ===',
-        'Do EXACTLY ONE focused read-and-write cycle: pick a single angle not covered yet, gather what you need, write ONE focused note. Leave the rest for later iterations.',
+        'Do EXACTLY ONE focused read-and-write cycle: ONE gather action, THEN one write action, THEN your status line. That is three things, not two — the write is a real tool call, not a sentence describing one.',
         '',
-        'Available actions (use ONE, max two):',
+        'Available actions (one gather, then one write):',
     ] + actions + [
         '',
         'Rules:',
-        '  - ONE gather step → ONE note. Never chain multiple searches or reads beyond two actions.',
+        '  - ONE gather step, THEN one write. Never chain multiple searches or reads.',
         "  - Don't re-write notes that already exist — extend them with VAULT_APPEND instead.",
         '  - Use frontmatter (---\\ntags: [night-shift]\\n---) and wikilinks ([[other-note]]) on new notes.',
         '  - Night shift is read-only outside the vault: no shell, no publishing, no money — those need the boss awake.',
-        '  - End your reply with a plain status line: "Wrote X. Next iteration could explore Y."',
+        '  - The write is MANDATORY and is a TOOL CALL: [VAULT_NEW: ...] or [VAULT_APPEND: ...], not a sentence claiming you wrote something. "I wrote a note about X" with no VAULT_NEW/VAULT_APPEND call is a LIE the boss will catch, because nothing lands in the vault.',
+        '  - Only AFTER that tool call has run: end your reply with a plain status line reporting what you actually just wrote: "Wrote X. Next iteration could explore Y."',
     ]
     return '\n'.join(lines)
 
@@ -518,7 +539,22 @@ def run_iteration(ctx, sched, iteration, total_iters):
     except Exception as e:
         return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': str(e)}
     summary = ' '.join((reply or '').split())[-300:]
-    return {'writes': writes, 'tokens': tokens_used, 'summary': summary, 'error': None}
+    error = None
+    if not writes and _CLAIMS_A_WRITE_RE.search(reply or ''):
+        # The prompt's own closing rule demands a status line like "Wrote
+        # X." -- and a model that skips the actual VAULT_NEW/VAULT_APPEND
+        # call but still produces that sentence has written a LIE, not a
+        # note. Watched live: iterations: 1, errors: 0, writes: [], and a
+        # reply ending "Wrote 1. Next iteration could explore..." with no
+        # tool call anywhere in the transcript -- a run that reported
+        # success while the vault gained nothing. A quiet, honest night
+        # (no claim, no write) is not an error; THIS -- a claim with
+        # nothing behind it -- is exactly what fabricatedRelay() catches
+        # on the chat side, and the morning report deserves the same
+        # honesty: better to say the claim didn't match reality than to
+        # let "Wrote 1" stand unexamined next to an empty writes list.
+        error = 'said it wrote a note but never called VAULT_NEW/VAULT_APPEND — nothing landed in the vault'
+    return {'writes': writes, 'tokens': tokens_used, 'summary': summary, 'error': error}
 
 
 def run_mission(ctx, sched, on_progress=None, should_abort=None):

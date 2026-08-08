@@ -114,6 +114,28 @@ def main():
             print('   got: %r' % (hit,))
             failures += 1
 
+    # Dotted tool naming — a SECOND live-observed shape from the same
+    # model, in a different run: "browser.fetch" instead of
+    # "browser_fetch" (plus an extra unrelated "id" field). One fold-dots-
+    # to-underscores normalization step covers both, and the namespaced
+    # form too.
+    dotted_fixtures = [
+        ('<|channel|>commentary to=browser.fetch <|constrain|>json<|message|>'
+         '{"id":"1","url":"https://en.wikipedia.org/wiki/Delta_(finance)"}',
+         'BROWSER_FETCH', 'https://en.wikipedia.org/wiki/Delta_(finance)'),
+        ('<|channel|>commentary to=functions.browser.fetch <|message|>{"url":"https://x.com"}',
+         'BROWSER_FETCH', 'https://x.com'),
+        ('<|channel|>commentary to=vault.new <|message|>{"path":"Research/x.md","content":"body"}',
+         'VAULT_NEW', 'Research/x.md'),
+    ]
+    for text, want_name, want_arg in dotted_fixtures:
+        hit = night_runner.find_first_tool(text)
+        ok = hit is not None and hit[0] == want_name and hit[1] == want_arg
+        print('%s dotted-namespace fixture %-13s %r' % ('PASS' if ok else 'FAIL', want_name, text[:50]))
+        if not ok:
+            print('   got: %r' % (hit,))
+            failures += 1
+
     # A harmony call to a tool night shift doesn't support (DM_TO, HIRE_*,
     # anything outside TOOL_RES) must be ignored, not fabricated into one
     # of the eight it does understand.
@@ -134,6 +156,64 @@ def main():
     if not ok:
         print('   got: %r' % (hit,))
     failures += 0 if ok else 1
+
+    # 6. run_iteration end-to-end: a model that narrates "Wrote 1" without
+    # ever calling VAULT_NEW/VAULT_APPEND must come back as an honest
+    # error, not a silent success. Watched live on the harmony fix's own
+    # retest: iterations: 1, errors: 0, writes: [], reply ending "Wrote 1.
+    # Next iteration could explore..." — a run that reported success while
+    # the vault gained nothing. The prompt's own closing rule is what
+    # invites this ("End your reply with a plain status line: 'Wrote X.'"
+    # sounds like a wrap-up sentence, not evidence gated on a real write),
+    # so the fix is two-layered: build_prompt now says the write is a
+    # mandatory TOOL CALL and the status line only follows it; this test
+    # covers the belt-and-suspenders half — small models will still
+    # sometimes skip it, and a claim with nothing behind it must not pass
+    # as a quiet, honest night.
+    real_llm_call = night_runner.llm_call
+
+    def fake_llm_call_narrates_no_write(ctx, messages, max_tokens=None):
+        return ("Reviewed the topic and found good material. "
+                "Wrote 1. Next iteration could explore a related angle."), 42
+
+    def fake_llm_call_honest_quiet_night(ctx, messages, max_tokens=None):
+        return "Nothing new to add this round — will look again next iteration.", 10
+
+    def fake_llm_call_real_write(ctx, messages, max_tokens=None):
+        if len(messages) <= 2:
+            return ('[VAULT_NEW: Research/x.md]\n# X\n\nreal content\n[/VAULT_NEW]'), 30
+        return "Wrote 1. Next iteration could explore Y.", 15
+
+    class _FakeCtx(object):
+        brave_key = ''
+
+    night_runner.llm_call = fake_llm_call_narrates_no_write
+    res = night_runner.run_iteration(_FakeCtx(), {'vaultFolder': 'Research/x', 'agentName': 'Test'}, 0, 1)
+    ok = (not res['writes']) and res['error'] is not None and 'VAULT_NEW' in res['error']
+    print('%s run_iteration: a fabricated "Wrote 1" with no write is an honest error' % ('PASS' if ok else 'FAIL'))
+    if not ok:
+        print('   got: %r' % (res,))
+    failures += 0 if ok else 1
+
+    night_runner.llm_call = fake_llm_call_honest_quiet_night
+    res = night_runner.run_iteration(_FakeCtx(), {'vaultFolder': 'Research/x', 'agentName': 'Test'}, 0, 1)
+    ok = (not res['writes']) and res['error'] is None
+    print('%s run_iteration: an honest quiet night is NOT an error' % ('PASS' if ok else 'FAIL'))
+    if not ok:
+        print('   got: %r' % (res,))
+    failures += 0 if ok else 1
+
+    orig_run_tool = night_runner.run_tool
+    night_runner.run_tool = lambda ctx, name, arg, body: 'Wrote %d chars → %s' % (len(body or ''), arg)
+    night_runner.llm_call = fake_llm_call_real_write
+    res = night_runner.run_iteration(_FakeCtx(), {'vaultFolder': 'Research/x', 'agentName': 'Test'}, 0, 1)
+    ok = len(res['writes']) == 1 and res['error'] is None
+    print('%s run_iteration: a REAL VAULT_NEW call is not flagged' % ('PASS' if ok else 'FAIL'))
+    if not ok:
+        print('   got: %r' % (res,))
+    failures += 0 if ok else 1
+    night_runner.run_tool = orig_run_tool
+    night_runner.llm_call = real_llm_call
 
     print('\n%d failure(s)' % failures)
     sys.exit(1 if failures else 0)
