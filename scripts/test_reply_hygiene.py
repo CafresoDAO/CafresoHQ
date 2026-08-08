@@ -605,6 +605,28 @@ def main():
     check('an unrecognised marker is still shown, not swallowed',
           out['unknownTag'] == '[MYSTERY_TAG: x]', repr(out['unknownTag']))
 
+    # ── the answer comes home ───────────────────────────────────────────
+    # Every agent-to-agent DM lands in 'team', so a chain the boss started
+    # ended in a room the boss was not watching: the coworkers cooperated
+    # and the boss got no answer. The last link now reports back -- but only
+    # once the round-trip has SETTLED.
+    app_src = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    rb = re.search(r'if \(chainOrigin && thread !== chainOrigin[\s\S]{0,400}?\n      \}', app_src)
+    check('the last link of a boss-started chain reports back', bool(rb),
+          'app.jsx: no report-back block found')
+    body = rb.group(0) if rb else ''
+    # The trap, and it bit once: cleanBuf has already had the hand-off
+    # STRIPPED, so asking it "did they hand off?" always answers no.
+    check('the settled-check reads the raw buffer, not the stripped one',
+          'extractAllDMs(buf)' in body and 'extractAllDMs(cleanBuf)' not in body,
+          'app.jsx: test `buf` — cleanBuf has the hand-off removed already')
+    check('only the coworker the boss asked reports back',
+          'agent.id === chainAskedId' in body,
+          'app.jsx: a peer pulled into the chain does not owe the boss a reply')
+    check('nothing is posted twice into the room it came from',
+          'thread !== chainOrigin' in body,
+          'app.jsx: guard against relaying into the originating thread')
+
     # ── the first sentence of the product ───────────────────────────────
     # The greeting promised a brain nobody had probed: "I'm already running
     # on Cafreso's Gemma 4 brain - nothing to sign up for", stated flat, one

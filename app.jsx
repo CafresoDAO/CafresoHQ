@@ -1422,6 +1422,21 @@ ${d.text}` : d.text,
       userText = null,
       dmFrom = null,
       dmDepth = 0,
+      /* Where this whole chain STARTED, and who the boss actually asked.
+         Every agent-to-agent DM lands in 'team' (see `thread` below), which
+         is right for watching colleagues talk -- but it meant a chain that
+         began with the boss ended in a room the boss was not looking at.
+         Watched live: "@Gemma ask Nano to name one colour of a ripe lemon,
+         then tell me what they said" produced a correct chain (question,
+         "Yellow", acknowledgement) entirely inside the team room, while the
+         direct thread went quiet after "Sent this to Nano". The coworkers
+         cooperated; the boss never got an answer. That is the one-liner --
+         "all your AIs work together" -- delivered halfway.
+
+         These two ride the recursion unchanged so the last link can find
+         its way home. */
+      originThread = null,
+      originAgentId = null,
       taskId = null,
       // NEW: override the destination thread (project:<id>, meeting:<id>, etc.)
       // and/or suppress the user-text echo (when fanning out one user message
@@ -1520,6 +1535,9 @@ ${d.text}` : d.text,
        - explicit override (project:/meeting:) wins
        - otherwise: agent-to-agent DM lands in 'team', user dispatch in 'direct' */
     const thread = threadOverride || (dmFrom ? 'team' : 'direct');
+    /* A boss dispatch IS the origin; a DM inherits whatever it was handed. */
+    const chainOrigin  = originThread  || (dmFrom ? null : thread);
+    const chainAskedId = originAgentId || (dmFrom ? null : agent.id);
     if (userText && !suppressUserEcho) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: userText, target: agent.name, thread }]);
     }
@@ -1972,6 +1990,33 @@ ${d.text}` : d.text,
       const cleanBuf = HQ.cleanHarmony(
         HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
       screen.done(cleanBuf);
+      /* The last link of a boss-started chain reports back to the boss.
+         Conditions, all of them necessary:
+           - the chain began somewhere else (chainOrigin) and we are not
+             already there, so nothing is ever posted twice;
+           - this is the coworker the boss actually ASKED, not a peer they
+             pulled in -- Nano answering Gemma is Gemma's business, and the
+             boss asked Gemma;
+           - the reply is a real answer, not another hand-off, so we speak
+             only once the round-trip has actually settled. Test the RAW
+             buffer, not cleanBuf: cleanBuf has already had the hand-off
+             STRIPPED OUT, so asking it whether a hand-off happened always
+             says no. First version made that mistake and it showed --
+             Gemma answered Nano's "red" with "could you provide some
+             context?" AND a fresh DM in the same turn, and the boss's
+             thread received the half addressed to Nano;
+           - there is something to say.
+         Their own words, moved into the room where the question was asked.
+         The office does not paraphrase and does not invent a summary --
+         fabricatedRelay() exists precisely because a coworker claiming to
+         relay something they were never told is the failure mode here. */
+      if (chainOrigin && thread !== chainOrigin && agent.id === chainAskedId
+          && cleanBuf.trim() && !(HQ.extractAllDMs(buf) || []).length) {
+        setChat(prev => prev.concat([{
+          id: HQ.uid('m'), from: 'agent', name: `${agent.name} · ${agent.role}`,
+          text: cleanBuf, thread: chainOrigin, agentId: agent.id,
+        }]));
+      }
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',
         /* `recent` is the line under a coworker's name on the floor — what
@@ -2191,6 +2236,8 @@ ${d.text}` : d.text,
       });
       await dispatchToAgent(target, dm.body, {
         dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
+        originThread: chainOrigin, originAgentId: chainAskedId,
+        originThread: chainOrigin, originAgentId: chainAskedId,
       });
       dmDelivered++;
     }
@@ -2305,6 +2352,7 @@ ${d.text}` : d.text,
         try {
           await dispatchToAgent(matchingAssistant, sub.body || '', {
             dmFrom: agent, dmDepth: dmDepth + 1, messageId: childId,
+            originThread: chainOrigin, originAgentId: chainAskedId,
           });
         } catch (_e) {}
         continue;  // skip the actual spawn for this iteration
@@ -2383,6 +2431,7 @@ ${d.text}` : d.text,
       try {
         await dispatchToAgent(transientAgent, sub.body || '', {
           dmFrom: agent, dmDepth: dmDepth + 1, messageId: spawnMsgId,
+          originThread: chainOrigin, originAgentId: chainAskedId,
         });
       } catch (_e) {}
       // Schedule dismissal — 30s grace lets user see the sub-agent's reply
@@ -2999,7 +3048,8 @@ ${d.text}` : d.text,
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== a.id) {
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
-        await dispatchToAgent(target, dm.body, { dmFrom: a, dmDepth: 1 });
+        await dispatchToAgent(target, dm.body, { dmFrom: a, dmDepth: 1,
+          originThread: 'direct', originAgentId: a.id });
       } else if (!target) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${a.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);
@@ -3586,7 +3636,8 @@ ${d.text}` : d.text,
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== agent.id) {
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
-        await dispatchToAgent(target, dm.body, { dmFrom: agent, dmDepth: 1 });
+        await dispatchToAgent(target, dm.body, { dmFrom: agent, dmDepth: 1,
+          originThread: 'direct', originAgentId: agent.id });
       } else if (!target) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);
