@@ -5063,7 +5063,23 @@ ${d.text}` : d.text,
             },
             {
               id: 'key',
-              title: 'Get your free AI key',
+              /* Was "Get your free AI key" — as step 2 of the tour, before
+                 the newcomer had hired anyone or seen anything happen. The
+                 BODY already adapts and says the honest thing on a trial
+                 office ("You're already set. Your HQ runs on Cafreso's free
+                 shared brain out of the box — hire an agent and it works
+                 right now, no signup"); the TITLE sat above that paragraph
+                 telling them to go get a key.
+
+                 Same shape as the starter card's "sourced" promise: the
+                 capability check reached the body and not the heading.
+                 §3.3 is explicit that we never make someone buy a key to
+                 feel the product, and the CEO's own first line says
+                 "nothing to sign up for".
+
+                 "Your AI brain" is what the getting-started checklist
+                 already calls this, so the two surfaces now agree. */
+              title: 'Your AI brain',
               body: <OnboardingKeyStep />,
             },
             {
@@ -5119,7 +5135,23 @@ ${d.text}` : d.text,
             },
             {
               id: 'key',
-              title: 'Get your free AI key',
+              /* Was "Get your free AI key" — as step 2 of the tour, before
+                 the newcomer had hired anyone or seen anything happen. The
+                 BODY already adapts and says the honest thing on a trial
+                 office ("You're already set. Your HQ runs on Cafreso's free
+                 shared brain out of the box — hire an agent and it works
+                 right now, no signup"); the TITLE sat above that paragraph
+                 telling them to go get a key.
+
+                 Same shape as the starter card's "sourced" promise: the
+                 capability check reached the body and not the heading.
+                 §3.3 is explicit that we never make someone buy a key to
+                 feel the product, and the CEO's own first line says
+                 "nothing to sign up for".
+
+                 "Your AI brain" is what the getting-started checklist
+                 already calls this, so the two surfaces now agree. */
+              title: 'Your AI brain',
               body: <OnboardingKeyStep />,
             },
             {
