@@ -76,6 +76,9 @@ for (const m of ['fable', 'claude-opus-5', 'sonnet', 'haiku', 'codex', 'claude-c
 }
 R.allBounded   = all.every(Boolean);
 R.localCheap   = statBars(A('ollama:llama3.1:latest')).cost;           // 4 — free-local
+R.nanoSpeed    = statBars(A('lmstudio:nvidia/nemotron-3-nano')).speed;  // 4 — small class
+R.nanoTag      = statBars(A('lmstudio:nvidia/nemotron-3-nano-4b')).tag;
+R.gemmaTag     = statBars(A('lmstudio:google/gemma-4-e4b')).tag;
 R.opusDeep     = statBars(A('claude-opus-5')).depth;                   // 4
 R.haikuFast    = statBars(A('haiku')).speed;                           // 4
 R.prefixStrip  = statBars(A('openrouter:meta-llama/llama-3.1-8b')).cost; // llama class through the prefix
@@ -346,6 +349,13 @@ console.log(JSON.stringify(R));
           and 'handoffHint(others' in m2.group(0)
           and 'withHandoff(out, others' in m2.group(0),
           'app/storage.jsx: filter `selfId` out, then hint from the remainder')
+
+    # A real LM Studio shelf turned these up falling through to the generic
+    # row: a model whose own name says nano is the small-and-quick class.
+    check('a nano model is quick, not a steady generalist', out['nanoSpeed'] == 4)
+    check('...and says so', out['nanoTag'] == 'quick with the small stuff')
+    # ...without swallowing the open-weights row that follows it.
+    check('gemma still reads as cheap and tireless', out['gemmaTag'] == 'cheap and tireless')
 
     # ── what they can DO ────────────────────────────────────────────────
     # Section 6: "tool call -> shown as the action itself". The card used to

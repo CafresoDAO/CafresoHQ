@@ -453,13 +453,38 @@ function App() {
       setTourSeen(true);
       /* Genuinely new office: the CEO opens the DIRECT thread with a real
          welcome message (a normal chat entry, not fabricated history).
-         The office thinks out of the box — Cafreso's Gemma 4 brain is
-         already wired in, so the first hire can start working immediately. */
+
+         The brain sentence used to be part of THIS message and stated flatly
+         that "I'm already running on Cafreso's Gemma 4 brain — nothing to
+         sign up for". Nothing had checked. On a self-hosted install with no
+         Cafreso account, or simply with the shared brain unreachable, the
+         product's FIRST sentence was false — and it sat one clause after
+         "nothing here is pre-staged, so everything you see happen from here
+         on is real", which is the promise it broke.
+
+         probeManagedBrain() already existed and already answered this exact
+         question; it just had no listener here. So the greeting says only
+         what is true without asking anyone, and the brain is REPORTED a beat
+         later, once the probe lands — which reads better anyway: a chief of
+         staff says hello, then tells you what they found. */
       if ((firstRunChatRef.current || []).length === 0) {
         setChat([{
           id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
-          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. I'm already running on Cafreso's Gemma 4 brain — nothing to sign up for, though you can bring your own brain later in Settings. Let's make your first hire: I'm opening the candidate book now.",
+          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Let me check what we've got to work with.",
         }]);
+        (async () => {
+          let brain = null;
+          try {
+            const C = CafresoHQClient;
+            brain = C.probeManagedBrain ? await C.probeManagedBrain() : null;
+          } catch (_e) { brain = null; }
+          setChat(prev => prev.concat([{
+            id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
+            text: brain
+              ? "Good — we're covered: I'm running on Cafreso's shared brain, so there's nothing for you to sign up for. You can bring your own later in Settings. Let's make your first hire; I'm opening the candidate book now."
+              : "We don't have a shared brain here, so whoever you hire will use one from this machine. I'm opening the candidate book now — it lists what I could find.",
+          }]));
+        })();
       }
       /* Beat 2: the candidates deck opens itself a moment after the CEO's
          line lands — the user's first decision is a real hire. */

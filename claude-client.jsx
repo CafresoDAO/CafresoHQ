@@ -584,7 +584,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
 /* Shared OpenAI-compatible streaming. Used by both LM Studio and Ollama.
    noStreamOptions: suppress `stream_options` for backends that
    reject that field with InvalidParameter. */
-async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions, local }) {
+async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onReasoning, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions, local }) {
   const root = (base || '').replace(/\/+$/, '');
   if (!root) throw new Error(`No ${label} URL set — open Settings → API`);
   if (requireKey && !apiKey) throw new Error(`No ${label} API key set — open Settings → API`);
@@ -618,22 +618,42 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
     const t = await res.text();
     throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
   }
-  /* Reasoning models (nemotron, deepseek-r1, etc.) emit thinking into
-     `delta.reasoning_content` and final answer into `delta.content`.
-     Surface both so the user sees something while the model thinks. */
+  /* Reasoning models (nemotron, deepseek-r1, gemma-4, etc.) emit thinking
+     into `delta.reasoning_content` and the answer into `delta.content`.
+
+     Both used to go down onToken with a 💭 in front, which meant the
+     monologue was not merely SHOWN while thinking -- it was concatenated
+     into the reply and kept. Watched live on LM Studio's gemma-4: the
+     filed message opened "💭 Thinking Process: 1. **Analyze the Request:**
+     The user is asking me to...". For the capable non-guru this is the
+     "this isn't for me" signal in its purest form, and it is the same
+     thing cleanHarmony() already refuses to show for harmony models --
+     analysis is not for the boss. One concept, two wire formats, and only
+     one of them was handled.
+
+     So reasoning gets its own channel. A caller that wants to show the
+     thinking live opts in with onReasoning; nobody gets it folded into the
+     answer. Dropping it when unclaimed is deliberate: silence is correct
+     here, and an answer with someone's private reasoning stapled to the
+     front is not. */
   let inReasoning = false;
+  let sawContent = false, sawReasoning = false;
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
       const delta = j.choices && j.choices[0] && j.choices[0].delta;
       if (delta) {
-        if (delta.reasoning_content) {
-          if (!inReasoning) { onToken('💭 '); inReasoning = true; }
-          onToken(delta.reasoning_content);
+        if (delta.reasoning_content) sawReasoning = true;
+        if (delta.reasoning_content && onReasoning) {
+          inReasoning = true;
+          try { onReasoning(delta.reasoning_content); } catch (_e) {}
         }
         if (delta.content) {
-          if (inReasoning) { onToken('\n\n'); inReasoning = false; }
+          // The thinking is over the moment real content starts; tell the
+          // caller so it can clear whatever it was showing.
+          if (inReasoning) { inReasoning = false; try { onReasoning(null); } catch (_e) {} }
+          sawContent = true;
           onToken(delta.content);
         }
       }
@@ -646,6 +666,14 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
       }
     } catch (_e) {}
   });
+  /* All monologue, no answer. Now that reasoning no longer falls through to
+     onToken, a model that spends its whole budget thinking would leave an
+     EMPTY bubble -- swapping a bad reply for no reply, which is the worse
+     of the two and the exact silent-drop visibleReply() was written against.
+     Say what happened instead. */
+  if (!sawContent && sawReasoning) {
+    onToken('(thought it through but ran out of room before answering — ask again, or give them a shorter question)');
+  }
 }
 
 function streamLMStudio(opts) {

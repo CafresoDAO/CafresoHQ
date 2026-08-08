@@ -741,6 +741,34 @@ function visibleReply(text, selfName) {
      wasn't protocol, it was text, and text is the boss's to see. Showing
      an odd string beats silently dropping what someone said. */
   const acks = extractAcks(raw);
+  /* A reply that was ONLY a hand-off. The strip understood it perfectly and
+     removed it, leaving nothing -- and the raw fallback below then printed
+     the protocol back out. Watched live: the boss asked Gemma a question and
+     their bubble read, in full,
+
+         [DM_TO: Nano] Can you name one color of a ripe banana? [/DM_TO]
+
+     The fallback exists for markers we did NOT understand, on the principle
+     that showing an odd string beats silently dropping what someone said.
+     A recognised block is the opposite case: we know exactly what happened,
+     so say it. Handled before the ack branch because a hand-off reply
+     usually carries no ack at all. */
+  const dms = extractAllDMs(raw);
+  if (dms.length) {
+    const who = dms.map(d => d.to).filter(Boolean);
+    const uniq = [...new Set(who)];
+    const names = uniq.length <= 1 ? (uniq[0] || 'a coworker')
+                : uniq.slice(0, -1).join(', ') + ' and ' + uniq[uniq.length - 1];
+    /* Wording watched, then corrected. "Asked Nano — I'll come back to you
+       with what they say" reads beautifully in the boss's thread and is
+       wrong twice. It PROMISES a follow-up the office does not currently
+       deliver (the answer lands in the team room and the direct thread
+       never hears again), and the same branch renders when a coworker DMs
+       someone BACK -- so Nano answering Gemma's question rendered as
+       "Asked Gemma - I'll come back to you", which inverts who asked whom.
+       State the fact and point at where the reply actually goes. */
+    return `Sent this to ${names} — their reply lands in the team room.`;
+  }
   if (!acks.length) return raw.trim();
   const note = String(acks[acks.length - 1].note || '').trim();
   return note || 'still working on it';

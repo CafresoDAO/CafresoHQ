@@ -54,7 +54,7 @@ def run_js(cases_js):
     if not mconst:
         raise SystemExit('could not find ORPHAN_TAG_RE')
     wanted.append(mconst.group(0))
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')
@@ -76,6 +76,16 @@ R.bareAck      = visibleReply('[ACK: in_progress: gathering context for regressi
 R.bareAckNoNote= visibleReply('[ACK: in_progress]');
 R.mixed        = visibleReply('[ACK: in_progress: thinking]\nRed, green, blue.');
 R.trailing     = visibleReply('Red, green, blue. [ACK: completed: done]');
+// A reply that is ONLY a hand-off: the strip understands it and removes it,
+// and the raw fallback used to print the protocol straight back at the boss.
+R.pureDM       = visibleReply('[DM_TO: Nano]\nCan you name one color of a ripe banana?\n[/DM_TO]');
+R.pureDMTwo    = visibleReply('[DM_TO: Nano]\nq1\n[/DM_TO]\n[DM_TO: Kip]\nq2\n[/DM_TO]');
+R.pureDMSame   = visibleReply('[DM_TO: Nano]\nq1\n[/DM_TO]\n[DM_TO: Nano]\nq2\n[/DM_TO]');
+// Prose alongside the hand-off still wins -- the boss's words come first.
+R.dmWithProse  = visibleReply('On it.\n[DM_TO: Nano]\nq\n[/DM_TO]');
+// An UNRECOGNISED marker keeps the old behaviour: show it rather than
+// silently drop what someone said.
+R.unknownTag   = visibleReply('[MYSTERY_TAG: x]');
 
 /* Verbatim off the floor, 2026-08-07. The boss asked for one colour; the
    reply carried a whole [MEMORY_WRITE] block whose delimiters were stripped
@@ -573,6 +583,49 @@ def main():
     missing = [f'{r}:{n}' for r, n, ok in paths if not ok]
     check(f'all {len(paths)} reply paths clean their final text',
           not missing, 'uncleaned: ' + ', '.join(missing) if missing else '')
+
+    # ── a hand-off is not a protocol dump ───────────────────────────────
+    # Watched live on LM Studio: the boss asked Gemma a question and the
+    # whole bubble read "[DM_TO: Nano] Can you name one color of a ripe
+    # banana? [/DM_TO]". The raw fallback is for markers we did NOT
+    # understand; a recognised block is the opposite case.
+    check('a pure hand-off reads as an office sentence',
+          out['pureDM'] == 'Sent this to Nano — their reply lands in the team room.',
+          repr(out['pureDM']))
+    # The same branch renders for a DM sent BACK, so it must not claim the
+    # sender did the asking, and must not promise a follow-up this office
+    # does not deliver.
+    check('the sentence promises nothing it cannot keep',
+          not re.search(r"come back to you|I'?ll (?:get|let you)", out['pureDM'], re.I),
+          repr(out['pureDM']))
+    check('two coworkers are both named', 'Nano and Kip' in out['pureDMTwo'], repr(out['pureDMTwo']))
+    check('the same coworker twice is named once',
+          out['pureDMSame'].count('Nano') == 1, repr(out['pureDMSame']))
+    check('prose alongside a hand-off still wins', out['dmWithProse'] == 'On it.', repr(out['dmWithProse']))
+    check('an unrecognised marker is still shown, not swallowed',
+          out['unknownTag'] == '[MYSTERY_TAG: x]', repr(out['unknownTag']))
+
+    # ── the first sentence of the product ───────────────────────────────
+    # The greeting promised a brain nobody had probed: "I'm already running
+    # on Cafreso's Gemma 4 brain - nothing to sign up for", stated flat, one
+    # clause after "nothing here is pre-staged, so everything you see happen
+    # from here on is real". On a self-hosted install that opening line was
+    # simply false. probeManagedBrain() already answered the question and
+    # had no listener, so the claim now waits for it.
+    app = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    intro = re.search(r"text: \"Welcome to your HQ[^\"]*\"", app)
+    check('the greeting claims no brain before anything has looked',
+          bool(intro) and not re.search(r'gemma|already running on|nothing to sign up',
+                                        intro.group(0), re.I),
+          'app.jsx: the welcome line must not assert a brain')
+    seg = app[intro.end():intro.end() + 1600] if intro else ''
+    check('the brain is reported only after probeManagedBrain resolves',
+          'probeManagedBrain' in seg and 'brain' in seg,
+          'app.jsx: the follow-up must await the probe')
+    check('both answers are written, not just the happy one',
+          "shared brain" in seg and "don't have a shared brain" in seg,
+          'app.jsx: a probe with one branch is an assertion with extra steps')
+
 
     print()
     if FAILS:

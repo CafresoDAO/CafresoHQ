@@ -18,7 +18,12 @@ const CAST_CLASSES = [
   // key-test (on the prefix-stripped, lowercased model id), bars, tagline
   { re: /fable|mythos|opus/,        speed: 2, depth: 4, code: 4, cost: 1, tag: 'the deep-work specialist' },
   { re: /sonnet/,                   speed: 3, depth: 3, code: 3, cost: 2, tag: 'strong all-rounder' },
-  { re: /haiku|mini|flash|small/,   speed: 4, depth: 2, code: 2, cost: 3, tag: 'quick with the small stuff' },
+  // `nano` earned its place off a real shelf: LM Studio was serving
+  // nemotron-3-nano and nemotron-3-nano-4b, and both fell through to the
+  // generic row and advertised themselves as steady generalists. A model
+  // whose name says nano is the small-and-quick class by definition.
+  { re: /haiku|mini|flash|small|nano/,
+                                    speed: 4, depth: 2, code: 2, cost: 3, tag: 'quick with the small stuff' },
   { re: /gpt-5|o[13]|codex/,        speed: 2, depth: 4, code: 4, cost: 2, tag: 'ships serious code' },
   { re: /claude-code/,              speed: 2, depth: 4, code: 4, cost: 2, tag: 'ships serious code' },
   { re: /gemini/,                   speed: 3, depth: 3, code: 3, cost: 2, tag: 'strong all-rounder' },
