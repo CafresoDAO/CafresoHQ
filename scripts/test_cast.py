@@ -437,6 +437,37 @@ console.log(JSON.stringify(R));
           "name: 'Reel'" in rt and 'GENERATE_VIDEO' in rt,
           'hq-runtime.jsx: parked means shelved, not removed')
 
+    # ── no runtime is privileged in the picker (section 3.1, park row 1) ─
+    # "No agent runtime gets special treatment - not in code, not in copy,
+    # not in defaults", and the park list's FIRST row retires
+    # "Hermes-as-default". The model picker violated all three readings at
+    # once: Hermes was hard-coded to position 0 under the comment "surface
+    # first" (code), and labelled "Hermes Agent (default · Nous Research)"
+    # (copy). Both are fixed; the settings FALLBACK stays, because §3.3
+    # requires a zero-key visitor to reach a working brain.
+    client = (ROOT / 'claude-client.jsx').read_text(encoding='utf-8')
+    picker = re.search(r'const groups = \[\];[\s\S]*?return groups', client)
+    check('the model picker exists to be checked', bool(picker),
+          'claude-client.jsx: could not locate the picker group assembly')
+    body = picker.group(0) if picker else ''
+    labels = re.findall(r"label: '([^']+)'", body)
+    check('no picker label crowns a default',
+          not any(re.search(r'\bdefault\b', l, re.I) for l in labels),
+          'claude-client.jsx: picker labels claiming "default": %s'
+          % [l for l in labels if re.search(r'default', l, re.I)])
+    # Position is code. Whoever is first is being promoted, so pin that it
+    # is not the one the doc names.
+    check('Hermes is not first in the picker',
+          bool(labels) and 'hermes' not in labels[0].lower(),
+          'claude-client.jsx: first picker group is %r' % (labels[0] if labels else None))
+    check('...but Hermes is still offered, as a peer',
+          any('hermes' in l.lower() for l in labels),
+          'claude-client.jsx: parking the privilege must not remove the driver')
+    # The zero-key safety net §3.3 mandates is NOT the thing being parked.
+    check('the zero-key fallback survives the un-privileging',
+          re.search(r"^\s*provider: 'hermes',", client, re.M),
+          "claude-client.jsx: §3.3 needs a working brain for a visitor with no keys")
+
     # ── CDP screenshots do not ride the default web claim (section 5) ────
     # "CDP browser screenshots | Niche, heavy, off-thesis for v1." It was
     # bundled onto claimed.has('web') alongside plain BROWSER_FETCH -- so

@@ -2,7 +2,7 @@ import { headTimeoutMs, SLOW_HEAD_MS } from './app/patience.jsx';
 /* ==========================================================================
    CafresoHQ — real backend client
    Dispatches streaming chat to:
-     - Hermes Agent (DEFAULT — OpenAI-compatible via /hermes/v1 proxy, SSE)
+     - Hermes Agent (OpenAI-compatible via /hermes/v1 proxy, SSE)
      - Anthropic Messages API (browser-direct, stream SSE)
      - LM Studio / Ollama (OpenAI-compatible /v1/chat/completions, SSE)
      - Claude Code / CafresoHQ / Codex CLIs, Google Gemini
@@ -222,7 +222,10 @@ const CODEX_MODELS = [
   'o4-mini',
 ];
 
-/* Hermes Agent (Nous Research) — the DEFAULT runtime. serve.py proxies
+/* Hermes Agent (Nous Research) — one driver among peers (north-star §3.1;
+   the park list's first row retires "Hermes-as-default"). It is still the
+   zero-key FALLBACK that §3.3 requires, which is a safety net, not a
+   ranking. serve.py proxies
    /hermes/v1 → the per-container `hermes gateway` OpenAI-compatible API
    server (127.0.0.1:8642), injecting the Bearer API_SERVER_KEY server-side
    so the key never reaches the browser. The single advertised model id is
@@ -699,7 +702,7 @@ function streamOllama(opts) {
   });
 }
 
-/* Hermes Agent (DEFAULT) — OpenAI-compatible chat completions through the
+/* Hermes Agent — OpenAI-compatible chat completions through the
    same-origin /hermes/v1 proxy. serve.py injects the Bearer API_SERVER_KEY
    server-side and meters the `usage` object, so no key is needed here.
    noStreamOptions: the gateway runs a full agent and may reject the
@@ -1453,20 +1456,6 @@ async function probe() {
    Returns: [{ label, provider, options: [{ id, label }] }, ...] */
 async function localModelOptions() {
   const groups = [];
-  // Hermes Agent (default runtime) — surface first; only if the gateway's
-  // API server is reachable through the proxy.
-  try {
-    const h = await hermesStatus();
-    if (h.configured) {
-      const opts = (h.models.length ? h.models : HERMES_MODELS)
-        .map(m => ({ id: 'hermes:' + m, label: m }));
-      groups.push({
-        label: 'Hermes Agent (default · Nous Research)',
-        provider: 'hermes',
-        options: opts,
-      });
-    }
-  } catch (_e) {}
   groups.push({
     label: 'Anthropic (Claude API · credits)',
     provider: 'anthropic',
@@ -1502,6 +1491,35 @@ async function localModelOptions() {
     }
   } catch (_e) {}
 
+  /* Hermes sits HERE, with the other runtimes detected on this machine —
+     not at the top of the list. It used to be hard-coded first with the
+     comment "surface first" and the label "Hermes Agent (default · Nous
+     Research)". North-star §3.1 is explicit that this is the thing to
+     stop: "No agent runtime gets special treatment — not in code, not in
+     copy, not in defaults", and the park list's FIRST row is
+     "Hermes-as-default (+ Hermes Console as flagship surface) → becomes
+     one driver among peers". Position is code; the word "default" is
+     copy; both were privilege.
+
+     What did NOT change: `provider: 'hermes'` remains the settings
+     fallback, because §3.3 REQUIRES it — "zero-subscription visitors get
+     the managed trial brain" is how someone with no keys and no local
+     model feels the product at all. That is a fallback for the user's
+     benefit, not a promotion of one vendor, and it is invisible in the
+     picker. Privilege in the shop window is the violation; a safety net
+     underneath is the promise. */
+  try {
+    const h = await hermesStatus();
+    if (h.configured) {
+      const opts = (h.models.length ? h.models : HERMES_MODELS)
+        .map(m => ({ id: 'hermes:' + m, label: m }));
+      groups.push({
+        label: 'Hermes Agent (Nous Research)',
+        provider: 'hermes',
+        options: opts,
+      });
+    }
+  } catch (_e) {}
   groups.push({
     label: 'Google (Gemini API · credits)',
     provider: 'google',
