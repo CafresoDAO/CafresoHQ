@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Guards for the two unattended-failure modes: torn state files and 429s.
+"""Guards for the three ways persisted state has been lost: torn files,
+429s, and a fresh browser deleting the office.
 
 1. State writes must be atomic. A bare write_bytes truncates first, so a crash
    mid-write leaves invalid JSON; the client's shape check then falls back to
@@ -10,6 +11,13 @@
    used to end an iteration and three in a row ended the run, so transient
    upstream failures must retry with backoff — but a bad key (401) must not.
 
+3. A fresh browser context (new browser, cleared site data, second device)
+   seeds useFileStored from an EMPTY mirror. A boot-time write then marks the
+   value dirty, the arriving file fetch is turned away by the local-edits-win
+   rule, and the office persists the emptiness over a good file. Measured
+   2026-08-08: agents.json went from a hired roster to 2 bytes. Guarded here
+   by shape, because the hook cannot be driven headlessly.
+
 Run: python3 scripts/test_durability_retry.py
 """
 from __future__ import annotations
@@ -18,6 +26,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import urllib.error
@@ -200,9 +209,50 @@ def test_atomic_state_write() -> None:
     check('no .tmp file is left behind', not tmp.exists())
 
 
+def test_fresh_browser_keeps_the_office() -> None:
+    """A fresh browser context must not delete the office from disk.
+
+    Checked by SHAPE, not by driving: useFileStored is a React hook with a
+    network fetch, and the failure needs a real browser with an empty mirror
+    and a populated file. What is checkable here is the two invariants the
+    fix rests on, expressed as the DEFECT rather than the cure — per the
+    lesson that a rule hunting for a fix can be satisfied by a coincidence.
+
+    Defect 1: the mount fetch abandons the server copy on `dirtyRef` alone.
+    That is what turned the GET away while the session held nothing but its
+    own empty seed, and it is the actual wipe. The guard requires the
+    early-return to consider something else too.
+
+    Defect 2: the debounced PUT can fire before the fetch has settled, so
+    the app writes a file it has never read.
+    """
+    src = (ROOT / 'app' / 'storage.jsx').read_text(encoding='utf-8')
+
+    # The adopt path must not bail on dirtyRef by itself.
+    bare_bail = re.search(r'if\s*\(\s*dirtyRef\.current\s*\)\s*return', src)
+    check('the mount fetch does not abandon the file on dirtyRef alone',
+          bare_bail is None,
+          'found a bare `if (dirtyRef.current) return` in the adopt path')
+
+    # …and it must reason about whether the local value is still the seed.
+    check('…it compares what the session holds against the seed it started with',
+          'seedRef' in src and 'valRef' in src,
+          'seedRef/valRef missing — nothing distinguishes a real edit from a boot write')
+
+    # No file write before the fetch has settled, either way.
+    check('no file write before the mount fetch settles',
+          'hydratedRef' in src and re.search(r'if\s*\(\s*!\s*hydratedRef\.current\s*\)\s*return', src) is not None,
+          'the debounced PUT is not gated on hydration')
+    check('…and an unreachable server still counts as settled',
+          re.search(r'catch\s*\(\s*\(\s*\)\s*=>\s*\{\s*hydratedRef\.current\s*=\s*true', src) is not None
+          or 'hydratedRef.current = true; });' in src,
+          'an offline office could never write to disk again')
+
+
 def main() -> int:
     test_night_retry()
     test_atomic_state_write()
+    test_fresh_browser_keeps_the_office()
     print()
     if FAILS:
         print(f'durability/retry: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
