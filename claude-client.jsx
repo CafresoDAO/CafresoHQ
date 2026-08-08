@@ -1455,12 +1455,24 @@ async function probe() {
 /* Build a grouped, prefixed list for model-picker UIs.
    Returns: [{ label, provider, options: [{ id, label }] }, ...] */
 async function localModelOptions() {
+  /* ORDER IS A CLAIM. Section 3.3: "Bring what you already pay for — the
+     default backend is whatever the user ALREADY HAS. We never make
+     someone buy a new key to feel the product."
+
+     This list used to open with "Anthropic (Claude API · credits)" and
+     "Google (Gemini API · credits)" — both pushed unconditionally, both
+     requiring the reader to go BUY something — while the runtimes actually
+     detected on their machine sat underneath. Seen live on this box: the
+     picker led with two paid services while Ollama (llama3.1) and LM
+     Studio (12 models loaded), free and already running, were last.
+
+     So: everything DETECTED on this machine first, in the order it was
+     found; the key-required services after. Nobody is hidden — a paid API
+     is a legitimate choice and stays one click away — but the top of a
+     list is an endorsement, and section 3.3 says it belongs to what the
+     boss already owns. */
   const groups = [];
-  groups.push({
-    label: 'Anthropic (Claude API · credits)',
-    provider: 'anthropic',
-    options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })),
-  });
+  const keyed = [];      // needs a key/credits — appended after the detected
   // Claude Code (Pro/Max subscription) — only surface if the proxy can find
   // the CLI. Otherwise picking it would just error every call.
   try {
@@ -1520,11 +1532,6 @@ async function localModelOptions() {
       });
     }
   } catch (_e) {}
-  groups.push({
-    label: 'Google (Gemini API · credits)',
-    provider: 'google',
-    options: GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })),
-  });
 
   const [lm, ol] = await Promise.all([
     lmStudioModelDetails().catch(() => []),
@@ -1550,7 +1557,18 @@ async function localModelOptions() {
       })),
     });
   }
-  return groups;
+  /* The buy-something options, after everything the boss already has. */
+  keyed.push({
+    label: 'Anthropic (Claude API · credits)',
+    provider: 'anthropic',
+    options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })),
+  });
+  keyed.push({
+    label: 'Google (Gemini API · credits)',
+    provider: 'google',
+    options: GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })),
+  });
+  return groups.concat(keyed);
 }
 
 /* ---- Brave Web Search ---- */

@@ -39,13 +39,22 @@ function ModelPicker({ value, onChange, refreshKey }) {
         /* Last-resort fallback — all static model lists so the picker
            is never blank. Static lists only. */
         const s = CafresoHQClient.getSettings();
+        /* Same ordering rule as the live list (§3.3: "the default backend
+           is whatever the user ALREADY HAS"): anything that might already
+           be on their machine first, the buy-a-key services after. This
+           list is a SECOND place the order is decided, and it used to
+           disagree with the first — Anthropic, then Google, then Codex —
+           so the principle held right up until the proxy went down, which
+           is exactly when a boss is least in the mood to be sold
+           something. Static lists only; nothing here is detected, so the
+           CLI goes first on the chance that it is there. */
         const fallback = [
+          { label: 'Codex CLI', provider: 'codex',
+            options: CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
           { label: 'Anthropic (Claude API)', provider: 'anthropic',
             options: CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
           { label: 'Google (Gemini API)', provider: 'google',
             options: CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
-          { label: 'Codex CLI', provider: 'codex',
-            options: CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
         ];
         setGroups(fallback);
         setLoading(false);

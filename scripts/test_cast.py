@@ -464,6 +464,42 @@ console.log(JSON.stringify(R));
           any('hermes' in l.lower() for l in labels),
           'claude-client.jsx: parking the privilege must not remove the driver')
     # The zero-key safety net §3.3 mandates is NOT the thing being parked.
+    # ── what the boss already has comes first (section 3.3) ─────────────
+    # "The default backend is whatever the user ALREADY HAS... We never
+    # make someone buy a new key to feel the product." Found by opening
+    # the picker live rather than reading the source order: it led with
+    # "Anthropic (Claude API · credits)" and "Google (Gemini API ·
+    # credits)" - both unconditional, both requiring a purchase - while
+    # Ollama and LM Studio, running on the machine with 13 models between
+    # them, sat at the bottom. The top of a list is an endorsement.
+    keyed_labels = [l for l in labels if 'credits' in l.lower()]
+    detected_labels = [l for l in labels if 'credits' not in l.lower()]
+    check('the picker still offers the paid services', len(keyed_labels) >= 2,
+          'claude-client.jsx: a paid API is a legitimate choice, do not hide it')
+    check('nothing you must buy outranks something you already have',
+          bool(detected_labels) and bool(keyed_labels)
+          and max(labels.index(l) for l in detected_labels)
+              < min(labels.index(l) for l in keyed_labels),
+          'claude-client.jsx: detected runtimes must precede key-required ones — got %s' % labels)
+    check('the two lists are assembled separately, not hand-ordered',
+          'const keyed = []' in client and 'groups.concat(keyed)' in client,
+          'claude-client.jsx: keep the split structural so a new push cannot land in the wrong half')
+    # The picker decides its order in TWO places, and only one was checked:
+    # ModelPicker's catch-fallback builds its own static list when the proxy
+    # is unreachable. It had the same inversion (paid first) and would have
+    # sailed past a rule that only read localModelOptions — the same
+    # two-sources-one-rule gap as the seed-swarm tooltip beside its count.
+    base = (ROOT / 'modals' / 'base.jsx').read_text(encoding='utf-8')
+    fb = re.search(r'const fallback = \[[\s\S]*?\n        \];', base)
+    check('the offline fallback list exists to be checked', bool(fb),
+          'modals/base.jsx: could not find ModelPicker\'s static fallback')
+    fb_labels = re.findall(r"label: '([^']+)'", fb.group(0) if fb else '')
+    check('the offline fallback obeys the same ordering rule',
+          bool(fb_labels) and 'credits' not in fb_labels[0].lower()
+          and not re.search(r'anthropic|google', fb_labels[0], re.I),
+          'modals/base.jsx: fallback leads with %r — a key-required service '
+          'should not head the list shown when the proxy is down' % (fb_labels[0] if fb_labels else None))
+
     check('the zero-key fallback survives the un-privileging',
           re.search(r"^\s*provider: 'hermes',", client, re.M),
           "claude-client.jsx: §3.3 needs a working brain for a visitor with no keys")
