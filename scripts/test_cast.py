@@ -437,6 +437,22 @@ console.log(JSON.stringify(R));
           "name: 'Reel'" in rt and 'GENERATE_VIDEO' in rt,
           'hq-runtime.jsx: parked means shelved, not removed')
 
+    # The PTY terminal is parked too — "stays in Living Floor desktop mode
+    # for devs" per north-star §5. MobileTabBar only renders on a narrow
+    # viewport, where app.jsx's desktopMode is unconditionally false
+    # (`windowsEnabled && !isNarrowViewport`), and the terminal view switch
+    # itself has no desktopMode gate. ALL_VIEWS drives that component's
+    # horizontal swipe cycle on `.view-area` — so 'terminal' sitting in it
+    # was a fully working, un-parked door on the one surface guaranteed to
+    # never be desktop mode. The mobile drawer/tab bookmarks were already
+    # correctly excluding it; the swipe array was the one door left open.
+    office_src = (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8')
+    all_views = re.search(r"const ALL_VIEWS = \[([^\]]*)\];", office_src)
+    check('the mobile swipe cycle does not include the parked terminal',
+          bool(all_views) and 'terminal' not in all_views.group(1),
+          'ui/office.jsx: ALL_VIEWS drives MobileTabBar\'s swipe — a phone '
+          'user could swipe straight into the PTY terminal')
+
     # ── no runtime is privileged in the picker (section 3.1, park row 1) ─
     # "No agent runtime gets special treatment - not in code, not in copy,
     # not in defaults", and the park list's FIRST row retires

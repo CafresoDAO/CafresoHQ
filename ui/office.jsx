@@ -132,7 +132,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
    Chat is the primary mobile entry point; Office, Team, Vault, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
-  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','terminal','projects'];
+  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','projects'];
   const TAB_BOOKMARKS = [
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],
@@ -186,6 +186,16 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
      it, which is exactly where the park list puts it. A local principle
      ("every view needs a door") lost to a product decision that had
      already been made and written down.
+
+     Second correction, same bug in a different door: 'terminal' was still
+     sitting in ALL_VIEWS above, which drives the horizontal swipe cycle on
+     `.view-area` — so even after the drawer was fixed, seven swipes from
+     Chat landed a phone user straight in the PTY terminal. desktopMode is
+     unconditionally false on the narrow viewport this component only
+     renders on (app.jsx: `desktopMode = windowsEnabled && !isNarrowViewport`),
+     and the view switch itself has no desktopMode gate — so the swipe was a
+     fully working, un-parked door. Removed from ALL_VIEWS; the desktop nav
+     rail is still the only way in, same as the drawer fix above.
 
      Tasks was the one I expected to find stranded and it is fine: the
      floor's task rail carries a visible "Board →". Checking that before
