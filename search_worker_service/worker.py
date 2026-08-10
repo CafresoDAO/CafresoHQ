@@ -687,7 +687,23 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
         # Streaming: bound the FIRST token by TTFT (prefill on a saturated box is
         # slow but not unbounded), then tighten to the idle timeout once tokens
         # are flowing. Best-effort — see _sw_sock.
-        _sw_settimeout(r, _SW_TTFT_TIMEOUT)
+        #
+        # min() with _sw_left(deadline), not the flat constant alone. Found by a
+        # single readline() blocking for the WHOLE 25s/60s constant regardless of
+        # how little of the caller's actual deadline was left — a 3-SECOND
+        # deadline against a stalled backend took 25.0 seconds to return, not 3,
+        # because the socket's own timeout only ever knew the flat TTFT/idle
+        # window, never the deadline. The loop-top `deadline` check (below)
+        # can only fire BETWEEN reads; it cannot interrupt a read already in
+        # flight, so the read itself has to be the thing that's actually bounded
+        # by whatever time is left. The whole-suite symptom of this: 49 REAL
+        # minutes for a test file whose own fake server has zero network
+        # latency, because several deliberately-stalled fixtures each ate a
+        # full flat window instead of their intended few-second deadline. Same
+        # bug, in production, against a real backend that goes quiet mid-answer:
+        # the worker's "always come back in time" promise silently did not
+        # hold at anything finer than 25-60s.
+        _sw_settimeout(r, min(_SW_TTFT_TIMEOUT, _sw_left(deadline) or _SW_TTFT_TIMEOUT))
         chunks, model, tokens, deltas, truncated = [], '', 0, 0, False
         while True:
             if deadline is not None and time.monotonic() > deadline:
@@ -722,7 +738,10 @@ def _sw_chat(url, headers, payload, deadline, stream=True, usage_opt=True):
                     if deltas == 1:
                         # First token is in: tighten from the prefill bound to
                         # the idle bound so a mid-stream stall aborts fast.
-                        _sw_settimeout(r, _SW_IDLE_TIMEOUT)
+                        # Same min()-with-deadline fix as the TTFT bound above —
+                        # a flat 25s here is exactly what turned a 3s deadline
+                        # into a 25s wait in the reproduction that found this.
+                        _sw_settimeout(r, min(_SW_IDLE_TIMEOUT, _sw_left(deadline) or _SW_IDLE_TIMEOUT))
         text = ''.join(chunks)
         if not text:
             raise RuntimeError('empty stream')
