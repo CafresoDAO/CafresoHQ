@@ -667,6 +667,10 @@ console.log(JSON.stringify(R));
           # explanatory comment above the branch, not the branch itself).
           'plan-selfhosted' in body,
           'modals/settings.jsx: the false branch must say what is actually true')
+    check('the settings-search hint for Plan & hosting does not presume managed',
+          "hint:'your managed HQ on Cafreso cloud'" not in settings_src,
+          "modals/settings.jsx: SETTINGS_INDEX's search hint is a static string "
+          "(no health check reaches it) — it must not presume the answer either")
 
     print()
     if FAILS:

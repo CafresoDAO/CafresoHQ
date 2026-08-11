@@ -19,7 +19,7 @@ const SETTINGS_TAB_ALIAS = {
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
-  { tab:'account', label:'Plan & hosting', hint:'your managed HQ on Cafreso cloud', kw:'plan premium account subscription container backend health status gateway api runtime connected' },
+  { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
   { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
   { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
   { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
