@@ -606,6 +606,37 @@ console.log(JSON.stringify(R));
           'a native alert() reading raw backend cause text ("REST backend") on the single most-visited '
           'pane in the vault (see cabinet, section 3.6)')
 
+    # ── the "Arcade" Easter egg must never destroy the boss's session ─────
+    # Live-clicked in a real browser this session: <a href="https://ai.
+    # cafreso.com/workspaces"> with no target — a plain same-tab navigation
+    # that took the WHOLE TAB off the local self-hosted app to the real
+    # production domain, which 404s ("This page wandered off the farm").
+    # For a real self-hosted install that is total, silent data loss: any
+    # unsaved chat draft or in-flight task view is gone the instant the top
+    # frame navigates away, with no confirmation and no way back except
+    # browser Back (which does not restore in-memory state). A link this
+    # destructive must open in a new tab regardless of whether its
+    # destination is ever fixed.
+    office_full_src = (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8')
+    panels_src = (ROOT / 'ui' / 'panels.jsx').read_text(encoding='utf-8')
+    needle = 'https://ai.cafreso.com/workspaces'
+    for label, src in (
+        ('office-floor arcade cabinet', office_full_src),
+        ('desk-side PAC-MAN cabinet / CEO panel Workspaces action', panels_src),
+    ):
+        occurrences = list(re.finditer(re.escape(needle), src))
+        for m in occurrences:
+            # The <a ...> tag containing this href, opening tag only.
+            tag_start = src.rfind('<a ', 0, m.start())
+            tag_end = src.find('>', m.end())
+            tag = src[tag_start:tag_end]
+            check(f'{label}: link to {needle} opens in a new tab',
+                  'target="_blank"' in tag and 'noopener' in tag,
+                  'a same-tab external <a href> to a link that 404s is a full-session-destroying '
+                  'trap for a self-hosted install — found live by clicking it')
+        check(f'{label}: the link still exists to be checked', bool(occurrences),
+              f'{label}: expected at least one {needle} link — did it move?')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
