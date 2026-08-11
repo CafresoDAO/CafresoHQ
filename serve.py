@@ -94,8 +94,8 @@ HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
 # import termios/pty/fcntl); on native Windows run the stack in WSL.
 
 # Gemini CLI (Google) — npm `@google/gemini-cli`, native on every platform.
-# Override the binary path with CAFRESOHQ_GEMINI_BIN.
-_gemini_bin = os.environ.get('CAFRESOHQ_GEMINI_BIN', '').strip()
+# Binary resolution + the CAFRESOHQ_GEMINI_BIN override now live in
+# drivers/gemini_cli.py; auth stays in ~/.gemini — never touched here.
 
 # Extra browser origins allowed to open the terminal WebSocket and fetch the PTY
 # nonce. Needed when the HQ UI is served cross-origin from an ICP asset canister
@@ -1642,7 +1642,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'claude_code':      bool(self._claudecode_resolve()),
             'codex':            bool(self._codex_resolve()),
             'hermes':           bool(self._hermes_resolve()),
-            'gemini':           bool(_gemini_bin or shutil.which('gemini')),
+            'gemini':           bool(self._gemini_resolve()),
             'runtime_env':      _RUNTIME_ENV,
             'auth_required':    bool(CAFRESOHQ_API_KEY),
             'oci_vault_ready':  oci_ready,
@@ -2232,13 +2232,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             elif aid == 'codex':
                 return _drivers.get('codex').detect_auth()
             elif aid == 'gemini':
-                gdir = home / '.gemini'
-                if ((gdir / 'oauth_creds.json').is_file()
-                        or (gdir / 'google_accounts.json').is_file()):
-                    return True, 'oauth'
-                if (os.environ.get('GEMINI_API_KEY', '').strip()
-                        or os.environ.get('GOOGLE_API_KEY', '').strip()):
-                    return True, 'api-key'
+                return _drivers.get('gemini').detect_auth()
             elif aid == 'hermes':
                 return _drivers.get('hermes').detect_auth()
         except OSError:
@@ -2705,16 +2699,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _gemini_resolve(self):
         """Find the gemini binary (npm @google/gemini-cli). Returns path or ''.
-        CAFRESOHQ_GEMINI_BIN overrides. On Windows prefer the .cmd npm wrapper
-        (same OSError-193 reasoning as _codex_resolve)."""
-        if _gemini_bin and pathlib.Path(_gemini_bin).is_file():
-            return _gemini_bin
-        if sys.platform == 'win32':
-            return (shutil.which('gemini.cmd')
-                    or shutil.which(_gemini_bin or 'gemini')
-                    or shutil.which('gemini')
-                    or '')
-        return shutil.which(_gemini_bin or 'gemini') or shutil.which('gemini.cmd') or ''
+        Moved into the driver — one detection, front desk, /agents/install
+        and the legacy PTY /terminal/run path (pty_server.py) all read it."""
+        return _drivers.get('gemini').resolve()
 
     def _codex_configure(self):
         length = int(self.headers.get('content-length', 0) or 0)
