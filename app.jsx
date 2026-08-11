@@ -5164,7 +5164,19 @@ ${d.text}` : d.text,
                   </div>
                   <div className="hq-switcher-head"><span>Launch</span></div>
                   <div className="hq-switcher-grid">
-                    {NAV_ITEMS.filter(([k]) => k !== 'visual').map(([k, label]) => (
+                    {/* 'terminal' excluded for the same reason MobileTabBar's
+                       swipe cycle excludes it (ui/office.jsx): north-star §5
+                       parks the PTY terminal off the newcomer path, "stays
+                       in Living Floor desktop mode for devs" — and
+                       windowsEnabled defaults to true for every user, so
+                       mobileMode (windowsEnabled && isNarrowViewport) is the
+                       DEFAULT state for a first-run phone visitor, not an
+                       opt-in. This "Launch" grid is a full app list with
+                       Terminal as one tap among equals — the second door
+                       into it this session, found by reading the same
+                       component class the first door lived in rather than
+                       assuming one fix covered every NAV_ITEMS consumer. */}
+                    {NAV_ITEMS.filter(([k]) => k !== 'visual' && k !== 'terminal').map(([k, label]) => (
                       <button key={k} className="hq-switcher-launch" onClick={() => openMobileApp(k)}>
                         <Ico kind={k} size={22} />
                         <span>{label}</span>

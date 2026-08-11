@@ -453,6 +453,24 @@ console.log(JSON.stringify(R));
           'ui/office.jsx: ALL_VIEWS drives MobileTabBar\'s swipe — a phone '
           'user could swipe straight into the PTY terminal')
 
+    # A second door into the same park violation, found by checking every
+    # OTHER NAV_ITEMS consumer rather than assuming the swipe fix covered
+    # the surface. app.jsx's mobile "app switcher" launcher grid renders
+    # when windowsEnabled (default TRUE for every user) && isNarrowViewport
+    # — i.e. the default state for a first-run phone visitor, not an
+    # opt-in "desktop mode" — and its "Launch" section listed every
+    # NAV_ITEMS entry as an equal-weight tappable icon, Terminal included.
+    app_src_early = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    switcher_grid = re.search(
+        r"<div className=\"hq-switcher-head\"><span>Launch</span></div>\s*"
+        r"<div className=\"hq-switcher-grid\">([\s\S]*?)</div>", app_src_early)
+    check('the mobile app-switcher Launch grid does not include the parked terminal',
+          bool(switcher_grid)
+          and "k !== 'terminal'" in switcher_grid.group(1),
+          "app.jsx: the switcher's Launch grid offers every NAV_ITEMS icon — "
+          "a phone user with windowsEnabled on (the default) could tap "
+          "straight into the PTY terminal")
+
     # ── no runtime is privileged in the picker (section 3.1, park row 1) ─
     # "No agent runtime gets special treatment - not in code, not in copy,
     # not in defaults", and the park list's FIRST row retires
