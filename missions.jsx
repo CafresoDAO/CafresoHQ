@@ -838,6 +838,18 @@ function NightShiftSection({ agents }) {
           <select value={agentId} onChange={e => setAgentId(e.target.value)}>
             {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}
           </select>
+          {/* Every other surface in the office ties a coworker to their OWN
+              brain (the "powered by" chip, the model picker, the front-desk
+              card) — this is the one picker that doesn't. night_runner.py's
+              llm_call() -> resolve_backend(ctx.hermes_home) reads ONE shared,
+              operator-configured backend, with no per-agent override; the
+              schedule's agentName only feeds the persona line and the run's
+              byline. Picking Kip over Vera changes whose name signs the
+              notes, not whose brain writes them — confirmed live, and this
+              was the one place that didn't say so. Tool restriction is
+              already disclosed a few rows down ("night tools only");
+              honesty about the brain deserved the same treatment. */}
+          <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Roster doesn't apply here)</span>
         </div>
         <div className="form-row">
           <label>VAULT FOLDER</label>

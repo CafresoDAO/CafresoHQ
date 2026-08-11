@@ -841,6 +841,26 @@ console.log(JSON.stringify(R));
           'modals/settings.jsx: keys are env/operator config — the drivers '
           'reject runtime key settings, so a browser form would be a lie')
 
+    # ── Night Shift's COWORKER picker must say the brain is shared ────────
+    # Confirmed live by actually running a mission: night_runner.py's
+    # llm_call() -> resolve_backend(ctx.hermes_home) reads ONE shared,
+    # operator-configured backend with no per-agent override.
+    # sched.get('agentName') feeds only the persona line and the run's
+    # byline. Every OTHER surface in the office ties a coworker to their
+    # own brain (powered-by chip, model picker, front-desk card) — this
+    # was the one picker that silently didn't, and the sibling browser-tab
+    # Research picker a few hundred lines up (which genuinely does use
+    # each agent's own model via HQ.agentStream) made the omission read as
+    # an oversight rather than a deliberate difference.
+    missions_src = (ROOT / 'missions.jsx').read_text(encoding='utf-8')
+    ns_section = missions_src[missions_src.find('NIGHT SHIFT · runs in your office'):]
+    ns_coworker = ns_section[:ns_section.find("VAULT FOLDER")]
+    check("Night Shift's coworker picker discloses the shared brain",
+          'share one brain' in ns_coworker or 'shared brain' in ns_coworker,
+          "missions.jsx: the Night Shift COWORKER select has no hint at all — "
+          "picking a coworker there changes only whose name signs the notes, "
+          "not which brain runs them, and nothing says so")
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
