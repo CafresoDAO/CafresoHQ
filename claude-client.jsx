@@ -211,6 +211,14 @@ const CLAUDECODE_MODELS = [
    client just picks a model. Same accepted IDs as CLAUDECODE_MODELS. */
 const CAFRESOHQ_MODELS = CLAUDECODE_MODELS;
 
+/* Gemini CLI elevated agent (drivers/gemini_cli.py) — one-shot
+   `gemini --yolo --prompt` runs under the user's own Google sign-in.
+   Models are what the CLI accepts via --model. */
+const GEMINI_CLI_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+];
+
 /* Codex CLI elevated agent — talks directly to OpenAI (model_provider=openai)
    via OPENAI_API_KEY (BYOK / operator env). Models are real OpenAI ids. */
 const CODEX_MODELS = [
@@ -1186,7 +1194,7 @@ async function streamAgentContract(driver, label, { system, messages, model, max
    back to whatever provider the user picked in Settings. */
 function parseModelId(id) {
   if (!id) return { provider: null, model: null };
-  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'cafresohq:', 'codex:', 'google:', 'openrouter:', 'groq:', 'gemini-api:']) {
+  for (const p of ['hermes:', 'anthropic:', 'lmstudio:', 'ollama:', 'claudecode:', 'cafresohq:', 'codex:', 'google:', 'openrouter:', 'groq:', 'gemini-api:', 'gemini:']) {
     if (id.startsWith(p)) return { provider: p.slice(0, -1), model: id.slice(p.length) };
   }
   return { provider: null, model: id };
@@ -1207,6 +1215,7 @@ async function stream(opts) {
   if (provider === 'openrouter') return streamAgentContract('openrouter', 'OpenRouter', next);
   if (provider === 'groq')       return streamAgentContract('groq', 'Groq', next);
   if (provider === 'gemini-api') return streamAgentContract('gemini-api', 'Gemini', next);
+  if (provider === 'gemini')     return streamAgentContract('gemini', 'Gemini', next);
   return streamLMStudio(next);
 }
 
@@ -1499,6 +1508,21 @@ async function localModelOptions() {
         label: 'Codex · file & shell access (OpenAI Codex CLI + tools)',
         provider: 'codex',
         options: CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })),
+      });
+    }
+  } catch (_e) {}
+
+  // Gemini CLI (drivers/gemini_cli.py) — the user's own Google sign-in,
+  // detected the same way. 'gemini:' rides POST /agent/stream; distinct
+  // from the key-required 'google:' Gemini API group in `keyed` below.
+  try {
+    const st = await agentsStatus();
+    const gem = (st.agents || []).find(a => a.id === 'gemini');
+    if (gem && gem.installed) {
+      groups.push({
+        label: 'Gemini · file & shell access (Google Gemini CLI + tools)',
+        provider: 'gemini',
+        options: GEMINI_CLI_MODELS.map(m => ({ id: 'gemini:' + m, label: m })),
       });
     }
   } catch (_e) {}

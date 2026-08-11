@@ -28,6 +28,15 @@ const FRONT_DESK = {
   'codex':       { id: 'a_cli_codex', name: 'Codex', role: 'Coding Agent', color: 'mint',
                    model: 'codex:gpt-4.1', tools: ['files', 'shell'], elevated: true,
                    poweredBy: 'OpenAI', found: 'We found your Codex subscription on this machine.' },
+  /* Gemini CLI (drivers/gemini_cli.py) — distinct from the 'gemini-api'
+     cloud card below: this one is the agent CLI on this machine, working
+     with computer access like Claude/Codex, signed in with the user's own
+     Google account. Until this card existed the driver was hire-less: the
+     back office could detect and even install the CLI, but the front desk
+     never offered it — a detected subscription the boss couldn't use. */
+  'gemini':      { id: 'a_cli_gemini', name: 'Gemini', role: 'Coding Agent', color: 'blush',
+                   model: 'gemini:gemini-2.5-pro', tools: ['files', 'shell'], elevated: true,
+                   poweredBy: 'Google', found: 'We found your Google sign-in on this machine.' },
   /* North-star §3.1: no runtime gets special treatment, "not in code, not in
      copy, not in defaults" — and Hermes is the runtime that section names as
      the original mistake. Its card was the only one written as a pitch

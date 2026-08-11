@@ -61,8 +61,12 @@ function App() {
                        color: 'leaf',  model: 'claudecode:sonnet',       tools: ['files','shell','web'] },
       'codex':       { id: 'a_cli_codex',  name: 'Codex',       role: 'Coding Agent · CLI',
                        color: 'mint',  model: 'codex:gpt-4.1',           tools: ['files','shell'] },
-      'gemini':      { id: 'a_cli_gemini', name: 'Gemini',      role: 'Research Agent · CLI',
-                       color: 'blush', model: 'google:gemini-2.5-flash', tools: ['web','files'] },
+      /* model rides the CLI driver ('gemini:'), NOT 'google:' — that prefix
+         is the browser-key Google API path, which needs a separate API key
+         the user never signed up for. The card says "we found your Google
+         sign-in"; the brain must be the thing that sign-in powers. */
+      'gemini':      { id: 'a_cli_gemini', name: 'Gemini',      role: 'Coding Agent · CLI',
+                       color: 'blush', model: 'gemini:gemini-2.5-pro', tools: ['files','shell'] },
     };
     let cancelled = false;
     const sync = async () => {

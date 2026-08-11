@@ -520,6 +520,38 @@ console.log(JSON.stringify(R));
           re.search(r"^\s*provider: 'hermes',", client, re.M),
           "claude-client.jsx: §3.3 needs a working brain for a visitor with no keys")
 
+    # ── the Gemini CLI driver is reachable end-to-end, not just registered ─
+    # drivers/gemini_cli.py landed with serve.py delegation and 15 pinned
+    # checks — but a driver nobody can dispatch to is decoration. Three
+    # doors, each a separate file, each individually forgettable:
+    #   1. stream(): 'gemini:' model ids must route via the contract.
+    #   2. the front desk: a detected Gemini CLI must be offerable
+    #      (FRONT_DESK['gemini']), with the model riding the CLI driver.
+    #   3. app.jsx's CLI-sync DEFS: a_cli_gemini must ALSO ride 'gemini:',
+    #      not 'google:' — that prefix is the browser-key Gemini API path,
+    #      which needs an API key the "we found your sign-in" card never
+    #      mentions. A card whose first task fails is worse than no card.
+    check("stream() dispatches the 'gemini:' prefix through the contract",
+          re.search(r"provider === 'gemini'\)?\s*return streamAgentContract\('gemini'", client),
+          'claude-client.jsx: gemini: model ids have no route to the CLI driver')
+    check("parseModelId knows the 'gemini:' prefix",
+          "'gemini:'" in client,
+          'claude-client.jsx: without the prefix, gemini: ids fall through to the global provider')
+    hire = (ROOT / 'modals' / 'hire.jsx').read_text(encoding='utf-8')
+    fd_gem = re.search(r"'gemini':\s*\{[^}]*\}", hire)
+    check('the front desk offers a detected Gemini CLI',
+          bool(fd_gem) and 'a_cli_gemini' in fd_gem.group(0),
+          "modals/hire.jsx: FRONT_DESK has no 'gemini' card — detected but unhirable")
+    check("...and the card's brain is the CLI driver, not the keyed API",
+          bool(fd_gem) and "model: 'gemini:" in fd_gem.group(0),
+          'modals/hire.jsx: the card claims the sign-in but the model needs a key')
+    app_src = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    defs_gem = re.search(r"'gemini':\s*\{[^}]*a_cli_gemini[^}]*\}", app_src)
+    check("app.jsx's CLI-sync DEFS rides the CLI driver too",
+          bool(defs_gem) and "model: 'gemini:" in defs_gem.group(0)
+          and "google:" not in defs_gem.group(0),
+          "app.jsx: a_cli_gemini's model must be 'gemini:*' — 'google:' needs a browser API key")
+
     # ── CDP screenshots do not ride the default web claim (section 5) ────
     # "CDP browser screenshots | Niche, heavy, off-thesis for v1." It was
     # bundled onto claimed.has('web') alongside plain BROWSER_FETCH -- so
