@@ -672,6 +672,31 @@ console.log(JSON.stringify(R));
           "modals/settings.jsx: SETTINGS_INDEX's search hint is a static string "
           "(no health check reaches it) — it must not presume the answer either")
 
+    # ── the vault's New/Rename/Delete use the in-app dialog, not natives ──
+    # Found live: clicking "+ New note" threw an uncaught "prompt() is not
+    # supported" in this test browser. ui/feedback.jsx's DialogHost exists
+    # BECAUSE native window.confirm/window.prompt "on some hosts (iframe
+    # sandboxes) are silently disabled" — its own docstring — and this app
+    # is explicitly designed to run inside the ai.cafreso.com iframe shell.
+    # views/projects.jsx already made the switch for its identical New
+    # Folder / Rename / Delete flows; views/vault.jsx — the single most
+    # important data surface in the app, per the park list's "stays
+    # first-class" row — had not, for its New/Rename/Delete note actions.
+    vault_full_src = (ROOT / 'views' / 'vault.jsx').read_text(encoding='utf-8')
+    check('vault "new note" uses the in-app prompt dialog',
+          'await window.hqPrompt(' in vault_full_src
+          and re.search(r'const newNote = async[\s\S]{0,120}await window\.hqPrompt', vault_full_src),
+          'views/vault.jsx: newNote() must use hqPrompt, not the native window.prompt')
+    check('vault "rename" uses the in-app prompt dialog',
+          bool(re.search(r'const renameNote = async[\s\S]{0,600}await window\.hqPrompt', vault_full_src)),
+          'views/vault.jsx: renameNote() must use hqPrompt, not the native window.prompt')
+    check('vault "delete" uses the in-app confirm dialog',
+          bool(re.search(r'const deleteNote = async[\s\S]{0,200}await window\.hqConfirm', vault_full_src)),
+          'views/vault.jsx: deleteNote() must use hqConfirm, not the native window.confirm')
+    check('no raw window.prompt/window.confirm remain in the vault view',
+          not re.search(r'\bwindow\.prompt\(|\bwindow\.confirm\(', vault_full_src),
+          'views/vault.jsx: a native dialog call slipped back in')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))

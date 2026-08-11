@@ -236,7 +236,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const renameNote = async () => {
     const n = openNoteRef.current;
     if (!n) return;
-    const to = window.prompt('Rename / move to (path inside the vault):', n.path);
+    // Native window.prompt breaks the pixel aesthetic, blocks the JS thread,
+    // and — per ui/feedback.jsx's own docstring — is silently disabled on
+    // some hosts (iframe sandboxes). views/projects.jsx already made this
+    // switch for its identical rename flow; the vault, the single most
+    // important data surface in the app, had not.
+    const to = await window.hqPrompt('Rename / move to (path inside the vault):', { value: n.path });
     if (!to || to.trim() === n.path) return;
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
@@ -248,7 +253,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const deleteNote = async () => {
     const n = openNoteRef.current;
     if (!n) return;
-    if (!window.confirm(`Delete "${n.path}"? This cannot be undone.`)) return;
+    if (!(await window.hqConfirm(`Delete "${n.path}"? This cannot be undone.`, { danger: true }))) return;
     try {
       await CafresoHQClient.vaultDelete(n.path);
       setSaveState('');
@@ -257,8 +262,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (e) { alert('Delete failed: ' + e.message); }
   };
 
-  const newNote = () => {
-    const path = window.prompt('New note path (e.g. "Inbox/idea.md"):');
+  const newNote = async () => {
+    const path = await window.hqPrompt('New note path (e.g. "Inbox/idea.md"):');
     if (!path) return;
     const norm = path.endsWith('.md') ? path : path + '.md';
     // id is null for new notes — saveNote() will call bridge.create()
