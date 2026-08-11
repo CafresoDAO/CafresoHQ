@@ -105,10 +105,22 @@ function ConnectionsPanel() {
   useEffectM(() => {
     let dead = false;
     (async () => {
+      /* NOT CafresoHQClient.agentDrivers() — it swallows every failure
+         (bad status, network error, thrown exception) and always resolves
+         { drivers: [] }, so a catch block here could never run and `err`
+         could never be set. Caught live: killing the probe request left
+         the panel reading "checking…" forever instead of switching to
+         "couldn't check" — the state this whole panel exists to avoid,
+         self-inflicted by trusting a wrapper built for a caller that is
+         allowed to shrug off failure. Same fix as the health probe a
+         few lines up in this same file: go around the wrapper. */
       try {
-        const r = await CafresoHQClient.agentDrivers(true);
-        if (!dead) setDrivers((r && r.drivers) || []);
-      } catch (e) { if (!dead) { setErr(String((e && e.message) || e)); setDrivers([]); } }
+        const r = await fetch((window._API_BASE || '') + '/agent/drivers?probe=1',
+          { cache: 'no-store', credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (!dead) setDrivers((j && j.drivers) || []);
+      } catch (e) { if (!dead) { setErr(String((e && e.message) || e) || 'probe failed'); setDrivers([]); } }
     })();
     return () => { dead = true; };
   }, []);
@@ -170,18 +182,28 @@ function ConnectionsPanel() {
         </div>
         {SELF_HOST_PROVIDERS.map(p => {
           const det = detectOf(p.id);
-          const on = !!(det && det.authenticated);
+          /* THREE states, not two. `det` is null both while the probe is in
+             flight and when it failed outright — collapsing that into "not
+             set" tells someone whose key IS set to go set it again, and makes
+             a working config look broken. Same mistake as calling a stopped
+             LM Studio "not found": asserting absence when the honest answer
+             is "don't know yet". §0's rule — if a surface is unsure, be quiet
+             about the CLAIM, not louder. */
+          const state = !det ? (err ? 'unknown' : 'checking')
+                             : (det.authenticated ? 'on' : 'off');
+          const body = {
+            on:       'connected — hire them at the front desk',
+            checking: 'checking…',
+            unknown:  'couldn’t check just now — reopen this tab to retry',
+          }[state] || <>set <code>{p.env}</code> · key from {p.where}<br/>{p.note}</>;
+          const badge = { on: '● connected', checking: '· checking', unknown: '· unknown' }[state] || '○ not set';
           return (
             <div className="row-knob" key={p.id} style={{ alignItems: 'flex-start' }}>
               <div>
                 <div className="lbl">{p.label}</div>
-                <div className="sub" style={{ maxWidth: 300 }}>
-                  {on
-                    ? 'connected — hire them at the front desk'
-                    : <>set <code>{p.env}</code> · key from {p.where}<br/>{p.note}</>}
-                </div>
+                <div className="sub" style={{ maxWidth: 300 }}>{body}</div>
               </div>
-              <span className="tiny" style={{ whiteSpace: 'nowrap' }}>{on ? '● connected' : '○ not set'}</span>
+              <span className="tiny" style={{ whiteSpace: 'nowrap' }}>{badge}</span>
             </div>
           );
         })}

@@ -781,6 +781,34 @@ console.log(JSON.stringify(R));
     check('the old CODE AGENTS deep-link lands there too',
           "agentcli: 'connections'" in settings_src,
           "modals/settings.jsx: the old CLI tab is now the 'on this machine' panel")
+    # A failed or in-flight probe must not be reported as "not set". det is
+    # null in BOTH cases, so the naive `!!(det && det.authenticated)` told a
+    # user whose key IS set to go set it again — asserting absence when the
+    # honest answer is "don't know yet" (§0: if unsure, be quiet about the
+    # claim). Three states: on / off / checking-or-unknown.
+    conn_src = re.search(r'function ConnectionsPanel[\s\S]*?\n}\n', settings_src)
+    conn_body = conn_src.group(0) if conn_src else ''
+    check('the cloud-key rows distinguish unknown from not-set',
+          "'unknown'" in conn_body and "'checking'" in conn_body,
+          'modals/settings.jsx: a probe that failed or has not answered must '
+          'not be rendered as a confident "not set"')
+    check('...and that distinction keys off the error, not just null',
+          bool(re.search(r"!det \? \(err \?", conn_body)),
+          'modals/settings.jsx: null det means BOTH in-flight and failed — '
+          'the error flag is what tells them apart')
+    check('the probe does not go through the error-swallowing client wrapper',
+          # Checks for an actual CALL, not a mention — the fix's own
+          # explanatory comment names CafresoHQClient.agentDrivers() to say
+          # why it is avoided, which a plain substring check can't tell
+          # apart from a live call (same class of false-positive already
+          # caught once this session on "self-hosted" prose vs. a real
+          # branch — see 7221c05's ConnectionsPanel check history).
+          not re.search(r'await\s+CafresoHQClient\.agentDrivers\(', conn_body)
+          and 'fetch(' in conn_body,
+          "modals/settings.jsx: CafresoHQClient.agentDrivers() always resolves "
+          "{drivers:[]} on failure and never throws — a catch keyed on it can "
+          "never run. Confirmed live: killing the request left the panel "
+          'reading "checking…" forever instead of switching to "unknown".')
     check('the panel never offers to take a key in the browser',
           not re.search(r'ConnectionsPanel[\s\S]*?\n}', settings_src)
           or 'type="password"' not in re.search(r'function ConnectionsPanel[\s\S]*?\n}\n', settings_src).group(0),
