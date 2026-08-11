@@ -3253,8 +3253,14 @@ ${d.text}` : d.text,
     say(wasRunning ? `Stopped ${a.name} and cleared their desk`
                    : `Cleared ${a.name}'s desk`, 'COFFEE');
   };
-  const onAddSticky = () => {
-    const text = prompt('New sticky note for CafresoHQ:');
+  const onAddSticky = async () => {
+    // Same class of bug as views/vault.jsx's New/Rename/Delete (738f931):
+    // a bare native prompt() on a core, always-visible office action (the
+    // CEO desk's "+ NOTE" sticky, also bound to the 'n' shortcut) — silently
+    // disabled on hosts like iframe sandboxes per ui/feedback.jsx's own
+    // docstring, which this app's ai.cafreso.com shell embedding is exactly
+    // one example of.
+    const text = await window.hqPrompt('New sticky note for CafresoHQ:');
     if (!text || !text.trim()) return;
     setPins(prev => [{ id: HQ.uid('pin'), kind: 'sticky', text: text.trim(), addedAt: Date.now() }, ...prev]);
     say('Pinned a note to the CEO desk', 'NOTE');

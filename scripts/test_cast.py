@@ -697,6 +697,21 @@ console.log(JSON.stringify(R));
           not re.search(r'\bwindow\.prompt\(|\bwindow\.confirm\(', vault_full_src),
           'views/vault.jsx: a native dialog call slipped back in')
 
+    # ── sibling of 738f931: the CEO desk's sticky-note prompt ─────────────
+    # onAddSticky is the "+ NOTE" action always visible on the office floor
+    # (also bound to the 'n' shortcut) — same silently-disabled-on-iframe-
+    # hosts risk as the vault, on an even more prominent, always-present
+    # surface. Only this one call site fixed this pass; the broader sweep
+    # (18+ remaining sites across app.jsx, modals/settings.jsx,
+    # modals/hire.jsx, app/commands.jsx, ui/onboarding.jsx, features.jsx,
+    # claude-client.jsx — several touching destructive confirms like STOP
+    # ALL and task/workspace delete) is a deliberately separate, larger,
+    # more careful pass: a careless batch convert risks dropping an
+    # `await` and silently skipping a confirmation on a destructive action.
+    check('the CEO-desk sticky note uses the in-app prompt dialog',
+          bool(re.search(r'const onAddSticky = async[\s\S]{0,600}await window\.hqPrompt', app_src)),
+          "app.jsx: onAddSticky() must use hqPrompt, not the native prompt()")
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
