@@ -96,7 +96,7 @@ layer, usage metering, and the approval flow consume **only** this stream.
 |---|---|---|
 | `claude-code` | cli | `_claudecode_stream`, `_cafresohq_stream` (tools-enabled variant becomes a task option, not a separate route) |
 | `codex` | cli | `_codex_stream` + its bespoke JSON parsing |
-| `gemini-cli` | cli | detection exists; streaming route to be built **against the contract from day one** |
+| `gemini-cli` | cli | ✅ shipped 2026-08-11 as `drivers/gemini_cli.py` — one-shot `--yolo --prompt` spawn, contract events from day one; serve.py's detection + auth probe delegate to it |
 | `hermes` | http | `/hermes/*` proxy + gateway lifecycle + config/env management, all private to the driver |
 | `ollama` / `lmstudio` | http | the `ROUTES` relay entries, wrapped to emit contract events |
 | `openrouter` | http | `night_runner`'s HTTP client, promoted out of the scheduler into a shared driver both night missions and live tasks use |
@@ -140,7 +140,9 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
    tool text + `[DONE]` trailer), then `local_http.py` (✅ done 2026-08-05 —
    one OpenAI-compat streaming base; lmstudio + ollama + openrouter drivers;
    the raw ROUTES relays stay for the legacy in-browser client), then
-   `gemini_cli.py`.
+   `gemini_cli.py` (✅ done 2026-08-11 — the last bespoke integration style;
+   serve.py's `_gemini_resolve` + auth probe now delegate to the driver,
+   pinned by `scripts/test_drivers.py`).
 3. ✅ **done 2026-08-05** — **Hermes last** — most privileged today, most
    plumbing to fold inward. Done-criterion met: zero hermes config/env/gateway
    knowledge outside `drivers/hermes.py` (the four gateway-restart call sites
