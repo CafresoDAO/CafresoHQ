@@ -454,7 +454,7 @@ function NotificationCenter({
             <button
               className="px-btn ghost"
               style={{fontSize: 'var(--text-9)'}}
-              onClick={() => { if (window.confirm('Clear all notifications? Audit trail is lost.')) onClear(); }}
+              onClick={async () => { if (await window.hqConfirm('Clear all notifications? Audit trail is lost.', { danger: true })) onClear(); }}
             >CLEAR ALL</button>
           </div>
         )}

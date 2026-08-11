@@ -122,8 +122,8 @@ function AppGlobalCommands({
           label: 'Delete workspace "' + w.name + '"',
           section: 'Workspaces',
           icon: '✕',
-          run: () => {
-            if (window.confirm(`Delete workspace "${w.name}"?`) && onDeleteWorkspace) {
+          run: async () => {
+            if ((await window.hqConfirm(`Delete workspace "${w.name}"?`, { danger: true })) && onDeleteWorkspace) {
               onDeleteWorkspace(w.id);
             }
           },
@@ -185,8 +185,8 @@ function AppGlobalCommands({
        opens a toast with the full capability roster. */
     { id: 'comms.who-can', label: '/who-can — find the right coworker for a job',
       section: 'Comms', icon: '🔎',
-      run: () => {
-        const q = window.prompt('Find coworkers who can do…\n(e.g. "code review", "docs", "deployment")', '');
+      run: async () => {
+        const q = await window.hqPrompt('Find coworkers who can do…\n(e.g. "code review", "docs", "deployment")', { value: '' });
         if (!q || !q.trim()) return;
         const hits = whoCan(agents, q);
         const toast = window.cafresohqToast;

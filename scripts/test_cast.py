@@ -701,16 +701,43 @@ console.log(JSON.stringify(R));
     # onAddSticky is the "+ NOTE" action always visible on the office floor
     # (also bound to the 'n' shortcut) — same silently-disabled-on-iframe-
     # hosts risk as the vault, on an even more prominent, always-present
-    # surface. Only this one call site fixed this pass; the broader sweep
-    # (18+ remaining sites across app.jsx, modals/settings.jsx,
-    # modals/hire.jsx, app/commands.jsx, ui/onboarding.jsx, features.jsx,
-    # claude-client.jsx — several touching destructive confirms like STOP
-    # ALL and task/workspace delete) is a deliberately separate, larger,
-    # more careful pass: a careless batch convert risks dropping an
-    # `await` and silently skipping a confirmation on a destructive action.
+    # surface.
     check('the CEO-desk sticky note uses the in-app prompt dialog',
           bool(re.search(r'const onAddSticky = async[\s\S]{0,600}await window\.hqPrompt', app_src)),
           "app.jsx: onAddSticky() must use hqPrompt, not the native prompt()")
+
+    # ── the full sweep: no native dialog remains anywhere in the app ──────
+    # The two prior checks fixed the vault and the sticky note; grepping
+    # afterward turned up 18+ MORE raw window.prompt/window.confirm sites
+    # across app.jsx, modals/settings.jsx, modals/hire.jsx, app/commands.jsx,
+    # ui/onboarding.jsx, features.jsx, claude-client.jsx — several guarding
+    # destructive actions (STOP ALL, task/workspace delete, granting a
+    # coworker computer access). Converted every one, checking each call
+    # site's caller first (a plain onClick/fire-and-forget run() is safe to
+    # make async; a chained synchronous call like `onDismiss(id);
+    # onClose();` needs a beat of thought about ordering, not a blind
+    # find-replace). ui/feedback.jsx's OWN fallback definitions
+    # (`window.hqConfirm = (m) => Promise.resolve(window.confirm(m))`) are
+    # the one legitimate use of the natives — DialogHost's degrade-gracefully
+    # path — so this scan excludes that one file.
+    all_jsx_dirs = ['app', 'ui', 'modals', 'views']
+    offenders = []
+    root_jsx = [p for p in ROOT.glob('*.jsx')]
+    dir_jsx = [p for d in all_jsx_dirs for p in (ROOT / d).glob('*.jsx')]
+    for f in root_jsx + dir_jsx:
+        if f.name == 'feedback.jsx':
+            continue
+        src = f.read_text(encoding='utf-8')
+        for m in re.finditer(r'(?<!hq)\bwindow\.(prompt|confirm)\(|(?<![.\w])\b(?:prompt|confirm)\(', src):
+            line_no = src.count('\n', 0, m.start()) + 1
+            line = src.splitlines()[line_no - 1]
+            if line.strip().startswith(('//', '*')):
+                continue
+            offenders.append(f'{f.relative_to(ROOT)}:{line_no}')
+    check('no raw window.prompt/window.confirm remains anywhere in the app',
+          not offenders,
+          f'native dialog calls found (silently disabled on iframe-sandboxed '
+          f'hosts — see ui/feedback.jsx DialogHost docstring): {offenders}')
 
     print()
     if FAILS:

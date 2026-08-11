@@ -864,11 +864,11 @@ function App() {
      tokens or talking to the host computer right now: every in-flight agent
      stream is aborted, every running mission is paused. Useful when an
      elevated agent goes off the rails or the API quota is about to run out. */
-  const onStopAll = () => {
+  const onStopAll = async () => {
     const inflight = agentAbortersRef.current.size;
     const running = missions.filter(m => m.status === 'running').length;
     if (inflight === 0 && running === 0) { say('Nothing to stop', 'STOP'); return; }
-    if (!window.confirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`)) return;
+    if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`, { danger: true }))) return;
     for (const c of agentAbortersRef.current.values()) {
       try { c.abort(); } catch (_e) {}
     }
@@ -1114,7 +1114,7 @@ ${d.text}` : d.text,
      and also when the agent is dismissed (handled in onDismiss).  */
   const pendingElevationRef = useRefA(new Set());
 
-  const onDismiss = (id) => {
+  const onDismiss = async (id) => {
     const a = agents.find(x=>x.id===id);
     if (!a) return;
     // Detected-CLI agents are auto-(re)added by the local CLI sync on load —
@@ -1133,14 +1133,14 @@ ${d.text}` : d.text,
     let cascadeAction = 'none';  // 'none' | 'dismiss' | 'transfer'
     if (assistants.length > 0) {
       const names = assistants.map(x => x.name).join(', ');
-      const choice = window.prompt(
+      const choice = await window.hqPrompt(
         `${a.name} has ${assistants.length} assistant${assistants.length === 1 ? '' : 's'}: ${names}.\n\n` +
         `What should happen to them?\n\n` +
         `Type one of:\n` +
         `  dismiss   — let the assistants go too\n` +
         `  transfer  — they stay on, reporting directly to you (boss)\n` +
         `  cancel    — abort dismissing ${a.name}`,
-        'transfer'
+        { value: 'transfer' }
       );
       if (!choice) return;  // user cancelled the prompt itself
       const c = choice.trim().toLowerCase();
@@ -3451,7 +3451,7 @@ ${d.text}` : d.text,
       sourceMsgId: msg.id,
     });
   };
-  const onDeleteTask = (id) => {
+  const onDeleteTask = async (id) => {
     const t = tasks.find(x => x.id === id);
     if (!t) return;
     // Guard against losing real output: archived stand-ups / agent results
@@ -3463,8 +3463,8 @@ ${d.text}` : d.text,
     const running = t.status === 'doing' && !!t.assignedTo;
     if (running) {
       const who = (agents.find(a => a.id === t.assignedTo) || {}).name || 'someone';
-      if (!window.confirm(`${who} is working on "${t.title}" right now.\n\nDelete it and stop them?`)) return;
-    } else if (t.result && !window.confirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`)) {
+      if (!(await window.hqConfirm(`${who} is working on "${t.title}" right now.\n\nDelete it and stop them?`, { danger: true }))) return;
+    } else if (t.result && !(await window.hqConfirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`, { danger: true }))) {
       return;
     }
     /* Stop the run, don't just drop the card. Deleting a running task used to
@@ -3524,10 +3524,10 @@ ${d.text}` : d.text,
       return;
     }
     if (displaced) {
-      const ok = window.confirm(
+      const ok = await window.hqConfirm(
         `${agent.name} is working on "${displaced.title}".\n\n` +
         `Start "${task.title}" instead? "${displaced.title}" goes back to the inbox ` +
-        `and whatever they had done on it so far is lost.`);
+        `and whatever they had done on it so far is lost.`, { danger: true });
       if (!ok) return;
       setTasks(prev => prev.map(t => t.id === displaced.id
         ? { ...t, stalledNote: `put aside when you started "${task.title}" — start it again when you want it` }
@@ -4627,8 +4627,8 @@ ${d.text}` : d.text,
   }, [setActiveView, setRailCollapsed, setChatWinOpen, setDensity, setTheme, setNight, setActiveWorkspace, setWindowsEnabled, setOpenWindows]);
 
   /* Capture current state into a new user workspace. */
-  const saveCurrentWorkspace = useCallbackA(() => {
-    const name = (window.prompt('Name this workspace:') || '').trim();
+  const saveCurrentWorkspace = useCallbackA(async () => {
+    const name = ((await window.hqPrompt('Name this workspace:')) || '').trim();
     if (!name) return;
     const id = 'ws.user.' + Date.now().toString(36);
     const ws = {
@@ -4754,7 +4754,7 @@ ${d.text}` : d.text,
         if (filter) try { sessionStorage.setItem('cafresohq:inbox-filter', filter); } catch(_e) {}
         setInboxOpen(true);
       }}
-      onRetryFailed={() => {
+      onRetryFailed={async () => {
         const failed = (messagesRef.current || []).filter(m => m.state === 'failed');
         if (!failed.length) {
           window.cafresohqToast && window.cafresohqToast.warn('No failed messages to retry.');
@@ -4769,8 +4769,8 @@ ${d.text}` : d.text,
             `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
           return;
         }
-        if (!window.confirm(
-          `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`)) return;
+        if (!(await window.hqConfirm(
+          `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`))) return;
         // Spawn a fresh dispatch — old message stays in the registry as
         // historical, the retry creates its own record (with parentId set
         // so the thread chain remains intact).

@@ -2144,7 +2144,12 @@ function _tipjarSource() {
     btn.onclick = function () {
       (navigator.clipboard ? navigator.clipboard.writeText(value) : Promise.reject()).then(
         function () { btn.textContent = 'COPIED'; setTimeout(function () { btn.textContent = 'COPY'; }, 1200); },
-        function () { window.prompt('Copy address:', value); }
+        // Clipboard API rejected — fall back to a select-and-copy dialog.
+        // window.hqPrompt (ui/feedback.jsx) over the native prompt(): same
+        // "select all, Cmd/Ctrl+C" affordance, but not silently disabled on
+        // hosts that block native dialogs (iframe sandboxes — this app's
+        // own ai.cafreso.com shell embedding is exactly one such host).
+        function () { window.hqPrompt('Copy address:', { value }).catch(() => {}); }
       );
     };
     line.appendChild(code); line.appendChild(btn); wrap.appendChild(line);

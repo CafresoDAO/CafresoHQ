@@ -1029,7 +1029,7 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
       size="lg"
       footer={receipts.length > 0 ? (
         <>
-          <button className="px-btn ghost" style={{fontSize: 'var(--text-9)', marginRight: 'auto'}} onClick={()=>{ if (confirm('Clear all receipts? Audit trail is lost.')) onClear(); }}>CLEAR ALL</button>
+          <button className="px-btn ghost" style={{fontSize: 'var(--text-9)', marginRight: 'auto'}} onClick={async ()=>{ if (await window.hqConfirm('Clear all receipts? Audit trail is lost.', { danger: true })) onClear(); }}>CLEAR ALL</button>
           <button className="px-btn primary" onClick={onClose}>DONE</button>
         </>
       ) : null}

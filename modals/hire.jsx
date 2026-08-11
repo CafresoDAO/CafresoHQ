@@ -179,8 +179,8 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     setElevated(false);
     setShowBoard(false);
   };
-  const saveAsTemplate = () => {
-    const tplName = (window.prompt('Save this configuration as a template — name it (e.g., "Researcher", "Inbox triage"):') || '').trim();
+  const saveAsTemplate = async () => {
+    const tplName = ((await window.hqPrompt('Save this configuration as a template — name it (e.g., "Researcher", "Inbox triage"):')) || '').trim();
     if (!tplName) return;
     const t = { id: 'tpl_'+Math.random().toString(36).slice(2,7), name: tplName, role, prompt, tools, avatar, model, temp };
     const next = [t, ...templates.filter(x => x.name !== tplName)];
@@ -249,17 +249,17 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     onClose();
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) return;
-    if (elevated && !window.confirm(
+    if (elevated && !(await window.hqConfirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
       `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
       `· Inter-agent DMs cannot reach them (only your direct dispatches will).\n` +
       `· Research missions are blocked unless you explicitly authorize unattended access.\n` +
       `· Every tool call they make will be logged to Receipts.\n` +
       `· Their actions will pause for your approval before executing.\n\n` +
-      `Continue?`
-    )) return;
+      `Continue?`, { danger: true }
+    ))) return;
     onHire({
       id: HQ.uid('a'),
       name: name.trim(),

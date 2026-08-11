@@ -734,14 +734,14 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                           Has file and shell access. DMs blocked, missions opt-in, every action logged.
                         </div>
                       </div>
-                      <div className={`pxswitch ${sel.elevated?'on':''}`} onClick={()=>{
+                      <div className={`pxswitch ${sel.elevated?'on':''}`} onClick={async ()=>{
                         if (!sel.elevated) {
-                          if (!window.confirm(
+                          if (!(await window.hqConfirm(
                             `Grant ${sel.name} COMPUTER ACCESS?\n\n` +
                             `They will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. ` +
                             `DMs from other agents will be blocked, missions require explicit authorization, and every tool call is logged.\n\n` +
-                            `Continue?`
-                          )) return;
+                            `Continue?`, { danger: true }
+                          ))) return;
                         }
                         update({ elevated: !sel.elevated });
                       }}><div className="nub"/></div>
@@ -855,8 +855,8 @@ function AccountTab({ usageTokens = 0 }) {
     } catch (_e) { setNote('copy failed — clipboard blocked'); }
   };
 
-  const resetOnboarding = () => {
-    if (!window.confirm('Replay the new-user guide on next reload?')) return;
+  const resetOnboarding = async () => {
+    if (!(await window.hqConfirm('Replay the new-user guide on next reload?'))) return;
     try {
       const kill = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -1026,8 +1026,8 @@ function SystemTab() {
     setImportBusy(false);
   };
 
-  const resetOnboarding = () => {
-    if (!window.confirm('Replay the new-user guide on next reload?')) return;
+  const resetOnboarding = async () => {
+    if (!(await window.hqConfirm('Replay the new-user guide on next reload?'))) return;
     try {
       const kill = [];
       for (let i = 0; i < localStorage.length; i++) {
