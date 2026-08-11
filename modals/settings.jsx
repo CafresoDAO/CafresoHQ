@@ -14,9 +14,18 @@ const SETTINGS_TABS = [
 ];
 // old/removed id → canonical id, so deep-links (openSettings('keys') from the
 // old "add a key" chip, saved last-tab values, tour buttons) never dead-end.
+/* `keys` and `agentcli` point at CONNECTIONS now that it exists. Both were
+   parked on 'account' only because there was nowhere better to send them:
+   the ⚠ ADD AI KEY chip's own tooltip has been promising "Settings →
+   Connections" the whole time, and the onboarding checklist's FIRST step
+   ("Your AI brain") lands here too — the two places a boss with no working
+   brain is most likely to click. `agentcli` was the old CODE AGENTS tab,
+   which is precisely the new "on this machine" panel.
+   A managed install has no CONNECTIONS tab; SettingsModal's activeTab
+   fallback catches that and lands on the first visible tab instead. */
 const SETTINGS_TAB_ALIAS = {
   global: 'appearance', modules: 'icp-services',
-  keys: 'account', system: 'account', agentcli: 'account', media: 'appearance',
+  keys: 'connections', system: 'account', agentcli: 'connections', media: 'appearance',
 };
 
 /* Search index — one entry per meaningful control so "key", "model", "dark"

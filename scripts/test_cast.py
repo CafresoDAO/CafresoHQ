@@ -768,6 +768,19 @@ console.log(JSON.stringify(R));
               ('OPENROUTER_API_KEY', 'GROQ_API_KEY', 'GEMINI_API_KEY')),
           'modals/settings.jsx: telling someone to "add a key" without naming '
           'the variable is the same silence in a different font')
+    # The ⚠ ADD AI KEY chip's tooltip has always said "Click to open
+    # Settings → Connections", and the onboarding checklist's first step
+    # ("Your AI brain") uses the same openSettings('keys') deep-link. Both
+    # aliased to ACCOUNT because CONNECTIONS did not exist. It does now, so
+    # the promise the tooltip already makes should be the one kept.
+    check("the 'add a key' deep-link lands on CONNECTIONS",
+          "keys: 'connections'" in settings_src,
+          "modals/settings.jsx: openSettings('keys') is what the ADD AI KEY "
+          "chip and the onboarding brain step both call — it must reach the "
+          'tab about connecting a brain')
+    check('the old CODE AGENTS deep-link lands there too',
+          "agentcli: 'connections'" in settings_src,
+          "modals/settings.jsx: the old CLI tab is now the 'on this machine' panel")
     check('the panel never offers to take a key in the browser',
           not re.search(r'ConnectionsPanel[\s\S]*?\n}', settings_src)
           or 'type="password"' not in re.search(r'function ConnectionsPanel[\s\S]*?\n}\n', settings_src).group(0),
