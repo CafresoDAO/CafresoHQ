@@ -5,6 +5,9 @@ import { Modal, ModelPicker } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 const SETTINGS_TABS = [
   { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · hosting · usage' },
+  /* Self-hosted installs only (filtered out when health.managed) — see
+     ConnectionsPanel for why this is status-and-instructions, not a form. */
+  { id: 'connections', ico: '🔌', label: 'CONNECTIONS', desc: 'brains found · cloud keys' },
   { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
   { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
   { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
@@ -20,6 +23,8 @@ const SETTINGS_TAB_ALIAS = {
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
   { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
+  { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain' },
+  { tab:'connections', label:'Cloud provider keys', hint:'OpenRouter · Groq · Gemini — set as environment variables', kw:'connections key api openrouter groq gemini google env environment variable byok self-hosted' },
   { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
   { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
   { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
@@ -53,6 +58,128 @@ const SETTINGS_INDEX = [
    agent-tool gating stays synchronous. Turning money OFF never touches funds:
    balances live on-chain under the user's Internet Identity — the module hides
    them and pauses agent spending, nothing more. */
+
+/* ── Self-host connections (north-star §1: "bring the subscriptions you
+   already have") ───────────────────────────────────────────────────────
+   The gap this closes: the front desk only shows a cloud provider's card
+   when detect.authenticated is true (modals/hire.jsx — "a card that would
+   fail its first task is worse than no card", which is right). But when
+   the key ISN'T set the card is simply absent, so a self-hosted boss is
+   never told those coworkers exist, let alone how to enable them. Silence,
+   not a wrong answer — and silence on the one path north-star §1 names
+   first.
+
+   Why this is a read-only status panel and NOT a key-entry form: the
+   drivers treat keys as env/operator config on purpose.
+   drivers/local_http.py's configure() actively REFUSES runtime settings
+   ("this driver has no runtime settings", 400), and hire.jsx's own note
+   says the key "lives server-side, so … keys never reach the browser".
+   A browser form would need a new secret-accepting endpoint — fighting a
+   deliberate security posture rather than filling a gap. So: show what is
+   connected, and for what isn't, name the exact environment variable and
+   where to get the key. The boss sets it where secrets belong.
+
+   Managed installs never see this tab (gated on health.managed in
+   SettingsModal) — there the container already holds the keys. */
+const SELF_HOST_PROVIDERS = [
+  { id: 'openrouter', label: 'OpenRouter', env: 'OPENROUTER_API_KEY',
+    where: 'openrouter.ai/keys', note: 'free open-weights models · no card needed to start' },
+  { id: 'groq', label: 'Groq', env: 'GROQ_API_KEY',
+    where: 'console.groq.com/keys', note: 'fastest free tier' },
+  { id: 'gemini-api', label: 'Google Gemini', env: 'GEMINI_API_KEY',
+    where: 'aistudio.google.com/apikey', note: 'generous free tier' },
+];
+
+function ConnectionsPanel() {
+  const [drivers, setDrivers] = useStateM(null);   // null = still probing
+  const [err, setErr] = useStateM('');
+  useEffectM(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const r = await CafresoHQClient.agentDrivers(true);
+        if (!dead) setDrivers((r && r.drivers) || []);
+      } catch (e) { if (!dead) { setErr(String((e && e.message) || e)); setDrivers([]); } }
+    })();
+    return () => { dead = true; };
+  }, []);
+  const detectOf = (id) => {
+    const d = (drivers || []).find(x => x.id === id);
+    return (d && d.detect) || null;
+  };
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>ON THIS MACHINE</h4>
+        <div className="muted" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+          Coworkers run on brains you already have. Anything found here can be
+          hired at the front desk.
+        </div>
+        {drivers === null && <div className="muted">Checking…</div>}
+        {err && <div className="tiny" style={{ color: '#c44' }}>Couldn’t check: {err}</div>}
+        {drivers !== null && ['claude-code', 'codex', 'gemini', 'ollama', 'lmstudio'].map(id => {
+          const det = detectOf(id);
+          if (!det) return null;
+          /* A local daemon counts as live only on a real probe
+             (detect.version === 'reachable') — hire.jsx uses the same rule,
+             because `installed` is true for these from the default URL
+             alone. But "not found on this machine" is the wrong SENTENCE
+             for that state: LM Studio may well be installed and simply not
+             running, and telling someone their software is absent when it
+             is merely closed sends them to a download page for something
+             they already have. Say which it is. */
+          const isDaemon = id === 'ollama' || id === 'lmstudio';
+          const live = isDaemon ? det.version === 'reachable' : !!det.installed;
+          const label = { 'claude-code': 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI',
+                          ollama: 'Ollama', lmstudio: 'LM Studio' }[id];
+          const offText = isDaemon
+            ? (det.installed ? 'not answering — start it and reopen this' : 'not running on this machine')
+            : 'not found on this machine';
+          return (
+            <div className="row-knob" key={id}>
+              <div>
+                <div className="lbl">{label}</div>
+                <div className="sub">
+                  {live
+                    ? (det.authenticated ? 'found · signed in' : 'found · needs a sign-in before its first task')
+                    : offText}
+                </div>
+              </div>
+              <span className="tiny">
+                {live ? (det.authenticated ? '● ready' : '● sign in') : (isDaemon ? '○ offline' : '○ absent')}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="cb-panel">
+        <h4>CLOUD KEYS</h4>
+        <div className="muted" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+          Optional. Set one as an environment variable where you start HQ, then
+          restart it — the key stays on your machine and never passes through
+          this page.
+        </div>
+        {SELF_HOST_PROVIDERS.map(p => {
+          const det = detectOf(p.id);
+          const on = !!(det && det.authenticated);
+          return (
+            <div className="row-knob" key={p.id} style={{ alignItems: 'flex-start' }}>
+              <div>
+                <div className="lbl">{p.label}</div>
+                <div className="sub" style={{ maxWidth: 300 }}>
+                  {on
+                    ? 'connected — hire them at the front desk'
+                    : <>set <code>{p.env}</code> · key from {p.where}<br/>{p.note}</>}
+                </div>
+              </div>
+              <span className="tiny" style={{ whiteSpace: 'nowrap' }}>{on ? '● connected' : '○ not set'}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* Tool chips shown in Hire + Roster. The wallet tool only appears when the
    Money module is on — with money off, agents shouldn't even be offerable a
@@ -571,6 +698,12 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
   // Live status for the nav rail: provider key state, CLI install count,
   // backend reachability. Refetched each time the modal opens.
   const [navStat, setNavStat] = useStateM({});
+  /* null until /health answers. CONNECTIONS is for self-hosted installs
+     only — on a managed container Cafreso holds the keys, so a panel about
+     setting env vars would be noise at best and misleading at worst.
+     Starts null (not false) so the tab doesn't flash in and out on a
+     managed box during the probe. */
+  const [managed, setManaged] = useStateM(null);
   useEffectM(() => {
     if (!open) return;
     let live = true;
@@ -580,10 +713,28 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
       // container up" — provider keys and CLI installs are Cafreso's job now.
       const stat = {};
       try { stat.backend = !!(await C.backendHealth()); } catch (_e) { stat.backend = false; }
-      if (live) setNavStat(stat);
+      /* backendHealth() answers a BOOLEAN (reachable or not) — it does not
+         hand back the body. The managed flag needs the body, so fetch it
+         separately; AccountTab already does exactly this for the same
+         reason. Leave `managed` null on any failure so a box we cannot
+         classify never gets shown a panel aimed at the other kind. */
+      let mg = null;
+      try {
+        const r = await fetch((window._API_BASE || '') + '/health',
+          { cache: 'no-store', credentials: 'include' });
+        const j = r.ok ? await r.json().catch(() => null) : null;
+        if (j && typeof j === 'object') mg = !!j.managed;
+      } catch (_e) { mg = null; }
+      if (live) { setNavStat(stat); setManaged(mg); }
     })();
     return () => { live = false; };
   }, [open]);
+  const visibleTabs = SETTINGS_TABS.filter(t => t.id !== 'connections' || managed === false);
+  /* A managed box whose last-used tab was CONNECTIONS (self-hosted before,
+     or the flag flipped) would land on a hidden tab and render an empty
+     body — no nav item lit, nothing shown, no way to tell what went wrong.
+     Fall back to the first visible tab instead. */
+  const activeTab = visibleTabs.some(t => t.id === tab) ? tab : visibleTabs[0].id;
 
   // Deep-link: jump to a requested tab each time the modal is (re)opened
   // (e.g. the "no API key" chip opens straight to CONNECTIONS).
@@ -633,8 +784,8 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
         <aside className="settings-nav">
           <input className="settings-search" type="search" placeholder="🔍 search settings…"
             value={q} onChange={e => setQ(e.target.value)} aria-label="Search settings"/>
-          {SETTINGS_TABS.map(t => (
-            <button key={t.id} className={`sn-item ${tab===t.id && !terms.length ? 'active' : ''}`}
+          {visibleTabs.map(t => (
+            <button key={t.id} className={`sn-item ${activeTab===t.id && !terms.length ? 'active' : ''}`}
               onClick={() => { setQ(''); setTab(t.id); }}>
               <span className="sn-ico">{t.ico}</span>
               <span className="sn-txt">
@@ -666,11 +817,11 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
-          {!terms.length && tab === 'icp-services' && (
+          {!terms.length && activeTab === 'icp-services' && (
             <IcpServicesPanel agents={agents} />
           )}
 
-          {!terms.length && tab === 'agents' && (
+          {!terms.length && activeTab === 'agents' && (
             <div className="control-board">
               <div className="cb-panel">
                 <h4>ROSTER</h4>
@@ -752,7 +903,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
-          {!terms.length && tab === 'appearance' && (
+          {!terms.length && activeTab === 'appearance' && (
             <div className="control-board">
               {setTheme && (
                 <div className="cb-panel">
@@ -807,7 +958,10 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
             </div>
           )}
 
-          {!terms.length && tab === 'account' && <AccountTab usageTokens={usageTokens} />}
+          {!terms.length && activeTab === 'account' && <AccountTab usageTokens={usageTokens} />}
+          {/* managed === false, not just falsy: null means /health hasn't
+              answered yet, and a managed box must never flash this panel. */}
+          {!terms.length && activeTab === 'connections' && managed === false && <ConnectionsPanel />}
         </div>
       </div>
     </Modal>

@@ -739,6 +739,41 @@ console.log(JSON.stringify(R));
           f'native dialog calls found (silently disabled on iframe-sandboxed '
           f'hosts — see ui/feedback.jsx DialogHost docstring): {offenders}')
 
+    # ── self-host CONNECTIONS panel (north-star §1) ───────────────────────
+    # The gap: hire.jsx only shows a cloud provider's card when
+    # detect.authenticated, so with no key set the card is ABSENT and a
+    # self-hosted boss is never told the provider exists or how to enable
+    # it. Closed with a read-only status panel, NOT a key form — the
+    # drivers refuse runtime key config on purpose
+    # (drivers/local_http.py configure() → 400 "no runtime settings") and
+    # hire.jsx notes keys "never reach the browser". A form would need a
+    # new secret-accepting endpoint, i.e. fighting the security posture.
+    check('a CONNECTIONS tab exists for self-hosted installs',
+          "id: 'connections'" in settings_src and 'function ConnectionsPanel' in settings_src,
+          'modals/settings.jsx: the self-host connections surface is missing')
+    check('the CONNECTIONS tab is hidden on managed installs',
+          "t.id !== 'connections' || managed === false" in settings_src,
+          'modals/settings.jsx: managed containers hold the keys — an env-var '
+          'panel there is noise; must be gated on health.managed')
+    check('...and gated on managed === false, never merely falsy',
+          "activeTab === 'connections' && managed === false" in settings_src,
+          'modals/settings.jsx: null means /health has not answered yet — a '
+          'managed box must not flash a self-host panel mid-probe')
+    check('a hidden tab cannot strand the modal on an empty body',
+          'const activeTab = visibleTabs.some' in settings_src,
+          'modals/settings.jsx: a managed box whose saved tab was CONNECTIONS '
+          'would render no panel at all without a fallback')
+    check('the panel names the real env var for each provider',
+          all(v in settings_src for v in
+              ('OPENROUTER_API_KEY', 'GROQ_API_KEY', 'GEMINI_API_KEY')),
+          'modals/settings.jsx: telling someone to "add a key" without naming '
+          'the variable is the same silence in a different font')
+    check('the panel never offers to take a key in the browser',
+          not re.search(r'ConnectionsPanel[\s\S]*?\n}', settings_src)
+          or 'type="password"' not in re.search(r'function ConnectionsPanel[\s\S]*?\n}\n', settings_src).group(0),
+          'modals/settings.jsx: keys are env/operator config — the drivers '
+          'reject runtime key settings, so a browser form would be a lie')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
