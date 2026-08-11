@@ -637,6 +637,37 @@ console.log(JSON.stringify(R));
         check(f'{label}: the link still exists to be checked', bool(occurrences),
               f'{label}: expected at least one {needle} link — did it move?')
 
+    # ── Settings must not claim a paid managed plan on a self-hosted box ──
+    # Live-checked on a bare `python3 serve.py` install (CAFRESOHQ_FLEET_MODE
+    # unset): /health correctly reports managed:false, brain:null — but
+    # AccountTab's "YOUR PLAN" panel hardcoded "Cafreso HQ Premium ...
+    # active" with NO gate on health.managed at all. A self-hosted user (the
+    # audience north-star §1 names first) opened Settings and was told they
+    # had an active paid subscription they don't have. The exact
+    # fabricated-state failure this same panel had already been caught
+    # doing twice before, per its own in-file "false span" comment on the
+    # Usage row — just not caught here.
+    settings_src = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')
+    account_tab = re.search(r'function AccountTab\([\s\S]*?\n}\n', settings_src)
+    check('AccountTab reads the settings source to be checked', bool(account_tab),
+          'modals/settings.jsx: could not find AccountTab — did it move or rename?')
+    body = account_tab.group(0) if account_tab else ''
+    check('the managed-plan panel is gated on health.managed',
+          bool(re.search(r'const managed = .*health\.managed', body)),
+          'modals/settings.jsx: AccountTab must branch on health.managed before '
+          'claiming an active paid plan')
+    check('"Cafreso HQ Premium ... active" only renders inside that gate',
+          bool(re.search(r'\{managed \? \([\s\S]*?Cafreso HQ Premium', body)),
+          'modals/settings.jsx: the premium claim must be inside the managed-only branch')
+    check('a self-hosted box gets an honest label instead',
+          # A distinct CSS hook, not prose — a comment mentioning
+          # "self-hosted" would satisfy a plain substring check even with
+          # the real branch deleted (caught live: fire-testing the PREVIOUS
+          # two checks left this one green because it was reading the
+          # explanatory comment above the branch, not the branch itself).
+          'plan-selfhosted' in body,
+          'modals/settings.jsx: the false branch must say what is actually true')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))

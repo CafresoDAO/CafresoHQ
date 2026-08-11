@@ -876,18 +876,44 @@ function AccountTab({ usageTokens = 0 }) {
     : null;
   const fmtTokens = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 
+  /* "Cafreso HQ Premium ... active" was hardcoded here with no gate at
+     all — shown identically whether /health said managed:true or
+     managed:false. A bare `python3 serve.py` self-host (health.managed
+     false, health.brain null — confirmed live) got told it had an ACTIVE
+     PAID plan with a brain "included", which is the exact fabricated-
+     state failure this panel had already been caught doing twice before
+     (see the "false span" note below, on Usage) — just not here yet.
+     Self-hosted installs are the audience north-star §1 names first
+     ("bring your own subscriptions"), so this is the first tab many of
+     them will ever open. */
+  const managed = !!(health && health.managed);
   return (
     <div className="control-board">
       <div className="cb-panel">
         <h4>YOUR PLAN</h4>
-        <div className="row-knob">
-          <div><div className="lbl">Cafreso HQ Premium</div><div className="sub">managed cloud — hosting, brain & updates included</div></div>
-          <span className="tiny">{dot(true)}active</span>
-        </div>
-        <div className="row-knob">
-          <div><div className="lbl">AI brain</div><div className="sub">included — no keys to manage</div></div>
-          <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'Gemma (Cafreso)'}</span>
-        </div>
+        {managed ? (
+          <>
+            <div className="row-knob">
+              <div><div className="lbl">Cafreso HQ Premium</div><div className="sub">managed cloud — hosting, brain & updates included</div></div>
+              <span className="tiny">{dot(true)}active</span>
+            </div>
+            <div className="row-knob">
+              <div><div className="lbl">AI brain</div><div className="sub">included — no keys to manage</div></div>
+              <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'not set yet'}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="row-knob plan-selfhosted">
+              <div><div className="lbl">Self-hosted</div><div className="sub">running on your own machine — bring your own subscriptions or keys</div></div>
+              <span className="tiny">{dot(!!health)}{health ? 'running' : 'unreachable'}</span>
+            </div>
+            <div className="row-knob">
+              <div><div className="lbl">AI brain</div><div className="sub">whatever your coworkers are configured with — see Roster</div></div>
+              <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'no shared brain — per-coworker'}</span>
+            </div>
+          </>
+        )}
         <div className="row-knob">
           {/* Third place this false span has been found today, after the
               roster card and the Situation Wall. `usageTokens` is
