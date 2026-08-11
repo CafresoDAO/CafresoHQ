@@ -1527,6 +1527,46 @@ async function localModelOptions() {
     }
   } catch (_e) {}
 
+  /* OpenRouter / Groq / Gemini API — the driver-contract cloud providers
+     (drivers/local_http.py), server-side-key-only by design (see
+     drivers/local_http.py's configure(), which REFUSES runtime settings).
+     Until now these were only reachable by being hired FRESH through the
+     front desk's auto-assigned card (modals/hire.jsx FRONT_DESK) — the
+     model string is baked into that card and never touches this picker.
+     So the boss could hire a new OpenRouter coworker but could not
+     REPOINT an existing one to it via Settings → Roster: the dropdown
+     never offered it, silently, the same "absence with no explanation"
+     class of gap the CONNECTIONS panel (modals/settings.jsx) exists to
+     close on the OTHER side of this exact promise — telling someone to
+     set GROQ_API_KEY is only half true if nothing in the app then lets
+     them actually pick Groq for a coworker they already hired.
+     One probe covers all three; each is offered only when its OWN key is
+     configured (never assume one implies another). */
+  try {
+    const dr = await agentDrivers(true);
+    const list = (dr && dr.drivers) || [];
+    const cloudDriver = (id) => {
+      const d = list.find(x => x.id === id);
+      return d && d.detect;
+    };
+    const CLOUD_DRIVER_DEFAULTS = {
+      openrouter:   { label: 'OpenRouter',    model: 'openai/gpt-oss-120b:free' },
+      groq:         { label: 'Groq',          model: 'llama-3.3-70b-versatile' },
+      'gemini-api': { label: 'Google Gemini', model: 'gemini-2.5-flash' },
+    };
+    for (const id of ['openrouter', 'groq', 'gemini-api']) {
+      const det = cloudDriver(id);
+      if (det && det.authenticated) {
+        const { label, model } = CLOUD_DRIVER_DEFAULTS[id];
+        groups.push({
+          label: `${label} (server key)`,
+          provider: id,
+          options: [{ id: `${id}:${model}`, label: model }],
+        });
+      }
+    }
+  } catch (_e) {}
+
   /* Hermes sits HERE, with the other runtimes detected on this machine —
      not at the top of the list. It used to be hard-coded first with the
      comment "surface first" and the label "Hermes Agent (default · Nous

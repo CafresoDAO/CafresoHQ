@@ -570,6 +570,32 @@ console.log(JSON.stringify(R));
           and "google:" not in defs_gem.group(0),
           "app.jsx: a_cli_gemini's model must be 'gemini:*' — 'google:' needs a browser API key")
 
+    # ── the Roster model picker can actually select the driver-contract
+    #    cloud providers, not just get them via a fresh front-desk hire ────
+    # Found while reviewing the CONNECTIONS panel (7221c05): it tells a
+    # self-hosted boss to set GROQ_API_KEY etc., but localModelOptions()
+    # (which feeds the Roster tab's per-agent Model <select>) never listed
+    # openrouter/groq/gemini-api at all — only reachable by being hired
+    # FRESH through modals/hire.jsx's FRONT_DESK card, whose model string
+    # is hard-coded. An existing coworker could never be REPOINTED to a
+    # cloud driver via the picker — the dropdown silently never offered
+    # it. Telling someone to set a key is only half true if nothing then
+    # lets them pick the thing the key unlocks.
+    lmo = re.search(r'async function localModelOptions\(\)[\s\S]*?\n}\n', client)
+    lmo_body = lmo.group(0) if lmo else ''
+    check('localModelOptions() offers the three driver-contract cloud providers',
+          all(f"'{p}'" in lmo_body or f'`{p}' in lmo_body for p in ('openrouter', 'groq', 'gemini-api')),
+          'claude-client.jsx: the Roster picker must be able to select what '
+          'CONNECTIONS just told the boss to go set up')
+    check('...each gated on its OWN authenticated flag, not on any other',
+          bool(re.search(r"if \(det && det\.authenticated\)", lmo_body)),
+          'claude-client.jsx: one configured key must not make the other two '
+          'look available too')
+    check('...and this group sits before the paid "credits" tier',
+          lmo_body.find('CLOUD_DRIVER_DEFAULTS') < lmo_body.find("'Anthropic (Claude API"),
+          'claude-client.jsx: section 3.3 — what the boss already configured '
+          'must precede what they would have to buy')
+
     # ── CDP screenshots do not ride the default web claim (section 5) ────
     # "CDP browser screenshots | Niche, heavy, off-thesis for v1." It was
     # bundled onto claimed.has('web') alongside plain BROWSER_FETCH -- so
