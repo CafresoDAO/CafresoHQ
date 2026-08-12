@@ -24,6 +24,12 @@ function ModelPicker({ value, onChange, refreshKey }) {
   const [groups, setGroups] = useStateM([]);
   const [loading, setLoading] = useStateM(true);
   const [error, setError] = useStateM(false);
+  /* `refreshKey` is a prop, and NONE of ModelPicker's three call sites
+     (hire, providers, settings) passes it — so it is permanently undefined
+     and this effect could only ever run once. The refresh affordance existed
+     in the code and could never fire. An internal nonce so the picker owns
+     its own retry rather than depending on a caller that does not cooperate. */
+  const [retryNonce, setRetryNonce] = useStateM(0);
   useEffectM(() => {
     let live = true;
     setLoading(true);
@@ -61,20 +67,40 @@ function ModelPicker({ value, onChange, refreshKey }) {
         setError(true);
       });
     return () => { live = false; };
-  }, [refreshKey]);
+  }, [refreshKey, retryNonce]);
 
   const flat = groups.flatMap(g => g.options);
   const known = flat.some(o => o.id === value);
+  /* The fallback is a SUBSTITUTION, and it used to be announced only in a
+     `title` tooltip — which does not exist on touch and which almost nobody
+     hovers. What actually happened: detection failed, so the list stopped
+     being "what you already have" (§3.3) and became a static guess that
+     omits the boss's own running Ollama, while looking exactly like a
+     detected list. A picker quietly showing a different set of options than
+     it claims to is the same fault as a verdict about a graph with no shape.
+     Said out loud now, with the way back next to it. */
   return (
-    <select value={known ? value : ''} onChange={e => onChange(e.target.value)}
-      title={error ? 'Static fallback — proxy unreachable' : undefined}>
-      {!known && <option value="">{loading ? 'loading…' : (value || '— pick a model —')}</option>}
-      {groups.map(g => (
-        <optgroup key={g.provider} label={g.label}>
-          {g.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </optgroup>
-      ))}
-    </select>
+    <>
+      <select value={known ? value : ''} onChange={e => onChange(e.target.value)}>
+        {!known && <option value="">{loading ? 'loading…' : (value || '— pick a model —')}</option>}
+        {groups.map(g => (
+          <optgroup key={g.provider} label={g.label}>
+            {g.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      {error && (
+        <div className="tiny" style={{ color: '#c44', display: 'flex', flexWrap: 'wrap',
+                                       alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <span>Couldn’t check this machine, so this is a standard list — anything
+                you already run may be missing from it.</span>
+          <button type="button" className="px-btn" style={{ fontSize: 8, padding: '4px 7px' }}
+            disabled={loading} onClick={() => setRetryNonce(n => n + 1)}>
+            {loading ? 'CHECKING…' : '↻ CHECK AGAIN'}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 

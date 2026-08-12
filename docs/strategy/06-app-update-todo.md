@@ -112,8 +112,17 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
   there would imply the first had stopped working. The gap is AUTOMATIC loads,
   which have no button at all. Settings → Connections' driver probe is done:
   hoisted out of its `useEffect`, ↻ CHECK AGAIN wired to it, and two distinct
-  sentences depending on whether the office answered. Remaining: sweep the
-  other mount-time loads the same way.)*
+  sentences depending on whether the office answered. **Sweep completed same
+  day:** only two other mount-time loads reported their own failure, and both
+  are now fixed — the Projects file tree (replaced the whole tree with a raw
+  `Error: {err}` and had no retry of its own) and `ModelPicker`, which
+  silently substitutes a STATIC model list for the detected one. That second
+  one was the worse find: proven live, the fallback shows three buy-a-key
+  services where the real list is six groups including the boss's own running
+  **Ollama**, and the only signal was a `title` tooltip. Its `refreshKey` prop
+  is passed by none of its three call sites, so the refresh in the code could
+  never fire; both components now own an internal nonce. Pinned by
+  `scripts/test_mount_load_recovery.py`.)*
 
 ### Track 7 — SNS launch readiness *(04)*
 - [ ] **P1 (S)** **Reconcile the two token models** (100M/55-30-15 vs $CF/46-27-22) → adopt one (recommended: swap 30 / treasury 43 / team 15 vested / seed 2 / community 10).

@@ -1,4 +1,8 @@
 import { CafresoHQClient } from '../claude-client.jsx';
+/* cleanCause, not snagCause: a directory listing that fails is the office's
+   own file tools not answering, not a brain. snagCause's whole table names
+   brains, so it would confidently blame the wrong component here. */
+import { cleanCause } from '../app/floor.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function renderMarkdown(text) {
   if (!text) return '';
@@ -143,6 +147,11 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
   const [loading, setLoading] = useSV(false);
   const [err, setErr] = useSV(null);
   const [dropDir, setDropDir] = useSV(null);   // folder row being dragged over
+  /* A retry the tree owns. `refreshNonce` comes from the parent and is only
+     bumped after an upload, so on a failed listing there was no way to ask
+     again — and the failure REPLACES the whole tree, so the boss lost the
+     files and the route back in one go. */
+  const [retryNonce, setRetryNonce] = useSV(0);
 
   /* Collapse + clear cached sub-listings only when the project PATH changes.
      A refresh (refreshNonce bump after an upload) deliberately keeps expanded
@@ -160,8 +169,8 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     setErr(null);
     CafresoHQClient.toolExec('DIR_LIST', path)
       .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
-      .catch(e => { setErr(e.message || String(e)); setLoading(false); });
-  }, [path, refreshNonce]);
+      .catch(e => { setErr(cleanCause(e && e.message ? e.message : e)); setLoading(false); });
+  }, [path, refreshNonce, retryNonce]);
 
   const loadSub = (subPath) => {
     if (subEntries[subPath]) return;
@@ -224,7 +233,17 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
 
   if (!path) return <div className="proj-empty-msg">No project path set.</div>;
   if (loading) return <div className="proj-empty-msg">Loading…</div>;
-  if (err) return <div className="proj-empty-msg" style={{color: 'var(--danger)'}}>Error: {err}</div>;
+  if (err) return (
+    <div className="proj-empty-msg">
+      <div style={{ color: 'var(--danger)', marginBottom: 8 }}>
+        Couldn’t read this folder — {err}
+      </div>
+      <button className="px-btn" style={{ fontSize: 9 }}
+        onClick={() => { setErr(null); setRetryNonce(n => n + 1); }}>
+        ↻ TRY AGAIN
+      </button>
+    </div>
+  );
   if (!entries) return null;
   return <div className="tree-root">{renderEntries(entries, 0)}</div>;
 }
