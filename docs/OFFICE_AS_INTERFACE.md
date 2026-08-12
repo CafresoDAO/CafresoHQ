@@ -1193,6 +1193,35 @@ should extend that boundary, not blur it.
   > what is broken is wrong in the safer direction, but it is still wrong —
   > it invites a fix for a non-bug and quietly writes off a feature that
   > works.
+- **The office floor is not touch-sized, and "coffee" has no other door.**
+  MEASURED 2026-08-12 at 375×812, the first mobile pass of this codebase.
+  Of the **15 controls inside `.px-scene`, 14 are under the 44px touch
+  minimum** — the coffee mugs are **12×12**, the work-log paperstack 22×26.
+  `docs/strategy/06-app-update-todo.md` Track 6 already carries this as an
+  open P1 ("Interactive targets ≥44px"); this is the measurement behind it.
+
+  The obvious fix — expand the hit areas with a transparent overlay and
+  leave the art alone — is **not safe here, and the numbers say so**: the
+  tightest gap between two of those small controls is **11px**, between the
+  filing cabinet (`.px-cab`, open the vault) and the 1:1 sofa
+  (`.px-couch`, sit with the CEO). Growing both to 44px would overlap them
+  by more than the gap, trading a hard-to-hit target for a
+  wrong-thing-happens one on two controls a boss actually uses. Scaling the
+  whole scene up is no freer: it already renders 345px wide inside a 375px
+  viewport, so there is no slack to grow into without sideways scroll.
+
+  What makes it more than cosmetic: **`onCoffee` appears 5× in
+  `ui/office.jsx` and 0× in `views/core.jsx`.** Sending a coworker for
+  coffee — which STOPS whatever they are running and clears their desk — is
+  reachable on a phone only through that 12×12 mug. Every other roster
+  action has a full-size path (the mobile Team view is 19/21 over 44px, so
+  touch sizing was clearly considered there); this one does not. The nearest
+  alternative is the global ■ STOP ALL, which is a different, blunter action.
+
+  Left open deliberately rather than half-fixed: choosing between spacing
+  the props, scaling the scene, and giving coffee a roster control is a
+  design decision about the art, and §3.2 makes the floor load-bearing
+  enough that guessing at it in an audit pass would be the wrong call.
 - **`awaiting_reply` — the common case now closes; the rest is still open.**
   UPDATE 2026-08-07: the fan-out loop AWAITS every child dispatch, so when it
   exits, each recipient has run to a terminal state and the awaited thing has
