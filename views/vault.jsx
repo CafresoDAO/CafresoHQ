@@ -119,9 +119,40 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /* Bridge-mode search: VaultBridge has no vault:search message — the shell
+     only exposes list/read/write/create/remove — so vaultSearch() was being
+     called unconditionally and hitting the LOCAL serve.py /vault/search
+     endpoint even inside the encrypted shell, where that endpoint has no
+     relationship to the boss's actual (encrypted, parent-held) notes. A
+     search for a word that IS in the vault came back empty, or errored, with
+     nothing telling the boss their real notes were never even looked at —
+     exactly the silent-wrong-answer failure the vetKeys trust story can't
+     afford. Mirrors serve.py's own /vault/search scoring (title match worth
+     3, then raw occurrence count) so results rank the same either way. */
+  const bridgeSearch = async (query) => {
+    const ql = query.toLowerCase();
+    const candidates = files.filter(f => !f.isBinary);
+    const results = await Promise.all(candidates.map(async (f) => {
+      let text;
+      try { text = await _bridge.read(f.id); } catch (_e) { return null; }
+      const tl = String(text || '').toLowerCase();
+      const titleScore = f.title && f.title.toLowerCase().includes(ql) ? 3 : 0;
+      const count = ql ? tl.split(ql).length - 1 : 0;
+      if (!titleScore && !count) return null;
+      const idx = tl.indexOf(ql);
+      let snippet = '';
+      if (idx >= 0) {
+        const s = Math.max(0, idx - 60), e = Math.min(text.length, idx + query.length + 60);
+        snippet = (s > 0 ? '…' : '') + text.slice(s, e).replace(/\n/g, ' ').trim() + (e < text.length ? '…' : '');
+      }
+      return { path: f.path, title: f.title, score: titleScore + count, snippet };
+    }));
+    return results.filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
+  };
+
   const search = async () => {
     if (!q.trim()) { setHits(null); return; }
-    try { setHits(await CafresoHQClient.vaultSearch(q.trim())); }
+    try { setHits(_bridge ? await bridgeSearch(q.trim()) : await CafresoHQClient.vaultSearch(q.trim())); }
     catch (e) { setErr(e.message); setHits([]); }
   };
 
