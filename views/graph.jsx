@@ -396,13 +396,22 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
           return React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginTop: -6, marginBottom: 12, lineHeight: 1.45 } }, parts.join(' · '));
         })(),
 
-        // Top influential (betweenness brokers).
-        React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
-        (analytics.topInfluential || []).slice(0, 6).map((t) =>
-          React.createElement('div', { key: t.id, onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); }, title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-            '◆ ' + titleFor(t.id))),
+        /* Top influential (betweenness brokers). The heading is conditional
+           because nothing brokers on a small or disjoint graph — every
+           betweenness is 0, the Jenks cutoff comes back Infinity, and the
+           list is empty. A brand-new office was therefore shown a bold
+           "Most influential" with a blank space under it, which reads as a
+           surface that failed to load rather than one with nothing true to
+           say yet. No answer is better rendered as no section. */
+        (analytics.topInfluential || []).length > 0 && React.createElement(React.Fragment, null,
+          React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
+          (analytics.topInfluential || []).slice(0, 6).map((t) =>
+            React.createElement('div', { key: t.id, onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); }, title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+              '◆ ' + titleFor(t.id)))),
 
-        // Topical clusters.
+        // Topical clusters. Conditional for the same reason as the heading
+        // above: an empty vault was showing "Main topics" over blank space.
+        (analytics.clusters || []).length > 0 && React.createElement(React.Fragment, null,
         React.createElement('div', { style: { fontWeight: 600, margin: '12px 0 5px', color: '#F5D25D' } }, 'Main topics'),
         (analytics.clusters || []).slice(0, 5).map((c) =>
           React.createElement('div', { key: c.community, style: { marginBottom: 6 } },
@@ -433,7 +442,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
                   if (names.length === 3) break;
                 }
                 return names.join(', ');
-              })()))),
+              })())))),
 
         // Structural gap.
         analytics.gap && React.createElement('div', { style: { marginTop: 12, padding: 8, borderRadius: 8, background: 'rgba(232,169,169,0.10)', border: '1px solid rgba(232,169,169,0.25)' } },

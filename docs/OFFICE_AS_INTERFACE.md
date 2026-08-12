@@ -1104,6 +1104,56 @@ sentences are the part that cannot be enforced (§7 of this section); the
 office's sentences are the part that can, which makes them the ones with no
 excuse.
 
+> ✅ **A computed verdict is a promise too — the Vault analytics panel,
+> 2026-08-11/12.** The rule above was written about copy a human wrote. The
+> same standard applies to sentences a *formula* writes, and that panel was
+> publishing five it could not stand behind. Every one was found by running
+> the shipped `analyze()` on degenerate input, not by reading it:
+>
+> | What it said | On what | Why it was wrong |
+> |---|---|---|
+> | "Dispersed — many scattered topics" | an empty cabinet | Louvain returns NaN modularity for an edgeless graph; NaN is false against every comparison, so the chain fell through to its final `else` |
+> | "Weakly connected: A ⟷ B" | two groups joined by **six** edges | `score` only ranks pairs *relatively* — there is always a worst pair, so the alert could never not fire |
+> | "Weakly connected: Llama ⟷ Hermes" | the real office | true, and useless: Hermes is one unused coworker, and *everything* is weakly connected to an orphan |
+> | "0% · 3 items" twice | two equal halves of the map | `share` is an *influence* share; with no brokering anywhere it collapsed to 0 for everyone |
+> | "Topics:" / "Separate clusters:" with nothing after them | an empty vault | the `N === 0` early return emitted two fields; the rest rendered as `undefined` |
+>
+> Three lessons worth keeping separate:
+>
+> **A degenerate input does not produce a degenerate answer — it produces a
+> confident wrong one.** None of these failed loudly. NaN did not throw, the
+> missing metrics did not error, the gap did not warn. Each one silently
+> picked the branch that happened to be last, or the pair that happened to
+> sort first, and printed it in the same voice it uses for real findings.
+>
+> **A relative ranking must not be published as an absolute claim.** That is
+> the whole of the gap bug. "The weakest of your pairs" is a true statement
+> that becomes false the moment it is rendered as "Weakly connected", and
+> nothing in the code marked the transition. The fix is a threshold that
+> survives being said out loud — *fewer links across than there are items in
+> the smaller group* — because a threshold you can't phrase is one you can't
+> check.
+>
+> **Say the absence out loud rather than leaving a hole.** `unformed`,
+> "Topics: 0", and the now-conditional "Most influential" / "Main topics"
+> headings are all the same move: an honest "there isn't one yet" beats both
+> a guessed verdict *and* a blank space, because a bold heading over nothing
+> reads as a surface that failed to load. Same call as the contrast sweep —
+> a cannot-say is an answer.
+>
+> Both fixes are pinned by tests that call the real `analyze()` through an
+> esbuild CJS bundle (the worker's subpath imports defeat bare node ESM), and
+> both were fire-tested in *both* directions — the reverts, and the
+> silence-everything shortcut that would pass every check written so far.
+> `scripts/test_graph_structure_verdict.py`, `scripts/test_graph_gap_verdict.py`.
+>
+> Still open, deliberately: on the real office "Main topics" reads **100% ·
+> 3 items** over three **0% · 1 items** rows. Those are influence shares and
+> they are arithmetically correct, but nobody reads that percentage as "share
+> of brokering" — they read it as "how much of my work is this". Narrowing
+> the fallback to the fully-degenerate case was the defensible fix; deciding
+> what that number should *mean* is a design call, not a bug fix.
+
 ### The boundary to preserve, and what is still open
 
 **The honesty boundary — the thing to preserve.** Everything the *office*

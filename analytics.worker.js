@@ -82,7 +82,27 @@ function analyze({ nodes, edges }) {
   }
 
   const N = g.order, E = g.size;
-  if (N === 0) return { nodeAttrs: {}, metrics: { nodes: 0, edges: 0 }, clusters: [], topInfluential: [], gap: null };
+  /* An empty graph still has to answer every question the panel asks it.
+     This used to return `{ nodes: 0, edges: 0 }` and nothing else, so on a
+     brand-new office the panel rendered a bare "—" chip with no sentence
+     under it and, worse, two labels with NOTHING after them:
+
+         Topics:
+         Separate clusters:
+
+     which reads as a surface that failed to load rather than one with
+     nothing in it yet. Zero is a real answer to "how many topics";
+     undefined is not an answer at all. Same shape as `unformed` below —
+     say the absence out loud instead of leaving a hole. */
+  if (N === 0) {
+    return {
+      nodeAttrs: {},
+      metrics: { nodes: 0, edges: 0, avgDegree: 0, density: 0, modularity: 0,
+                 communityCount: 0, components: 0, structure: 'unformed',
+                 entropy: 0, largestShare: 0, influenceCutoff: Infinity },
+      clusters: [], topInfluential: [], gap: null,
+    };
+  }
 
   // Communities (Louvain / Blondel) + modularity.
   let communities = {}, modularity = 0, communityCount = 0;
@@ -126,10 +146,24 @@ function analyze({ nodes, edges }) {
     (byCommunity[c] = byCommunity[c] || []).push(nd);
     totalBc += bc[nd] || 0;
   });
+  /* `share` is an INFLUENCE share — how much of the graph's brokering this
+     cluster does. On a graph where nobody brokers anything (disjoint
+     clusters: every betweenness is 0, so totalBc is 0) that made every
+     share 0, and "Main topics" rendered two equal halves of the map as
+     "0% · 3 items" and "0% · 3 items". Nobody reads that percentage as
+     "share of brokering" — they read it as "how much of my work is this",
+     and by that reading 0% is simply false for half the map.
+
+     So when influence is undefined for EVERYONE, fall back to size share,
+     which is what the label implies anyway. On any graph with real
+     brokering nothing changes. Note this also feeds E_entropy below, and
+     improves it for the same reason: all-zero shares gave entropy 0, the
+     signal for "one dominant topic", about a graph with several equal
+     ones. */
   const clusters = Object.entries(byCommunity).map(([c, members]) => {
     const cBc = members.reduce((s, m) => s + (bc[m] || 0), 0);
     const top = members.slice().sort((a, b) => (bc[b] || 0) - (bc[a] || 0)).slice(0, 5);
-    return { community: Number(c), size: members.length, share: totalBc > 0 ? cBc / totalBc : 0, topNodes: top };
+    return { community: Number(c), size: members.length, share: totalBc > 0 ? cBc / totalBc : members.length / N, topNodes: top };
   }).sort((a, b) => b.share - a.share);
 
   // Structure classification (biased / focused / diversified / dispersed).
@@ -156,9 +190,34 @@ function analyze({ nodes, edges }) {
   else if (modularity <= 0.65) structure = (C < 0.5 && E_entropy >= 1.0) ? 'diversified' : 'focused';
   else structure = 'dispersed';
 
-  // Widest structural gap: the two largest communities with the FEWEST edges between.
+  /* Widest structural gap: the two largest communities with the FEWEST edges
+     between. The panel prints this as "Weakly connected: A ⟷ B", which is an
+     ABSOLUTE claim — so it may only be emitted when the pair really is weakly
+     connected. It used to be emitted whenever there were two clusters at all,
+     because `score` only ranks pairs RELATIVELY and there is always a worst
+     pair, so the alert could never not fire. Two measured consequences:
+
+       · Two triangles joined by SIX cross edges — about as connected as two
+         groups get — were reported as "Weakly connected".
+       · Three notes with no links at all produced "Weakly connected: a ⟷ b"
+         in a pink alert box directly beneath the structure chip's own
+         "Not enough here to read a shape yet". One panel, one render,
+         contradicting itself — the same fault as the NaN fall-through above,
+         one section further down.
+
+     Three gates now. `structure === 'unformed'` kills it outright: a graph
+     with no shape cannot have a gap in its shape. A pair qualifies only when
+     the links across it number fewer than the items in the SMALLER group —
+     a threshold that survives being said out loud, which the old one could
+     not. And both sides must hold at least two items, because a gap is a
+     missing bridge between two bodies of work and one orphan item is not a
+     body of work: measured on the real office (6 items, 2 links) the pick
+     was "Weakly connected: Llama ⟷ Hermes", where Hermes is simply an
+     unused coworker sitting alone. True, and useless — everything is
+     weakly connected to an orphan. Ranking among qualifying pairs is
+     unchanged. */
   let gap = null;
-  if (clusters.length >= 2) {
+  if (clusters.length >= 2 && structure !== 'unformed') {
     const inter = {};
     g.forEachEdge((e, attr, s, t) => {
       const cs = communities[s], ct = communities[t];
@@ -173,7 +232,9 @@ function analyze({ nodes, edges }) {
         const a = big[i].community, b = big[j].community;
         const key = a < b ? a + '|' + b : b + '|' + a;
         const between = inter[key] || 0;
-        const score = (big[i].size + big[j].size) / (between + 1);   // big & disconnected → high
+        if (big[i].size < 2 || big[j].size < 2) continue;              // an orphan is not a topic
+        if (between >= Math.min(big[i].size, big[j].size)) continue;   // genuinely joined — not a gap
+        const score = (big[i].size + big[j].size) / (between + 1);     // big & disconnected → high
         if (!best || score > best.score) best = { a, b, between, score, aTop: big[i].topNodes[0], bTop: big[j].topNodes[0] };
       }
     }
