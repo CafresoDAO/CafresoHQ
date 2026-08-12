@@ -7945,6 +7945,23 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     max-width: 80px;
   }
 
+  /* A keyboard-shortcuts cheatsheet on a device with no keyboard. Every one
+     of the nine rows it opens (⌘K, H, S, M, N, U, F, D, /) needs a key a
+     phone does not have, so the control costs three things and returns
+     nothing: it is 34×34 against a 44px touch minimum, it floats above the
+     tab bar at z-index 300, and it sits 10px from the CHAT tab — close
+     enough that a thumb aiming for primary nav can take it instead.
+
+     Hidden, not shrunk or moved: there is no size at which a list of
+     keystrokes helps someone who cannot press them. Nothing is lost — the
+     shortcuts still fire if a keyboard is attached, and the command palette
+     (⌘K, or its own FAB) stays on every viewport. Caveat worth knowing: a
+     768px tablet WITH a keyboard also loses the cheatsheet, since CSS can
+     see viewport width but not whether a keyboard exists. That trade favours
+     the phone, which is the far commoner case at this width and the one §2
+     is written for. */
+  .shortcut-hud { display: none; }
+
   /* No rail on mobile, so the coach takes the screen edge back. */
   .gs-coach { left: 14px; }
 
