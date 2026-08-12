@@ -2897,7 +2897,20 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   animation: scroll 60s linear infinite;
 }
 .ticker-track .line span { display: inline-flex; align-items: center; gap: 6px; }
-.ticker-track .line .sep { color: var(--ink-3); }
+/* NOT --ink-3 here, and the reason is the surface. `--ink-3` is
+   `--brand-coffee-3`, whose own definition says it was darkened "for WCAG AA
+   4.5:1 ON PAPER" — and it does hit ~5:1 there, including on the topbar's
+   own `.crumbs .sep`. The ticker is the one dark strip in a light app, so
+   the paper-tuned tertiary lands at **3.38:1** against its hsl backdrop
+   rgb(34,21,12) — measured on 26 live separators, the ONLY contrast failure
+   left among 132 coffee-2/-3 text nodes across the floor, eight views and
+   Settings.
+
+   Same fault as the vacant desk plate earlier: a token that is right for one
+   surface, reused on its opposite. #9a8d7c gives 5.48:1 on the ticker while
+   staying 3.08:1 dimmer than the ticker's own #fff8ee text, so it still
+   reads as a separator instead of competing with the news. */
+.ticker-track .line .sep { color: #9a8d7c; }
 .ticker-track .line .kw { color: var(--accent-sun); }
 @keyframes scroll {
   from { transform: translateX(0); }

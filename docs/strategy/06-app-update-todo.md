@@ -89,7 +89,22 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - [ ] **P1 (S)** Pin `postMessage` origin; require auth on LLM proxies before public exposure.
 
 ### Track 6 — Accessibility & mobile *(02 A3, Part A)*
-- [ ] **P1 (S)** Interactive targets ≥44px; fix `--brand-coffee-2/3` contrast.
+- [ ] **P1 (S)** Interactive targets ≥44px. *(Measured 2026-08-12 at 375×812:
+  14 of the 15 controls in `.px-scene` are under 44px — mugs are 12×12 — and
+  the naive fix is unsafe: the tightest gap between two of them is **11px**
+  (filing cabinet ↔ 1:1 sofa), so growing both to 44 overlaps them by more
+  than the gap. Needs a layout decision, not a CSS bump.)*
+- [x] ~~fix `--brand-coffee-2/3` contrast~~ — **done 2026-08-12.** Measured on
+  the running app across 132 coffee-2/-3 text nodes (office floor, eight
+  views, Settings modal): the tokens themselves already pass AA on the paper
+  surfaces they were tuned for — coffee-3 on the topbar gradient measures
+  5.08:1 / 4.93:1. Exactly one real failure: the activity ticker's `•`
+  separators at **3.38:1**, because the ticker is the one dark strip in a
+  light app and `.sep` reused the paper-tuned `--ink-3` (= `--brand-coffee-3`).
+  Fixed at the surface, not the token — lightening coffee-3 globally would
+  have cleared the ticker by degrading every paper surface. Now 5.48:1, still
+  3.08:1 dimmer than the ticker's own text. Pinned by
+  `scripts/test_coffee_contrast.py`, which fails on that exact wrong fix.
 - [ ] **P1 (M)** Polish the **mobile PWA** (manifest + service worker + mobile tab bar).
 - [ ] **P1 (S)** Error-recovery/retry UI on failed async ops.
 
