@@ -5332,25 +5332,74 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
 /* ==============================
    Inspect / performance review panel
    ============================== */
+/* The performance-review panel. `position: fixed` with NO height bound of
+   any kind was the whole bug: the panel grew to whatever its content wanted
+   (984px for an ordinary coworker, measured at 375×812) and simply ran off
+   the bottom of the screen. Nothing in the ancestor chain could scroll to
+   the overflow — `.app` is `overflow-y: hidden` and a fixed element does not
+   extend the document — so the last 252px were not "hard to reach", they
+   were unreachable, and the panel's three action buttons all lived there.
+
+   Fixed at the base rule rather than behind a `max-width: 768px` query,
+   because this was never really a phone bug: any viewport shorter than the
+   content clipped it the same way, and a 900px-tall laptop with a chatty
+   coworker is well inside that. The phone is just where it always happens.
+
+   Height bound + a flex column + one designated scroller is the whole fix.
+   `min-height: 0` on `.body` is load-bearing — a flex child defaults to
+   `min-height: auto`, which refuses to shrink below its content, and without
+   it the panel overflows exactly as before while LOOKING like it was fixed. */
 .inspect {
   position: fixed;
   top: 80px; right: 20px;
   width: 340px;
+  max-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
   border: 3px solid var(--ink);
   box-shadow: 6px 6px 0 0 var(--ink);
-  z-index: var(--z-window);
+  /* +1, not a new tier. The scale at the top of this file puts "receipts,
+     inspect" on --z-window together, so the two were exact peers and DOM
+     order decided — `<ReceiptTray>` renders after `<InspectPanel>` in
+     app.jsx, so the tray won. That was invisible for as long as the action
+     row rendered off-screen; the moment the row came back into view at
+     1280×800, the tray (fixed, bottom-right, same corner) covered 80% of
+     COFFEE BREAK and 100% of LET GO — `elementFromPoint` returned
+     `BUTTON.receipt-tray` at all five probes across LET GO.
+     A panel the boss opened and can dismiss outranks an ambient corner
+     readout. Still below --z-dropdown (350), so topbar menus and every
+     modal continue to cover this panel as before. */
+  z-index: calc(var(--z-window) + 1);
 }
 .inspect .head {
+  flex: 0 0 auto;
   background: var(--ceo);
   color: #fff8ee;
   padding: 10px 12px;
   display: flex; justify-content: space-between; align-items: center;
   border-bottom: 3px solid var(--ink);
 }
+/* The action row, pinned below the scroller. `background: inherit` rather
+   than `var(--paper)` so it tracks `.inspect` in every theme — night mode
+   repaints the panel (#2e2840) and a hardcoded paper footer would have been
+   a bright bar across the bottom of a dark panel. */
+.inspect-actions {
+  flex: 0 0 auto;
+  display: flex; gap: 6px;
+  padding: 8px 12px;
+  border-top: 2px solid var(--ink);
+  background: inherit;
+}
 .inspect .head .title { font-family: 'Press Start 2P'; font-size: 11px; }
 .inspect .head .sub { font-family: 'Inter'; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(255,248,238,0.7); }
-.inspect .body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.inspect .body {
+  flex: 1 1 auto;
+  min-height: 0;              /* see the note on .inspect — without this the panel still overflows */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
 .inspect .stat {
   display: flex; justify-content: space-between; align-items: center;
   font-family: 'VT323'; font-size: 17px;
@@ -5368,6 +5417,20 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
   padding: 6px 8px;
   font-family: 'VT323'; font-size: 15px;
   max-height: 120px; overflow: auto;
+}
+/* Phone: the panel is `z-index: var(--z-window)` (300) and the mobile tab
+   bar is 150, so a full-height panel would sit ON TOP of the app's primary
+   navigation — the Team tab you used to open this panel would be underneath
+   it. Stop above the bar instead of covering it: 70px of tab bar, 12px of
+   gap, plus the home indicator the bar already accounts for. Also drop the
+   fixed 340px width, which left a lopsided 15px/20px margin at 375. */
+@media (max-width: 768px) {
+  .inspect {
+    top: 64px;
+    left: 12px; right: 12px;
+    width: auto;
+    max-height: calc(100vh - 64px - 82px - env(safe-area-inset-bottom));
+  }
 }
 
 /* Keyboard shortcut tooltip (pixel floppy) */

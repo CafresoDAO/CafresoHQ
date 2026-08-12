@@ -5226,7 +5226,19 @@ ${d.text}` : d.text,
                 </div>
               );
             })()}
-            <button className="hq-mobile-fab" title="Apps" onClick={() => setSwitcherOpen(true)}>▦</button>
+            {/* Hidden while a performance review is open. The FAB is
+                `position: fixed; right: 14px; bottom: 76px; z-index: 321`
+                and the review panel is `--z-window` (300), so the launcher
+                floats OVER the panel's own action row and wins the hit test.
+                Measured at 375×812 the moment that row became visible: the
+                FAB stole 1221px² of LET GO — 2 of 5 sample points across the
+                button returned the FAB from `elementFromPoint`, so the right
+                ~40% of a DESTRUCTIVE control silently opened the app
+                switcher. That is the "hard-to-hit becomes hits-the-wrong-
+                thing" trade the office ledger warns about, and it is not
+                worth making to keep a launcher on screen during a focused
+                task. It comes straight back when the panel closes. */}
+            {!inspect && <button className="hq-mobile-fab" title="Apps" onClick={() => setSwitcherOpen(true)}>▦</button>}
             {switcherOpen && (
               <div className="hq-switcher" onClick={() => setSwitcherOpen(false)}>
                 <div className="hq-switcher-inner" onClick={(e) => e.stopPropagation()}>

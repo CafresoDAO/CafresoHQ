@@ -1386,12 +1386,13 @@ should extend that boundary, not blur it.
   > what is broken is wrong in the safer direction, but it is still wrong —
   > it invites a fix for a non-bug and quietly writes off a feature that
   > works.
-- **The office floor is not touch-sized, and "coffee" has no other door.**
+- **The office floor is not touch-sized — but "coffee" always had another door.**
   MEASURED 2026-08-12 at 375×812, the first mobile pass of this codebase.
   Of the **15 controls inside `.px-scene`, 14 are under the 44px touch
   minimum** — the coffee mugs are **12×12**, the work-log paperstack 22×26.
   `docs/strategy/06-app-update-todo.md` Track 6 already carries this as an
   open P1 ("Interactive targets ≥44px"); this is the measurement behind it.
+  **That half is unchanged and still open — the art was not touched.**
 
   The obvious fix — expand the hit areas with a transparent overlay and
   leave the art alone — is **not safe here, and the numbers say so**: the
@@ -1403,18 +1404,69 @@ should extend that boundary, not blur it.
   whole scene up is no freer: it already renders 345px wide inside a 375px
   viewport, so there is no slack to grow into without sideways scroll.
 
-  What makes it more than cosmetic: **`onCoffee` appears 5× in
-  `ui/office.jsx` and 0× in `views/core.jsx`.** Sending a coworker for
-  coffee — which STOPS whatever they are running and clears their desk — is
-  reachable on a phone only through that 12×12 mug. Every other roster
-  action has a full-size path (the mobile Team view is 19/21 over 44px, so
-  touch sizing was clearly considered there); this one does not. The nearest
-  alternative is the global ■ STOP ALL, which is a different, blunter action.
-
-  Left open deliberately rather than half-fixed: choosing between spacing
-  the props, scaling the scene, and giving coffee a roster control is a
-  design decision about the art, and §3.2 makes the floor load-bearing
-  enough that guessing at it in an audit pass would be the wrong call.
+  > ✅ **CORRECTED 2026-08-12, same day it was written — the reachability
+  > half of this entry was wrong, and it was wrong in the way this section
+  > has now been caught twice.** The original said: *"`onCoffee` appears 5×
+  > in `ui/office.jsx` and 0× in `views/core.jsx`, so sending a coworker for
+  > coffee is reachable on a phone only through that 12×12 mug."* The grep
+  > was accurate; the inference was not. **`views/core.jsx` has no
+  > `onCoffee` because it does not need one** — every roster card is
+  > `onClick={()=>onInspect(a)}`, `onInspect` is `setInspect(a)`, and
+  > `<InspectPanel>` is handed `onCoffee={onCoffee}`, the same handler the
+  > mug calls. The panel has carried a **☕ COFFEE BREAK** button at a
+  > correct **115×44** the entire time. A grep over one file was read as
+  > proof about a path that runs through three.
+  >
+  > This is the same shape as the Night Shift correction three bullets up,
+  > five days apart: a claim generalised from a static read without driving
+  > the other half. Worth stating plainly — the recurring failure of this
+  > ledger is not dishonesty about what is broken, it is confidence about
+  > what is *unreachable* based on where a symbol does not appear.
+  >
+  > **Driving it found a worse bug, in a different place.** `.inspect` was
+  > `position: fixed` with no height bound of any kind, so the panel stood
+  > **984px tall in an 812px viewport** and nothing in the ancestor chain
+  > could scroll to the overflow (`.app` is `overflow-y: hidden`, and a
+  > fixed element does not extend the document — `scrollIntoView()` on the
+  > button moved it zero pixels). **252px hung below the fold, and all three
+  > of the panel's actions were in it**: `elementFromPoint` at the centre of
+  > 💬 MESSAGE, ☕ COFFEE BREAK and LET GO each returned `null`. The old
+  > entry reached a true-sounding conclusion for entirely the wrong reason —
+  > the door was full-size, correctly labelled, and 252px off-screen.
+  >
+  > Two floating surfaces had to give way, and **both were invisible until
+  > the row came back into view** — neither would have been found by
+  > reading. The Apps FAB (`z-index: 321`) stole **1221px²** of LET GO, so
+  > the right ~40% of a destructive control opened the app switcher; it now
+  > stands down while a review is open. The receipts tray shares
+  > `--z-window` with `.inspect` *by design* (see the scale at the top of
+  > `styles.css`) and `app.jsx` renders it later, so DOM order handed it the
+  > corner — at 1280×800 it covered **100%** of LET GO. The panel now sits
+  > at `calc(var(--z-window) + 1)`, still below dropdowns and modals.
+  >
+  > Fixed at the base rule rather than behind a `max-width: 768px` query,
+  > because this was never really a phone bug — **desktop was clipping too**
+  > (984px into 800px); the phone is just where it always happens.
+  >
+  > Verified live, not reasoned: panel 64→730 inside 812, clear of the 742
+  > tab bar, body scrolling 853px of content in 531px, all three buttons
+  > 44px and hittable at five probes across their width; tapped COFFEE BREAK
+  > at (214, 697) and got *"COFFEE Cleared Hermes's desk"*. Re-driven at
+  > 320×568 and 1280×800. `scripts/test_coffee_reachable_on_mobile.py` now
+  > guards the path, the height bound, the scroller (including the
+  > `min-height: 0` whose removal is silent), the footer, and both z-order
+  > fixes.
+  >
+  > **What this deliberately did NOT do:** touch the pixel art. §3.2 makes
+  > the floor load-bearing, and the 11px cabinet/sofa gap above is still the
+  > reason a blanket hit-area expansion is the wrong move. The floor props
+  > remain a **desktop-precision affordance**; the phone's full-size path to
+  > the same two actions the audit named — coffee, and the work log — is the
+  > roster card, which opens the panel that carries both. Both were confirmed
+  > present in that panel (a coworker with journal entries renders the work
+  > journal; the floor's paperstack only appears in the same condition). The
+  > remaining floor props were not audited for equivalent full-size paths,
+  > and that is not claimed here.
 - **Most of this app's text cannot be contrast-checked automatically, and
   the naive check lies confidently.** Track 6 of
   `docs/strategy/06-app-update-todo.md` lists contrast as an open P1

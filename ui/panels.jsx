@@ -225,17 +225,39 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             </div>
           </div>
         )}
-        <div style={{display:'flex',gap:6,marginTop:4}}>
-          {onMessage && <button className="px-btn primary" style={{fontSize:8,flex:1}} onClick={()=>onMessage(agent)}>💬 MESSAGE</button>}
-          {/* Was "REFRESH CTX" — §6 bans the context-window vocabulary, and
-              the button ALSO did a different thing than the floor's mug: it
-              zeroed the counter while leaving an in-flight run streaming.
-              Same gesture, same surface, one handler. */}
-          <button className="px-btn secondary" style={{fontSize:8,flex:1}}
-                  title="Stops anything they're running and clears their desk for the next job"
-                  onClick={()=>(onCoffee ? onCoffee(agent) : onUpdate(agent.id, { tokens: 0, recent: 'back from a coffee break — desk clear' }))}>☕ COFFEE BREAK</button>
-          <button className="px-btn danger" style={{fontSize:8}} onClick={()=>{onDismiss(agent.id); onClose();}}>LET GO</button>
-        </div>
+      </div>
+      {/* Lifted OUT of `.body`, which is now the panel's scroller.
+
+          These three are the only things on this panel that DO anything —
+          everything above them is a read. They used to be the last children
+          of an unbounded, `position: fixed` panel, which meant that on any
+          viewport shorter than the panel's content they rendered past the
+          bottom edge with nothing in the ancestor chain able to scroll to
+          them. Measured at 375×812: the panel stood 984px tall, 252px of it
+          off-screen, and all three buttons were in that 252px —
+          `elementFromPoint` at each button's centre returned null. They were
+          drawn, labelled, correctly 44px, and untouchable.
+
+          So they are a footer now, not the tail of a list: a boss who opens
+          a coworker to stop them should not have to scroll a performance
+          review to find the stop. */}
+      <div className="inspect-actions">
+        {onMessage && <button className="px-btn primary" style={{fontSize:8,flex:1}} onClick={()=>onMessage(agent)}>💬 MESSAGE</button>}
+        {/* Was "REFRESH CTX" — §6 bans the context-window vocabulary, and
+            the button ALSO did a different thing than the floor's mug: it
+            zeroed the counter while leaving an in-flight run streaming.
+            Same gesture, same surface, one handler.
+
+            This is also the phone's door to coffee. The floor's mug is
+            12×12 and always will be — it is pixel art, and §3.2 makes the
+            art load-bearing — so the full-size path to the same handler has
+            to exist somewhere a thumb can reach. It is here, one tap from
+            the Team roster card, and `scripts/test_coffee_reachable_on_mobile.py`
+            holds it here. */}
+        <button className="px-btn secondary" style={{fontSize:8,flex:1}}
+                title="Stops anything they're running and clears their desk for the next job"
+                onClick={()=>(onCoffee ? onCoffee(agent) : onUpdate(agent.id, { tokens: 0, recent: 'back from a coffee break — desk clear' }))}>☕ COFFEE BREAK</button>
+        <button className="px-btn danger" style={{fontSize:8}} onClick={()=>{onDismiss(agent.id); onClose();}}>LET GO</button>
       </div>
     </div>
   );
