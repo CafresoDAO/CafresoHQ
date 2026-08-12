@@ -15,6 +15,7 @@ import base64
 import hashlib
 import http.client
 import http.server
+import itertools
 import json
 import os
 # ── env compat shim: mirror legacy OPENCLAW_* vars to CAFRESOHQ_* ───────────────
@@ -846,7 +847,20 @@ def _vault_resolve(rel: str) -> pathlib.Path:
     if not root.is_dir():
         raise ValueError(f'vault directory does not exist: {root}')
     rel = rel.lstrip('/').replace('\\', '/')
-    if not rel.endswith('.md'):
+    # Bare slugs ("Research/topic") are the common case and rely on this
+    # default. A path that already carries a REAL extension must keep it —
+    # this used to force '.md' onto anything not already ending in '.md',
+    # so buildDelivery()'s `Sites/<slug>.html` (app/artifacts.jsx — "html is
+    # written raw so it renders when opened") landed on disk as
+    # `Sites/<slug>.html.md`. That is the ONE deliverable format the whole
+    # north-star front door produces (the "Simple page" starter task, one of
+    # exactly three — 08-north-star-real-product.md §3.6): a fresh install,
+    # a first task, "a real artifact lands in your vault" — and the artifact
+    # that landed could never be opened as a page, by this app or anything
+    # else, and the server's own /vault/search (`root.rglob('*.md')`) could
+    # never find it either. `.suffix` only sees the FINAL path segment, so a
+    # dotted folder name earlier in the path (`v1.2/notes`) is untouched.
+    if not pathlib.PurePosixPath(rel).suffix:
         rel += '.md'
     candidate = (root / rel).resolve()
     # Reject anything outside the vault directory.
@@ -3540,7 +3554,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             root = pathlib.Path(_vault_root).resolve()
             ql = query.lower()
             hits = []
-            for p in root.rglob('*.md'):
+            # .html joins .md now that _vault_resolve keeps a real extension
+            # instead of forcing '.md' onto it (see that function) — pages
+            # filed by the "Simple page" starter task are real files on disk
+            # again, and a search that only globbed *.md would never find
+            # the one deliverable format the front door's third starter card
+            # produces.
+            for p in itertools.chain(root.rglob('*.md'), root.rglob('*.html')):
                 try:
                     rel = str(p.relative_to(root)).replace('\\', '/')
                 except ValueError:

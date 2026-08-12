@@ -3,6 +3,32 @@ import { FolderTree } from './core.jsx';
 import { GraphView, simulate } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
+
+const _isHtmlPath = (path) => /\.html?$/i.test(path || '');
+
+/* "Simple page" is one of exactly THREE starter tasks on the whole app's
+   front door (§3.6) — a boss's first delivery is very often an .html file.
+   renderMarkdown() escapes every `<`/`>` before it ever looks for markdown
+   syntax (views/ide.jsx), so a real page's own source came back as inert
+   text — `<!DOCTYPE html>`, `<style>`, `<script>`, one escaped line per tag
+   — under a "Preview" checkbox that is ON. §4 rules this out in as many
+   words: "Not a dev console." An iframe is the only preview that keeps the
+   promise the DeliverySheet button already makes: "Open the page →". No
+   `allow-same-origin` — page markup can come from any hired coworker, and a
+   sandboxed opaque origin means a live script in there still cannot reach
+   this app's own storage, cookies, or DOM. */
+function HtmlFramePreview({ html }) {
+  return (
+    <iframe
+      className="vault-preview vault-preview-html"
+      srcDoc={html || ''}
+      sandbox="allow-scripts allow-forms allow-modals allow-popups"
+      style={{ width: '100%', height: '100%', border: 0, background: '#fff' }}
+      title="Page preview"
+    />
+  );
+}
+
 function VaultView({ agents = null, onOpenSettings } = {}) {
   const [status, setStatus] = useSV(null);
   const [files, setFiles] = useSV([]);
@@ -441,7 +467,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 <button className="px-btn ghost" onClick={() => { closeNote(); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
               {preview ? (
-                <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
+                _isHtmlPath(openNote.path)
+                  ? <HtmlFramePreview html={openNote.content} />
+                  : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
               ) : (
                 <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
               )}
@@ -512,7 +540,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             >✕</button>
           </div>
           {preview ? (
-            <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
+            _isHtmlPath(openNote.path)
+              ? <HtmlFramePreview html={openNote.content} />
+              : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
           ) : (
             <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
           )}
