@@ -397,6 +397,46 @@ It is a **status summary, not a spec**; the sections below remain the spec.
 | the boss's errand round-trips, 2026-08-08 | the one-liner's full loop, watched on two different LM Studio brains (gemma-4-e4b asking, llama-3.1-8b answering): "@Gemma ask Nano what 4+4 is, then tell me their answer" → direct thread reads the question, **"Asked Nano — watch the team room, and I'll bring their answer back here"**, then **"Nano confirmed that the answer to 4 + 4 is 8"** — while the team room holds exactly three bubbles: the DM, the verbatim answer, the closing words. Three findings got it there: every agent-to-agent DM landed in `team` so a boss-started chain ENDED in a room the boss wasn't watching (origin now rides the recursion; the last link reports back, in the coworker's own words); the DM framing told the one coworker who could close the loop "you are replying to X, NOT to the boss" (that coworker now gets report-back framing); and the boss-direct framing licensed [DM_TO] only for work "outside your skillset", so "ask Nano what 4+4 is" — inside everyone's skillset — produced a bare echo of the question in **3 of 5** runs, WORSE at low temperature. With the license written in: **3/3** clean. One content garble noted (a 4B brain restated 6+6 as "4 + 4" while carrying the right answer, 12) — brain quality, honestly rendered, ground truth verbatim in the team room one click away, which is what §3.4 is for |
 | first run on a wiped install, re-verified 2026-08-07 | after a day that touched all six reply paths, the onboarding copy, the hire modal's default job description and the delivery footer: empty state → **0 HIRED** with the ⚠ ADD AI KEY alarm on → front desk lists Claude, Codex and Llama as found on this machine → hire the local one → **1 HIRED**, alarm clears, starter sheet opens → *First draft* → one field → filed to `Drafts/` **20 seconds** after the click, with real sentences, the local date, and a Working footer that says nothing was consulted. Zero §6 jargon anywhere on the path |
 | coworkers actually work together, 2026-08-07 | the north star's central claim, watched live between two local brains. "@Llama ask Nova to name one colour" produced a real two-way chain — `Llama → Nova`, `Nova → Llama`, `Llama → Nova` — each rendered with its direction on the bubble, all 18 team-thread messages displayed, zero blank bubbles. The MECHANIC is sound. The CONTENT drifted: both models wandered off the question into an invented "olives project code review", which is the confabulation already in Known open, not an office defect |
+
+  > **Re-driven 2026-08-12 on a single free brain, three attempts, zero
+  > delegations.** Seeded two coworkers on the ONLY model this machine has —
+  > `ollama:llama3.1:latest` for both asker AND answerer — and asked "@Llama
+  > ask Nova to name one colour of a ripe banana, then tell me their answer"
+  > three separate ways: verbatim, simplified, and finally spelling out the
+  > tool by name ("using your DM_TO tool, do not answer it yourself"). All
+  > three came back as `activity.json` "finished ✓" with no DM ever sent —
+  > confirmed at the state-file level, not just the UI: `messages.json`
+  > holds no team-room entry from any of the three runs. Attempt one trailed
+  > off mid-plan after "Here's my status update:"; attempts two and three
+  > echoed the question straight back to the boss. Spelling out the marker
+  > name by hand did not help, which reads as this 8B model's tool-following
+  > ceiling rather than an ambiguous prompt.
+  >
+  > Not a clean re-test of the "3/3 clean" claim above, and said plainly: that
+  > run paired **gemma-4-e4b asking** with **llama-3.1-8b answering** — two
+  > different brains, on LM Studio. Today's asker and answerer were the SAME
+  > model, because this machine has exactly one local brain available. If the
+  > asking side is what benefits most from a stronger model, this is not a
+  > regression of that fix — it is a smaller model failing at a step the
+  > earlier test never asked it to do alone.
+  >
+  > What this does NOT establish: a regression, since the fix's own PROMPT
+  > TEXT — "the boss-direct framing licensed [DM_TO] only for work 'outside
+  > your skillset' … with the license written in" — could not be located
+  > anywhere in `hq-runtime.jsx` by any of `skillset`, `outside your`, or
+  > `delegate` (`git log --all -S` on the phrase also found nothing). Either
+  > the fix lived somewhere this search missed, or it was prompt wording used
+  > live in that session and never landed in a file. Worth someone with more
+  > context confirming which, since a fix that only ever existed in a chat
+  > transcript is not a fix the next session can rely on.
+  >
+  > MECHANIC-is-sound stands on the evidence above it — dispatch, room
+  > routing and the direction labels were all proven live. What is unverified
+  > TODAY, on THIS machine's only free brain, is getting a small model to
+  > choose delegation at all. Flagged rather than patched: a prompt change
+  > aimed at an 8B model's tool-calling ceiling needs testing against that
+  > same ceiling to know if it worked, and guessing at wording under a time
+  > budget is how the original claim came to be unverifiable.
 | the calendar runs on the boss's clock, 2026-08-07 | "YOUR BUSINESS BY DAY · TASKS WHEN RAISED · MISSIONS WHEN THEY WRAP" — and the first half is exact: a task listed at 8:42 AM has `createdAt` = 08:42 local, where UTC would have read 12:42 PM, the same off-by-a-timezone that once dated a delivery tomorrow. Day grouping is local too, and the "Today 4" header matches its four rows. ~~The missions half is unverified — no mission has run in this office~~ **→ driven 2026-08-12, and it failed** (see below) |
 | **the missions half, driven at last — 2026-08-12** | the bullet above sat unverified for five days because verifying it meant running a mission; when one finally ran, the promise did not hold. The filter was `status !== 'running' → skip`, so the view showed the one thing that had NOT happened (a projected wrap) and dropped the thing that had. A run that finished left **no trace on the day it finished**, in the view whose title is "your business by day". Underneath was a data gap: **no terminal transition recorded a time** — eight of them across two files, and the eighth (`onStopAll`) was found only by driving, after I had enumerated six by reading and been sure. Driven on a throwaway office with a real 15-minute mission on Llama: running row filed at **2:32 PM "wraps up" · RUNNING** (the projected wrap, correct as a forecast) → reload → **2:18 PM "stopped" · STOPPED**, where 2:18 is `lastIterationAt`, not the 2:20 reload and not the 2:32 forecast. Before the fix that reload made the row vanish outright. Two more things surfaced on the way: `.cal-mission`'s left border explicitly means "this points FORWARD" and had no exception for a finished run, and `.status-pill` is scoped to `.agent-card`, so the calendar's RUNNING tag had been rendering as **bare unstyled text** the whole time — which matters now that the pill is what separates a forecast from an outcome, and a failed outcome from a good one. `scripts/test_calendar_missions.py` |
 | what each run is HANDED — audited, 2026-08-07 | third use of the entry-point census, this time on context rather than cleaning: of six `agentStream` callers only the two conversational ones should carry chat history, and only the TASK path wrongly did (fixed — it produced a delivery about the wrong subject). Missions pass `onUsage`/`onTool` and run on their own prompt; the meeting turn carries the transcript it needs; the stand-up passes `signal` and `maxTokens` and nothing else. One defect, five confirmed clean |
