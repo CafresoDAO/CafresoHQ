@@ -1180,6 +1180,59 @@ with the exact reproduction, the precedent fix pattern, and the
 constraint that `scripts/test_reply_hygiene.py` must stay green
 including its doc-echo and mid-sentence cases.
 
+### The chat-thread Meeting Room, driven live — 2026-08-12
+
+Two separate features share the name "meeting room" in this codebase and
+neither had been driven this session: the office-floor door (seats
+participants, sequential per-round replies, CEO synthesizes) and the
+chat-thread modal reached via ROOMS ▾ (`modals/collab.jsx`'s
+`MeetingRoomModal`, "everyone in the room sees this when it opens... pick
+at least one — they'll all see each other's replies"). Drove the second —
+last touched 2026-08-06, before every change made today.
+
+Two Ollama coworkers, one topic ("What is one colour of a ripe banana?"),
+sent `@Llama @Nova`. Both replied independently and correctly in the same
+round — "One colour of a ripe banana is yellow." from each, clean, no raw
+markers, no blank bubbles. Sent a second message ("Nova, do you agree with
+what Llama just said?") to test whether round 2 actually carries round 1's
+exchange, since the code shows each round's transcript is built ONCE before
+that round's replies (a structural question worth answering by driving
+rather than assuming from the shape of the loop). It does: both replies in
+round 2 clearly reference round 1's answer rather than starting fresh.
+
+**Almost mis-flagged something as a bug that turned out to be correct,
+documented behavior — caught by reading the reasoning before writing up the
+finding.** Nova's round-2 reply ended with a literal
+`[Llama · Generalist]: One colour of a ripe banana is yellow.` — the
+office's own speaker-label format (`NAME · ROLE`), presenting a quote as if
+Llama had said it. First read as a fresh instance of the "office's own
+voice is not the coworker's to borrow" class this file already documents
+at length. It is not, on closer reading: `stripSelfLabel`'s own comment
+states the design directly — *"A label naming somebody else is content — a
+coworker quoting what Mika said. A label naming the SPEAKER is never
+content."* And checking the transcript rather than assuming: Llama's round-1
+reply genuinely was "One colour of a ripe banana is yellow." Nova's quote is
+accurate. The function is correctly leaving alone exactly the case it says
+it will.
+
+`fabricatedRelay` — the detector for a coworker inventing a colleague's
+words — does not apply here either, and not by oversight: it is never
+called from the meeting path at all (`grep fabricatedRelay features.jsx` →
+nothing), and even if it were, its regex requires an arrow (`X → Y:`), not
+this dot-separated label shape, because it is built for a narrower,
+different threat (a fabricated RELAY claim, gated on nothing having
+actually been delivered this run).
+
+**What's left genuinely open, stated at the right confidence.** The label
+format is unchecked against truth — nothing verifies a `[Name · Role]:`
+quote is accurate before it renders, the way `fabricatedRelay` verifies
+its narrower case. This instance was accurate. Whether a small model could
+use the same unchecked format to dress up a FABRICATED quote as a
+colleague's words is a real, structurally plausible question and was NOT
+observed happening — no task filed, because filing one would mean asking
+someone to fix a bug that has not been shown to exist. Recorded as a
+question for future driving to answer, not a finding to act on today.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
