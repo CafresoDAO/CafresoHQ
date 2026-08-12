@@ -333,16 +333,28 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent })
 
     /* Local rAF throttle — same idea as HQ.throttleTokens but the meeting
        view writes via updateById(text=buf) rather than appending, so we
-       just gate the update calls themselves to once per frame. */
+       just gate the update calls themselves to once per frame.
+
+       `.cancel()`: the same missing half of the fix as the stand-up's
+       identical gate above (see its comment) — without it, the pending rAF
+       scheduled by the stream's last raw token fires a frame after the
+       "clean the final text" write just below and overwrites it right back
+       with the unstripped buffer. */
     const makeRafGate = (id) => {
       let scheduled = false;
+      let cancelled = false;
       let latest = '';
-      return (text) => {
+      const fn = (text) => {
         latest = text;
-        if (scheduled) return;
+        if (scheduled || cancelled) return;
         scheduled = true;
-        requestAnimationFrame(() => { scheduled = false; updateById(id, { text: latest }); });
+        requestAnimationFrame(() => { scheduled = false;
+          if (cancelled) return;
+          updateById(id, { text: latest });
+        });
       };
+      fn.cancel = () => { cancelled = true; };
+      return fn;
     };
 
     for (const ph of placeholders) {
@@ -370,9 +382,14 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent })
         );
         /* Clean the final text, same as every other reply path. A meeting
            turn is a coworker speaking to the whole room, so a stray marker
-           lands in the transcript the others then read back as context. */
+           lands in the transcript the others then read back as context.
+           `.cancel()` first — the gate's pending rAF from the stream's last
+           raw token otherwise fires a frame after this and overwrites the
+           clean text right back with the unstripped buffer. */
+        update.cancel();
         updateById(ph.id, { text: HQ.visibleReply(buf, ph.agentRef && ph.agentRef.name) });
       } catch (err) {
+        update.cancel();
         const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';
         /* §7: no raw error dumps on a user surface. This read
            `⚠ OpenRouter 503: {"error": "openrouter: no API key configured"}`
@@ -571,18 +588,39 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
 
     const finished = [];
     /* rAF gate to batch setReports per-frame — same reason as the chat panel:
-       per-token state churn pegs CPU when reports list grows. */
+       per-token state churn pegs CPU when reports list grows.
+
+       `.cancel()` exists because the LAST raw token of a stream schedules a
+       pending rAF write moments before the loop's own "final, cleaned" write
+       runs synchronously right after. requestAnimationFrame fires on the
+       NEXT paint, after this function returns — so that stale pending
+       callback lands AFTER the clean write and overwrites it with the raw
+       buffer. Watched live: a real stand-up's checked-in report read "TODAY:
+       Saved first note to private memory folder using [MEMORY_WRITE:
+       decisions/auth.md]…[/MEMORY_WRITE]." — the exact machine syntax
+       `HQ.visibleReply()` two lines below is supposed to strip, verified by
+       running that same string through `stripBlocks`'s regex directly: it
+       strips cleanly in isolation, so the raw text on screen could only be
+       the gate's own late write, not a stripping failure. `HQ.throttleTokens`
+       (the chat/task path's equivalent gate) already learned this lesson —
+       callers there call `flush.cancel()` before writing final state; this
+       local reimplementation, and the meeting room's identical one below,
+       never got that half of the fix. */
     const makeReportGate = (agentId) => {
       let scheduled = false;
+      let cancelled = false;
       let latest = '';
-      return (text) => {
+      const fn = (text) => {
         latest = text;
-        if (scheduled) return;
+        if (scheduled || cancelled) return;
         scheduled = true;
         requestAnimationFrame(() => { scheduled = false;
+          if (cancelled) return;
           setReports(prev => prev.map(r => r.agentId === agentId ? { ...r, text: latest } : r));
         });
       };
+      fn.cancel = () => { cancelled = true; };
+      return fn;
     };
     for (const a of participating) {
       let buf = '';
@@ -601,12 +639,17 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
            stream — on the one ritual the comment below calls "the whole team
            checking in", so a coworker who emitted a marker checked in with
            machine syntax. The archive gets the same text as the screen;
-           they used to be the same only because neither was cleaned. */
+           they used to be the same only because neither was cleaned.
+           `.cancel()` first — see the gate's own comment above — or this
+           write wins the race with the stream's last token and then loses
+           it to the gate's pending rAF a frame later. */
+        updateReport.cancel();
         const said = HQ.visibleReply(buf, a && a.name);
         setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, text: said } : r));
         setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, streaming: false } : r));
         finished.push({ name: a.name, role: a.role, text: said });
       } catch (err) {
+        updateReport.cancel();
         const userStopped = controller.signal.aborted;
         const timedOut = !userStopped && perAgent.signal.aborted;
         const label = userStopped ? '…(stopped)' : timedOut ? '…(timed out — model too slow or unloaded)' : null;
