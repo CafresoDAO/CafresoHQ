@@ -1240,6 +1240,67 @@ Not verified: a full successful export (a real file landing in the vault),
 since no export library is actually installed on this machine. That is a
 `pip install` away and orthogonal to the bug that was found and fixed.
 
+### GENERATE_IMAGE/GENERATE_VIDEO are fully built and completely unreachable — 2026-08-12
+
+The other two tools sharing `_read_json_body` with the exports above.
+Checked whether the same fix cleared them too: it did. A throwaway office
+(`CAFRESOHQ_HQ_STATE_DIR=/tmp/hq-gen`) driven with direct `curl POST` against
+`/generate/image` (9 branches: all 5 providers — openai, google, fal,
+a1111, comfyui — each with valid-key/missing-key/unreachable-local-server
+paths) and `/generate/video` (4 branches: fal, openai, google, comfyui) —
+zero crashes, zero empty replies, every branch a clean structured JSON
+error. `exporters.py`'s `_generate_image`/`_generate_video` are genuinely
+well-built: real API integrations for five image and four video providers,
+proper `try/except` around every network call, and — unlike most of this
+session's findings — an *honest* one: the `openai`/`google` video branches
+don't pretend to work, they return a hardcoded `501` naming the real
+reason (`"OpenAI Sora video generation not yet wired — Sora API is gated.
+Try provider=fal instead"`).
+
+That honesty is what surfaced the real finding. `claude-client.jsx`'s
+`_mediaConfig()` defaults an unset provider to `'openai'` for BOTH kinds:
+`(kind === 'video' ? s.videoProvider : s.imageProvider) || 'openai'`. For
+images that default is fine — OpenAI images genuinely work. For video it
+is the one provider guaranteed to fail; `fal` is the only one that could
+actually succeed on a bare API key. So I went to see what a boss would
+need to set to avoid that default — and found the setting itself does not
+exist anywhere.
+
+`toolsForAgent` gates both tools on nothing but a settings key:
+`if (s && s.imageProvider) out.push(...)` / `if (s && s.videoProvider)
+out.push(...)` (`hq-runtime.jsx:1538-1539`). Grepped the entire `.jsx`
+codebase for `imageProvider`, `videoProvider`, `imageModel`, `videoModel`,
+`a1111Url`, `comfyUrl` — **four matches total, all read-side**: the two
+gate checks above, one comment, and `_mediaConfig`'s own fallback logic.
+Checked every candidate write path directly rather than trusting the grep
+alone: `modals/settings.jsx`'s `SETTINGS_TABS` is exactly five entries —
+account, connections, roster, modules, appearance — no media tab.
+`modals/providers.jsx` (808 lines) covers text-model backends only
+(openrouter/gemini/groq/lmstudio/ollama) plus Claude Code, Codex, Vault,
+and Brave tabs. No raw/advanced JSON settings editor exists as a fallback
+path either. **`s.imageProvider` and `s.videoProvider` can never become
+truthy through any control in the product.** GENERATE_IMAGE and
+GENERATE_VIDEO are not buggy — they are permanently absent from
+`toolsForAgent`'s output for every coworker, in every office, unconditionally.
+A fully-built, fully-tested backend with no door to it.
+
+One thing narrows the eventual fix: `getAgentKey`/`setAgentKey`
+(`claude-client.jsx:1907-1932`) already store vault-encrypted keys by an
+arbitrary provider-name string, not a hardcoded enum — the same mechanism
+`generateImage`/`generateVideo` already call with `getAgentKey('openai')`,
+`getAgentKey('fal')`, etc. So this isn't "build encrypted key storage
+from scratch," it's specifically "build the missing picker/field UI and
+have it call the storage that already exists." Filed as `task_gen_media_ui`
+rather than fixed same-tick: a real Settings → Media section needs
+provider dropdowns for image and video, model fields, key fields per
+provider via the existing vault mechanism, and base-URL fields for the two
+local providers (a1111/comfyui) — five to nine new fields plus the state
+wiring, not a one-line change, and rushing UI surface area under a loop
+tick risks exactly the kind of half-built control this file exists to
+call out. The `_mediaConfig` `'openai'`-video-default bug is folded into
+the same task rather than fixed in isolation, since correcting a default
+for a gate that can never open is moot until the gate exists.
+
 ### The chat-thread Meeting Room, driven live — 2026-08-12
 
 Two separate features share the name "meeting room" in this codebase and
