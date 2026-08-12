@@ -1156,18 +1156,43 @@ should extend that boundary, not blur it.
   back-dated `lastSeen` produced four columns and "+2 MORE COWORKERS WERE
   BUSY — FULL LOG IN THE TEAM INBOX". The arithmetic is right and the
   overflow line carries its own route out.
-- **A front-desk hire cannot run a Night Shift.** Detected brains get their
-  tools by kind — a local model `['web']`, a CLI agent `['files','shell','web']`
-  — and none of them include Vault Notes, which a research mission requires
-  alongside web. The saved ROLES do carry it (Kip is `['web','vault']`, Vera
-  `['web','email','cal','vault']`), so the feature works if you hire a
-  specialist and not if you hire a brain. That means the §3 zero-config path —
-  the one first run is optimised for — lands on an office that cannot use the
-  headline overnight feature until someone visits Settings → Roster. The
-  route out is on screen at the point of failure, and START is now correctly
+- **A front-desk hire cannot run a browser Research mission.** Detected brains
+  get their tools by kind — a local model `['web']`, a CLI agent
+  `['files','shell','web']` — and none of them include Vault Notes, which a
+  research mission requires alongside web. The saved ROLES do carry it (Kip is
+  `['web','vault']`, Vera `['web','email','cal','vault']`), so the feature
+  works if you hire a specialist and not if you hire a brain. That means the §3
+  zero-config path — the one first run is optimised for — lands on an office
+  that cannot use in-tab Research until someone visits Settings → Roster. The
+  route out is on screen at the point of failure, and START is correctly
   blocked rather than running a doomed mission, so this is friction rather
   than a trap. Whether a detected brain should arrive with Vault Notes on is a
   permissions decision: it is write access to the boss's cabinet.
+
+  > ✅ **CORRECTED 2026-08-12 — this never applied to the Night Shift, which
+  > is the "headline overnight feature" the bullet used to name.** The two
+  > missions do not share a toolset and never did. In-tab Research runs on the
+  > BROWSER's tool registry, which is per-agent, so `canDoMode()` gates its
+  > picker (`missions.jsx` — options carry `disabled` and a "(needs Web +
+  > Vault tools)" suffix). The Night Shift runs server-side in
+  > `night_runner.py`, whose `run_tool()` grants `VAULT_NEW`/`VAULT_APPEND`
+  > unconditionally — it never consults `agent.tools` at all — and
+  > `NightShiftSection`'s own picker matches that reality: every hired
+  > coworker is selectable, neither 🌙 SCHEDULE nor ▶ RUN NOW carries a
+  > `disabled`, and there is no gate to hit.
+  >
+  > Driven live rather than reasoned: scheduled a real Night Shift on **Llama
+  > — `tools: ['web']`, no Vault Notes, exactly the front-desk-hire shape this
+  > bullet said was blocked** — and it ran, wrote a run record with a real
+  > summary, and appeared on the office floor's board. The zero-config path
+  > can use the overnight feature on day one.
+  >
+  > Worth keeping as a lesson about this ledger itself: the entry was written
+  > from the Research gate and generalised to "the headline overnight
+  > feature" without driving that half. An honesty ledger that overstates
+  > what is broken is wrong in the safer direction, but it is still wrong —
+  > it invites a fix for a non-bug and quietly writes off a feature that
+  > works.
 - **`awaiting_reply` — the common case now closes; the rest is still open.**
   UPDATE 2026-08-07: the fan-out loop AWAITS every child dispatch, so when it
   exits, each recipient has run to a terminal state and the awaited thing has
