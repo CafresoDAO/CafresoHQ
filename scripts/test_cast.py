@@ -888,6 +888,19 @@ console.log(JSON.stringify(R));
           'dependsOn is typically [itself, moments ago], which the frozen '
           '`tasks` closure still shows as not-done')
 
+    # ── Add Project's manual path field must agree with its own Browse button ─
+    # Found live: typed C:\Users\You\projects\myrepo as the placeholder, then
+    # clicked Browse two inches away in the same form and got real paths back
+    # slash-style (Users/anthonym/…) — the one server this modal can ever
+    # talk to. The static hint and the live picker disagreed about path
+    # syntax inside the same form.
+    proj_src = (ROOT / 'views' / 'projects.jsx').read_text(encoding='utf-8')
+    check("Add Project's path placeholder is POSIX, matching its own Browse picker",
+          'C:\\\\Users' not in proj_src and '/Users/you/projects/myrepo' in proj_src,
+          r"views/projects.jsx: placeholder='C:\Users\You\projects\myrepo' — "
+          "wrong syntax for the only filesystem this modal ever browses "
+          "(_cafresohq_allowed_dirs defaults to expanduser('~'))")
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))

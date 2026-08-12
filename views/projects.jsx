@@ -1298,11 +1298,18 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
               <label>Name<input value={name} onChange={e => setName(e.target.value)} placeholder="My project" autoFocus /></label>
               <label>
                 Absolute path
+                {/* POSIX, not "C:\Users\You\...": the Browse picker two lines
+                   down lists this same server's real paths and has always
+                   returned them slash-style ("Users/you/…") — the manual
+                   field's own hint disagreed with its sibling button in the
+                   same form. _cafresohq_allowed_dirs defaults to
+                   expanduser('~'), which is what every self-hosted install
+                   actually resolves to. */}
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input
                     value={path}
                     onChange={e => setPath(e.target.value)}
-                    placeholder="C:\Users\You\projects\myrepo"
+                    placeholder="/Users/you/projects/myrepo"
                     style={{ flex: 1 }}
                   />
                   <button
