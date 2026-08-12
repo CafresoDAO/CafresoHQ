@@ -294,6 +294,13 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     focused: 'A clear main theme with some branches.',
     diversified: 'Several well-connected topics — healthy balance.',
     dispersed: 'Many scattered topics — consider bridging them.',
+    /* The honest fifth state. Without it, an edgeless graph got NaN
+       modularity, fell through every threshold in analytics.worker.js, and
+       published "Dispersed — many scattered topics" over a cabinet with no
+       notes in it — beside this panel's own "Topics: 1", which contradicted
+       it in the same breath. Says nothing about shape, because there isn't
+       one yet, and points at the thing that would create one. */
+    unformed: 'Not enough here to read a shape yet — link a few notes and this fills in.',
   };
   const COLOR_MODES = [['community', 'Topics'], ['tags', 'Tags'], ['type', 'Type'], ['folder', 'Folder'], ['inlinks', 'Links'], ['modified', 'Recency']];
 

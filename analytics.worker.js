@@ -136,8 +136,22 @@ function analyze({ nodes, edges }) {
   const largest = clusters.length ? Math.max(...clusters.map((c) => c.size)) : N;
   const C = largest / N;                         // share in largest community
   const E_entropy = -clusters.reduce((s, c) => s + (c.share > 0 ? c.share * Math.log(c.share) : 0), 0);
+  /* A graph with no edges has no shape to classify, and Louvain hands back a
+     NaN modularity for one. NaN is false against EVERY comparison below, so
+     the chain silently fell through to its final `else` and published the
+     most alarming verdict available: a brand-new office opening the Vault
+     was told "Dispersed — many scattered topics, consider bridging them"
+     about a cabinet holding zero notes, directly above this same panel's own
+     "Topics: 1". Note that the initialiser (`modularity = 0`) would have
+     said "biased" instead — also wrong, just quieter — so the default was
+     never the thing keeping this honest.
+
+     `unformed` is a real answer rather than a guess: there genuinely is not
+     enough here to read a shape yet, and saying so beats picking one of four
+     verdicts at random. */
   let structure;
-  if (modularity < 0.2) structure = 'biased';
+  if (!Number.isFinite(modularity) || E === 0 || N < 3) structure = 'unformed';
+  else if (modularity < 0.2) structure = 'biased';
   else if (modularity < 0.4) structure = 'focused';
   else if (modularity <= 0.65) structure = (C < 0.5 && E_entropy >= 1.0) ? 'diversified' : 'focused';
   else structure = 'dispersed';
