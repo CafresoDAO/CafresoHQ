@@ -2859,6 +2859,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ---- Export / generate endpoints (extracted to exporters.py) ---------
     # Plain-function bindings — each receives this Handler as `self`.
+    #
+    # `_read_json_body` was missing from this list entirely. It is not a
+    # route — no serve.py dispatch table sends a request to it directly —
+    # it is exporters.py's own shared helper, called via `self._read_json_body()`
+    # from all five functions below. Composing a class from free functions by
+    # individually naming each one (rather than real inheritance) means a
+    # helper the module calls on itself has to be wired on just as explicitly
+    # as a route does, and this one never was. Every one of these five tools
+    # crashed the request thread with a raw `AttributeError` the instant a
+    # coworker actually tried to use it — confirmed live: `curl -X POST
+    # .../export/pptx` returned nothing at all (curl error 52, empty reply),
+    # and the server log showed the handler dying mid-request. None of the
+    # five had ever been exercised before this was found.
+    _read_json_body = exporters._read_json_body
     _vault_binary_path = exporters._vault_binary_path
     _export_pptx    = exporters._export_pptx
     _export_docx    = exporters._export_docx

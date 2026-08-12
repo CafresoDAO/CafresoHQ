@@ -1180,6 +1180,66 @@ with the exact reproduction, the precedent fix pattern, and the
 constraint that `scripts/test_reply_hygiene.py` must stay green
 including its doc-echo and mid-sentence cases.
 
+### Every export tool was completely broken, and had never once been run — 2026-08-12
+
+EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /
+python-docx / weasyprint-or-reportlab) had never appeared in this ledger.
+They're not specialist-only — `toolsForAgent` grants all three to ANY
+coworker with vault access, which is the common case, not an edge one.
+
+Checked whether the underlying libraries are even installed on this
+machine first, since that determines what's testable at all: none of the
+four are (`python-pptx`, `python-docx`, `weasyprint`, `reportlab` all
+`ModuleNotFoundError`). That's an environment fact, not a code defect —
+`exporters.py` catches exactly this with `except ImportError: return
+self._send_json(503, {'error': 'python-pptx not installed — run: pip
+install python-pptx'})`, a clean, actionable, already-correct message.
+
+**Except calling it didn't reach that message. It crashed the request
+thread and returned nothing at all.** `curl -X POST .../export/pptx` came
+back as `curl: (52) Empty reply from server` — not a JSON error, not any
+HTTP response, silence. The server log named it exactly:
+`AttributeError: 'Handler' object has no attribute '_read_json_body'`, from
+inside `exporters.py`'s own `_export_pptx`, at the very first line trying
+to read the request body.
+
+Root cause, and it is not subtle once found: `serve.py` composes its
+`Handler` class from free functions by explicit, individual assignment —
+`_export_pptx = exporters._export_pptx`, one line per function, six lines
+total for the export/generate family. `_read_json_body` is
+`exporters.py`'s own shared helper (`def _read_json_body(self):`, five
+`self._read_json_body()` call sites — one from each of EXPORT_PPTX,
+EXPORT_DOCX, EXPORT_PDF, GENERATE_IMAGE, GENERATE_VIDEO), and it was simply
+never given its own binding line. Composition-by-explicit-naming means a
+helper the module calls on ITSELF needs wiring exactly as much as a route
+does, and this one never got it. **All five tools were completely
+non-functional, in the worst possible way — not a graceful error, a raw
+crash with an empty reply — and none of them had ever been exercised
+before today, which is the only reason this survived.**
+
+One line fixes it, matching the six sibling bindings already there
+verbatim in shape. Verified live at the API level (more reliable than
+routing through a small local model's unreliable tool-calling, which
+narrated a plan instead of emitting the marker when asked — today's
+familiar pattern): before the fix, `/export/pptx` returned nothing; after,
+all three formats return their correct, pre-written, ImportError-caught
+JSON error. The graceful-degradation code was already right; it just
+could never be reached.
+
+Pinned by `scripts/test_exporters_wired.py`, written general rather than
+narrow: it checks EVERY `self._X()` call inside `exporters.py` against
+`serve.py`'s binding list, so the same class of bug — a helper added later
+and called via `self.`, never wired — is caught for any future helper, not
+just this one. Fire-tested by removing the fix (all five affected tools
+named in the failure) and by removing a DIFFERENT, unrelated binding
+(`_export_docx`'s own) to confirm the check's real scope: it catches an
+unwired helper called from inside the module, not an unwired route itself
+— a narrower, honestly-stated claim rather than an oversold one.
+
+Not verified: a full successful export (a real file landing in the vault),
+since no export library is actually installed on this machine. That is a
+`pip install` away and orthogonal to the bug that was found and fixed.
+
 ### The chat-thread Meeting Room, driven live — 2026-08-12
 
 Two separate features share the name "meeting room" in this codebase and
