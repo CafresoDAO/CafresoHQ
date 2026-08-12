@@ -10766,7 +10766,12 @@ body.night .px-room.is-away .px-int::after { background: rgba(20, 24, 54, 0.46);
    rectangle was the majority of what a first-run boss ever saw.
    The room claims nothing: no desk, no props, no nameplate pip. */
 .px-room.vacant { cursor: pointer; }
-.px-room.vacant .px-plate { color: #9a9382; background: #3c3a4e; }
+/* #9a9382 on this plate measured 3.60:1 — under the 4.5:1 AA floor for 8px
+   text, and this plate is a real control (the whole vacant room hires). The
+   dimming is deliberate and kept: #b3ab98 measures 4.82:1, still less than
+   half the occupied plate's 9.28:1, so a vacant unit still reads as the
+   inactive one without the label being the thing that proves it. */
+.px-room.vacant .px-plate { color: #b3ab98; background: #3c3a4e; }
 .px-int.vacant {
   /* Same tiles as an occupied room, drained of warmth — the wallpaper is
      still up, the lights are off. */

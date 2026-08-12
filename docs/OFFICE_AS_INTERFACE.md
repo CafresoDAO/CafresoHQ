@@ -1222,6 +1222,33 @@ should extend that boundary, not blur it.
   the props, scaling the scene, and giving coffee a roster control is a
   design decision about the art, and §3.2 makes the floor load-bearing
   enough that guessing at it in an audit pass would be the wrong call.
+- **Most of this app's text cannot be contrast-checked automatically, and
+  the naive check lies confidently.** Track 6 of
+  `docs/strategy/06-app-update-todo.md` lists contrast as an open P1
+  alongside touch targets. Audited it 2026-08-12 by computing WCAG ratios on
+  rendered text. **The first pass reported 7 failures. Six were fabricated by
+  the checker, not by the app** — including "📋 Inbox" at a supposedly
+  unreadable 1.01:1, which a screenshot shows as ordinary dark-on-near-white.
+
+  Two bugs, both worth knowing before anyone repeats the exercise. Resolving
+  a backdrop by walking ancestors' `background-color` **skips gradients**:
+  `.office-task-rail` paints a near-white `linear-gradient`, has no
+  background-*colour*, so the walk fell through to a dark navy ancestor and
+  every element on that rail scored as white-on-black. And starting the walk
+  at `el.parentElement` **ignores the element's own background**, so any
+  chip that paints its own fill (the `LIVE` badge) was scored against
+  whatever sat behind it — that one produced an exact 1.00:1, which is the
+  tell.
+
+  With both fixed: **one real failure** — the vacant nameplate, since fixed
+  and pinned in `scripts/test_vacant_plate_contrast.py` — and **27 of ~28
+  text nodes simply not measurable this way**, because they sit on gradients
+  or pixel art. That is the honest state of this item: it is not "contrast is
+  fine", it is "an automated sweep can only see one text node in twenty-eight
+  here, and will invent failures for the rest unless it is written to refuse
+  them." Verifying the remaining 27 needs pixel sampling or human eyes, and
+  the palette variables (`--brand-coffee-2/3`) that the TODO names are only a
+  fraction of what actually paints text on this floor.
 - **`awaiting_reply` — the common case now closes; the rest is still open.**
   UPDATE 2026-08-07: the fan-out loop AWAITS every child dispatch, so when it
   exits, each recipient has run to a terminal state and the awaited thing has
