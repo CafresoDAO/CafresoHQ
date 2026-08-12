@@ -25,7 +25,7 @@ const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: u
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
-const { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
+const { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 
@@ -735,6 +735,7 @@ function App() {
   const [memoryOpen, setMemoryOpen] = useStateA(false);
   const [meetingOpen, setMeetingOpen] = useStateA(false);
   const [meetingParticipants, setMeetingParticipants] = useStateA([]);
+  const [meetingPickerOpen, setMeetingPickerOpen] = useStateA(false);
   const [focus, setFocus] = useStateA(false);
   const [approvals, setApprovals] = useStateA([]);
   const [ceoTokens, setCeoTokens] = useStateA(0);
@@ -3835,13 +3836,24 @@ ${d.text}` : d.text,
   const onAddMemory = (m) => { setMemory(prev => [m, ...prev]); say('Added to memory', 'MEM'); };
   const onRemoveMemory = (id) => setMemory(prev => prev.filter(m => m.id !== id));
 
-  // Meeting room
-  const onOpenMeeting = () => {
-    const defaults = agents.slice(0, 2);
-    setMeetingParticipants(defaults);
+  /* Meeting room. The door used to seat `agents.slice(0, 2)` with zero boss
+     choice and no way to add anyone once the room was open — found live
+     while auditing the office floor for the northstar MVP pass, the same
+     turn that closed out the Calendar-view check. Now the door opens a
+     picker (reusing the exact attendee-grid the standalone "NEW MEETING
+     ROOM" chat-thread modal already uses in modals/collab.jsx) so seating a
+     team reads the same way everywhere in the app; the picker preselects
+     the first two agents so the old one-click behavior still works for a
+     boss who just wants that. */
+  const onOpenMeeting = () => setMeetingPickerOpen(true);
+  const onStartMeeting = (ids) => {
+    setMeetingParticipants(agents.filter(a => ids.includes(a.id)));
+    setMeetingPickerOpen(false);
     setMeetingOpen(true);
   };
   const onRemoveFromMeeting = (id) => setMeetingParticipants(p => p.filter(x => x.id !== id));
+  const onAddToMeeting = (id) => setMeetingParticipants(prev =>
+    prev.some(p => p.id === id) ? prev : [...prev, ...agents.filter(a => a.id === id)]);
 
   // Approvals
   const onApprovalRequest = (req) => {
@@ -5273,10 +5285,11 @@ ${d.text}` : d.text,
         onOpenSettings={() => setSettingsOpen(true)}
         onSitWithCEO={() => { navTo('chat'); }}
         onOpenMemory={() => setMemoryOpen(true)}
-        onOpenMeeting={() => setMeetingOpen(true)}
+        onOpenMeeting={onOpenMeeting}
       />
       <MemoryShelf open={memoryOpen} onClose={()=>setMemoryOpen(false)} memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory}/>
-      {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting} onUpdateAgent={onUpdateAgent}/>}
+      <MeetingPicker open={meetingPickerOpen} agents={agents} onClose={()=>setMeetingPickerOpen(false)} onStart={onStartMeeting}/>
+      {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting} onAdd={onAddToMeeting} onUpdateAgent={onUpdateAgent}/>}
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
       {/* ApprovalTray moved inline into view-area */}
       <ReceiptTray receipts={receipts} onOpen={()=>setReceiptsOpen(true)}/>

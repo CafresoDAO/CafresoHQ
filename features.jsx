@@ -299,12 +299,72 @@ function MemoryShelf({ open, onClose, memory, onAdd, onRemove }) {
 }
 
 /* ---------------- Meeting Room ---------------- */
-function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent }) {
+/* Meeting door picker — the office-floor MEETING ROOM used to seat whoever
+   `agents.slice(0, 2)` picked with zero boss input, and the CEO panel's
+   mini-office door opened it with whatever `meetingParticipants` happened
+   to be left over from the last time (including empty, on a fresh
+   session — a "meeting" of nobody but CafresoHQ). Both doors now go
+   through this picker instead. Reuses the exact `.meeting-attendee-grid`
+   markup the standalone "NEW MEETING ROOM" chat-thread modal
+   (modals/collab.jsx) already uses, so seating a team looks the same
+   everywhere in the app. Preselects the first two agents so a boss who
+   just wants the old one-click behavior can still hit Start Meeting
+   immediately without picking anyone. */
+function MeetingPicker({ open, agents, onClose, onStart }) {
+  const [selectedIds, setSelectedIds] = useSF([]);
+  useEF(() => { if (open) setSelectedIds(agents.slice(0, 2).map(a => a.id)); }, [open]);
+  if (!open) return null;
+  const toggle = (id) => setSelectedIds(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const canStart = selectedIds.length >= 1;
+  return (
+    <OcModal open={open} onClose={onClose} title="🪑 SEAT THE MEETING ROOM" size="md">
+      <div className="meeting-modal-body">
+        <label>
+          Attendees <span style={{opacity:0.5,fontSize:9,marginLeft:4}}>(pick who's in the room)</span>
+          <div className="meeting-attendee-grid">
+            {agents.length === 0 && (
+              <div style={{fontSize:10,opacity:0.5,gridColumn:'1/-1',padding:'8px'}}>
+                No coworkers hired. Hire someone on the Team tab first.
+              </div>
+            )}
+            {agents.map(a => (
+              <div
+                key={a.id}
+                className={'meeting-attendee' + (selectedIds.includes(a.id) ? ' selected' : '')}
+                onClick={() => toggle(a.id)}
+              >
+                <span style={{fontSize:14}}>{a.elevated ? '🛡' : '👤'}</span>
+                <div style={{display:'flex',flexDirection:'column',lineHeight:1.1,minWidth:0}}>
+                  <span className="meeting-attendee-name">{a.name}</span>
+                  <span className="meeting-attendee-role">{a.role}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </label>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'8px'}}>
+          <button className="px-btn secondary" onClick={onClose}>Cancel</button>
+          <button className="px-btn primary" disabled={!canStart} onClick={() => onStart(selectedIds)}>
+            Start Meeting · {selectedIds.length} attendee{selectedIds.length === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>
+    </OcModal>
+  );
+}
+
+function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateAgent }) {
   const [msgs, setMsgs] = useSF([]);
   const [input, setInput] = useSF('');
   const [streaming, setStreaming] = useSF(false);
+  const [addOpen, setAddOpen] = useSF(false);
   const logRef = useRF(null);
   useEF(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [msgs]);
+  /* Whoever's left once seated — the "+ Seat" tile below only shows a
+     coworker once, and disappears once everyone hired is already in the
+     room. */
+  const available = agents.filter(a => !participants.some(p => p.id === a.id));
 
   const newId = () => 'mtg_' + Math.random().toString(36).slice(2, 8);
 
@@ -454,6 +514,29 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onUpdateAgent })
               <div className="seat-role">{p.role}</div>
             </div>
           ))}
+          {onAdd && available.length > 0 && (
+            <div className="seat seat-add" onClick={() => setAddOpen(o => !o)} title="Seat another coworker">
+              <div className="seat-add-plus">+</div>
+              <div className="seat-role">Seat someone</div>
+              {addOpen && (
+                <div className="meeting-attendee-grid seat-add-popover" onClick={e => e.stopPropagation()}>
+                  {available.map(a => (
+                    <div
+                      key={a.id}
+                      className="meeting-attendee"
+                      onClick={() => { onAdd(a.id); setAddOpen(false); }}
+                    >
+                      <span style={{fontSize:14}}>{a.elevated ? '🛡' : '👤'}</span>
+                      <div style={{display:'flex',flexDirection:'column',lineHeight:1.1,minWidth:0}}>
+                        <span className="meeting-attendee-name">{a.name}</span>
+                        <span className="meeting-attendee-role">{a.role}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="meeting-log" ref={logRef}>
           {msgs.map(m => (
@@ -1152,6 +1235,6 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-const CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+const CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
 
 export { CafresoHQV2 };

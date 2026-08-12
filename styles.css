@@ -4862,6 +4862,25 @@ body.night .settings-shell .cb-panel {
   border: 1px solid var(--ink); cursor: pointer;
   font-family: 'Press Start 2P'; font-size: 7px;
 }
+/* "+ Seat someone" — an empty chair a boss can add a coworker into
+   mid-meeting, instead of the room's cast being fixed the moment the door
+   opens. Dashed border reads as "unoccupied" against the solid `.seat`
+   tiles either side of it. */
+.seat.seat-add {
+  cursor: pointer;
+  border-style: dashed;
+  color: var(--ink-3);
+  justify-content: center;
+  position: relative;
+}
+.seat-add-plus { font-family: 'Press Start 2P'; font-size: 18px; line-height: 1; }
+.seat-add-popover {
+  position: absolute; top: 100%; left: 0; margin-top: 6px;
+  width: 240px; z-index: var(--z-tooltip);
+  background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  padding: 8px; cursor: default; text-align: left;
+}
 .meeting-log { padding: 14px; max-height: 260px; overflow: auto; background: #fdf6e3; }
 .mtg-msg { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
 .mtg-msg.you { flex-direction: row-reverse; }
