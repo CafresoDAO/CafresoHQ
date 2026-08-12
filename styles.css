@@ -5893,6 +5893,27 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
    time on it is when the run wraps, not when it was logged. Marked so it
    doesn't read as one more past entry in the day's log. */
 .cal-item.cal-mission { border-left: 3px solid var(--accent-lav); background: var(--paper-2, #f0e9d8); }
+/* ...and a FINISHED mission must not wear that marker, or the one visual
+   cue meaning "this hasn't happened yet" would sit on a run that ended
+   hours ago. Finished missions only started appearing here once the
+   calendar stopped dropping them; before that this rule had no exception
+   to make. Same dimming as any other completed row. */
+.cal-item.cal-mission.is-done { border-left-color: var(--ink-3); opacity: 0.75; }
+
+/* The calendar's pills had NO styles: `.status-pill` is defined only under
+   `.agent-card`, so the RUNNING tag on a mission row has been rendering as
+   bare text this whole time. It matters more now that the pill is what
+   separates a forecast from an outcome, and an outcome that went wrong
+   from one that didn't. */
+.cal-meta .status-pill {
+  font-family: 'Press Start 2P'; font-size: 7px;
+  padding: 2px 4px; border: 1px solid var(--ink);
+  background: var(--bg-2); color: var(--ink-2);
+}
+.cal-meta .status-pill.busy { background: var(--accent-sun); color: var(--ink); }
+.cal-meta .status-pill.ok   { background: var(--accent-leaf); color: var(--ink); }
+.cal-meta .status-pill.warn { background: var(--accent-sun);  color: var(--ink); }
+.cal-meta .status-pill.bad  { background: var(--error);       color: #fff8ee; }
 .cal-time { font-family: 'VT323'; font-size: 16px; color: var(--ink-2); }
 .cal-title { font-family: 'VT323'; font-size: 17px; }
 .cal-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

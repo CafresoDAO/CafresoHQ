@@ -719,10 +719,34 @@ function CalendarView({ tasks, agents, missions = [] }) {
     for (const t of tasks) {
       push(t.createdAt || Date.now(), { kind: 'task', at: t.createdAt || Date.now(), task: t });
     }
+    /* A finished mission used to VANISH from here. The filter was
+       `status !== 'running' → skip`, so this view showed the one thing that
+       has not happened yet (a projected wrap) and dropped the thing that
+       has (a run that actually ended) — in a view whose title is "your
+       business by day" and whose job is answering "what did we get done".
+       A four-hour research mission could wrap at 3pm and leave no trace on
+       the day it wrapped, while the tag above promised "missions when they
+       wrap".
+
+       Both now appear, and the distinction is kept rather than blurred:
+         · running  → filed at its PROJECTED wrap, labelled "wraps up",
+                      which is a forecast and is marked as one.
+         · finished → filed at `endedAt`, when it really stopped.
+
+       `endedAt` is new — no terminal transition recorded a time before
+       this, which is why the honest version could not be built. For a
+       mission that ended before the field existed, fall back to the
+       projected wrap; that is exact for the common deadline case and an
+       estimate otherwise, and it beats erasing the run. */
     for (const m of missions) {
-      if (!m || m.status !== 'running' || !m.startedAt || !m.durationMs) continue;
-      push(m.startedAt + m.durationMs,
-           { kind: 'mission', at: m.startedAt + m.durationMs, mission: m });
+      if (!m || !m.startedAt || !m.durationMs) continue;
+      if (m.status === 'running') {
+        push(m.startedAt + m.durationMs,
+             { kind: 'mission', at: m.startedAt + m.durationMs, mission: m, done: false });
+      } else {
+        const at = m.endedAt || (m.startedAt + m.durationMs);
+        push(at, { kind: 'mission', at, mission: m, done: true });
+      }
     }
     return [...out.entries()]
       .map(([day, items]) => [day, items.sort((a, b) => b.at - a.at)])
@@ -765,15 +789,30 @@ function CalendarView({ tasks, agents, missions = [] }) {
                 const m = entry.mission;
                 const a = agents.find(x => x.id === m.agentId);
                 /* Says what the clock actually means for this row — the
-                   time is when the run STOPS, not when it was set up. */
+                   time is when the run STOPS, not when it was set up.
+                   A finished row must not borrow the running row's words:
+                   "wraps up" is a forecast, and printing it over a run that
+                   ended hours ago is the same tense error as a verdict about
+                   a graph with no shape. Past tense, real time, real
+                   outcome — including the unhappy ones, which are still
+                   business that happened. */
+                const notes = (m.notesWritten || []).length;
+                const OUT = { done:   ['finished',  'DONE',    'ok'],
+                              paused: ['stopped',   'STOPPED', 'warn'],
+                              error:  ['ended early', 'FAILED', 'bad'] };
+                const [verb, pill, tone] = OUT[m.status] || ['ended', String(m.status || '').toUpperCase(), 'warn'];
                 return (
-                  <div key={m.id} className="cal-item cal-mission">
+                  <div key={m.id} className={'cal-item cal-mission' + (entry.done ? ' is-done' : '')}>
                     <div className="cal-time">{time}</div>
-                    <div className="cal-title">🔬 {m.topic} — wraps up</div>
+                    <div className="cal-title">🔬 {m.topic} — {entry.done ? verb : 'wraps up'}</div>
                     <div className="cal-meta">
                       {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">{m.agentId}</span>}
-                      <span className="pri">every {Math.max(1, Math.round((m.intervalMs || 0) / 60000))}m</span>
-                      <span className="status-pill busy">RUNNING</span>
+                      {entry.done
+                        ? <span className="pri">{notes} note{notes === 1 ? '' : 's'} filed</span>
+                        : <span className="pri">every {Math.max(1, Math.round((m.intervalMs || 0) / 60000))}m</span>}
+                      <span className={'status-pill ' + (entry.done ? tone : 'busy')}>
+                        {entry.done ? pill : 'RUNNING'}
+                      </span>
                     </div>
                   </div>
                 );

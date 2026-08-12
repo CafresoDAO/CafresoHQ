@@ -406,6 +406,8 @@ async function runMissionIteration(ctx) {
     tokensUsed: (x.tokensUsed || 0) + usedTokens,
     errors: 0, // streak reset on success
     status: completed ? 'done' : x.status,
+    // When it ENDED, not when it was due to. See CalendarView.
+    endedAt: completed ? Date.now() : x.endedAt,
   } : x));
 
   /* A mission that finished its run is one completed night shift on the
@@ -554,7 +556,7 @@ function useMissionRunner(missions, setMissions, ctx) {
       /* Time-budget check: stop if we've blown past the duration. */
       const deadline = m.startedAt + m.durationMs;
       if (Date.now() >= deadline) {
-        setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+        setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done', endedAt: Date.now() } : x));
         standDown(m.agentId);
         // Ran its schedule → one night shift on the record — but only if it
         // actually worked at least once (§5; the per-taskId guard dedupes).
@@ -568,7 +570,7 @@ function useMissionRunner(missions, setMissions, ctx) {
       /* Three errors in a row → auto-pause so we don't burn cycles on
          a busted backend. */
       if ((m.errors || 0) >= 3) {
-        setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'paused', lastError: x.lastError || 'too many errors' } : x));
+        setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'paused', endedAt: Date.now(), lastError: x.lastError || 'too many errors' } : x));
         standDown(m.agentId);
         continue;
       }
@@ -601,7 +603,7 @@ function useMissionRunner(missions, setMissions, ctx) {
           /* Deadline re-check at FIRE time — the timer scheduled just before
              the budget ran out used to run one full extra iteration. */
           if (Date.now() >= (latest.startedAt + latest.durationMs)) {
-            setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done' } : x));
+            setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'done', endedAt: Date.now() } : x));
             standDown(m.agentId);
             if (latest.iterations > 0 && ctx.recordXp) {
               ctx.recordXp({ agentId: latest.agentId, kind: 'mission', outcome: 'done',
@@ -612,7 +614,7 @@ function useMissionRunner(missions, setMissions, ctx) {
           _haveMissionLease();   // renew the heartbeat while we work
           const agent = ctxWithSetters.agentsRef.current.find(a => a.id === latest.agentId);
           if (!agent) {
-            setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'error', lastError: 'agent removed' } : x));
+            setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'error', endedAt: Date.now(), lastError: 'agent removed' } : x));
             standDown(m.agentId);
             return;
           }

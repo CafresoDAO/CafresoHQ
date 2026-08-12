@@ -822,8 +822,17 @@ function App() {
      never re-authorized, with a time budget already eaten by wall-clock
      downtime. Reload lands it in 'paused'; resuming is an explicit click,
      which is what the missions header always claimed happened. */
+  /* `lastIterationAt`, deliberately NOT Date.now(): this run stopped when
+     the page died, which could have been hours ago, and the calendar files
+     a finished mission at `endedAt`. Stamping the load time would file a
+     run under whenever the boss next opened the app. The last iteration is
+     the last moment we KNOW it was alive; where there isn't one, leave the
+     field unset and let the calendar fall back rather than invent a time. */
   const missionsOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
-    .map(m => m && m.status === 'running' ? { ...m, status: 'paused', pauseNote: 'paused on reload — resume to continue' } : m), []);
+    .map(m => m && m.status === 'running'
+      ? { ...m, status: 'paused', endedAt: m.lastIterationAt || m.endedAt,
+          pauseNote: 'paused on reload — resume to continue' }
+      : m), []);
   const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', [], missionsOnLoad);
   const [missionsOpen, setMissionsOpen] = useStateA(false);
   /* Night Shift board (§1 bulletin board) — the office floor's board used
@@ -891,11 +900,14 @@ function App() {
       navigator.wakeLock.request('screen').catch(() => {});
     }
   };
+  /* endedAt so the calendar can file a stopped mission on the day it
+     actually stopped, not the day it was projected to wrap. Cleared on
+     resume below, because a resumed mission has not ended. */
   const onStopMission = (id) =>
-    setMissions(prev => prev.map(m => m.id === id ? { ...m, status: 'paused' } : m));
+    setMissions(prev => prev.map(m => m.id === id ? { ...m, status: 'paused', endedAt: Date.now() } : m));
   const onResumeMission = (id) =>
     setMissions(prev => prev.map(m => m.id === id
-      ? { ...m, status: 'running', errors: 0,
+      ? { ...m, status: 'running', errors: 0, endedAt: null,
           startedAt: m.startedAt + (Date.now() - (m.lastIterationAt || m.startedAt)) }
       : m));
   const onClearMission = (id) =>
@@ -929,7 +941,8 @@ function App() {
        night-shift story turns its ✓ into a ⚠. The boss pressed the button;
        the office should not file it as something that went wrong. */
     setMissions(prev => prev.map(m => m.status === 'running'
-      ? { ...m, status: 'paused', pauseNote: 'you stopped this — resume when you want it' } : m));
+      ? { ...m, status: 'paused', endedAt: Date.now(),
+          pauseNote: 'you stopped this — resume when you want it' } : m));
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}.` }]);
     say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
