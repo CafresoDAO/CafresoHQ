@@ -1215,6 +1215,43 @@ should extend that boundary, not blur it.
   > reply would be its own §7 failure, and the brief legitimately invites
   > *"(Source: what I already know)"*, so the rule needs more care than a
   > substring match. Flagged, not guessed at.
+
+  > **A third instance, and the most ordinary one — 2026-08-12.** Re-walked
+  > §3.6 on a clean install to check the day's eight commits had not broken
+  > the headline flow. It had not: front desk opens itself, hire Llama, pick
+  > **First draft**, one field, START → **33.3 seconds** to a filed artifact
+  > in `Drafts/`, with real prose, the local date, an *Assumptions* section
+  > and an honest Working footer.
+  >
+  > But the delivery opens *"Welcome to CafresoHQ, **[Teammate's Name]**!"* —
+  > and the brief the OFFICE wrote says, in as many words: *"no placeholder
+  > text and no '[insert here]' gaps. Where you need an assumption to keep
+  > moving, make a sensible one and list your assumptions at the end."*
+  > (`modals/starter.jsx:56`.) The model then listed, as an assumption, *"The
+  > new teammate's name is available in the office's records"* — which
+  > contradicts the placeholder it had just written: if the name were
+  > available it would have used it.
+  >
+  > This one is worth separating from the invented citation because it looks
+  > EASIER to catch and is not. A bracketed placeholder seems like an exact
+  > pattern, and the office's own instruction forbids it, so a detector needs
+  > no judgement. Probed the obvious rule (`\[[A-Z][^\]]{0,40}\](?!\()`)
+  > against the real artifact and four controls:
+  >
+  > | input | verdict |
+  > |---|---|
+  > | `[Teammate's Name]` (the real one) | caught ✓ |
+  > | `[the docs](https://…)` markdown link | correctly ignored ✓ |
+  > | `[1, 2, 3]` | correctly ignored ✓ |
+  > | `Cite [Smith 2020] properly.` | **false positive** |
+  > | `Press [Enter] to continue.` | **false positive** |
+  >
+  > Two of five controls cry wolf on ordinary prose — a citation and a key
+  > name — which is the §7 failure the citation entry above already refuses
+  > to commit. So: not shipped. Recorded with the counter-examples so the
+  > next attempt starts from the false positives rather than rediscovering
+  > them, and so nobody mistakes "the pattern is exact" for "the rule is
+  > safe".
 - **Unverified branches**, called out where they live: the specialist
   filing-deferral path still rests on unit tests. ATTEMPTED 2026-08-07 with a
   local brain once Vault Notes was enabled on it, and it did not reach the
