@@ -295,6 +295,7 @@ _hq_memory_dir  = pathlib.Path(os.environ.get('CAFRESOHQ_MEMORY_DIR',
 # browser session is live (last-writer-wins clobber guard).
 _night_lock = threading.Lock()
 _night_running = {}          # scheduleId -> True while a run is in flight
+_night_abort = set()         # scheduleId -> requested to stop mid-run (see _missions_delete)
 _night_base_url = ['']       # set in __main__ once scheme + port are known
 _LAST_UI_ACTIVITY = [0.0]    # last request that came from a real browser
 MAX_NIGHT_RUNS_KEPT = 100
@@ -561,21 +562,24 @@ def _night_post_activity(run):
 
 
 def _night_run_one(sched):
+    sid = sched.get('id', '')
     try:
         import night_runner as _nr
-        run = _nr.run_mission(_night_ctx(), sched, on_progress=_night_log_run)
+        run = _nr.run_mission(_night_ctx(), sched, on_progress=_night_log_run,
+                               should_abort=lambda: sid in _night_abort)
         _night_log_run(run)
         _night_post_activity(run)
     except Exception as e:
         now_ms = int(time.time() * 1000)
         _night_log_run({
-            'id': 'run_%d' % now_ms, 'scheduleId': sched.get('id', ''),
+            'id': 'run_%d' % now_ms, 'scheduleId': sid,
             'agentId': sched.get('agentId', ''), 'agentName': sched.get('agentName', ''),
             'topic': sched.get('topic', ''), 'vaultFolder': sched.get('vaultFolder', ''),
             'startedAt': now_ms, 'finishedAt': now_ms, 'iterations': 0, 'writes': [],
             'tokensUsed': 0, 'errors': 1, 'lastError': str(e)[:300], 'summary': ''})
     finally:
-        _night_running.pop(sched.get('id', ''), None)
+        _night_running.pop(sid, None)
+        _night_abort.discard(sid)
 
 
 def _night_scan():
@@ -2064,13 +2068,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'ok': True, 'schedule': sched})
 
     def _missions_delete(self):
+        """DELETE /missions/scheduled/<id> — the boss's "✕ CANCEL".
+
+        Used to only drop the schedule row: a mission already in flight
+        (`_night_running`) kept executing in its background thread for the
+        rest of its duration — up to 4 hours — with no schedule left to show
+        it, no board entry, nothing. An orphaned job the boss had just
+        clicked "cancel" on, invisible everywhere, still spending tokens.
+        Reproduced live: cancelled a running mission, watched
+        `_night_running` still hold its id with `schedules: []` right after.
+        Now also flags it to stop — `run_mission`'s should_abort check picks
+        it up within its next 5s sleep slice (night_runner.py), same as an
+        explicit stop already does for browser-side research missions.
+        """
         sid = self.path.rstrip('/').rsplit('/', 1)[-1]
         with _night_lock:
             scheds = _night_load('scheduled-missions.json', [])
             kept = [s for s in scheds if s.get('id') != sid]
             _night_save('scheduled-missions.json', kept)
+            was_running = sid in _night_running
+            if was_running:
+                _night_abort.add(sid)
         return self._send_json(200, {'ok': True, 'removed': sid,
-                                     'existed': len(kept) != len(scheds)})
+                                     'existed': len(kept) != len(scheds),
+                                     'stopped': was_running})
 
     def _tool_exec(self):
         """Execute a bracket-format tool call dispatched by the frontend.

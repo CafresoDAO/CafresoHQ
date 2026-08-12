@@ -821,6 +821,41 @@ function App() {
     .map(m => m && m.status === 'running' ? { ...m, status: 'paused', pauseNote: 'paused on reload — resume to continue' } : m), []);
   const [missions, setMissions] = useFileStored(k('missions'), 'state', 'missions', [], missionsOnLoad);
   const [missionsOpen, setMissionsOpen] = useStateA(false);
+  /* Night Shift board (§1 bulletin board) — the office floor's board used
+     to filter THIS `missions` state, which only ever holds in-browser
+     Research missions ("keep this tab open"). Server-side Night Shift
+     schedules/runs (night_runner.py, "close the laptop, work continues")
+     live entirely in NightShiftSection's own component state inside the
+     Missions modal, polled from /missions/scheduled + /missions/runs and
+     never lifted up here — so a Night Shift mission could run for hours
+     and the boss's own office floor would never show a thing about it.
+     Confirmed live: scheduled one, watched it run in hq-state/mission-
+     runs.json, and the bulletin board stayed empty the whole time.
+     This poll is the fix — same endpoint, same 15s cadence NightShiftSection
+     already uses, lifted one level so the floor can see it too. */
+  const [nightShiftBoard, setNightShiftBoard] = useStateA([]);
+  React.useEffect(() => {
+    let stop = false;
+    const poll = async () => {
+      if (document.hidden || stop) return;
+      try {
+        const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
+        const r = await fetch(base + '/missions/scheduled', { credentials: 'include' });
+        const j = await r.json();
+        const schedules = j.schedules || [];
+        const runningIds = new Set(j.running || []);
+        const board = schedules
+          .filter(s => s && runningIds.has(s.id))
+          .map(s => ({ id: s.id, status: 'running', topic: s.topic, agentName: s.agentName }));
+        if (!stop) setNightShiftBoard(board);
+      } catch (_e) { /* ambient board — a failed poll just leaves the last-known state */ }
+    };
+    poll();
+    const t = setInterval(poll, 15000);
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stop = true; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
   const [workflows, setWorkflows] = useFileStored(k('workflows'), 'state', 'workflows', []);
   const [projects, setProjects] = useFileStored(k('projects'), 'state', 'projects', []);
   /* Meetings (chat-room flavor) — ephemeral multi-agent rooms tied to the
@@ -4452,7 +4487,7 @@ ${d.text}` : d.text,
               attentionCount={attentionCount}
               onOpenAttention={openAttention}
               approvals={approvals}
-              missions={missions}
+              nightShiftBoard={nightShiftBoard}
               onOpenMissions={() => setMissionsOpen(true)}
               meetingActive={meetingOpen}
               meetingIds={meetingParticipants.map(p => p.id)}

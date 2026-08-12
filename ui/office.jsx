@@ -389,7 +389,7 @@ function freshCacheEntries(bucket) {
   return out;
 }
 
-function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], missions = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
+function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], nightShiftBoard = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
 
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
@@ -538,8 +538,11 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
 
   /* Night Shift board (§1: scheduled missions → the bulletin board). Only
      hangs on the wall once missions EXIST — an empty board on a fresh HQ
-     would be set dressing pretending to be state (the out-tray rule). */
-  const nightMissions = (missions || []).filter(m => m && (m.status === 'running' || m.status === 'paused'));
+     would be set dressing pretending to be state (the out-tray rule).
+     `nightShiftBoard` only ever carries currently-running server-side
+     schedules (app.jsx's poll already filters to `running`), so this stays
+     defensive rather than assuming that shape forever. */
+  const nightMissions = (nightShiftBoard || []).filter(m => m && (m.status === 'running' || m.status === 'paused'));
   const nightRunning = nightMissions.filter(m => m.status === 'running').length;
 
   const [trayDrop, setTrayDrop] = React.useState({});
