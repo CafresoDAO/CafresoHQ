@@ -1791,7 +1791,7 @@ body.theme-coffeeshop .desk::after {
    Both the rail and the coach are bottom-anchored, so they collide by
    construction; the fix is to clear the rail's column entirely. These
    offsets mirror the grid-template-columns above and must move with them. */
-.gs-coach { left: 246px; }                                  /* 232 rail + 14 */
+.gs-coach { left: 246px; bottom: 14px; }                    /* 232 rail + 14 */
 @media (max-width: 1100px) { .gs-coach { left: 214px; } }    /* 200 rail + 14 */
 .app.rail-collapsed .gs-coach { left: 70px; }                /*  56 rail + 14 */
 .rail.collapsed { padding: 16px 4px; gap: 6px; }
@@ -7947,6 +7947,47 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
 
   /* No rail on mobile, so the coach takes the screen edge back. */
   .gs-coach { left: 14px; }
+
+  /* …but the rail is not the only thing it can collide with. Both onboarding
+     surfaces are bottom-anchored at ~14–16px, and the mobile tab bar owns the
+     bottom 70px of the screen — so both were sitting UNDER it. Measured at
+     375×812 before this: `.gs-coach` ran to y798 against a tab bar starting at
+     y742, burying step 6 ("Watch them work") and its button. Anchor both above
+     the bar instead. `right` as well as `left` so the card can no longer be
+     wider than the screen. */
+  .gs-coach {
+    bottom: calc(70px + 14px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100vh - 70px - 96px);
+    overflow-y: auto;
+  }
+
+  /* The coach pill is a single-line lozenge by design (border-radius 999).
+     At 375px its text + CTA + ✕ cannot fit on one line, so it wrapped — and a
+     999px radius on a 155px-tall box renders as a giant blob, which is exactly
+     what shipped. Let it be a rounded card here, sized to the screen and
+     stacked above the tab bar like everything else down there. */
+  /* The coach mark stacks ABOVE the collapsed checklist pill rather than the
+     other way round, and that direction is deliberate: this element's height
+     varies with its text (three possible strings, one or two lines), while
+     `.gs-coach-mini` is always one line at exactly 44px. Anchoring the
+     variable-height box above the fixed-height one is the only arrangement
+     that needs no magic number for a box whose height we cannot know.
+
+     It is also exact rather than approximate: `coachMark` returns null the
+     moment the checklist is dismissed, and on mobile it is suppressed while
+     the checklist is expanded — so whenever this is on screen, that 44px pill
+     is guaranteed to be underneath it. 70 tab bar + 14 gap + 44 pill + 10. */
+  .coach-mark {
+    left: 12px !important;
+    right: 12px;
+    transform: none !important;
+    bottom: calc(138px + env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 14px !important;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding: 12px !important;
+  }
+  .coach-mark > span { flex: 1 1 100%; }
 
   /* Topbar: hide token HUD and crumb on mobile — tab bar already shows view name */
   .token-hud { display: none; }

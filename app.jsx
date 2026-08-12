@@ -505,6 +505,11 @@ function App() {
 
   /* Persistent getting-started checklist (survives a tour-skip). */
   const [gsDismissed, setGsDismissed] = useStored(ks('gettingStartedDone'), false);
+  /* Whether the Getting Started checklist is collapsed to its pill. Reported
+     up by the card so the coach mark below can stand down on a phone — see
+     the coachMark memo. Deliberately NOT persisted: it is a within-session
+     layout fact, not a preference. */
+  const [gsCollapsed, setGsCollapsed] = useStateA(false);
   const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
   useEffectA(() => {
     const onPub = () => setPublishedGraph(true);
@@ -5364,13 +5369,25 @@ ${d.text}` : d.text,
           onProjects={() => navTo('projects')}
           onWatch={() => navTo('visual')}
           onDismiss={() => setGsDismissed(true)}
+          onCollapsedChange={setGsCollapsed}
         />
       )}
       {/* Just-in-time coach marks — one nudge at the moment the next step
           becomes relevant, instead of a 10-step upfront slideshow. Each
           fires once (persisted); the full tour stays on the palette. */}
-      {!tourOpen && coachMark && (
-        <div style={{
+      {/* On a phone this pill and the Getting Started checklist are both
+          bottom-anchored and both always present (coachMark returns null
+          once the checklist is dismissed), so they collided by construction:
+          measured at 375×812, the pill sat on top of the card by 155px — its
+          whole height — burying steps 5 and 6. There is no room for two
+          onboarding nags on a 375px screen, and no need: the expanded
+          checklist already lists this exact step with this exact CTA. So on
+          narrow viewports the pill waits until the checklist is collapsed to
+          its own pill; on desktop both show as before, where they don't
+          touch. The class carries the mobile geometry (see styles.css) —
+          these inline styles are the desktop shape. */}
+      {!tourOpen && coachMark && !(isNarrowViewport && !gsDismissed && !gsCollapsed) && (
+        <div className="coach-mark" style={{
           position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 45,
           display: 'flex', alignItems: 'center', gap: 10,
           background: 'rgba(24,20,14,0.96)', border: '1px solid rgba(245,210,93,0.35)',

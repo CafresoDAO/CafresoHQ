@@ -278,8 +278,19 @@ function OnboardingKeyStep() {
    a tour-skip and stays until every step is done (or the user dismisses it), so
    a new user is never left at a dead end (e.g. agents that error with no key).
    Steps auto-check from live app state passed in as props. */
-function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAddKey, onHire, onChat, onTasks, onProjects, onWatch, onDismiss }) {
-  const [collapsed, setCollapsed] = useState(false);
+/* `onCollapsedChange` exists because this card is not the only bottom-anchored
+   onboarding surface: app.jsx also renders a coach-mark pill, and the pill
+   only exists while this checklist is undismissed — so on a phone they are
+   ALWAYS both on screen at once. Measured at 375×812: the pill covered this
+   card by 155px, its entire height. The owner of that collision is app.jsx
+   (it renders both), so it needs to know whether this card is expanded.
+   Still local state — this only reports, never obeys. */
+function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAddKey, onHire, onChat, onTasks, onProjects, onWatch, onDismiss, onCollapsedChange }) {
+  const [collapsed, setCollapsedState] = useState(false);
+  const setCollapsed = (v) => {
+    setCollapsedState(v);
+    if (onCollapsedChange) onCollapsedChange(v);
+  };
   const steps = [
     // Managed containers include Cafreso's Gemma 4 brain — this step self-
     // completes on those, and stays actionable only for standalone setups.
@@ -302,11 +313,13 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
   }, [allDone]);
 
   const card = {
-    /* No `left` here on purpose — .gs-coach in styles.css owns it, so the
-       offset stays next to the grid-template-columns it has to clear. See
-       the note there: at left:14 this sat squarely on the rail's SETTINGS
-       button. */
-    position: 'fixed', bottom: 14, zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
+    /* No `left` or `bottom` here on purpose — .gs-coach in styles.css owns
+       both, so each offset stays next to the thing it has to clear. See the
+       notes there: at left:14 this sat squarely on the rail's SETTINGS
+       button, and at bottom:14 it ran underneath the mobile tab bar. An
+       inline value would silently outrank the breakpoint override that
+       fixes either one. */
+    position: 'fixed', zIndex: 40, width: 274, maxWidth: 'calc(100vw - 28px)',
     background: 'rgba(24,20,14,0.95)', backdropFilter: 'blur(8px)',
     border: '1px solid rgba(245,210,93,0.28)', borderRadius: 12, padding: '12px 13px',
     color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', boxShadow: '0 14px 44px rgba(0,0,0,0.42)',
@@ -314,8 +327,12 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
   if (collapsed) {
     return React.createElement('button', {
       onClick: () => setCollapsed(false),
-      className: 'gs-coach',
-      style: { position: 'fixed', bottom: 14, zIndex: 40, cursor: 'pointer', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 20, padding: '7px 12px', background: 'rgba(24,20,14,0.95)', color: '#F5D25D', font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' },
+      // gs-coach-mini so the mobile stylesheet can tell the collapsed pill
+      // (fixed 44px, always single-line) from the expanded card — the coach
+      // mark stacks on top of this exact height. See styles.css.
+      className: 'gs-coach gs-coach-mini',
+      // `left`/`bottom` come from .gs-coach in styles.css — see the card below.
+      style: { position: 'fixed', zIndex: 40, cursor: 'pointer', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 20, padding: '7px 12px', background: 'rgba(24,20,14,0.95)', color: '#F5D25D', font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' },
       title: 'Getting started',
     }, '✦ Getting started · ' + doneCount + '/' + steps.length);
   }
