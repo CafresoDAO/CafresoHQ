@@ -1415,6 +1415,49 @@ so the regex was widened to match the new three-line shape, then
 fire-tested by moving `.cancel()` after the write again to confirm it
 still catches the real race.
 
+### PUBLISH_SITE — a clean pass, and the settings gate actually works this time — 2026-08-12
+
+After yesterday's finding that GENERATE_IMAGE/VIDEO's settings keys are
+gated but never writable anywhere, checked the other ICP-Services module
+gated the same shape: Settings → MODULES → "Publish to Web," which flips
+`s.icpServices.publish`, read by `icpPublishEnabled()`, which gates the
+`PUBLISH_SITE` tool. This one is not a repeat of yesterday's bug.
+
+Toggled it on in Settings, reloaded the office, reopened Settings — still
+ON. The write side exists and persists, unlike `imageProvider`/
+`videoProvider`, which have no write side anywhere. `togglePublish`
+(`modals/settings.jsx`) writes through `CafresoHQClient.setSettings`,
+same mechanism every other working toggle on that panel uses.
+
+Drove the actual publish mechanics independently of an LLM turn (local
+Ollama's tool-calling has been unreliable all session — narrating a plan
+instead of emitting the marker, more than once) by hitting the same `/fs`
+endpoints `publishSite()` calls, directly: uploaded a real `index.html`
+to a throwaway directory via `POST /fs/upload`, fetched it back through
+`GET /fs/site/<b64root>/index.html` (200, real content, and the bare-
+directory fallback to `index.html` also works), then uploaded the
+`.url` shortcut file the same way `publishSite()`'s second step does and
+fetched that back too. Full loop, no shell bridge, no ICP identity
+required — exactly what the code comments claim ("Publish works without
+the bridge — always store locally").
+
+One harmless dead-code note, not fixed: `TOOL_REGISTRY.publish_site.run`
+(the static registry entry) hardcodes `tip: false` and `agentId: null`,
+which contradicts its own doc string ("tip jar rides along unless
+tip=off"). It doesn't matter — grepped every reference to
+`TOOL_REGISTRY.publish_site` in `hq-runtime.jsx` and there is exactly
+one, the `...TOOL_REGISTRY.publish_site` spread in `toolsForAgent` that
+immediately overrides `.run` with a correct, per-agent-bound version
+(real `tip` default from `icpWalletEnabled()`, real `agentId`/
+`agentName` so the tip jar credits the right wallet). The static `.run`
+is provably unreachable through any live path today — but it is a trap
+for whoever next refactors `toolsForAgent` and forgets the override,
+since nothing currently exercises the static version to catch a
+regression there. Left alone rather than touched with no live bug behind
+it; worth a one-line fix (delegate the static `.run` to the same logic,
+or drop it and require the override) if `toolsForAgent` is ever
+restructured.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
