@@ -207,7 +207,17 @@ const SNAG_CAUSES = [
    'that brain is rate-limited right now — worth trying again in a minute'],
   [/insufficient|quota|billing|payment required|\b402\b/i,
    "that brain's account is out of credit — top it up or pick another coworker"],
-  [/econnrefused|connection refused|enotfound|failed to fetch|network error|dns/i,
+  /* Every browser words a dead connection differently, and this pattern
+     originally spoke only Chrome. `network error` (with a space) does NOT
+     match Firefox's `NetworkError when attempting to fetch resource`, and
+     nothing here matched Safari's terse `Load failed` — so on two of the
+     three major engines a plain offline failure fell straight past the
+     classifier into the raw-first-line fallback, on EVERY surface that uses
+     it, not just one. Caught by unplugging the network under a real vault
+     delete and reading the toast: "NetworkError when attempting to fetch
+     resource." reached the boss verbatim, which is the §7 leak this table
+     exists to stop. `networkerror` is written unspaced on purpose. */
+  [/econnrefused|connection refused|enotfound|failed to fetch|network ?error|load failed|dns/i,
    "couldn't reach that brain — it looks offline from here"],
   /* "did not start responding" is how a cold LOCAL model reads: the driver
      gives up before the weights finish loading. Caught live — a first call

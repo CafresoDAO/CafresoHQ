@@ -1,4 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
+import { snagCause } from '../app/floor.jsx';
 import { FolderTree } from './core.jsx';
 import { GraphView, simulate } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
@@ -89,6 +90,37 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      tick behind is a cosmetic problem, not one worth a broken vault over. */
   const refreshGraph = () => {
     try { window.CafresoHQGraph && window.CafresoHQGraph.refresh(); } catch (_e) {}
+  };
+
+  /* §7, "every failure is one honest sentence": these used to be native
+     `alert()`s, three of them interpolating a raw `e.message` straight at
+     the boss — the exact thing the note further down criticises the removed
+     Obsidian button for, sitting five lines from where it was written. The
+     vault had already moved to hqConfirm/hqPrompt for confirm and prompt;
+     the alerts were simply left behind, and the comment claiming they were
+     gone was never checked against the file it lives in.
+
+     `say` for things that merely happened, `snag` for things that failed —
+     the latter runs the cause through the same classifier the floor and the
+     chat paths use, so a vault failure reads like every other failure in the
+     office instead of like a browser dialog.
+
+     snagCAUSE, not snagSentence: these messages bring their own subject and
+     verb ("Couldn't delete that note"), and snagSentence prepends a "hit a
+     snag — " spine meant for surfaces that have none. Written the wrong way
+     first and caught by reading the toast it actually produced: "Couldn't
+     delete that note — hit a snag — NetworkError…", two spines in one line.
+     floor.jsx says this in as many words above snagCause — "One classifier,
+     two shapes, no regex surgery at the call site" — and names the twin
+     mistake (stripping the prefix instead) that once printed a verbless
+     "Kenji that brain isn't signed in yet". Both shapes exist precisely so
+     neither call site has to improvise. */
+  const say = (text, kind = 'info') => {
+    const t = window.cafresohqToast;
+    if (t && t[kind]) t[kind](text);
+  };
+  const snag = (what, err) => {
+    say(`${what} — ${snagCause((err && err.message) || String(err))}`, 'error');
   };
 
   const refresh = async () => {
@@ -204,7 +236,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // Binary files (images, video, audio) can't open in the text editor
     const fileMeta = files.find(f => f.path === path);
     if (fileMeta?.isBinary) {
-      alert(`"${fileMeta.title}" is a binary file.\nDownload it from ai.cafreso.com/vault to view it.`);
+      say(`"${fileMeta.title}" is an image or media file — open it from the vault at ai.cafreso.com to view it.`, 'info');
       return;
     }
     // Flush any dirty buffer before swapping files — no silent edit loss.
@@ -300,11 +332,18 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     try {
       const r = await CafresoHQClient.vaultUpload(list);
       await refresh();
+      /* A partial upload is a real, mixed outcome, so it says both halves and
+         names the files that didn't make it — but only the first few, since
+         a toast is not a log and forty filenames in one is its own kind of
+         dishonesty. The count carries the rest. */
       if (r && r.failed && r.failed.length) {
-        alert(`Uploaded ${r.count}, failed ${r.failed.length}:\n` +
-              r.failed.map(f => `${f.path}: ${f.error}`).join('\n'));
+        const named = r.failed.slice(0, 3).map(f => f.path).join(', ');
+        const more = r.failed.length > 3 ? ` and ${r.failed.length - 3} more` : '';
+        say(`Filed ${r.count}. Couldn't file ${r.failed.length}: ${named}${more}.`, 'warn');
+      } else if (r && r.count) {
+        say(`Filed ${r.count} file${r.count === 1 ? '' : 's'} in the vault.`, 'success');
       }
-    } catch (er) { alert('Upload failed: ' + er.message); }
+    } catch (er) { snag("Couldn't add those to the vault", er); }
     setBusy(false);
   };
   const renameNote = async () => {
@@ -322,7 +361,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       await CafresoHQClient.vaultRename(n.path, to.trim());
       setOpenNote(o => o ? { ...o, path: to.trim() } : o);
       await refresh();
-    } catch (e) { alert('Rename failed: ' + e.message); }
+    } catch (e) { snag("Couldn't move that note", e); }
   };
   const deleteNote = async () => {
     const n = openNoteRef.current;
@@ -333,7 +372,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       setSaveState('');
       setOpenNote(null);
       await refresh();
-    } catch (e) { alert('Delete failed: ' + e.message); }
+    } catch (e) { snag("Couldn't delete that note", e); }
   };
 
   const newNote = async () => {
@@ -354,8 +393,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      So this button had a 0% success rate in every shipped build, by
      construction, sitting on the single most-visited pane in the vault —
      which OFFICE_AS_INTERFACE §3.6 calls "the cabinet", the story of this
-     product. Its failure path was also a native `alert()` (this app's only
-     one — everything else is cafresohqToast or an inline sentence) reading
+     product. Its failure path was also a native `alert()` — which this note
+     originally called "this app's only one — everything else is
+     cafresohqToast or an inline sentence". That was wrong when it was
+     written: THIS FILE still held five more, at the binary-file notice, the
+     partial-upload report, and the upload/rename/delete catch blocks, three
+     of them interpolating a raw `e.message`. They are toasts now (see `say`
+     and `snag` above). A claim about the whole app, written from one line of
+     it, and contradicted a hundred lines up in the same file — worth leaving
+     visible rather than quietly deleting. The alert read
      "Could not open in Obsidian: open-in-Obsidian requires REST backend" —
      raw backend cause text, "REST backend", straight at a boss with no
      context for what that means. North-star §5: "Obsidian bridge — serves

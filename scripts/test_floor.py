@@ -84,6 +84,16 @@ R.snagNoLeak  = (() => { const out = snagSentence('{"error":{"message":"quota ex
 R.snagLong    = snagSentence('x'.repeat(300));
 R.snagLongLen = snagSentence('x'.repeat(300)).length;
 R.snagEmpty   = snagSentence('');
+/* A dead connection, worded by each engine that ships one. The table used to
+   speak only Chrome: `network error` (spaced) misses Firefox's
+   `NetworkError`, and nothing matched Safari's `Load failed`, so on two of
+   three engines an offline failure fell through to the raw first line — on
+   every surface using this classifier. Found by pulling the network under a
+   real vault delete and reading the toast. */
+R.netChrome   = snagCause('Failed to fetch');
+R.netFirefox  = snagCause('NetworkError when attempting to fetch resource.');
+R.netSafari   = snagCause('Load failed');
+R.netRefused  = snagCause('connect ECONNREFUSED 127.0.0.1:8787');
 // ── deskKit — room props from GRANTED capability, never achievement ─────
 R.kitVault   = deskKit(['vault']);
 R.kitFiles   = deskKit(['files']);
@@ -249,6 +259,15 @@ console.log(JSON.stringify(R));
     check('JSON shrapnel is stripped from an unrecognised cause',
           '{' not in out['snagJson'] and 'flux capacitor' in out['snagJson'],
           repr(out['snagJson']))
+    OFFLINE = "couldn't reach that brain — it looks offline from here"
+    for engine, key in (('Chrome', 'netChrome'), ('Firefox', 'netFirefox'),
+                        ('Safari', 'netSafari'), ('Node/ECONNREFUSED', 'netRefused')):
+        check(f'a dead connection is classified on {engine}',
+              out[key] == OFFLINE,
+              f"{out[key]!r} — this table is shared by every surface, so an "
+              f"engine it cannot parse leaks that engine's raw wording "
+              f"app-wide, not just on one screen")
+
     check('URLs are dropped from the bubble',
           'http' not in out['snagUrl'] and 'while parsing' in out['snagUrl'], repr(out['snagUrl']))
     check('a recognised cause leaks none of the raw text it replaced',
