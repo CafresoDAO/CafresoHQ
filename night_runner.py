@@ -562,7 +562,14 @@ def run_iteration(ctx, sched, iteration, total_iters):
         # on the chat side, and the morning report deserves the same
         # honesty: better to say the claim didn't match reality than to
         # let "Wrote 1" stand unexamined next to an empty writes list.
-        error = 'said it wrote a note but never called VAULT_NEW/VAULT_APPEND — nothing landed in the vault'
+        # Office words, and SHORT. This lands verbatim in the morning
+        # Gazette, which slices lastError for display — at 60 chars the
+        # old wording ('…never called VAULT_NEW/VAULT_APPEND — nothing
+        # landed in the vault', 90 chars) was cut precisely at the end of
+        # the protocol tokens, so the boss read two wire-format names and
+        # LOST the clause that says what it means. §6 bans those names on
+        # a human surface; the truncation made it jargon-only.
+        error = 'said it saved a note, but nothing reached the vault'
     return {'writes': writes, 'tokens': tokens_used, 'summary': summary, 'error': error}
 
 

@@ -229,7 +229,17 @@ def main():
 
     night_runner.llm_call = fake_llm_call_narrates_no_write
     res = night_runner.run_iteration(_FakeCtx(), {'vaultFolder': 'Research/x', 'agentName': 'Test'}, 0, 1)
-    ok = (not res['writes']) and res['error'] is not None and 'VAULT_NEW' in res['error']
+    # NOT `'VAULT_NEW' in res['error']` — this string lands verbatim in the
+    # morning Gazette, and asserting the token by name is what kept it
+    # there: §6 bans wire-format names on a human surface, and the
+    # Gazette's own 60-char slice cut the sentence at exactly the end of
+    # the tokens, leaving jargon and deleting "nothing landed in the
+    # vault". Assert the MEANING instead, so the wording stays free to be
+    # human while the detector stays pinned.
+    ok = ((not res['writes']) and res['error'] is not None
+          and re.search(r'said it (?:saved|wrote)', res['error'], re.I)
+          and re.search(r'nothing (?:reached|landed)', res['error'], re.I)
+          and 'VAULT_NEW' not in res['error'])
     print('%s run_iteration: a fabricated "Wrote 1" with no write is an honest error' % ('PASS' if ok else 'FAIL'))
     if not ok:
         print('   got: %r' % (res,))

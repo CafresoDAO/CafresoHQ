@@ -1060,7 +1060,13 @@ function MorningReportModal({ report, onClose, onGoToOffice }) {
             <div key={r.id} className="tiny" style={{ marginTop: 3 }}>
               {r.lastError ? '⚠' : '✓'} <b>{r.agentName || r.agentId}</b> · {String(r.topic || '').slice(0, 50)} ·
               {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} notes
-              {r.summary ? ` — ${String(r.summary).slice(0, 80)}` : r.lastError ? ` — ${String(r.lastError).slice(0, 60)}` : ''}
+              {/* 90, not 60: snagCause/officeCause cap their own sentences at
+                  90 (with an ellipsis), so a 60-char slice here truncated the
+                  office's OWN honest sentences mid-clause — "that brain isn't
+                  signed in yet — add it in Settings, or give" loses the route
+                  out, which is the half §7 exists for. A display cap below the
+                  producer's cap is a silent editor. */}
+              {r.summary ? ` — ${String(r.summary).slice(0, 80)}` : r.lastError ? ` — ${String(r.lastError).slice(0, 90)}` : ''}
             </div>
           ))}
         </div>
