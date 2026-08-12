@@ -412,8 +412,37 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   if (!status) {
     return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Loading…</div></div></div>;
   }
+  /* The whole-cabinet failure screen. It used to read, in full:
+
+          Error
+          NetworkError when attempting to fetch resource.
+
+      — the raw browser exception under the literal word "Error", with no
+      button on it anywhere. Three §7 breaches at once (raw dump, dev word,
+      no way forward) on the surface §3.6 calls "the cabinet", and it
+      REPLACES the file tree, so the boss loses sight of their documents and
+      is handed a stack-trace fragment instead. Driven live by failing
+      /vault/status; the app's own offline banner answers the very same
+      outage with "Your office is offline… then hit Retry", which is the bar
+      this never met.
+
+      Classifying here rather than at the five setErr() call sites on
+      purpose: this is the single choke point they all render through, so
+      one honest sentence covers every one of them, and `err` stays the raw
+      cause for anyone debugging. */
   if (err) {
-    return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title error">Error</div><div className="empty-sub">{err}</div></div></div>;
+    const cause = snagCause(err);
+    return (
+      <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}>
+        <div className="section-title">📓 VAULT</div>
+        <div className="empty-state">
+          <div className="empty-title">The cabinet won't open</div>
+          <div className="empty-sub">{cause}. Your files are safe where they are — this is the office not answering, not the vault losing anything.</div>
+          <button className="px-btn primary" style={{marginTop:16,fontSize:12,padding:'10px 20px'}}
+                  onClick={() => { setErr(null); setStatus(null); refresh(); }}>↻ Try again</button>
+        </div>
+      </div>
+    );
   }
   if (!status.configured) {
     return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Vault not configured.</div><div className="empty-sub">Choose a Markdown vault directory in Connections settings.</div>{onOpenSettings && <button className="px-btn primary" style={{marginTop:16,fontSize:12,padding:'10px 20px'}} onClick={onOpenSettings}>⚙️ Open Settings</button>}</div></div>;
