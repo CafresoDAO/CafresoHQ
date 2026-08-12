@@ -1354,6 +1354,67 @@ observed happening — no task filed, because filing one would mean asking
 someone to fix a bug that has not been shown to exist. Recorded as a
 question for future driving to answer, not a finding to act on today.
 
+### The office-floor Meeting Room's second speaker couldn't hear the first — 2026-08-12
+
+The other meeting room — the office-floor door (`features.jsx`'s
+`MeetingRoom`, seats participants, sequential per-round replies, CEO
+synthesizes) — was still undriven after the chat-thread modal above got
+its pass. Drove it on the same throwaway two-Ollama-coworker office.
+
+Sent one message with both seated: *"name ONE fruit and say which of you
+spoke before you (or 'no one' if you're first)."* Llama, going first,
+answered correctly — fruit, "no one spoke before me." Nova, going
+**second**, in the same visible round, with Llama's reply already
+rendered a few pixels above hers: *"I said no one spoke before me since
+I'm the first to respond."* Wrong, and not the model's fault — her prompt
+genuinely contained no trace of Llama's turn.
+
+Root cause, once looked for: `transcript` was a `const`, built once at the
+top of `moderate()` from prior messages plus the boss's new line, before
+the participant loop ran. Every seated coworker's prompt read "Meeting
+transcript so far: `<that same frozen string>`" no matter how many
+round-mates had already answered in front of them — a `for` loop that
+LOOKS like turn-taking (typing indicator, one reply materializing after
+another) while every participant is actually answering the same static
+prompt in isolation. The CEO's closing synthesis used the identical frozen
+`transcript`, so even a healthy CEO call would have summarized "the
+discussion" having seen none of it — only the question that opened it.
+
+This is the third distinct instance this file has now recorded of the
+same shape of bug — a value that visually *looks* live (a running
+transcript, a streaming reply, a round in progress) but is structurally
+a frozen snapshot underneath. The chat-thread modal above rebuilds its
+transcript fresh per round and fans out in genuine parallel within a
+round — a different, correct design for a different feature. This one
+is sequential BY DESIGN (turns render one at a time) and simply never
+fed each turn's own output back in.
+
+Fix: `transcript` is now `let`, appended after each participant's turn
+(`\n${name}: ${cleaned}`, using the same `visibleReply`-cleaned text
+already written to their bubble — not the raw buffer, so a stray marker
+can't leak into what the next round-mate reads as context). The CEO's
+synthesis call needed no separate change — it reads the same `transcript`
+variable, so it now inherits the full round automatically. Re-ran the
+identical probe after rebuilding: Nova correctly opened with *"Llama has
+made a response to the initial question... Llama responded with
+'Apple.'"*
+
+Pinned by `scripts/test_meeting_room_round_transcript.py` (`let` not
+`const`, an in-loop append using the cleaned text, positioned before the
+loop's closing brace) — fire-tested against the reverted bug (3 failures)
+and against an over-reach wrong fix that appended once after the loop
+instead of once per turn inside it (still 2 failures, confirming the
+test's positional check has real teeth). Refactoring the success-write
+into `const cleaned = ...` broke an existing test's regex —
+`test_report_gate_race.py`'s meeting-room check expected the cancel-then-
+write as one literal adjacent pattern. The underlying invariant it
+protects (the rAF gate's `.cancel()` must run before ANY write, or the
+stream's last raw token clobbers the clean one a frame later) was never
+at risk — `update.cancel()` is still the first statement in the block —
+so the regex was widened to match the new three-line shape, then
+fire-tested by moving `.cancel()` after the write again to confirm it
+still catches the real race.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office

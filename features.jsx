@@ -378,7 +378,14 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
     setStreaming(true);
 
     const youMsg = { id: newId(), who: 'You', color: null, text: you };
-    const transcript = msgs.map(m => `${m.who}: ${m.text}`).join('\n') + `\nYou: ${you}`;
+    /* `let`, not `const` — this is a LIVE round, and each participant needs
+       to hear whoever just spoke before them, same as the CEO's synthesis
+       needs to hear everyone. A frozen snapshot here means the second
+       coworker in a three-person room answers deaf to the first — verified
+       live: asked to name who spoke before them, the second coworker
+       insisted they were first, because their prompt still held the
+       pre-round transcript. Appended after each turn below. */
+    let transcript = msgs.map(m => `${m.who}: ${m.text}`).join('\n') + `\nYou: ${you}`;
     const placeholders = participants.map(a => ({
       id: newId(), who: a.name, color: a.color, text: '', streaming: true, agentRef: a,
     }));
@@ -447,7 +454,9 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
            raw token otherwise fires a frame after this and overwrites the
            clean text right back with the unstripped buffer. */
         update.cancel();
-        updateById(ph.id, { text: HQ.visibleReply(buf, ph.agentRef && ph.agentRef.name) });
+        const cleaned = HQ.visibleReply(buf, ph.agentRef && ph.agentRef.name);
+        updateById(ph.id, { text: cleaned });
+        transcript += `\n${ph.agentRef.name}: ${cleaned}`;
       } catch (err) {
         update.cancel();
         const stopped = (controller.signal && controller.signal.aborted) || err.name === 'AbortError';

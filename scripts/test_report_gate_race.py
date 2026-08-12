@@ -99,9 +99,13 @@ def main():
     meeting_loop = src[src.find('for (const ph of placeholders) {'):]
     meeting_loop = meeting_loop[:meeting_loop.find('\n    let buf = \'\';\n    if (!controller.signal.aborted)')]
     check("the meeting room's success path cancels the gate before its final write",
-          bool(re.search(r"update\.cancel\(\);\s*\n\s*updateById\(ph\.id, \{ text: HQ\.visibleReply", meeting_loop)),
+          bool(re.search(r"update\.cancel\(\);\s*\n\s*const cleaned = HQ\.visibleReply\([^)]*\);"
+                          r"\s*\n\s*updateById\(ph\.id, \{ text: cleaned \}\);", meeting_loop)),
           'features.jsx: same race as the stand-up — a meeting turn\'s last '
-          'token can schedule a pending write that clobbers the cleaned text')
+          'token can schedule a pending write that clobbers the cleaned text. '
+          '`cleaned` also now feeds the running per-round transcript (see '
+          'test_meeting_room_round_transcript.py), so the write must still '
+          'be the CLEANED text, not the raw buffer')
     check("the meeting room's error/stop path also cancels the gate",
           bool(re.search(r'\} catch \(err\) \{\s*\n\s*update\.cancel\(\);', meeting_loop)),
           'features.jsx: the error/stopped message needs the same protection')
