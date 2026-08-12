@@ -4,24 +4,16 @@
 > **Two parts:** **Part A** is an overall critique of the CafresoHQ app (what to fix and why). **Part B** is the prioritized, ordered TODO that turns the whole strategy package into a build checklist.
 > **Severity:** 🔴 high · 🟡 medium · 🟢 low. **Priority:** P0 launch-blocking / safe quick-win · P1 needed for a credible MVP · P2 post-MVP / pre-SNS. **Effort:** S hours · M a day or two · L 1–2+ weeks.
 >
-> ⚠️ **Part A predates ~2.5 months of subsequent work and two of its 🔴 items were
-> found stale on direct verification (2026-08-12) — see the build-step and
-> `shell=True` corrections below.** Not a full re-audit; flagging so the rest of
-> Part A is read as "as of May", not "as of now". At least two more 🔴/🟡 items
-> look contradicted by work verified elsewhere this session and were left
-> UNCORRECTED because doing it properly means checking the code, not guessing
-> from memory of today's other tickets:
->   - *"Agents / missions / tasks aren't durably persisted... lost on container
->     restart"* — agents demonstrably persist to `hq-state/memory/agents.json`
->     via `useFileStored` (this session seeded a throwaway office by writing
->     that file directly and the server picked it up on boot).
->   - *"No onboarding path — the dashboard assumes you know what an
->     'endpoint' is"* — contradicted by the extensively-verified §3.6 first-run
->     flow (front-desk detection, the FIRST ASSIGNMENT sheet, a 33-second
->     hire-to-artifact walk logged 2026-08-12 in `OFFICE_AS_INTERFACE.md`).
->
-> Worth a dedicated pass rather than opportunistic fixes threaded through
-> unrelated tickets, the way the two corrections below were.
+> ⚠️ **Part A predates ~2.5 months of subsequent work. Five of its 🔴/🟡 items
+> were found stale on direct verification (2026-08-12)** — the build-step,
+> `shell=True`, agent/task/mission persistence, onboarding, and the
+> monolithic-files entries below are all corrected in place (the last one
+> only partially — `app.jsx`/`styles.css` are real, worsening problems, so
+> read that one's fix line, not just its status). Not a full re-audit — those
+> five were checked because this session had direct, load-bearing evidence
+> for each (things directly driven, measured, or built today), not because
+> the rest of Part A was reviewed. The remaining entries should be read as
+> "as of May", not "as of now", until someone does the same check on them.
 
 ## Ecosystem mapping (corrected)
 The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\Anthony\Documents`:
@@ -41,7 +33,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ### Architecture & build
 - ✅ ~~**No build step — Babel transpiles JSX in the browser.**~~ **Done, not via Vite — verified 2026-08-12.** `scripts/build_ui_bundle.mjs` self-hosts the vendor UMD globals (dropping the unpkg dependency), bundles the app's real ES modules into IIFE chunks, and hashes the output to `dist-ui/bundle/`; `hq.html` confirms in its own comment: "JSX is pre-transformed at build time (no @babel/standalone, no unpkg)". This session ran that build after nearly every code change today. The doc's goal (drop in-browser Babel/CDN, ship a minified prod build) is met by a purpose-built esbuild script instead of Vite — same outcome, different tool, and re-pointing this at Vite now would be a rewrite of something that already works, not a fix.
-- 🟡 **Monolithic files** — `views.jsx` 6,394 LOC, `styles.css` 7,817, `app.jsx` 3,754, `ui.jsx` 3,367, `modals.jsx` 1,936. *Fix:* split by feature with the bundler migration.
+- 🟡 **Monolithic files — mixed result, re-measured 2026-08-12.** `views.jsx`, `ui.jsx` and `modals.jsx` WERE split by feature as prescribed: all three are now thin barrels (721 / 50 / 16 bytes) re-exporting from `views/*.jsx` (7 files, 538–1,783 LOC each, 6,800 total — the original content, genuinely divided) and presumably equivalent `ui/`/`modals/` directories. But `app.jsx` and `styles.css` were NOT split, and both grew past the size that flagged them in the first place: `app.jsx` 3,754 → **5,814** LOC, `styles.css` 7,817 → **11,104** LOC. The fix landed for 3 of 5 named files and the other 2 got measurably worse in the same window. *Fix, unchanged for the remaining two:* split `app.jsx` and `styles.css` by feature.
 - 🟡 **`window`-global module wiring** (`app.jsx:6–10`). One failed script → cascading `undefined`. *Fix:* ES module imports once bundled.
 
 ### Duplication & data integrity
@@ -49,7 +41,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - 🟡 **`postMessage` origin `'*'`** (`frontend/src/routes/app/+page.svelte` ~line 61). *Fix:* pin to the container origin.
 
 ### "Real vs mock" product gaps
-- 🔴 **Agents / missions / tasks aren't durably persisted** — hired agents are in-memory (only the 3 seed agents survive reload, `mock-data.jsx`); missions read seed data; tasks use `useFileStored` (`app.jsx:49`) → localStorage + local `/hq/state/`, lost on container restart. *Fix:* persist to the encrypted vault / a state endpoint + an agent registry. **This is the gap between "demo" and "product."**
+- ✅ ~~**Agents / missions / tasks aren't durably persisted**~~ **Wrong on every count — verified 2026-08-12.** `mock-data.jsx` does not exist anywhere in this codebase. `HQ.INITIAL_AGENTS` (`hq-runtime.jsx`) is `[]` — not "3 seed agents"; a fresh office starts with zero. Agents, tasks AND missions all go through the same `useFileStored` (`app.jsx:38,733,836`), which the doc's own next clause names correctly and then contradicts in the same sentence: it does not stop at localStorage, it syncs to `hq-state/<scope>/<name>.json` on the SERVER, and this session proved that survives a full process kill twice — a throwaway office was seeded by hand-writing `hq-state/memory/agents.json` before the server process even started, and a fresh `serve.py` picked it up correctly on boot both times. The gap this bullet named does not exist; whatever separates "demo" from "product" here, it isn't persistence.
 
 ### Security & ops (flag)
 - ✅ ~~**`subprocess.run(arg, shell=True)`** for the BASH tool~~ **Re-examined 2026-08-12 — this is the correct implementation, not a bug.** A BASH tool's entire purpose is running shell syntax (pipes, `&&`, redirects); `shell=True` is what makes that possible, and "drop it, use arg lists" would silently break the feature rather than secure it — an arg-list `subprocess.run` cannot execute `ls | grep foo`. The actual mitigation is already layered and, per the code's own comment at `serve.py:~184`, deliberate: `Bash` is excluded from `CAFRESOHQ_ALLOWED_TOOLS`'s default set specifically *because* "enabling it by default makes every unconfigured deployment one request away from arbitrary command execution" — it requires an explicit env-var opt-in on top of that. And reaching the endpoint at all requires the AGENT to be `elevated`, which requires a boss-approved `grant-elevation` request (`app.jsx`, `hq-runtime.jsx:1748`). Three gates (server opt-in, per-agent elevation, human approval), a 30s timeout, and a 4000-char output cap. Removing `shell=True` was never the fix; the fix (default-deny + explicit consent) already shipped.
@@ -57,7 +49,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - ✅ **Non-portable hardcoded path** (`serve.py:187`) — **fixed** (see above).
 
 ### UX, accessibility, mobile
-- 🟡 **No onboarding path** — the dashboard assumes you know what an "endpoint" is. *Fix:* guided sign-in → provision → first-task.
+- ✅ ~~**No onboarding path** — the dashboard assumes you know what an "endpoint" is.~~ **Built and repeatedly verified — checked again 2026-08-12.** "Endpoint" appears zero times in any first-run UI string — the only two hits in the whole codebase are developer comments in `app.jsx`, not copy a boss sees. The doc's own prescribed fix (guided sign-in → provision → first-task) is exactly what shipped, under office words: the front desk auto-detects brains on the machine ("checking who's available…" → "found on this machine, ready to join" — `modals/hire.jsx`), then the FIRST ASSIGNMENT sheet hands over three starter cards (`modals/starter.jsx`). `OFFICE_AS_INTERFACE.md` §3 has logged multiple clean clock-timed walks of this exact path, most recently 33.3 seconds hire-to-artifact on 2026-08-12. `scripts/test_jargon_table.py` stands guard against this specific regression class.
 - 🟢 **Touch targets < 44px** (buttons ~32–40px). 🟢 **Contrast** — `--brand-coffee-3` (and `--brand-coffee-2` small text) likely fail WCAG AA. 🟡 **Thin error recovery** — no retry on failed async ops.
 - 🟢 **Brand seam** — pixel-art HQ chrome vs. soft control-plane chrome (`05-design-cohesion`).
 
@@ -85,9 +77,9 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ### Track 2 — HQ product: make it real *(03 Phase 1)*
 - [ ] **P0 (L)** One **live agent loop**: assign task → dispatch to Claude in the container → persist result + receipt to the **encrypted vault**.
-- [ ] **P1 (M)** Durable **agent registry** + mission/task persistence (survives restart).
+- [x] ~~Durable **agent registry** + mission/task persistence (survives restart).~~ **Already true — verified 2026-08-12.** See Part A: agents/tasks/missions share `useFileStored`, which round-trips through `hq-state/` on the server and was proven to survive a killed-and-restarted process, twice, this session.
 - [ ] **P1 (M)** Resolve the **vault duplication** (encrypted store = source of truth; HQ writes via bridge).
-- [ ] **P1 (M)** **3-step onboarding** with empty/loading/error states; self-explanatory dashboard.
+- [x] ~~**3-step onboarding** with empty/loading/error states; self-explanatory dashboard.~~ **Already shipped — verified 2026-08-12.** See Part A: front desk → hire → FIRST ASSIGNMENT, zero jargon, clocked at 33.3s hire-to-artifact.
 
 ### Track 3 — Fleet productionization *(03 Phase 2)*
 - [ ] **P0 (M)** Persist fleet **job state** (file/DB); add provisioning rate-limits.
@@ -103,7 +95,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ### Track 5 — Engineering quality & hardening *(Part A)*
 - [x] ~~Introduce **Vite** → minified prod build; production React bundles; drop in-browser Babel/CDN for prod.~~ **Done 2026-08-12** — via `scripts/build_ui_bundle.mjs` (esbuild-based), not Vite. See Part A.
-- [ ] **P1 (M)** Split monolithic `views.jsx` / `styles.css` / `app.jsx`; move off `window` globals.
+- [ ] **P1 (M)** ~~Split monolithic `views.jsx`~~ / `styles.css` / `app.jsx`; move off `window` globals. **Partially done, re-measured 2026-08-12** — `views.jsx` (and `ui.jsx`, `modals.jsx`) were split into real per-file directories and are now thin barrels; see Part A. `styles.css` and `app.jsx` were not, and have grown to 11,104 and 5,814 LOC respectively since this was written. Still open for those two specifically.
 - [x] ~~Remove `shell=True` (`serve.py`); keep tool allowlist default-deny.~~ **Re-examined 2026-08-12 — not a bug, no action needed.** See Part A: `shell=True` is required for a shell tool to work, and the actual protection (default-deny + per-agent elevation + boss approval) already exists.
 - [ ] **P1 (S)** Pin `postMessage` origin; require auth on LLM proxies before public exposure.
 
