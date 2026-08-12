@@ -1107,6 +1107,79 @@ nothing, because `backendHealth()` closes over a MODULE-scoped `_API_BASE`.
 The banner's own text reads `window._API_BASE`, so both exist and only one is
 the one that matters — patch the seam the code actually uses.
 
+### Workflows — driven end to end for the first time, 2026-08-12
+
+Never appeared in this ledger before today; only ever listed in a topbar
+menu. Read the mechanism first (chain fields — `chainTo`/`dependsOn`/
+`autoDispatch` — are genuinely consumed on task completion, not just
+written and forgotten; `triggerChainStep`'s own comment records a prior
+fix for exactly that "computed-and-discarded" shape), then drove a real
+two-step chain: create → step 1 dispatches → step 1 completes and files →
+the `workflow-step` approval fires → APPROVE → step 2 dispatches with
+step 1's result folded into its brief → step 2 completes and files. Every
+stage worked. Step 2's own delivered text proved the hand-off was real,
+not cosmetic — it said outright *"I do see that 'banana' was a result
+from a previous task."*
+
+Two defects fell out of actually finishing the run rather than stopping
+once the happy path looked plausible:
+
+**Minor, fixed same session.** The `workflow-step` approval omitted `by:
+agent.name` — every sibling approval kind sets it, this one didn't — so
+the tray rendered `by  · workflow-step` with the requester's name
+silently blank. One line. Re-verified live: `by Llama · workflow-step`.
+
+**Major, flagged rather than rushed.** Step 2's own FILED DELIVERABLE
+opened with a raw, unstripped `[MEMORY_READ: decisions/banana.md]`
+directly in the boss's permanent record — worse than a chat-bubble leak,
+since a chat bubble scrolls away and a filed note doesn't. Root-caused,
+not guessed at: `visibleReply`'s `ORPHAN_TAG_RE` pass is deliberately
+"whole line, consume to end of line" (correct and load-bearing — it's
+what strips a chatty model's echoed tool-doc-string off the same line,
+per the BROWSER_FETCH case documented just above it in `hq-runtime.jsx`).
+But when the text AFTER the marker is the model's own genuine,
+newline-less continuation — not an echoed doc string — the whole-line
+strip empties the result to `''`, which is *falsy*, so `visibleReply`'s
+own safety fallback ("nothing survived the strip → show the raw text
+rather than silently drop it") fires and reintroduces the very marker
+the strip had correctly identified as scaffolding.
+
+Reproduced with a minimal node harness built from the real, unmodified
+source (not a re-implementation): the exact captured string, run through
+the real `visibleReply`, returns the raw marker+prose unchanged; the
+identical string with one `\n` inserted between the marker and the
+prose returns clean stripped prose. One character is the entire
+difference between correct and broken.
+
+Confirmed this is a genuine gap, not an accepted tradeoff:
+`scripts/test_reply_hygiene.py` already covers the MIRROR case — a
+marker mid-sentence with prose *before* it (`"I will use [MEMORY_READ:
+decisions/x.md] to check."`, correctly left untouched) — but has no
+case for genuine prose immediately *after* a line-opening marker with
+no separating newline.
+
+The codebase already solved this exact class of problem once, for a
+different marker family: `stripBlocks`'s `lone` regex (the 17
+block-form markers — VAULT_NEW, MEMORY_WRITE, etc.) uses a lookahead,
+`(?=\n|$)`, instead of consuming to end-of-line — stripping only the
+tag and leaving genuine trailing prose alone. `ORPHAN_TAG_RE` covers a
+different, larger set (the single-shot, non-block tools: SEARCH,
+MEMORY_READ, VAULT_READ, FILE_READ, DIR_LIST, BASH, BROWSER_FETCH,
+BROWSER_SCREENSHOT, VAULT_SEARCH, MEMORY_LIST, plus the four
+request-class names it shares with `stripBlocks`) and was never given
+the analogous fix — because for THAT set, the whole-line consumption is
+sometimes intentional (the echoed-doc-string case), so a blind
+lookahead swap would regress a different, already-hardened behavior.
+
+Not fixed here. `visibleReply` is one of the most heavily-patched,
+many-tradeoff functions in this codebase — this entry alone documents
+five separate hard-won edge cases it already balances — and a same-tick
+patch risks trading a rare, subtle leak for a regression of one of
+those, with no more evidence than "seemed right." Flagged as a task
+with the exact reproduction, the precedent fix pattern, and the
+constraint that `scripts/test_reply_hygiene.py` must stay green
+including its doc-echo and mid-sentence cases.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office

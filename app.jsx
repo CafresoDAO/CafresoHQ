@@ -3772,6 +3772,11 @@ ${d.text}` : d.text,
                 kind: 'workflow-step',
                 taskId: nextTask.id,
                 fromAgent: agent.id,
+                // Every sibling approval sets `by` (the requester's name) —
+                // this one didn't, so the tray rendered "by  · workflow-step"
+                // with the name silently blank. Found by driving a real
+                // workflow chain end to end, not by reading.
+                by: agent.name,
                 priorResult: cleanBuf,
               });
             }
