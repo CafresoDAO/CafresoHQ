@@ -61,10 +61,16 @@ def main():
     check('...it says what failed, in the office\'s words',
           'Couldn’t read this folder' in ide,
           'views/ide.jsx: "Error: ENOENT…" tells a boss nothing they can act on')
-    check('...routed through cleanCause, not snagCause',
-          'cleanCause' in ide and not re.search(r'\bsnagCause\s*\(', ide),
+    # officeCause since 2026-08-12, cleanCause before it. This check always
+    # meant "name the right subject"; it was written when the classifier had
+    # only two shapes, so it spelled that as cleanCause and went on passing
+    # after officeCause arrived — the assertion outlived its own intent.
+    check('...routed through officeCause, not snagCause',
+          re.search(r'\bofficeCause\s*\(', ide) is not None
+          and not re.search(r'\bsnagCause\s*\(', ide),
           'views/ide.jsx: a directory listing is the office\'s own file tools, not a '
-          'brain — snagCause would blame the wrong component')
+          'brain — snagCause would blame the wrong component, and cleanCause throws '
+          'away the two rows written for exactly this (ENOENT, EACCES)')
     check('...and offers a retry the tree itself owns',
           re.search(r'setRetryNonce\(n => n \+ 1\)', ide) is not None
           and 'TRY AGAIN' in ide,

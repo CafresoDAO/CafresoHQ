@@ -94,6 +94,15 @@ R.netChrome   = snagCause('Failed to fetch');
 R.netFirefox  = snagCause('NetworkError when attempting to fetch resource.');
 R.netSafari   = snagCause('Load failed');
 R.netRefused  = snagCause('connect ECONNREFUSED 127.0.0.1:8787');
+/* The same four wordings through the OFFICE shape. Widening the connectivity
+   pattern above is what taught a vault delete to blame a brain — one fix, two
+   subjects — so the two subjects are now asserted side by side, in the suite
+   run_tests.py actually runs. scripts/test_cause_subject.py owns the rest of
+   the office table; this is the row with a history. */
+R.offChrome   = officeCause('Failed to fetch');
+R.offFirefox  = officeCause('NetworkError when attempting to fetch resource.');
+R.offSafari   = officeCause('Load failed');
+R.offRefused  = officeCause('connect ECONNREFUSED 127.0.0.1:8787');
 // ── deskKit — room props from GRANTED capability, never achievement ─────
 R.kitVault   = deskKit(['vault']);
 R.kitFiles   = deskKit(['files']);
@@ -267,6 +276,18 @@ console.log(JSON.stringify(R));
               f"{out[key]!r} — this table is shared by every surface, so an "
               f"engine it cannot parse leaks that engine's raw wording "
               f"app-wide, not just on one screen")
+
+    # The same four wordings, the other subject. Widening the pattern above is
+    # what taught a vault delete to say "couldn't reach that brain" about the
+    # boss's own filing cabinet: the fix was right, it just had two callers and
+    # only one got checked. Both are checked here now.
+    for engine, key in (('Chrome', 'offChrome'), ('Firefox', 'offFirefox'),
+                        ('Safari', 'offSafari'), ('Node/ECONNREFUSED', 'offRefused')):
+        check(f'...and blames the OFFICE, not a brain, on {engine}',
+              out[key] == "the office isn't answering — check it's still running",
+              f"{out[key]!r} — a file, the vault and a publish have no brain to be "
+              f"offline; naming one sends the boss to their model settings, which "
+              f"cannot help")
 
     check('URLs are dropped from the bubble',
           'http' not in out['snagUrl'] and 'while parsing' in out['snagUrl'], repr(out['snagUrl']))

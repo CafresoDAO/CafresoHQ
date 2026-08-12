@@ -105,16 +105,22 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      chat paths use, so a vault failure reads like every other failure in the
      office instead of like a browser dialog.
 
-     snagCAUSE, not snagSentence: these messages bring their own subject and
-     verb ("Couldn't delete that note"), and snagSentence prepends a "hit a
-     snag — " spine meant for surfaces that have none. Written the wrong way
-     first and caught by reading the toast it actually produced: "Couldn't
-     delete that note — hit a snag — NetworkError…", two spines in one line.
-     floor.jsx says this in as many words above snagCause — "One classifier,
-     two shapes, no regex surgery at the call site" — and names the twin
-     mistake (stripping the prefix instead) that once printed a verbless
-     "Kenji that brain isn't signed in yet". Both shapes exist precisely so
-     neither call site has to improvise. */
+     A CLAUSE, not a sentence: these messages bring their own subject and
+     verb ("Couldn't delete that note"), so they need the half without the
+     "hit a snag — " spine that snagSentence prepends for surfaces that have
+     none. Written the wrong way first and caught by reading the toast it
+     actually produced: "Couldn't delete that note — hit a snag —
+     NetworkError…", two spines in one line. floor.jsx says this in as many
+     words — "no regex surgery at the call site" — and names the twin mistake
+     (stripping the prefix instead) that once printed a verbless "Kenji that
+     brain isn't signed in yet". The shapes exist precisely so no call site
+     has to improvise.
+
+     And officeCAUSE, not snagCause. This paragraph named snagCause while the
+     line below called officeCause, which is how the bug it documents gets
+     re-introduced: the vault is a filing cabinet, and snagCause's every
+     sentence names a brain, so an offline delete announced "couldn't reach
+     that brain — it looks offline from here" about the boss's own files. */
   const say = (text, kind = 'info') => {
     const t = window.cafresohqToast;
     if (t && t[kind]) t[kind](text);

@@ -137,6 +137,14 @@ console.log(JSON.stringify(R));
               not stray,
               f'{len(stray)} snagCause call(s) — a file, the vault and a publish are '
               'not brains')
+        # Both halves, because the absence check alone is not the rule.
+        check(f'{rel} still NAMES the cause',
+              re.search(r'\bofficeCause\s*\(', s) is not None,
+              'no officeCause call — "not a brain" was only half of it. views/ide.jsx '
+              'passed the stray-snagCause check for a day on cleanCause, which is '
+              'silent about the subject rather than right about it, so an ENOENT on '
+              'the file tree printed "ENOENT: no such file or directory" where the '
+              'office table had a sentence ready')
 
     for rel in BRAIN_FILES:
         f = ROOT / rel

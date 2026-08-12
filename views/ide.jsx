@@ -1,8 +1,19 @@
 import { CafresoHQClient } from '../claude-client.jsx';
-/* cleanCause, not snagCause: a directory listing that fails is the office's
+/* officeCause, not snagCause: a directory listing that fails is the office's
    own file tools not answering, not a brain. snagCause's whole table names
-   brains, so it would confidently blame the wrong component here. */
-import { cleanCause } from '../app/floor.jsx';
+   brains, so it would confidently blame the wrong component here.
+
+   It was cleanCause first, and that was only half the fix. cleanCause was
+   the right call the morning the classifier still had two shapes — better a
+   sanitised line than a confident lie about a brain — but it names no cause
+   at all, and this is the one surface where the office table has rows
+   written for exactly what goes wrong: a folder that moved (ENOENT) and one
+   we aren't allowed to open (EACCES). Both are things the boss can act on,
+   and both were being thrown away to print "ENOENT: no such file or
+   directory" instead. The subject was never in doubt here — this file's own
+   comment said "the office's own file tools" while importing the shape that
+   declines to say so. */
+import { officeCause } from '../app/floor.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function renderMarkdown(text) {
   if (!text) return '';
@@ -169,7 +180,7 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     setErr(null);
     CafresoHQClient.toolExec('DIR_LIST', path)
       .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
-      .catch(e => { setErr(cleanCause(e && e.message ? e.message : e)); setLoading(false); });
+      .catch(e => { setErr(officeCause(e && e.message ? e.message : e)); setLoading(false); });
   }, [path, refreshNonce, retryNonce]);
 
   const loadSub = (subPath) => {
