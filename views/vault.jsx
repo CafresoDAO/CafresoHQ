@@ -76,6 +76,21 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     return adapted;
   };
 
+  /* GraphView (embedded below) loads its data once on mount and again only
+     when its own `source`/`scope` controls change — never when a note gets
+     created, deleted, renamed, or saved here. It already exposes a
+     `window.CafresoHQGraph.refresh()` escape hatch for exactly this, but
+     nothing called it: the file tree updated correctly on every mutation
+     while the graph panel next to it kept showing deleted notes as present
+     and never picked up new ones. Watched live — deleted a note, created
+     a fresh one, clicked this same Refresh button, and "On the map: 8" /
+     the deleted note's own node sat there unchanged the whole time; only
+     the file list caught up. Best-effort and swallowed: a graph panel one
+     tick behind is a cosmetic problem, not one worth a broken vault over. */
+  const refreshGraph = () => {
+    try { window.CafresoHQGraph && window.CafresoHQGraph.refresh(); } catch (_e) {}
+  };
+
   const refresh = async () => {
     setErr(null);
     if (_bridge) {
@@ -83,6 +98,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         const bridgeFiles = await _bridge.list();
         setFiles(_adaptBridgeFiles(bridgeFiles));
         setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });
+        refreshGraph();
       } catch (e) {
         setErr(e.message || 'Could not load vault from shell.');
         setStatus({ configured: false, unavailable: true, error: e.message });
@@ -95,6 +111,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       if (!s.configured) { setFiles([]); return; }
       try {
         setFiles(await CafresoHQClient.vaultList());
+        refreshGraph();
       } catch (e) {
         setFiles([]);
         setErr(e.message || 'Could not list vault notes.');
