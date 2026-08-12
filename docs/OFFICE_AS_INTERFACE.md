@@ -1137,6 +1137,33 @@ should extend that boundary, not blur it.
   `[Vault path: Research/lemon-colour.md]` four lines above exactly that
   sentence. Neither line is edited; they simply both appear, and the reader
   can see they disagree.
+
+  > **Reproduced 2026-08-12 in a different and harder shape — invented
+  > CITATIONS.** Walked §3.6's five-minute flow end to end on the free local
+  > brain: starter card → "Research brief: why small teams miss deadlines" →
+  > Llama → filed to `Research/…`. The brief's own wording tells the coworker
+  > *"Say where each finding came from … Never invent a citation."* All five
+  > findings came back tagged `(Source: …)` anyway, and while three name real
+  > books, one cites a **Harvard Business Review article "Why Small Teams
+  > Fail"** that does not appear to exist. Four lines below it the footer
+  > reads *"Nothing opened, saved or looked up for this one."* The mitigation
+  > held: the two statements sit on the same page and contradict each other,
+  > exactly as designed, on a case nobody staged.
+  >
+  > Worth separating from the lemon-colour example rather than filing next to
+  > it, because the shape is more dangerous. An invented `[Vault path: …]` is
+  > checkable in one click — open the cabinet, it isn't there. An invented
+  > journal article is not: it is plausible, authoritative-looking, and a
+  > reader who trusts the bullet has no reason to scroll to a footer to
+  > cross-examine it. The office's record still disagrees with the coworker;
+  > it just disagrees more quietly than the reader needs.
+  >
+  > Both facts — "consulted nothing" and "claims five sources" — are known at
+  > filing time, so the contradiction could be stated instead of merely
+  > available. Not done here: a detector that cries fabrication at an honest
+  > reply would be its own §7 failure, and the brief legitimately invites
+  > *"(Source: what I already know)"*, so the rule needs more care than a
+  > substring match. Flagged, not guessed at.
 - **Unverified branches**, called out where they live: the specialist
   filing-deferral path still rests on unit tests. ATTEMPTED 2026-08-07 with a
   local brain once Vault Notes was enabled on it, and it did not reach the
