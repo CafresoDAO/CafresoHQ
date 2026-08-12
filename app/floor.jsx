@@ -291,6 +291,51 @@ function snagCause(raw) {
    JSON shrapnel and multi-line stacks are stripped and the line is capped —
    it just declines to name a cause it cannot identify, which is the same
    call as the graph panel's "unformed". */
+/* ── The same knowledge, worded for the OFFICE ────────────────────────────
+   Splitting snagCause and cleanCause fixed the misattribution but threw away
+   something useful: the patterns themselves are right, it is only the NOUN
+   that was wrong. A vault delete that fails offline is not "couldn't reach
+   that brain", but neither is it nothing — "the office isn't answering" is
+   both true and actionable, and the office is what actually failed.
+
+   Found by census after the settings probe: TWELVE call sites were passing
+   non-brain failures through snagCause — every file operation and publish in
+   views/projects.jsx, all three vault paths, app/storage.jsx, the delivery
+   share. Some of that was mine, from earlier the same day: widening the
+   connectivity pattern so an offline vault delete stopped leaking
+   "NetworkError when attempting to fetch resource" verbatim ALSO made it
+   claim a brain was offline. One fix, two subjects, and I only checked one.
+
+   hq-runtime.jsx already had this lesson written down for BROWSER_FETCH —
+   "a page is not a brain", snagCause applied and then taken back out. It was
+   true there, true here, and nobody had generalised it.
+
+   Three shapes now, one classifier: snagCause when a brain really is the
+   subject, officeCause when the office is, cleanCause when nothing can be
+   said with confidence. */
+const OFFICE_CAUSES = [
+  [/econnrefused|connection refused|enotfound|failed to fetch|network ?error|load failed|dns/i,
+   "the office isn't answering — check it's still running"],
+  [/timed? ?out|etimedout|\b504\b/i,
+   'that took too long, so I stopped waiting — try again'],
+  [/\b5\d\d\b|internal server error|service unavailable/i,
+   'the office ran into trouble doing that — not something you did'],
+  [/\b40[34]\b|not found|no such file|enoent/i,
+   "the office couldn't find that — it may have been moved or renamed"],
+  [/eacces|permission denied|\b403\b/i,
+   "the office isn't allowed to touch that file"],
+  [/enospc|no space left/i,
+   'this machine is out of disk space'],
+];
+
+function officeCause(raw) {
+  const text = String(raw || '');
+  for (const [re, sentence] of OFFICE_CAUSES) {
+    if (re.test(text)) return sentence;
+  }
+  return cleanCause(text);
+}
+
 function cleanCause(raw) {
   const first = String(raw || '').split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
@@ -380,4 +425,4 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

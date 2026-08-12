@@ -1,7 +1,7 @@
 import { ProjectTerminal } from './terminal.jsx';
 import { ideLangFromPath } from './ide.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
-import { snagCause } from '../app/floor.jsx';
+import { officeCause } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
@@ -19,7 +19,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
      gets no part of the desktop-mode/settings exemption in §6. Same helper
      and same reasoning as views/vault.jsx; snagCAUSE because these messages
      bring their own subject and verb. */
-  const snag = (what, e) => toast('error', `${what} — ${snagCause((e && e.message) || String(e))}`);
+  const snag = (what, e) => toast('error', `${what} — ${officeCause((e && e.message) || String(e))}`);
   const C = CafresoHQClient;
 
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
@@ -208,7 +208,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       const r = await CafresoHQClient.publishSite(openFile.path);
       setPubMsg(r.url);
       try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
-    } catch (e) { setPubMsg('Publish failed — ' + snagCause((e && e.message) || String(e))); }
+    } catch (e) { setPubMsg('Publish failed — ' + officeCause((e && e.message) || String(e))); }
   };
 
   const editorPane = () => (
@@ -236,7 +236,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
               <button onClick={() => setPubMsg(null)}>✕</button>
             </div>
           )}
-          {err && <div className="ws-err">{snagCause(err)}</div>}
+          {err && <div className="ws-err">{officeCause(err)}</div>}
           <div className="ws-stage">
             {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
           </div>
@@ -527,7 +527,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
      gets no part of the desktop-mode/settings exemption in §6. Same helper
      and same reasoning as views/vault.jsx; snagCAUSE because these messages
      bring their own subject and verb. */
-  const snag = (what, e) => toast('error', `${what} — ${snagCause((e && e.message) || String(e))}`);
+  const snag = (what, e) => toast('error', `${what} — ${officeCause((e && e.message) || String(e))}`);
 
   /* Upload (drop or picker) files into a working dir so assigned agents can
      read them and the preview pane can render them. targetDir defaults to the
@@ -813,7 +813,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                 <span className="ide-tab-name" style={{overflow:'hidden',textOverflow:'ellipsis'}}>{openFile.path.split(/[\\/]/).pop()}</span>
                 {openFile.dirty && <span className="ide-tab-dot">●</span>}
               </span>
-              {err && <span className="proj-edit-err">{snagCause(err)}</span>}
+              {err && <span className="proj-edit-err">{officeCause(err)}</span>}
               <span style={{display:'inline-flex', gap:2}}>
                 <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(false)}>Code</button>
                 <button className={`px-btn ${previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(true)}>Preview</button>
@@ -1096,7 +1096,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                     {openFile.dirty && <span className="ide-tab-dot" title="unsaved changes">●</span>}
                   </span>
                   <span className="ide-tab-path">{openFile.path}</span>
-                  {err && <span className="proj-edit-err">{snagCause(err)}</span>}
+                  {err && <span className="proj-edit-err">{officeCause(err)}</span>}
                   <span style={{flex:1}}/>
                   <span style={{display:'inline-flex', gap:2, marginRight:8}}>
                     <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:9, padding:'3px 9px'}} onClick={() => setPreviewMode(false)}>Code</button>
@@ -1213,7 +1213,7 @@ function FileBrowserModal({ initialPath, onSelect, onClose }) {
         {/* Entries */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
           {loading && <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-dim)', textAlign: 'center' }}>Loading…</div>}
-          {err    && <div style={{ padding: 12, fontSize: 11, color: 'var(--red, #f87171)' }}>⚠ {snagCause(err)}</div>}
+          {err    && <div style={{ padding: 12, fontSize: 11, color: 'var(--red, #f87171)' }}>⚠ {officeCause(err)}</div>}
           {!loading && entries.length === 0 && !err && (
             <div style={{ padding: 16, fontSize: 11, color: 'var(--ink-dim)', textAlign: 'center' }}>Empty folder</div>
           )}

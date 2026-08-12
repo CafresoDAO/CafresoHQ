@@ -1,5 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
-import { snagCause } from '../app/floor.jsx';
+import { officeCause } from '../app/floor.jsx';
 import { FolderTree } from './core.jsx';
 import { GraphView, simulate } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
@@ -120,7 +120,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (t && t[kind]) t[kind](text);
   };
   const snag = (what, err) => {
-    say(`${what} — ${snagCause((err && err.message) || String(err))}`, 'error');
+    say(`${what} — ${officeCause((err && err.message) || String(err))}`, 'error');
   };
 
   const refresh = async () => {
@@ -299,7 +299,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
          hover. Caught by the core-path sweep, not by the pass that
          fixed this file's alerts — I had grepped for alert() and
          setErr(), and this is neither. */
-      setSaveState('error: ' + snagCause(e && e.message));
+      setSaveState('error: ' + officeCause(e && e.message));
     }
     setBusy(false);
   };
@@ -438,13 +438,22 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       one honest sentence covers every one of them, and `err` stays the raw
       cause for anyone debugging. */
   if (err) {
-    const cause = snagCause(err);
+    const cause = officeCause(err);
     return (
       <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}>
         <div className="section-title">📓 VAULT</div>
         <div className="empty-state">
           <div className="empty-title">The cabinet won't open</div>
-          <div className="empty-sub">{cause}. Your files are safe where they are — this is the office not answering, not the vault losing anything.</div>
+          {/* The reassurance used to end "...this is the office not answering,
+              not the vault losing anything", which was written when {cause}
+              said "couldn't reach that brain" and so had to name the office
+              itself. Now that officeCause names it correctly, that clause
+              repeated the sentence directly before it — measured live:
+              "the office isn't answering — check it's still running. Your
+              files are safe where they are — this is the office not
+              answering, not the vault losing anything." The reassurance is
+              still needed; the re-diagnosis is not. */}
+          <div className="empty-sub">{cause}. Your files are safe where they are — nothing has been lost.</div>
           <button className="px-btn primary" style={{marginTop:16,fontSize:12,padding:'10px 20px'}}
                   onClick={() => { setErr(null); setStatus(null); refresh(); }}>↻ Try again</button>
         </div>

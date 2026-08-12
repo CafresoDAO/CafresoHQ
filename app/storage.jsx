@@ -1,4 +1,4 @@
-import { floorEmit, snagCause } from './floor.jsx';
+import { floorEmit, officeCause } from './floor.jsx';
 import { handoffHint, withHandoff } from './cast.jsx';   // import-free module — no cycle
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
@@ -306,7 +306,7 @@ const makeScreenEmitter = (agentId) => {
 const chatErrorText = (err, agents, selfId) => {
   const others = selfId ? (agents || []).filter(a => a && a.id !== selfId) : agents;
   const raw = (err && err.message) || String(err);
-  const because = snagCause(raw);
+  const because = officeCause(raw);
   let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
   try {
     const C = CafresoHQClient;

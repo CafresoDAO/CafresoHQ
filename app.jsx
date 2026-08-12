@@ -12,7 +12,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { attachVisit, floorEmit, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
+import { attachVisit, floorEmit, officeCause, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -4135,12 +4135,16 @@ ${d.text}` : d.text,
               text: `shipped "${String(p.path).slice(0, 40)}" ${r.mode === 'canister' ? 'to the Internet Computer 🚀' : 'as a preview link'}` });
             say('Shipped', 'PUBLISH');
           } catch (err) {
-            /* snagCause(), not snagSentence().replace(…) — regexing the
+            /* A bare CLAUSE, never snagSentence().replace(…) — regexing the
                spine off snagSentence's output is exactly the pattern that
                produced the verbless "Kenji that brain isn't signed in yet"
-               inbox-row bug two commits ago. Same clause, no fragile strip. */
+               inbox-row bug. Same clause, no fragile strip.
+               And officeCause, not snagCause: a publish that fails is the
+               office not getting the file out, not a brain refusing. This
+               used to say "couldn't reach that brain" when the canister
+               was unreachable. */
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-              text: `⚠ The publish didn't make it out — ${snagCause(err && err.message || String(err))}` }]);
+              text: `⚠ The publish didn't make it out — ${officeCause(err && err.message || String(err))}` }]);
             logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'failed',
               priority: 'attention', text: 'publish failed after approval',
               detail: (err && err.message || String(err)).slice(0, 240) });

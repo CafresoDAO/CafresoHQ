@@ -62,7 +62,13 @@ ALLOWED_RAW_ERR_RENDER = 'addproj-err'
 
 # A cause on its way INTO the classifier is the fix, not the bug. Without this
 # the guard flags the very helpers that implement it.
-ROUTED = re.compile(r'snag(?:Cause|Sentence)\s*\(')
+# All three shapes of the one classifier count as "routed": snagCause where
+# a brain is the subject, officeCause where the OFFICE is (a file, the
+# vault, a publish), cleanCause where nothing can be named with confidence.
+# This listed only the snag* pair, so the 2026-08-12 sweep that moved twelve
+# non-brain sites off snagCause — because it was confidently blaming a brain
+# for a failed vault delete — made this rule report them as raw dumps.
+ROUTED = re.compile(r'(?:snag(?:Cause|Sentence)|officeCause|cleanCause)\s*\(')
 
 FAILS = []
 
@@ -102,7 +108,7 @@ def main():
         check(f'{rel}: no raw exception concatenated into a message',
               not hits,
               f'{len(hits)} site(s), e.g. {hits[:2]} — route it through '
-              f'snagCause() with your own subject and verb, as the vault does')
+              f'snagCause()/officeCause() with your own subject and verb')
 
         renders = []
         for m in RAW_ERR_RENDER.finditer(src):

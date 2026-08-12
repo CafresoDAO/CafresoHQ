@@ -52,10 +52,16 @@ def main():
     block = src[start:start + 1400]
 
     # ── §7: no raw dump ────────────────────────────────────────────────────
-    check('the raw cause is classified, not printed',
-          'snagCause(err)' in block,
+    # officeCause, not snagCause, since 2026-08-12: the vault is not a brain,
+    # and snagCause's table names one in every sentence — an offline delete
+    # announced "couldn't reach that brain — it looks offline from here" about
+    # the boss's own filing cabinet. Either counts as classified for §7; only
+    # officeCause is correct about the SUBJECT, which is why it is required here.
+    check('the raw cause is classified, not printed — with the office as subject',
+          'officeCause(err)' in block,
           "views/vault.jsx: `{err}` put the browser's own exception text on "
-          'screen — the exact §7 breach this branch used to commit')
+          'screen — the exact §7 breach this branch used to commit. snagCause '
+          'would classify it but blame a brain for a vault failure.')
     check('the bare {err} interpolation is gone',
           not re.search(r'\{err\}', block),
           'views/vault.jsx: rendering err directly re-opens the raw dump')
