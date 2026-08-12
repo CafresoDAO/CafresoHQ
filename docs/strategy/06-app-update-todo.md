@@ -3,6 +3,25 @@
 > **Status:** Living checklist · Generated 2026-05-29 · Compounds docs `00`–`05`.
 > **Two parts:** **Part A** is an overall critique of the CafresoHQ app (what to fix and why). **Part B** is the prioritized, ordered TODO that turns the whole strategy package into a build checklist.
 > **Severity:** 🔴 high · 🟡 medium · 🟢 low. **Priority:** P0 launch-blocking / safe quick-win · P1 needed for a credible MVP · P2 post-MVP / pre-SNS. **Effort:** S hours · M a day or two · L 1–2+ weeks.
+>
+> ⚠️ **Part A predates ~2.5 months of subsequent work and two of its 🔴 items were
+> found stale on direct verification (2026-08-12) — see the build-step and
+> `shell=True` corrections below.** Not a full re-audit; flagging so the rest of
+> Part A is read as "as of May", not "as of now". At least two more 🔴/🟡 items
+> look contradicted by work verified elsewhere this session and were left
+> UNCORRECTED because doing it properly means checking the code, not guessing
+> from memory of today's other tickets:
+>   - *"Agents / missions / tasks aren't durably persisted... lost on container
+>     restart"* — agents demonstrably persist to `hq-state/memory/agents.json`
+>     via `useFileStored` (this session seeded a throwaway office by writing
+>     that file directly and the server picked it up on boot).
+>   - *"No onboarding path — the dashboard assumes you know what an
+>     'endpoint' is"* — contradicted by the extensively-verified §3.6 first-run
+>     flow (front-desk detection, the FIRST ASSIGNMENT sheet, a 33-second
+>     hire-to-artifact walk logged 2026-08-12 in `OFFICE_AS_INTERFACE.md`).
+>
+> Worth a dedicated pass rather than opportunistic fixes threaded through
+> unrelated tickets, the way the two corrections below were.
 
 ## Ecosystem mapping (corrected)
 The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\Anthony\Documents`:
@@ -21,7 +40,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 ## Part A — Critique of CafresoHQ (overall)
 
 ### Architecture & build
-- 🔴 **No build step — Babel transpiles JSX in the browser.** `hq.html:36–49` loads React 18 **dev** UMD bundles + `@babel/standalone` from unpkg and runs every `*.jsx` via `<script type="text/babel">`. → multi-MB uncompressed payload, no minify/tree-shake, transpile-on-load latency, hard CDN dependency, dev-mode React in production. *Fix:* a real bundler (Vite) → minified prod build; keep `serve.py` as dev/proxy.
+- ✅ ~~**No build step — Babel transpiles JSX in the browser.**~~ **Done, not via Vite — verified 2026-08-12.** `scripts/build_ui_bundle.mjs` self-hosts the vendor UMD globals (dropping the unpkg dependency), bundles the app's real ES modules into IIFE chunks, and hashes the output to `dist-ui/bundle/`; `hq.html` confirms in its own comment: "JSX is pre-transformed at build time (no @babel/standalone, no unpkg)". This session ran that build after nearly every code change today. The doc's goal (drop in-browser Babel/CDN, ship a minified prod build) is met by a purpose-built esbuild script instead of Vite — same outcome, different tool, and re-pointing this at Vite now would be a rewrite of something that already works, not a fix.
 - 🟡 **Monolithic files** — `views.jsx` 6,394 LOC, `styles.css` 7,817, `app.jsx` 3,754, `ui.jsx` 3,367, `modals.jsx` 1,936. *Fix:* split by feature with the bundler migration.
 - 🟡 **`window`-global module wiring** (`app.jsx:6–10`). One failed script → cascading `undefined`. *Fix:* ES module imports once bundled.
 
@@ -33,7 +52,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - 🔴 **Agents / missions / tasks aren't durably persisted** — hired agents are in-memory (only the 3 seed agents survive reload, `mock-data.jsx`); missions read seed data; tasks use `useFileStored` (`app.jsx:49`) → localStorage + local `/hq/state/`, lost on container restart. *Fix:* persist to the encrypted vault / a state endpoint + an agent registry. **This is the gap between "demo" and "product."**
 
 ### Security & ops (flag)
-- 🔴 **`subprocess.run(arg, shell=True)`** for the BASH tool (`serve.py:~2258`). Gated by `CAFRESOHQ_ALLOWED_TOOLS` (default read-only), but shell-injection is real if Bash is enabled. *Fix:* drop `shell=True`/use arg lists; keep allowlist default-deny.
+- ✅ ~~**`subprocess.run(arg, shell=True)`** for the BASH tool~~ **Re-examined 2026-08-12 — this is the correct implementation, not a bug.** A BASH tool's entire purpose is running shell syntax (pipes, `&&`, redirects); `shell=True` is what makes that possible, and "drop it, use arg lists" would silently break the feature rather than secure it — an arg-list `subprocess.run` cannot execute `ls | grep foo`. The actual mitigation is already layered and, per the code's own comment at `serve.py:~184`, deliberate: `Bash` is excluded from `CAFRESOHQ_ALLOWED_TOOLS`'s default set specifically *because* "enabling it by default makes every unconfigured deployment one request away from arbitrary command execution" — it requires an explicit env-var opt-in on top of that. And reaching the endpoint at all requires the AGENT to be `elevated`, which requires a boss-approved `grant-elevation` request (`app.jsx`, `hq-runtime.jsx:1748`). Three gates (server opt-in, per-agent elevation, human approval), a 30s timeout, and a 4000-char output cap. Removing `shell=True` was never the fix; the fix (default-deny + explicit consent) already shipped.
 - 🟡 **Open LLM proxies without auth** (`serve.py:41–43`). *Fix:* require auth before any public exposure.
 - ✅ **Non-portable hardcoded path** (`serve.py:187`) — **fixed** (see above).
 
@@ -83,9 +102,9 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - [ ] **P2 (M)** Fiat + ICP/ckBTC on-ramps.
 
 ### Track 5 — Engineering quality & hardening *(Part A)*
-- [ ] **P1 (L)** Introduce **Vite** → minified prod build; production React bundles; drop in-browser Babel/CDN for prod.
+- [x] ~~Introduce **Vite** → minified prod build; production React bundles; drop in-browser Babel/CDN for prod.~~ **Done 2026-08-12** — via `scripts/build_ui_bundle.mjs` (esbuild-based), not Vite. See Part A.
 - [ ] **P1 (M)** Split monolithic `views.jsx` / `styles.css` / `app.jsx`; move off `window` globals.
-- [ ] **P0 (S)** Remove `shell=True` (`serve.py`); keep tool allowlist default-deny.
+- [x] ~~Remove `shell=True` (`serve.py`); keep tool allowlist default-deny.~~ **Re-examined 2026-08-12 — not a bug, no action needed.** See Part A: `shell=True` is required for a shell tool to work, and the actual protection (default-deny + per-agent elevation + boss approval) already exists.
 - [ ] **P1 (S)** Pin `postMessage` origin; require auth on LLM proxies before public exposure.
 
 ### Track 6 — Accessibility & mobile *(02 A3, Part A)*
