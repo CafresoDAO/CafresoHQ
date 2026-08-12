@@ -2818,6 +2818,14 @@ ${d.text}` : d.text,
      + pulseGraph after they're defined. Refs let it see latest agent and
      mission state without we re-mounting timers on every render. */
   const agentsRef = useRefA(agents);  agentsRef.current = agents;
+  /* onTaskDropOnAgent's chain check reads this after an LLM run that can
+     take minutes — `tasks` in that closure is frozen at the moment the run
+     STARTED, before this very step flipped itself to 'doing'/'done'. A
+     workflow step depending on its own predecessor (dependsOn: [selfId])
+     always found the predecessor still 'inbox' in that stale snapshot, so
+     depsReady was false and the chain silently died: no approval, no
+     auto-dispatch, second step sat in the inbox forever. */
+  const tasksRef = useRefA(tasks);  tasksRef.current = tasks;
   /* When the external-approval poll last saw an ask. Drives its fast/idle
      cadence — a ref, not state, because the poll effect mounts once and a
      re-render on every tick is exactly the cost being avoided. */
@@ -3690,11 +3698,14 @@ ${d.text}` : d.text,
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
       // Chain: if this task has a chainTo, activate the next step
       if (task.chainTo) {
-        const nextTask = tasks.find(t => t.id === task.chainTo);
+        // tasksRef, not the `tasks` closure — this run can take minutes and
+        // dependsOn typically includes THIS task's own id, which the stale
+        // closure still shows as 'inbox' rather than the 'done' it just became.
+        const nextTask = tasksRef.current.find(t => t.id === task.chainTo);
         if (nextTask && nextTask.status === 'inbox') {
           // Check dependsOn — all must be done
           const depsReady = !nextTask.dependsOn || nextTask.dependsOn.every(depId => {
-            const dep = tasks.find(t => t.id === depId);
+            const dep = tasksRef.current.find(t => t.id === depId);
             return dep && dep.status === 'done';
           });
           if (depsReady) {

@@ -861,6 +861,33 @@ console.log(JSON.stringify(R));
           "picking a coworker there changes only whose name signs the notes, "
           "not which brain runs them, and nothing says so")
 
+    # ── Workflow chaining must survive its own step's stale closure ───────
+    # Found by actually running a 2-step workflow live: step one (Llama)
+    # finished, filed, moved to DONE — and step two just sat unassigned in
+    # the inbox forever, no approval prompt, no auto-dispatch, no error.
+    # onTaskDropOnAgent's chain check runs after an LLM stream that can take
+    # minutes; `tasks` in that closure is frozen from the moment the run
+    # STARTED. A chained step's dependsOn is [the step that just ran] — so
+    # depsReady looked the dependency up in the stale snapshot, found it
+    # still 'inbox' (it flips to 'doing' then 'done' via setTasks, which
+    # never touches the closed-over `tasks` binding), and silently treated
+    # the chain as not ready. Confirmed via localStorage on the live run:
+    # chainTo was correctly set to the next task's id, but nothing ever
+    # read a state where the predecessor showed 'done'.
+    check('a tasksRef exists to dodge onTaskDropOnAgent\'s stale-tasks-closure bug',
+          bool(re.search(r'tasksRef\s*=\s*useRefA\(tasks\)', app)),
+          'app.jsx: needs the same ref pattern as agentsRef — a plain `tasks` '
+          'closure inside a multi-minute async run never sees its own step '
+          'flip to "done"')
+    chain_block = app[app.find('// Chain: if this task has a chainTo'):]
+    chain_block = chain_block[:chain_block.find('\n      }\n')]
+    check('the chain-step lookup reads tasksRef, not the stale closure',
+          'tasksRef.current.find' in chain_block and 'tasks.find' not in chain_block,
+          'app.jsx: both the nextTask lookup and the dependsOn lookup inside '
+          'the chain check must read tasksRef.current — a chained step\'s own '
+          'dependsOn is typically [itself, moments ago], which the frozen '
+          '`tasks` closure still shows as not-done')
+
     print()
     if FAILS:
         print(f'the cast: {len(FAILS)} FAILED — ' + ', '.join(FAILS))
