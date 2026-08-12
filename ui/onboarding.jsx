@@ -245,7 +245,18 @@ function OnboardingKeyStep() {
           style={{ flex: 1, fontSize: 'var(--text-11)' }}
           autoComplete="off"
           spellCheck={false}
-          aria-label="OpenRouter API key"
+          /* "OpenRouter key", not "OpenRouter API key": §6 bans the latter
+             on onboarding by name, and the visible copy around this input
+             never used it anyway — it says "Copy the key (starts with
+             sk-or-…)". So the accessible name was the ONLY place the banned
+             phrase appeared, which also meant a screen-reader user heard
+             different vocabulary than a sighted user read. Now they match.
+
+             The larger question §6 really asks of this step — whether a
+             newcomer should be pasting a key at all rather than signing in —
+             is a content decision about the bring-your-own path, not
+             something to settle by editing an aria-label. */
+          aria-label="OpenRouter key"
         />
         <button className="px-btn secondary" style={{ fontSize: 'var(--text-10)' }}
           onClick={save} disabled={saving || !(key || '').trim()}>

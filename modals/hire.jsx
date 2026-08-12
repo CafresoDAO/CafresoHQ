@@ -451,7 +451,20 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               })()}
             </div>
             <div className="form-row">
-              <label>TEMPERATURE · {temp.toFixed(2)}</label>
+              {/* §6's table bans "temperature" outright and prescribes the
+                  replacement in the same row: "(hidden; 'creativity' dial
+                  behind Advanced if ever)". This form is the Advanced half
+                  already — the quick-hire candidate cards, which is what a
+                  first run actually meets, carry no such dial at all — so
+                  the placement was fine and only the word was wrong.
+
+                  Missed by the §6 pass that did this very form: it caught
+                  SYSTEM PROMPT → JOB DESCRIPTION and MODEL → BRAIN, and left
+                  the third banned term sitting in the row between them. The
+                  hint underneath ("0 = precise · 1 = spicy") was already
+                  doing the explaining, which is probably why the label read
+                  as harmless. */}
+              <label>CREATIVITY · {temp.toFixed(2)}</label>
               <input type="range" className="pxslider" min="0" max="1" step="0.05" value={temp} onChange={e=>setTemp(parseFloat(e.target.value))}/>
               <span className="hint">0 = precise · 1 = spicy</span>
             </div>
