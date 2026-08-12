@@ -2,7 +2,16 @@ import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal, ModelPicker } from './base.jsx';
-const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
+/* cleanCause, NOT snagCause. Every sentence in snagCause's table names a
+   BRAIN, and nothing on this screen is one: the probe below asks the
+   office's own backend which brains exist, and the modules panel talks to
+   the chain bridge. Routed through snagCause, a dead probe reported
+   "couldn't reach that brain — it looks offline from here", which is a
+   confident diagnosis of the wrong subject. cleanCause strips the raw
+   error without inventing a cause. */
+import { cleanCause } from '../app/floor.jsx';
+const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
+        useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
   { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · hosting · usage' },
   /* Self-hosted installs only (filtered out when health.managed) — see
@@ -102,28 +111,47 @@ const SELF_HOST_PROVIDERS = [
 function ConnectionsPanel() {
   const [drivers, setDrivers] = useStateM(null);   // null = still probing
   const [err, setErr] = useStateM('');
-  useEffectM(() => {
-    let dead = false;
-    (async () => {
-      /* NOT CafresoHQClient.agentDrivers() — it swallows every failure
-         (bad status, network error, thrown exception) and always resolves
-         { drivers: [] }, so a catch block here could never run and `err`
-         could never be set. Caught live: killing the probe request left
-         the panel reading "checking…" forever instead of switching to
-         "couldn't check" — the state this whole panel exists to avoid,
-         self-inflicted by trusting a wrapper built for a caller that is
-         allowed to shrug off failure. Same fix as the health probe a
-         few lines up in this same file: go around the wrapper. */
-      try {
-        const r = await fetch((window._API_BASE || '') + '/agent/drivers?probe=1',
-          { cache: 'no-store', credentials: 'include' });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const j = await r.json();
-        if (!dead) setDrivers((j && j.drivers) || []);
-      } catch (e) { if (!dead) { setErr(String((e && e.message) || e) || 'probe failed'); setDrivers([]); } }
-    })();
-    return () => { dead = true; };
+  /* Hoisted out of the effect so the boss can run it AGAIN. This probe is
+     automatic — it fires once on mount and there is no button behind it — so
+     when it failed the panel that answers "what brains do I have?" showed a
+     red line and stayed empty for the rest of the session. Every other
+     failure in this file is behind a control the boss can press a second
+     time; this one had no way forward at all, which is the Track 6 P1
+     ("error-recovery/retry UI on failed async ops") and §7's second half. */
+  const [probing, setProbing] = useStateM(false);
+  const probeDrivers = useCallbackM(async () => {
+    /* NOT CafresoHQClient.agentDrivers() — it swallows every failure
+       (bad status, network error, thrown exception) and always resolves
+       { drivers: [] }, so a catch block here could never run and `err`
+       could never be set. Caught live: killing the probe request left
+       the panel reading "checking…" forever instead of switching to
+       "couldn't check" — the state this whole panel exists to avoid,
+       self-inflicted by trusting a wrapper built for a caller that is
+       allowed to shrug off failure. Same fix as the health probe a
+       few lines up in this same file: go around the wrapper. */
+    setProbing(true);
+    setErr('');
+    /* Whether the office ANSWERED at all is the only distinction the boss can
+       act on here, and it is knowable without printing anything raw: if the
+       fetch itself threw, nothing is listening; if it resolved and something
+       later failed, the office is up but could not answer this question. Two
+       sentences, two different things to go and check. */
+    let answered = false;
+    try {
+      const r = await fetch((window._API_BASE || '') + '/agent/drivers?probe=1',
+        { cache: 'no-store', credentials: 'include' });
+      answered = true;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      setDrivers((j && j.drivers) || []);
+    } catch (_e) {
+      setErr(answered
+        ? 'your office is running but couldn’t list what’s installed'
+        : 'your office isn’t answering — is it still running?');
+      setDrivers([]);
+    } finally { setProbing(false); }
   }, []);
+  useEffectM(() => { probeDrivers(); }, [probeDrivers]);
   const detectOf = (id) => {
     const d = (drivers || []).find(x => x.id === id);
     return (d && d.detect) || null;
@@ -137,7 +165,16 @@ function ConnectionsPanel() {
           hired at the front desk.
         </div>
         {drivers === null && <div className="muted">Checking…</div>}
-        {err && <div className="tiny" style={{ color: '#c44' }}>Couldn’t check: {err}</div>}
+        {err && (
+          <div className="tiny" style={{ color: '#c44', display: 'flex', flexWrap: 'wrap',
+                                         alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span>Couldn’t check what’s on this machine — {err}</span>
+            <button className="px-btn" style={{ fontSize: 8, padding: '5px 8px' }}
+              disabled={probing} onClick={probeDrivers}>
+              {probing ? 'CHECKING…' : '↻ CHECK AGAIN'}
+            </button>
+          </div>
+        )}
         {drivers !== null && ['claude-code', 'codex', 'gemini', 'ollama', 'lmstudio'].map(id => {
           const det = detectOf(id);
           if (!det) return null;
@@ -555,7 +592,7 @@ function IcpServicesPanel({ agents }) {
       setInstalled(map);
       CafresoHQClient.setSettings({ icpServices: map });
       setPausedAll(await chain().wallet.pausedAll());
-    } catch (e) { setErr(String(e.message || e)); }
+    } catch (e) { setErr(cleanCause(e && e.message ? e.message : e)); }
     setLoading(false);
   };
   useEffectM(() => { load(); }, []);
@@ -584,7 +621,7 @@ function IcpServicesPanel({ agents }) {
           const map = { ...installed, wallet: true };
           setInstalled(map);
           CafresoHQClient.setSettings({ icpServices: map });
-        } catch (e) { setErr(String(e.message || e)); }
+        } catch (e) { setErr(cleanCause(e && e.message ? e.message : e)); }
       }
       return;
     }
@@ -611,13 +648,13 @@ function IcpServicesPanel({ agents }) {
     CafresoHQClient.setSettings({ icpServices: map });
     if (available) {
       try { await chain().services.set('publish', next, ''); }
-      catch (e) { setErr(String(e.message || e)); }
+      catch (e) { setErr(cleanCause(e && e.message ? e.message : e)); }
     }
   };
 
   const togglePauseAll = async () => {
     try { const n = !pausedAll; await chain().wallet.pauseAll(n); setPausedAll(n); }
-    catch (e) { setErr(String(e.message || e)); }
+    catch (e) { setErr(cleanCause(e && e.message ? e.message : e)); }
   };
 
   const walletAgents = (agents || []).filter(a => (a.tools || []).includes('wallet'));
@@ -630,7 +667,13 @@ function IcpServicesPanel({ agents }) {
           Your HQ runs the same everywhere — laptop, cloud, or on-chain. Modules
           add capabilities on top; everything below is opt-in and off by default.
         </div>
-        {err && <div className="tiny" style={{ color: '#c44' }}>{err}</div>}
+        {/* A spine, because snagCause returns a bare CLAUSE — on its own this
+            line read "couldn't reach that brain" with no subject and no verb.
+            No retry button here on purpose: every error on this panel comes
+            from a toggle the boss just pressed, and that toggle is still on
+            screen. The way forward is the control itself; adding a second one
+            would imply the first had stopped working. */}
+        {err && <div className="tiny" style={{ color: '#c44' }}>Couldn’t save that change — {err}</div>}
         {loading && available && <div className="muted">Loading…</div>}
         <div className="stack">
           {/* Money — the master switch, styled as a first-class module card */}

@@ -271,7 +271,28 @@ function snagCause(raw) {
   for (const [re, sentence] of SNAG_CAUSES) {
     if (re.test(text)) return sentence;
   }
-  const first = text.split('\n')[0]
+  return cleanCause(text);
+}
+
+/* The sanitiser WITHOUT the diagnosis — snagCause's own fallback, given a
+   name so surfaces whose subject is not a brain can use it.
+
+   Every sentence in SNAG_CAUSES says "that brain", because the table was
+   written for coworker dispatch. Point it at a failure whose subject is
+   something else and it answers confidently and wrongly: a failed probe of
+   the office's OWN backend came back "couldn't reach that brain — it looks
+   offline from here", which names the wrong thing and sends the boss to
+   check the wrong place. (Same shape as the open note about file saves
+   reporting a brain outage.) Routing those surfaces through snagCause trades
+   a raw dump for a confident misdiagnosis, which is the worse of the two.
+
+   So: use snagCause where a brain really is the subject, and cleanCause
+   where it is not. This still satisfies §7's "no raw error dumps" — URLs,
+   JSON shrapnel and multi-line stacks are stripped and the line is capped —
+   it just declines to name a cause it cannot identify, which is the same
+   call as the graph panel's "unformed". */
+function cleanCause(raw) {
+  const first = String(raw || '').split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
     .replace(/[{}[\]"\\]/g, ' ')               // JSON shrapnel
     .replace(/\s+/g, ' ')
@@ -359,4 +380,4 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { attachVisit, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

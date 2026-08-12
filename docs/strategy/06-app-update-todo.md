@@ -106,7 +106,14 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
   3.08:1 dimmer than the ticker's own text. Pinned by
   `scripts/test_coffee_contrast.py`, which fails on that exact wrong fix.
 - [ ] **P1 (M)** Polish the **mobile PWA** (manifest + service worker + mobile tab bar).
-- [ ] **P1 (S)** Error-recovery/retry UI on failed async ops.
+- [ ] **P1 (S)** Error-recovery/retry UI on failed async ops. *(Census 2026-08-12:
+  50 catch blocks report a failure to the boss. Most are behind a control they
+  just pressed, so the way forward is that control — a second retry button
+  there would imply the first had stopped working. The gap is AUTOMATIC loads,
+  which have no button at all. Settings → Connections' driver probe is done:
+  hoisted out of its `useEffect`, ↻ CHECK AGAIN wired to it, and two distinct
+  sentences depending on whether the office answered. Remaining: sweep the
+  other mount-time loads the same way.)*
 
 ### Track 7 — SNS launch readiness *(04)*
 - [ ] **P1 (S)** **Reconcile the two token models** (100M/55-30-15 vs $CF/46-27-22) → adopt one (recommended: swap 30 / treasury 43 / team 15 vested / seed 2 / community 10).
