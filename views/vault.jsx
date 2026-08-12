@@ -292,7 +292,14 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       setSaveState('saved');
       if (!(opts && opts.quiet)) await refresh();
     } catch (e) {
-      setSaveState('error: ' + (e.message || 'save failed'));
+      /* The 'error' prefix is load-bearing — saveState is a little state
+         machine and the button reads startsWith('error') to switch to
+         Retry. Only the CAUSE goes through the classifier; it surfaces
+         as this button's tooltip, so a raw exception was visible on
+         hover. Caught by the core-path sweep, not by the pass that
+         fixed this file's alerts — I had grepped for alert() and
+         setErr(), and this is neither. */
+      setSaveState('error: ' + snagCause(e && e.message));
     }
     setBusy(false);
   };

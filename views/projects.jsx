@@ -1,6 +1,7 @@
 import { ProjectTerminal } from './terminal.jsx';
 import { ideLangFromPath } from './ide.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
+import { snagCause } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
@@ -11,6 +12,14 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const joinPath = (dir, name) => { const d = String(dir || ''); const sep = (d.includes('\\') && !d.includes('/')) ? '\\' : '/'; return d.replace(/[\/\\]+$/, '') + sep + name; };
   const isUnder = (p, base) => p === base || p.startsWith(base + '/') || p.startsWith(base + '\\');
   const toast = (k, m) => { if (window.cafresohqToast && window.cafresohqToast[k]) window.cafresohqToast[k](m); };
+  /* §7: "every failure is one honest sentence". These toasts used to
+     concatenate a raw `e.message` — "Save failed: NetworkError when
+     attempting to fetch resource." — on Projects, which is onboarding step 5
+     and has a button on the Getting Started checklist, so it is core path and
+     gets no part of the desktop-mode/settings exemption in §6. Same helper
+     and same reasoning as views/vault.jsx; snagCAUSE because these messages
+     bring their own subject and verb. */
+  const snag = (what, e) => toast('error', `${what} — ${snagCause((e && e.message) || String(e))}`);
   const C = CafresoHQClient;
 
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
@@ -92,7 +101,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       setOpenFile(o => (o && o.path === f.path) ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
       setConflict(false); setTreeNonce(n => n + 1);
       toast('success', 'Saved ' + baseName(f.path));
-    } catch (e) { setErr(e.message || String(e)); toast('error', 'Save failed: ' + (e.message || e)); }
+    } catch (e) { setErr(e.message || String(e)); snag("Couldn't save that file", e); }
     setBusy(false);
   };
   const reloadOpen = async (path) => {
@@ -148,24 +157,24 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const newFolder = async () => {
     if (!project || !fsOK()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
     const name = ((await window.hqPrompt('New folder name:')) || '').trim(); if (!name || /[\/\\]/.test(name)) return;
-    try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { toast('error', e.message || String(e)); }
+    try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { snag("Couldn't make that folder", e); }
   };
   const renameEntry = async (entry) => {
     if (!fsOK()) return;
     const next = ((await window.hqPrompt('Rename to:', { value: entry.name, okLabel: 'Rename' })) || '').trim(); if (!next || next === entry.name || /[\/\\]/.test(next)) return;
     const to = entry.path.slice(0, Math.max(0, entry.path.length - entry.name.length)) + next;
-    try { await C.fsRename(entry.path, to); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(o => ({ ...o, path: to + o.path.slice(entry.path.length) })); toast('success', `Renamed to "${next}"`); } catch (e) { toast('error', e.message || String(e)); }
+    try { await C.fsRename(entry.path, to); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(o => ({ ...o, path: to + o.path.slice(entry.path.length) })); toast('success', `Renamed to "${next}"`); } catch (e) { snag("Couldn't rename that", e); }
   };
   const deleteEntry = async (entry) => {
     if (!fsOK()) return;
     if (!(await window.hqConfirm(`Delete ${entry.isDir ? 'folder' : 'file'} "${entry.name}"?` + (entry.isDir ? '\n\nThis removes everything inside it.' : '') + '\n\nThis cannot be undone.', { danger: true }))) return;
-    try { await C.fsDelete(entry.path); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(null); toast('success', `Deleted "${entry.name}"`); } catch (e) { toast('error', e.message || String(e)); }
+    try { await C.fsDelete(entry.path); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(null); toast('success', `Deleted "${entry.name}"`); } catch (e) { snag("Couldn't delete that", e); }
   };
   const doUpload = async (fileList, dir) => {
     setFileDrag(false);
     if (!project) return; const files = Array.from(fileList || []).filter(Boolean); if (!files.length) return;
     if (!C || !C.fsUpload) { toast('error', 'Uploading needs a newer HQ — update and restart.'); return; }
-    try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); toast('success', `Shared ${res.count || files.length} file${(res.count || files.length) === 1 ? '' : 's'}`); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { toast('error', 'Upload failed: ' + (e.message || e)); }
+    try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); toast('success', `Shared ${res.count || files.length} file${(res.count || files.length) === 1 ? '' : 's'}`); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { snag("Couldn't share those files", e); }
   };
   const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
   const triggerUpload = () => { uploadDirRef.current = null; if (uploadRef.current) uploadRef.current.click(); };
@@ -199,7 +208,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       const r = await CafresoHQClient.publishSite(openFile.path);
       setPubMsg(r.url);
       try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
-    } catch (e) { setPubMsg('Publish failed: ' + (e.message || e)); }
+    } catch (e) { setPubMsg('Publish failed — ' + snagCause((e && e.message) || String(e))); }
   };
 
   const editorPane = () => (
@@ -227,7 +236,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
               <button onClick={() => setPubMsg(null)}>✕</button>
             </div>
           )}
-          {err && <div className="ws-err">{err}</div>}
+          {err && <div className="ws-err">{snagCause(err)}</div>}
           <div className="ws-stage">
             {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
           </div>
@@ -511,6 +520,14 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
      /proj/foobar is NOT treated as living under /proj/foo. */
   const isUnder = (p, base) => p === base || p.startsWith(base + '/') || p.startsWith(base + '\\');
   const toast = (kind, msg) => { if (window.cafresohqToast && window.cafresohqToast[kind]) window.cafresohqToast[kind](msg); };
+  /* §7: "every failure is one honest sentence". These toasts used to
+     concatenate a raw `e.message` — "Save failed: NetworkError when
+     attempting to fetch resource." — on Projects, which is onboarding step 5
+     and has a button on the Getting Started checklist, so it is core path and
+     gets no part of the desktop-mode/settings exemption in §6. Same helper
+     and same reasoning as views/vault.jsx; snagCAUSE because these messages
+     bring their own subject and verb. */
+  const snag = (what, e) => toast('error', `${what} — ${snagCause((e && e.message) || String(e))}`);
 
   /* Upload (drop or picker) files into a working dir so assigned agents can
      read them and the preview pane can render them. targetDir defaults to the
@@ -541,7 +558,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
       if (first && first.path) readFile(first.path);
     } catch (e) {
       setErr(e.message || String(e));
-      toast('error', 'Upload failed: ' + (e.message || e));
+      snag("Couldn't share those files", e);
     }
     setBusy(false);
   };
@@ -561,7 +578,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
       await fsClient().fsMkdir(joinPath(project.path, name));
       setTreeNonce(n => n + 1);
       toast('success', `Created folder "${name}"`);
-    } catch (e) { setErr(e.message || String(e)); toast('error', 'Couldn\'t create folder: ' + (e.message || e)); }
+    } catch (e) { setErr(e.message || String(e)); snag("Couldn't make that folder", e); }
     setBusy(false);
   };
 
@@ -584,7 +601,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
         setOpenFile({ ...openFile, path: to + openFile.path.slice(entry.path.length) });
       }
       toast('success', `Renamed to "${next}"`);
-    } catch (e) { setErr(e.message || String(e)); toast('error', 'Rename failed: ' + (e.message || e)); }
+    } catch (e) { setErr(e.message || String(e)); snag("Couldn't rename that", e); }
     setBusy(false);
   };
 
@@ -599,7 +616,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
       setTreeNonce(n => n + 1);
       if (openFile && openFile.path && isUnder(openFile.path, entry.path)) setOpenFile(null);
       toast('success', `Deleted "${entry.name}"`);
-    } catch (e) { setErr(e.message || String(e)); toast('error', 'Delete failed: ' + (e.message || e)); }
+    } catch (e) { setErr(e.message || String(e)); snag("Couldn't delete that", e); }
     setBusy(false);
   };
 
@@ -796,7 +813,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                 <span className="ide-tab-name" style={{overflow:'hidden',textOverflow:'ellipsis'}}>{openFile.path.split(/[\\/]/).pop()}</span>
                 {openFile.dirty && <span className="ide-tab-dot">●</span>}
               </span>
-              {err && <span className="proj-edit-err">{err}</span>}
+              {err && <span className="proj-edit-err">{snagCause(err)}</span>}
               <span style={{display:'inline-flex', gap:2}}>
                 <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(false)}>Code</button>
                 <button className={`px-btn ${previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(true)}>Preview</button>
@@ -1079,7 +1096,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
                     {openFile.dirty && <span className="ide-tab-dot" title="unsaved changes">●</span>}
                   </span>
                   <span className="ide-tab-path">{openFile.path}</span>
-                  {err && <span className="proj-edit-err">{err}</span>}
+                  {err && <span className="proj-edit-err">{snagCause(err)}</span>}
                   <span style={{flex:1}}/>
                   <span style={{display:'inline-flex', gap:2, marginRight:8}}>
                     <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:9, padding:'3px 9px'}} onClick={() => setPreviewMode(false)}>Code</button>
@@ -1196,7 +1213,7 @@ function FileBrowserModal({ initialPath, onSelect, onClose }) {
         {/* Entries */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
           {loading && <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-dim)', textAlign: 'center' }}>Loading…</div>}
-          {err    && <div style={{ padding: 12, fontSize: 11, color: 'var(--red, #f87171)' }}>⚠ {err}</div>}
+          {err    && <div style={{ padding: 12, fontSize: 11, color: 'var(--red, #f87171)' }}>⚠ {snagCause(err)}</div>}
           {!loading && entries.length === 0 && !err && (
             <div style={{ padding: 16, fontSize: 11, color: 'var(--ink-dim)', textAlign: 'center' }}>Empty folder</div>
           )}
