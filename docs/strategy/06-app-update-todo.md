@@ -82,6 +82,19 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - [x] ~~**3-step onboarding** with empty/loading/error states; self-explanatory dashboard.~~ **Already shipped — verified 2026-08-12.** See Part A: front desk → hire → FIRST ASSIGNMENT, zero jargon, clocked at 33.3s hire-to-artifact.
 
 ### Track 3 — Fleet productionization *(03 Phase 2)*
+> ⚠️ **This entire track is scoped to the wrong repository — checked 2026-08-12.**
+> CafresoHQ contains no OCI provisioning code at all (zero hits for
+> `compartment_id`/`launch_instance`/`oci.core` anywhere in this tree); it only
+> *consumes* fleet-manager's output — `serve.py:757`, its own comment: "Fleet
+> identity (set by fleet-manager when provisioning the container)". The actual
+> provisioning, job state, and metering logic lives in the sibling repo
+> `cafreso-fleet/oci-fleet/` (`fleet-manager.py`, `fleet-api.py`,
+> `session_store.py`, `workspaces-api.py` all exist there and look like they
+> already address parts of this — not independently verified, since that repo
+> has none of the test/measurement infrastructure this session built up here).
+> These four items should be tracked in `cafreso-fleet`'s own planning doc (or
+> given one, if it doesn't have one), not worked on inside CafresoHQ — there is
+> no code here for them to land against.
 - [ ] **P0 (M)** Persist fleet **job state** (file/DB); add provisioning rate-limits.
 - [ ] **P0 (L)** **Meter** per-user OCI cost + canister cycles; expose a usage endpoint.
 - [ ] **P1 (M)** **Free-tier quota** enforcement + usage/cost panel.
