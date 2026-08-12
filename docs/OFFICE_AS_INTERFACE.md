@@ -1564,6 +1564,30 @@ charming; the coworkers are competent.
 The protected front door (North Star §3.6). No settings pages, no model IDs,
 no keys pasted in this path.
 
+> ✅ **Walked end to end on a genuinely clean install, 2026-08-12 — 44
+> seconds.** Not a staged replay of the parts: a throwaway office on its own
+> `CAFRESOHQ_HQ_STATE_DIR`, zero coworkers, zero tasks, so `firstEver` was
+> really true. The front desk opened by itself and listed brains actually
+> found on the machine; hired the local Ollama one in a click; the FIRST
+> ASSIGNMENT sheet appeared on its own ("Llama is at a desk · pick something
+> real to start on") with the three cards and a "Skip — I'll ask in my own
+> words" way out. Picked Research brief, typed a subject, and the task
+> **dispatched itself** — no assign step, no ▶ START — going straight to
+> `doing` on the coworker just hired, exactly as §3.6 words it ("pick a
+> starter task → watch it happen").
+>
+> Measured: task created 13:10:00, artifact on disk 13:10:44. **43.9 seconds**
+> from picking the card to a real file at
+> `Research/research-brief-what-makes-a-good-first-day-at-a-new-job.md`, XP
+> written (`brief`/`done`), and the Working footer present and honest. The
+> budget is five minutes; the flow uses about one sixth of it.
+>
+> Worth separating two paths that look alike and are not, because confusing
+> them is easy: the FIRST-RUN sheet auto-dispatches, while the task board's
+> empty-state starter cards deliberately mint an UNASSIGNED task and say so
+> ("Drag any card onto a coworker's desk to delegate"). Driving the second and
+> reading it as the first would report a §3.6 regression that does not exist.
+
 1. **Walk in.** The front desk greets you; behind it, the office floor is
    visibly alive (trial brain doing ambient work). One sentence of promise, no
    feature tour.
