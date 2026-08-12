@@ -1246,6 +1246,44 @@ should extend that boundary, not blur it.
   than a trap. Whether a detected brain should arrive with Vault Notes on is a
   permissions decision: it is write access to the boss's cabinet.
 
+  > ✅ **The friction is gone; the permissions question is untouched
+  > (2026-08-12).** The missing tool is now handed over inside the Research
+  > modal — named, one button, with "Vault Notes lets them write notes into
+  > your cabinet" under it — using the same `onUpdateAgent` the Roster uses.
+  > Nothing is granted that the boss could not already grant; what changed is
+  > that it no longer requires knowing the app's furniture, which is most of
+  > what "no expertise required" means. Driven on a throwaway zero-config
+  > office: hire Llama → open Research → one click → the row drops its
+  > "(needs Vault Notes)" suffix and START enables once a topic is typed.
+  >
+  > Whether a detected brain should ARRIVE with Vault Notes on is deliberately
+  > still open and still the boss's call. A button they press, with the cost
+  > stated, is what a permissions decision should look like; a default is a
+  > different question and this does not answer it.
+  >
+  > **Two adjacent bugs fell out of driving it, and the worse one had nothing
+  > to do with the gate.** The requirement hint rendered UNCONDITIONALLY — on
+  > the real office, with Vera selected (web + email + cal + vault, not
+  > disabled, able to start immediately), the modal still read "NEEDS WEB
+  > SEARCH AND VAULT NOTES — TURN THEM ON IN SETTINGS → ROSTER". The office
+  > instructing a boss to fix a thing that is not broken is the same fault as
+  > the graph verdict recorded above: a true-sounding sentence bolted to a
+  > case it does not describe. And the dropdown row named the MODE's
+  > requirement ("needs Web + Vault tools") while the sentence beneath it
+  > named the coworker's actual gap (Vault Notes only, since Llama has web) —
+  > one control disagreeing with itself about one coworker.
+  >
+  > **The gate itself is correct — do not "unify" it with the Night Shift.**
+  > They do not share a toolset. In-tab Research runs on the browser's
+  > per-agent registry, so an ungated run silently delivers nothing;
+  > `missions.jsx` records the measurement (round 4, transcript claimed
+  > "Wrote 1", `writes: null`, no `Research/`). The Night Shift runs
+  > server-side and grants the write without consulting `agent.tools` at all.
+  > `scripts/test_mission_tool_gate.py` pins both halves, including a check
+  > that fails if anyone adds a tools gate to `night_runner.py` — that would
+  > read as hardening and would actually take the overnight feature away from
+  > every front-desk hire.
+
   > ✅ **CORRECTED 2026-08-12 — this never applied to the Night Shift, which
   > is the "headline overnight feature" the bullet used to name.** The two
   > missions do not share a toolset and never did. In-tab Research runs on the

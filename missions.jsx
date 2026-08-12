@@ -916,7 +916,7 @@ function NightShiftSection({ agents }) {
 /* ==========================================================================
    UI: MissionsModal — start a mission + show live progress on active ones
    ========================================================================== */
-function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onResume, onClear, projects }) {
+function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onResume, onClear, projects, onUpdateAgent }) {
   const [mode, setMode] = useSM('research'); // 'research' | 'project-study'
   const [topic, setTopic] = useSM('');
   const [projectId, setProjectId] = useSM('');
@@ -1026,12 +1026,18 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
     }
   };
 
-  const hasVaultAndWeb = (a) => {
-    const t = new Set(a.tools || []);
-    return t.has('web') && t.has('vault');
+  /* One source of truth for "can this coworker do this mode", expressed as
+     WHICH tools are missing rather than a boolean — because the surface
+     below needs to name them and hand them over, and two predicates that
+     each half-knew the answer could not. `canDoMode` is unchanged in
+     behaviour: research needed web+vault, a project study needs vault. */
+  const TOOL_LABEL = { web: 'Web Search', vault: 'Vault Notes' };
+  const neededTools = () => (mode === 'project-study' ? ['vault'] : ['web', 'vault']);
+  const missingTools = (a) => {
+    const t = new Set((a && a.tools) || []);
+    return neededTools().filter((x) => !t.has(x));
   };
-  const hasVault = (a) => (a.tools || []).includes('vault');
-  const canDoMode = (a) => mode === 'project-study' ? hasVault(a) : hasVaultAndWeb(a);
+  const canDoMode = (a) => missingTools(a).length === 0;
 
   return (
     <OcModalM
@@ -1157,23 +1163,73 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             )}
             <div className="form-row">
               <label>COWORKER</label>
+              {/* The row names what THIS coworker is missing, not what the
+                  mode requires. Measured on a zero-config office: Llama
+                  holds ['web'], so it read "(needs Web + Vault tools)" while
+                  the sentence directly under it correctly said only Vault
+                  Notes — one dropdown disagreeing with itself about one
+                  coworker. */}
               <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
                 {agents.map(a => (
                   <option key={a.id} value={a.id} disabled={!canDoMode(a)}>
-                    {a.elevated ? '🛡 ' : ''}{a.name} · {a.role}{!canDoMode(a) ? (mode === 'project-study' ? ' (needs Vault tool)' : ' (needs Web + Vault tools)') : ''}
+                    {a.elevated ? '🛡 ' : ''}{a.name} · {a.role}
+                    {!canDoMode(a) ? ` (needs ${missingTools(a).map((t) => TOOL_LABEL[t]).join(' + ')})` : ''}
                   </option>
                 ))}
               </select>
-              {/* §7: a failure is one honest sentence PLUS a way forward —
-                  try again, ask differently, or pick another coworker. This
-                  hint stated the requirement and stopped there, so a boss
-                  whose only hire lacks Vault Notes hit a disabled agent, a
-                  disabled START, and no route out. The tools live in
-                  Settings → ROSTER (the inspect panel only shows them,
-                  read-only), so name that. */}
-              <span className="hint">{mode === 'project-study'
-                ? 'needs the Vault Notes tool — turn it on in Settings → Roster'
-                : 'needs Web Search and Vault Notes — turn them on in Settings → Roster'}</span>
+              {/* §7: a failure is one honest sentence PLUS a way forward.
+                  This line had two faults, and the first is the worse one.
+
+                  It rendered UNCONDITIONALLY. Measured on the real office
+                  with Vera selected — who holds web, email, cal AND vault,
+                  is not disabled, and can start a mission right now — the
+                  modal still read "NEEDS WEB SEARCH AND VAULT NOTES — TURN
+                  THEM ON IN SETTINGS → ROSTER". The office telling a boss to
+                  go fix something that is not broken is the same fault as a
+                  verdict about a graph with no shape: a true-sounding
+                  sentence attached to a case it does not describe. It now
+                  appears only when the selected coworker actually lacks
+                  something, and names WHICH.
+
+                  Second, "turn them on in Settings → Roster" is a treasure
+                  map, not a way forward — and the boss most likely to read
+                  it is the §3 zero-config one, who has never opened
+                  Settings and whose front-desk hire arrives with ['web'].
+                  The north star is "no expertise required"; a route out
+                  that requires knowing the app's furniture is not one.
+
+                  So the tools are handed over here, on the spot. This grants
+                  nothing the boss could not already grant in two clicks
+                  elsewhere — it is the same `onUpdateAgent` the Roster
+                  uses. What it changes is that the permission is asked for
+                  at the moment it is needed, by name, with the consequence
+                  said out loud, which is what a permissions decision should
+                  look like. Whether a detected brain should ARRIVE with
+                  Vault Notes on is still open and still the boss's call;
+                  this deliberately does not answer it. */}
+              {(() => {
+                const miss = selectedAgent ? missingTools(selectedAgent) : [];
+                if (!selectedAgent || miss.length === 0) return null;
+                const names = miss.map((t) => TOOL_LABEL[t]).join(' and ');
+                return (
+                  <span className="hint" style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'var(--sp-2)'}}>
+                    {/* "they need", not "it needs" — §2 casts these as
+                        coworkers, and the rest of the office calls them
+                        people everywhere else. */}
+                    <span>{selectedAgent.name} can't do this yet — they need {names}.</span>
+                    {onUpdateAgent && (
+                      <button className="px-btn" style={{fontSize:8,padding:'5px 8px'}}
+                        onClick={()=>onUpdateAgent(selectedAgent.id,
+                          { tools: [...(selectedAgent.tools || []), ...miss] })}>
+                        ⊕ GIVE {selectedAgent.name.toUpperCase()} {miss.length > 1 ? 'THEM' : TOOL_LABEL[miss[0]].toUpperCase()}
+                      </button>
+                    )}
+                    {miss.includes('vault') && (
+                      <span style={{flexBasis:'100%'}}>Vault Notes lets them write notes into your cabinet.</span>
+                    )}
+                  </span>
+                );
+              })()}
             </div>
             <div className="form-row">
               <label>VAULT FOLDER</label>

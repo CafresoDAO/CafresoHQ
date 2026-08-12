@@ -5571,6 +5571,9 @@ ${d.text}` : d.text,
         onHire={()=>{ setStandupOpen(false); setHireOpen(true); }}/>
       <MissionsModal open={missionsOpen} onClose={()=>setMissionsOpen(false)} agents={agents} missions={missions}
         projects={projects}
+        /* So a blocked mission can hand over the missing tool where the boss
+           is standing, instead of sending them to find Settings → Roster. */
+        onUpdateAgent={onUpdateAgent}
         onStart={onStartMission} onStop={onStopMission} onResume={onResumeMission} onClear={onClearMission}/>
       <MeetingRoomModal
         open={chatMeetingModalOpen}
