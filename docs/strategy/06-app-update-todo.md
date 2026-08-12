@@ -105,7 +105,23 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
   have cleared the ticker by degrading every paper surface. Now 5.48:1, still
   3.08:1 dimmer than the ticker's own text. Pinned by
   `scripts/test_coffee_contrast.py`, which fails on that exact wrong fix.
-- [ ] **P1 (M)** Polish the **mobile PWA** (manifest + service worker + mobile tab bar).
+- [ ] **P1 (M)** Polish the **mobile PWA** (manifest + service worker + mobile tab
+  bar). *(Measured 2026-08-12 — this is mostly BUILT, not missing. The manifest
+  is valid and served as `application/manifest+json`; icon-192/512 (any +
+  maskable) and apple-touch-icons at 180/167/152 all exist; hq.html carries
+  `viewport-fit=cover`, theme-color and the apple-mobile-web-app meta; the
+  mobile tab bar ships. The one thing missing is that hq.html UNREGISTERS the
+  service worker on every load, so the app cannot be installed.*
+  *Driving `sw.js` for the first time — it had never executed — found it would
+  have made a DEAD office report itself healthy: with the server killed,
+  `/health`, `/agent/drivers` and `/missions/scheduled` all returned cached
+  200s. Its fetch rule is now an allowlist (only the static shell is
+  cacheable), re-verified against the same dead server: all three fail
+  honestly while a page reload still renders the offline shell. Pinned by
+  `scripts/test_sw_never_caches_state.py`.*
+  *Left OFF deliberately: a service worker is sticky, and enabling it on a
+  daily-driver office is a decision the owner should make. Raised as a task
+  with three options.)*
 - [ ] **P1 (S)** Error-recovery/retry UI on failed async ops. *(Census 2026-08-12:
   50 catch blocks report a failure to the boss. Most are behind a control they
   just pressed, so the way forward is that control — a second retry button
