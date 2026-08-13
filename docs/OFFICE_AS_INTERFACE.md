@@ -5907,3 +5907,61 @@ and the hedge would be the lie. `scripts/test_stamp_walkback_knows_what_it_knows
 holds both halves — that the decision still travels, that neither side
 asserts a pending action, that both name the already-done case, and that
 the external gate still answers `allow`/`deny` and is still checked first.
+
+---
+
+### "Create your first Project" opened a dialog written for a developer
+
+Followed the checklist's own step 5 the way a first-run boss would — the
+"New Project →" button, then "Create your first project" — and the dialog
+it opens speaks two languages the boss does not.
+
+The local-folder tab's only guidance about which paths work was *"Path must
+be inside CAFRESOHQ_ALLOWED_DIRS for your coworkers to reach it."* An
+environment variable, named to someone with no way to look up its value
+from inside the app. It was also false for the ordinary install: `_safe_path`
+skips the whitelist entirely when the runtime is local and nothing was set
+explicitly, so a default self-hosted run has no such restriction at all. The
+sentence invented a rule and then named it in a vocabulary the reader could
+not act on.
+
+The GitHub tab was worse, because you reach it by making a typo. Verbatim
+off the live dialog, after submitting `owner/repo`:
+
+> git clone failed (exit 128)
+> Cloning into '/private/tmp/…/pj-space/repo'...
+> remote: Repository not found.
+> fatal: repository 'https://github.com/owner/repo/' not found
+
+An exit code, an absolute path, "remote:", "fatal:" — and the one line that
+says what to do about it is third of four. Same class as the vault's raw
+dumps, same fix: one honest sentence. The raw text now goes to the console
+instead of being discarded, because a self-hosted install has a second
+reader and dropping stderr entirely just trades one blind user for another.
+
+`officeCause` was not the fix, and that is the part worth recording. Its
+generic `/not found/` rule answers *"the office couldn't find that — it may
+have been moved or renamed"*, which describes a file on this machine, not a
+GitHub name that was mistyped or belongs to a private repo. So `repoCause`
+puts a repository-subject table in front and keeps officeCause as the
+fallback — the same "the patterns were right, only the noun was wrong" split
+that produced officeCause in the first place. The fire test for that arm is
+the proof: disable the repo table and the mistyped repo goes straight back
+to "moved or renamed".
+
+Two smaller things came out of chasing it. A hypothesis of mine was wrong
+and is worth writing down so nobody re-chases it: I expected the clone route
+to leak `CAFRESOHQ_ALLOWED_DIRS not set — clone disabled` into the same box,
+and it cannot — `_cafresohq_allowed_dirs` defaults to `expanduser('~')`, so
+that 503 branch is unreachable on any ordinary install.
+
+And the §6 guard had a hole shaped exactly like this defect. `views/projects.jsx`
+was in neither the guarded nor the exempt list — the guarded list was drawn
+from the surfaces a first run meets, and Projects was not thought of as one,
+though the getting-started checklist routes the boss straight into it. It is
+guarded now. The banned-terms table also had no rule for environment-variable
+names, because its rows are *terms* and this is a *shape*, so there is now a
+SHOUTING_SNAKE check that runs over JSX text nodes only — string literals in
+these files carry real constants of the same shape (`FILE_READ`,
+`VAULT_APPEND` passed to `toolExec`), and a rule that flagged those would be
+noise people learn to ignore.

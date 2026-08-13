@@ -366,6 +366,36 @@ function officeCause(raw) {
   return cleanCause(text);
 }
 
+/* A fourth subject: the REPOSITORY the boss asked the office to fetch.
+   Same argument as officeCause — the patterns are fine, the noun matters.
+   Falling straight through to officeCause is not merely vague here, it is
+   wrong: git's "Repository not found" hits that table's generic /not found/
+   rule and answers "the office couldn't find that — it may have been moved
+   or renamed", which describes a file on this machine, not a GitHub name
+   that was mistyped or belongs to a private repo. So these run FIRST and
+   the office table stays the fallback.
+
+   Sentences name the fix, because every one of these has one the boss can
+   act on — §7's "one honest sentence + a way forward". */
+const REPO_CAUSES = [
+  [/already exists and is not an empty directory/i,
+   'there’s already a folder here with that name — give it a different one'],
+  [/could not read username|authentication failed|permission denied \(publickey\)|terminal prompts disabled|invalid username or password/i,
+   'that one’s private, and this machine isn’t signed in to GitHub'],
+  [/could not resolve host|unable to access|failed to connect|network is unreachable/i,
+   'couldn’t reach GitHub from this machine — check the connection'],
+  [/repository not found|remote branch .* not found|does not appear to be a git repository/i,
+   'no repository by that name — check the owner and name, and that it isn’t private'],
+];
+
+function repoCause(raw) {
+  const text = String(raw || '');
+  for (const [re, sentence] of REPO_CAUSES) {
+    if (re.test(text)) return sentence;
+  }
+  return officeCause(text);
+}
+
 function cleanCause(raw) {
   const first = String(raw || '').split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
@@ -493,4 +523,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

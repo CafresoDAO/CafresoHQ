@@ -35,6 +35,13 @@ ROOT = Path(__file__).resolve().parent.parent
 GUARDED = [
     'modals/hire.jsx', 'modals/starter.jsx', 'modals/delivery.jsx',
     'ui/onboarding.jsx', 'ui/office.jsx', 'views/core.jsx',
+    # Added after the checklist's own step 5 ("Create your first Project →
+    # New Project") opened a dialog that read "Path must be inside
+    # CAFRESOHQ_ALLOWED_DIRS for your coworkers to reach it." The list above
+    # was drawn from the surfaces a first run meets, and Projects was not on
+    # it — but the getting-started checklist routes the boss straight here,
+    # so it is core path by the office's own navigation.
+    'views/projects.jsx',
 ]
 # §6's own exemption: desktop-mode surfaces and settings.
 EXEMPT = ['modals/settings.jsx', 'modals/providers.jsx', 'views/terminal.jsx', 'views/ide.jsx']
@@ -52,7 +59,27 @@ BANNED = [
     (r'\binference\b', 'inference → working'),
 ]
 
+# SHOUTING_SNAKE_CASE: two or more segments, so ordinary shouted UI words
+# ("APPROVE", "NEW HIRE") and single acronyms are untouched.
+ENV_VAR = re.compile(r'\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b')
+
 FAILS = []
+
+
+def jsx_prose(src):
+    """JSX text nodes only — the sentences rendered between tags.
+
+    Deliberately narrower than visible_copy(), which also harvests string
+    literals; see the note at the ENV_VAR check for why that distinction
+    is what makes this rule usable rather than noisy."""
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    src = re.sub(r'^\s*//.*$', '', src, flags=re.M)
+    out = []
+    for raw in re.findall(r'>([^<>\n]{3,200})<', src):
+        text = re.sub(r'\{[^{}]*\}', ' ', raw).strip()
+        if len(text) >= 3:
+            out.append(text)
+    return out
 
 
 def check(name, cond, detail=''):
@@ -103,6 +130,30 @@ def main():
                     break
         check(f'{rel}: no never-say terms in visible copy',
               not hits, '; '.join(hits[:2]))
+
+    # ── environment-variable names in prose ─────────────────────────────
+    # Not a row in §6's table, because nobody thought to write one — but it
+    # is the same rule ("plain words for the boss"), and the table's rows
+    # are named terms while this is a SHAPE. CAFRESOHQ_ALLOWED_DIRS was the
+    # only guidance in the Add-Project dialog about which paths work; a
+    # first-run boss cannot look up its value from inside the app.
+    #
+    # JSX text nodes only, deliberately. String literals in these files
+    # carry real code constants of the same shape — 'FILE_READ',
+    # 'VAULT_APPEND' passed to toolExec, BOOKMARK_IDS inside a template
+    # interpolation — and a rule that flagged those would be noise people
+    # learn to ignore. Prose the boss reads is what this is about.
+    for rel in GUARDED:
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        hits = sorted({m for c in jsx_prose(p.read_text(encoding='utf-8'))
+                       for m in ENV_VAR.findall(c)})
+        check(f'{rel}: no environment-variable names in prose',
+              not hits,
+              f'{hits} — a SHOUTING_SNAKE name is something the boss sets '
+              'outside the app, in a file they may not own; naming it here '
+              'without a value is a dead end')
 
     check('the exempt surfaces named by §6 still exist',
           all((ROOT / r).is_file() for r in EXEMPT),

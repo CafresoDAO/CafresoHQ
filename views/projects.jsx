@@ -1,7 +1,7 @@
 import { ProjectTerminal } from './terminal.jsx';
 import { ideLangFromPath } from './ide.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
-import { officeCause } from '../app/floor.jsx';
+import { officeCause, repoCause } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
@@ -1430,7 +1430,25 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
       });
       onCommit({ name: r.name, path: r.path, source: 'github:' + url });
     } catch (e2) {
-      setErr((e2.message || String(e2)) + (e2.detail ? '\n' + e2.detail : ''));
+      /* This box used to print `message + '\n' + detail`, and `detail` is
+         git's stderr verbatim. Typing a repo name with a typo, on the
+         surface the getting-started checklist sends you to at step 5, got:
+
+           git clone failed (exit 128)
+           Cloning into '/private/tmp/…/pj-space/repo'...
+           remote: Repository not found.
+           fatal: repository 'https://github.com/owner/repo/' not found
+
+         An exit code, an absolute path, "remote:", "fatal:" — and the one
+         line that says what to DO about it is third of four. Same class as
+         the vault's raw dumps, and the same fix: one honest sentence.
+
+         The raw text is not thrown away, it goes to the console, because
+         the person debugging a self-hosted install is a different reader
+         from the one adding their first project. */
+      const raw = (e2.message || String(e2)) + (e2.detail ? '\n' + e2.detail : '');
+      try { console.warn('[projects] clone failed:', raw); } catch (_) {}
+      setErr(repoCause(raw));
       setBusy(false);
     }
   };
@@ -1480,7 +1498,24 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   >📁 Browse</button>
                 </div>
               </label>
-              <small>Path must be inside CAFRESOHQ_ALLOWED_DIRS for your coworkers to reach it.</small>
+              {/* Was: "Path must be inside CAFRESOHQ_ALLOWED_DIRS for your
+                  coworkers to reach it." An environment-variable name, as
+                  the ONLY guidance about which paths work, in the dialog
+                  the getting-started checklist opens at step 5 — and a
+                  boss who has never seen that name has no way to look up
+                  its value from here.
+
+                  It was also false for the common install. `_safe_path`
+                  skips the whitelist entirely when the runtime is local
+                  and nothing was set explicitly (serve.py), so on a
+                  default self-hosted run there is no such restriction —
+                  the sentence invented a rule and then named it in a
+                  vocabulary the reader could not act on.
+
+                  This says the same thing in the one place it is true in
+                  BOTH modes: Browse lists exactly what the coworkers can
+                  reach, because it resolves through the same guard. */}
+              <small>Any folder on this machine — 📁 Browse shows the ones your coworkers can open.</small>
               {err ? <div className="addproj-err">{err}</div> : null}
               <div className="addproj-actions">
                 <button type="button" className="px-btn secondary" onClick={onClose}>Cancel</button>
