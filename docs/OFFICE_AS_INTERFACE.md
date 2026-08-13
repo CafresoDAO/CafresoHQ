@@ -6441,3 +6441,74 @@ progress notes reach a toast and a ten-entry array nobody opens. That is a
 missing feature — a card with no history is not lying about anything — and
 it was scoped out rather than bolted onto a defect fix. It is the last of
 the three write-only fields and it should get a real surface, not a line.
+
+### The DONE column was a wall of titles
+
+`result` is the deliverable — the text a coworker actually produced. The
+done handler stamps it on the task next to `completedAt` and `completedBy`.
+None of the three had a reader. The only code in the product that touched
+`result` was the delete confirmation:
+
+    Delete "…"? Your coworker's work on it will be lost.
+
+So the office warned the boss they were about to lose work it had never
+once let them look at.
+
+Measured on a live floor before the fix. A done task carrying a 320-word Q3
+summary — revenue figures, two flagged risks, a file path — rendered as:
+
+    Draft the Q3 board summary
+    Llama · Researcher            HIGH
+
+That is the whole card. The work existed, was spoken once into a chat
+bubble that had long since scrolled away, and sat on the record unread. An
+office that cannot show you what came of a finished job is not an operating
+business, whatever else it does.
+
+Two more things fell out of the same audit and are fixed in the same pass.
+
+**`progressLog` is no longer write-only.** It was the last of the three
+write-only task fields named in the entry above. Collapsed, a card shows
+its most recent note — the worklog line says a job is moving, this says
+what moved. Expanded, all of them. The `+N earlier` counter is computed
+from the notes actually hidden rather than from the log length, because it
+is the one claim on this surface that could be a lie rather than an
+omission: a count that disagrees with the slice advertises a history that
+is not there.
+
+**Clicking a card used to do nothing.** The whole card is a click target
+that toggles `expanded`, and `expanded` only un-clamps `-webkit-line-clamp`
+on the title and detail. For a card with a short title and no detail —
+which is most cards — the click was a visual no-op. Measured: 173px before,
+173px after, byte-identical text. That is a worse failure than a missing
+feature, because the card *invites* the click and then denies that anything
+happened.
+
+The fix uses that, rather than working around it. The result renders in a
+`tc-detail`, so it clamps to three lines collapsed and opens to the full
+deliverable on click; the history opens with it. Same card, measured after:
+173px → 355px, result 54px → 180px, both progress notes appearing. The
+click now has a job, and no new CSS was needed to give it one.
+
+Credit comes from `completedBy`, not from the assignee. A card can be
+reassigned after it was finished, and naming whoever holds it now would be
+the office asserting something it does not know (§4). With no resolvable
+finisher it says "finished" and no name.
+
+Pinned in `scripts/test_the_card_shows_what_came_back.py`. `finishedLabel`
+runs for real in the node harness; the render assertions are reads of the
+real source, because `features.jsx` needs a JSX transform this harness does
+not have — which is why the live measurements above are quoted rather than
+implied. Twelve arms, each reverted separately. One of them pins a rule in
+`styles.css` from a test in another file: without
+`.task-card.expanded .tc-detail { -webkit-line-clamp: unset; }` the result
+is permanently truncated and the click silently goes back to being a no-op,
+and nothing in `features.jsx` would show it.
+
+**A process note.** That last arm meant a fire-test briefly edited
+`styles.css`, which a parallel session owns. It was restored from a
+scratchpad copy and verified byte-identical, but the window was real: a
+concurrent write during those few seconds would have been overwritten by my
+restore. Fire-testing a cross-file invariant is worth doing; mutating a file
+another session is holding is the part to avoid, and the safer shape is to
+assert the rule without reverting it.

@@ -106,4 +106,20 @@ function worklogLine(task, owner, now) {
   return age ? `nobody's on this · ${age}` : "nobody's on this";
 }
 
-export { applyStatus, durationLabel, isStalled, sittingFor, worklogLine, WORKING };
+/* When a job finished. `completedAt` and `completedBy` were both stamped on
+   the record by the done handler and read by nothing, so a finished card
+   could not say who finished it or when — the DONE column was a wall of
+   titles with no history behind any of them.
+
+   Returns null rather than guessing when the stamp is missing: tasks that
+   predate `completedAt` must say nothing, for the same reason `sittingFor`
+   refuses to fall back to `createdAt`. "just now" already reads as a time,
+   so it does not take the "ago". */
+function finishedLabel(task, now) {
+  if (!task || !task.completedAt) return null;
+  const label = durationLabel((now || Date.now()) - task.completedAt);
+  if (!label) return null;
+  return label === 'just now' ? 'just now' : `${label} ago`;
+}
+
+export { applyStatus, durationLabel, finishedLabel, isStalled, sittingFor, worklogLine, WORKING };

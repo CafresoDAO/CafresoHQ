@@ -4,7 +4,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { floorEmit, snagSentence } from './app/floor.jsx';
 import { xpLastAttempt, xpLastAttemptText } from './app/experience.jsx';
 import { brainName } from './app/cast.jsx';
-import { worklogLine } from './app/worklog.jsx';
+import { finishedLabel, worklogLine } from './app/worklog.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -209,6 +209,81 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                         ✋ {String(t.blockedReason).slice(0, 140)}
                       </div>
                     )}
+                    {/* What the coworker has done so far. `progressLog` was
+                        the last of the three write-only fields on a task:
+                        every `[TASK_PROGRESS: …]` note went into a ten-entry
+                        array and reached a toast, and nothing ever read the
+                        array back. The worklog line above says a job is
+                        moving; this says what moved.
+
+                        Collapsed shows the latest note only, and only while
+                        the job is unfinished — once there is a result, the
+                        result is the answer and the notes are history. Click
+                        the card for all of them. The "+N more" counter is
+                        computed from the notes actually hidden, so it can
+                        never advertise a history that isn't there. */}
+                    {(() => {
+                      const log = (t.progressLog || []).filter(p => p && p.note);
+                      if (!log.length) return null;
+                      const open = !!expanded[t.id];
+                      if (!open && t.result) return null;
+                      const shown = open ? log : log.slice(-1);
+                      return (
+                        <div>
+                          {shown.map((p, i) => (
+                            <div key={p.at || i} className="tc-stalled"
+                                 title="A note your coworker left while working">
+                              · {String(p.note).slice(0, 160)}
+                            </div>
+                          ))}
+                          {!open && log.length > 1 && (
+                            <div className="tc-worklog"
+                                 style={{ border: 'none', paddingTop: 0, opacity: 0.7 }}>
+                              +{log.length - 1} earlier — click to read
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {/* What actually came back.
+
+                        `result` is the deliverable — the text the coworker
+                        produced — and it was written to the record, spoken
+                        once into a chat bubble that scrolls away, and never
+                        shown again. The only code that read it was the
+                        delete confirmation, which warned the boss they were
+                        about to lose work the office had never let them see.
+                        A DONE column that cannot show what was done is not
+                        an operating business.
+
+                        `tc-detail` is reused deliberately rather than given
+                        its own class: it clamps to three lines and un-clamps
+                        under `.task-card.expanded`, which is exactly the
+                        behaviour this needs — and it gives the card's click
+                        something to do. Before this, clicking a card toggled
+                        `expanded` and nothing on screen changed unless the
+                        title happened to run past two lines. Measured: same
+                        height, same text, both sides of the click.
+
+                        The name comes from `completedBy`, not from the
+                        assignee, and falls back to no name at all rather
+                        than crediting whoever holds the card now — §4's rule
+                        that the office reports what it knows. */}
+                    {t.result && (() => {
+                      const by = agents.find(x => x.id === t.completedBy) || null;
+                      const when = finishedLabel(t);
+                      return (
+                        <div>
+                          <div className="tc-worklog">
+                            ✓ {by ? `${by.name} finished this` : 'finished'}
+                            {when ? ` · ${when}` : ''}
+                          </div>
+                          <div className="tc-detail" style={{ marginBottom: 0 }}>
+                            {String(t.result)}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {/* → CHAT drafts the task as an @mention in the DIRECT
                         thread; 📋 ROOM opens the meeting-create modal
                         pre-populated. Neither starts work — they hand the
