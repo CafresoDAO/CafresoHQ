@@ -1634,6 +1634,42 @@ turns out to work is still worth knowing, and the absence of a "driven,
 clean" entry reads identically to "never checked" until someone writes
 one down.
 
+### Money & Payments, driven on — the bridge gate holds even locally — 2026-08-13
+
+The other half of the ICP Services panel (Publish verified two days
+ago; Money never driven). Seeded a coworker already claiming `wallet`
+in its tools — the worst case for this test, not a random one — and
+toggled Money & Payments ON on a throwaway office with no
+ai.cafreso.com shell behind it. The confirm dialog and the resulting
+"module is on, but balances and sends need your Internet Identity...
+Until then agents cannot move any funds" panel both rendered exactly as
+the code promises.
+
+Reading the code says `icpWalletEnabled()` also requires
+`CafresoHQChain.isAvailable()` (the postMessage bridge to the II-holding
+shell), so WALLET_BALANCE/WALLET_SEND should stay ungated regardless of
+the local toggle. Said so rather than just trusted: `window.HQ` isn't
+exposed globally (module-scoped), so verified it a level deeper —
+monkey-patched `window.fetch` to capture the actual outgoing request to
+the local Ollama backend and read the real system prompt a live chat
+turn produced. It reads: *"Claimed capabilities: chat, vault, wallet. Of
+these, the following are wired up for real execution: VAULT_SEARCH, ...
+ACK, SPAWN_SUBAGENT, ..."* — no `WALLET_BALANCE`, no `WALLET_SEND`,
+anywhere in the wired list, confirmed against the actual bytes sent to
+the model, not a description of them.
+
+One small-model wrinkle, not a bug: asked "what is your ICP wallet
+balance?", Llama didn't say "I don't have that tool" as instructed —
+it emitted `[NEEDS_APPROVAL: check ICP wallet balance]`, which landed
+correctly in the boss's approval tray ("by Llama · awaiting stamp").
+Confused, but safely confused: `NEEDS_APPROVAL` is a generic, always-
+taught marker independent of any specific tool grant, so the office did
+exactly what it's supposed to with a request it can't itself fulfill —
+surfaced it to a human rather than fabricating an answer or a balance.
+Nothing moved, nothing was invented; left the pending approval alone
+and tore the whole office down with it rather than approving/rejecting
+something that was never going to execute either way.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
