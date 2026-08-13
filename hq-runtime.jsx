@@ -256,7 +256,35 @@ function throttleTokens(setChat, msgId) {
     }
     schedule();
   };
-  ontok.flushNow = () => { flush(); };
+  /* flushNow is the LAST paint this throttle ever makes, and saying so is
+     the whole point. Every caller does the same two steps: `flushNow()`,
+     then write the finished text — `visibleReply` + `cleanHarmony`, markers
+     stripped. But `flush` renders from `raw`, which still has every marker
+     in it, so any frame that fires after that write undoes it.
+
+     And one usually is queued: the final tokens schedule a frame, flushNow
+     runs synchronously inside the same task, and the queued callback fires
+     afterwards. React batches all three writes into one commit, so the
+     cleaned text never even paints — the bubble goes straight from
+     streaming to raw-markers-and-all.
+
+     Watched live on the CEO, which is the bubble the boss reads most: it
+     rendered `[HANDOFF_TO: Nova]` and `[ACK: completed: …]` verbatim,
+     directly underneath a strip written to be unconditional for exactly
+     this reason. The strip ran every time; its result was overwritten every
+     time. Whether it survives depends only on whether the last token
+     happened to land in an earlier frame, which is why a slow remote model
+     hides it and a fast local one shows it every run.
+
+     The abort path already knew: it calls `cancel()` and its comment says
+     a queued frame "would fire AFTER this rewrite and overwrite" it. Only
+     the success path was left holding the same open door. Ending the
+     throttle here closes it, and `note()` already does the right thing
+     once cancelled — it APPENDS to whatever the caller wrote instead of
+     re-rendering from `raw`, which is the behaviour its own comment asks
+     for. Every call site is immediately after an awaited stream, so there
+     is no caller left expecting to paint again. */
+  ontok.flushNow = () => { flush(); cancelled = true; };
   ontok.cancel = () => { cancelled = true; };
   ontok.raw = () => raw;
   return ontok;

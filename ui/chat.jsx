@@ -1138,17 +1138,27 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         </div>
         <textarea
           ref={composerRef}
-          /* Name who is actually going to read this. In a project or meeting
-             room the message does NOT go to CafresoHQ — it goes to everyone
-             seated, and the placeholder was still addressing the CEO while
-             the banner directly above it listed three other people. The
-             room's own empty-state already says "type below to send to all
-             attendees"; the composer was contradicting it. */
-          placeholder={activeRoom && activeRoom.participants.length
-            ? `Message ${activeRoom.participants.length === 1
-                ? activeRoom.participants[0].name
-                : `all ${activeRoom.participants.length} in ${activeRoom.name}`}… (@ mention to narrow · ↵ send)`
-            : 'Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)'}
+          /* Name who is actually going to read this. There are three states
+             where the next message does NOT go to CafresoHQ, and the box
+             claimed it did in all three.
+
+             In a project or meeting room it goes to everyone seated, while
+             the banner directly above listed three other people and the
+             room's own empty state said "type below to send to all
+             attendees" — the composer was the only thing in the room
+             disagreeing.
+
+             During a hand-off it goes to the specialist. That one is worse,
+             because the office had just said, in its own voice, "Handed off
+             to Nova. Talk to them directly" — and then labelled the box you
+             talk to them in with somebody else's name. */
+          placeholder={handoffAgent
+            ? `Message ${handoffAgent.name}… (say "back to CafresoHQ" to return · ↵ send)`
+            : activeRoom && activeRoom.participants.length
+              ? `Message ${activeRoom.participants.length === 1
+                  ? activeRoom.participants[0].name
+                  : `all ${activeRoom.participants.length} in ${activeRoom.name}`}… (@ mention to narrow · ↵ send)`
+              : 'Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)'}
           value={input}
           onChange={onInputChange}
           onKeyDown={onKey}

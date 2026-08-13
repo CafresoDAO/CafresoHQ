@@ -5570,3 +5570,69 @@ settings — never on the floor, the cards, or onboarding.
 > so the failure is not entirely silent, but the bubbles themselves persist
 > as blank agent messages in the thread. Worth a look on its own; it is a
 > different question from whether the meeting is a meeting.
+
+---
+
+### The reply the boss reads was painted over by a frame from the past
+
+Drove the hand-off path — CEO decides a specialist should take it, hands
+over, the boss carries on talking to the specialist, then says "back to
+CafresoHQ". The mechanism worked end to end. What the boss *read* did not:
+
+    CafresoHQ — Nova is the right person for this.
+                [HANDOFF_TO: Nova]
+                The boss wants a read on the gold rails.
+                [/HANDOFF_TO]
+
+Machine punctuation in the CEO's own bubble, sitting directly underneath a
+strip whose comment says it was made unconditional so exactly this could
+not happen. And the strip *was* running, every time. Its result was being
+overwritten, every time.
+
+Every streaming path in this office ends the same two ways:
+
+    flush.flushNow();                   // paint what has arrived
+    ...
+    setChat(... text: cleanBuf ...)     // then paint the FINISHED text
+
+`cleanBuf` is the reply with markers stripped. `throttleTokens.flush()`
+renders from `raw`, which still holds every marker the model emitted. So
+any animation frame that fires *after* that second write undoes it — and
+one usually is already queued, because the last tokens call `schedule()`,
+`flushNow()` runs synchronously in the same task, and the queued callback
+gets its turn afterwards. React batches all three writes into one commit,
+so the cleaned text never even paints: the bubble goes straight from
+streaming to markers-and-all, with no flicker to give it away. A
+MutationObserver on the bubble saw exactly **one** DOM transition.
+
+Whether it shows depends only on whether the final token happened to land
+in an earlier frame — which is why a slow remote model hides this and a
+fast local one shows it on every single reply, and why it survived so
+long. A plain `[ACK: completed: …]` reproduced it identically, so this was
+never about hand-offs; it was every marker on every path — CEO, dispatch,
+delegate, and task.
+
+The abort path already knew the shape of it. It calls `cancel()`, and its
+comment says a queued frame "would fire AFTER this rewrite and overwrite"
+the stopped marker. Only the success path was left holding the same door
+open.
+
+**Fix:** `flushNow()` is the throttle's *last* paint — it flushes and then
+ends the throttle, exactly as `cancel()` does. One line, four paths.
+`note()` already handles the ended case by appending to whatever the
+caller wrote instead of re-rendering from `raw`, which its own comment
+asks for; that only ever held if the throttle was finished by then.
+
+The pin (`scripts/test_final_paint_wins.py`) drives the real
+`throttleTokens` under node with a frame queue we drain by hand, rather
+than grepping for the fix — the bug is entirely about *when* callbacks
+run, and no source check can see that. Fire-tested against three separate
+ways of un-fixing it, including the tempting one: ending the throttle
+*before* the final flush instead of after, which makes the flush a no-op
+and silently drops the last tokens of every reply.
+
+**Third instance of the same defect, same drive:** the composer read
+*"Message CafresoHQ…"* while the banner directly above it said "Talking to
+**Nova**" — and the next thing typed went to Nova. After project rooms and
+meeting rooms, this is the third place the box named someone who was not
+going to read it. It now names the specialist, and says how to come back.

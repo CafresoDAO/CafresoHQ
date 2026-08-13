@@ -156,10 +156,19 @@ check('a run that threw reports saying nothing, not the last turn\'s words',
 # ── 6. the composer names who will read it ──────────────────────────────
 # Smaller, same class: the banner listed three attendees and the box under
 # it still said "Message CafresoHQ…", who is not in the room.
+ph = re.search(r'placeholder=\{[\s\S]{0,900}?\n\s*/>', chat[chat.index('const send'):])
+ph = ph.group(0) if ph else ''
 check('the composer addresses the room it is in',
-      re.search(r'placeholder=\{activeRoom && activeRoom\.participants\.length', chat)
-      and re.search(r"`Message \$\{activeRoom\.participants\.length === 1", chat),
+      'activeRoom && activeRoom.participants.length' in ph
+      and re.search(r"`Message \$\{activeRoom\.participants\.length === 1", ph),
       'ui/chat.jsx: in a room the message does not go to CafresoHQ')
+# Third instance of the same defect, found on the hand-off path: the banner
+# above the box said "Talking to Nova" while the box said "Message
+# CafresoHQ…", and the next thing typed went to Nova.
+check('...and the specialist, once the boss has been handed to one',
+      re.search(r'handoffAgent\s*\n?\s*\?\s*`Message \$\{handoffAgent\.name\}', ph),
+      'ui/chat.jsx: during a hand-off the message goes to the specialist, '
+      'not to CafresoHQ — the banner already says so')
 check('...and still addresses CafresoHQ everywhere else',
       "'Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)'" in chat,
       'ui/chat.jsx: the direct thread must keep its own placeholder as the '
