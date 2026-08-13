@@ -1464,6 +1464,24 @@ Pinned by `scripts/test_night_mode_respects_explicit_choice.py`,
 fire-tested by removing the guard — failed for exactly the expected
 reason.
 
+> ✅ **The ecosystem app switcher ("Apps ▾"), clean pass — 2026-08-13.**
+> Driven for the first time this session. Worth noting how it hid from
+> the usual tooling first: `document.querySelectorAll`/a full DOM
+> `TreeWalker` both came back completely empty for "Apps" text, even
+> though it's plainly visible in a screenshot — it lives inside
+> `<cafreso-ecobar>`'s Shadow DOM (`cafreso-ecobar.jsx`, a genuinely
+> shared, framework-agnostic Web Component: "canonical copy lives in the
+> CafresoHQ repo; the Svelte frontend and Minegold load an identical
+> copy"), invisible to a plain top-level query. Reached it with
+> `document.querySelector('cafreso-ecobar').shadowRoot.querySelector(…)`
+> instead. Clicked the real `.apps` button inside the shadow root: the
+> menu opened correctly, positioned cleanly (not clipped or hidden behind
+> anything — the exact bug class this session found repeatedly
+> elsewhere), listing all four ecosystem apps (Pages, AI, HQ, Mine) with
+> correct URLs, and HQ itself correctly rendered as a non-clickable `<div
+> class="item active">` with a CURRENT badge rather than a self-link. No
+> code changed.
+
 > ✅ **Agent Inspect panel's job description, clean pass — 2026-08-13.**
 > Driven for the first time this session: clicked a hired coworker's desk
 > sprite on the office floor, opened the "PERFORMANCE REVIEW" card, edited
