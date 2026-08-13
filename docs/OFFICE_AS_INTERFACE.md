@@ -5292,3 +5292,64 @@ settings — never on the floor, the cards, or onboarding.
 > office stayed silent about all of it: no visit card, no receipt, no
 > ledger line. The forgery was confined to the model's own bubble, which is
 > exactly the boundary this design exists to hold.
+
+> **The same defect, three more times — and one of them was a tense, not a
+> guard** (2026-08-13). The fix above was one catch, made live. Because the
+> cause was structural, the sensible next move was to sweep every surface
+> that records an outcome rather than wait to catch the rest one at a time.
+> Three more sites had it:
+>
+>   · the **inbox artifact** — a failed `VAULT_NEW` still attached an
+>     artifact to the message, and an artifact is not a caption, it is a
+>     claim about a file on disk shown as the message's deliverable. The
+>     boss reads "wrote foo.md" in the inbox and goes to open it.
+>   · **mission writes** — `notesWritten` counted failed writes, so the
+>     number the mission card and the calendar both report as the night's
+>     output was inflated, and each entry was a path that could be gone
+>     looking for and not found.
+>   · the **activity feed** — this one was not a missing guard. Both tool
+>     streams filed their feed line from the `start` phase, already in the
+>     past tense. The feed said "saved report.md" the instant the call was
+>     *issued*, before anything had been written, and nothing went back to
+>     correct it when the write then failed. A record cannot be written
+>     before the outcome it records exists. The line moved to `done`, where
+>     the tense is chosen from `ev.failed`; the live "what are they doing
+>     right now" signal was never the feed — it is the coworker's `task`
+>     field, which is set at `start` and stays in the present tense.
+>
+> Both feed sites now go through one `toolActivity(agent, ev, extra)` in
+> `app/floor.jsx`, because two hand-built objects at two call sites is how
+> they drifted into the same bug in the first place.
+>
+> Verified live, all three, in one office: the feed holds
+> `saved reports/good.md` and `couldn't open nowhere/missing-report.md`
+> side by side, and `reports/good.md` is really on disk. A failed
+> `VAULT_NEW` (path escaping the vault) left its message `completed` with
+> no artifacts; the successful one attached `wrote reports/second.md`.
+>
+> **On getting a live test to run at all.** Three attempts were lost to the
+> model rather than the office: asked to read a missing file, llama3.1
+> answered from thin air without calling a tool; asked to emit the literal
+> tool line and nothing else, it emitted a different marker. No prompt
+> makes a small model comply, and "the model wouldn't cooperate" is not
+> evidence about the office. What worked is a **scripted brain injected at
+> the fetch boundary** — a page-level `window.fetch` shim that answers
+> `/ollama/v1/chat/completions` with a canned SSE stream and passes
+> everything else through. Only the model's words are faked; the stream
+> scanner, tool registry, `/tool` endpoint, `failed` flag, `done` event and
+> every listener on it are the real ones. A standalone server version was
+> written and then deleted: the managed Connections tab has no Ollama URL
+> field to point at it, so it could not be verified, and shipping
+> unverified test infrastructure is the same defect this whole section is
+> about.
+>
+> One real trap found on the way: `agent.tools` holds coarse capability
+> tags (`vault`, `web`), not tool names. Seeding an agent with
+> `["FILE_READ", "DIR_LIST", ...]` grants nothing, and the failure is
+> silent — the coworker emits the marker, the office renders it as plain
+> text, and no tool runs.
+>
+> Pinned in `scripts/test_failed_tools_arent_wins.py` (call sites, plus an
+> assertion that neither `start` branch may call `logActivity` at all) and
+> `scripts/test_floor.py` (seven behavioural cases on `toolActivity`).
+> Fire-tested nine ways. Full suite green (64 files).

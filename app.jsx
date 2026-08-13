@@ -12,7 +12,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { attachVisit, floorEmit, officeCause, snagCause, snagSentence, visitLine, visitPlace } from './app/floor.jsx';
+import { attachVisit, floorEmit, officeCause, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -1989,7 +1989,11 @@ ${d.text}` : d.text,
             // Tools that wrote/touched a vault note: attach as message
             // artifact so the inbox can show "Selvin: completed → wrote
             // foo.md" without scrolling chat.
-            if (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND') {
+            /* Only if it actually wrote. An artifact is a claim about a file
+               on disk, and the inbox shows it as the DELIVERABLE — a failed
+               write filed here reads as a finished note the user can go
+               open, and there is nothing to open. */
+            if (!ev.failed && (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND')) {
               MessageRegistry.attachArtifact(messageId, {
                 path: String(ev.arg || ''), kind: ev.name === 'VAULT_NEW' ? 'wrote' : 'appended',
               });
@@ -3199,7 +3203,6 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(a.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
-            logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'tool', text: (visitLine(ev.name, ev.arg, 'past', 40) || visitPlace(ev.name, 'past')).toLowerCase() });
             pulseGraph(ev, a);
           } else if (ev.phase === 'done') {
             /* `agentId` here is the CHAT MESSAGE id (see HQ.uid('m') above and
@@ -3211,6 +3214,15 @@ ${d.text}` : d.text,
                onTool callback and no visit block was ever attached here.
                Found by eslint no-undef, not by looking. */
             attachVisit(setChat, agentId, ev);
+            /* Filed on `done`, not `start`. This line went into the activity
+               feed the instant the call was ISSUED, already in the past tense
+               — "saved report.md" before anything had been saved, and no
+               correction if the save then failed. A feed is a record of what
+               happened; it cannot be written before the outcome exists. The
+               live "what are they doing right now" signal is the agent's
+               `task` field set above, which is where the present tense
+               belongs. */
+            logActivity(toolActivity(a, ev));
             onUpdateAgent(a.id, { task: 'reading results…' });
             pulseGraph(ev, a);
             recordToolReceipt(a, ev);
@@ -3704,7 +3716,6 @@ ${d.text}` : d.text,
           if (ev.phase === 'dm') { dmQueue.push({ to: ev.arg, body: ev.body }); return; }
           if (ev.phase === 'start') {
             onUpdateAgent(agent.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
-            logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'tool', taskId, text: (visitLine(ev.name, ev.arg, 'past', 40) || visitPlace(ev.name, 'past')).toLowerCase() });
             pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
             toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
@@ -3712,6 +3723,10 @@ ${d.text}` : d.text,
                no longer text in the bubble, so nothing the coworker types
                can look like the office reporting a trip it never made. */
             attachVisit(setChat, agentMsgId, ev);
+            // Same move as the delegate path: filed on `done`, tense from
+            // the outcome. `taskId` still rides along so the task card can
+            // show the trips that were made for it.
+            logActivity(toolActivity(agent, ev, { taskId }));
             onUpdateAgent(agent.id, { task: 'reading results…' });
             pulseGraph(ev, agent);
             recordToolReceipt(agent, ev);

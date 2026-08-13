@@ -244,6 +244,26 @@ R.vReads  = ['VAULT_READ','FILE_READ','MEMORY_READ','DIR_LIST']
 R.vMade   = visitLine('EXPORT_PPTX', 'deck.pptx', 'past');
 R.vPub    = visitLine('PUBLISH_SITE', 'site/', 'past');
 R.vSearchTool = visitLine('VAULT_SEARCH', 'gold', 'past');
+
+/* toolActivity — the line filed into the activity feed. Both call sites in
+   app.jsx used to build this by hand, on the `start` phase, in the PAST
+   tense: the feed said "saved report.md" before the save was attempted and
+   never went back to correct it when the save failed. */
+const AG = { id: 'a1', name: 'Nova', color: '#8ab' };
+/* JSON.stringify DROPS undefined values, so a dropped field would reach the
+   python side as a missing key and blow up with a KeyError instead of the
+   assertion's own explanation. Pin every field to null so a regression reads
+   as the failure it is. */
+const keep = o => ({ agentId: o.agentId ?? null, agentName: o.agentName ?? null,
+                     color: o.color ?? null, action: o.action ?? null,
+                     text: o.text ?? null, taskId: o.taskId ?? null });
+R.actOk    = keep(toolActivity(AG, { name: 'VAULT_NEW', arg: 'report.md', failed: false }));
+R.actFail  = keep(toolActivity(AG, { name: 'VAULT_NEW', arg: 'report.md', failed: true }));
+R.actNoFlag= keep(toolActivity(AG, { name: 'DIR_LIST', arg: './site' })).text;
+R.actNoArg = keep(toolActivity(AG, { name: 'MEMORY_LIST', arg: '', failed: true })).text;
+R.actExtra = keep(toolActivity(AG, { name: 'FILE_WRITE', arg: 'x.md' }, { taskId: 't9' })).taskId;
+R.actNoAgent = (() => { try { return toolActivity(null, { name: 'DIR_LIST', arg: 'x' }).text; }
+                        catch (e) { return 'THREW: ' + e.message; } })();
 console.log(JSON.stringify(R));
 ''')
 
@@ -461,6 +481,26 @@ console.log(JSON.stringify(R));
     check('an export is something they made', out['vMade'] == 'Made deck.pptx', out['vMade'])
     check('a publish says published', out['vPub'] == 'Published site/', out['vPub'])
     check('a vault search still looks it up', out['vSearchTool'] == 'Looked up gold', out['vSearchTool'])
+
+    # toolActivity — the activity feed is a RECORD, so it reads in the past
+    # tense; that is exactly why it may only be written once the outcome is
+    # known. These pin the tense to the outcome and nothing else.
+    check('a filed tool line carries the coworker and the tool action',
+          out['actOk']['agentId'] == 'a1' and out['actOk']['agentName'] == 'Nova'
+          and out['actOk']['color'] == '#8ab' and out['actOk']['action'] == 'tool',
+          str(out['actOk']))
+    check('a write that landed is filed as saved',
+          out['actOk']['text'] == 'saved report.md', str(out['actOk']))
+    check('a write that failed is NOT filed as saved',
+          out['actFail']['text'] == "couldn't save report.md", str(out['actFail']))
+    check('an event with no failed flag is treated as success',
+          out['actNoFlag'] == 'opened ./site', str(out['actNoFlag']))
+    check('a failed argument-less tool does not borrow the placard',
+          out['actNoArg'] == "couldn't do that", str(out['actNoArg']))
+    check('extra fields (taskId) ride along so the task card can show the trip',
+          out['actExtra'] == 't9', str(out['actExtra']))
+    check('a missing agent does not throw inside the stream callback',
+          not str(out['actNoAgent']).startswith('THREW'), str(out['actNoAgent']))
 
     print()
     if FAILS:

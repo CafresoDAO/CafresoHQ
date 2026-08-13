@@ -298,7 +298,12 @@ async function runMissionIteration(ctx) {
              (b) grew the persisted blob by one record per read for the whole
              mission — hours of iterations bloated every localStorage +
              server PUT. */
-          if (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND') {
+          /* And only writes that LANDED. A vault write can come back with
+             an explanation instead of a file (see serve.py's soft
+             failures); counting those inflates the "N notes" the mission
+             card and the calendar both report as the night's output, and
+             files a path the user can go looking for and not find. */
+          if (!ev.failed && (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND')) {
             writesThisIter.push({ name: ev.name, path: String(ev.arg || '').trim(), at: Date.now() });
           }
           pulseGraph && pulseGraph(ev);

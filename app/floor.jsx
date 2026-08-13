@@ -455,4 +455,22 @@ function floorOn(kind, handler) {
   return () => window.removeEventListener(name, handler);
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagSentence, stripOfficeVoice, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+/* One shape for a tool line filed into the activity feed, so the call sites
+   can't drift on tense the way they did — both wrote the PAST tense from the
+   `start` phase, which put "saved report.md" in the feed before the save had
+   been attempted, and left it there unchanged when the save failed.
+
+   Call this on `done` only: the tense is chosen from the outcome, and the
+   outcome does not exist yet at `start`. */
+function toolActivity(agent, ev, extra) {
+  const tense = ev && ev.failed ? 'fail' : 'past';
+  const line = visitLine(ev.name, ev.arg, tense, 40) || visitPlace(ev.name, tense);
+  return {
+    agentId: agent && agent.id, agentName: agent && agent.name,
+    color: agent && agent.color, action: 'tool',
+    text: String(line || '').toLowerCase(),
+    ...(extra || {}),
+  };
+}
+
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

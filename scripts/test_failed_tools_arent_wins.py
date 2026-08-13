@@ -178,6 +178,45 @@ check(
     "\"wrote index.html\" claims the folder changed, and the tree pulse and "
     "follow-along that follow would chase a file that was never written.",
 )
+check(
+    re.search(r'if \(!ev\.failed && \(ev\.name === .VAULT_NEW. \|\| ev\.name === .VAULT_APPEND.\)\)', app),
+    "the inbox artifact must skip failed writes — an artifact is a claim "
+    "about a file on disk, shown as the message's DELIVERABLE, so a failed "
+    "write filed here reads as a finished note the user can go open.",
+)
+missions = read('missions.jsx')
+check(
+    re.search(r'if \(!ev\.failed && \(ev\.name === .VAULT_NEW. \|\| ev\.name === .VAULT_APPEND.\)\)', missions),
+    "a mission must not count a failed write in notesWritten — that number "
+    "is what the mission card and the calendar both report as the night's "
+    "output, and each entry is a path the user can go looking for.",
+)
+
+# ── 5b. and the activity feed must not be written before the outcome ────────
+# This one is not a missing guard; it is a tense error. Both call sites filed
+# the PAST tense from the `start` phase — "saved report.md" before the save
+# was attempted, with no correction when it failed.
+starts = re.findall(r"if \(ev\.phase === 'start'\) \{(.*?)\n\s*\} else if", app, re.S)
+check(len(starts) >= 2, f"expected both tool-stream start branches in app.jsx; found {len(starts)}.")
+for i, body in enumerate(starts):
+    check(
+        'logActivity' not in body,
+        "a tool's activity line must NOT be filed on the `start` phase "
+        f"(branch {i + 1}): the feed is a record, and at `start` the outcome "
+        "it records does not exist yet. The live 'what are they doing right "
+        "now' signal is the agent's `task` field, which is set here already.",
+    )
+check(
+    app.count('logActivity(toolActivity(') == 2,
+    "BOTH tool streams must file their activity line through toolActivity on "
+    f"`done`; found {app.count('logActivity(toolActivity(')}. Hand-built "
+    "objects at each site are how the two drifted into the same tense bug.",
+)
+check(
+    'logActivity(toolActivity(agent, ev, { taskId }))' in app,
+    "the task-stream line must keep riding `taskId` so the task card can "
+    "still show the trips made for it.",
+)
 
 # ── 6. and it has to look like a failure ────────────────────────────────────
 chat = read('ui/chat.jsx')
