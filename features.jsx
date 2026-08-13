@@ -1066,16 +1066,44 @@ function MorningReportModal({ report, onClose, onGoToOffice }) {
             {' '}{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0)} note{report.nightRuns.reduce((n, r) => n + (r.writes || []).length, 0) === 1 ? '' : 's'} written to the vault.
           </div>
           {report.nightRuns.slice(0, 5).map(r => (
-            <div key={r.id} className="tiny" style={{ marginTop: 3 }}>
-              {r.lastError ? '⚠' : '✓'} <b>{r.agentName || r.agentId}</b> · {String(r.topic || '').slice(0, 50)} ·
-              {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} notes
-              {/* 90, not 60: snagCause/officeCause cap their own sentences at
-                  90 (with an ellipsis), so a 60-char slice here truncated the
-                  office's OWN honest sentences mid-clause — "that brain isn't
-                  signed in yet — add it in Settings, or give" loses the route
-                  out, which is the half §7 exists for. A display cap below the
-                  producer's cap is a silent editor. */}
-              {r.summary ? ` — ${String(r.summary).slice(0, 80)}` : r.lastError ? ` — ${String(r.lastError).slice(0, 90)}` : ''}
+            <div key={r.id} style={{ marginTop: 3 }}>
+              <div className="tiny">
+                {r.lastError ? '⚠' : '✓'} <b>{r.agentName || r.agentId}</b> · {String(r.topic || '').slice(0, 50)} ·
+                {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} notes
+                {/* 90, not 60: snagCause/officeCause cap their own sentences at
+                    90 (with an ellipsis), so a 60-char slice here truncated the
+                    office's OWN honest sentences mid-clause — "that brain isn't
+                    signed in yet — add it in Settings, or give" loses the route
+                    out, which is the half §7 exists for. A display cap below the
+                    producer's cap is a silent editor. */}
+                {/* The error goes FIRST, and it is no longer an else-branch of
+                    the summary. `run_mission` only refreshes `summary` on a
+                    clean round, so a night that worked for five rounds and
+                    fabricated on the sixth carries BOTH — and this line used
+                    to print the good round's sentence and drop the office's
+                    correction entirely. Measured on a seeded run: the boss
+                    read "Wrote 1. Next iteration could explore refinery
+                    margins…" while `lastError` said "said it saved a note, but
+                    nothing reached the vault". One ⚠ was the only difference
+                    between that row and the row below it, which was real.
+                    The two sibling surfaces that show the same runs — the
+                    Night Shift panel and the terminal's `night` listing —
+                    have always rendered lastError unconditionally. The
+                    Gazette was the one that suppressed it, on the one screen
+                    that exists BECAUSE nobody was watching. */}
+                {r.lastError ? ` — ${String(r.lastError).slice(0, 90)}`
+                  : r.summary ? ` — ${String(r.summary).slice(0, 80)}` : ''}
+              </div>
+              {/* …and the summary is not thrown away, it is ATTRIBUTED. On the
+                  fabrication case the summary IS the false claim, so printing
+                  it unlabelled beside the correction just restages the
+                  argument. "said" — not "wrote" — because the sentence above
+                  it is the office saying nothing was written. */}
+              {r.lastError && r.summary && (
+                <div className="tiny" style={{ marginLeft: 12, opacity: 0.75 }}>
+                  {`${r.agentName || r.agentId} said: "${String(r.summary).slice(0, 80)}"`}
+                </div>
+              )}
             </div>
           ))}
         </div>

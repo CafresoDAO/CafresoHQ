@@ -601,7 +601,15 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
     error_streak = 0
     while int(time.time() * 1000) < deadline:
         if should_abort and should_abort():
-            run['lastError'] = 'aborted'
+            # This word reaches the boss. `should_abort` is only ever true
+            # because the boss deleted the schedule (serve.py's
+            # _missions_delete is the sole writer of _night_abort), so the
+            # honest sentence names them as the cause and says what it cost
+            # -- and 'aborted' is a wire word, which §6 bans on a human
+            # surface. Nothing reads this field as a sentinel; all three
+            # surfaces that show it print it as prose. It was easy to miss
+            # because the Gazette used to bury it behind `summary`.
+            run['lastError'] = 'you stopped this one — the rest of the night did not run'
             break
         res = run_iteration(ctx, sched, run['iterations'], total_iters)
         run['iterations'] += 1

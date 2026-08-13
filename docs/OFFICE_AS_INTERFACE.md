@@ -6238,3 +6238,81 @@ that matters most is the cheap one: no dispatch path may call `HQ.<guard>(`
 directly. That is the check that would have caught the original drift,
 which was silent precisely because each of the three copies looked
 complete on its own.
+
+### The office wrote the correction, then filed it where nobody would read it
+
+`night_runner` catches a specific lie. The night-shift prompt asks for a
+closing status line, so a model that skips the `VAULT_NEW` call but still
+writes "Wrote 1." has produced a sentence with nothing behind it. The
+runner detects exactly that and sets
+
+    lastError = 'said it saved a note, but nothing reached the vault'
+
+There is a whole test devoted to that sentence —
+`test_gazette_error_copy.py` — because an earlier version leaked wire
+tokens and got truncated mid-clause on the morning report. Its docstring
+says the words "land verbatim in the morning Gazette".
+
+They did not. On the common path they were never rendered at all.
+
+`run_mission` refreshes `summary` only on a round with NO error, so a
+night that worked for five rounds and fabricated on the sixth carries both
+fields — a good sentence describing round five, and a correction about
+round six. The Gazette's line read
+
+    r.summary ? summary : r.lastError ? lastError : ''
+
+The correction was the **else-branch of the coworker's own sentence**. It
+appeared only on runs where nothing had ever worked. Measured on a seeded
+office, two adjacent rows as the boss read them:
+
+    ⚠ NOVA · GOLD MARKET WATCH · 6 ROUNDS · 1 NOTES — WROTE 1. NEXT
+      ITERATION COULD EXPLORE REFINERY MARGINS AND THE LBMA FIX.
+    ✓ NOVA · SHIPPING RATES · 3 ROUNDS · 1 NOTES — WROTE 1. RATES STEADY
+      WEEK OVER WEEK.
+
+One of those runs was caught fabricating. The other was real. A single ⚠
+was the entire difference, and the sentence the boss actually read on the
+caught one was the fabrication itself.
+
+The two sibling surfaces showing the same run records — the Night Shift
+panel in `missions.jsx` and the terminal's `night` listing — have always
+printed `lastError` unconditionally. The Gazette was the one that made it
+conditional, on the one screen that exists **because** nobody was watching.
+
+The fix puts the office's sentence first and keeps the coworker's,
+attributed:
+
+    ⚠ NOVA · GOLD MARKET WATCH · 6 ROUNDS · 1 NOTES — SAID IT SAVED A NOTE,
+      BUT NOTHING REACHED THE VAULT
+      NOVA SAID: "WROTE 1. NEXT ITERATION COULD EXPLORE REFINERY MARGINS…"
+
+Dropping the summary would have been the lazy fix and would lose real
+information about the rounds that did work. Printing it unlabelled beside
+the correction is what caused this. "said", not "wrote" — the line above
+it is the office saying nothing was written.
+
+**What landing it exposed.** A boss-stopped night set `lastError` to
+`'aborted'`, which §6 bans on a human surface — and which the summary had
+been hiding on the Gazette while showing it plainly on the other two
+surfaces all along. It now reads "you stopped this one — the rest of the
+night did not run": boss-caused, and it says what it cost rather than only
+that it stopped. Safe to reword because nothing branches on it, which the
+test now pins — comparisons only, not the assignment, because a check that
+cannot tell "sets it" from "branches on it" reports the wrong sin.
+
+Pinned in `scripts/test_gazette_prints_the_correction.py`. The status
+clause is lifted verbatim out of `features.jsx` and actually run against
+four fixture runs, so the failure quotes what the boss would see rather
+than complaining that a regex moved — and the extraction deliberately
+matches either field first, so reordering the branches fails the
+behavioural check instead of the shape one. The cross-surface invariant is
+checked on all three surfaces at once, since the defect was one of three
+disagreeing.
+
+**The general shape, worth naming.** Both of the last two entries are the
+same failure: honest text was produced and then not shown. Not a missing
+guard — a guard whose output had nowhere to land. Writing the sentence is
+the easy half; the hard half is that every surface which can speak about a
+run has to be checked for whether it can speak about a run that went
+wrong.
