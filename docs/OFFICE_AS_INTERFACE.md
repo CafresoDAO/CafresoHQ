@@ -437,6 +437,30 @@ It is a **status summary, not a spec**; the sections below remain the spec.
   > aimed at an 8B model's tool-calling ceiling needs testing against that
   > same ceiling to know if it worked, and guessing at wording under a time
   > budget is how the original claim came to be unverifiable.
+  >
+  > **The "could not be located" half is resolved — 2026-08-12, later the
+  > same day.** The phrase-level search above only covered `hq-runtime.jsx`,
+  > and the fix does not live there — it lives in `app.jsx`'s
+  > `dispatchToAgent` (~line 1822), the SHARED prompt-builder every dispatch
+  > path calls (ten call sites: DM chains, task-board triggers, mission and
+  > workflow dispatch, the boss's own chat send). The exact clause is
+  > present verbatim: *"or [DM_TO: <coworker>] if it's outside your
+  > skillset. And when the boss NAMES a coworker — 'ask Nano …' — that IS a
+  > [DM_TO: Nano], even if you know the answer yourself: the boss chose who
+  > answers, and only a [DM_TO] actually reaches them."* It is not a chat
+  > transcript that failed to land in a file, and it is not scoped to the
+  > chat surface — it is real, committed, and reachable from every dispatch
+  > path in the app, exactly the property the earlier note asked someone to
+  > confirm.
+  >
+  > That leaves the ORIGINAL open half exactly where it was, now correctly
+  > separated from a search-tooling gap rather than a landing gap: the
+  > wording is live, is well-targeted (it names the precise failure mode —
+  > a boss naming a coworker for in-skillset work), and an 8B model asking
+  > AND answering with itself still produced 0/3 real delegations against
+  > it. This is a capability ceiling, not a missing fix — recorded in Known
+  > open below rather than re-attempted as a prompt tweak with no stronger
+  > local model on this machine to verify a tweak against.
 | the calendar runs on the boss's clock, 2026-08-07 | "YOUR BUSINESS BY DAY · TASKS WHEN RAISED · MISSIONS WHEN THEY WRAP" — and the first half is exact: a task listed at 8:42 AM has `createdAt` = 08:42 local, where UTC would have read 12:42 PM, the same off-by-a-timezone that once dated a delivery tomorrow. Day grouping is local too, and the "Today 4" header matches its four rows. ~~The missions half is unverified — no mission has run in this office~~ **→ driven 2026-08-12, and it failed** (see below) |
 | **the missions half, driven at last — 2026-08-12** | the bullet above sat unverified for five days because verifying it meant running a mission; when one finally ran, the promise did not hold. The filter was `status !== 'running' → skip`, so the view showed the one thing that had NOT happened (a projected wrap) and dropped the thing that had. A run that finished left **no trace on the day it finished**, in the view whose title is "your business by day". Underneath was a data gap: **no terminal transition recorded a time** — eight of them across two files, and the eighth (`onStopAll`) was found only by driving, after I had enumerated six by reading and been sure. Driven on a throwaway office with a real 15-minute mission on Llama: running row filed at **2:32 PM "wraps up" · RUNNING** (the projected wrap, correct as a forecast) → reload → **2:18 PM "stopped" · STOPPED**, where 2:18 is `lastIterationAt`, not the 2:20 reload and not the 2:32 forecast. Before the fix that reload made the row vanish outright. Two more things surfaced on the way: `.cal-mission`'s left border explicitly means "this points FORWARD" and had no exception for a finished run, and `.status-pill` is scoped to `.agent-card`, so the calendar's RUNNING tag had been rendering as **bare unstyled text** the whole time — which matters now that the pill is what separates a forecast from an outcome, and a failed outcome from a good one. `scripts/test_calendar_missions.py` |
 | what each run is HANDED — audited, 2026-08-07 | third use of the entry-point census, this time on context rather than cleaning: of six `agentStream` callers only the two conversational ones should carry chat history, and only the TASK path wrongly did (fixed — it produced a delivery about the wrong subject). Missions pass `onUsage`/`onTool` and run on their own prompt; the meeting turn carries the transcript it needs; the stand-up passes `signal` and `maxTokens` and nothing else. One defect, five confirmed clean |
@@ -1942,6 +1966,21 @@ should extend that boundary, not blur it.
   on the prompt (tried once already, recorded null result), or to make
   the boss's routes so prominent that coworker-initiated handoff is a
   bonus rather than the path.
+
+  > **Updated reliability data point — 2026-08-12** (full account earlier
+  > in this file, under "coworkers actually work together"). "Lean harder
+  > on the prompt" was not a null result after all — it landed, in
+  > `app.jsx`'s `dispatchToAgent`, reachable from every dispatch path, and
+  > names the exact failure shape ("when the boss NAMES a coworker...
+  > that IS a [DM_TO]"). An earlier note worried the fix might have only
+  > ever existed in a chat transcript; it did not — it is real, committed
+  > code. With the wording confirmed live, the SAME probe against this
+  > machine's only free brain (`ollama:llama3.1`, asking and answering
+  > with itself, three attempts, three different phrasings including
+  > naming the tool outright) still produced **0/3** real delegations.
+  > The prompt-wording lever has now been pulled and independently
+  > verified reachable; what remains is a genuine 8B-class tool-calling
+  > ceiling, not an unlanded or unverifiable fix.
 
 - **Hermes is still the default provider in code, and the picker says so.**
   North-star §3.1 forbids special treatment "not in code, not in copy, not
