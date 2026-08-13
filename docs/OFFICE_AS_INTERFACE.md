@@ -6377,3 +6377,67 @@ leaving a `pauseNote` behind is invisible if the fixture never had one. The
 check named for the live symptom was not testing the live symptom. Caught
 by fire-testing every arm separately rather than reverting everything at
 once and being satisfied that something went red.
+
+### The coworker said it was stuck, and the office wrote it in a drawer
+
+Three domain fields on a task record had writers and no readers:
+`blockedReason`, `blockedAt`, `progressLog`. All three are written by the
+handlers for `[TASK_BLOCKED: id: reason]` and `[TASK_PROGRESS: id: note]` —
+two of the three channels a coworker has for reporting on a job in flight.
+Nothing in the product read any of them back.
+
+What that looked like on the floor: a coworker hits a locked spreadsheet,
+says so, and the office raises a toast that is gone in about four seconds.
+The card stays in DOING, pixel-identical to a job somebody is actively
+working. If the boss was in another room when the toast fired, the report
+never happened as far as they can tell.
+
+Worse than looking neutral. `worklogLine` answers "is anyone on this?" from
+`agent.status` — which is a fact about the COWORKER, not about the job (§4
+is explicit that it is the only authority for the first question, and it
+was being asked the second). So the moment that coworker was dispatched
+anywhere else, the blocked card read
+
+    ⚡ on it · 45m
+
+over a job they had explicitly given up on. A missing answer had become a
+wrong one, which is the §7 failure and not merely a gap.
+
+The fix is three lines of reading, and a lifecycle for the field so it
+does not outlive its truth. `worklogLine` gets a blocked branch ranked
+above both others — "hit a snag", the one place that word is earned,
+because §5 reserves it for a coworker who tried. The reason itself renders
+under the card, next to `stalledNote`, which is the surface the boss
+already reads for "why is this not moving". And the block is cleared on all
+three ways off it: a progress note, a completion, and the boss pressing
+START.
+
+The gate on the reason line is `!== 'done'`, not `=== 'doing'`, and that
+correction came from the reload scrub rather than from taste. `tasksOnLoad`
+sends every DOING task back to `inbox` and does *not* clear
+`blockedReason` — so a doing-only gate would have hidden a still-true
+reason the instant the boss refreshed, leaving "start it again" as the only
+advice for a job about to hit the same locked spreadsheet. The scrub's
+behaviour is now pinned as the premise of that gate, so if it ever starts
+clearing the field the test says the gate can narrow again.
+
+Pinned in `scripts/test_a_blocked_card_says_so.py`. The update handler is
+brace-matched whole out of `app.jsx` and run against a real fixture, so the
+three clear-sites are measured by the task that comes out rather than by
+regexes near a keyword. Six arms, each reverted separately.
+
+**What was measured live, and what was not.** The reason line was watched
+render in a throwaway office: a blocked card, a control, and a done card
+carrying a stale reason, showing ✋ on exactly the first; then START, which
+cleared the field and the card returned to `⚡ on it`. The `hit a snag`
+branch of `worklogLine` was *not* observed on a live floor, and could not
+be — it only speaks for DOING, and the reload scrub empties DOING before
+the page finishes loading, so reaching it live needs a coworker mid-run
+and a model to run them. It is covered against the real source in the node
+harness instead. Saying which half is which is cheaper than implying both.
+
+**`progressLog` is still write-only, and that is a decision.** A coworker's
+progress notes reach a toast and a ten-entry array nobody opens. That is a
+missing feature — a card with no history is not lying about anything — and
+it was scoped out rather than bolted onto a defect fix. It is the last of
+the three write-only fields and it should get a real surface, not a line.

@@ -179,11 +179,36 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                     {(() => {
                       const line = worklogLine(t, a);
                       if (!line) return null;
-                      const idle = line.indexOf('nobody') === 0;
-                      return <div className={'tc-worklog' + (idle ? ' is-idle' : '')}>
-                        {idle ? '⏸' : '⚡'} {line}
+                      /* Three states now, not two. `is-idle` is reused for a
+                         blocked card because it IS not progressing and the
+                         muted treatment is right; the glyph and the reason
+                         line below carry what is different about it. */
+                      const blocked = !!t.blockedReason && t.status === 'doing';
+                      const idle = !blocked && line.indexOf('nobody') === 0;
+                      return <div className={'tc-worklog' + (blocked || idle ? ' is-idle' : '')}>
+                        {blocked ? '✋' : idle ? '⏸' : '⚡'} {line}
                       </div>;
                     })()}
+                    {/* The reason the coworker gave, which until now existed
+                        only on the record and in a toast that was gone in
+                        seconds. Same treatment as `stalledNote` above: the
+                        card is the surface that does not scroll away.
+
+                        `!== 'done'`, the same gate `stalledNote` uses, and
+                        deliberately not `=== 'doing'`. The reload scrub sends
+                        every `doing` task back to `inbox` without touching
+                        this field, so a doing-only gate would have hidden a
+                        password-protected spreadsheet the moment the boss
+                        refreshed — and "start it again" is bad advice for a
+                        job that will hit the same wall. Nothing goes stale
+                        by staying: the three paths that move a task on from
+                        a block — a progress note, a completion, a fresh
+                        START — all clear it. */}
+                    {t.blockedReason && t.status !== 'done' && (
+                      <div className="tc-stalled" title="What the coworker said they were stuck on">
+                        ✋ {String(t.blockedReason).slice(0, 140)}
+                      </div>
+                    )}
                     {/* → CHAT drafts the task as an @mention in the DIRECT
                         thread; 📋 ROOM opens the meeting-create modal
                         pre-populated. Neither starts work — they hand the

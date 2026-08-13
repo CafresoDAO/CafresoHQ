@@ -94,6 +94,11 @@ R.lineNoStamp = worklogLine({ status: 'doing' }, { status: 'idle' }, T0);
 R.lineInbox   = worklogLine({ status: 'inbox', startedAt: T0 }, null, T0);
 R.lineDone    = worklogLine({ status: 'done' }, { status: 'idle' }, T0);
 R.lineNoStuck = /stuck|fail|error/i.test([R.lineOnIt, R.lineNobody, R.lineNoOwner, R.lineNoStamp].join(' '));
+// A coworker who reported a block outranks both other answers: `agent.status`
+// is about the COWORKER, so a blocked card whose owner had moved on read
+// "on it · 2h" over a job that had been given up on.
+R.lineBlockedBusy = worklogLine({ status: 'doing', startedAt: T0, blockedReason: 'the sheet is locked' }, { status: 'active' }, T0 + 2 * HOUR);
+R.lineBlockedIdle = worklogLine({ status: 'doing', startedAt: T0, blockedReason: 'the sheet is locked' }, { status: 'idle' }, T0 + 2 * HOUR);
 console.log(JSON.stringify(R));
 ''')
 
@@ -145,6 +150,11 @@ console.log(JSON.stringify(R));
     check('a done task gets no line', out['lineDone'] is None)
     check('a job nobody picked up is never called stuck or failed (§5)',
           out['lineNoStuck'] is False)
+    check('a coworker\'s block outranks a busy owner',
+          out['lineBlockedBusy'] == 'hit a snag · 2h', str(out['lineBlockedBusy']))
+    check('...and reads the same whatever the owner is doing',
+          out['lineBlockedIdle'] == out['lineBlockedBusy'],
+          str(out['lineBlockedIdle']))
 
     print()
     if FAILS:

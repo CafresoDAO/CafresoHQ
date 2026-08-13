@@ -2212,10 +2212,17 @@ ${d.text}` : d.text,
         setTasks(prev => prev.map(t => {
           const upd = taskUpdates.find(u => u.id === t.id);
           if (!upd) return t;
+          /* `blockedReason` is cleared on both of the other two updates. It
+             is now rendered on the card, and a field that is rendered needs
+             a lifecycle: a coworker who reports progress on a task, or
+             finishes it, has moved past whatever they were stuck on, and
+             leaving the old reason there would put "waiting on the API key"
+             under a job that is done. */
           if (upd.action === 'done') {
             if (toast) toast.success(`✓ ${agent.name} completed "${t.title.slice(0, 36)}"`);
             return { ...applyStatus(t, 'done'),
                      result: upd.result || t.result || '',
+                     blockedReason: '', blockedAt: null,
                      completedAt: Date.now(),
                      completedBy: agent.id };
           }
@@ -2228,7 +2235,9 @@ ${d.text}` : d.text,
           if (upd.action === 'progress') {
             if (toast) toast.info(`${agent.name}: ${upd.note || '(progress note)'}`);
             const log = (t.progressLog || []).concat([{ at: Date.now(), by: agent.id, note: upd.note || '' }]);
-            return { ...applyStatus(t, t.status === 'inbox' ? 'doing' : t.status), progressLog: log.slice(-10) };
+            return { ...applyStatus(t, t.status === 'inbox' ? 'doing' : t.status),
+                     blockedReason: '', blockedAt: null,
+                     progressLog: log.slice(-10) };
           }
           return t;
         }));
@@ -3828,9 +3837,12 @@ ${d.text}` : d.text,
     }
 
     /* Starting clears the note: it explains why a card is sitting in the
-       inbox, so it must not outlive the sitting. */
+       inbox, so it must not outlive the sitting. `blockedReason` goes with
+       it for the same reason — a fresh run is not still stuck on what the
+       last one was stuck on, and the card now shows that reason. */
     setTasks(prev => prev.map(t => t.id === taskId
-      ? { ...applyStatus(t, 'doing'), assignedTo: agent.id, stalledNote: null }
+      ? { ...applyStatus(t, 'doing'), assignedTo: agent.id, stalledNote: null,
+          blockedReason: '', blockedAt: null }
       : t));
     onUpdateAgent(agent.id, { status: 'busy', mood: 'thinking', task: task.title.toLowerCase() });
     logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'assigned', taskId, text: `picked up "${task.title}" 📁` });

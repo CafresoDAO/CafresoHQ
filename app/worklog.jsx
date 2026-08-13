@@ -84,9 +84,24 @@ function durationLabel(ms) {
    from the boss: someone IS on it (wait), or nobody is (start it, or close
    it). It never says "stuck" — that word belongs to a coworker who tried
    and snagged (§5), and a job nobody picked up has not failed at anything. */
+/* The blocked branch comes FIRST, and it is the one case where this line is
+   allowed the word the comment above reserves.
+
+   A coworker can say `[TASK_BLOCKED: id: reason]` mid-run. The office stored
+   the reason on the task and showed it in a toast, and the toast is gone in
+   seconds — after which the card sat in DOING looking exactly like a job in
+   flight. Worse than looking neutral: `agent.status` is about the COWORKER,
+   not the task, so the moment that coworker was dispatched to anything else
+   this line read "on it · 12m" over a job they had explicitly given up on.
+   A missing answer became a wrong one.
+
+   "hit a snag" and not "nobody's on this", because the two need different
+   moves from the boss. Nobody-on-this means start it or close it. This means
+   somebody tried, and there is a reason underneath worth reading. */
 function worklogLine(task, owner, now) {
   if (!task || task.status !== 'doing') return null;
   const age = durationLabel(sittingFor(task, now));
+  if (task.blockedReason) return age ? `hit a snag · ${age}` : 'hit a snag';
   if (!isStalled(task, owner)) return age ? `on it · ${age}` : 'on it';
   return age ? `nobody's on this · ${age}` : "nobody's on this";
 }
