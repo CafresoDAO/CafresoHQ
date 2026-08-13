@@ -1430,8 +1430,15 @@ body.theme-wallstreet .ticker .badge {
 body.theme-wallstreet .ticker-track .line .kw {
   color: #ffd700;
 }
+/* #00e0a060 (37.6% alpha) measured at 2.42:1 against this theme's own
+   --office-ticker-bg (#0a0a1a) — well under WCAG AA's 4.5:1, and worse
+   than the failure the base `.ticker-track .line .sep` rule above was
+   already fixed for (3.38:1 → 5.48:1, see that rule's comment). Same
+   green hue, alpha raised to land at the same target ratio the base fix
+   already established (5.51:1 here) rather than picking a number that
+   "looked about right" a second time. */
 body.theme-wallstreet .ticker-track .line .sep {
-  color: #00e0a060;
+  color: #00e0a0ac;
 }
 /* Market quotes (Trading Floor theme feeds live Coinbase prices into the ticker) */
 .ticker-track .line .mkt-up   { color: var(--ok, #1f8a4c); }

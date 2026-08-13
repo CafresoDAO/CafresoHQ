@@ -1302,6 +1302,42 @@ still gates on both `gsDismissed`/`gsCollapsed`), fire-tested by
 reverting to the old `isNarrowViewport`-gated condition — failed for
 exactly the expected reason.
 
+### Trading Floor theme's ticker separator failed WCAG AA contrast — 2026-08-13
+
+Another previously-flagged, not-yet-verified claim: "Trading Floor theme
+ticker separator contrast." The base `.ticker-track .line .sep` rule
+already carries an extensive comment documenting a real accessibility fix
+— measured at 3.38:1 against the ticker's dark background, raised to
+5.48:1 — but the `theme-wallstreet` override of that same selector
+(`#00e0a0` at 37.6% alpha) was never put through the same analysis.
+
+Computed with the actual WCAG relative-luminance formula (not eyeballed —
+built a small node script, cross-checked it against the base rule's own
+cited 5.48:1 to confirm the math before trusting it on the new case):
+`#00e0a060` against this theme's `--office-ticker-bg` (`#0a0a1a`) measures
+**2.42:1** — below WCAG AA's 4.5:1 floor, and worse than the failure the
+base rule was already fixed for.
+
+Fix: same hue, alpha raised from `0x60` (37.6%) to `0xac` (67.5%) —
+`#00e0a0ac` — landing at 5.51:1, matching the base rule's own established
+5.48:1 target rather than picking a new number by eye. Full-opacity
+`#00e0a0` alone would hit 11.36:1, comfortably AA, but would make the
+separator brighter than the surrounding content, defeating the point of a
+separator (the base rule's own comment: "still reads as a separator
+instead of competing with the news").
+
+Verified live: switched to the Trading Floor theme in a throwaway office,
+read the separator's actual computed style — `rgba(0, 224, 160, 0.675)`
+(0xac/255) against a measured `rgb(10, 10, 26)` ticker background,
+matching the calculation exactly — and confirmed visually the ticker
+still reads cleanly (`SPX 7,700 ▲0.45 · GOLD 4,644 ▼0.32 ·`).
+
+Pinned by `scripts/test_ticker_wallstreet_contrast.py` — re-derives the
+contrast ratio from the live CSS values (not a hardcoded duplicate) using
+the same WCAG formula, so it tracks the real rule rather than a snapshot
+of it. Fire-tested by reverting to the original `#00e0a060` — failed with
+the exact measured 2.42:1, not just "does not pass."
+
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 
 EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /
