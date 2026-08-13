@@ -5050,3 +5050,36 @@ settings — never on the floor, the cards, or onboarding.
 > event twice is the marquee's two deliberate halves (`translate -50%`
 > loop, animation confirmed running at 60s on `.line`) — the duplication
 > is only visible to text extraction, not to a boss watching the strip.
+
+### 2026-08-13 — the button that promised a project and delivered a mode
+
+> Drove onboarding step 5 ("Create your first Project") live on the same
+> seeded office as the honesty-note drive, at desktop width. The
+> checklist's "New Project →" opens the Workspace window correctly, and
+> the empty state's copy is honest about what a project IS — but its
+> "Create your first project" button only did `flipMode('classic')`. The
+> boss clicked a button named after the thing they wanted and landed on
+> a SECOND empty state ("No projects yet. Click + ADD or drop a folder
+> here.") in a view named after the office's plumbing. The comment above
+> that button claimed it "does the thing it is named after" — a comment
+> describing an earlier rewrite that fixed the copy and kept the detour.
+>
+> Fix: WorkspaceView now owns an Add-Project dialog of its own — the
+> empty-state button opens it in place, and the committed project lands
+> selected in the same Workspace view (folder auto-created via the same
+> best-effort mkdir as Classic's commit). Watched live: name + path in,
+> one click, FILES pane open on the new empty folder, checklist step 5
+> checked, all six steps done, card celebrated and self-dismissed —
+> the full Getting Started funnel completed end-to-end for the first
+> time. Pinned in `scripts/test_new_project_creates_folder.py`, which
+> now also checks BOTH commitProject copies for the mkdir guarantee;
+> fire-tested both new checks (reverting the button failed the two
+> empty-state checks; deleting WorkspaceView's modal render failed the
+> render-site count).
+>
+> Also chased and CLEARED this drive: "New Project → does nothing" on a
+> physical click was the browser pane mis-scaling injected input after a
+> viewport resize (clicks landed at 2.3x the target coordinates,
+> off-screen) — instrumented the page's real event stream to prove the
+> button never received the click, and the app behaved correctly once
+> input landed where aimed.

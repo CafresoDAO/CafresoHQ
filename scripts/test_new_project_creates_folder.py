@@ -46,12 +46,22 @@ def check(cond, msg):
 
 src = PROJECTS.read_text()
 
-m = re.search(r'const commitProject = (async )?\(\{[^}]*\}\) => \{', src)
-check(m, "views/projects.jsx: could not find the `commitProject` function.")
-if m:
+# There are now TWO commitProject functions: ProjectsView's (Classic) and
+# WorkspaceView's (the workspace empty state commits without leaving the
+# view). Every copy must carry the mkdir guarantee — a regression in either
+# one re-opens the "Not a directory" dead end on that path.
+matches = list(re.finditer(r'const commitProject = (async )?\(\{[^}]*\}\) => \{', src))
+check(
+    len(matches) >= 2,
+    "views/projects.jsx: expected commitProject in BOTH WorkspaceView and "
+    f"ProjectsView (found {len(matches)}) — if one was consolidated into a "
+    "shared helper, update this test to point at the helper instead.",
+)
+for i, m in enumerate(matches):
+    who = f"commitProject #{i + 1}"
     check(
         m.group(1) == 'async ',
-        "commitProject must be `async` — it now awaits CafresoHQClient.fsMkdir "
+        f"{who} must be `async` — it awaits CafresoHQClient.fsMkdir "
         "before adding the project.",
     )
     tail = src[m.end():]
@@ -59,23 +69,51 @@ if m:
     body = tail[:end]
     check(
         "source === 'local'" in body,
-        "commitProject must gate the mkdir call on `source === 'local'` — "
+        f"{who} must gate the mkdir call on `source === 'local'` — "
         "GitHub-clone paths already exist (cloneRepo creates them), so this "
         "should only run for the local-folder tab.",
     )
     check(
         'fsMkdir' in body,
-        "commitProject must call CafresoHQClient.fsMkdir(path) — the same "
+        f"{who} must call CafresoHQClient.fsMkdir(path) — the same "
         "call the '+ Folder' button already made, now run automatically so "
         "a brand-new project path is guaranteed to exist before the Files "
         "pane ever tries to list it.",
     )
     check(
         re.search(r'try\s*\{[^}]*fsMkdir', body) or 'catch' in body,
-        "the fsMkdir call must be try/caught — a failure here (e.g. no "
-        "permission) must fall back to today's existing 'not a directory' "
-        "state, not break project creation outright.",
+        f"the fsMkdir call in {who} must be try/caught — a failure here "
+        "(e.g. no permission) must fall back to today's existing 'not a "
+        "directory' state, not break project creation outright.",
     )
+
+# The Workspace empty state's "Create your first project" button must open
+# the Add-Project dialog IN PLACE — not flip to Classic. The first rewrite
+# renamed the CTA but kept `flipMode('classic')`, so a brand-new boss at
+# onboarding step 5 clicked a button named after the thing they wanted and
+# got a second empty state ("Click + ADD") in a mode they never asked for.
+# Watched live on a fresh office 2026-08-13.
+noproj = re.search(r'className="ws-noproj">(.*?)</div>\s*\)', src, re.S)
+check(noproj, "views/projects.jsx: could not find the ws-noproj empty state.")
+if noproj:
+    block = noproj.group(1)
+    check(
+        'setShowAdd(true)' in block,
+        "the ws-noproj 'Create your first project' button must open the "
+        "Add-Project modal (setShowAdd(true)) — a button does the thing it "
+        "is named after.",
+    )
+    check(
+        "flipMode('classic')" not in block,
+        "the ws-noproj empty state must NOT flip to Classic — that lands a "
+        "first-time boss on a second empty state instead of the dialog.",
+    )
+check(
+    src.count('<AddProjectModal') >= 3,
+    "WorkspaceView must render its own <AddProjectModal> (expected the two "
+    "ProjectsView render sites plus WorkspaceView's) — without it, "
+    "setShowAdd(true) in the workspace empty state opens nothing.",
+)
 
 if failures:
     print("FAIL:")

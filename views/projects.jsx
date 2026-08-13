@@ -31,6 +31,20 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     if (cur && cur.dirty && !(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
     setMode(m); LSset('mode', m);
   };
+  /* Same commit step as ProjectsView's — the best-effort mkdir carries the
+     same reasoning as there: the first-time boss typing a fresh path has no
+     existing folder, and without this the FILES pane's first render is
+     "Not a directory: …". An existing path just returns `existed: true`. */
+  const commitProject = async ({ name, path, source }) => {
+    if (source === 'local' && C && C.fsMkdir) {
+      try { await C.fsMkdir(path); } catch (_e) { /* surfaces as the tree's not-a-directory state */ }
+    }
+    const id = 'p_' + Math.random().toString(36).slice(2, 8);
+    setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
+    setSelectedId(id);
+    setShowAdd(false);
+    toast('success', `Added project "${name}"`);
+  };
   const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [mobilePane, setMobilePane] = useSV('files');   // mobile pane-switcher: files | editor | terminal | agents
   const [selectedId, setSelectedId] = useSV(() => LS('selid', (projects[0] && projects[0].id) || null));
@@ -56,6 +70,12 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const [termOpen, setTermOpen] = useSV(() => LS('term', false));
   const [termMounted, setTermMounted] = useSV(() => LS('term', false));
   const [fileDrag, setFileDrag] = useSV(false);
+  /* Workspace mode's own Add-Project modal. Before this, creating a project
+     was Classic-only, so the empty state's "Create your first project"
+     button could only flip modes — a boss clicked a button named after the
+     thing they wanted and got a different screen with ANOTHER empty state
+     ("Click + ADD"). Watched live on a fresh office at onboarding step 5. */
+  const [showAdd, setShowAdd] = useSV(false);
   const uploadRef = React.useRef(null);
   const uploadDirRef = React.useRef(null);
 
@@ -293,15 +313,18 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
            sentence describes the app's internal shape instead of offering
            the thing they came for.
 
-           The button already flipped modes, so this was never a hard dead
-           end — it was a CTA named after the office's plumbing. Now it says
-           what a project IS and does the thing it is named after. */
+           First rewrite renamed the CTA but kept the mode flip — so the
+           button said "Create your first project" and delivered a SECOND
+           empty state ("Click + ADD") in a view the boss never asked for.
+           A button does the thing it is named after: this one opens the
+           Add-Project dialog right here, and the committed project lands
+           selected in this same Workspace view. */
         <div className="ws-noproj">
           <div className="ws-noproj-copy">
             No projects yet. A project is a folder your coworkers can build
             in — docs, pages, code — and you can watch them work in it.
           </div>
-          <button className="px-btn primary" onClick={() => flipMode('classic')}>
+          <button className="px-btn primary" onClick={() => setShowAdd(true)}>
             Create your first project
           </button>
         </div>
@@ -350,6 +373,16 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
           {agentPane()}
         </div>
       )}
+      {/* Portaled to <body> (see AddProjectModal) so the floating window's
+          stacking context can't bury it — the same trap the Classic view
+          hit with the Job Postings book. */}
+      {showAdd ? (
+        <AddProjectModal
+          prefillName=""
+          onClose={() => setShowAdd(false)}
+          onCommit={commitProject}
+        />
+      ) : null}
     </div>
   );
 }
