@@ -1599,6 +1599,41 @@ exactly 5 tool checkboxes instead of 9, with `Vault Notes` correctly
 still checked and the four dead ones simply absent rather than present-
 and-inert.
 
+### Projects — a clean pass, driven end to end for the first time — 2026-08-13
+
+The Workspace/Projects panel (`views/projects.jsx`'s `ProjectsView`, the
+"Classic" tab — folders coworkers build in, real files a boss can watch
+change) had never been driven this session. Added a real local folder
+(two files, one `.md` one `.txt`) as a project on a throwaway office and
+worked through it end to end, deliberately skipping the Terminal
+sub-tab (it can spawn a real PTY / Claude Code / Codex session, out of
+bounds under this session's standing no-paid-CLI-dispatch rule).
+
+Every step landed clean: the file list showed the real files with real
+byte counts (18 B / 43 B, matching what was written to disk); opening
+`notes.txt` loaded its real content into the editor; editing it flipped
+an unsaved-dot indicator and a `Save` button into view; clicking Save
+wrote the edit to the actual file on disk (confirmed by reading it back
+outside the app) and the status flipped back to "Saved"; `README.md`'s
+Preview toggle rendered real markdown (`# Test Project` → a styled
+heading); checking a coworker in the "ASSIGNED" list persisted the
+assignment, enabled the "TALK" button, and — matching the comment at
+`ProjectsView`'s `toggleAgent` that says the per-project chat tab "keys
+off `agentIds`" — a new **TEST PROJECT** tab appeared in the chat panel
+live, with its own project-scoped room ("No messages in this project
+room yet... @-mention just some of them," an honest empty state, not a
+fabricated one). The onboarding checklist's "Create your first Project"
+step checked itself off as a side effect of the real action, not a
+separate manual step.
+
+No defects found. Recorded as a clean pass rather than skipped
+silently — the same reason the SEARCH raw-key-leak and the DM_TO
+mechanic-is-sound findings earlier in this file were written up even
+though nothing needed fixing: a surface that has never been driven and
+turns out to work is still worth knowing, and the absence of a "driven,
+clean" entry reads identically to "never checked" until someone writes
+one down.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
