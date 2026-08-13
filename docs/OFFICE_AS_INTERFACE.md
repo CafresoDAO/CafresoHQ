@@ -1398,6 +1398,34 @@ the actual cascade. Fire-tested all three new rules separately (each
 reverted to its pre-fix color) — each failed with the exact ratio
 measured live (4.09, 3.77, 4.00), not just "does not pass."
 
+### One more from the same audit: the market-quote red — 2026-08-13
+
+Finishing the `.sep` audit rather than stopping at "found three, fixed
+three": checked the OTHER colors in the same selector family —
+`.mkt-up`/`.mkt-down` (Trading Floor's Coinbase-fed market quotes) and
+`.kw` (keyword highlight). `.mkt-up` and `.kw` both clear night mode's
+real `#3a3050` background comfortably (9.11:1, 8.71:1). `.mkt-down`
+does not: same red (`#ff4d4d`), same background the `.sep` fix above
+already had to re-target — measures **3.74:1**.
+Fixed the same way, additively: `body.theme-wallstreet.night
+.ticker-track .line .mkt-down` at `#ff8a8a`, landing at 5.39:1.
+Verified live (`getComputedStyle` on a real `.mkt-down` node in a
+throwaway office, wallstreet + night): fg `rgb(255,138,138)` vs bg
+`rgb(58,48,80)`, 5.39:1, matching the calculation exactly.
+Pinned by extending `scripts/test_ticker_sep_contrast.py`, fire-tested
+by reverting the night override back to the day-mode red — failed with
+the exact 3.74:1 measured live.
+
+Also checked the BASE (non-wallstreet) `.mkt-up`/`.mkt-down` — `var(--ok,
+#1f8a4c)` / `var(--danger, #c0392b)`, two CSS variables that turn out to
+be undefined everywhere in this codebase, so always the fallback color.
+Every real ticker background fails against them (2.25–4.06:1). **Not
+fixed**: `marketTicker` is `true` only for the wallstreet vocab entry
+(`ui/primitives.jsx:16`) — no other theme ever renders a `.mkt-up`/
+`.mkt-down` span, so this is confirmed-dead CSS, not a live gap, same
+class of finding as the `--office-ticker-bg` night-mode variables the
+first ticker entry already flagged as unreachable.
+
 > ✅ **Agent Inspect panel's job description, clean pass — 2026-08-13.**
 > Driven for the first time this session: clicked a hired coworker's desk
 > sprite on the office floor, opened the "PERFORMANCE REVIEW" card, edited

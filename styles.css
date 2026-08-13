@@ -1467,6 +1467,15 @@ body.theme-wallstreet.night .ticker-track .line .sep {
 .ticker-track .line .mkt-down { color: var(--danger, #c0392b); }
 body.theme-wallstreet .ticker-track .line .mkt-up   { color: #00ff88; text-shadow: 0 0 6px rgba(0,255,136,0.35); }
 body.theme-wallstreet .ticker-track .line .mkt-down { color: #ff4d4d; text-shadow: 0 0 6px rgba(255,77,77,0.35); }
+/* Found finishing the .sep audit above: .mkt-up passes night mode's real
+   #3a3050 background comfortably (9.11:1) but .mkt-down does not — same
+   red, same #3a3050 the .sep fix above already had to re-target, measures
+   3.74:1. (The base, non-wallstreet .mkt-up/.mkt-down rules two lines up
+   also fail every real background they were checked against — but
+   marketTicker is wallstreet-only (ui/primitives.jsx), so those spans
+   never actually render outside this theme; not fixed as dead CSS.)
+   Same red hue, lightened to land at 5.39:1. */
+body.theme-wallstreet.night .ticker-track .line .mkt-down { color: #ff8a8a; text-shadow: 0 0 6px rgba(255,138,138,0.35); }
 
 /* Wall Street monitor screens get Bloomberg green */
 body.theme-wallstreet .desk::after {

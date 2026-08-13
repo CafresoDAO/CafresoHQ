@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""The ticker separator failed WCAG AA contrast in 3 of its 14 real
-theme x day/night combinations — found auditing the first one.
+"""The ticker separator (and, it turned out, the market-quote colors)
+failed WCAG AA contrast in several of the real theme x day/night
+combinations — found auditing the first one.
 
 Started narrow: `theme-wallstreet`'s own override of `.ticker-track .line
 .sep` (`#00e0a0` at 37.6% alpha) was never put through the same contrast
@@ -32,6 +33,23 @@ time:
   - `body.theme-wallstreet.night .ticker-track .line .sep` (combined
     selector, so Trading Floor keeps its own green branding in night mode
     instead of falling back to the generic fix's neutral tone)
+
+Finishing that audit turned up one more, in a related but different
+selector family: `.mkt-up`/`.mkt-down`/`.kw` (the market-quote colors and
+the keyword highlight `marketTicker` — Trading Floor's Coinbase-fed
+ticker — actually renders). `.mkt-up` and `.kw` both clear night mode's
+real #3a3050 background comfortably (9.11:1, 8.71:1), but `.mkt-down`
+does not — same red, same background the .sep fix above had to
+re-target: measures 3.74:1. Fixed the same way, additively:
+`body.theme-wallstreet.night .ticker-track .line .mkt-down` at 5.39:1.
+
+(The BASE, non-wallstreet `.mkt-up`/`.mkt-down` rules — `var(--ok,
+#1f8a4c)` / `var(--danger, #c0392b)`, both variables undefined everywhere
+in this codebase so always the fallback — fail every real background
+checked too. Not fixed: `marketTicker` is true only for the wallstreet
+vocab entry (`ui/primitives.jsx`), so those spans never actually render
+outside this theme. Confirmed dead CSS, not a live gap, same as the
+`--office-ticker-bg` night variables the earlier entry already flagged.)
 
 Run: python3 scripts/test_ticker_sep_contrast.py
 """
@@ -145,6 +163,30 @@ for label, (fg, alpha), bg in cases:
     check(
         ratio >= 4.5,
         f'{label}: .sep measures {ratio:.2f}:1 against its real ticker '
+        f'background {bg} — below WCAG AA\'s 4.5:1 floor for text.',
+    )
+
+# --- Market-quote colors: only wallstreet ever renders these -------------
+
+m_up_ws = find_one(r'body\.theme-wallstreet \.ticker-track \.line \.mkt-up\s*\{\s*color:\s*(#[0-9a-fA-F]{6});', 'body.theme-wallstreet .mkt-up')
+m_down_ws = find_one(r'body\.theme-wallstreet \.ticker-track \.line \.mkt-down\s*\{\s*color:\s*(#[0-9a-fA-F]{6});', 'body.theme-wallstreet .mkt-down')
+m_down_ws_night = find_one(r'body\.theme-wallstreet\.night \.ticker-track \.line \.mkt-down\s*\{\s*color:\s*(#[0-9a-fA-F]{6});', 'body.theme-wallstreet.night .mkt-down')
+# .kw has no wallstreet-specific override — inherits var(--accent-sun),
+# already measured comfortably passing (8.71:1+) live, so not re-checked here.
+
+mkt_cases = []
+if bg_wallstreet and m_up_ws:
+    mkt_cases.append(('wallstreet .mkt-up, day', hex_to_rgb(m_up_ws.group(1)), bg_wallstreet))
+if bg_wallstreet and m_down_ws:
+    mkt_cases.append(('wallstreet .mkt-down, day', hex_to_rgb(m_down_ws.group(1)), bg_wallstreet))
+if bg_night and m_down_ws_night:
+    mkt_cases.append(('wallstreet .mkt-down, night', hex_to_rgb(m_down_ws_night.group(1)), bg_night))
+
+for label, fg, bg in mkt_cases:
+    ratio = contrast(fg, bg)
+    check(
+        ratio >= 4.5,
+        f'{label}: measures {ratio:.2f}:1 against its real ticker '
         f'background {bg} — below WCAG AA\'s 4.5:1 floor for text.',
     )
 
