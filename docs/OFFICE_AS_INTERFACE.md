@@ -4594,3 +4594,40 @@ settings — never on the floor, the cards, or onboarding.
 > the injection. Fire-tested against both reverts separately (hardcode
 > the old default back, drop the injected script tag) — each failed for
 > its own specific reason.
+
+> ✅ **The full task loop, driven end to end for the first time this
+> session — clean pass (2026-08-13).** Hired the free local Llama
+> (Ollama), typed a real task in the Tasks board ("Draft a one-paragraph
+> company bio for Cafreso"), assigned it, hit START, and watched the
+> whole pipeline run for real: card moved Inbox → Doing → Done, Llama
+> streamed an actual reply, a "FIRST DELIVERY" toast appeared, and the
+> file landed at `Deliveries/draft-a-one-paragraph-company-bio-for-
+> cafreso.md` in the real Markdown Vault — openable, with correct
+> "Delivered by Llama · 2026-08-13" attribution and the graph-analytics
+> panel picking it up as a linked note. This is the product's central
+> promise (task → coworker → real deliverable, filed where the boss can
+> see it) and it held together with zero console errors end to end.
+>
+> One edge came up unscripted: Llama's small local model, on its first
+> pass, emitted a malformed vault-append marker (missing closing tag).
+> The app caught it and replied honestly in-thread — *"nothing was
+> appended in the cabinet — that one needs a closing tag to be written.
+> Ask them to try again"* — rather than silently dropping it or writing
+> garbage. The model then also emitted a `[NEEDS_APPROVAL: draft company
+> bio for CafresoHQ]` marker restating the already-finished task's title
+> with no real decision content — exactly the empty-ask edge case
+> `extractApproval`'s own comment names (*"the only safe answer to it is
+> no"*). Traced `onApprove`'s branches (`app.jsx:4118+`) before acting:
+> this generic marker doesn't match `publish`/`hire-agent`/
+> `hire-assistant`/`grant-elevation`/`workflow-step`, so Approve or
+> Reject is pure local bookkeeping — no real action either way. Rejected
+> it, per the code's own stated philosophy. Task board still showed
+> exactly one task and one delivery afterward — no duplicate, no orphaned
+> state — despite the model effectively replaying the exchange.
+>
+> No code changed, nothing to pin — this is a small local model's own
+> retry/hallucination behavior, already handled correctly by existing
+> error paths built for exactly this. Recorded because "does the core
+> loop actually work, end to end, live" had never been checked this
+> directly before, and it's the single most important thing in the app
+> to have verified clean.
