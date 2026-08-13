@@ -5357,7 +5357,13 @@ ${d.text}` : d.text,
         open={ceoShown}
         onClose={() => setCeoShown(false)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onSitWithCEO={() => { navTo('chat'); }}
+        /* Same label as the office floor's 1:1 sofa ("Sit down with
+           CafresoHQ for a one-to-one") must open the same thing. This used
+           to silently downgrade to the plain multi-thread chat panel —
+           found live, clicking the CEO panel's own "Sit 1:1" quick action
+           landed on ordinary Chat, not the distraction-free quiet room the
+           identical floor affordance opens. */
+        onSitWithCEO={() => setFocus(true)}
         onOpenMemory={() => setMemoryOpen(true)}
         onOpenMeeting={onOpenMeeting}
       />

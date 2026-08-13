@@ -1808,6 +1808,44 @@ actually work rather than fail gracefully, the command is
 without it, PDFs still work via the reportlab fallback just proven
 live, only simpler ones). Left for them to run, not run for them.
 
+### The same label, two different rooms — the CEO panel's own "Sit 1:1" was the wrong one — 2026-08-13
+
+Drove the 1:1 with CafresoHQ for the first time this session — a
+feature named in the topbar hint on every single screenshot all
+session ("CLICK THE 1:1 SOFA FOR A ONE-TO-ONE") but never itself
+clicked. Two places in the app carry the identical label, word for
+word: the office floor's sofa sprite, and the CEO panel's own "Sit 1:1"
+quick-action button (opened via the CEO's sidebar card). Clicked the
+CEO panel's version first, since that's the more obvious entry point
+for a boss who hasn't found the floor sofa yet — and got the ordinary
+multi-thread Chat window, not the feature its own label names.
+
+The floor sofa's version was already correctly wired to `FocusMode`,
+`app.jsx`'s dedicated "1:1 WITH CAFRESOHQ · QUIET ROOM · NO
+DISTRACTIONS" overlay. The CEO panel's identically-labeled button was
+wired to a bare `navTo('chat')` — same words, silently lesser
+experience, and which one a boss actually got depended entirely on
+which of two unmarked entry points they happened to use first.
+
+Fixed by pointing the CEO panel's action at the same `setFocus(true)`
+the floor already uses — one line, no other changes needed, since
+`CEOPanel` already wraps every quick action in a `fire()` helper that
+closes the panel afterward regardless of what the action does.
+Verified live end to end after rebuilding: CEO panel → Sit 1:1 → the
+real quiet room opens, with the same shared chat history the floor
+sofa and the regular Chat panel all read from (not a separate silo);
+sent a real message and watched the honest §7 failure path render
+correctly inside it too (`⚠ hit a snag — couldn't reach that brain —
+it looks offline from here`, this machine's default CEO brain having
+no local Hermes gateway to answer — an environment fact, not a defect,
+and the exact same honest sentence already verified elsewhere in this
+file); "LEAVE ROOM" returned cleanly to the normal view, and the
+"Chat with your team" onboarding step checked itself off as a result
+of the real interaction.
+
+Pinned by `scripts/test_ceo_panel_sit_1on1.py`, fire-tested by
+reverting the fix — 2 failures, both correctly named.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
