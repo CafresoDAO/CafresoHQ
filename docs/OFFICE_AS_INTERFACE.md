@@ -1743,6 +1743,34 @@ No code changed. A real capability (keyboard-driven command running)
 was verified working, and a real process mistake was caught before it
 became a false entry in this file.
 
+### Receipts — the elevation dialog's "every action logged" promise, checked — 2026-08-13
+
+Traced the elevation-grant dialog's claim ("every tool call is logged")
+to its actual mechanism: `recordToolReceipt` (`app.jsx`), which writes
+into the same `receipts` state the Receipts modal reads. Seeded a
+throwaway office with three realistic receipts (a deliverable, a
+tool-execution, a rejected publish) directly into `hq-state/receipts.json`
+to drive the modal itself without depending on a live model successfully
+emitting a tool marker.
+
+Everything held: real per-kind stamps and tinting (📝 green deliverable,
+🛠 tool-execution with no PIN button — correctly excluded, since
+`onPin && r.kind !== 'tool-execution'` — ✕ red rejected), the filter
+tabs correctly narrowed the list and updated the "N of 3" count, PIN
+landed a real sticky on the CEO desk corkboard (confirmed by checking
+the office floor after, not just the click succeeding), and CLEAR ALL
+still shows *"Clear all"* — the exact dialog fixed several ticks ago in
+this same file's confirm-dialog-label sweep, now re-confirmed live
+rather than just left to the earlier fix's own test.
+
+No defects found. Also confirms the model side of the underlying claim
+is architecturally sound without needing a successful live tool call to
+prove it: `recordToolReceipt`'s own logic (`!agent.elevated &&
+!isDeliverable → return`) means every elevated agent's tool call is
+captured regardless of type, and every agent's deliverables are
+captured regardless of elevation — the audit trail the elevation
+dialog promises is the real one, not a decorative one.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
