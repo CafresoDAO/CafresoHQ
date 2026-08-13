@@ -449,8 +449,23 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     setShowAdd(true);
   };
 
-  /* Final commit step shared by Local-folder and GitHub-clone tabs. */
-  const commitProject = ({ name, path, source }) => {
+  /* Final commit step shared by Local-folder and GitHub-clone tabs.
+     GitHub-clone's path always exists (cloneRepo creates it server-side),
+     but "Local folder" — the path the onboarding flow's "Create your
+     first project" actually funnels a brand-new boss into — accepted any
+     typed path with no such guarantee. A first-time boss following that
+     copy has no existing empty-projects folder lying around, so the
+     FILES pane's very first render read "Not a directory: /tmp/…" with
+     no path forward other than discovering the unrelated "+ Folder"
+     button already does `mkdir(parents=True)` as a side effect. Best-
+     effort create it here too — same call "+ Folder" already makes, so
+     an existing path (the "point at my existing repo" case this tab's
+     own copy also describes) just gets `existed: true` back and nothing
+     changes for it. */
+  const commitProject = async ({ name, path, source }) => {
+    if (source === 'local' && CafresoHQClient && CafresoHQClient.fsMkdir) {
+      try { await CafresoHQClient.fsMkdir(path); } catch (_e) { /* falls back to today's "not a directory" state */ }
+    }
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     setSelected(id);

@@ -4631,3 +4631,42 @@ settings — never on the floor, the cards, or onboarding.
 > loop actually work, end to end, live" had never been checked this
 > directly before, and it's the single most important thing in the app
 > to have verified clean.
+
+> ✅ **"Create your first project" dead-ended on "Not a directory"
+> (2026-08-13).** Drove Projects for the first time this session via the
+> exact path the onboarding checklist and the empty state both point a
+> brand-new boss at — "Create your first project" → Local folder → type a
+> name and a path. Typed a path that (like any first-time boss's) didn't
+> exist on disk yet. Result: the project was added, but its Files pane's
+> very first render read `Not a directory: /tmp/hq-…` — a raw filesystem
+> error, truncated, with no visible way forward.
+>
+> Root cause: `commitProject` (`views/projects.jsx`, shared by both the
+> Local-folder and GitHub-clone tabs) only ever did `onCommit({name, path,
+> source})` — no directory creation. GitHub-clone never hit this because
+> `cloneRepo` creates its target dir server-side; only the local tab —
+> the one the onboarding copy actually funnels new users into — was
+> exposed. An escape hatch already existed (the unrelated "+ Folder"
+> button's `fsMkdir` call happens to use `mkdir(parents=True)`
+> server-side, so clicking it once creates the missing project root as a
+> side effect of creating a subfolder) but nothing connected it to the
+> failure a boss actually saw, and nothing suggested clicking it.
+>
+> Fix: `commitProject` now best-effort calls
+> `CafresoHQClient.fsMkdir(path)` before adding the project, gated to
+> `source === 'local'` only. `fs_routes.py`'s `_fs_mkdir` already returns
+> `{ok: true, existed: true}` for a path that's already a directory, so
+> pointing at a real existing repo (the tab's other documented use case)
+> is unaffected — the call is a no-op for it. Wrapped in try/catch so a
+> failure (permissions, etc.) falls back to exactly today's behavior
+> rather than blocking project creation outright.
+>
+> Verified live: rebuilt the bundle, added a project at a path confirmed
+> absent on disk, and watched the Files pane render its normal empty
+> state instead of the error — `ls` confirmed the directory now exists.
+>
+> Pinned by `scripts/test_new_project_creates_folder.py`, fire-tested by
+> reverting the fix back to the plain synchronous `commitProject` — failed
+> for all four checked reasons (not async, no source gate, no fsMkdir
+> call, no try/catch), confirming the test actually discriminates the fix
+> rather than passing on any shape of the function.
