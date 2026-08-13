@@ -1704,6 +1704,45 @@ Pinned by `scripts/test_graph_analytics_toggle_clickable.py`
 higher than panel's), fire-tested by reverting the fix — 2 failures,
 both correctly named.
 
+### The command palette, driven — clean, and a tooling gotcha worth keeping — 2026-08-13
+
+`Cmd/Ctrl-K` opened cleanly (42 commands, real sections — Navigation,
+Actions, Toggles, Windows), search-filtered correctly, and mouse-picking
+a result ran it and navigated. Then keyboard — the palette's own stated
+mechanism, "↑↓ navigate · ↵ run" — looked broken: `ArrowDown`/`Enter`
+sent via this session's own driving tools appeared to do nothing, twice
+in a row, footer hint and all.
+
+Chased it all the way down before writing it up, because "the palette's
+core interaction is broken" would be a serious claim. Confirmed the
+input was genuinely focused with the right value; confirmed via
+`document.elementFromPoint()`-style checks that the real DOM node was
+receiving events; confirmed React's own `onKeyDown` prop function was
+present and callable; called it directly with a plain `{key:'Enter'}`
+object, bypassing all dispatch machinery. That last call — checked
+correctly, in a genuinely separate round-trip rather than the same
+synchronous script block (a mistake made and caught mid-investigation:
+an earlier same-tick check of `ArrowDown` read state before React had
+re-rendered and looked like a second bug that wasn't one) — closed the
+palette and ran the command. The application's own keyboard-handling
+code is correct.
+
+What wasn't correct was the test input: this session's `key` action
+sending the string `"Return"` does not produce an event this app's
+`e.key === 'Enter'` check matches, while sending `"Enter"` does — same
+physical key, different string, only one of which this environment's
+key-name mapping honors. Worth keeping as a standing note for future
+ticks driving any Enter-to-submit surface in this harness: use `"Enter"`
+as the key text, not `"Return"`, and when a keyboard interaction looks
+broken, verify state in a separate tool round-trip before writing up a
+finding — a same-tick check after a state-changing dispatch can read
+the DOM before React has committed the re-render and manufacture a
+bug that was never there.
+
+No code changed. A real capability (keyboard-driven command running)
+was verified working, and a real process mistake was caught before it
+became a false entry in this file.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
