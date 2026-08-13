@@ -1409,6 +1409,37 @@ measured live (4.09, 3.77, 4.00), not just "does not pass."
 > Calendar, Memory, Vault, Team, Terminal, Projects) turned up zero
 > console errors. No code changed.
 
+> ✅ **STOP ALL vs. an in-flight task — clean pass, verified by full
+> call-path reading after live automation proved impractical (2026-08-13).**
+> Tried twice to catch this live: seed an agent as "busy" and reload (the
+> app correctly scrubs a persisted busy status on mount — its own
+> `tasksOnLoad` safety net, working as designed, not a bug), then tried
+> racing a real Llama task against a STOP ALL click. Both attempts lost
+> the race — a short local-model reply finishes faster than a multi-step
+> browser-automation round trip can click Start → Stop All → confirm.
+> Recognized this as friction in the *testing tool*, not evidence about
+> the app (same lesson as this session's earlier `computer.key`
+> "Return"-vs-"Enter" finding), and switched to reading the real call
+> path instead of continuing to force a live race.
+>
+> First read of `onStopAll` (`app.jsx:920`) looked like a real bug: it
+> resets agent status via `setAgents` but never calls `setTasks` — so a
+> task marked `doing` when the boss hits STOP ALL looked like it would
+> stay `doing` forever, the exact "office claims work is happening that
+> isn't" failure the reload-scrub's own comment (`app.jsx:715`) already
+> names and fixes for a *different* trigger (a killed tab). Read further
+> before concluding that: `onStopAll` calls `c.abort()` on every in-flight
+> `AbortController`, and the task-dispatch function's own `catch` block
+> (`app.jsx:3786`) is what actually handles the rejected promise that
+> abort produces — `controller.signal.aborted` is checked explicitly, and
+> when true it puts the task back in `inbox` (keeping the assignee, since
+> a boss-stop is not the coworker's failure — mood stays `idle` not
+> `stuck`, off the XP ledger, matching §5's rule applied consistently
+> elsewhere in the same handler). The reset happens; it just happens one
+> function away from the button's own handler, through the abort→reject→
+> catch chain rather than directly in `onStopAll`. No code changed —
+> confirmed working as designed, not a gap.
+
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 
 EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /
