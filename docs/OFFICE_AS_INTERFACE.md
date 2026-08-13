@@ -2367,10 +2367,27 @@ should extend that boundary, not blur it.
   >
   > Both facts — "consulted nothing" and "claims five sources" — are known at
   > filing time, so the contradiction could be stated instead of merely
-  > available. Not done here: a detector that cries fabrication at an honest
-  > reply would be its own §7 failure, and the brief legitimately invites
-  > *"(Source: what I already know)"*, so the rule needs more care than a
-  > substring match. Flagged, not guessed at.
+  > available. The care it needed: a detector that cries fabrication at an
+  > honest reply would be its own §7 failure, and the brief legitimately
+  > invites *"(Source: what I already know)"*, so a bare "Source:" substring
+  > match would fire on exactly the compliant behaviour the office asked for.
+  >
+  > **Stated since 2026-08-13** (`citesOutside`, app/artifacts.jsx). The rule
+  > fires only when the run's record is EMPTY and the reply points outside
+  > the coworker's own head — a URL, or a `Source: …` attribution naming
+  > something that is not "what I already know" / "from memory" / "no
+  > specific source". When both hold, the footer gains one line: *"The note
+  > above mentions sources, but nothing was opened or searched while it was
+  > written — treat those as recalled, not checked."* — a report of what the
+  > office observed, not a judgement of the coworker. A quoted title floating
+  > in prose is still left alone (the placeholder-detector table below is why
+  > "exact" prose patterns cry wolf); a miss falls back to this bullet's
+  > passive footer, which remains the floor. Fire-tested both ways before
+  > shipping — detector silenced, 8 suite checks failed; own-head exemption
+  > removed, 7 failed — and re-walked live the same day: a fresh brief on
+  > remote startups cited Buffer, Harvard Business Review, Forbes and Gallup
+  > on an empty record, and the filed delivery said the contradiction out
+  > loud, two lines under the footer, on a case nobody staged.
 
   > **A third instance, and the most ordinary one — 2026-08-12.** Re-walked
   > §3.6 on a clean install to check the day's eight commits had not broken

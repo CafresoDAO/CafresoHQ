@@ -131,6 +131,51 @@ function workingNotes(visits) {
   return seen;
 }
 
+/* ── Naming a source you never visited ────────────────────────────────────
+   The always-written footer puts the office's record beneath the coworker's
+   claim, but it argues in silence: a real brief (2026-08-12) cited a Harvard
+   Business Review article that does not appear to exist, with "Nothing
+   opened, saved or looked up for this one." four lines below. An invented
+   vault path is checkable in one click; an invented journal article looks
+   authoritative, and a reader who trusts the bullet has no reason to scroll
+   down and cross-examine a footer. Both facts — record empty, reply claims
+   sources — are known at filing time, so when they contradict, the office
+   can say so instead of leaving the disagreement as an exercise.
+
+   Deliberately narrow, because flagging an honest reply is the same §7
+   failure pointed the other way. The research brief itself invites
+   "(Source: what I already know)", so a bare "Source:" match would fire on
+   exactly the compliant behaviour the office asked for. Only two shapes
+   count as pointing OUTSIDE the coworker's own head:
+   - a URL — no visits means nothing was fetched, so it was not read;
+   - a source attribution ("Source: …" at a line's start, or "(Source: …)")
+     whose named source is NOT the coworker's own knowledge.
+   A quoted title floating in prose is left alone — the placeholder-detector
+   post-mortem in OFFICE_AS_INTERFACE.md shows how an "exact" prose pattern
+   still cries wolf on ordinary sentences. Misses fall back to the passive
+   footer, which is the standing mitigation; false alarms have no fallback. */
+const OWN_HEAD = new RegExp('\\b(?:' + [
+  'what (?:i|they) (?:already )?know', 'already knew',
+  '(?:my|their|its) (?:own )?(?:knowledge|memory|experience|understanding|training|head)',
+  '(?:general|common|prior|existing|internal|background) knowledge',
+  'training data', 'from memory', 'recall(?:ed)?',
+  'no (?:specific |particular |single )?(?:source|citation)',
+  "(?:don'?t|do not|doesn'?t|does not) have a (?:source|citation)",
+  'unsure', 'not sure', 'none', 'n/a',
+].join('|') + ')\\b', 'i');
+
+function citesOutside(text) {
+  const s = String(text || '');
+  if (/\bhttps?:\/\/[^\s)]|\bwww\.[a-z0-9-]+\.[a-z]{2}/i.test(s)) return true;
+  const tag = /(?:^[ \t>*+-]*|\()sources?\s*:\s*([^)\n]*)/gim;
+  let m;
+  while ((m = tag.exec(s)) !== null) {
+    const named = m[1].trim();
+    if (named && !OWN_HEAD.test(named)) return true;
+  }
+  return false;
+}
+
 /* The office runs on the boss's clock. `toISOString()` stamps UTC, so a
    delivery filed at 8pm in New York was dated TOMORROW in its own header —
    caught on a real filing. Every other date on the floor is local. */
@@ -167,6 +212,13 @@ function buildDelivery(task, agent, text, visits) {
   if (html) return { path: `${home}/${slug}.html`, content: html, kind: 'page' };
 
   const working = workingNotes(visits);
+  /* An empty record under a reply that names sources is a contradiction the
+     office can state, not just make available — see citesOutside above. The
+     wording reports what the office observed; it does not judge the reply. */
+  const emptyRecord = ['- Nothing opened, saved or looked up for this one.'];
+  if (!working.length && citesOutside(body)) {
+    emptyRecord.push('- The note above mentions sources, but nothing was opened or searched while it was written — treat those as recalled, not checked.');
+  }
   const content = [
     `# ${(task && task.title) || 'Delivery'}`,
     '',
@@ -190,7 +242,7 @@ function buildDelivery(task, agent, text, visits) {
        disagree. Same principle as the unclosed-write guard: an absence loses
        against a confident sentence, so turn the absence into a statement. */
     '', '---', '', '**Working**', '',
-    ...(working.length ? working : ['- Nothing opened, saved or looked up for this one.']),
+    ...(working.length ? working : emptyRecord),
     '',
   ].join('\n');
   return { path: `${home}/${slug}.md`, content, kind: 'note' };
@@ -261,4 +313,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { agentFiledPath, buildDelivery, cabinetIsEncrypted, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };

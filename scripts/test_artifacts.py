@@ -154,6 +154,33 @@ R.withWorking = buildDelivery({ title: 'T' }, { name: 'A' },
 R.echoOnlyBody = buildDelivery({ title: 'T' }, { name: 'A' }, fetched,
   [{ name: 'BROWSER_FETCH', arg: 'https://a.com', echo: fetched }]);
 R.noWorkingSection = buildDelivery({ title: 'T' }, { name: 'A' }, 'body').content;
+// ── citesOutside — does the reply point past the coworker's own head? ───
+R.coSourceExt  = citesOutside('- Teams miss deadlines. (Source: Harvard Business Review article "Why Small Teams Fail")');
+R.coSourceLine = citesOutside('Source: The Mythical Man-Month by Fred Brooks');
+R.coSourceItem = citesOutside('- Source: Peopleware, DeMarco & Lister');
+R.coSourcesHdr = citesOutside('Sources: Peopleware; Deep Work');
+R.coUrl        = citesOutside('See https://hbr.org/2019/x for the study.');
+R.coWww        = citesOutside('More at www.example.com today.');
+R.coMixed      = citesOutside('- A. (Source: what I already know)\n- B. (Source: Deep Work by Cal Newport)');
+// The compliant behaviour the brief itself invites must NOT be flagged.
+R.coOwnKnow    = citesOutside('- Deadlines slip. (Source: what I already know)');
+R.coOwnGeneral = citesOutside('(Source: general knowledge)');
+R.coOwnMemory  = citesOutside('(Source: from memory)');
+R.coOwnExper   = citesOutside('(Source: my own experience)');
+R.coNoSource   = citesOutside('(Source: no specific source)');
+R.coDontHave   = citesOutside("(Source: I don't have a source for this)");
+R.coEmptyTag   = citesOutside('Source:');
+R.coPlainProse = citesOutside('Small teams miss deadlines because scope grows.');
+R.coMidProse   = citesOutside('I trust my sources: they are careful people.');
+R.coNull       = citesOutside(null);
+// ── buildDelivery: the stated contradiction ─────────────────────────────
+R.footClaims   = buildDelivery({ title: 'T' }, { name: 'A' },
+  'Finding. (Source: Harvard Business Review article "Why Small Teams Fail")', []).content;
+R.footHonest   = buildDelivery({ title: 'T' }, { name: 'A' },
+  'Finding. (Source: what I already know)', []).content;
+R.footVisited  = buildDelivery({ title: 'T' }, { name: 'A' },
+  'Finding. (Source: hbr.org)\nhttps://hbr.org/x',
+  [{ name: 'BROWSER_FETCH', arg: 'https://hbr.org/x' }]).content;
 // ── agentFiledPath: did the coworker file it themselves? ────────────────
 R.afNone    = agentFiledPath([{ name: 'BROWSER_FETCH', arg: 'https://a.com' }]);
 R.afVault   = agentFiledPath([{ name: 'VAULT_NEW', arg: 'Research/topic.md' }]);
@@ -288,6 +315,54 @@ console.log(JSON.stringify(R));
           '**Working**' in out['noWorkingSection']
           and 'Nothing opened, saved or looked up' in out['noWorkingSection'],
           out['noWorkingSection'])
+
+    # citesOutside — a claim of outside sources, never a claim of own head.
+    # The asymmetry is deliberate: a miss falls back to the passive footer
+    # (the standing mitigation); a false alarm accuses an honest reply, which
+    # is the §7 failure the whole feature exists to avoid.
+    check('a Source: naming an external work is outside',
+          out['coSourceExt'] is True)
+    check('a line-leading Source: counts', out['coSourceLine'] is True)
+    check('a list-item Source: counts', out['coSourceItem'] is True)
+    check('a Sources: header counts', out['coSourcesHdr'] is True)
+    check('a URL with no visit behind it is outside', out['coUrl'] is True)
+    check('so is a bare www. address', out['coWww'] is True)
+    check('one external source among honest ones still counts',
+          out['coMixed'] is True)
+    check('"(Source: what I already know)" — the brief invites this — is NOT',
+          out['coOwnKnow'] is False)
+    check('"general knowledge" is not outside', out['coOwnGeneral'] is False)
+    check('"from memory" is not outside', out['coOwnMemory'] is False)
+    check('"my own experience" is not outside', out['coOwnExper'] is False)
+    check('"no specific source" is not outside', out['coNoSource'] is False)
+    check('"I don\'t have a source" is not outside', out['coDontHave'] is False)
+    check('an empty Source: tag names nothing', out['coEmptyTag'] is False)
+    check('plain prose with no attribution is not outside',
+          out['coPlainProse'] is False)
+    check('"my sources:" mid-sentence is not an attribution line',
+          out['coMidProse'] is False)
+    check('null is safe and not outside', out['coNull'] is False)
+
+    # buildDelivery — when the record is empty AND the reply names sources,
+    # the footer states the contradiction instead of merely making it
+    # available (OFFICE_AS_INTERFACE "Known open" — the invented-HBR-article
+    # filing of 2026-08-12).
+    check('an empty record under claimed sources states the contradiction',
+          'Nothing opened, saved or looked up' in out['footClaims']
+          and 'recalled, not checked' in out['footClaims'],
+          out['footClaims'])
+    check('…in observed terms, not an accusation',
+          'made' not in out['footClaims'].split('**Working**')[1]
+          and 'invent' not in out['footClaims'].split('**Working**')[1],
+          out['footClaims'])
+    check('an honest own-head attribution gets NO callout',
+          'Nothing opened, saved or looked up' in out['footHonest']
+          and 'recalled, not checked' not in out['footHonest'],
+          out['footHonest'])
+    check('a reply with real visits gets NO callout',
+          'recalled, not checked' not in out['footVisited']
+          and '- Read hbr.org/x' in out['footVisited'],
+          out['footVisited'])
 
     # agentFiledPath — defer to a coworker that filed its own deliverable
     check('an ordinary tool visit is not a filing', out['afNone'] is None)
