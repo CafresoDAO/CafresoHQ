@@ -51,7 +51,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ### UX, accessibility, mobile
 - ✅ ~~**No onboarding path** — the dashboard assumes you know what an "endpoint" is.~~ **Built and repeatedly verified — checked again 2026-08-12.** "Endpoint" appears zero times in any first-run UI string — the only two hits in the whole codebase are developer comments in `app.jsx`, not copy a boss sees. The doc's own prescribed fix (guided sign-in → provision → first-task) is exactly what shipped, under office words: the front desk auto-detects brains on the machine ("checking who's available…" → "found on this machine, ready to join" — `modals/hire.jsx`), then the FIRST ASSIGNMENT sheet hands over three starter cards (`modals/starter.jsx`). `OFFICE_AS_INTERFACE.md` §3 has logged multiple clean clock-timed walks of this exact path, most recently 33.3 seconds hire-to-artifact on 2026-08-12. `scripts/test_jargon_table.py` stands guard against this specific regression class.
-- 🟢 **Touch targets < 44px** (buttons ~32–40px). 🟢 **Contrast** — `--brand-coffee-3` (and `--brand-coffee-2` small text) likely fail WCAG AA. 🟡 **Thin error recovery** — no retry on failed async ops.
+- 🟢 **Touch targets < 44px** (buttons ~32–40px). 🟢 ~~**Contrast** — `--brand-coffee-3` (and `--brand-coffee-2` small text) likely fail WCAG AA.~~ **Stale — this exact claim is already resolved below** (see the "fix `--brand-coffee-2/3` contrast" entry a few lines down: done 2026-08-12, plus a theme-specific regression of the same issue found and fixed 2026-08-13). This line predates that fix and was never updated to match. 🟡 **Thin error recovery** — no retry on failed async ops.
 - 🟢 **Brand seam** — pixel-art HQ chrome vs. soft control-plane chrome (`05-design-cohesion`).
 
 ### Workspace hygiene
@@ -130,6 +130,14 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
   have cleared the ticker by degrading every paper surface. Now 5.48:1, still
   3.08:1 dimmer than the ticker's own text. Pinned by
   `scripts/test_coffee_contrast.py`, which fails on that exact wrong fix.
+  **Follow-up, 2026-08-13:** the base-theme fix above did not cover
+  `theme-wallstreet`'s own override of the same `.sep` selector — a
+  separate rule (`#00e0a0` at 37.6% alpha) that was never put through the
+  same analysis. Measured at **2.42:1** against that theme's ticker
+  background, worse than the failure this entry already fixed. Same
+  approach applied: same hue, alpha raised to land at 5.51:1, matching
+  this entry's own 5.48:1 target. Pinned by
+  `scripts/test_ticker_wallstreet_contrast.py`.
 - [ ] **P1 (M)** Polish the **mobile PWA** (manifest + service worker + mobile tab
   bar). *(Measured 2026-08-12 — this is mostly BUILT, not missing. The manifest
   is valid and served as `application/manifest+json`; icon-192/512 (any +
