@@ -118,22 +118,14 @@ const OPENSWARM_ROSTER = [
     name: 'Pixel',
     role: 'Image Generation',
     color: 'rose',
-    /* PARKED. Section 5's own line for the exporter-zoo row ends "image gen
-       can return post-core" — the same sentence that parks video gen and
-       the ComfyUI/A1111 wiring, so this is not a stretch of the row, it is
-       what the row says.
-
-       Confirmed live-relevant, not just doc-literal: `toolsForAgent` only
-       grants GENERATE_IMAGE when `getSettings().imageProvider` is set, and
-       there is NO Settings screen anywhere in the app that sets it —
-       grepped modals/settings.jsx, nothing. So for every install today,
-       Pixel's own job description below runs its last line for real: "tell
-       the boss to configure a provider" in "Settings → Media", a screen
-       that has never existed. A parked coworker isn't on the shelf to make
-       that promise to a first-run stranger in the first place — un-parking
-       Pixel is real, in-scope work (build the Settings → Media screen),
-       not a one-line flip like Reel's. */
-    parked: true,
+    /* Un-parked 2026-08-13. Was parked because `toolsForAgent` only grants
+       GENERATE_IMAGE when `getSettings().imageProvider` is set and no
+       Settings screen anywhere could ever set it — Pixel's own job
+       description promised "configure a provider in Settings → Media", a
+       screen that didn't exist. That screen now exists (modals/providers.jsx
+       MediaTab, mounted at Settings -> Media), so the promise the prompt
+       below makes is real. Reel (video) stays parked — that one is a
+       broader product-scope call (north-star section 5), not this gap. */
     tools: ['vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.8,

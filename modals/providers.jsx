@@ -769,6 +769,197 @@ export function VaultTab() {
   );
 }
 
+/* ── Media generation (Settings -> Media) ────────────────────────────────
+   GENERATE_IMAGE/GENERATE_VIDEO are real, tested tools (exporters.py
+   _generate_image/_generate_video: 5 image providers, 4 video providers,
+   clean structured errors on every branch) gated in hq-runtime.jsx's
+   toolsForAgent purely on `s.imageProvider`/`s.videoProvider` being truthy
+   — and until this tab, NOTHING anywhere ever wrote those two settings
+   keys. See docs/OFFICE_AS_INTERFACE.md, "GENERATE_IMAGE/GENERATE_VIDEO
+   are fully built and completely unreachable" (2026-08-12).
+
+   Cloud keys reuse the SAME encrypted vault as terminal sessions
+   (CafresoHQClient.setAgentKey/getAgentKey, claude-client.jsx) —
+   generateImage/generateVideo already call getAgentKey('openai'|'google'
+   |'fal'), so a shared provider (e.g. fal for both image and video) only
+   asks for a key once. Local providers (a1111, comfyui) take a base URL
+   instead, in plain settings — no secret involved, same shape as the
+   LM Studio/Ollama URL fields above. */
+const IMAGE_PROVIDERS = [
+  { id: 'openai',  label: 'OpenAI (DALL·E)',        kind: 'key', keyId: 'openai',
+    modelPh: 'dall-e-3' },
+  { id: 'google',  label: 'Google (Gemini/Imagen)',  kind: 'key', keyId: 'google',
+    modelPh: 'gemini-2.5-flash-image-preview' },
+  { id: 'fal',     label: 'fal.ai',                  kind: 'key', keyId: 'fal',
+    modelPh: 'fal-ai/flux/schnell' },
+  { id: 'a1111',   label: 'Automatic1111 (local)',   kind: 'url', urlField: 'a1111Url',
+    ph: 'http://127.0.0.1:7860', modelPh: '(server default)' },
+  { id: 'comfyui', label: 'ComfyUI (local)',         kind: 'url', urlField: 'comfyUrl',
+    ph: 'http://127.0.0.1:8188', modelPh: '(server default)' },
+];
+const VIDEO_PROVIDERS = [
+  { id: 'fal',     label: 'fal.ai',                          kind: 'key', keyId: 'fal',
+    modelPh: 'fal-ai/bytedance/seedance/v1/lite/text-to-video' },
+  { id: 'openai',  label: 'OpenAI (Sora — gated, returns an error)', kind: 'key', keyId: 'openai',
+    modelPh: '—' },
+  { id: 'google',  label: 'Google (Veo — not wired, returns an error)', kind: 'key', keyId: 'google',
+    modelPh: '—' },
+  { id: 'comfyui', label: 'ComfyUI (local, needs a workflow)', kind: 'url', urlField: 'comfyUrl',
+    ph: 'http://127.0.0.1:8188', modelPh: '(provider-specific — required)' },
+];
+const MEDIA_KEY_META = {
+  openai: { label: 'OpenAI', ph: 'sk-…',
+    link: 'https://platform.openai.com/api-keys', linkText: 'platform.openai.com/api-keys' },
+  google: { label: 'Google', ph: 'AIza…',
+    link: 'https://aistudio.google.com/apikey', linkText: 'aistudio.google.com/apikey' },
+  fal:    { label: 'fal.ai', ph: 'key_id:key_secret',
+    link: 'https://fal.ai/dashboard/keys', linkText: 'fal.ai/dashboard/keys' },
+};
+
+/* Write-only key field: the vault never hands the plaintext back to a
+   caller that isn't about to use it immediately, so this row can only show
+   "saved" / "not set", never the value itself. Mirrors VaultTab's REST API
+   KEY field (same never-redisplay rule), but backed by setAgentKey/
+   getAgentKey instead of vaultConfigure. */
+function MediaKeyRow({ keyId }) {
+  const meta = MEDIA_KEY_META[keyId];
+  const [has, setHas] = useStateM(() => CafresoHQClient.hasAgentKey(keyId));
+  const [busy, setBusy] = useStateM(false);
+  const [msg, setMsg] = useStateM('');
+
+  // hasAgentKey() is synchronous against local-device presence only; chain
+  // keychain hydration finishes async shortly after module load, so confirm
+  // with the real (awaited) getter once mounted rather than trusting the
+  // synchronous snapshot forever.
+  useEffectM(() => {
+    let live = true;
+    CafresoHQClient.getAgentKey(keyId).then(v => { if (live) setHas(!!v); }).catch(() => {});
+    return () => { live = false; };
+  }, [keyId]);
+
+  const save = async (e) => {
+    const val = e.target.value.trim();
+    if (!val) return;
+    e.target.value = '';
+    setBusy(true); setMsg('');
+    try {
+      await CafresoHQClient.setAgentKey(keyId, val);
+      setHas(true);
+      setMsg('✓ saved');
+    } catch (err) { setMsg(err.message || 'save failed'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="form-row" style={{ marginBottom: 8 }}>
+      <label>{meta.label} KEY</label>
+      <input type="password" placeholder={has ? '•••• (saved — type to replace)' : meta.ph}
+        autoComplete="off" spellCheck={false} disabled={busy} onBlur={save} />
+      <span className="hint">
+        {msg || <>get one at{' '}
+          <a href={meta.link} target="_blank" rel="noopener noreferrer"
+             style={{ color: 'var(--accent-rose, #c45)', textDecoration: 'underline' }}>
+            {meta.linkText}
+          </a></>}
+        {' '}· shared with any other media provider that uses the same key
+      </span>
+    </div>
+  );
+}
+
+export function MediaTab() {
+  const [s, update] = useSettingsStore();
+  const imgMeta = IMAGE_PROVIDERS.find(p => p.id === s.imageProvider);
+  const vidMeta = VIDEO_PROVIDERS.find(p => p.id === s.videoProvider);
+  // One row per distinct key provider actually in play, so a shared
+  // provider (e.g. fal for both image and video) asks for a key once.
+  const keyIds = [...new Set([imgMeta, vidMeta].filter(p => p && p.kind === 'key').map(p => p.keyId))];
+
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>IMAGE GENERATION</h4>
+        <div className="sub" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+          Coworkers get the GENERATE_IMAGE tool once a provider is set here — leave
+          it off to keep image generation out of their toolbelt entirely.
+        </div>
+        <div className="form-row" style={{ marginBottom: 8 }}>
+          <label>PROVIDER</label>
+          <select value={s.imageProvider || ''} onChange={e => update({ imageProvider: e.target.value })}>
+            <option value="">— off —</option>
+            {IMAGE_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </div>
+        {imgMeta && (
+          <div className="form-row" style={{ marginBottom: imgMeta.kind === 'url' ? 8 : 0 }}>
+            <label>MODEL</label>
+            <input placeholder={imgMeta.modelPh} value={s.imageModel || ''}
+              onChange={e => update({ imageModel: e.target.value })} />
+            <span className="hint">blank uses your office's default model for this provider</span>
+          </div>
+        )}
+        {imgMeta && imgMeta.kind === 'url' && (
+          <div className="form-row">
+            <label>BASE URL</label>
+            <input placeholder={imgMeta.ph} value={s[imgMeta.urlField] || ''}
+              onChange={e => update({ [imgMeta.urlField]: e.target.value })} />
+            <span className="hint">where your local {imgMeta.label.split(' ')[0]} server listens</span>
+          </div>
+        )}
+      </div>
+
+      <div className="cb-panel">
+        <h4>VIDEO GENERATION</h4>
+        <div className="sub" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+          fal.ai is the only provider that can succeed on just an API key today —
+          OpenAI's Sora and Google's Veo APIs are still gated, so those branches
+          return a clean error instead of a video.
+        </div>
+        <div className="form-row" style={{ marginBottom: 8 }}>
+          <label>PROVIDER</label>
+          <select value={s.videoProvider || ''} onChange={e => update({ videoProvider: e.target.value })}>
+            <option value="">— off —</option>
+            {VIDEO_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </div>
+        {vidMeta && (
+          <div className="form-row" style={{ marginBottom: vidMeta.kind === 'url' ? 8 : 0 }}>
+            <label>MODEL</label>
+            <input placeholder={vidMeta.modelPh} value={s.videoModel || ''}
+              onChange={e => update({ videoModel: e.target.value })} />
+            <span className="hint">blank uses your office's default model for this provider</span>
+          </div>
+        )}
+        {vidMeta && vidMeta.kind === 'url' && (
+          <div className="form-row">
+            <label>BASE URL</label>
+            <input placeholder={vidMeta.ph} value={s[vidMeta.urlField] || ''}
+              onChange={e => update({ [vidMeta.urlField]: e.target.value })} />
+            <span className="hint">ComfyUI video needs a workflow JSON supplied per-call; this only sets where to reach it</span>
+          </div>
+        )}
+      </div>
+
+      {keyIds.length > 0 && (
+        <div className="cb-panel">
+          <h4>PROVIDER KEYS</h4>
+          <div className="sub" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+            Stored in this browser's encrypted key vault — the same one used for
+            terminal sessions. Never sent anywhere but the provider's own API.
+          </div>
+          {keyIds.map(id => <MediaKeyRow key={id} keyId={id} />)}
+        </div>
+      )}
+
+      {!imgMeta && !vidMeta && (
+        <div className="cb-panel">
+          <div className="muted">Pick an image or video provider above to give coworkers the media-generation tool.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BraveTab({ s, update }) {
   const [probing, setProbing] = useStateM(false);
   const [result, setResult] = useStateM(null);

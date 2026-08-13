@@ -402,22 +402,25 @@ console.log(JSON.stringify(R));
     check('Reel (video generation) is marked parked',
           bool(reel) and 'parked: true' in reel.group(0),
           'hq-runtime.jsx: the parked template must say so')
-    # Pixel is parked too. Not the same row literally, but the SAME
-    # sentence: section 5's exporter-zoo row ends "image gen can return
-    # post-core" — and independent of the doc, toolsForAgent only grants
-    # GENERATE_IMAGE when getSettings().imageProvider is set, which no
-    # Settings screen in the app can ever set. A hired coworker whose job
-    # description permanently points at a settings page that does not
-    # exist is a worse failure than a capability that is honestly absent.
+    # Pixel was parked for the SAME reason Reel is (section 5's exporter-zoo
+    # row), plus a live-relevant one: toolsForAgent only ever granted
+    # GENERATE_IMAGE when getSettings().imageProvider was set, and no
+    # Settings screen in the app could ever set it — Pixel's own job
+    # description permanently pointed at a settings page that did not
+    # exist. modals/providers.jsx's MediaTab (mounted at Settings -> Media,
+    # see scripts/test_media_settings_wired.py) closed that gap 2026-08-13,
+    # so Pixel is un-parked: the promise its prompt makes is real now.
     pixel = re.search(r"name: 'Pixel',[\s\S]{0,1200}?systemPrompt", rt)
-    check('Pixel (image generation) is marked parked',
-          bool(pixel) and 'parked: true' in pixel.group(0),
-          'hq-runtime.jsx: the parked template must say so')
+    check('Pixel (image generation) is no longer parked',
+          bool(pixel) and 'parked: true' not in pixel.group(0),
+          'hq-runtime.jsx: Settings -> Media exists now (modals/providers.jsx MediaTab) '
+          '— Pixel should not still be marked parked')
     settings_src = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')
-    check("the dead end is real: no Settings screen sets imageProvider",
-          'imageProvider' not in settings_src,
-          'modals/settings.jsx: a Media settings screen now exists — Pixel can be un-parked '
-          '(this check should be REMOVED, not made to pass some other way)')
+    check('the Settings -> Media screen actually sets imageProvider',
+          "activeTab === 'media'" in settings_src and 'imageProvider' in
+          (ROOT / 'modals' / 'providers.jsx').read_text(encoding='utf-8'),
+          'modals/settings.jsx / modals/providers.jsx: MediaTab must write imageProvider '
+          '— otherwise Pixel is un-parked onto the same dead end it was parked to avoid')
     check('the seed-swarm hire skips parked templates',
           'if (tpl.parked) continue;' in rt,
           'hq-runtime.jsx: spawnOpenswarmRoster must skip parked')

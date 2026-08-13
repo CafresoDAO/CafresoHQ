@@ -2024,10 +2024,15 @@ async function exportPdf(path, content) {
   return j;
 }
 
-/* Read media provider/model from settings. Falls back to OpenAI/dall-e-3. */
+/* Read media provider/model from settings (Settings -> Media). Falls back
+   to OpenAI/dall-e-3 for images. Video's default is 'fal', NOT 'openai':
+   exporters.py's openai video branch is a hardcoded 501 ("Sora API is
+   gated"), so defaulting an unset video provider to openai guaranteed
+   failure for every boss who hadn't visited Settings -> Media yet. fal is
+   the only video provider that can succeed on just an API key. */
 function _mediaConfig(kind /* 'image' | 'video' */) {
   const s = (typeof getSettings === 'function') ? getSettings() : (CafresoHQClient && CafresoHQClient.getSettings ? CafresoHQClient.getSettings() : {});
-  const provider = (kind === 'video' ? s.videoProvider : s.imageProvider) || 'openai';
+  const provider = (kind === 'video' ? s.videoProvider : s.imageProvider) || (kind === 'video' ? 'fal' : 'openai');
   const model = (kind === 'video' ? s.videoModel : s.imageModel) || (kind === 'video' ? '' : 'dall-e-3');
   return { provider, model };
 }

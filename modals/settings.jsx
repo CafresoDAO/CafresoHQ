@@ -21,6 +21,10 @@ import { cleanCause } from '../app/floor.jsx';
    process starts. The component itself needed no changes — it already
    uses only `CafresoHQClient` and `HQ`, both already imported here. */
 import { VaultTab } from './providers.jsx';
+/* MediaTab: Settings -> Media, the missing door onto GENERATE_IMAGE/
+   GENERATE_VIDEO — see the comment above MediaTab's own definition in
+   providers.jsx for the full unreachable-tool story. */
+import { MediaTab } from './providers.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
         useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
@@ -30,6 +34,7 @@ const SETTINGS_TABS = [
   { id: 'connections', ico: '🔌', label: 'CONNECTIONS', desc: 'brains found · cloud keys' },
   { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
   { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
+  { id: 'media',       ico: '🎬', label: 'MEDIA',       desc: 'image · video generation' },
   { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
 ];
 // old/removed id → canonical id, so deep-links (openSettings('keys') from the
@@ -45,7 +50,7 @@ const SETTINGS_TABS = [
    fallback catches that and lands on the first visible tab instead. */
 const SETTINGS_TAB_ALIAS = {
   global: 'appearance', modules: 'icp-services',
-  keys: 'connections', system: 'account', agentcli: 'connections', media: 'appearance',
+  keys: 'connections', system: 'account', agentcli: 'connections',
 };
 
 /* Search index — one entry per meaningful control so "key", "model", "dark"
@@ -61,6 +66,9 @@ const SETTINGS_INDEX = [
   { tab:'icp-services', label:'Money & payments (optional)', hint:'master switch for wallets, payroll, tips — off by default', kw:'money payments wallet payroll tips icrc icp ckusdt ckuni token balance fund send cap spend agent crypto enable disable optional' },
   { tab:'icp-services', label:'Agent wallet', hint:'per-agent on-chain wallet + spend cap', kw:'wallet icp ckusdt ckuni token balance fund send cap spend agent money crypto' },
   { tab:'icp-services', label:'Publish to canister', hint:'ship a site to a *.icp0.io URL', kw:'publish canister deploy site url icp0 web hosting' },
+  { tab:'media', label:'Image generation', hint:'pick a provider to give coworkers GENERATE_IMAGE — off by default', kw:'media image generation dall-e dalle openai google gemini imagen fal automatic1111 a1111 stable diffusion picture pixel art' },
+  { tab:'media', label:'Video generation', hint:'pick a provider to give coworkers GENERATE_VIDEO — off by default', kw:'media video generation fal sora veo comfyui seedance clip movie' },
+  { tab:'media', label:'Media provider keys', hint:'API keys for image/video providers, stored in the encrypted vault', kw:'media image video key api vault openai google fal' },
   { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
@@ -277,9 +285,14 @@ function ConnectionsPanel() {
    but the boss saw a checkbox with no effect and no warning. Hidden
    rather than left half-true. 'code'/'files' are a different case (real
    file/shell access exists, gated on `agent.elevated`, not on this
-   claim) and 'img' is a different case again (a real tool gated on an
-   orphaned setting, tracked separately) — neither removed here, since
-   both need a product decision this filter shouldn't make silently. */
+   claim) and 'img' is a different case again: GENERATE_IMAGE/GENERATE_VIDEO
+   are real tools, gated on the imageProvider/videoProvider settings that
+   Settings -> Media (MediaTab, providers.jsx) now writes — but this
+   catalog checkbox itself still gates nothing (`claimed.has('img')`
+   appears nowhere in toolsForAgent). Left as an inert checkbox rather than
+   hidden, since removing it is a separate product decision than the one
+   made here. Neither removed here, since both need a product decision
+   this filter shouldn't make silently. */
 const NEVER_WIRED_TOOL_IDS = new Set(['email', 'cal', 'db', 'slack']);
 const visibleToolsCatalog = () =>
   HQ.TOOLS_CATALOG
@@ -925,6 +938,8 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
           {!terms.length && activeTab === 'icp-services' && (
             <IcpServicesPanel agents={agents} />
           )}
+
+          {!terms.length && activeTab === 'media' && <MediaTab />}
 
           {!terms.length && activeTab === 'agents' && (
             <div className="control-board">
