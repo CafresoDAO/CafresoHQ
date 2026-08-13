@@ -3,6 +3,18 @@
 > **Status:** Draft for founder review · Generated 2026-05-29
 > **Goal (founder's words):** "get as close to MVP for our entire ecosystem of apps" and "fully launch CafresoHQ so we can work towards raising ICP for our DAO."
 > **How to read this:** §1 is the honest current state. §2 names the few things actually blocking a launch. §3 defines the smallest coherent MVP. §4 is the phased plan. §5 is a per‑app checklist. Tokenomics/SNS specifics live in `04`; market positioning in `02`.
+>
+> ⚠️ **This document predates ~2.5 months of subsequent work on CafresoHQ
+> specifically, and its central premise — "HQ agent execution is mock
+> only" — is now false, corrected in place below with dated evidence.**
+> The correction is scoped to what a long session of live-driving
+> `ai.cafreso.com`/CafresoHQ has directly proven (real agent dispatch,
+> real tool execution, real missions, real workflows, a real graph view —
+> see `OFFICE_AS_INTERFACE.md` for the dated, evidenced ledger of all of
+> it). It is **not** a re-audit of the other four rows in the ecosystem
+> table (fleet provisioning/billing, shared identity, SNS/ledger,
+> Minegold/Pages) — those were not touched this session and should still
+> be read as "as of May" until someone checks them the same way.
 
 ---
 
@@ -22,8 +34,8 @@ Grounded in the code as of this review. **The cryptographic and identity foundat
 | OCI fleet provisioning | ⚠️ Partial — **blocker** | `oci-fleet/fleet-api.py` + `fleet-manager.py` can spawn containers (1 OCPU/6GB); **no billing/metering, DNS not wired, job state in‑memory** |
 | Caddy per‑user gateway (`/u/{slug}`) | ⚠️ Partial — **blocker** | `caddyfile.template` ready; `gateway.public_hostname` unset → falls back to raw IP |
 | Shared‑principal identity across domains | ❌ Broken — **blocker** | `frontend/static/.well-known/ii-alternative-origins` is **empty** → "one login, every app" doesn't actually work yet |
-| HQ agent execution | ❌ Mock only — **blocker for positioning** | `mock-data.jsx` `INITIAL_AGENTS` (Mira/Kip/Bop) are hardcoded UI state; `// INTEGRATE:` markers; no live task dispatch |
-| HQ missions / workflows / graph | ❌ Stubbed | demo seed data; graph view designed not built |
+| HQ agent execution | ✅ ~~Mock only — blocker for positioning~~ **Real, verified 2026-08-13.** `mock-data.jsx` does not exist in this codebase (confirmed again during this correction). `HQ.INITIAL_AGENTS` is `[]` — a fresh office starts empty, not seeded with fake sprites. Live dispatch runs through `agentStream`/`dispatchToAgent` to whichever real brain a boss configures (Ollama/LM Studio/OpenRouter/Claude/Codex/Gemini); a full session of throwaway-office drives proved real tool execution (`VAULT_NEW`, `SEARCH`, `PUBLISH_SITE`, `WALLET_*`, exports, `DM_TO` chains), real approvals, real receipts, and a real end-to-end delivery in **92 seconds** hire-to-filed-vault-note on a wiped install — see `OFFICE_AS_INTERFACE.md` §3 and its dated ledger entries throughout 2026-08. |
+| HQ missions / workflows / graph | ✅ ~~Stubbed — demo seed data; graph view designed not built~~ **Built and driven, verified 2026-08-13.** Missions run for real (a real 15-minute Night Shift run was driven end to end, with terminal-transition timestamps fixed to make the calendar and board honest about it). Workflows chain real dispatch — a live two-step chain was driven with the second step's prompt genuinely built from the first step's real output, not a canned string. The vault graph is a real force-directed Sigma canvas, not a mockup — driven with seeded linked notes, correct real analytics (node/edge/cluster counts matching the seed exactly), and one real interaction bug (an unclickable close button) found and fixed live. None of this is stub data; all of it is in `OFFICE_AS_INTERFACE.md`'s ledger with dates and reproduction steps. |
 | SNS / governance / token ledger canister | ❌ Not started | only frontend + keys canisters exist today |
 | Unified design tokens across apps | ⚠️ Diverged | see `05-design-cohesion` |
 
@@ -36,7 +48,7 @@ Grounded in the code as of this review. **The cryptographic and identity foundat
 Everything else is polish. These five are the difference between "demo" and "a stranger can sign up and get value."
 
 1. **Wire the ecosystem identity** — populate `ii-alternative-origins` so the shared principal works across `cafreso.com`, `ai.cafreso.com`, `hq.cafreso.com`, Banking.Brave, `minegold.defi`. Without this the "one ecosystem" story is fiction. *(S)*
-2. **Make the HQ agent loop real** — replace at least one mock agent path with a live one: user assigns a task → it dispatches to Claude in their container → result + receipt persisted to the vault. One real loop beats five fake sprites. *(L)*
+2. ✅ ~~**Make the HQ agent loop real** — replace at least one mock agent path with a live one: user assigns a task → it dispatches to Claude in their container → result + receipt persisted to the vault. One real loop beats five fake sprites.~~ **Done, verified 2026-08-13** — see the corrected current-state row above. Not one loop but the general path: task assignment, chat, DM chains, missions and workflows all dispatch live and persist real receipts. What this bullet does NOT cover and this session did not verify: whether that dispatch happens *inside the user's own provisioned container* specifically, as opposed to whatever brain (local or cloud) the boss has configured — that's an OCI-fleet/provisioning question, item 3 below, still unverified.
 3. **Fleet: provisioning + metering + a paywall** — finish DNS/Caddy routing, persist job state, meter cycles/OCI cost per user, and gate provisioning behind *something* (free‑tier quota or payment). You cannot open the doors to the public while every signup spends your money invisibly. *(L)*
 4. **Cost/usage visibility** — surface per‑user compute + cycle spend in the dashboard. This is both a trust feature and the precondition for any subscription or token‑credit model (`02`, `04`). *(M)*
 5. **A real onboarding path** — a logged‑out visitor needs a 3‑step path to first value (sign in → provision/connect → run one agent task) without reading docs. Today the dashboard assumes you already know what an endpoint is. *(M)*
@@ -84,6 +96,18 @@ This framing lets you launch in weeks, not quarters, and gives the DAO a *real p
 
 **Exit:** a new user with no context completes one real agent task and sees the result saved in their vault.
 
+> ✅ ~~Unmet~~ **Met on a wiped install, verified 2026-08-13** — see the
+> corrected current-state row above (92s hire-to-filed-vault-note, zero
+> jargon on the path). One nuance worth carrying forward rather than
+> silently resolving: the vault this lands in is CafresoHQ's own Markdown
+> vault (real files on disk, browsable, graphable — driven and confirmed
+> this session), which is the *root app's plaintext vault* `06`'s "Two
+> vault implementations" critique names, not necessarily the same thing
+> as the SvelteKit **E2E-encrypted** vault store that critique calls the
+> "real" one. If this MVP's promise specifically requires end-to-end
+> encryption at rest, that gap is still open and this session did not
+> touch it.
+
 ### Phase 2 — "We can open the doors safely" (1–2 weeks, overlaps Phase 1)
 - [ ] Persist fleet job state (file/DB, not in‑memory) and add provisioning rate‑limits.
 - [ ] Meter per‑user OCI cost + canister cycles; expose a usage endpoint from `fleet-api.py`.
@@ -116,7 +140,7 @@ This framing lets you launch in weeks, not quarters, and gives the DAO a *real p
 |---|---|---|---|
 | **Cafreso Pages** (`cafreso.com`) | Storefront + dev log + community front door | Working checkout (coffee/sub), dev‑log live, ecosystem nav, link to AI/HQ | Storefront/checkout partial; admin/treasury view missing |
 | **CafresoHQ** (`ai.cafreso.com`) | Control plane / shell | II login, ecosystem nav, vault, chat, provisioning + usage, onboarding | Shell done; provisioning/billing + onboarding are the gaps |
-| **CafresoHQ** (`hq.cafreso.com`) | Per‑user agent workspace | One real agent loop, vault‑persisted state, cohesive chrome | Agents mock; chrome diverged |
+| **CafresoHQ** (`hq.cafreso.com`) | Per‑user agent workspace | One real agent loop, vault‑persisted state, cohesive chrome | ✅ ~~Agents mock; chrome diverged~~ **Corrected 2026-08-13** — agents are real (see current-state table); chrome is a single from-scratch pixel-art rendering (`ui/office.jsx`, replaced 2026-08-06), not diverged CSS skins. Whether it's *cohesive with the other 4 apps'* chrome specifically (the `05-design-cohesion` brand-seam question) is untouched — this only confirms it's no longer the multiple-competing-implementations problem the old note described. |
 | **Minegold.defi / Banking.Brave** (one app) | II anchor + treasury/yield — Banking.Brave is the homepage, Minegold.defi the protocol under that domain | Add custom domains to `ii-alternative-origins` (done); show DAO/treasury balances; admin dashboard | Backend live `c626g-…`; frontend canister `cqyto-…` = II anchor; admin UI missing |
 
 ---
