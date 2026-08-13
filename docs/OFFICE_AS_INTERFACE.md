@@ -5007,3 +5007,46 @@ settings — never on the floor, the cards, or onboarding.
 > for all four checked reasons (not async, no source gate, no fsMkdir
 > call, no try/catch), confirming the test actually discriminates the fix
 > rather than passing on any shape of the function.
+
+> **2026-08-13 — the honesty note that called three honest surfaces
+> liars.** First tick this session to drive a genuinely VIRGIN office —
+> empty state dir, no seeded agents.json, the true first-run every prior
+> throwaway had skipped past. The front door held up: the front desk
+> auto-opened with the machine's real candidates, hiring Llama (the free
+> local one) flowed straight into the FIRST ASSIGNMENT starter cards, the
+> START button properly disables on an empty topic (0.45 opacity,
+> not-allowed cursor — checked before calling it a dead button), and one
+> typed topic later a real local model picked up, finished, and filed a
+> real draft to `Drafts/` — FIRST DELIVERY sheet, approval stamp, floor
+> log and cabinet all agreeing. The product's proudest moment, working.
+>
+> Then the last line of Llama's chat bubble: *"(nothing was appended in
+> the cabinet — that one needs a closing tag to be written. Ask them to
+> try again.)"* — directly under a reply whose deliverable was sitting in
+> the cabinet, complete, openable, announced by three other surfaces.
+>
+> Root cause, a collision between two honesty mechanisms: the TASK path
+> files the deliverable itself (`fileDelivery` — best-effort, exactly so
+> a coworker's botched self-filing can't lose work), while `unsentBlocks`
+> flags any `[VAULT_APPEND:` opened without a closer. Llama emitted an
+> unclosed opener; the office filed the finished draft anyway; the guard
+> — written for the chat paths, where an unclosed vault tag really does
+> mean nothing landed — fired a note that was true about the tag and
+> false about the world. The note exists to contradict FALSE success
+> claims; here the success was real and the note was the lie.
+>
+> Fix: `unsentBlocks(text, skipKinds)` — the task path passes the two
+> cabinet-write kinds only once its own filing succeeded
+> (`deliveryFiled`), so the chat paths keep the guard verbatim and every
+> non-cabinet kind (memory, exports, hires, hand-offs — things the office
+> does NOT do on a coworker's behalf) stays guarded everywhere. Pinned in
+> `scripts/test_reply_hygiene.py` at both layers — the function's skip
+> behavior AND the app.jsx wiring that passes it — and fire-tested both:
+> deleting the skip line failed the three new function checks with the
+> exact live note; reverting the call site to the plain one-arg form
+> failed the wiring check alone.
+>
+> Also chased and CLEARED this drive: the floor ticker listing every
+> event twice is the marquee's two deliberate halves (`translate -50%`
+> loop, animation confirmed running at 60s on `.line`) — the duplication
+> is only visible to text extraction, not to a boss watching the strip.

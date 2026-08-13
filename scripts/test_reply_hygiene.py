@@ -291,6 +291,17 @@ R.ubTwo      = unsentBlocks('[HIRE_AGENT: A]\nx\n[SPAWN_SUBAGENT: b]\ny');
 R.ubWrite    = unsentBlocks('[MEMORY_WRITE: notes/a.md]\nhello');   // write class → NOW ours
 R.ubNone     = unsentBlocks('Just an ordinary reply.');
 R.ubMixed    = unsentBlocks('[HIRE_AGENT: A]\nx\n[/HIRE_AGENT]\n[SPAWN_SUBAGENT: b]\ny');
+/* skipKinds — the task path's exception. The office files the deliverable
+   itself there (fileDelivery), so once filing succeeded the two cabinet
+   kinds must NOT be called out: the note would contradict the FIRST
+   DELIVERY sheet, the floor log, and the file the boss can open. Watched
+   live on a virgin office's first starter task (Llama emitted an unclosed
+   [VAULT_APPEND: while the office filed the finished draft to Drafts/).
+   Everything else stays guarded even with the skip in force. */
+R.ubSkipVault    = unsentBlocks('the draft\n[VAULT_APPEND: Drafts/note.md]\nbody', ['VAULT_NEW', 'VAULT_APPEND']);
+R.ubSkipVaultNew = unsentBlocks('[VAULT_NEW: Drafts/note.md]\nbody', ['VAULT_NEW', 'VAULT_APPEND']);
+R.ubSkipKeepsRest= unsentBlocks('[VAULT_APPEND: a.md]\nx\n[MEMORY_WRITE: b.md]\ny', ['VAULT_NEW', 'VAULT_APPEND']);
+R.ubNoSkipVault  = unsentBlocks('the draft\n[VAULT_APPEND: Drafts/note.md]\nbody');
 R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
 R.uhEmpty     = unsentHandoff('', 0);
 R.uhNull      = unsentHandoff(null, 0);
@@ -547,6 +558,30 @@ def main():
     check('an ordinary reply is silent', out['ubNone'] is None)
     check('a good marker beside a broken one only flags the broken one',
           out['ubMixed'] is not None and out['ubMixed'].count('_(') == 1, out['ubMixed'])
+    # skipKinds: the task path files the deliverable itself, so once filing
+    # succeeded the cabinet kinds must go quiet — and ONLY the cabinet kinds.
+    check('a skipped VAULT_APPEND is silent when the office already filed',
+          out['ubSkipVault'] is None, repr(out['ubSkipVault']))
+    check('…and a skipped VAULT_NEW likewise', out['ubSkipVaultNew'] is None,
+          repr(out['ubSkipVaultNew']))
+    check('the skip leaves every other kind guarded — MEMORY_WRITE still flags',
+          out['ubSkipKeepsRest'] is not None
+          and out['ubSkipKeepsRest'].count('_(') == 1
+          and 'memory' in out['ubSkipKeepsRest'],
+          repr(out['ubSkipKeepsRest']))
+    check('without the skip an unclosed VAULT_APPEND is still called out '
+          '(the chat paths, where nothing was filed for them)',
+          out['ubNoSkipVault'] is not None and 'cabinet' in out['ubNoSkipVault'],
+          repr(out['ubNoSkipVault']))
+    # And the wiring, not just the function: the TASK path in app.jsx must
+    # actually pass the skip, gated on the office having filed. Without this
+    # a refactor could drop the second argument and every check above would
+    # stay green while the live bug returned.
+    app_src = (Path(__file__).resolve().parent.parent / 'app.jsx').read_text()
+    check('app.jsx task path gates the cabinet kinds on deliveryFiled',
+          re.search(r"unsentBlocks\(buf,\s*deliveryFiled\s*\?\s*\['VAULT_NEW',\s*'VAULT_APPEND'\]\s*:\s*undefined\)", app_src) is not None)
+    check('app.jsx sets deliveryFiled from the filing outcome',
+          'deliveryFiled = !!filedPath;' in app_src)
     check('an own-line marker still counts as unsent', bool(out['uhOwnLine']))
     check('empty and null are safe', out['uhEmpty'] is None and out['uhNull'] is None)
     check('a runaway name cannot blow up the note', out['uhLongName'] is True)

@@ -3635,6 +3635,12 @@ ${d.text}` : d.text,
     let usedTokens = 0;
     const dmQueue = [];
     const toolVisits = [];      // what they consulted, for the delivery footer
+    /* Whether the deliverable actually reached the cabinet this run — set
+       inside the try below, read by the unsentBlocks guard after it, which
+       lives in a different block and can't see `filedPath`. See the
+       skipKinds note on unsentBlocks in hq-runtime.jsx for why the guard
+       needs to know. */
+    let deliveryFiled = false;
     const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     /* A task run gets NO chat history, unlike the two conversational paths.
@@ -3735,6 +3741,7 @@ ${d.text}` : d.text,
            out-tray at the host's duplicate instead of their real file. */
         const ownPath = agentFiledPath(toolVisits);
         const filedPath = ownPath || await fileDelivery(task, agent, cleanBuf, toolVisits);
+        deliveryFiled = !!filedPath;
         if (filedPath) {
           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
           logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
@@ -3859,7 +3866,16 @@ ${d.text}` : d.text,
       if (missAsk && flush && flush.note) flush.note(missAsk);
       /* …and the rest of the class: a hire, an assistant, a helper, a
          hand-off that never parsed. Each leaves a person waiting. */
-      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
+      /* \u2026EXCEPT the two cabinet-write kinds once the office has filed the
+         deliverable itself this run: then the cabinet HAS the work, the
+         FIRST DELIVERY sheet and the floor log both say so, and a
+         "nothing was appended in the cabinet" note would be the one
+         surface in the room that's wrong \u2014 telling the boss to "ask them
+         to try again" about a file they can open. Watched happen on a
+         virgin office's very first starter task; the full account is on
+         unsentBlocks' skipKinds note in hq-runtime.jsx. */
+      const missBlocks = HQ.unsentBlocks
+        && HQ.unsentBlocks(buf, deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined);
       if (missBlocks && flush && flush.note) flush.note(missBlocks);
       /* Same guard as the dispatch path: a coworker writing the office's
          own `[A \u2192 B]:` relay label around words it invented, when the

@@ -756,8 +756,25 @@ function unsentElevation(text, raised) {
 
    Unlike unsentHandoff this needs no "did anything land" flag: a marker
    opened with no closing tag of its own is proof THAT ONE did not parse,
-   whatever else in the reply did. */
-function unsentBlocks(text) {
+   whatever else in the reply did.
+
+   ...with one exception, which is what `skipKinds` is for. On the TASK
+   path the office files the deliverable itself (fileDelivery in app.jsx —
+   best-effort, exactly so a coworker's own botched filing cannot lose the
+   work). Watched live on a VIRGIN office's very first starter task: Llama
+   opened a [VAULT_APPEND: with no closer, the office filed the finished
+   draft anyway, the FIRST DELIVERY sheet said "filed it in your cabinet",
+   the floor log said "filed to Drafts 🗄", the file sat in the Vault with
+   the full draft — and this guard appended "nothing was appended in the
+   cabinet … Ask them to try again." Three surfaces telling the boss it
+   landed, and the honesty note calling all three liars, on the product's
+   proudest first-run moment. The note exists to contradict FALSE success
+   claims; when the office itself put the deliverable in the cabinet, the
+   success is real and the note is the part that lies. So the task path
+   passes the two cabinet-write kinds here once filing succeeded; every
+   other kind (memory, exports, hires, hand-offs) stays guarded because
+   the office does NOT do those on the coworker's behalf. */
+function unsentBlocks(text, skipKinds) {
   /* Table lives inside the function: scripts/test_reply_hygiene.py lifts
      named functions out of this file to run them under node, so a
      module-level const beside it is invisible to the harness. */
@@ -780,8 +797,10 @@ function unsentBlocks(text) {
     ['GENERATE_VIDEO',  'no video was made — that one needs a closing tag. Nothing was created.'],
   ];
   const t = String(text || '');
+  const skip = Array.isArray(skipKinds) ? skipKinds : [];
   const notes = [];
   for (const [name, why] of KINDS) {
+    if (skip.includes(name)) continue;
     const opened = new RegExp('\\[\\s*' + name + '\\s*:', 'i').test(t);
     if (!opened) continue;
     const closed = new RegExp('\\[\\s*\\/\\s*' + name + '\\s*\\]', 'i').test(t);
