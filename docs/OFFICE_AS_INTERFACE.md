@@ -1771,6 +1771,43 @@ captured regardless of type, and every agent's deliverables are
 captured regardless of elevation — the audit trail the elevation
 dialog promises is the real one, not a decorative one.
 
+### Export tools verified working end to end, including a fallback edge case — 2026-08-13
+
+The 2026-08-12 export-tools fix (the missing `_read_json_body` binding)
+left one thing explicitly unverified: "a full successful export... since
+no export library is actually installed on this machine." Closed that
+today. `pip install` on this machine's system Python is blocked by
+Homebrew's PEP-668 guard (both the plain and `--user` forms), and
+overriding that with `--break-system-packages` risks the user's real
+Python installation — not a call to make unilaterally under an
+autonomous loop. Installed `python-pptx`, `python-docx`, `weasyprint`,
+and `reportlab` into an isolated scratch venv instead (created and
+destroyed within this tick, touching nothing outside it) and ran a
+throwaway office under that venv's interpreter.
+
+All three formats produced real, valid files, confirmed by `file` (not
+just a 200 response): a genuine Microsoft OOXML `.docx`, a genuine OOXML
+`.pptx`, and a real 1-page PDF. The PDF path surfaced something worth
+knowing beyond "it works": `weasyprint` imports fine as a Python package
+but needs the native Pango library to actually run, which this machine
+doesn't have — so importing it raised `OSError`, not `ImportError`.
+`_export_pdf`'s weasyprint attempt is wrapped in `except ImportError:
+pass` **followed by** `except Exception as e: ...` with no `return` —
+so the OSError fell through exactly like a missing-package ImportError
+would, and the reportlab fallback produced the PDF instead
+(`{"renderer": "reportlab"}`). The graceful-degradation code was
+already written correctly for a failure mode broader than its own
+docstring names.
+
+Not done, and stated plainly why: the user's actual `serve.py` still
+runs on system Python without these libraries — this was a capability
+verification, not an environment change. If they want the exports to
+actually work rather than fail gracefully, the command is
+`pip3 install --break-system-packages python-pptx python-docx weasyprint markdown reportlab`
+(weasyprint's CSS rendering additionally wants `brew install pango`;
+without it, PDFs still work via the reportlab fallback just proven
+live, only simpler ones). Left for them to run, not run for them.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
