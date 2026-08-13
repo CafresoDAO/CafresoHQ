@@ -1398,6 +1398,17 @@ the actual cascade. Fire-tested all three new rules separately (each
 reverted to its pre-fix color) — each failed with the exact ratio
 measured live (4.09, 3.77, 4.00), not just "does not pass."
 
+> ✅ **Agent Inspect panel's job description, clean pass — 2026-08-13.**
+> Driven for the first time this session: clicked a hired coworker's desk
+> sprite on the office floor, opened the "PERFORMANCE REVIEW" card, edited
+> the JOB DESCRIPTION textarea, blurred it, closed the panel, reopened it —
+> the edit survived. Confirmed on disk too, not just in the UI: the new
+> text landed in `hq-state/memory/agents.json` under the agent's
+> `systemPrompt` field, exactly where the front-desk hire flow writes the
+> same field. A rapid sweep through every sidebar view (Office, Tasks,
+> Calendar, Memory, Vault, Team, Terminal, Projects) turned up zero
+> console errors. No code changed.
+
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 
 EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /
