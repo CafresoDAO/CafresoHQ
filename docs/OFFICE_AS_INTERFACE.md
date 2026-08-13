@@ -5636,3 +5636,68 @@ and silently drops the last tokens of every reply.
 **Nova**" — and the next thing typed went to Nova. After project rooms and
 meeting rooms, this is the third place the box named someone who was not
 going to read it. It now names the specialist, and says how to come back.
+
+---
+
+### The bubble sent the boss to check the one thing that was fine
+
+First drive of this office against a real brain rather than a scripted one:
+two coworkers on the local Ollama daemon, one pinned to a model that is
+installed and one to a model that is not — the single most likely failure
+for the audience §08 names, a non-guru picking a model they do not have.
+
+The healthy half worked end to end. The failing half produced this, in the
+chat bubble, which is where the boss actually looks:
+
+    ⚠ The office couldn't find that — it may have been moved or renamed.
+
+Nothing was moved and nothing was renamed. At the same instant the floor
+bubble and the inbox row both said the true thing — *"that brain isn't
+installed on this machine — pick another coworker, or install it and try
+again"* — a sentence this repo already had, written after finding this
+exact failure live once before.
+
+`chatErrorText` was classifying with `officeCause` instead of `snagCause`.
+That was collateral from the census that split the two tables: twelve call
+sites were pushing file and vault failures through `snagCause` and getting
+"couldn't reach that brain" for a failed delete, so they were swept.
+`app/storage.jsx` was on that list because it was touched, not because its
+subject was the office. It has exactly one cause call — this one — and all
+three of its call sites are agent runs. The fix for a misdiagnosis landed
+on the one surface that had been diagnosing correctly, and
+`test_cause_subject.py` then held it there by listing the file under
+OFFICE_FILES.
+
+The two tables disagree on every failure a coworker can actually have.
+Measured against verbatim errors, bubble as shipped vs floor:
+
+| what broke | the bubble said | the floor said |
+|---|---|---|
+| brain unreachable | the office isn't answering — check it's still running | couldn't reach that brain — it looks offline from here |
+| model not on disk | the office couldn't find that — it may have been moved or renamed | that brain isn't installed on this machine — pick another coworker, or install it and try again |
+| no key | `Ollama 401: no api key` | that brain isn't signed in yet — add it in Settings |
+
+Each row is its own failure of §7. The first sends the boss to check the
+office — the one thing on their screen that is demonstrably running, since
+they are reading this sentence in it. The second describes a lost file,
+because OFFICE_CAUSES has no rule for a missing model: installing models
+is not something an office does. The third has no rule either, so it falls
+through to `cleanCause` and prints a vendor name, an HTTP code and the
+words "api key" — the raw dump §7 forbids and a word §6 bans outright, in
+the exact surface whose own comment says it stopped improvising.
+
+**Fix:** the bubble classifies with `snagCause`, because the subject here
+is a brain — it is a coworker speaking about their own failed run. The
+census list moves `app/storage.jsx` to BRAIN_FILES, and the pin no longer
+rests on file membership alone: it reads `chatErrorText` itself, and
+checks the two tables still disagree on all three real errors, so the day
+they converge this test says so instead of passing quietly.
+
+Verified live on the same office, same coworker, same missing model:
+
+    ⚠ That brain isn't installed on this machine — pick another coworker,
+      or install it and try again. Nova is still working, though —
+      @mention them and they can pick this up.
+
+Diagnosis, then the route out, then the name of somebody who can actually
+do it. Nova then answered the question on a working local brain.

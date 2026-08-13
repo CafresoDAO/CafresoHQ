@@ -39,11 +39,30 @@ FLOOR = ROOT / 'app' / 'floor.jsx'
 
 FAILS = []
 
-# Where the subject is the office itself: files, the vault, publishing, storage.
-OFFICE_FILES = ['views/projects.jsx', 'views/vault.jsx', 'app/storage.jsx',
+# Where the subject is the office itself: files, the vault, publishing.
+OFFICE_FILES = ['views/projects.jsx', 'views/vault.jsx',
                 'modals/delivery.jsx', 'views/ide.jsx']
 # Where a brain really is the subject and snagCause must STAY.
-BRAIN_FILES = ['features.jsx', 'missions.jsx', 'ui/chat.jsx']
+#
+# `app/storage.jsx` sat in the list above for a while, and it was the one
+# entry the census got wrong. The sweep went file by file over everything
+# that had been passing file and vault failures through snagCause; this
+# file was on that list because it was touched, not because its subject
+# was the office. It has exactly ONE cause call — chatErrorText — and all
+# three of chatErrorText's call sites are agent runs (dispatch, delegate,
+# task). So the fix for a misdiagnosis was applied to the one surface that
+# had been diagnosing correctly, and this test then held it there.
+#
+# Cost, measured live against a coworker pinned to a model that was not
+# installed: the floor and the inbox said "that brain isn't installed on
+# this machine — pick another coworker, or install it and try again"; the
+# chat bubble, in the same instant, said "the office couldn't find that —
+# it may have been moved or renamed". OFFICE_CAUSES has no rule for a
+# missing model, because installing models is not something an office
+# does, so a missing key fell through to cleanCause and printed
+# `Ollama 401: no api key` — a vendor name, an HTTP code and a §6-banned
+# word, in the surface whose own comment says it stopped improvising.
+BRAIN_FILES = ['features.jsx', 'missions.jsx', 'ui/chat.jsx', 'app/storage.jsx']
 
 
 def check(name, cond, detail=''):
@@ -157,6 +176,51 @@ console.log(JSON.stringify(R));
     check('officeCause is exported',
           re.search(r'export \{[^}]*\bofficeCause\b', FLOOR.read_text(encoding='utf-8')) is not None,
           'app/floor.jsx')
+
+    # ── the chat bubble, specifically ───────────────────────────────────
+    # The membership lists above are a coarse instrument: they ask whether
+    # a file mentions a classifier, and app/storage.jsx has exactly one
+    # cause call, so "mentions snagCause" and "chatErrorText uses
+    # snagCause" happen to coincide today. Pin the thing that actually
+    # matters, so adding a second, genuinely office-subject call to this
+    # file later cannot quietly satisfy the list check while the bubble
+    # goes back to describing a lost file.
+    stor = (ROOT / 'app' / 'storage.jsx').read_text(encoding='utf-8')
+    fn = re.search(r'const chatErrorText = \([\s\S]*?\n\};', stor)
+    check('chatErrorText is still there to check', bool(fn), 'app/storage.jsx')
+    body = fn.group(0) if fn else ''
+    check('the chat bubble classifies a failed run as a BRAIN failure',
+          re.search(r'\bsnagCause\s*\(\s*raw\s*\)', body)
+          and 'officeCause(' not in body,
+          'app/storage.jsx: this bubble is a coworker speaking about their own '
+          'failed run — all three call sites are agent dispatches. officeCause '
+          'here sends the boss to check the office, which is the one thing on '
+          'their screen that is demonstrably fine')
+
+    # And the difference is not cosmetic — these are the three failures a
+    # coworker can actually have, verbatim off a live office.
+    diff = run_js('''
+      const R = {};
+      const REAL = [
+        'TypeError: Failed to fetch',
+        'Ollama 404: model "mistral-nemo:12b" not found',
+        'Ollama 401: no api key',
+      ];
+      R.brain  = REAL.map(snagCause);
+      R.office = REAL.map(officeCause);
+      console.log(JSON.stringify(R));
+    ''')
+    check('...and the two tables really do disagree about every one of them',
+          all(b != o for b, o in zip(diff['brain'], diff['office'])),
+          'if these ever agree, this whole test has stopped measuring anything')
+    check('a model that is not installed says so, and says what to do',
+          'installed on this machine' in diff['brain'][1],
+          repr(diff['brain'][1]))
+    check('a missing key never reaches the boss as vendor shrapnel',
+          not re.search(r'ollama|\b40\d\b|api key', diff['brain'][2], re.I),
+          repr(diff['brain'][2]) + ' — §7 bans raw dumps and §6 bans "api key"; '
+          'the office table has no rule for either, so both fall through to '
+          'cleanCause and print the error itself')
 
     print()
     if FAILS:

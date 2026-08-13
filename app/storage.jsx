@@ -1,4 +1,4 @@
-import { floorEmit, officeCause } from './floor.jsx';
+import { floorEmit, snagCause } from './floor.jsx';
 import { handoffHint, withHandoff } from './cast.jsx';   // import-free module — no cycle
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
@@ -294,6 +294,37 @@ const makeScreenEmitter = (agentId) => {
    and keep the shared-brain line for what it's genuinely good for — telling
    a zero-config user that BYOK is a way out. Advice, after the diagnosis,
    not instead of it. */
+/* …and the classifier is snagCause, because the subject here IS a brain.
+   This bubble is the coworker speaking about their OWN failed run.
+
+   It said officeCause for a while, and that was collateral from the census
+   that split the two: twelve call sites were pushing file and vault
+   failures through snagCause and getting "couldn't reach that brain" for a
+   failed delete, so they were moved. This file was on the list and should
+   not have been — every one of chatErrorText's three call sites is an
+   agent run (dispatch, delegate, task). The fix for a misdiagnosis was
+   applied to the one surface that had been diagnosing correctly.
+
+   The two tables disagree on every failure a coworker can actually have.
+   Measured against verbatim errors from a live office, bubble vs floor:
+
+     brain unreachable  "the office isn't answering — check it's still
+                        running"  ·  vs "couldn't reach that brain — it
+                        looks offline from here"
+     model not on disk  "the office couldn't find that — it may have been
+                        moved or renamed"  ·  vs "that brain isn't
+                        installed on this machine — pick another coworker,
+                        or install it and try again"
+     no key            `Ollama 401: no api key` VERBATIM  ·  vs "that brain
+                        isn't signed in yet — add it in Settings"
+
+   The first sends the boss to check the office, which is the one thing on
+   their screen that is demonstrably fine. The second describes a lost
+   file when nothing was lost — and OFFICE_CAUSES has no model-not-found
+   rule at all, because installing models is not something an office does.
+   The third falls through to cleanCause and prints a vendor name, an HTTP
+   code and the words "api key" — the raw dump §7 forbids and the word §6
+   bans, in the surface this comment was written to stop improvising. */
 /* `selfId` — the coworker who just failed. handoffHint can only ask whose
    BRAIN is ready, and for a local model that probe says "yes" even when the
    named model is not installed, so it cheerfully offers the coworker that
@@ -306,7 +337,7 @@ const makeScreenEmitter = (agentId) => {
 const chatErrorText = (err, agents, selfId) => {
   const others = selfId ? (agents || []).filter(a => a && a.id !== selfId) : agents;
   const raw = (err && err.message) || String(err);
-  const because = officeCause(raw);
+  const because = snagCause(raw);
   let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
   try {
     const C = CafresoHQClient;
