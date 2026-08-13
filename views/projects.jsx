@@ -81,6 +81,10 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   const openFileRef = React.useRef(null); React.useEffect(() => { openFileRef.current = openFile; }, [openFile]);
   const followRef = React.useRef(false); React.useEffect(() => { followRef.current = followAgent; }, [followAgent]);
+  /* The agent-tool listener below is mounted once ([] deps) and needs the
+     CURRENT project to resolve the paths coworkers report. Same ref pattern
+     as the two above. */
+  const projectRef = React.useRef(null); React.useEffect(() => { projectRef.current = project; }, [project && project.id, project && project.path]);
   const pulseTimers = React.useRef({});
   const idleTimer = React.useRef(null);
 
@@ -138,10 +142,43 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const addLedger = (verb, name, arg) => setLedger(prev => [{ id: Math.random().toString(36).slice(2, 9), verb, name, path: arg, label: shortPath(arg), kind: verb }, ...prev].slice(0, 40));
   const bumpIdle = () => { clearTimeout(idleTimer.current); idleTimer.current = setTimeout(() => setAgentStatus('idle'), 3500); };
 
+  /* A coworker reports the path they were GIVEN — "index.html" — because that
+     is what they typed in the marker, and the runtime resolves it server-side
+     against the project's working directory. Every path in this pane is
+     absolute: the tree lists absolute paths, so `openFile.path` is absolute
+     too. Comparing the two silently matched nothing, and all three live
+     "watch them work" behaviours below were dead for the ordinary case of a
+     coworker writing inside their own project:
+
+       · the tree pulse highlighted a path that isn't in the tree,
+       · Follow along called fsReadText('index.html') — which fails, and the
+         error renders only inside the editor pane, so with no file open the
+         failure was invisible: the checkbox promised "auto-open whatever
+         file they are writing" and silently did nothing,
+       · and the `cur.path === arg` branch — the one that reloads the file
+         you are LOOKING AT when a coworker rewrites it, or raises the
+         conflict banner if you have unsaved edits — could never be true.
+
+     Measured live 2026-08-13: with index.html open and the file changed
+     underneath, the runtime's own relative-arg event left the editor showing
+     stale content with no banner; the identical event carrying the absolute
+     path reloaded it instantly. Resolve here, at the one place that knows
+     the project root. FILE_* only — vault and export args are vault-relative
+     and have nothing to do with this tree. */
+  const resolveInProject = (p) => {
+    const s = String(p || '').trim();
+    if (!s || s.startsWith('/') || /^[A-Za-z]:[\\/]/.test(s)) return s;
+    const base = projectRef.current && projectRef.current.path;
+    return base ? joinPath(base, s) : s;
+  };
+
   /* ── the agent event bus: the heart of co-habitation ── */
   React.useEffect(() => {
     const onAgentTool = (e) => {
-      const d = e.detail || {}; const name = d.name, phase = d.phase, arg = String(d.arg || '').trim();
+      const d = e.detail || {}; const name = d.name, phase = d.phase;
+      const arg = (name === 'FILE_WRITE' || name === 'FILE_READ')
+        ? resolveInProject(d.arg)
+        : String(d.arg || '').trim();
       setAgentStatus('working'); bumpIdle();
       if (phase === 'start') { markPulse(arg); return; }
       if (phase !== 'done') return;
@@ -156,8 +193,17 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
         if (isWrite && cur && cur.path === arg) {
           if (cur.dirty) setConflict(true);   // surface banner — do not clobber
           else reloadOpen(arg);               // clean buffer → silent reload + preview chase
-        } else if (isWrite && followRef.current && previewKind(arg) !== 'code') {
-          openPath(arg, { auto: true });       // follow the agent — but never clobber a dirty buffer
+        } else if (isWrite && followRef.current) {
+          /* Follow along means EVERY file they write, code included. The old
+             gate here was `previewKind(arg) !== 'code'`, which skipped .js,
+             .py, .css, .json — i.e. nearly everything a coworker writes in a
+             code workspace — while the checkbox promised "Auto-open whatever
+             file they are writing". Measured live: a .md write followed, the
+             very next .js write did not, and the stage silently kept showing
+             the stale file. openPath's own `auto` branch is what protects
+             unsaved edits (it returns early on a dirty buffer); the kind
+             check never protected anything. */
+          openPath(arg, { auto: true });
         }
       } else if (isBash) {
         addLedger('ran', name, arg);

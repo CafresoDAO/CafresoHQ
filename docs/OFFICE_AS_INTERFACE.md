@@ -5123,3 +5123,60 @@ settings — never on the floor, the cards, or onboarding.
 > claimed on disk that wasn't there, and the office's own surfaces
 > (tree, receipts, activity) stayed silent about work that never
 > happened.
+
+### 2026-08-13 — the pane that watched the wrong paths, then looked away from code
+
+> Follow-up drive on the same co-habitation loop, this time pointed at
+> the Workspace's live-presence feed itself — the tree pulse, the
+> "Follow along" checkbox, the ledger, and the reload/conflict banner
+> over the file you have open. Two defects, stacked, both of which made
+> the "watch them work" pitch do nothing for the ordinary case.
+>
+> **Path identity.** The runtime emits the marker argument verbatim, so
+> a coworker working inside a project writes `index.html` — relative.
+> Everything on the receiving side is absolute: the tree, `openFile.path`,
+> `fsReadText`. Nothing ever matched. The pulse highlighted a path not in
+> the tree; Follow along called `fsReadText('index.html')`, which fails,
+> and that error renders only inside the editor pane, so with no file
+> open the failure was completely invisible; and `cur.path === arg` — the
+> branch that reloads the file you are LOOKING AT when a coworker
+> rewrites it, or raises the conflict banner if you have unsaved edits —
+> could never be true. That last one is the serious one: a coworker could
+> overwrite the file under your cursor and the pane would keep showing
+> you the old contents, silently, forever.
+>
+> Proven with a deterministic A/B before touching anything: with
+> index.html open and the file changed underneath, the runtime's own
+> relative-arg event left the editor stale with no banner; the identical
+> event carrying the absolute path reloaded it instantly. Fix is one
+> `resolveInProject()` at the single place that knows the project root,
+> applied to FILE_* only (vault and export args are vault-relative and
+> have nothing to do with this tree), reading the selection through a ref
+> because the listener mounts once. After the fix the same relative-arg
+> event reloaded the editor, and the ledger label went from
+> "wrote index.html" to "wrote site/index.html".
+>
+> **The code gate.** With paths fixed, Follow along was still guarded by
+> `previewKind(arg) !== 'code'` — it opened .md, .html, .svg, .csv and
+> skipped .js, .py, .css, .json. In a code workspace that is nearly
+> everything a coworker writes, and the checkbox beside it reads
+> "Auto-open whatever file they are writing". Measured live: a .md write
+> followed, the very next .js write did not, and the stage kept showing
+> the stale file with no indication anything had been skipped. An editor
+> whose main job is displaying code, following everything except code, is
+> the least defensible version of the feature. The gate wasn't protecting
+> unsaved work either — `openPath`'s own `auto` branch does that by
+> returning early on a dirty buffer, which is what makes dropping the
+> gate safe. Removed; re-ran the same A/B and the .js write now opens.
+>
+> Both pinned in `scripts/test_workspace_follow.py`, fire-tested five
+> ways: restoring the previewKind gate, using the raw relative arg,
+> resolving every tool's arg (vault included), dropping the projectRef
+> sync, and dropping openPath's dirty-buffer guard each fail with the
+> matching message.
+>
+> The pattern worth carrying: both defects were invisible from the code.
+> Each one reads as obviously correct in isolation, and the pane renders
+> perfectly with either bug present — nothing throws, nothing logs. They
+> only surfaced by putting a real coworker in a real project and watching
+> what the office failed to do.
