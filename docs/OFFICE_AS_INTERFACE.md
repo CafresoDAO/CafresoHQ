@@ -1883,6 +1883,25 @@ default.
 No code changed — the feature itself is correct; the gap was in this
 session's own test setup, caught before it did anything.
 
+### FileBrowserModal — driven with the isolation lesson applied, clean pass — 2026-08-13
+
+Immediately put the previous entry's own lesson to use: drove
+Add Project → Local folder → **📁 Browse** with `CAFRESOHQ_ALLOWED_DIRS`
+properly set to a scratch sandbox this time, rather than the default
+real-home-directory fallback. Confirmed `/fs/browse` opened correctly
+scoped to the sandbox (real seeded folders and a file, not the actual
+machine's home directory), drilled into a subfolder and back up with
+`↑ Up`, selected it, and watched both the Name and Absolute Path fields
+in the parent modal auto-fill correctly from the selection. Completed
+the flow with **Add** and got a real project — file list showed the
+real seeded file with its real byte count, and the "ASSIGNED · 0 — No
+coworkers hired yet" empty state was honest, not fabricated.
+
+No defects found — a clean pass, and a working demonstration that the
+prior tick's isolation note is load-bearing: this same drive without
+`CAFRESOHQ_ALLOWED_DIRS` set would have browsed and potentially
+selected real folders from this machine's actual home directory.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
