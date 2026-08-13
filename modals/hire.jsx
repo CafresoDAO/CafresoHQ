@@ -258,7 +258,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
       `· Research missions are blocked unless you explicitly authorize unattended access.\n` +
       `· Every tool call they make will be logged to Receipts.\n` +
       `· Their actions will pause for your approval before executing.\n\n` +
-      `Continue?`, { danger: true }
+      `Continue?`, { danger: true, okLabel: 'Hire' }
     ))) return;
     onHire({
       id: HQ.uid('a'),

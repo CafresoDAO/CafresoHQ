@@ -1482,6 +1482,67 @@ it; worth a one-line fix (delegate the static `.run` to the same logic,
 or drop it and require the override) if `toolsForAgent` is ever
 restructured.
 
+### The most consequential confirm dialog in the app had the wrong button — 2026-08-13
+
+Drove Settings → ROSTER for the first time this session — the per-agent
+model/temperature/tools/tool-format/elevation editor, never previously
+exercised live. The tool grid toggles correctly and PERSISTS: unchecked
+"Web Search" for a seeded coworker, and `hq-state/memory/agents.json`
+came back with `web` actually removed from `tools` — the write path is
+real, not decorative.
+
+Then reached the "🛡 File & shell access" toggle — the elevation grant,
+the single highest-consequence control in the entire product, since it's
+the one switch that gives a coworker real shell and file access on the
+boss's machine. The confirm dialog read exactly right: *"Grant Llama
+COMPUTER ACCESS? They will be backed by an elevated CafresoHQ session
+that can read/write files and run shell commands on this machine. ...
+Continue?"* Its button read **"Delete."**
+
+Root cause, once traced: `window.hqConfirm(message, opts)`
+(`ui/feedback.jsx`) renders its OK button as `opts.okLabel || (opts.danger
+? 'Delete' : 'OK')`. `danger: true` is the right call here — this
+deserves red-button styling — but the settings call site
+(`modals/settings.jsx`) only ever passed `{ danger: true }`, so it
+silently inherited a default written for the OTHER common case: most
+`danger: true` confirms in this app genuinely ARE deletions (the API's
+own doc comment uses `hqConfirm('Delete "x"?', {danger: true})` as its
+canonical example), and this one just never got its own label.
+
+Grepped every `danger: true` confirm in the codebase (17 total) rather
+than fixing the one found live, since a default this easy to fall into
+is exactly the kind of bug that lands more than once. It had: the
+IDENTICAL bug, word for word, sat in `modals/hire.jsx`'s hire-with-
+elevation dialog — same question shape, same "Continue?", same missing
+label, on the OTHER path to the same grant. Four more, lower stakes but
+still wrong: `app.jsx`'s "STOP ALL?" and its in-progress-task-displacement
+confirm ("Start X instead? ... goes back to the inbox and ... is lost"),
+and `features.jsx`/`ui/onboarding.jsx`'s "Clear all receipts?" / "Clear
+all notifications?" — four dialogs asking one thing and a button
+answering another.
+
+Fixed all six with an explicit `okLabel` matching what each dialog
+actually does (`'Grant access'`, `'Hire'`, `'Stop all'`, `'Start it'`,
+`'Clear all'` ×2) — the same mechanism `views/projects.jsx`'s two
+"Discard unsaved changes?" dialogs and `modals/settings.jsx`'s "Stop
+payroll?" dialog already used correctly, so this wasn't a new pattern to
+invent, just one three other call sites had already found and six
+hadn't.
+
+Pinned by `scripts/test_confirm_dialog_labels.py`, written general on
+purpose: it finds every `window.hqConfirm(..., {danger: true})` call
+site in the app (not just the six fixed here) and requires EITHER an
+explicit `okLabel` OR the dialog's own message to contain the word
+"Delete" — the one case where the default is actually coherent with what
+the dialog asks. Two call sites pass their message as a pre-built `msg`
+variable rather than an inline string (`views/projects.jsx`); the check
+follows the variable back to its assignment rather than false-flagging
+them. Fire-tested by reverting the ROSTER fix alone — one failure, named
+correctly, nothing else disturbed. Verified live after rebuilding: the
+same elevation toggle now shows *"Grant access."* Cancelled rather than
+confirmed, per this session's standing rule against ever actually
+elevating a coworker; `agents.json` confirmed `elevated: false` after.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office

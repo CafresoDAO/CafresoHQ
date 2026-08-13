@@ -921,7 +921,7 @@ function App() {
     const inflight = agentAbortersRef.current.size;
     const running = missions.filter(m => m.status === 'running').length;
     if (inflight === 0 && running === 0) { say('Nothing to stop', 'STOP'); return; }
-    if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`, { danger: true }))) return;
+    if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`, { danger: true, okLabel: 'Stop all' }))) return;
     for (const c of agentAbortersRef.current.values()) {
       try { c.abort(); } catch (_e) {}
     }
@@ -3589,7 +3589,7 @@ ${d.text}` : d.text,
       const ok = await window.hqConfirm(
         `${agent.name} is working on "${displaced.title}".\n\n` +
         `Start "${task.title}" instead? "${displaced.title}" goes back to the inbox ` +
-        `and whatever they had done on it so far is lost.`, { danger: true });
+        `and whatever they had done on it so far is lost.`, { danger: true, okLabel: 'Start it' });
       if (!ok) return;
       setTasks(prev => prev.map(t => t.id === displaced.id
         ? { ...t, stalledNote: `put aside when you started "${task.title}" — start it again when you want it` }

@@ -965,7 +965,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                             `Grant ${sel.name} COMPUTER ACCESS?\n\n` +
                             `They will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. ` +
                             `DMs from other agents will be blocked, missions require explicit authorization, and every tool call is logged.\n\n` +
-                            `Continue?`, { danger: true }
+                            `Continue?`, { danger: true, okLabel: 'Grant access' }
                           ))) return;
                         }
                         update({ elevated: !sel.elevated });
