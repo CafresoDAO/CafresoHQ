@@ -1670,6 +1670,40 @@ Nothing moved, nothing was invented; left the pending approval alone
 and tore the whole office down with it rather than approving/rejecting
 something that was never going to execute either way.
 
+### The graph's own "close this panel" button was unclickable — 2026-08-13
+
+Drove the vault Graph view for the first time this session: seeded three
+linked notes, opened Vault (which lands on the graph), and the analytics
+panel opened with real, correct numbers — 3 notes, 3 links, "Biased: one
+dominant topic," matching the seeded triangle exactly. Then tried to
+close it. Two clicks on "Hide analytics ›," at its own correct on-screen
+position, did nothing.
+
+Not a targeting mistake — checked at the DOM level.
+`document.elementFromPoint()` at the exact center of the button's own
+`getBoundingClientRect()` returned a *different* element: the analytics
+panel's content div, not the button. The top toolbar (`views/graph.jsx`)
+holds filter/source/color/scope controls plus four buttons plus the
+analytics toggle plus minimize — around ten controls in a `flexWrap:
+'wrap'` row — and at this session's own driving width (874px, an
+ordinary size, not a narrow-viewport repro) it wraps to a second line.
+That second line lands inside the analytics panel's own territory
+(`position: absolute, top: 50`), and since the panel is defined AFTER
+the toolbar in the JSX, default DOM-order stacking handed it the win —
+so the moment a boss opened the panel on a normal window, its own close
+button became permanently unreachable by a real click.
+
+Fixed with an explicit `zIndex` on both: the toolbar above the panel, so
+wrapped controls always win hit-testing no matter how many lines they
+wrap onto. Verified live after rebuilding — closed the panel, reopened
+it, closed it again, both directions working — and confirmed via the
+same `elementFromPoint()` check that the button now resolves to itself.
+
+Pinned by `scripts/test_graph_analytics_toggle_clickable.py`
+(structural: both elements declare an explicit `zIndex`, toolbar's
+higher than panel's), fire-tested by reverting the fix — 2 failures,
+both correctly named.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office

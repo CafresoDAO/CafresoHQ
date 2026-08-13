@@ -313,8 +313,19 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     // Loading hint.
     loading && React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bdb3a0', font: '13px Inter, sans-serif', pointerEvents: 'none' } }, source === 'concepts' ? 'Building concept map…' : 'Loading graph…'),
 
-    // Top toolbar.
-    React.createElement('div', { style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none' } },
+    // Top toolbar. zIndex above the analytics panel below: on a narrow
+    // viewport this row's ~10 controls (filter, two selects, four buttons,
+    // the analytics toggle, minimize) wrap onto a second line, and that
+    // line lands inside the panel's own top:50 territory. Without this the
+    // panel — which paints AFTER the toolbar in DOM order, so it wins
+    // default stacking — sits visually and functionally on top of the
+    // wrapped row. Confirmed live: `document.elementFromPoint()` at the
+    // "Hide analytics ›" button's own center returned the panel's content
+    // div, not the button, so the one control that closes the panel became
+    // permanently unclickable the moment it opened on an ordinary window
+    // width — not a rare narrow-viewport edge case, the default size this
+    // was driven at.
+    React.createElement('div', { style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none', zIndex: 2 } },
       React.createElement('input', {
         value: filter, placeholder: source === 'concepts' ? 'Filter concepts' : 'Filter  (tag:x  type:y  -term)',
         onChange: (e) => setFilter(e.target.value),
@@ -344,7 +355,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     ),
 
     // Analytics side panel (InfraNodus-style).
-    panelOpen && React.createElement('div', { style: { position: 'absolute', top: 50, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif' } },
+    panelOpen && React.createElement('div', { style: { position: 'absolute', top: 50, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', zIndex: 1 } },
       React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5D25D' } }, source === 'concepts' ? 'Concept analysis' : 'Graph analysis'),
       source === 'concepts' && conceptMeta && React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginBottom: 8 } }, 'Co-occurrence over ' + conceptMeta.docs + ' note' + (conceptMeta.docs === 1 ? '' : 's')),
       !m && React.createElement('div', { style: { color: '#9b938a' } }, 'Computing…'),
