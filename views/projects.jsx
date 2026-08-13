@@ -245,6 +245,25 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
   const triggerUpload = () => { uploadDirRef.current = null; if (uploadRef.current) uploadRef.current.click(); };
   const openChat = () => { if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'project:' + project.id })); };
+
+  /* Put a coworker on this project — or take them off. Workspace is the
+     DEFAULT mode and had no assignment control at all: the roster of
+     checkboxes lived only in Classic, so a boss who never found the mode
+     toggle could not staff a project. The pane it was missing from is
+     literally titled "Coworkers · working together", and its one control
+     (TALK ↗) stays disabled until somebody is assigned — so the empty
+     state offered a disabled button and no way to un-disable it.
+     Assignment is not a nicety here: it is what creates the project room,
+     what makes a message fan out to the team, and what gives this pane
+     anyone to report on. */
+  const toggleAgent = (agentId) => {
+    if (!project) return;
+    setProjects && setProjects(prev => prev.map(p => {
+      if (p.id !== project.id) return p;
+      const cur = Array.isArray(p.agentIds) ? p.agentIds : [];
+      return { ...p, agentIds: cur.includes(agentId) ? cur.filter(id => id !== agentId) : [...cur, agentId] };
+    }));
+  };
   const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); setTermMounted(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
 
   const statusLabel = agentStatus === 'working' ? 'coworker working…' : 'coworker standing by';
@@ -315,8 +334,29 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const agentPane = () => (
     <div className="ws-pane ws-agent">
       <div className="ws-pane-hd">Coworkers · working together<div className="ws-hd-acts"><button className="ws-talk" disabled={(project.agentIds || []).length === 0} onClick={openChat} title="Open this project's room, where the team works together">TALK ↗</button></div></div>
+      <div className="ws-crew">
+        {agents.length === 0
+          ? <div className="ws-crew-empty">No coworkers hired yet — visit Team to hire one.</div>
+          : agents.map(a => {
+              const on = (project.agentIds || []).includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  className={'ws-crew-chip' + (on ? ' on' : '')}
+                  onClick={() => toggleAgent(a.id)}
+                  title={on
+                    ? `${a.name} is on this project — click to take them off`
+                    : `Put ${a.name} on this project${a.elevated ? ' (has file and shell access)' : ''}`}
+                >
+                  <span className="tick">{on ? '✓' : '+'}</span>{a.name}
+                </button>
+              );
+            })}
+      </div>
       <div className="ws-ledger">
-        {ledger.length === 0 && <div className="ws-led-empty">Your coworkers share this folder &amp; shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.</div>}
+        {ledger.length === 0 && <div className="ws-led-empty">{(project.agentIds || []).length === 0
+          ? 'Nobody is on this project yet — add a coworker above and they share this folder & shell with you.'
+          : 'Your coworkers share this folder & shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.'}</div>}
         {ledger.map(l => (
           <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
             <span className="v">{l.kind}</span><span className="lb">{l.label}</span>

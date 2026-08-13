@@ -5180,3 +5180,56 @@ settings — never on the floor, the cards, or onboarding.
 > perfectly with either bug present — nothing throws, nothing logs. They
 > only surfaced by putting a real coworker in a real project and watching
 > what the office failed to do.
+
+### 2026-08-13 — the pane called "Coworkers · working together" had no way to add a coworker
+
+> Set out to exercise the conflict banner — the safety net that warns you
+> when a coworker rewrites the file you have open — which the path fix
+> earlier today had just made reachable for the first time. Getting to it
+> required assigning a coworker to a project, and that is where the drive
+> stopped: **Workspace mode, the default mode, has no assignment control
+> at all.**
+>
+> The roster of checkboxes lives only in `ProjectsView` (Classic). The
+> Workspace's third pane is titled "Coworkers · working together", its
+> body copy read "Your coworkers share this folder & shell", and its only
+> control is a TALK button gated on `agentIds.length === 0`. So the empty
+> state offered a disabled button, a sentence describing collaboration
+> that was not happening, and no way to change either. A boss who never
+> found the Workspace/Classic toggle could not staff a project.
+>
+> This is the same shape as the "Create your first project" defect fixed
+> two drives ago — a core action reachable only from the non-default mode
+> — but it gates more. `agentIds` is what makes the "📁 <project>" room
+> appear in the chat panel, what makes a message fan out to the team, and
+> what gives the activity ledger anything to report. Until someone is
+> assigned, the entire "watch your coworkers work" surface has nothing to
+> watch. That is the north star sitting behind a control in another mode.
+>
+> Fix: a crew strip in the Workspace's own coworkers pane — one toggle
+> chip per hired coworker, assigned state read from `project.agentIds`,
+> and two honest empty states (nobody hired → point at Team; nobody
+> assigned → say so, instead of describing a shared folder nobody shares).
+>
+> **With that in place the original test finally ran, and the whole chain
+> worked end to end for the first time in the product's life:** local
+> Llama, addressed in the project room, wrote `index.html` with a relative
+> path; the path resolved; the ledger filed "wrote site/index.html"; and
+> because the editor held unsaved edits, the conflict banner fired —
+> "⚠ Your coworker changed this file while you had edits" — with the edits
+> intact. Both escape hatches verified: "Keep mine" force-saves your
+> version over theirs and goes clean; "Reload" adopts theirs and clears
+> the dirty flag. A follow-up event on the now-clean buffer correctly took
+> the silent-reload path instead of re-raising the banner.
+>
+> Pinned in `scripts/test_workspace_crew.py`, fire-tested five ways
+> (removing the strip, chips that do not toggle, a toggle that rewrites
+> every project, reverted empty-state copy, and shipping unstyled).
+>
+> Method note, recorded against myself: my standing teardown check
+> `git status --short hq-state/` was **vacuous** — `hq-state/` is
+> gitignored, so it could never report a change. Throwaway-office
+> isolation now gets checked by looking for drive artefacts in the real
+> office's memory instead. Separately, reusing port 8899 across successive
+> throwaway offices shares a localStorage origin, so a new office can
+> inherit the previous one's cached state; clear site data between runs.

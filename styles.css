@@ -6853,6 +6853,16 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
 .ws-term-body { flex: 1; min-height: 0; overflow: hidden; }
 .ws-term-body > * { height: 100%; }
 .ws-agent { background: var(--paper); border-right: none; }
+/* Who is on this project. Workspace had no assignment control at all —
+   the roster lived only in Classic — so the pane's TALK button could
+   never be un-disabled from the default mode. */
+.ws-crew { display: flex; flex-wrap: wrap; gap: 5px; padding: 7px 6px; border-bottom: 1px solid var(--rule); flex-shrink: 0; }
+.ws-crew-empty { font-size: 11px; color: var(--ink-3); padding: 2px 4px; }
+.ws-crew-chip { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 10px; padding: 3px 9px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink-2); cursor: pointer; }
+.ws-crew-chip:hover { background: rgba(240, 198, 116, 0.10); }
+.ws-crew-chip .tick { font-size: 9px; opacity: 0.55; }
+.ws-crew-chip.on { border-color: var(--accent-sun); background: rgba(240, 198, 116, 0.16); color: var(--ink-1); font-weight: 600; }
+.ws-crew-chip.on .tick { opacity: 1; color: var(--accent-sun); }
 .ws-ledger { flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
 .ws-led-empty { font-size: 11px; color: var(--ink-3); line-height: 1.5; padding: 6px; }
 .ws-led { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 7px; font-size: 10px; cursor: pointer; background: var(--paper); }
