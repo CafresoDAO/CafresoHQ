@@ -1846,6 +1846,43 @@ of the real interaction.
 Pinned by `scripts/test_ceo_panel_sit_1on1.py`, fire-tested by
 reverting the fix — 2 failures, both correctly named.
 
+### GitHub-clone projects — a clean pass, plus a testing-isolation lesson — 2026-08-13
+
+Drove the "Add Project → GitHub repo" tab for the first time this
+session. Empty-URL submission correctly blocked with an inline
+"repo URL or owner/repo required," no crash. Submitted a deliberately
+nonexistent repo (`owner/repo` shorthand, to also confirm the
+normalize-to-`https://github.com/...` step) rather than cloning a real
+one — downloading real content, even a small public repo, needs the
+user's explicit permission per this session's standing rules, and a
+throwaway-office tick under an autonomous loop is the wrong moment to
+pause and ask. `git clone` ran for real against GitHub's real remote,
+came back `128`/"Repository not found," and the app surfaced the raw
+git output cleanly in the modal — honest, actionable, no stack trace.
+
+That failed attempt surfaced something worth more than the pass/fail
+result: the clone target it logged was `/Users/anthonym/…`, this
+machine's REAL home directory — not the isolated
+`CAFRESOHQ_HQ_STATE_DIR` this session's throwaway offices have used all
+along. `CAFRESOHQ_ALLOWED_DIRS` (which governs where local-folder
+projects and GitHub clones may land) is a separate env var from the
+state-dir one, defaults to `expanduser('~')` when unset — a sensible
+default for a real single-user install — and none of this session's
+throwaway-office setups ever set it. Confirmed nothing was actually
+left behind (`git clone`'s own failure path cleans up its partial
+directory), so no harm this time, but the near-miss is the finding: a
+successful clone test run the same way would have written real files
+into the boss's actual home folder, not a disposable scratch location.
+**Standing note for future ticks:** any investigation touching
+`Projects → Add`'s local-folder or GitHub-clone paths must also set
+`CAFRESOHQ_ALLOWED_DIRS` to an isolated scratch directory, the same
+discipline already applied to `CAFRESOHQ_HQ_STATE_DIR` — this session's
+existing throwaway-office recipe does not cover this surface by
+default.
+
+No code changed — the feature itself is correct; the gap was in this
+session's own test setup, caught before it did anything.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office
