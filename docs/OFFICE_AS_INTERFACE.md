@@ -5830,3 +5830,80 @@ message, because the defect being fixed *is* office text filed under
 `You`. And the "Standing order" search runs against the source with
 comments stripped, so the record of what the string was can stay next to
 the code that no longer uses it.
+
+---
+
+### The stamp told a coworker to undo a file that was already in the cabinet
+
+Drove §3 step 4 end to end on a live office, the half the onboarding
+checklist actually points at ("Add a task, then drop it on a desk to
+delegate"). It works. Starter card → task in INBOX → dragged the card from
+the out-tray onto Nova's desk → `assignedTo` set, status `doing`, one
+`/ollama/v1/chat/completions` on the wire → a 1,217-character brief → filed
+to the cabinet, checklist ticked to 5/6. The concern I opened with — that
+cards live in Tasks and desks live in Office, so the gesture the office
+advertises might be unreachable — was unfounded: the card rides in an
+out-tray on the office floor, beside the desks.
+
+What was wrong was what happened next. In the same beat as the delivery
+modal —
+
+> Nova finished Research brief: How gold-backed tokens settle on chain and
+> filed it in your cabinet.
+> 📁 Research/research-brief-how-gold-backed-tokens-settle-on-chain.md
+
+— the header raised a stamp: `[NEEDS_APPROVAL: Research brief on
+gold-backed token settlement, no cost]`. The model had restated its
+finished work into the approval slot rather than asking to do anything.
+The office was telling the boss two things about one brief: it is filed,
+and it is awaiting your authorisation.
+
+That shape is already in this ledger, a few entries up, recorded as
+harmless — *"this generic marker doesn't match publish/hire-agent/
+hire-assistant/grant-elevation/workflow-step, so Approve or Reject is pure
+local bookkeeping — no real action either way."* That was true when it was
+written, and it is the part worth keeping: it was traced properly, through
+`onApprove`'s branches, and the conclusion followed from what was there.
+Since then both handlers widened their last branch from `ap.elevated &&
+ap.agentId` to `ap.agentId`, on its own good reasoning — a coworker who
+asked for a stamp deserves to hear the answer, and elevation is not the
+criterion, having asked is. Nobody went back to the older conclusion to
+see whether the new branch had invalidated it. It had. The generic marker
+now dispatches like any other.
+
+So I rejected the already-filed brief and watched the office send Nova
+*"Stand down — do NOT carry out that action."* Nova rewrote the brief and
+closed by asking the boss to review it — a loop, produced by an order to
+do nothing. The `.md` was still in the vault throughout; nothing about the
+rejection touched it. Approve was the same defect facing the other way:
+*"Carry it out"*, for a file already on disk.
+
+The fix is not to suppress the marker. All four raise sites are run
+finalizers, so a genuine "may I publish this?" and a restatement of
+finished work arrive by the identical path and cannot be told apart from
+the text — and dropping a real ask would leave a coworker waiting for a
+stamp that never comes, which is worse than the noise. What the office
+actually knows is narrower than what it was saying: that the boss stamped,
+and what the description said. It does not know whether anything is left
+to do. So the walk-back now says only that, and names the case it cannot
+rule out: approve conditions the go-ahead on *"if you have not done it
+yet"* and adds *"if it is already done, just say so — do not do it
+again"*; reject drops the stand-down for *"if you already did it, say so
+plainly — do not repeat it or redo the work."*
+
+Hedging is the honest shape here rather than a weaker one: an imperative
+asserts a world-state, and this is the one place the office was guessing at
+one. Measured on the same office, same coworker, same rejected title, one
+run per arm: the old wording drew 735 characters that restated the brief
+and re-asked for review; the new wording drew a 138-character
+acknowledgement, no second copy, no re-ask. One sample each off a small
+local model, so that is a direction and not a benchmark — the reason to
+keep the wording is that it is true.
+
+The external branch is deliberately untouched and pinned as such. Those
+approvals come from the Claude Code PreToolUse hook, which is blocked on a
+socket waiting for the answer; there the action really has not happened,
+and the hedge would be the lie. `scripts/test_stamp_walkback_knows_what_it_knows.py`
+holds both halves — that the decision still travels, that neither side
+asserts a pending action, that both name the already-done case, and that
+the external gate still answers `allow`/`deny` and is still checked first.

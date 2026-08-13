@@ -4498,10 +4498,46 @@ ${d.text}` : d.text,
            it's decided". The stamp is only half the loop; the walk back
            to the coworker's desk is the other half. Elevation is not the
            criterion — having ASKED is. */
+        /* …and the walk-back says only what the office actually knows.
+           It knows the boss stamped, and it knows the description. It
+           does NOT know whether the action is still pending.
+
+           Watched live, and it corrects a conclusion already written into
+           the ledger. A coworker finished a research brief, the office
+           filed it to the cabinet and told the boss "Nova finished … and
+           filed it in your cabinet" — and in the same beat raised
+           `[NEEDS_APPROVAL: Research brief on gold-backed token
+           settlement, no cost]`, a marker restating the finished work
+           rather than asking to do anything. The ledger had already seen
+           that shape once and recorded it as harmless: "Approve or Reject
+           is pure local bookkeeping — no real action either way." That
+           was true when it was written. The widening two comments up made
+           it false: having ASKED is now the criterion, so the generic
+           marker dispatches like any other.
+
+           So the boss rejected an already-filed brief and the office told
+           Nova "Stand down — do NOT carry out that action". Nova rewrote
+           the same brief and closed by asking the boss to review it —
+           a loop, off an order to do nothing. Approve was the same defect
+           facing the other way: "Carry it out" for work already on disk.
+
+           Hedging is not weasel wording here, it is the honest shape: an
+           imperative asserts a world-state, and this is the one place the
+           office is guessing at one.
+
+           Measured on the live office, same coworker and same rejected
+           title, one run each: the old wording drew a 735-character reply
+           that restated the brief's body and closed by asking the boss to
+           review it again; the new wording drew a 138-character
+           acknowledgement with no second copy and no re-ask. One sample
+           per arm off a small local model, so treat the sizes as the
+           direction and not a benchmark — the reason to keep the wording
+           is that it is true, and the shorter reply is the evidence it
+           reads as intended rather than the argument for it. */
         const target = agents.find(a => a.id === ap.agentId);
         if (target) {
           dispatchToAgent(target,
-            `The boss APPROVED your request: "${ap.title}". You may now proceed with that action. Carry it out, then report what you did.`,
+            `The boss APPROVED your request: "${ap.title}". If you have not done it yet, go ahead now and report what you did. If it is already done, just say so — do not do it again.`,
             { taskId: null });
         }
       }
@@ -4557,10 +4593,14 @@ ${d.text}` : d.text,
       if (ap.external && ap.externalId) {
         decideExternal(ap.externalId, 'deny', 'rejected by boss in HQ');
       } else if (ap.agentId) {   // same widening as approve: asked ⇒ answered
+        /* Same correction as approve, and this is the side that was
+           actually caught in the act — see the long note there. "Stand
+           down — do NOT carry out that action" reads as an order about
+           something pending, and the office does not know that it is. */
         const target = agents.find(a => a.id === ap.agentId);
         if (target) {
           dispatchToAgent(target,
-            `The boss REJECTED your request: "${ap.title}". Stand down — do NOT carry out that action. Acknowledge and propose an alternative if there is one.`,
+            `The boss REJECTED your request: "${ap.title}". Do not carry that action out. If you already did it, say so plainly — do not repeat it or redo the work. Acknowledge, and propose an alternative if there is one.`,
             { taskId: null });
         }
       }
