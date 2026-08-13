@@ -1252,6 +1252,56 @@ fails `orphanEcho` for exactly the expected reason. Rebuilt the bundle
 and smoke-tested a fresh throwaway office — loads clean, no console
 errors.
 
+### The coach mark clipped the checklist's corner on every common laptop width — 2026-08-13
+
+A previously-flagged, not-yet-verified claim: "coach mark clips checklist
+corner on desktop." The code's own comment insisted otherwise — "on
+desktop both show as before, where they don't touch" — written when the
+mobile version of this exact collision (task/comment for the phone-width
+fix) was patched. Measured the desktop claim directly rather than trusting
+it.
+
+The checklist (`.gs-coach`) is left-anchored near the rail at a fixed
+274px width (246px left offset ≥1100px, 214px ≤1100px, 70px rail-
+collapsed). The coach-mark pill was always `left: 50%,
+transform: translateX(-50%)` — centered on the FULL viewport, with no
+awareness of the checklist's position at all. Measured live via
+`getBoundingClientRect` in a throwaway office with one agent hired (the
+condition that renders the 'chat' coach mark):
+
+| viewport | checklist right edge | pill left edge | result |
+|---|---|---|---|
+| 1100px | 488 | 315 | **overlap ~173px** |
+| 1366px | 520 | 448 | **overlap ~72px** |
+| 1600px | 520 | 565 | clear ~45px |
+
+1366×768 is one of the single most common screen resolutions there is —
+this wasn't an edge case, it was the common case. The overlap only fully
+clears above roughly 1510px, which the original comment's "on desktop"
+silently meant "on WIDE desktop."
+
+The mobile fix already had the right instinct, just scoped too narrowly:
+its own reasoning — "no room for two onboarding nags... the expanded
+checklist already lists this exact step with this exact CTA" — was never
+actually mobile-specific, it was gated behind an `isNarrowViewport &&`
+qualifier for no reason the reasoning itself required. Dropped that
+qualifier: the coach mark now renders only once the checklist is
+collapsed or dismissed, at every viewport width, instead of trying to
+out-position a card whose width and offset already vary by breakpoint.
+
+Verified both directions live at 1366px: with the checklist expanded, the
+pill is absent from the DOM entirely (`querySelector('.coach-mark')` →
+null); collapsing the checklist (clicking its own "–" button) brings the
+pill back with a clean ~46px gap to the collapsed mini-pill's right edge,
+matching the desktop-collapsed case that was already correct and
+untouched by this fix.
+
+Pinned by `scripts/test_coach_mark_desktop_overlap.py` (structural —
+confirms the render condition no longer references `isNarrowViewport` and
+still gates on both `gsDismissed`/`gsCollapsed`), fire-tested by
+reverting to the old `isNarrowViewport`-gated condition — failed for
+exactly the expected reason.
+
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 
 EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /

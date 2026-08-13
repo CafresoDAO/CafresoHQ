@@ -150,10 +150,20 @@ def main():
     check('GettingStarted reports collapse changes upward',
           'onCollapsedChange' in onb and 'if (onCollapsedChange) onCollapsedChange(v);' in onb,
           'ui/onboarding.jsx: report only — the card still owns the state')
-    check('the coach mark is suppressed on narrow viewports while expanded',
-          bool(re.search(r'!\(isNarrowViewport && !gsDismissed && !gsCollapsed\)', app)),
+    # This used to be gated `isNarrowViewport &&` — mobile-only. Widened
+    # 2026-08-13 (scripts/test_coach_mark_desktop_overlap.py) once the same
+    # collision was measured on real desktop widths too (overlap up to
+    # ~1510px, not just <768px) — so this check now confirms the pill is
+    # suppressed on EVERY viewport while expanded, a strict superset of the
+    # phone-only behavior this test originally pinned, not a weakening of it.
+    check('the coach mark is suppressed on any viewport while expanded',
+          bool(re.search(r'!\(!gsDismissed && !gsCollapsed\)', app))
+          and 'isNarrowViewport' not in re.search(
+              r'\{!tourOpen && coachMark && [^\n]*?\(\s*\n\s*<div className="coach-mark"', app
+          ).group(0),
           'app.jsx: without this the pill covers the checklist by its full '
-          'height on any phone')
+          'height on any phone, and clips its corner on common desktop '
+          'widths (measured: overlap up to ~1510px)')
     check('the coach mark carries a class so the stylesheet can reach it',
           'className="coach-mark"' in app,
           'app.jsx: it was pure inline styles, unreachable from a media query')

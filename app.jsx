@@ -5415,18 +5415,36 @@ ${d.text}` : d.text,
       {/* Just-in-time coach marks — one nudge at the moment the next step
           becomes relevant, instead of a 10-step upfront slideshow. Each
           fires once (persisted); the full tour stays on the palette. */}
-      {/* On a phone this pill and the Getting Started checklist are both
-          bottom-anchored and both always present (coachMark returns null
-          once the checklist is dismissed), so they collided by construction:
-          measured at 375×812, the pill sat on top of the card by 155px — its
-          whole height — burying steps 5 and 6. There is no room for two
-          onboarding nags on a 375px screen, and no need: the expanded
-          checklist already lists this exact step with this exact CTA. So on
-          narrow viewports the pill waits until the checklist is collapsed to
-          its own pill; on desktop both show as before, where they don't
-          touch. The class carries the mobile geometry (see styles.css) —
-          these inline styles are the desktop shape. */}
-      {!tourOpen && coachMark && !(isNarrowViewport && !gsDismissed && !gsCollapsed) && (
+      {/* This pill and the Getting Started checklist are both bottom-
+          anchored and both always present (coachMark returns null once the
+          checklist is dismissed), so they collide by construction whenever
+          the checklist is expanded — not just on a phone.
+
+          On mobile this was measured directly: at 375×812 the pill sat on
+          top of the card by 155px, burying steps 5 and 6. The fix there was
+          "the pill waits until the checklist is collapsed" — and that
+          reasoning was never actually mobile-specific ("no room for two
+          onboarding nags... the expanded checklist already lists this exact
+          step with this exact CTA"), it was just only APPLIED on narrow
+          viewports, gated behind `isNarrowViewport &&`.
+
+          The desktop half of that gate ("on desktop both show as before,
+          where they don't touch") was never measured. It's centered
+          (`left: 50%`) against a checklist that's left-anchored at a FIXED
+          274px card starting at 246px (214px ≤1100px, 70px rail-collapsed)
+          — so whether they clear depends on viewport width, and they don't
+          clear at any common laptop width. Measured live: they overlap by
+          ~173px at 1100px, ~72px at 1366px (one of the most common screen
+          resolutions there is), and only clear entirely above ~1510px —
+          visually clipping the checklist's bottom-right corner (steps 5/6
+          and their buttons) under the pill for most real desktop windows,
+          not just narrow ones.
+
+          Same fix, no viewport check needed: suppress the pill whenever the
+          checklist is expanded, full stop. The class still carries the
+          mobile geometry (see styles.css) for the collapsed-pill-vs-pill
+          case; these inline styles are the shape wherever it renders. */}
+      {!tourOpen && coachMark && !(!gsDismissed && !gsCollapsed) && (
         <div className="coach-mark" style={{
           position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 45,
           display: 'flex', alignItems: 'center', gap: 10,
