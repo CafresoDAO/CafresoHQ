@@ -5774,3 +5774,59 @@ Then with one coworker hired on a local brain:
 
     ⚠ Couldn't reach that brain — it looks offline from here. Nova is
       still working, though — @mention them and they can pick this up.
+
+---
+
+### The office wrote the boss's half of the conversation
+
+Drove HAND OFF TO… on a fresh office — two coworkers, nothing typed,
+nothing said yet. Picked Nova. The transcript got:
+
+    You    (delegated "Standing order: review your backlog and report the
+            top next step." to Nova)
+
+The boss issued no standing order. That sentence was a hardcoded fallback,
+and it went into the room wrapped in the same `from: 'user', name: 'You'`
+envelope as a real message — nothing distinguished it from something the
+boss had typed, to the reader or to the coworker who received it as the
+brief.
+
+It did not stop there, and that is what makes it worth more than a tidy-up.
+A coworker handed a false premise fills it in. Nova, asked to review a
+backlog that does not exist, answered:
+
+    "I need to follow up on a pending request from Kenji regarding the
+     current draft for our project. The last update was three days ago,
+     and I'd like to confirm with him which version is current."
+
+There is no Kenji. No project, no draft, no three days ago. Two bubbles
+above it the same office had said *"nothing here is pre-staged, so
+everything you see happen from here on is real"* — and then staged the
+boss's instruction and watched the floor stage work to match it. §7 broken
+twice from one default value, the second time by a coworker being
+truthful about a premise the office made up.
+
+The tell was there in the function's own comment. A previous fix had
+already caught this string nesting into itself — four clicks producing a
+brief four `(delegated "…"` deep, "seen on the floor, four deep" — and
+fixed the nesting while leaving the fabrication.
+
+**Fix:** an empty hand-off is not an error, it is a gesture with nothing in
+it. The office says so and names what would make it work:
+
+    (nothing to hand Nova yet — type what you'd like them to do, then
+     pick them again.)
+
+Nobody is dispatched — no tokens, no busy desk, no bubble for work that
+does not exist. Verified live: zero requests on the wire for the empty
+case, and typing a question then picking Nova sent exactly that question,
+once, and cleared the composer.
+
+The pin checks control flow, not just presence: the guard has to sit above
+`agentStream`, above the busy-desk update, and above the message append —
+a guard below the thing it guards is decoration. It also checks the
+correction does not repeat the trick in reverse: the note is a `system`
+message, because the defect being fixed *is* office text filed under
+`You`. And the "Standing order" search runs against the source with
+comments stripped, so the record of what the string was can stay next to
+the code that no longer uses it.

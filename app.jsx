@@ -3284,8 +3284,38 @@ ${d.text}` : d.text,
        and the coworker received the stack. Seen on the floor, four deep.
        `delegated: true` marks these so they are never picked up as an ask. */
     const lastUser = [...chat].reverse().find(m => m.from === 'user' && !m.delegated);
-    const brief = (typed && typed.trim())
-      || (lastUser ? lastUser.text : 'Standing order: review your backlog and report the top next step.');
+    const brief = (typed && typed.trim()) || (lastUser ? lastUser.text : '');
+    /* With nothing typed and nothing said, there is nothing to hand off,
+       and the office must say so rather than invent one.
+
+       It used to fall back to "Standing order: review your backlog and
+       report the top next step." — and that string went into the
+       transcript as a message from `You`, wrapped exactly like a real one.
+       The boss had issued no such order. Driven on a fresh office: the
+       fabrication did not stop there, because a coworker handed a false
+       premise fills it in. Nova, asked to review a backlog that does not
+       exist, answered
+
+         "I need to follow up on a pending request from Kenji regarding
+          the current draft for our project. The last update was three
+          days ago"
+
+       — no Kenji, no project, no draft, no three days ago. Two bubbles
+       above it the same office had promised "nothing here is pre-staged,
+       so everything you see happen from here on is real". The office
+       invented an order, attributed it to the boss, and the floor invented
+       work to match it.
+
+       An empty hand-off is not an error state, it is a gesture with
+       nothing in it, so this reads as the office noticing rather than
+       complaining — and it names the two things that would make it work.
+       Nobody is dispatched, so nothing is spent and no desk lights up for
+       work that does not exist. */
+    if (!brief.trim()) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(nothing to hand ${a.name} yet — type what you'd like them to do, then pick them again.)` }]);
+      return;
+    }
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})` };
     const agentId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);
