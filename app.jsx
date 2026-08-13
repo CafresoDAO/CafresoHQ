@@ -1411,6 +1411,25 @@ ${d.text}` : d.text,
     } catch (_e) { /* anchoring is advisory — swallow everything */ }
   };
 
+  /* What a tool actually DID to the thing it names. The receipts tray is the
+     boss's permanent record — the one surface they scroll back through months
+     later to answer "who touched this?" — so the verb has to be the true one.
+     It used to be computed inline as `name === 'VAULT_NEW' ? 'Wrote' :
+     'Appended'`, which made every other deliverable an append: a coworker who
+     CREATED index.html filed "Appended index.html" (watched live 2026-08-13
+     on a fresh project), an exported deck filed "Appended deck.pptx", and a
+     published site filed "Appended https://…". "Appended" is not a synonym
+     for "wrote" — it promises the previous contents survived, which is the
+     opposite of what FILE_WRITE and the exporters do. The corkboard pin four
+     lines below already had the right ladder; both read from here now. */
+  const deliverableVerb = (name) => (
+    name === 'VAULT_APPEND' ? 'Appended'
+      : name === 'PUBLISH_SITE' ? 'Published'
+      : String(name).indexOf('EXPORT_') === 0 ? 'Exported'
+      : String(name).indexOf('GENERATE_') === 0 ? 'Generated'
+      : 'Wrote'          // VAULT_NEW, FILE_WRITE — create or overwrite
+  );
+
   const recordToolReceipt = (agent, ev) => {
     if (!agent) return;
     if (ev.phase !== 'done') return;
@@ -1428,16 +1447,13 @@ ${d.text}` : d.text,
     const arg = String(ev.arg || '').trim();
     if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
       // Pin the headline deliverables (skip the high-volume append/file-write churn).
-      const verb = ev.name === 'VAULT_NEW' ? 'Wrote'
-        : ev.name === 'PUBLISH_SITE' ? 'Published'
-        : ev.name.indexOf('EXPORT_') === 0 ? 'Exported'
-        : 'Generated';
+      const verb = deliverableVerb(ev.name);
       onPin({ kind: 'receipt', text: `${agent.name}: ${verb} ${arg.slice(0, 60)}`,
               sourceId: `tool-${ev.name}-${arg.slice(0, 60)}` }, { quiet: true });
     }
     const rcId = HQ.uid('rc');
     const rcTitle = isDeliverable
-      ? `${ev.name === 'VAULT_NEW' ? 'Wrote' : 'Appended'} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
+      ? `${deliverableVerb(ev.name)} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
       : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`;
     // Headline deliverables (the corkboard set) also anchor on-chain.
     if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {

@@ -5083,3 +5083,43 @@ settings — never on the floor, the cards, or onboarding.
 > off-screen) — instrumented the page's real event stream to prove the
 > button never received the click, and the app behaved correctly once
 > input landed where aimed.
+
+### 2026-08-13 — the receipt that called a new file an append
+
+> Drove the second half of step 5's promise for the first time: a
+> coworker actually BUILDING in a project while the boss watches. Seeded
+> a project room, asked Llama (local ollama:llama3.1, elevated) to write
+> index.html, and followed it end to end — FILE_WRITE landed the file on
+> disk, the Workspace tree listed it, Code showed the source, Preview
+> rendered the page. The co-habitation loop works.
+>
+> The defect was in the record, not the work. `recordToolReceipt` built
+> its title inline as `ev.name === 'VAULT_NEW' ? 'Wrote' : 'Appended'`,
+> so every deliverable that wasn't a vault-new filed as an append: the
+> live run filed "Appended index.html" for a file the coworker had just
+> CREATED, and on the re-verification run it OVERWROTE an existing
+> index.html — the case where "appended" is not a wording slip but a
+> false promise that the previous contents survived. The corkboard pin
+> four lines below in the same function already had the correct verb
+> ladder, so the wall and the receipts tray described the same event
+> differently.
+>
+> Fix: one `deliverableVerb(name)` helper read by both surfaces —
+> VAULT_APPEND appends, PUBLISH_SITE publishes, EXPORT_* exports,
+> GENERATE_* generates, and VAULT_NEW/FILE_WRITE both write. Verified
+> live side by side: the new receipt reads "Wrote index.html" directly
+> above the pre-fix "Appended index.html". Pinned in
+> `scripts/test_receipt_verbs.py`; fire-tested twice (restoring the old
+> ternary failed the two call-site checks; flipping the ladder's
+> fallback to 'Appended' failed the fallback and single-append checks).
+>
+> Standing note reconfirmed, not a bug: the model ignored the marker
+> syntax on its first natural-language turn — narrated "I will create a
+> new file… using the FILE_WRITE tool", emitted no marker, wrote
+> nothing, then described the file's contents as if it had. It complied
+> only when handed the exact bracket form. This is the same finding
+> already recorded against §6's prompt rules: no instruction makes a
+> small model honest. What held downstream is what matters — no file was
+> claimed on disk that wasn't there, and the office's own surfaces
+> (tree, receipts, activity) stayed silent about work that never
+> happened.
