@@ -1290,7 +1290,18 @@ const TOOL_REGISTRY = {
     name: 'MEMORY_WRITE',
     re: /\[\s*MEMORY_WRITE\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*MEMORY_WRITE\s*\]/i,
     requires: isVaultReady,
-    doc: '- [MEMORY_WRITE: <relative-path>]\n<content>\n[/MEMORY_WRITE] — create or overwrite a note in your memory. Use markdown freely. Examples of good memory: "decisions/<topic>.md", "preferences.md", "people/<name>.md", "projects/<slug>.md".',
+    /* "projects/<slug>.md" used to be one of the examples here, and it is
+       the one word in this list the OFFICE had already spent. The boss's
+       Projects view, the folder they add in Add Project, and the Workspace
+       they watch are all "projects" — so a coworker asked for a file "in
+       the Site Check project folder" reached for the layout suggested
+       right here and wrote to `projects/Site%20Check/index.html` inside
+       its own private notes. Watched end to end: the coworker then said
+       "The index.html file has been created in the projects/Site%20Check/
+       folder", which is true of its notes and false of the folder the boss
+       was looking at, and the project's own Files tab stayed empty.
+       "work/" collides with nothing. */
+    doc: '- [MEMORY_WRITE: <relative-path>]\n<content>\n[/MEMORY_WRITE] — create or overwrite a note in your memory. Use markdown freely. Examples of good memory: "decisions/<topic>.md", "preferences.md", "people/<name>.md", "work/<slug>.md".',
     docShort: 'Create or overwrite a note in your memory (markdown body).',
     run: async () => 'MEMORY_WRITE is bound at agent-build time — see toolsForAgent.',
   },
@@ -1884,7 +1895,7 @@ function toolsPromptSnippet(tools) {
        What held again, unprompted, is downstream: the delivery carried
        "Nothing opened, saved or looked up for this one." four lines under the
        invented path. */
-    'A marker must be ALONE on its line: nothing before it, nothing after — no label, no bullet, no heading, no bold, no quotes. "**Vault Path:** [VAULT_NEW: notes.md]" is not a call; it is machine syntax in a record the boss keeps, and the file never gets written. If you are TELLING the boss what you did rather than doing it, use plain words instead ("saved it to projects/notes.md").',
+    'A marker must be ALONE on its line: nothing before it, nothing after — no label, no bullet, no heading, no bold, no quotes. "**Vault Path:** [VAULT_NEW: notes.md]" is not a call; it is machine syntax in a record the boss keeps, and the file never gets written. If you are TELLING the boss what you did rather than doing it, use plain words instead ("saved it to work/notes.md").',
   ].join('\n');
 }
 
@@ -2500,7 +2511,11 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     } else {
       agentMemoryNote =
         `YOUR MEMORY (private notes folder Agents/${safeName}/) — empty.\n` +
-        `Save the first note with [MEMORY_WRITE: <path>]…[/MEMORY_WRITE]. Suggested layout: decisions/<topic>.md, references/<thing>.md, preferences.md, projects/<slug>.md. Persists across sessions.`;
+        /* Same rename as the MEMORY_WRITE doc above, and this is the copy
+           that actually did the damage: it is the note a coworker with an
+           EMPTY memory reads, so it is the layout every first write
+           follows. See the long note at that doc for what it produced. */
+        `Save the first note with [MEMORY_WRITE: <path>]…[/MEMORY_WRITE]. Suggested layout: decisions/<topic>.md, references/<thing>.md, preferences.md, work/<slug>.md. Persists across sessions. These are your OWN notes, not the boss's Projects — a file the boss asked you to build belongs in the project folder via [FILE_WRITE], not here.`;
     }
   } catch (_e) { /* vault not configured — skip the memory note */ }
   const useJson = agent.toolFormat === 'json' || (agent.toolFormat !== 'bracket' && supportsJsonToolFormat(agent.model));

@@ -5965,3 +5965,79 @@ SHOUTING_SNAKE check that runs over JSX text nodes only — string literals in
 these files carry real constants of the same shape (`FILE_READ`,
 `VAULT_APPEND` passed to `toolExec`), and a rule that flagged those would be
 noise people learn to ignore.
+
+---
+
+### "projects/" meant two different folders, and the office taught both
+
+Drove step 5 to its actual promise — *"your coworkers build docs, decks,
+code & sites here"* — rather than stopping at the dialog. Added a real
+local project called **Site Check**, put Nova on it from the Workspace's
+own Agents panel (which works, and whose empty state is honest: *"Nobody is
+on this project yet"*), and asked in chat for an `index.html` in the
+project folder.
+
+Nova replied:
+
+> The index.html file has been created in the projects/Site%20Check/ folder
+> with the requested content.
+
+A file really was written. Not there. It landed in
+`vault/Agents/Nova/projects/Site%20Check/index.html` — the coworker's own
+private notes — while the boss's project folder stayed empty, as did the
+Workspace Files tab they were watching. The activity ledger recorded the
+whole thing as *"finished and reported back ✓"*.
+
+I first read that as the coworker lying, and it isn't. The cause is the
+office's own vocabulary. The memory prompt suggested a layout —
+`decisions/<topic>.md, references/…, preferences.md, projects/<slug>.md` —
+and `projects/` is the one word in that list the product had already spent
+on the Projects view, the Add Project dialog and the Workspace. Told to put
+a file "in the Site Check project folder", the coworker used the layout the
+office had just handed it, slugged the name the way a URL would, and filed
+it privately. Every step of that is our instruction being followed.
+
+Two smaller corrections came out of checking rather than assuming, both
+worth recording because both were things I had already half-written as
+findings. The `%20` is the model's own text, not our encoding — the
+approval row deliberately shows the requester's wording verbatim, which is
+the gate working as designed. And the approval Nova raised was real and
+pending, so its "it requires approval to save it" was true; only the
+destination was wrong.
+
+Fixed by renaming the suggestion to `work/<slug>.md`, which collides with
+nothing, and by telling the empty-memory note to say outright that these
+are the coworker's own notes and that a file the boss asked for goes to the
+project via `FILE_WRITE`. A third live occurrence — `"saved it to
+projects/notes.md"`, the plain-words example in the marker-syntax rule —
+was caught by the new test's own sweep rather than by me, which is the
+argument for sweeping the whole prompt instead of the two strings I had
+found by hand.
+
+Re-ran the identical ask on a fresh office with an empty-memory coworker,
+which is the branch that did the damage. Nova now reaches for the right
+door — *"I can use the [FILE_WRITE] tool to create the file directly"* —
+and nothing is written to its private notes any more. It still does not
+emit a well-formed marker, so no file appears, and that is the 8B-class
+tool-calling ceiling this ledger already measured; this change does not
+claim to move it. What it removes is a trap the office set. The office
+staying quiet about that bare `[FILE_WRITE]` is correct, incidentally: it
+has no colon and sits mid-sentence, which is the "explaining the marker"
+case `stripBlocks` deliberately leaves alone, and no completion was
+claimed.
+
+**Flagged, not patched — a coworker's memory write is undisclosed.** The
+office executed the write, knew the resolved path, and told the boss
+"finished and reported back ✓". The vault path already does this properly
+("filed to Drafts 🗄", the delivery modal with the path); memory writes have
+no equivalent. That is the half of this defect that survives the rename,
+and it is a real §7 gap rather than a product decision — it just needs its
+own pass.
+
+**Also flagged:** the Workspace terminal's CLI menu offers five brains from
+a hardcoded list with a DEFAULT badge on Hermes, without consulting the
+detection the front desk already runs — on this machine `gemini` is not
+installed and is offered anyway. Not driven to a failure, because the PTY
+server is not running in a throwaway office and starting it risks spawning
+a paid CLI. The Hermes-as-default half is the product decision this ledger
+already flagged with three named options, and remains the owner's call.
