@@ -216,6 +216,19 @@ R.orphanBash  = visibleReply('[BASH: ls -la]\ndone');
 R.orphanInline = visibleReply('I will use [MEMORY_READ: decisions/x.md] to check.');
 // A lookalike that is not one of ours stays put.
 R.orphanNotOurs = visibleReply('[TODO: buy milk]\nreal text');
+// The workflow-run leak (2026-08-12 ledger entry): genuine model prose
+// immediately after a line-opening marker, NO separating newline. The old
+// whole-line strip ate the prose too, emptied `cleaned`, and the raw
+// marker+prose came back out through the "nothing survived" fallback --
+// filed verbatim into a delivered .md. Only the marker should go.
+R.orphanGenuine = visibleReply("[MEMORY_READ: decisions/banana.md]I do see that 'banana' was a result from a previous task.");
+// The doc-string echo this whole rule exists for must still be fully
+// removed -- the em dash right after the bracket is the signal that this
+// is TOOL_REGISTRY's own `doc:` text coming back, not the coworker's words.
+// (Real surrounding content, like orphanFetch above -- a bare marker+echo
+// with nothing else falls to a different, pre-existing "nothing survived
+// the strip" fallback that this fix does not touch.)
+R.orphanEcho = visibleReply('Looking it up.\n[BROWSER_FETCH: https://en.wikipedia.org/wiki/Lime] — fetch a URL and return its readable text content.\nLime is a citrus fruit.');
 // vaultPaths — /vault/list returns records, not strings. Reading them as
 // strings killed [MEMORY_LIST] and silently emptied every agent's memory
 // summary; both failures were invisible for the same reason.
@@ -477,6 +490,12 @@ def main():
     check('a marker inside a sentence is left alone',
           out['orphanInline'] == 'I will use [MEMORY_READ: decisions/x.md] to check.',
           repr(out['orphanInline']))
+    check('genuine prose right after a line-opening marker survives, only the marker goes',
+          out['orphanGenuine'] == "I do see that 'banana' was a result from a previous task.",
+          repr(out['orphanGenuine']))
+    check('a doc-string echo (marker + em dash) is still fully dropped',
+          out['orphanEcho'] == 'Looking it up.\n\nLime is a citrus fruit.',
+          repr(out['orphanEcho']))
     check('vault records become path strings',
           out['vpRecords'] == ['Agents/Llama/a.md', 'Deliveries/b.md'], str(out['vpRecords']))
     check('bare strings still work', out['vpStrings'] == ['Agents/Llama/a.md'])

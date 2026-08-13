@@ -390,7 +390,9 @@ function stripAcks(text) {
    [MEMORY_READ: decisions/buildings.md] to check…", a marker INSIDE a
    sentence. Removing that would leave a broken sentence, so it stays; the
    model narrating its own tooling is a prompt problem, not a strip one. */
-/* Anchored at line START, and now consuming the REST of the line.
+/* Anchored at line START, and consuming the rest of the line ONLY when
+   what follows the bracket is the registry's own doc-string echo — never
+   for a model's genuine continuation.
    It used to require the marker to be the whole line (`\s*$`), which the
    models defeated by copying the tool's own documentation after it.
    Measured twice on the @mention route, the cure three failure notes tell
@@ -403,12 +405,33 @@ function stripAcks(text) {
    redundant scaffolding, and the trailing words are the registry's own doc
    string echoed back.
 
+   But "consume to end of line" is too blunt: a coworker whose reply is
+   `[MEMORY_READ: decisions/banana.md]I do see that 'banana' was a result
+   from a previous task.` — genuine prose, no newline before it — had that
+   prose eaten by the same rule, leaving `cleaned` empty, which tripped
+   visibleReply's own "nothing survived, show the raw text" fallback and
+   put the raw marker back in front of the boss (worse: filed verbatim
+   into the delivered .md, a permanent record, not a bubble that scrolls
+   away). Root-caused with a minimal node harness against the real,
+   unmodified regex — one inserted `\n` was the entire difference between
+   correct and broken.
+
+   Every `doc:` string in TOOL_REGISTRY below uses the exact same
+   separator to introduce its human-readable half: `] — <description>`
+   (bracket, space, em dash, space) — never anything else, and never
+   omitted. That is the one place this line-opening machine syntax reads
+   like natural English, so it is the one place it's safe to key on: text
+   starting with an em dash right after the bracket is the doc string
+   coming back, everything else is the coworker's own words. Consume the
+   line ONLY in that case; otherwise stop at the bracket and leave
+   whatever follows untouched.
+
    The line-START anchor is what keeps this safe, and the suite already
    pins it: "Use [DM_TO: Mika] to reach someone." has prose BEFORE the
    marker, so it is a coworker explaining and survives untouched. A line
    that OPENS with a protocol marker is machine syntax by construction. */
 const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|NEEDS[_ ]APPROVAL|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][^\n]*$/gim;
+  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|NEEDS[_ ]APPROVAL|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][ \t]*(?:—[^\n]*)?/gim;
 
 /* The header line above a tool result in the live transcript.
 

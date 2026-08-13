@@ -1204,6 +1204,54 @@ with the exact reproduction, the precedent fix pattern, and the
 constraint that `scripts/test_reply_hygiene.py` must stay green
 including its doc-echo and mid-sentence cases.
 
+### `visibleReply`'s deferred leak — fixed, 2026-08-13
+
+Picked the flagged task back up rather than re-deriving it: `cleaned`
+goes empty, and empty is falsy, whenever `ORPHAN_TAG_RE` consumes a
+line-opening marker AND whatever genuine prose happens to follow it on
+the same line with no separating newline — because the regex has always
+consumed "rest of line," full stop, with no way to tell a doc-string
+echo apart from the coworker's own words.
+
+The distinguishing signal was hiding in plain sight: every single `doc:`
+string across all ~30 `TOOL_REGISTRY` entries uses the exact same
+separator, with no exception — `] — <description>` (closing bracket,
+space, em dash, space). That convention exists purely for the system
+prompt; nothing enforces coworkers echo it verbatim. But it means text
+starting with an em dash immediately after the bracket is, in every
+observed and constructed case, the registry's own doc string coming
+back — never a coworker's independent sentence, since nobody naturally
+opens a reply with "— fetch a URL and return its readable text
+content."
+
+Verified the direction of the fix BEFORE touching real source: pulled
+`ORPHAN_TAG_RE` into a throwaway node script alongside both the old
+regex and a candidate replacement, ran both against the doc-echo case,
+the genuine-continuation case (with and without a space after the
+bracket), and every existing pinned shape (bare marker, marker+newline,
+closing tag) — confirmed the new regex changes exactly one of those and
+leaves the rest byte-identical, before editing `hq-runtime.jsx` at all.
+
+The actual change: `ORPHAN_TAG_RE`'s `[^\n]*$` (unconditional
+rest-of-line) becomes `[ \t]*(?:—[^\n]*)?` (optional, only consuming
+past the bracket if an em dash immediately follows). One regex, same
+call sites, same function signature — `stripOrphanTags`/`visibleReply`
+needed no changes at all.
+
+`scripts/test_reply_hygiene.py`'s full existing suite (120+ checks)
+passed unchanged — the constraint the earlier entry set. Added two new
+pinned cases: `orphanGenuine` (the workflow bug's exact shape — marker
+then prose, no newline — now keeps the prose) and `orphanEcho` (the
+BROWSER_FETCH doc-echo from the comment above `ORPHAN_TAG_RE`, embedded
+in real surrounding content so it exercises the whole-line strip rather
+than the unrelated "nothing survived" fallback a bare marker+echo alone
+would hit). Fire-tested in both directions: reverting to the old
+always-whole-line regex fails `orphanGenuine` for exactly the expected
+reason; an over-reach "fix" that never consumes the echo tail at all
+fails `orphanEcho` for exactly the expected reason. Rebuilt the bundle
+and smoke-tested a fresh throwaway office — loads clean, no console
+errors.
+
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 
 EXPORT_PPTX/DOCX/PDF (real .pptx/.docx/.pdf deliverables, via python-pptx /
