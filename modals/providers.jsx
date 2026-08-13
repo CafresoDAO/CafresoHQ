@@ -584,7 +584,7 @@ function CodexPanel({ s, update }) {
   );
 }
 
-function VaultTab() {
+export function VaultTab() {
   const [status, setStatus] = useStateM({
     configured: false, backend: 'fs', root: '', defaultRoot: '', restUrl: '', restKey: '',
     fsExists: false, restReachable: false, restDetail: '', unavailable: false, error: '',

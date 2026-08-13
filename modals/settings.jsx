@@ -10,6 +10,17 @@ import { Modal, ModelPicker } from './base.jsx';
    confident diagnosis of the wrong subject. cleanCause strips the raw
    error without inventing a cause. */
 import { cleanCause } from '../app/floor.jsx';
+/* VaultTab was written for this exact panel — Settings → Connections —
+   but never actually mounted anywhere: `modals/providers.jsx`, the file
+   it lives in, has zero real `import` sites anywhere in the app (one
+   grep hit, a comment). `vaultConfigure`/`vaultDiscover` — the ONLY way
+   to point CafresoHQ at an existing Obsidian vault, switch to the REST
+   backend, or move the vault root — were consequently unreachable by
+   ANY control a boss could press; the only way in was the
+   `CAFRESOHQ_VAULT`/`CAFRESOHQ_VAULT_BACKEND` env vars, set before the
+   process starts. The component itself needed no changes — it already
+   uses only `CafresoHQClient` and `HQ`, both already imported here. */
+import { VaultTab } from './providers.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
         useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
@@ -245,6 +256,7 @@ function ConnectionsPanel() {
           );
         })}
       </div>
+      <VaultTab />
     </div>
   );
 }

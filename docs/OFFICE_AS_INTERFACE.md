@@ -4463,3 +4463,52 @@ settings — never on the floor, the cards, or onboarding.
 >   the opener went out as prose. `stripOrphanTags` scrubs a known tag
 >   **only when it stands alone on its line** — an agent writing *about*
 >   `[DM_TO: name]` mid-sentence keeps it. Scaffolding goes, content stays.
+
+> ✅ **The Obsidian-vault UI was fully built and completely unreachable
+> (2026-08-13).** `modals/providers.jsx` has a real, finished `VaultTab`
+> component — a Storage toggle between a plain local folder and Obsidian's
+> Local REST API plugin, a working "DETECT OBSIDIAN" auto-discovery button,
+> and save paths for both backends. It's the *only* in-app caller of the
+> real, server-backed `CafresoHQClient.vaultConfigure()` /
+> `vaultDiscover()` methods — the sole way to point CafresoHQ at an
+> existing Obsidian vault, switch storage backends, or move the vault root
+> through the UI at all.
+>
+> Nothing imported it. Grepped every real `import` site for `ApiTab` /
+> `VaultTab` / `BraveTab` across the whole app: zero, except one stray
+> comment in `views/vault.jsx`. Confirmed at the compiled level too —
+> rebuilt via `scripts/build_ui_bundle.mjs` and grepped the output bundle
+> for the unique string `"DETECT OBSIDIAN"`: zero matches. esbuild's
+> import-graph-following never even compiled the file's code into what
+> ships, because nothing reached it from an entry point. The only working
+> path to a non-default vault was the `CAFRESOHQ_VAULT` /
+> `CAFRESOHQ_VAULT_BACKEND` env vars, set before the server process
+> starts — invisible to a normal boss clicking around Settings.
+>
+> Two faults, not one, once I went to actually wire it up:
+> - `VaultTab` itself was declared `function VaultTab()`, no `export` —
+>   so even a correct `import { VaultTab } from './providers.jsx'`
+>   silently resolved to `undefined` (esbuild warns, doesn't error, and
+>   drops the reference from the bundle rather than failing the build).
+> - and, obviously, nothing mounted it anywhere.
+>
+> Fix: exported `VaultTab`, then mounted `<VaultTab />` inside
+> `ConnectionsPanel` (`modals/settings.jsx`, the real Settings →
+> Connections panel) as a third sibling panel after the existing "ON THIS
+> MACHINE" and "CLOUD KEYS" panels it was written to sit next to —
+> `ConnectionsPanel` already imported everything `VaultTab` needs
+> (`CafresoHQClient`, `HQ`) with matching hook-alias conventions, so the
+> component itself needed zero changes beyond the export keyword.
+>
+> Verified live in a throwaway office: Settings → Connections now shows a
+> "MARKDOWN VAULT" panel with a working Storage toggle, a vault-directory
+> field, and a DETECT OBSIDIAN button that made a real backend call and
+> found an actual local Obsidian vault on the test machine ("33 notes
+> indexed"). Didn't press Save on the detected path — that would have
+> pointed a throwaway instance at a real personal vault, which the
+> button-click alone already proved end to end.
+>
+> Pinned by `scripts/test_vault_tab_wired.py`, fire-tested against both
+> reverts separately (drop the `export`, drop the `<VaultTab />` mount) —
+> each one failed the test for its own specific reason, not just "does not
+> pass."
