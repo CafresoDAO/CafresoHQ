@@ -218,6 +218,30 @@ check(
     "still show the trips made for it.",
 )
 
+# ── 5c. the graph pulse is a live signal, so it belongs at `start` ──────────
+# `pulse` is the engine's focusNode: it animates the camera to the note AND
+# takes over the selection. Firing it on both phases yanked the boss's view
+# twice per trip, and the second one landed AFTER the outcome was known — so
+# a failed append flew the camera to a note that had not changed.
+pulse = re.search(r'const pulseGraph = \(ev, agent\) => \{(.*?)\n  \};', app, re.S)
+check(pulse, "app.jsx: pulseGraph is gone or has been renamed.")
+if pulse:
+    body = pulse.group(1)
+    check(
+        re.search(r"if \(ev\.phase !== 'start'\) return;", body),
+        "the vault-note pulse must fire only on `start` — it is the graph's "
+        "version of the present-tense task placard, and a second pulse after "
+        "the fact both double-yanks the camera and lights up a note a failed "
+        "write never touched.",
+    )
+    check(
+        re.search(r"name === 'VAULT_SEARCH' && ev\.phase === 'done' && ev\.result && !ev\.failed", body),
+        "search is the exception — its hits do not exist until `done` — but a "
+        "FAILED search has no hits at all, so it must be excluded explicitly "
+        "rather than relying on its error text not happening to look like a "
+        "bullet list.",
+    )
+
 # ── 6. and it has to look like a failure ────────────────────────────────────
 chat = read('ui/chat.jsx')
 check(

@@ -5353,3 +5353,54 @@ settings — never on the floor, the cards, or onboarding.
 > assertion that neither `start` branch may call `logActivity` at all) and
 > `scripts/test_floor.py` (seven behavioural cases on `toolActivity`).
 > Fire-tested nine ways. Full suite green (64 files).
+
+> **The last one on the list: the graph pulse** (2026-08-13). `pulseGraph`
+> maps a vault tool onto `CafresoHQGraph.pulse`, so the boss can watch a
+> coworker touch the knowledge web. Reading what `pulse` actually does
+> changed the verdict on it. It is the engine's `focusNode`: it animates
+> the camera to the note over 420ms **and takes over the selection**. It is
+> not a subtle highlight — it moves the boss's view.
+>
+> It was firing on both `start` and `done`. Two camera animations for one
+> trip, and the second one landed *after* the outcome was known, so a
+> failed append flew the view to a note that had not changed and selected
+> it.
+>
+> The fix is the same question the activity feed just answered, with the
+> opposite answer. The feed is a RECORD, so it waits for `done` and takes
+> its tense from the outcome. The pulse is a LIVE signal — "they're
+> reaching for that note right now", the graph's version of the
+> present-tense placard above an empty desk — so it belongs at `start`,
+> where no claim about the outcome is being made. Moving it there fixes
+> both problems at once: one camera move per trip, and no after-the-fact
+> pulse left to light up a note that a failed write never touched.
+>
+> `VAULT_SEARCH` stays on `done` for the same reason inverted — its hits
+> don't exist until the search returns — and now excludes failed searches
+> explicitly rather than relying on the error text not happening to look
+> like a bullet list.
+>
+> Verified live with a recording stub in place of the engine (same
+> interface, so the branch under test runs unchanged): a successful
+> `VAULT_APPEND` produced exactly one pulse, and a failed `VAULT_READ`
+> produced exactly one, at `start`, with the card still reading "⚠ Couldn't
+> open". Both would have been two before.
+>
+> **Found while reading that code: 740 of the 1795 lines in
+> `views/graph.jsx` are unreachable.** `render` (355) and `render3D` (316),
+> plus their exclusive helpers `_drawEdgesByType` (52) and `project3D`
+> (17), have no callers anywhere and are not exported — the file exports
+> only `GraphView` and `simulate`, and the actual drawing is done by the
+> sigma engine in `graph-engine.js`. Filed as its own task rather than
+> folded into this change.
+>
+> One thing in there deserves rescuing before it is deleted: the dead
+> renderer contains an **agent activity halo** — a ring in the coworker's
+> own colour, pulsing around a note while they read or write it, keyed on a
+> `state.agentActivity` map. Nothing has ever populated that map, so it has
+> never drawn once. That is this section's promise ("see your coworker
+> touching the knowledge web in real time") in a better form than what
+> actually ships: a halo says *someone is working here* without seizing the
+> camera or the selection, which is exactly the complaint against `pulse`
+> above. Worth building on the live engine rather than losing with the
+> code.

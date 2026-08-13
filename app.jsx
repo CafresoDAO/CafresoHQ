@@ -2901,9 +2901,24 @@ ${d.text}` : d.text,
     if (!g || !g.pulse) return;
     const name = ev.name;
     if (name === 'VAULT_READ' || name === 'VAULT_APPEND' || name === 'VAULT_NEW') {
+      /* Once, on `start`. `pulse` is the engine's focusNode: it animates the
+         camera to the note AND takes over the selection, so firing on both
+         phases yanked the boss's view twice for a single trip. Which phase
+         to keep is the same question the activity feed answered, with the
+         opposite answer: the feed is a RECORD, so it waits for the outcome;
+         this is a LIVE signal — "they're reaching for that note right now",
+         the graph's version of the present-tense task placard — so it goes
+         at the start, where no claim about the outcome is being made. That
+         also disposes of the failed case: there is no after-the-fact pulse
+         left to light up a note a failed append never changed. */
+      if (ev.phase !== 'start') return;
       const path = String(ev.arg || '').trim();
       g.pulse(path.endsWith('.md') ? path : path + '.md');
-    } else if (name === 'VAULT_SEARCH' && ev.phase === 'done' && ev.result) {
+    } else if (name === 'VAULT_SEARCH' && ev.phase === 'done' && ev.result && !ev.failed) {
+      /* Search is the exception, and for the same reason: the hits don't
+         exist until `done`. A failed search has no hits — its result is the
+         explanation — so the bullet pattern below would find nothing, but
+         say so rather than relying on that. */
       // Result is a formatted bullet list; extract paths via the "• <path>" pattern.
       const re = /^•\s+([^\n]+)/gm;
       let m;
