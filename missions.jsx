@@ -1110,16 +1110,45 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                       </div>
                       {nextLabel && <div className="mc-next">⏳ {nextLabel}</div>}
                       {m.lastAction && <div className="mc-last">last: {m.lastAction.slice(0, 200)}{m.lastAction.length > 200 ? '…' : ''}</div>}
-                      {m.lastError && <div className="mc-err">⚠ {m.lastError.slice(0, 200)}</div>}
                       {/* `pauseNote` was written by two paths and read by
                           none — the reload scrub sets "paused on reload —
-                          resume to continue", and STOP ALL now sets its own,
-                          and neither ever reached a screen. A pause the boss
-                          caused deserves a plain line, not the ⚠ above it:
+                          resume to continue", and STOP ALL sets its own, and
+                          neither ever reached a screen. A pause the boss
+                          caused deserves a plain line, not the ⚠ below it:
                           that row is for things that went wrong, and neither
-                          of these did. */}
-                      {m.pauseNote && !m.lastError && (
+                          of these did.
+
+                          It then spent a round gated on `!m.lastError`, which
+                          re-made the same mistake in a narrower place. That
+                          gate was reasoning about the GLYPH — don't stamp a
+                          boss-stop with a ⚠ — and quietly turned into
+                          suppression, because `lastError` is never cleared
+                          while a mission lives. One error in a mission's
+                          whole life hid its pause note permanently.
+
+                          What that cost, measured live on two paused
+                          missions side by side: the one with an old error
+                          showed "⚠ that brain is not signed in yet — add it
+                          in Settings", and the one without showed "paused on
+                          reload — resume to continue". Both were paused by
+                          the same reload and both needed the same click. The
+                          card that stayed silent about it was also the one
+                          sending the boss off to fix a brain that was not
+                          the reason it had stopped.
+
+                          So: the pause note goes FIRST, because it is about
+                          the mission's state right now and it carries the
+                          way forward. */}
+                      {m.pauseNote && (
                         <div className="mc-last" style={{opacity:0.8}}>{m.pauseNote.slice(0, 200)}</div>
+                      )}
+                      {/* ...and when a pause note is present it, not this, is
+                          why the mission is stopped — so this one says when
+                          it happened rather than presenting an old round's
+                          snag as the current situation. Same idea as the
+                          `last:` prefix on the row above. */}
+                      {m.lastError && (
+                        <div className="mc-err">⚠ {m.pauseNote ? 'earlier: ' : ''}{m.lastError.slice(0, 200)}</div>
                       )}
                       <div className="mc-actions">
                         {m.status === 'running' && <button className="px-btn danger" style={{fontSize:9}} onClick={()=>onStop(m.id)}>■ STOP</button>}

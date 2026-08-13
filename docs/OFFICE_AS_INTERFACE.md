@@ -6316,3 +6316,64 @@ guard — a guard whose output had nowhere to land. Writing the sentence is
 the easy half; the hard half is that every surface which can speak about a
 run has to be checked for whether it can speak about a run that went
 wrong.
+
+### "RUNNING", and directly underneath it, "paused on reload"
+
+Swept the other reporting surfaces for the shape named above and found it
+one file over, in the mission card.
+
+Two fields speak from that card. `lastError` is set when a round fails.
+`pauseNote` is set when the mission stopped for a reason that is **not** a
+failure — a page reload, or the boss's own STOP. The comment above the
+card records that `pauseNote` was once written by two paths and read by
+none. The fix wired it up behind `&& !m.lastError`.
+
+That gate was reasoning about the GLYPH — don't stamp a boss-stop with the
+⚠ row, which is for things that went wrong. It became suppression, because
+`lastError` is never cleared while a mission lives. **One failed round in a
+mission's entire history hid its pause note permanently.**
+
+Measured live, two missions paused by the same reload, side by side:
+
+    ⚠ that brain is not signed in yet — add it in Settings, or give this…
+    paused on reload — resume to continue
+
+Both were stopped by the same event and both needed the same click. The one
+that said so was the one *without* an old error. The other sent the boss
+off to sign in a brain that had nothing to do with why it stopped — so the
+suppressed line was the one carrying the way forward, and the surviving
+line actively misdirected. That is worse than silence, and it is the reason
+this is not just a display nicety.
+
+Pulling on it found that neither field had a lifecycle at all.
+
+`onResumeMission` reset `errors: 0` — plainly meaning "clean slate" — and
+left both fields the boss actually READS untouched. Measured one click
+after resuming: a card whose own status line said **RUNNING**, with
+"paused on reload — resume to continue" beneath it and a ⚠ from a round
+that was over. The card contradicting itself, and telling the boss to press
+a button that was no longer there.
+
+`onStopMission` — the per-card ■ STOP — wrote no note at all. Only STOP ALL
+did. The more common of the two stops was the silent one, so a mission the
+boss stopped themselves read as one that had stopped on its own.
+
+The fix: pause note first (it is the mission's state *now*, and it carries
+the click), snag second and marked `earlier:` when a pause note is present,
+so an old round's cause stops posing as the current situation. Resume
+clears both. The per-card stop writes the same sentence STOP ALL does,
+because it is the same event from the boss's side.
+
+Pinned in `scripts/test_a_paused_mission_says_why.py`. The transition
+handlers are lifted whole out of `app.jsx` and run against a fixture
+through a fake `setMissions`, so the assertions are about the mission that
+comes out, not about field names appearing in a literal. The property
+worth keeping is stated over the transitions rather than per-transition:
+after any of them the card has *something* to print.
+
+**A note on the test itself.** The first version's fixture was a RUNNING
+mission, so reverting the resume fix produced only one failure — resume
+leaving a `pauseNote` behind is invisible if the fixture never had one. The
+check named for the live symptom was not testing the live symptom. Caught
+by fire-testing every arm separately rather than reverting everything at
+once and being satisfied that something went red.

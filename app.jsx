@@ -903,11 +903,26 @@ function App() {
   /* endedAt so the calendar can file a stopped mission on the day it
      actually stopped, not the day it was projected to wrap. Cleared on
      resume below, because a resumed mission has not ended. */
+  /* The same sentence STOP ALL writes, for the same event. Only the big red
+     button used to leave a note, so the per-card ■ STOP — the one a boss
+     reaches for far more often — paused a mission and said nothing about
+     why, leaving the card to be read as "it stopped on its own". */
   const onStopMission = (id) =>
-    setMissions(prev => prev.map(m => m.id === id ? { ...m, status: 'paused', endedAt: Date.now() } : m));
+    setMissions(prev => prev.map(m => m.id === id
+      ? { ...m, status: 'paused', endedAt: Date.now(),
+          pauseNote: 'you stopped this — resume when you want it' } : m));
+  /* `pauseNote` and `lastError` are cleared here for the same reason
+     `errors: 0` already was: a resumed mission is running again, and both of
+     those fields describe the run that stopped. Leaving them set put
+     "paused on reload — resume to continue" underneath a card whose own
+     status line read RUNNING — measured live, on a mission resumed one
+     click earlier — and kept a ⚠ from an old round on a healthy run. The
+     reset of `errors` says plainly what resume was always meant to be; the
+     two fields the boss actually READS were the ones left behind. */
   const onResumeMission = (id) =>
     setMissions(prev => prev.map(m => m.id === id
       ? { ...m, status: 'running', errors: 0, endedAt: null,
+          pauseNote: null, lastError: '',
           startedAt: m.startedAt + (Date.now() - (m.lastIterationAt || m.startedAt)) }
       : m));
   const onClearMission = (id) =>
