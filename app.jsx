@@ -12,7 +12,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { attachVisit, floorEmit, officeCause, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
+import { attachVisit, doneLine, floorEmit, officeCause, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -1899,6 +1899,16 @@ ${d.text}` : d.text,
     let rawReply = '';
     let usedTokens = 0;
     const dmQueue = [];                      // collect every DM the agent emits
+    /* The honesty guards, and the answer to "did any of them fire".
+       Declared out here for the same reason `rawReply` is: they are READ
+       after the try/finally, and they are WRITTEN inside it, one line above
+       the activity row that has to know. A row saying `finished "…" ✓` on a
+       turn where the office had just told the boss "nothing was saved to
+       their memory" is the office's own ledger contradicting the office. */
+    const honestyFor = (raw) => (HQ.honestyNotes
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name })
+      : []);
+    let honesty = null;
     /* Run-scoped, because the guard after the fan-out loop cannot ask the
        REGISTRY what state this message is in. `MessageRegistry.getMessage`
        reads React state, and the write that sets `awaiting_reply` happens
@@ -2348,6 +2358,11 @@ ${d.text}` : d.text,
         task: 'reporting back',
       });
       settleAfterRun(agent.id);
+      /* Run the guards HERE, not only in their own block after the
+         try/finally, because the row below makes a claim about this turn
+         and cannot make it honestly without their answer. The block still
+         owns showing them; this owns knowing. */
+      honesty = honestyFor(rawReply);
       logActivity({
         agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
         action: 'done',
@@ -2361,10 +2376,13 @@ ${d.text}` : d.text,
            the journal one line below has used it as a subject all along. A
            DM-originated run has no `userText`, so it keeps the plain line
            rather than borrowing another coworker's message. */
-        text: userText
-          ? `finished "${String(userText).replace(/\s+/g, ' ').trim().slice(0, 40)}" ✓`
-          : 'finished and reported back ✓',
-        detail: cleanBuf.slice(0, 300),
+        text: doneLine(userText, honesty.length),
+        /* The notes go in the detail, stripped of the italic markers the
+           chat bubble needs and the feed does not, so an expanded row says
+           WHICH part didn't land instead of only that some part didn't. */
+        detail: (honesty.length
+          ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n'
+          : '') + cleanBuf.slice(0, 300),
       });
       /* Same reason as the desk bubble above — the journal is a KEPT record,
          so it least of all should hold the office's own scaffolding. */
@@ -2498,42 +2516,16 @@ ${d.text}` : d.text,
        reads a handoff that was never sent. Silent whenever anything WAS
        delivered. */
     {
-      const miss = HQ.unsentHandoff && HQ.unsentHandoff(rawReply, dmQueue.length);
-      if (miss && flush && flush.note) flush.note(miss);
-      /* Same guard for the security request. extractApproval is pure on the
-         same buffer the tray was filled from, so this asks exactly "did an
-         approval get raised this run" — a well-formed ask stays silent, only
-         a malformed one is called out. (Re-derived rather than reusing
-         approvalDesc, which lives in a different block — no-undef caught
-         that, which is the second time this session that tripwire has paid
-         for itself.) */
-      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(rawReply));
-      const missAsk = HQ.unsentElevation && HQ.unsentElevation(rawReply, raisedAsk);
-      if (missAsk && flush && flush.note) flush.note(missAsk);
-      /* …and the rest of the class: a hire, an assistant, a helper, a
-         hand-off that never parsed. Each leaves a person waiting. */
-      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(rawReply);
-      if (missBlocks && flush && flush.note) flush.note(missBlocks);
-      /* …and the case with no marker to find at all: the coworker DECLARED
-         they are waiting on a teammate while the delivery queue came back
-         empty. Reads the parsed ACK STATES, not the reply text, so prose
-         that merely mentions a colleague is left alone. */
-      /* RE-DERIVED, not borrowed. `acks` is declared inside the try above,
-         a different block — the comment eight lines up warns about exactly
-         this for `approvalDesc`, and I reached for `acks` here anyway.
-         `no-undef` did not catch it and neither did 21 suites; it surfaced
-         as a live crash, "Llama bowed out — acks is not defined", on an
-         ordinary @mention. extractAcks is pure on the same buffer, so
-         calling it again costs nothing and cannot go out of scope. */
-      const ackStates = (HQ.extractAcks ? HQ.extractAcks(rawReply) : []).map(a => a.state);
-      const missAskState = HQ.unsentAsk && HQ.unsentAsk(ackStates, dmQueue.length);
-      if (missAskState && flush && flush.note) flush.note(missAskState);
-      /* …and the coworker who did not ask at all, but wrote the office's
-         own relay label around words it made up. Takes the roster so it
-         only fires on real colleagues. */
-      const missRelay = HQ.fabricatedRelay
-        && HQ.fabricatedRelay(rawReply, dmQueue.length, agents.map(x => x.name));
-      if (missRelay && flush && flush.note) flush.note(missRelay);
+      /* All five, from the one table in hq-runtime.jsx — see the note on
+         `honestyNotes` for why they are no longer five hand-copied blocks
+         in three files' worth of dispatch paths.
+
+         Usually already computed: the activity row above needs to know
+         whether any of these fired before it can claim the turn finished,
+         so it runs them and parks the result in `honesty`. The fallback is
+         the ERROR path, which reaches here without passing that line. */
+      if (!honesty) honesty = honestyFor(rawReply);
+      for (const n of honesty) if (flush && flush.note) flush.note(n);
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
@@ -3358,6 +3350,14 @@ ${d.text}` : d.text,
     let usedTokens = 0;
     let buf = '';
     const dmQueue = [];
+    /* Same pair as the @mention path: the guards are shown after the
+       try/finally and needed before it, by the row that says the turn
+       finished. `buf` is safe to read here — unlike the @mention path it is
+       never rewritten with the cleaned text on this dispatch. */
+    const honestyFor = (raw) => (HQ.honestyNotes
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: a.name })
+      : []);
+    let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentId);
     const controller = beginAgentRun(a.id);
     const recentChat = chat.slice(-6);
@@ -3420,7 +3420,17 @@ ${d.text}` : d.text,
         tokens: (a.tokens || 0) + usedTokens,
       });
       settleAfterRun(a.id);
-      logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done', text: 'finished and reported back ✓', detail: cleanBuf.slice(0, 300) });
+      honesty = honestyFor(buf);
+      /* Two changes in one line. The claim is now conditional (see doneLine),
+         and the row finally has a SUBJECT: the brief. The @mention row has
+         carried one since the Gazette read back five identical "finished and
+         reported back ✓" lines from one coworker in a morning report — the
+         Delegate button hands over a brief and had been throwing it away. */
+      logActivity({ agentId: a.id, agentName: a.name, color: a.color, action: 'done',
+        text: doneLine(brief, honesty.length),
+        detail: (honesty.length
+          ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n'
+          : '') + cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
       const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
@@ -3451,30 +3461,14 @@ ${d.text}` : d.text,
        reads a handoff that was never sent. Silent whenever anything WAS
        delivered. */
     {
-      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
-      if (miss && flush && flush.note) flush.note(miss);
-      /* Same guard for the security request. extractApproval is pure on the
-         same buffer the tray was filled from, so this asks exactly "did an
-         approval get raised this run" — a well-formed ask stays silent, only
-         a malformed one is called out. (Re-derived rather than reusing
-         approvalDesc, which lives in a different block — no-undef caught
-         that, which is the second time this session that tripwire has paid
-         for itself.) */
-      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
-      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
-      if (missAsk && flush && flush.note) flush.note(missAsk);
-      /* …and the rest of the class: a hire, an assistant, a helper, a
-         hand-off that never parsed. Each leaves a person waiting. */
-      const missBlocks = HQ.unsentBlocks && HQ.unsentBlocks(buf);
-      if (missBlocks && flush && flush.note) flush.note(missBlocks);
-      /* Same guard as the dispatch path: a coworker writing the office's
-         own `[A \u2192 B]:` relay label around words it invented, when the
-         office delivered nothing this run. It was wired into one path of
-         three -- and the run that first exposed the fabrication was a TASK
-         run, which was one of the two without it. */
-      const missRelay = HQ.fabricatedRelay
-        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
-      if (missRelay && flush && flush.note) flush.note(missRelay);
+      /* This block used to hold four of the five by hand — `unsentAsk` was
+         never copied over, so a coworker who ACKed "waiting on a teammate"
+         with an empty delivery queue was called out on an @mention and
+         passed in silence on the Delegate button. That is the same drift
+         the old fabricatedRelay copy already recorded one guard earlier,
+         which is why they are one table now. */
+      if (!honesty) honesty = honestyFor(buf);
+      for (const n of honesty) if (flush && flush.note) flush.note(n);
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
@@ -3850,6 +3844,17 @@ ${d.text}` : d.text,
        skipKinds note on unsentBlocks in hq-runtime.jsx for why the guard
        needs to know. */
     let deliveryFiled = false;
+    /* The honesty guards, and whether any fired. Same pair as the other two
+       dispatch paths — see the note on `honestyNotes` in hq-runtime.jsx.
+       `deliveryFiled` is read at CALL time, not captured: on this path the
+       office may file the deliverable itself, and when it does the two
+       cabinet-write notes must stay quiet or they contradict three surfaces
+       that are telling the boss the truth. */
+    const honestyFor = (raw) => (HQ.honestyNotes
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name,
+          skipKinds: deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined })
+      : []);
+    let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentMsgId);
     const controller = beginAgentRun(agent.id);
     /* A task run gets NO chat history, unlike the two conversational paths.
@@ -3936,7 +3941,31 @@ ${d.text}` : d.text,
       });
       settleAfterRun(agent.id);
       setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'done'), result: cleanBuf.slice(0, 600) } : t));
-      logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId, text: `finished "${task.title}" ✓`, detail: cleanBuf.slice(0, 600) });
+      /* Filing happens BEFORE the row that says the turn finished, because
+         that row now makes a claim the filing can settle. `deliveryFiled` is
+         what tells the guards to stay quiet about an unclosed [VAULT_NEW]
+         when the office put the work in the cabinet anyway — and it was set
+         thirty lines BELOW the row that needed it, so the row was written
+         with the question still open. The follow-up rows (filed to the
+         cabinet, the out-tray, the first-delivery sheet) stay where they
+         were, after it, so the feed still reads finished-then-filed. */
+      let filedPath = null;
+      if (cleanBuf.trim()) {
+        /* If the coworker already filed to the cabinet themselves — the
+           specialist roles are instructed to, at a path they chose and
+           named to the boss — that IS the deliverable. Filing a second
+           copy would put two of one thing in the cabinet and point the
+           out-tray at the host's duplicate instead of their real file. */
+        const ownPath = agentFiledPath(toolVisits);
+        filedPath = ownPath || await fileDelivery(task, agent, cleanBuf, toolVisits);
+        deliveryFiled = !!filedPath;
+      }
+      honesty = honestyFor(buf);
+      logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId,
+        text: doneLine(task.title, honesty.length),
+        detail: (honesty.length
+          ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n'
+          : '') + cleanBuf.slice(0, 600) });
       recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
@@ -3945,39 +3974,29 @@ ${d.text}` : d.text,
          very first one earns a sheet. Filing is best-effort and never
          rethrows — the work is already done and recorded on the task either
          way, so a missing vault must not read as a failed task. */
-      if (cleanBuf.trim()) {
-        /* If the coworker already filed to the cabinet themselves — the
-           specialist roles are instructed to, at a path they chose and
-           named to the boss — that IS the deliverable. Filing a second
-           copy would put two of one thing in the cabinet and point the
-           out-tray at the host's duplicate instead of their real file. */
-        const ownPath = agentFiledPath(toolVisits);
-        const filedPath = ownPath || await fileDelivery(task, agent, cleanBuf, toolVisits);
-        deliveryFiled = !!filedPath;
-        if (filedPath) {
-          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
-          logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
-            /* The FOLDER, not the whole path. This printed
-               `filed "Deliveries/check-your-memory-then-name-a-primary-colour.md"
-               to the cabinet` — one ticker row wide enough to push every
-               other event off the strip, and the row directly above it
-               already said `finished "Check your memory then name a primary
-               colour" ✓`. The boss got the same title twice: once in prose,
-               once as a hyphenated slug with a file extension, which is the
-               machine's name for it (§6). Where it landed is the part they
-               don't already know; the file itself is one click away on the
-               desk out-tray. Every other activity row is capped — this was
-               the only one that wasn't. */
-            action: 'artifact', taskId,
-            text: `filed to ${String(filedPath).split('/')[0] || 'the cabinet'} 🗄` });
-          try {
-            floorEmit('artifact', { agentId: agent.id });
-          } catch (_e) {}
-          if (!firstDeliverySeen) {
-            setFirstDeliverySeen(true);
-            setDelivery({ path: filedPath, agentId: agent.id, agentName: agent.name, agentColor: agent.color,
-              taskTitle: task.title, encrypted: cabinetIsEncrypted() });
-          }
+      if (filedPath) {
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, artifactPath: filedPath } : t));
+        logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
+          /* The FOLDER, not the whole path. This printed
+             `filed "Deliveries/check-your-memory-then-name-a-primary-colour.md"
+             to the cabinet` — one ticker row wide enough to push every
+             other event off the strip, and the row directly above it
+             already said `finished "Check your memory then name a primary
+             colour" ✓`. The boss got the same title twice: once in prose,
+             once as a hyphenated slug with a file extension, which is the
+             machine's name for it (§6). Where it landed is the part they
+             don't already know; the file itself is one click away on the
+             desk out-tray. Every other activity row is capped — this was
+             the only one that wasn't. */
+          action: 'artifact', taskId,
+          text: `filed to ${String(filedPath).split('/')[0] || 'the cabinet'} 🗄` });
+        try {
+          floorEmit('artifact', { agentId: agent.id });
+        } catch (_e) {}
+        if (!firstDeliverySeen) {
+          setFirstDeliverySeen(true);
+          setDelivery({ path: filedPath, agentId: agent.id, agentName: agent.name, agentColor: agent.color,
+            taskTitle: task.title, encrypted: cabinetIsEncrypted() });
         }
       }
       const approvalDesc = HQ.extractApproval(buf);
@@ -4064,39 +4083,11 @@ ${d.text}` : d.text,
        reads a handoff that was never sent. Silent whenever anything WAS
        delivered. */
     {
-      const miss = HQ.unsentHandoff && HQ.unsentHandoff(buf, dmQueue.length);
-      if (miss && flush && flush.note) flush.note(miss);
-      /* Same guard for the security request. extractApproval is pure on the
-         same buffer the tray was filled from, so this asks exactly "did an
-         approval get raised this run" — a well-formed ask stays silent, only
-         a malformed one is called out. (Re-derived rather than reusing
-         approvalDesc, which lives in a different block — no-undef caught
-         that, which is the second time this session that tripwire has paid
-         for itself.) */
-      const raisedAsk = !!(HQ.extractApproval && HQ.extractApproval(buf));
-      const missAsk = HQ.unsentElevation && HQ.unsentElevation(buf, raisedAsk);
-      if (missAsk && flush && flush.note) flush.note(missAsk);
-      /* …and the rest of the class: a hire, an assistant, a helper, a
-         hand-off that never parsed. Each leaves a person waiting. */
-      /* \u2026EXCEPT the two cabinet-write kinds once the office has filed the
-         deliverable itself this run: then the cabinet HAS the work, the
-         FIRST DELIVERY sheet and the floor log both say so, and a
-         "nothing was appended in the cabinet" note would be the one
-         surface in the room that's wrong \u2014 telling the boss to "ask them
-         to try again" about a file they can open. Watched happen on a
-         virgin office's very first starter task; the full account is on
-         unsentBlocks' skipKinds note in hq-runtime.jsx. */
-      const missBlocks = HQ.unsentBlocks
-        && HQ.unsentBlocks(buf, deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined);
-      if (missBlocks && flush && flush.note) flush.note(missBlocks);
-      /* Same guard as the dispatch path: a coworker writing the office's
-         own `[A \u2192 B]:` relay label around words it invented, when the
-         office delivered nothing this run. It was wired into one path of
-         three -- and the run that first exposed the fabrication was a TASK
-         run, which was one of the two without it. */
-      const missRelay = HQ.fabricatedRelay
-        && HQ.fabricatedRelay(buf, dmQueue.length, agents.map(x => x.name));
-      if (missRelay && flush && flush.note) flush.note(missRelay);
+      /* All five, from the one table — and `unsentAsk` among them for the
+         first time on this path. The skipKinds exception rides in
+         `honestyFor` above, where `deliveryFiled` is already settled. */
+      if (!honesty) honesty = honestyFor(buf);
+      for (const n of honesty) if (flush && flush.note) flush.note(n);
     }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());

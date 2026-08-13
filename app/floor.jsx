@@ -552,6 +552,35 @@ function floorOn(kind, handler) {
 
    Call this on `done` only: the tense is chosen from the outcome, and the
    outcome does not exist yet at `start`. */
+/* The row the activity feed files when a coworker's turn ends.
+
+   It used to be `finished "<subject>" ✓`, unconditionally, written from
+   inside the run before the honesty guards had been consulted. So the run
+   that emitted an unclosed [MEMORY_WRITE: …] — nothing saved, empty vault,
+   and the office's own note in the chat bubble reading "nothing was saved
+   to their memory … it is not there however it was described above" —
+   was filed in the same breath as
+
+     finished "Save a note in your own memory at work/p" ✓
+
+   Two office surfaces, one turn, opposite claims. The feed is also the
+   surface that OUTLIVES the chat: it is what the Gazette reads back the
+   next morning and what the boss scrolls a day later, by which time the
+   contradicting note is far up a thread nobody re-reads.
+
+   `missed` is how many honesty notes fired (HQ.honestyNotes). The tick is
+   the claim, so the tick is what goes. "not all of it landed" rather than
+   a count, because the count is of NOTES, not of lost work, and the notes
+   themselves — carried in the row's detail — are where the specifics
+   belong. `finished` stays either way: the turn did end, and that part was
+   never the lie. */
+function doneLine(subject, missed) {
+  const s = String(subject || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const ok = !missed;
+  if (!s) return ok ? 'finished and reported back ✓' : 'finished, but not all of it landed';
+  return ok ? `finished "${s}" ✓` : `finished "${s}" — but not all of it landed`;
+}
+
 function toolActivity(agent, ev, extra) {
   const tense = ev && ev.failed ? 'fail' : 'past';
   const line = visitLine(ev.name, ev.arg, tense, 40) || visitPlace(ev.name, tense);
@@ -563,4 +592,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };

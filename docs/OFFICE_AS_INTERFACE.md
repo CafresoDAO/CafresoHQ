@@ -6165,4 +6165,76 @@ left alone deliberately for now: that string is also what goes back into
 the coworker's context as the tool result, so rewriting it for the boss
 changes what the model reads next, and that trade deserves its own pass
 rather than a drive-by. The activity feed also still logs a turn that
-saved nothing as `finished "…" ✓`.
+saved nothing as `finished "…" ✓` — closed in the entry below.
+
+### The feed outlived the chat, and claimed more than it
+
+Landing the guard fix two entries up made the office honest in the chat
+bubble and left it lying one surface over. Measured on the live office in
+the same turn: a coworker emitted an unclosed `[MEMORY_WRITE:
+work/preferences.md]`, nothing was written, the vault was empty
+afterwards, and the bubble said so plainly — "nothing was saved to their
+memory … it is not there however it was described above." The activity
+feed, same turn, recorded
+
+    finished "Save a note in your own memory at work/p" ✓
+
+Two office surfaces, one turn, opposite claims. And the feed is the
+surface that OUTLIVES the chat: the Gazette reads it back the next
+morning, and a boss scrolling a day later is nowhere near the note that
+contradicts it. §7 says no lies to the boss; it does not exempt the
+surface the boss trusts most because it looks like a log.
+
+The cause was ordering, not wording. The row was written inside the run;
+the honesty guards ran after the try/finally, in a block the row could not
+see. The row could not have known, and said ✓ anyway.
+
+Two things had to change together.
+
+`doneLine(subject, missed)` makes the claim conditional — `finished "…" ✓`
+when everything landed, `finished "…" — but not all of it landed` when it
+didn't. It does not print the COUNT of notes: the count is of notes, not
+of lost work, and printing it would invent a number the office does not
+have. The notes themselves go into the row's `detail`, stripped of the
+italic markers the chat needs and the feed does not, so the boss who opens
+the row gets the same sentence the bubble gave — a day later, in the one
+place still standing.
+
+And the five guards became ONE call, `HQ.honestyNotes(raw, opts)`. Partly
+because the row needs their answer before the row is written, and partly
+because three hand-copied blocks had already drifted to five guards, four
+and four: `unsentAsk` was wired into the @mention path only, so a coworker
+who ACKed "waiting on a teammate" with an empty delivery queue was called
+out there and passed in silence on the Delegate button and on a task run.
+The old task-path copy carried a comment recording the PREVIOUS round of
+exactly this drift, one guard earlier. A defect that recurs with its own
+postmortem attached is a shape problem, not a mistake.
+
+Two smaller things fell out of doing it. The Delegate row had no subject
+at all — a hardcoded `finished and reported back ✓`, which on a board of
+five delegations tells the boss nothing about which one. And the task path
+files the delivery, so the guards must not be asked before the filing is
+settled, or `deliveryFiled` is false and `VAULT_NEW` is reported as
+unsent on the one turn where it demonstrably went out. The filing was
+hoisted above the row; the follow-up rows stayed put, so the feed still
+reads finished-then-filed. Verified live, real task, real file on disk:
+
+    filed to Deliveries 🗄
+    finished "Name three primary colours" ✓
+
+**What un-deadening the guards exposed.** A plain question came back with
+`_(the handoff to Nova didn't go out … ask them yourself with @Nova.)_`
+when no handoff had been asked for. Rather than assume the guard was
+wrong, I teed the raw SSE stream: the model really had emitted `[DM_TO:
+Nova]` — addressed to *itself*, Nova being the coworker answering. The
+guard had been correct about the marker and wrong about what it meant.
+Pre-existing, invisible for as long as the guards read an empty string.
+`unsentHandoff` now skips a self-addressed marker and keeps reporting a
+real recipient behind one. Worth stating because the tempting fix — trust
+the surface, soften the guard — would have muted a guard that was right.
+
+Pinned in `scripts/test_the_feed_cannot_outlive_the_truth.py`. The check
+that matters most is the cheap one: no dispatch path may call `HQ.<guard>(`
+directly. That is the check that would have caught the original drift,
+which was silent precisely because each of the three copies looked
+complete on its own.

@@ -647,12 +647,37 @@ function stripBlocks(text) {
    Deliberately conservative. If ANYTHING was delivered this run we say
    nothing, so a well-formed handoff alongside a malformed one is missed
    rather than risking a false alarm on a run that really did delegate. */
-function unsentHandoff(text, deliveredCount) {
+/* `selfName` is the coworker who is SPEAKING, and it exists because of a
+   note the office printed at a boss who had done nothing wrong. Asked Nova
+   a plain question, Nova answered it and also emitted `[DM_TO: Nova]` —
+   addressed to itself, empty body, no closing tag. The office skipped it,
+   which is right; nothing should be delivered. Then this fired:
+
+     the handoff to Nova didn't go out … ask them yourself with @Nova
+
+   The boss HAD just asked Nova, in that exact bubble. The sentence invents
+   a third person, and its one piece of advice is the thing already done.
+   Nothing failed to reach anybody here: a coworker talking to itself has
+   no recipient left waiting, which is the entire premise of this guard.
+
+   Surfaced the moment the honesty guards started running on the @mention
+   path at all (they had been reading an empty string — see the note on
+   `rawReply` in app.jsx). Un-deadening a guard means meeting the cases it
+   never got to be wrong about.
+
+   A self-addressed marker does not hide a real one: every DM_TO in the
+   reply is checked and the first with someone ELSE'S name still reports. */
+function unsentHandoff(text, deliveredCount, selfName) {
   if (deliveredCount > 0) return null;
-  const m = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]/i.exec(String(text || ''));
-  if (!m) return null;
-  const who = String(m[1]).trim().slice(0, 40);
-  return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+  const me = String(selfName || '').trim().toLowerCase();
+  const re = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]/gi;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const who = String(m[1]).trim().slice(0, 40);
+    if (me && who.toLowerCase() === me) continue;
+    return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+  }
+  return null;
 }
 
 /* The worst one found so far, and the first clean data point after the
@@ -836,6 +861,49 @@ function unsentBlocks(text, skipKinds) {
     notes.push('_(' + why + ')_');
   }
   return notes.length ? notes.join('\n') : null;
+}
+
+/* Every "the coworker claimed something the office did not do" check, run
+   once, in one place.
+
+   Three dispatch paths each grew their own copy of this block — @mention,
+   Delegate, and a task run — and copies drift. They had: five guards, four,
+   and four. `unsentAsk` (the coworker who ACKs "waiting on a teammate" with
+   an empty delivery queue) was wired into the @mention path only, so the
+   same reply on the Delegate button said nothing at all. The comment in the
+   task-path copy already records the previous round of this — fabricatedRelay
+   "was wired into one path of three, and the run that first exposed the
+   fabrication was a TASK run, which was one of the two without it."
+
+   The second reason it is one function: the CALLER needs to know whether
+   anything fired, not just show it. The activity feed writes its row before
+   these run, so a turn where nothing was saved was still filed as
+   `finished "…" ✓` — the office's own ledger contradicting the honesty note
+   it had just printed in chat. Returning an array lets the row ask.
+
+   `delivered` is how many DMs actually went out this run; several of these
+   are silent whenever something DID land, which is what stops them firing
+   on a run that worked. `roster` is real coworker names, so fabricatedRelay
+   only fires on a colleague who exists. `self` is the coworker speaking, so
+   a marker addressed to itself is not reported as a person left waiting.
+   `skipKinds` is the task path's exception, documented on unsentBlocks. */
+function honestyNotes(raw, opts) {
+  const o = opts || {};
+  const delivered = o.delivered || 0;
+  const out = [];
+  const push = (n) => { if (n) out.push(n); };
+  push(unsentHandoff(raw, delivered, o.self));
+  /* extractApproval on the same buffer answers "did a well-formed ask get
+     raised this run" — a good one keeps this silent, only a malformed one
+     is called out. Re-derived rather than passed in: the two call sites
+     that tried to borrow it from an enclosing block produced a no-undef and
+     a live ReferenceError respectively, and it is pure, so it costs
+     nothing. */
+  push(unsentElevation(raw, !!extractApproval(raw)));
+  push(unsentBlocks(raw, o.skipKinds));
+  push(unsentAsk(extractAcks(raw).map(a => a.state), delivered));
+  push(fabricatedRelay(raw, delivered, o.roster || []));
+  return out;
 }
 
 function visibleReply(text, selfName) {
@@ -2700,7 +2768,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

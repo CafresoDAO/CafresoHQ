@@ -303,6 +303,15 @@ R.ubSkipVaultNew = unsentBlocks('[VAULT_NEW: Drafts/note.md]\nbody', ['VAULT_NEW
 R.ubSkipKeepsRest= unsentBlocks('[VAULT_APPEND: a.md]\nx\n[MEMORY_WRITE: b.md]\ny', ['VAULT_NEW', 'VAULT_APPEND']);
 R.ubNoSkipVault  = unsentBlocks('the draft\n[VAULT_APPEND: Drafts/note.md]\nbody');
 R.uhOwnLine   = unsentHandoff('[DM_TO: Kenji]', 0);   // stripped from view, still unsent
+/* A coworker addressing ITSELF. Watched live: Nova answered a plain
+   question and also emitted an empty, unclosed [DM_TO: Nova]. The office
+   skipped it (right — there is nobody to deliver to), and the guard then
+   told the boss "the handoff to Nova didn't go out … ask them yourself with
+   @Nova", in the bubble where the boss had just done exactly that. */
+R.uhSelf      = unsentHandoff('[DM_TO: Nova]\n', 0, 'Nova');
+R.uhSelfCase  = unsentHandoff('[DM_TO: nova]\n', 0, 'Nova');
+R.uhSelfThenReal = unsentHandoff('[DM_TO: Nova]\n[DM_TO: Kenji]\n', 0, 'Nova');
+R.uhNoSelfName = unsentHandoff('[DM_TO: Nova]\n', 0);
 R.uhEmpty     = unsentHandoff('', 0);
 R.uhNull      = unsentHandoff(null, 0);
 R.uhLongName  = (unsentHandoff('[DM_TO: ' + 'x'.repeat(200) + ']', 0) || '').length < 260;
@@ -577,12 +586,42 @@ def main():
     # actually pass the skip, gated on the office having filed. Without this
     # a refactor could drop the second argument and every check above would
     # stay green while the live bug returned.
+    #
+    # The five guards are one call now (HQ.honestyNotes), so the skip rides
+    # in the task path's `honestyFor` closure rather than at the unsentBlocks
+    # call itself. Same requirement, one layer up.
     app_src = (Path(__file__).resolve().parent.parent / 'app.jsx').read_text()
     check('app.jsx task path gates the cabinet kinds on deliveryFiled',
-          re.search(r"unsentBlocks\(buf,\s*deliveryFiled\s*\?\s*\['VAULT_NEW',\s*'VAULT_APPEND'\]\s*:\s*undefined\)", app_src) is not None)
+          re.search(r"skipKinds:\s*deliveryFiled\s*\?\s*\['VAULT_NEW',\s*'VAULT_APPEND'\]\s*:\s*undefined",
+                    app_src) is not None)
     check('app.jsx sets deliveryFiled from the filing outcome',
           'deliveryFiled = !!filedPath;' in app_src)
+    # …and sets it BEFORE anything asks. The flag used to be assigned thirty
+    # lines below the activity row that now depends on it, which is exactly
+    # the kind of ordering a reader cannot see from either end.
+    # Scoped to the task path: `honesty = honestyFor(buf)` also appears on
+    # the Delegate path, earlier in the file, and an unscoped index() would
+    # compare two different functions and pass for the wrong reason.
+    task_path = app_src[app_src.index('let deliveryFiled = false;'):]
+    check('...before the guards are run on the task path',
+          task_path.index('deliveryFiled = !!filedPath;')
+          < task_path.index('honesty = honestyFor(buf);'),
+          'app.jsx: the skip is decided at call time, so filing has to have '
+          'happened first or the office contradicts its own cabinet')
     check('an own-line marker still counts as unsent', bool(out['uhOwnLine']))
+    check('a coworker addressing itself leaves nobody waiting',
+          out['uhSelf'] is None and out['uhSelfCase'] is None,
+          f"{out['uhSelf']!r} / {out['uhSelfCase']!r} — the note names a "
+          'person the boss should chase, and here that person is the one who '
+          'just answered them')
+    check('...but a real recipient behind a self-DM is still reported',
+          out['uhSelfThenReal'] is not None and 'Kenji' in out['uhSelfThenReal'],
+          f"{out['uhSelfThenReal']!r} — skipping the self-addressed marker "
+          'must not become a way to hide the one that mattered')
+    check('with no speaker named, nothing is assumed',
+          out['uhNoSelfName'] is not None,
+          'unsentHandoff must keep working for callers that do not pass a '
+          'speaker — silence there would be a guess, not a fact')
     check('empty and null are safe', out['uhEmpty'] is None and out['uhNull'] is None)
     check('a runaway name cannot blow up the note', out['uhLongName'] is True)
     check('a result placed inside an ACK is NOT shown — the reason the '
