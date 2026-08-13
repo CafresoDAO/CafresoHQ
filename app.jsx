@@ -1066,7 +1066,20 @@ ${d.text}` : d.text,
     window.addEventListener('cafresohq:storage-error', handler);
     return () => window.removeEventListener('cafresohq:storage-error', handler);
   }, []);
+  /* First-visit courtesy only: a brand-new boss loading HQ after dark gets
+     dropped straight into night mode instead of squinting at the day
+     theme. Guarded on there being no STORED value yet, not just on the
+     clock — without that guard this fired on every single mount, so a
+     boss who explicitly chose day mode (clicked the toggle, or the ROOMS
+     menu's "Switch to day") had that choice silently overwritten back to
+     night on their very next reload after 7pm, forever, with no way to
+     make day mode stick in the evening. `useStored`'s own initializer
+     already reads localStorage synchronously before this effect runs, so
+     `night` here is never "unset" — it's already `false` for that boss.
+     The one case this SHOULD fire is the one `useStored` itself treats as
+     unset: no key in storage at all yet. */
   useEffectA(() => {
+    if (localStorage.getItem(k('night')) != null) return;
     const h = new Date().getHours();
     if (h < 7 || h >= 19) setNight(true);
   }, []);

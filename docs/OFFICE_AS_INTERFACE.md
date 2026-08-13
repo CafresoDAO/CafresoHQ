@@ -1426,6 +1426,44 @@ fixed**: `marketTicker` is `true` only for the wallstreet vocab entry
 class of finding as the `--office-ticker-bg` night-mode variables the
 first ticker entry already flagged as unreachable.
 
+### Night mode couldn't stick in day mode past 7pm — 2026-08-13
+
+Found reading past the theme system while it was already open for the
+ticker audit: a mount-only effect auto-enables night mode based on the
+wall clock — `if (h < 7 || h >= 19) setNight(true)` — with no check for
+whether the boss already had an explicit preference stored. `useStored`
+reads localStorage synchronously in its own initializer, so `night`
+already correctly holds a stored `false` by the time this effect runs —
+and then the effect stomped it anyway, unconditionally, on every single
+mount. A boss who explicitly clicked "Switch to day" (or the toggle) in
+the evening had that exact choice silently overwritten back to night on
+their very next reload, forever, with no way to make day mode stick
+after 7pm — the auto-detect meant for a first-time visitor kept firing
+on every visit thereafter.
+
+The auto-detect itself is a reasonable courtesy (a first-time visitor
+loading HQ after dark shouldn't be squinting at a bright day theme by
+default) — the bug was applying it on every mount instead of only the
+one case `useStored`'s own initializer treats as "unset": no key in
+storage at all. Fixed by adding that exact guard —
+`if (localStorage.getItem(k('night')) != null) return;` — before the
+clock check.
+Verified precisely with a node harness replicating the exact effect
+body against four scenarios (new visitor + evening → still auto-sets;
+new visitor + day → no-op; returning visitor with explicit `false` +
+evening → no longer overridden, the bug; returning visitor with
+explicit `true` + day → no-op) — all four passed. Couldn't reproduce the
+evening case in a live browser directly (the real system clock was
+10:31am while investigating, and this tool has no clean way to mock
+`Date` before a fresh page's own scripts run across a real navigation),
+so leaned on the node harness for logic proof and used the browser only
+to smoke-test the unaffected, naturally-testable case: a fresh throwaway
+office loaded at the real current daytime hour stayed in day mode, no
+regression.
+Pinned by `scripts/test_night_mode_respects_explicit_choice.py`,
+fire-tested by removing the guard — failed for exactly the expected
+reason.
+
 > ✅ **Agent Inspect panel's job description, clean pass — 2026-08-13.**
 > Driven for the first time this session: clicked a hired coworker's desk
 > sprite on the office floor, opened the "PERFORMANCE REVIEW" card, edited
