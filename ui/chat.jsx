@@ -324,28 +324,66 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           text, target: targetLabel, thread: activeThread,
         }]);
         setStreaming(true);
+        /* `userText` existed for exactly this and no caller ever set it, so
+           every downstream surface that wanted "what the boss asked" had to
+           slice the ASSEMBLED prompt instead. Here the boss's own words are
+           right there.
+
+           The catch clause is §7, same sweep as the standup/missions fixes:
+           it used to read "(Miko bowed out: OpenRouter 503: {"error": …})",
+           a raw dump introducing itself as a parenthetical system note.
+           snagCause() supplies the clause; "bowed out" is already the
+           subject+verb. Six call sites in this file had independently
+           copy-pasted the same raw ${err.message}. */
+        const bowOut = (a, err) => setChat(prev => [...prev, {
+          id: HQ.uid('m'), from: 'system', name: 'HQ',
+          text: `(${a.name} bowed out — ${snagCause(err && err.message || String(err))})`,
+          thread: activeThread }]);
         try {
-          await Promise.all(recipients.map(a =>
-            onDispatchToAgent(a, body, {
-              /* `userText` existed for exactly this and no caller ever set
-                 it, so every downstream surface that wanted "what the boss
-                 asked" had to slice the ASSEMBLED prompt instead. Here the
-                 boss's own words are right there. */
-              userText: body,
-              suppressUserEcho: true,
-              threadOverride: activeThread,
-              coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
-            }).catch(err => {
-              /* §7, same sweep as the standup/missions fixes: this used to
-                 read "(Miko bowed out: OpenRouter 503: {"error": …})" —
-                 a raw dump introducing itself as a parenthetical system
-                 note. snagCause() supplies the clause; "bowed out" is
-                 already the subject+verb. Six call sites in this file had
-                 independently copy-pasted the same raw ${err.message}. */
-              setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                text: `(${a.name} bowed out — ${snagCause(err && err.message || String(err))})`, thread: activeThread }]);
-            })
-          ));
+          if (activeRoom.kind === 'meeting') {
+            /* A meeting takes turns. The seating modal promises attendees
+               "they'll all see each other's replies", and until now that was
+               simply false: all three were dispatched inside 19ms of each
+               other, every prompt was assembled before anybody had spoken,
+               and each one was told the others were "receiving the SAME
+               request in parallel". Three monologues stacked in one thread
+               is not a meeting, and the office said it was one at the exact
+               moment the boss was choosing who to invite.
+               Sequential costs wall-clock — that is what a meeting costs —
+               and it buys the thing the room is for: attendee two can
+               disagree with attendee one BY NAME, and the boss watches the
+               room fill in turn instead of three bubbles racing. */
+            const heardSoFar = [];
+            for (const a of recipients) {
+              try {
+                const said = await onDispatchToAgent(a, body, {
+                  userText: body,
+                  suppressUserEcho: true,
+                  threadOverride: activeThread,
+                  coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
+                  heardSoFar: heardSoFar.slice(),
+                  meetingTurn: true,
+                });
+                /* Only what they actually SAID gets passed on. A turn that
+                   failed, or came back empty, must not enter the transcript
+                   as a silent gap the next speaker is asked to build on. */
+                if (said && String(said).trim()) {
+                  heardSoFar.push({ name: a.name, role: a.role, text: String(said) });
+                }
+              } catch (err) {
+                bowOut(a, err);
+              }
+            }
+          } else {
+            await Promise.all(recipients.map(a =>
+              onDispatchToAgent(a, body, {
+                userText: body,
+                suppressUserEcho: true,
+                threadOverride: activeThread,
+                coParticipants: recipients.filter(o => o.id !== a.id).map(o => ({ name: o.name, role: o.role })),
+              }).catch(err => bowOut(a, err))
+            ));
+          }
         } finally {
           setStreaming(false);
         }
@@ -1100,7 +1138,17 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         </div>
         <textarea
           ref={composerRef}
-          placeholder="Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)"
+          /* Name who is actually going to read this. In a project or meeting
+             room the message does NOT go to CafresoHQ — it goes to everyone
+             seated, and the placeholder was still addressing the CEO while
+             the banner directly above it listed three other people. The
+             room's own empty-state already says "type below to send to all
+             attendees"; the composer was contradicting it. */
+          placeholder={activeRoom && activeRoom.participants.length
+            ? `Message ${activeRoom.participants.length === 1
+                ? activeRoom.participants[0].name
+                : `all ${activeRoom.participants.length} in ${activeRoom.name}`}… (@ mention to narrow · ↵ send)`
+            : 'Message CafresoHQ… (@ mention · ↵ send · /brainstorm for team)'}
           value={input}
           onChange={onInputChange}
           onKeyDown={onKey}

@@ -1544,6 +1544,14 @@ ${d.text}` : d.text,
       // Co-participants in a multi-agent room — passed to the agent's prompt
       // so it knows it's collaborating, not soliloquising.
       coParticipants = [],
+      /* A meeting runs its attendees in TURN, so each one can be handed
+         what the room has already said. `heardSoFar` is that transcript
+         ({name, role, text}); `meetingTurn` marks the run as part of a
+         meeting even for the person who speaks first and has heard
+         nothing yet. Both are absent for a project-room broadcast, which
+         really does go out to everyone at once. */
+      heardSoFar = [],
+      meetingTurn = false,
       // Phase-1 message-registry hooks. `messageId` is the existing message
       // record this dispatch is fulfilling (set by the DM-fanout loop below
       // when it forwards an inter-agent DM); `parentMessageId` is the
@@ -1766,10 +1774,34 @@ ${d.text}` : d.text,
     /* Co-participants context: when the boss @-mentioned multiple agents in
        one message (or the agent is in a project / meeting room with others),
        tell this agent who else is in the room so they can build on or
-       disagree with each other instead of replying in isolation. */
-    const coNote = (coParticipants && coParticipants.length)
-      ? `\n\nROOM: You are in a multi-agent room with ${coParticipants.map(p => `${p.name} (${p.role})`).join(', ')}. They are receiving the SAME request in parallel. Give your own perspective from your role; don't recap what they'd cover. If you disagree with what a teammate is likely to say, name it. Keep it tight.`
-      : '';
+       disagree with each other instead of replying in isolation.
+
+       Two different rooms, and the note has to know which one it is in. A
+       project-room broadcast goes out to everyone at once, so nobody can
+       react to anybody and the note says exactly that. A MEETING takes
+       turns, so whoever is up has actually HEARD the room and gets the
+       words themselves rather than a list of names to imagine. Guessing
+       what a teammate is "likely to say" is what you do when you cannot
+       hear them; it becomes the wrong instruction the moment you can. */
+    const heard = (heardSoFar || []).filter(h => h && String(h.text || '').trim());
+    const roomList = (coParticipants || []).map(p => `${p.name} (${p.role})`).join(', ');
+    let coNote = '';
+    if (heard.length) {
+      coNote = `\n\nMEETING: You are in a meeting with ${roomList}. ` +
+        `It is your turn, and here is what has actually been said so far:\n\n` +
+        heard.map(h => `  ${h.name} (${h.role}): ${String(h.text).replace(/\s+/g, ' ').trim().slice(0, 600)}`).join('\n\n') +
+        `\n\nRespond to the room, not just to the boss. Build on what you agree with BY NAME, and say plainly where you disagree and why. Do not repeat a point someone has already made. Keep it tight.`;
+    } else if (meetingTurn && roomList) {
+      /* First to speak has heard nothing — but they are not in a parallel
+         room either, and saying they are would be the same untruth pointed
+         the other way. It would invite a standalone memo from the one
+         person everybody else is about to answer by name. */
+      coNote = `\n\nMEETING: You are opening a meeting with ${roomList}. ` +
+        `You speak first; each of them answers after you and will see exactly what you said. ` +
+        `Give your own view from your role, and if there is something you want a particular teammate to weigh in on, name them and say why. Keep it tight.`;
+    } else if (roomList) {
+      coNote = `\n\nROOM: You are in a multi-agent room with ${roomList}. They are receiving the SAME request in parallel. Give your own perspective from your role; don't recap what they'd cover. If you disagree with what a teammate is likely to say, name it. Keep it tight.`;
+    }
     // ── DM injection defense (Phase 3) ─────────────────────────────
     // When this dispatch is forwarding a DM from another agent, the body
     // is UNTRUSTED INPUT — another agent (or content that agent ingested
@@ -1928,6 +1960,11 @@ ${d.text}` : d.text,
        holds longer-term memory. */
     const recentChat = chat.slice(-6);
     const screen = makeScreenEmitter(agent.id);
+    /* What this coworker ends up saying out loud, hoisted past the try so
+       the caller can be handed it. `cleanBuf` itself is born inside the
+       try and dies with it. A run that throws leaves this empty, which is
+       the honest answer to "what did they say" for a turn that failed. */
+    let saidAloud = '';
     try {
       await HQ.agentStream(agent, framedPrompt, tok => {
         buf += tok;
@@ -2194,6 +2231,7 @@ ${d.text}` : d.text,
       const cleanBuf = HQ.cleanHarmony(
         HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
       screen.done(cleanBuf);
+      saidAloud = cleanBuf;
       /* The last link of a boss-started chain reports back to the boss.
          Conditions, all of them necessary:
            - the chain began somewhere else (chainOrigin) and we are not
@@ -2925,6 +2963,14 @@ ${d.text}` : d.text,
         text: `🛡 ${agent.name} is asking for file and shell access — it's in your approvals. Their reason: ${reason}`,
         thread: 'team' }]);
     }
+    /* What they actually said, for a caller that needs to pass it on.
+       The meeting room is the one that does: it runs its attendees in
+       turn precisely so each can hear the last, and it cannot do that
+       from a promise that resolves to undefined. Everything above this
+       line has already happened — the bubble is rendered, the tools have
+       run, the DMs have gone out — so this is a read of a finished turn,
+       not a second channel that could disagree with the visible one. */
+    return saidAloud;
   };
 
   /* Map a vault tool event to a graph pulse so the user can SEE the agent

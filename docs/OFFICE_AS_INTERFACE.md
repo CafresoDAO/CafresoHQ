@@ -5487,3 +5487,86 @@ settings — never on the floor, the cards, or onboarding.
 > the dispatcher and every listener are the real ones. Both defects above
 > were found this way, and neither is reachable by reading the code — each
 > needs a specific two-turn shape to exist before it shows itself.
+
+### 2026-08-13 — the meeting room seated three people who couldn't hear each other
+
+> Continuing the "together" audit from the DM chain. Fan-out works; DMs now
+> work; the meeting room had never been driven end to end.
+>
+> **There are two surfaces in this office called a meeting room, and only
+> one of them was ever fixed.** `features.jsx`'s floor-level `MeetingRoom`
+> — the door you walk through on the office floor — runs a real sequential
+> round with a running transcript. It got that after the identical bug was
+> caught there earlier (the second speaker answered "no one spoke before
+> me" while the first speaker's reply sat a few pixels above), and
+> `test_meeting_room_round_transcript.py` has pinned it since. The CHAT
+> meeting — the one ROOMS ▸ Meeting rooms creates, which owns the
+> `meeting:<id>` thread — was written later and inherited none of it.
+>
+> Driven with three attendees and a scripted brain each. Reading the
+> prompts off the wire:
+>
+> · all three dispatched within **19ms** of each other, under `Promise.all`;
+> · **no attendee's prompt contained one word of any other attendee's
+>   reply** — they couldn't; every prompt was assembled before anyone had
+>   spoken;
+> · and each was told, in the office's own voice, that the others were
+>   *"receiving the SAME request in parallel"*, with the instruction to
+>   guess at what a teammate was *"likely to say"*.
+>
+> Meanwhile the seating modal says this at the moment the boss is choosing
+> who to invite:
+>
+> > **Attendees** *(pick at least one — they'll all see each other's replies)*
+>
+> They never saw each other's replies. Three people answering the same
+> question in one thread without hearing each other is not a meeting; it is
+> three parallel 1:1s stacked in one place. The office made the claim on the
+> way in and the implementation contradicted it — §7 again, and on the
+> surface whose entire reason to exist is the one-liner.
+>
+> **Fixed by making the promise true rather than softening the copy.** A
+> meeting now runs its attendees in turn, each handed what the room has
+> actually said. That costs wall-clock — which is what a meeting costs —
+> and it buys the thing the room is for: attendee two can disagree with
+> attendee one by name, and the boss watches the room fill in turn instead
+> of three bubbles racing. Project rooms stay parallel: a broadcast to
+> everyone assigned is a memo, and nothing there ever promised otherwise.
+>
+> Three details the fix turns on, each of which would silently un-fix it:
+>
+> · **The prompt has to describe the room it is in.** The *first* speaker
+>   has heard nothing, but is not in a parallel room either — telling them
+>   they are is the same untruth pointed the other way, inviting a
+>   standalone memo from the one person everybody else is about to answer
+>   by name. So there are three framings, not two: opening, taking your
+>   turn (with the transcript), and a genuine broadcast.
+> · **Only what was actually said gets passed on.** A failed or empty turn
+>   must not enter the transcript as a silent gap the next speaker is asked
+>   to build on.
+> · **The per-turn catch lives inside the loop.** Otherwise the first
+>   coworker to bow out ends the meeting for everyone still waiting to
+>   speak — a worse failure than the parallel version it replaced.
+>
+> This needed `dispatchToAgent` to hand back what the coworker said; it
+> returned `undefined`, and `cleanBuf` is born inside the `try` and dies
+> with it. Hoisted as `saidAloud`, initialised empty so a run that threw
+> reports saying nothing rather than the previous turn's words.
+>
+> Verified live after the fix: Nova opened having heard nothing, Pip's
+> prompt carried Nova's exact words, Rex's carried Nova's and Pip's, in
+> order — 0 → 1 → 2 prior turns.
+>
+> **Also caught on the same drive, smaller and the same shape:** the
+> composer placeholder still read *"Message CafresoHQ…"* while the banner
+> directly above it listed three attendees and the room's own empty state
+> said "type below to send to all attendees". The box named someone who was
+> not in the room and would not read it. It now names the room.
+>
+> **And one thing found but not chased:** with no brain configured, the
+> first run put three coworkers on a dead gateway and rendered **three
+> empty speech bubbles** — no text, no error, no "bowed out" line. The
+> office does raise a "⚠ 3 of the team are hitting the same wall" notice,
+> so the failure is not entirely silent, but the bubbles themselves persist
+> as blank agent messages in the thread. Worth a look on its own; it is a
+> different question from whether the meeting is a meeting.
