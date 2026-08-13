@@ -1543,6 +1543,62 @@ same elevation toggle now shows *"Grant access."* Cancelled rather than
 confirmed, per this session's standing rule against ever actually
 elevating a coworker; `agents.json` confirmed `elevated: false` after.
 
+### Four tool checkboxes in Hire/Roster gated nothing, silently — 2026-08-13
+
+Same ROSTER drive, a different corner of the same panel. Noticed "Image
+Gen" (`id: 'img'`) doesn't do anything — `toolsForAgent` gates
+`GENERATE_IMAGE` purely on `s.imageProvider` (2026-08-12's finding),
+never on `agent.tools`. That's already tracked (`task_287b0e8f`), but it
+raised an obvious question about its nine siblings in the same grid: how
+many of THOSE actually gate anything either?
+
+Audited by grepping every `claimed.has('<id>')` check inside
+`toolsForAgent` and every `TOOL_REGISTRY` entry name, against all 10 ids
+in `TOOLS_CATALOG`. Only three do anything: `web` (gates `SEARCH`),
+`vault` (gates the `VAULT_*` family), and `wallet` (gates the `WALLET_*`
+family, conditionally). `code` and `files` are harmlessly redundant —
+real file/shell access exists, but it's gated on the separate
+`agent.elevated` toggle, not on checking these boxes. `img` is the
+already-tracked orphaned-setting case. And `email`, `cal`, `db`, `slack`
+gate **nothing, because those tools were never built at all** — not
+ungated, not parked, just absent from `TOOL_REGISTRY` entirely. A boss
+checking "Email Send" for a coworker in Hire or Roster was granting
+nothing, with no indication that anything was wrong.
+
+The model side was never actually at risk, which is worth stating
+precisely rather than overselling this: `agentStream`'s prompt
+explicitly separates *"Claimed capabilities: web, email, ..."* from
+*"the following are wired up for real execution: web"*, and instructs
+the model to only invoke the wired subset and say so plainly otherwise.
+A coworker claiming `email` correctly refuses to pretend it sent one —
+the same claimed-vs-wired separation already verified sound for SEARCH.
+The harm was entirely the boss-facing checkbox implying a real,
+functioning grant where there was none.
+
+Fixed by extending `visibleToolsCatalog()` (`modals/settings.jsx`) — the
+single filter Hire and Roster ALREADY shared for hiding the wallet
+checkbox when the Money module is off — to also drop the four
+never-implemented ids. One change, both surfaces, confirmed by checking
+`modals/hire.jsx` imports the same function rather than rendering the
+raw catalog. `code`/`files`/`img` deliberately left visible: each is a
+real product decision (redesign the grid around elevation, or build
+Settings → Media) that a filter shouldn't make silently, unlike
+`email`/`cal`/`db`/`slack`, where there is no ambiguity — the capability
+does not exist, full stop.
+
+Pinned by `scripts/test_never_wired_tools_hidden.py`, written to also
+catch drift in the other direction: it fails if any of the three
+genuinely-wired ids (`web`/`vault`/`wallet`) ever stop being checked in
+`toolsForAgent`, and it fails if `email`/`cal`/`db`/`slack` ever START
+being checked there without also coming out of the hidden set — a
+future implementer shouldn't have to rediscover this audit. Fire-tested
+by reverting the fix (5 failures, all correctly named). Verified live:
+a coworker seeded with stale `email`/`db` claims (leftover data from
+before this fix — harmless, since nothing ever reads them) now shows
+exactly 5 tool checkboxes instead of 9, with `Vault Notes` correctly
+still checked and the four dead ones simply absent rather than present-
+and-inert.
+
 ### Testing the office a new user actually meets
 
 **A first-run bug is only visible from a first run, and the working office

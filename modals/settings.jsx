@@ -251,9 +251,28 @@ function ConnectionsPanel() {
 
 /* Tool chips shown in Hire + Roster. The wallet tool only appears when the
    Money module is on — with money off, agents shouldn't even be offerable a
-   wallet (the runtime gate in hq-runtime.jsx enforces the same rule). */
+   wallet (the runtime gate in hq-runtime.jsx enforces the same rule).
+
+   NEVER_WIRED: four catalog entries with no tool behind them anywhere —
+   audited 2026-08-13 by grepping every `claimed.has('<id>')` check in
+   hq-runtime.jsx's toolsForAgent (the only place a claimed tool becomes a
+   real one) and every TOOL_REGISTRY entry name. 'email'/'cal'/'db'/'slack'
+   gate nothing, because EMAIL_SEND/CALENDAR/DATABASE/SLACK were never
+   built as tools at all — not ungated, just absent. A boss checking these
+   in Hire or Roster was granting nothing, silently: the model itself is
+   protected (its prompt separates "claimed" from "wired up for real
+   execution", so it correctly refuses to act on a phantom capability),
+   but the boss saw a checkbox with no effect and no warning. Hidden
+   rather than left half-true. 'code'/'files' are a different case (real
+   file/shell access exists, gated on `agent.elevated`, not on this
+   claim) and 'img' is a different case again (a real tool gated on an
+   orphaned setting, tracked separately) — neither removed here, since
+   both need a product decision this filter shouldn't make silently. */
+const NEVER_WIRED_TOOL_IDS = new Set(['email', 'cal', 'db', 'slack']);
 const visibleToolsCatalog = () =>
-  HQ.TOOLS_CATALOG.filter(t => t.id !== 'wallet' || (window.hqMoneyOn && window.hqMoneyOn()));
+  HQ.TOOLS_CATALOG
+    .filter(t => !NEVER_WIRED_TOOL_IDS.has(t.id))
+    .filter(t => t.id !== 'wallet' || (window.hqMoneyOn && window.hqMoneyOn()));
 
 const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
 function toBaseUnits(whole, decimals) {
