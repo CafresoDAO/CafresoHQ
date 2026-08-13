@@ -2048,13 +2048,29 @@ ${d.text}` : d.text,
            so if a peer strands the chain the sentence's second half is
            still true. */
       const handedOff = dmQueue.length > 0 && HQ.isHandoffPlaceholder(cleaned);
+      /* Whether a chain is OPEN is a different question from whether the
+         coworker's whole reply was the hand-off. `handedOff` asks the
+         second — isHandoffPlaceholder matches only the office's own
+         substitute sentence, which exists solely for a reply that was
+         nothing BUT the DM block. Both were being read off that one flag,
+         so the moment a coworker did the natural thing and said something
+         before delegating ("I'll ask Pip"), chain.promised stayed false,
+         nothing tracked the round trip, and the boss got a promise
+         followed by silence — no answer and no notice either. Watched
+         live. Asking for help is what opens the chain; saying nothing else
+         while doing it only decides whose words go in the bubble. */
+      const askedForHelp = dmQueue.length > 0 && !dmFrom && !!chainOrigin;
       const dmNames = [...new Set(dmQueue.map(d => d.to).filter(Boolean))];
       const nameLine = dmNames.length <= 1 ? (dmNames[0] || 'a coworker')
         : dmNames.slice(0, -1).join(', ') + ' and ' + dmNames[dmNames.length - 1];
       setChat(prev => {
         if (handedOff && dmFrom) return prev.filter(m => m.id !== agentMsgId);
-        const promising = handedOff && !dmFrom && chainOrigin;
-        if (promising) chain.promised = true;   // we said we'd come back
+        if (askedForHelp) chain.promised = true;   // a round trip is open
+        /* Only SAY the promise when there is nothing else in the bubble.
+           A coworker who explained themselves keeps their own words —
+           overwriting them with the office's sentence would throw away
+           what they actually said to make room for a line about it. */
+        const promising = handedOff && askedForHelp;
         const text = promising
           ? `Asked ${nameLine} — watch the team room, and I'll bring their answer back here.`
           : cleaned;
@@ -2204,13 +2220,43 @@ ${d.text}` : d.text,
          The office does not paraphrase and does not invent a summary --
          fabricatedRelay() exists precisely because a coworker claiming to
          relay something they were never told is the failure mode here. */
-      if (chainOrigin && thread !== chainOrigin && agent.id === chainAskedId
+      /* `agent.id === chainAskedId` used to be one of those conditions, and
+         it is why the round trip never closed. It describes a run of the
+         ASKED coworker that is itself in some other thread — which only
+         happens if the peer they pulled in DMs them back. In the ordinary
+         two-hop shape the boss actually produces (boss asks Nova, Nova asks
+         Pip, Pip answers) Nova's run ends at the dispatch and she never
+         gets another turn, so nobody reported and the boss was told
+         "nothing came back to pass on" about an answer that existed, was
+         complete, and was sitting in the team room one tab away. The office
+         promised in its own voice to bring it back and then said it hadn't.
+
+         So the coworker holding the answer brings it, whoever they are.
+         Their own words, COPIED — the office still does not paraphrase and
+         does not invent a summary; fabricatedRelay() exists precisely
+         because a coworker claiming to relay something they were never told
+         is the failure mode here. The name on the bubble is theirs, so the
+         boss can see it came from Pip and not from Nova, and a one-line
+         note says how it got there — the boss asked one person and should
+         not have to work out why a second one is suddenly talking.
+
+         `!chain.reported` keeps it to exactly one relay: the branch runs
+         before the DM loop dispatches, so on a longer chain the deepest
+         link to produce a real answer wins and every caller above it finds
+         the flag already set. */
+      if (chainOrigin && thread !== chainOrigin && !chain.reported
           && cleanBuf.trim() && !dmQueue.length) {
         chain.reported = true;                  // ...and we came back
-        setChat(prev => prev.concat([{
-          id: HQ.uid('m'), from: 'agent', name: `${agent.name} · ${agent.role}`,
-          text: cleanBuf, thread: chainOrigin, agentId: agent.id,
-        }]));
+        const relayed = [];
+        const asker = agents.find(a => a.id === chainAskedId);
+        if (asker && asker.id !== agent.id) {
+          relayed.push({ id: HQ.uid('m'), from: 'system', name: 'HQ',
+            text: `(${asker.name} asked ${agent.name} — here's what they said.)`,
+            thread: chainOrigin });
+        }
+        relayed.push({ id: HQ.uid('m'), from: 'agent', name: `${agent.name} · ${agent.role}`,
+          text: cleanBuf, thread: chainOrigin, agentId: agent.id });
+        setChat(prev => prev.concat(relayed));
       }
       onUpdateAgent(agent.id, {
         status: 'active', mood: 'done',

@@ -708,7 +708,7 @@ def main():
     # and the boss got no answer. The last link now reports back -- but only
     # once the round-trip has SETTLED.
     app_src = (ROOT / 'app.jsx').read_text(encoding='utf-8')
-    rb = re.search(r'if \(chainOrigin && thread !== chainOrigin[\s\S]{0,400}?\n      \}', app_src)
+    rb = re.search(r'if \(chainOrigin && thread !== chainOrigin[\s\S]{0,900}?\n      \}', app_src)
     check('the last link of a boss-started chain reports back', bool(rb),
           'app.jsx: no report-back block found')
     body = rb.group(0) if rb else ''
@@ -721,12 +721,41 @@ def main():
     check('the settled-check asks the dispatcher queue, not a re-parse',
           '!dmQueue.length' in body and 'extractAllDMs' not in body,
           'app.jsx: use dmQueue — the one authority on whether this turn handed off')
-    check('only the coworker the boss asked reports back',
-          'agent.id === chainAskedId' in body,
-          'app.jsx: a peer pulled into the chain does not owe the boss a reply')
     check('nothing is posted twice into the room it came from',
           'thread !== chainOrigin' in body,
           'app.jsx: guard against relaying into the originating thread')
+    # This condition used to read `agent.id === chainAskedId` -- only the
+    # coworker the boss ASKED may report back -- on the reasoning that a peer
+    # pulled into the chain owes the boss nothing. It describes a run of the
+    # asked coworker that is itself in some other thread, which happens only
+    # if the peer DMs them back. The ordinary two-hop shape the boss actually
+    # produces (boss asks Nova, Nova asks Pip, Pip answers) never gets there:
+    # Nova's run ends at the dispatch and she has no second turn. So nobody
+    # reported, and the unkept-promise notice below fired -- the office told
+    # the boss "nothing came back to pass on" about a complete answer sitting
+    # one tab away, seconds after promising in its own voice to bring it.
+    # Watched live in both DM shapes. Whoever is holding the answer brings it.
+    # Read the CONDITION, not the block: chainAskedId still appears inside,
+    # because naming the hop needs to know who did the asking. What must not
+    # come back is the identity test in the guard.
+    cond = body.split(') {')[0]
+    check('the coworker holding the answer brings it, asked or not',
+          'chainAskedId' not in cond,
+          'app.jsx: requiring the ASKED coworker strands the ordinary two-hop '
+          'chain, where that coworker never runs again')
+    check('...exactly once, however deep the chain went',
+          '!chain.reported' in body and 'chain.reported = true;' in body,
+          'app.jsx: without the flag every caller above the answer relays it too')
+    # Copied, never paraphrased, and under their OWN name -- the boss asked
+    # one person and should not have to work out why a second is talking, so
+    # a one-line HQ note says how it got here.
+    check('the relay carries their own words and their own name',
+          'text: cleanBuf' in body and 'name: `${agent.name}' in body,
+          'app.jsx: the office does not summarise a coworker back to the boss')
+    check('...with a note naming who asked whom',
+          re.search(r'asked \$\{agent\.name\} — here', body)
+          and 'asker.id !== agent.id' in body,
+          'app.jsx: name the hop, and only when there was one')
 
     # The other half of the loop: the coworker the boss asked, holding a
     # peer's answer, must be TOLD to answer the boss. The generic DM framing
@@ -836,9 +865,25 @@ def main():
           re.search(r'if \(handedOff && dmFrom\) return prev\.filter\(m => m\.id !== agentMsgId\)', app_src),
           'app.jsx: pure hand-off in the team room keeps only the DM bubble')
     check("the boss's thread gets the promise only when the report-back is armed",
-          re.search(r'handedOff && !dmFrom && chainOrigin', app_src)
+          re.search(r'const promising = handedOff && askedForHelp;', app_src)
           and "I'll bring their answer back here" in app_src,
-          'app.jsx: promise gated on chainOrigin')
+          'app.jsx: promise gated on an open chain')
+    # SAYING the promise and HAVING an open chain are different questions, and
+    # reading both off isHandoffPlaceholder is what broke the second one.
+    # That matcher recognises exactly the office's own substitute sentence,
+    # which exists only for a reply that was nothing BUT the DM block. So a
+    # coworker who did the natural thing and explained itself first ("I will
+    # ask Pip to draft it.") kept its own words -- correctly -- and in the
+    # same stroke left chain.promised false. Nothing tracked the round trip:
+    # no relay, and no unkept-promise notice either. The boss got a sentence
+    # about asking Pip and then permanent silence. Watched live.
+    check('asking for help opens the chain, whatever else was said',
+          re.search(r'const askedForHelp = dmQueue\.length > 0 && !dmFrom && !!chainOrigin;', app_src),
+          'app.jsx: chain tracking must not be gated on the reply being NOTHING '
+          'but the hand-off — that is a question about the bubble, not the chain')
+    check('...and whose words go in the bubble is the other question',
+          'const handedOff = dmQueue.length > 0 && HQ.isHandoffPlaceholder(cleaned);' in app_src,
+          'app.jsx: keep the two flags distinct or they drift back together')
     # A promise needs its failure notices in the SAME room it was made in.
     check('the depth cap is announced where the promise was made',
           re.search(r'went back and forth too long without an answer[\s\S]{0,80}thread: originThread', app_src),
@@ -867,8 +912,9 @@ def main():
     # disables the notice: promised is set where the promise is rendered,
     # reported where the answer is delivered.
     check('the promise is recorded where it is made',
-          'if (promising) chain.promised = true;' in app_src,
-          'app.jsx: chain.promised must be set at the placeholder re-dress')
+          'if (askedForHelp) chain.promised = true;' in app_src,
+          'app.jsx: chain.promised must be set wherever a chain OPENS, not '
+          'only where the office happens to narrate it')
     check('keeping the promise is recorded where the answer lands',
           'chain.reported = true;' in app_src,
           'app.jsx: chain.reported must be set by the report-back')

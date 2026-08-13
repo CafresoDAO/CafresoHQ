@@ -5404,3 +5404,86 @@ settings — never on the floor, the cards, or onboarding.
 > camera or the selection, which is exactly the complaint against `pulse`
 > above. Worth building on the live engine rather than losing with the
 > code.
+
+### 2026-08-13 — the office promised to bring the answer back, then said it hadn't
+
+> **The other half of the north star.** "All your AIs work together" has two
+> halves, and only one had ever been driven end to end. Fan-out — one message
+> reaching several coworkers — was proven weeks ago. Coworker-to-coworker
+> DMs, where the boss asks one person and that person asks somebody else,
+> had never been run start to finish. Two coworkers (Nova the analyst, Pip
+> the writer), a scripted brain per coworker, two runs. Both were broken,
+> and both were broken in the office's own voice rather than in the wiring.
+>
+> **Defect A — the chain nobody was tracking.** `chain.promised` was set
+> from `handedOff`, which is `isHandoffPlaceholder(cleaned)`: a matcher for
+> the office's own substitute sentence, the one written for a reply that was
+> *nothing but* the DM block. Two different questions were being read off
+> that one flag. "Did this turn open a round trip?" is about the chain.
+> "Was there anything else in the bubble?" is about whose words the boss
+> reads. They coincide right up until a coworker does the natural thing and
+> explains itself first — *"I will ask Pip to draft it."* Then the office
+> keeps those words (correct: overwriting them would throw away what the
+> coworker actually said to make room for a line about it) and, in the same
+> stroke, sets nothing. No relay armed, and no unkept-promise notice either,
+> because that notice is gated on `chain.promised`. The boss reads a
+> sentence about asking Pip and then nothing happens, ever. Splitting the
+> flags fixes it: `askedForHelp` asks whether a chain opened, `handedOff`
+> only decides whose sentence goes in the bubble.
+>
+> **Defect B — the answer was home and the office denied it.** The
+> report-back required `agent.id === chainAskedId`: only the coworker the
+> boss *asked* may report back, on the reasoning that a peer pulled in owes
+> the boss nothing. But that condition describes a run of the asked coworker
+> that is itself in some other thread — which happens only if the peer DMs
+> them back. The ordinary two-hop shape (boss asks Nova → Nova asks Pip →
+> Pip answers) never reaches it: **Nova's run ends at the dispatch and she
+> never gets another turn.** So nobody relayed, and the unkept-promise
+> notice fired instead:
+>
+> > *Nova · Analyst — Asked Pip — watch the team room, and I'll bring their
+> > answer back here.*
+> > *HQ — (Nova asked, but nothing came back to pass on — the team room has
+> > what was said. Ask them again, or ask someone else.)*
+>
+> Both sentences are the office speaking, seconds apart, and the second
+> contradicts the first about a complete answer sitting one tab away. This
+> is §7's lie in its purest form: not a stale surface or an inferred
+> outcome, but the office breaking a promise it had just made in its own
+> voice — with the thing it promised already in hand.
+>
+> So the coworker holding the answer brings it, whoever they are. Their own
+> words, copied — the office still does not paraphrase, which is why
+> `fabricatedRelay()` exists — under their own name, with one HQ line saying
+> how it got here, because the boss asked one person and should not have to
+> work out why a second is suddenly talking. `!chain.reported` keeps it to
+> exactly one relay however deep the chain went.
+>
+> Verified live in both shapes. Bare DM:
+>
+> ```
+> direct | You         | @Nova I need one sentence about the gold rails.
+> direct | Nova        | Asked Pip — watch the team room, and I'll bring
+>                        their answer back here.
+> team   | Nova → Pip  | Please draft one sentence about the gold rails.
+> team   | Pip         | Here is the sentence: the gold rails settle on chain.
+> direct | HQ          | (Nova asked Pip — here's what they said.)
+> direct | Pip         | Here is the sentence: the gold rails settle on chain.
+> ```
+>
+> Prose-then-delegate produces the same thread with Nova's own sentence in
+> place of the placeholder. Pre-fix, the first shape ended in the
+> self-contradiction above and the second ended in silence.
+>
+> **The technique that made this testable, since three earlier attempts
+> failed on it.** No prompt makes a small local model comply — asked to read
+> a missing file it answered from thin air, asked to emit one literal tool
+> line it emitted a different marker. "The model wouldn't cooperate" is not
+> evidence about the office. The answer is an in-page `window.fetch` shim
+> that intercepts `/ollama/v1/chat/completions`, returns a canned OpenAI SSE
+> stream, and passes everything else through, routing per coworker by
+> matching the system prompt in the request body. Only the model's *words*
+> are faked; the stream scanner, the DM extractor, the chain bookkeeping,
+> the dispatcher and every listener are the real ones. Both defects above
+> were found this way, and neither is reachable by reading the code — each
+> needs a specific two-turn shape to exist before it shows itself.
