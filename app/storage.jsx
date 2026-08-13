@@ -1,5 +1,5 @@
-import { floorEmit, snagCause } from './floor.jsx';
-import { handoffHint, withHandoff } from './cast.jsx';   // import-free module — no cycle
+import { floorEmit, snagOpener } from './floor.jsx';
+import { withRouteOut } from './cast.jsx';   // import-free module — no cycle
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
 
@@ -337,8 +337,7 @@ const makeScreenEmitter = (agentId) => {
 const chatErrorText = (err, agents, selfId) => {
   const others = selfId ? (agents || []).filter(a => a && a.id !== selfId) : agents;
   const raw = (err && err.message) || String(err);
-  const because = snagCause(raw);
-  let out = '⚠ ' + because.charAt(0).toUpperCase() + because.slice(1);
+  let out = '⚠ ' + snagOpener(raw);
   try {
     const C = CafresoHQClient;
     /* §7's third route — "pick another coworker" — was the one this never
@@ -353,15 +352,15 @@ const chatErrorText = (err, agents, selfId) => {
 
        Same probe as the topbar alarm (agentBrainReady), so the two surfaces
        cannot disagree about who can work. */
-    const hint = handoffHint(others, C);
-    const close = () => { if (!/[.!?…]$/.test(out)) out += '.'; };
-    if (hint) {
-      out = withHandoff(out, others, C);   // closes the clause for us
-    } else if (C && C.hasUsableKey && !C.hasUsableKey()) {
-      close();
-      out += ' You’re on the shared Cafreso brain — you can add your own AI key ' +
-             'in Settings → Keys to run independently of it.';
-    }
+    /* The ladder — name a coworker, else hire, else bring a brain — now
+       lives in cast.jsx beside handoffHint, because the CEO's own failure
+       bubble needed the same one and had only the first rung. It reached
+       the end of the ladder with nothing to say and printed a diagnosis
+       with no way forward on the first message a new office ever sends.
+       `agents` as well as `others`: rung 2 asks who is HIRED, and `others`
+       is empty in a one-coworker office the moment that coworker falls
+       over. */
+    out = withRouteOut(out, others, C, agents);
   } catch (_) {}
   return out;
 };

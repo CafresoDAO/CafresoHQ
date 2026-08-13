@@ -380,6 +380,26 @@ function snagSentence(raw) {
   return 'hit a snag — ' + snagCause(raw);
 }
 
+/* The third shape: the clause standing alone as its own sentence, for
+   surfaces where the speaker is already obvious because the bubble IS
+   them — the coworker's error bubble and the CEO's.
+
+   snagSentence is the INBOX shape. Those rows render "NAME + text", so
+   "Kenji hit a snag — that brain isn't signed in yet" needs the verb to
+   have a spine. Put the same string in a bubble the CEO is speaking and
+   the subject vanishes: "⚠ hit a snag — couldn't reach that brain — it
+   looks offline from here", a log line with two dashes in it, which is
+   what the front door said until this was written down.
+
+   It exists as a function for the reason the other two do: chatErrorText
+   was already capitalising the clause by hand, and a second call site
+   copying that expression is exactly how these three shapes drifted apart
+   the first time. */
+function snagOpener(raw) {
+  const c = snagCause(raw);
+  return c.charAt(0).toUpperCase() + c.slice(1);
+}
+
 /* Which props stand in a coworker's room. Driven by `agent.tools` — the
    capability the boss ACTUALLY granted at hire — so a room furnishes to
    what its occupant can really do, and the §4 walk destinations exist in
@@ -473,4 +493,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };

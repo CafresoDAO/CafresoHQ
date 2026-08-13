@@ -1,8 +1,8 @@
 import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
-import { attachVisit, snagCause, snagSentence } from '../app/floor.jsx';
-import { withHandoff } from '../app/cast.jsx';
+import { attachVisit, snagCause, snagOpener, snagSentence } from '../app/floor.jsx';
+import { withHandoff, withRouteOut } from '../app/cast.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
@@ -590,9 +590,33 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
 
            Caught only because I reproduced the failure instead of assuming
            my edit to chatErrorText covered it: agent dispatches and the CEO
-           stream have always been two different error-copy paths. */
+           stream have always been two different error-copy paths.
+
+           …and being two paths cost a second time, on the emptiest office
+           there is. Driven on a genuine first run — nobody hired, no key —
+           the boss's first ever message came back as
+
+             ⚠ hit a snag — couldn't reach that brain — it looks offline
+               from here
+
+           and ended there. withHandoff only ever offered rung one, so with
+           an empty floor there was nobody to name and the sentence simply
+           stopped: no route, and a diagnosis that promises a brain will be
+           back when none was ever configured — two bubbles under the same
+           office saying "We don't have a shared brain here". withRouteOut
+           carries the rest of the ladder (hire, or bring a brain), and both
+           paths now climb the same one.
+
+           The spine goes too. snagSentence gives "hit a snag — <cause>",
+           which is the INBOX's shape: those rows read "Kenji hit a snag —
+           …" and need the verb because the name is already there. Here the
+           bubble IS the CEO speaking, so the subject was missing and the
+           result read as a log line with two dashes in it. The coworker
+           bubble has always used the bare capitalised clause; the front
+           door now matches its own floor. */
         ? {...m, text: stopped ? (m.text + ' …(stopped)')
-             : withHandoff(`⚠ ${snagSentence(err && err.message || String(err))}`, agents, CafresoHQClient),
+             : withRouteOut(`⚠ ${snagOpener(err && err.message || String(err))}`,
+                            agents, CafresoHQClient, agents),
            error: !stopped}
         : m));
     }

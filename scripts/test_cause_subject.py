@@ -169,7 +169,7 @@ console.log(JSON.stringify(R));
         f = ROOT / rel
         s = f.read_text(encoding='utf-8')
         check(f'{rel} still uses the brain wording',
-              re.search(r'snag(?:Cause|Sentence)\s*\(', s) is not None,
+              re.search(r'snag(?:Cause|Sentence|Opener)\s*\(', s) is not None,
               'this is coworker dispatch — the brain sentences belong here, and a '
               'sweep that converted everything would have removed them')
 
@@ -190,7 +190,7 @@ console.log(JSON.stringify(R));
     check('chatErrorText is still there to check', bool(fn), 'app/storage.jsx')
     body = fn.group(0) if fn else ''
     check('the chat bubble classifies a failed run as a BRAIN failure',
-          re.search(r'\bsnagCause\s*\(\s*raw\s*\)', body)
+          re.search(r'\bsnag(?:Cause|Opener)\s*\(\s*raw\s*\)', body)
           and 'officeCause(' not in body,
           'app/storage.jsx: this bubble is a coworker speaking about their own '
           'failed run — all three call sites are agent dispatches. officeCause '

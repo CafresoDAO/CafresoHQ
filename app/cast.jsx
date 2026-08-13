@@ -309,4 +309,77 @@ function handoffHint(agents, C) {
     : ` ${names} are still working, though — @mention one of them and they can pick this up.`;
 }
 
-export { agentBrainReady, brainName, canDoPhrase, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, statBars, withHandoff };
+/* §7 wants every failure to end in a way FORWARD, and "pick another
+   coworker" is only one of them — it is the one that stops existing exactly
+   when the office is emptiest.
+
+   Driven on a genuine first run: brand-new office, nobody hired, no key.
+   The boss's very first message came back
+
+     ⚠ hit a snag — couldn't reach that brain — it looks offline from here
+
+   and stopped there. No route, no next step, and a diagnosis that reads as
+   "it will be back shortly" when nothing was configured to come back. Two
+   bubbles above it, the same office had already said "We don't have a
+   shared brain here" — so it contradicted itself inside one screen, on the
+   first thing a new user ever types.
+
+   It stopped there because withHandoff returns the text untouched when
+   nobody can help, and the only fallback that existed lived privately
+   inside chatErrorText. That split is old: ui/chat.jsx's own comment says
+   "agent dispatches and the CEO stream have always been two different
+   error-copy paths", written the last time something was fixed in one and
+   not the other. So the ladder moves here, beside handoffHint, and both
+   paths climb the same one:
+
+     1. somebody's brain is ready      → name them
+     2. nobody hired at all            → hire, or bring a brain
+     3. hired, but no usable key       → bring a brain
+
+   Rung 2 offers BOTH routes in one sentence rather than guessing between
+   them, because the client cannot answer "is there a brain on this
+   machine" without an async probe, and a route-out that turns out to be a
+   dead end is worse than two honest ones. "Hire someone on the Team tab"
+   is the office's existing words for it (features.jsx, modals/collab.jsx).
+
+   Unknowable → say nothing: if the client can't be asked about keys, the
+   diagnosis stands alone rather than gaining a guess.
+
+   `candidates` is who may be OFFERED and `roster` is who has been HIRED,
+   and they are two different lists on purpose. Callers hand over a
+   filtered set — chatErrorText drops the coworker who just fell over, and
+   the hand-off surfaces drop the one who refused — so in a one-coworker
+   office `candidates` is empty while the floor is not. Reading rung 2 off
+   that list would tell a boss who has hired somebody that nobody is
+   hired, which is the same class of untruth this whole function exists to
+   stop. Defaults to `candidates` so a caller with nothing to filter can
+   pass one list. */
+function routeOut(candidates, C, roster) {
+  const hint = handoffHint(candidates, C);
+  if (hint) return hint;
+  const BRAIN = 'add your own AI key in Settings → Keys';
+  const hired = Array.isArray(roster) ? roster : (Array.isArray(candidates) ? candidates : []);
+  if (!hired.length) {
+    return ` Nobody's hired yet — hire someone on the Team tab, or ${BRAIN}.`;
+  }
+  try {
+    if (C && C.hasUsableKey && !C.hasUsableKey()) {
+      return ` You’re on the shared Cafreso brain — you can ${BRAIN} to run independently of it.`;
+    }
+  } catch (_) {}
+  return '';
+}
+
+/* The same join withHandoff does, over the full ladder. Kept as one
+   function for the reason withHandoff's own comment gives: centralising
+   the sentence but not the JOIN just moves the run-on to whichever caller
+   gets written second. */
+function withRouteOut(text, candidates, C, roster) {
+  const tail = routeOut(candidates, C, roster);
+  if (!tail) return String(text || '');
+  let out = String(text || '');
+  if (out && !/[.!?…]$/.test(out)) out += '.';
+  return out + tail;
+}
+
+export { agentBrainReady, brainName, canDoPhrase, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

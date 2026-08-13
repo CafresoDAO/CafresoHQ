@@ -5701,3 +5701,76 @@ Verified live on the same office, same coworker, same missing model:
 
 Diagnosis, then the route out, then the name of somebody who can actually
 do it. Nova then answered the question on a working local brain.
+
+---
+
+### The first message a new office ever sends had nowhere to go
+
+Drove a genuine first run: fresh state, nobody hired, no key. The office
+opens honestly — *"it's just me and a floor of empty desks: nothing here is
+pre-staged"*, then *"We don't have a shared brain here, so whoever you hire
+will use one from this machine."* Both true.
+
+Then the boss typed the first thing they will ever type, and got:
+
+    ⚠ hit a snag — couldn't reach that brain — it looks offline from here
+
+and nothing else. Three separate failures in one line.
+
+**It ends at the diagnosis.** §7 asks every failure to offer try again /
+ask differently / pick another coworker. `withHandoff` only ever carried
+the third, and the third is the one route that stops existing exactly when
+the office is emptiest — there is nobody to name, so the sentence simply
+stopped. The fallback for that case (add your own key) existed, but
+privately, inside `chatErrorText`, which the CEO stream does not call.
+`ui/chat.jsx`'s own comment had already recorded why: *"agent dispatches
+and the CEO stream have always been two different error-copy paths"* —
+written the last time something was fixed in one and not the other.
+
+**It contradicts the office two bubbles up.** "It looks offline from here"
+says a brain exists and is temporarily away. The office had just said there
+isn't one. Retrying — the only affordance offered — could never work.
+
+**It reads as a log line.** `snagSentence` produces "hit a snag — <cause>",
+which is the *inbox* shape: those rows render "NAME + text", so "Kenji hit
+a snag — …" needs the verb to have a spine. In a bubble the CEO is
+speaking, the subject vanishes and what is left has two dashes and no
+subject. The coworker bubble beside it had always used the bare
+capitalised clause.
+
+**Fix — one ladder, both paths:**
+
+| rung | when | what it says |
+|---|---|---|
+| 1 | somebody's brain is ready | *Nova is still working, though — @mention them…* |
+| 2 | nobody hired at all | *Nobody's hired yet — hire someone on the Team tab, or add your own AI key in Settings → Keys.* |
+| 3 | hired, but no usable key | *You're on the shared Cafreso brain — you can add your own AI key…* |
+
+`routeOut`/`withRouteOut` live in `app/cast.jsx` beside `handoffHint`, for
+the reason that file's own comment gives about centralising the sentence
+but not the join. Rung 2 offers **both** routes in one sentence rather than
+choosing: the client cannot answer "is there a brain on this machine"
+without an async probe, and a route-out that turns out to be a dead end is
+worse than two honest ones.
+
+Two details that would each silently un-fix it:
+
+· **`candidates` and `roster` are different lists.** Callers hand over a
+  filtered set — `chatErrorText` drops the coworker who just fell over —
+  so in a one-coworker office the candidate list is empty while the floor
+  is not. Reading rung 2 off it would tell a boss who has hired somebody
+  that nobody is hired.
+· **The third shape gets a name.** `snagOpener` joins `snagCause` and
+  `snagSentence` rather than each bubble capitalising the clause itself,
+  which is how these drifted apart in the first place.
+
+Verified live on the same office. Empty floor:
+
+    ⚠ Couldn't reach that brain — it looks offline from here. Nobody's
+      hired yet — hire someone on the Team tab, or add your own AI key in
+      Settings → Keys.
+
+Then with one coworker hired on a local brain:
+
+    ⚠ Couldn't reach that brain — it looks offline from here. Nova is
+      still working, though — @mention them and they can pick this up.

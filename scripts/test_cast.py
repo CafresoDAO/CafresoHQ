@@ -171,6 +171,19 @@ R.joinOpen   = withHandoff('⚠ it looks offline from here', ROSTER, fakeC);
 R.joinClosed = withHandoff('⚠ it looks offline from here.', ROSTER, fakeC);
 R.joinEllip  = withHandoff('⚠ give this to someone else…', ROSTER, fakeC);
 R.joinNone   = withHandoff('⚠ it looks offline from here', DEAD, fakeC);
+/* The rest of the ladder. withHandoff stops after rung one, which is fine
+   for the hand-off surfaces (somebody is always hired there) and was a dead
+   end everywhere else — most sharply on an office with nobody in it. */
+const DIAG   = '⚠ Couldn’t reach that brain — it looks offline from here';
+R.rungName   = withRouteOut(DIAG, ROSTER, fakeC, ROSTER);
+R.rungHire   = withRouteOut(DIAG, [], fakeC, []);
+R.rungKey    = withRouteOut(DIAG, DEAD, fakeC, DEAD);
+// Filtered candidates, non-empty roster: the coworker who just fell over is
+// the only one hired, so there is nobody to name AND nobody to hire.
+R.rungLastMan = withRouteOut(DIAG, [], fakeC, DEAD);
+// A client that cannot answer must not produce a guess.
+R.rungMute   = withRouteOut(DIAG, DEAD, { parseModelId: fakeC.parseModelId,
+                                          getSettings: fakeC.getSettings }, DEAD);
 // ── what a coworker can DO, in the boss's words ─────────────────────────
 R.cdOne    = canDoPhrase(['web']);
 R.cdTwo    = canDoPhrase(['web','vault']);
@@ -310,6 +323,44 @@ console.log(JSON.stringify(R));
     check('no hint means the text is returned untouched',
           out['joinNone'] == '⚠ it looks offline from here')
 
+    # ── the rest of the ladder ───────────────────────────────────────────
+    # §7 wants every failure to end in a way forward, and "pick another
+    # coworker" is the one route that stops existing exactly when the office
+    # is emptiest. Driven on a genuine first run — nobody hired, no key —
+    # the boss's first ever message came back "⚠ hit a snag — couldn't reach
+    # that brain — it looks offline from here" and stopped there: no route,
+    # and a diagnosis promising a brain would return when none was ever
+    # configured, two bubbles under the office's own "We don't have a shared
+    # brain here".
+    check('somebody who can work is still named first',
+          'Llama and Mika are still working' in out['rungName'], out['rungName'])
+    check('an empty office is told how to stop being empty',
+          "Nobody's hired yet" in out['rungHire']
+          and 'Team tab' in out['rungHire']
+          and 'Settings → Keys' in out['rungHire'],
+          repr(out['rungHire']) + ' — with nobody hired, "pick another '
+          'coworker" is not a route; hiring and bringing a brain are')
+    check('...offering both routes rather than guessing between them',
+          out['rungHire'].count(' or ') == 1,
+          repr(out['rungHire']) + ' — the client cannot answer "is there a '
+          'brain on this machine" without an async probe, and a route-out '
+          'that turns out to be a dead end is worse than two honest ones')
+    check('a hired-but-keyless office is pointed at a brain',
+          'shared Cafreso brain' in out['rungKey'], out['rungKey'])
+    check('the last coworker falling over is not "nobody is hired"',
+          "Nobody's hired" not in out['rungLastMan']
+          and 'shared Cafreso brain' in out['rungLastMan'],
+          repr(out['rungLastMan']) + ' — callers pass a FILTERED candidate '
+          'list, so an empty one means nobody is available, not that the '
+          'floor is empty; rung 2 must read the roster instead')
+    check('a client that cannot be asked adds no guess',
+          out['rungMute'] == '⚠ Couldn’t reach that brain — it looks offline from here',
+          repr(out['rungMute']))
+    check('the join still closes the clause on every rung',
+          all('here. ' in out[k] for k in ('rungName', 'rungHire', 'rungKey')),
+          'centralising the SENTENCE but not the JOIN is what put a run-on '
+          'in the first version of this')
+
     # ── the call site, not the helper ────────────────────────────────────
     # handoffHint only asks whose brain is ready; it cannot know that one of
     # them just refused the job. So the exclusion has to live where the
@@ -324,6 +375,33 @@ console.log(JSON.stringify(R));
     check("the refused coworker is left out of their own hand-off hint",
           bool(m) and 'agents.filter(a => a.id !== target.id)' in m.group(0),
           'ui/chat.jsx: withHandoff must get a roster without `target`')
+
+    # ── the front door ───────────────────────────────────────────────────
+    # The CEO's own failure bubble. ui/chat.jsx's comment says it plainly:
+    # "agent dispatches and the CEO stream have always been two different
+    # error-copy paths" — written the last time something was fixed in one
+    # and not the other, and true again the next time. This is the one
+    # bubble a brand-new office can produce before anything else exists, so
+    # it is the one that most needs the whole ladder.
+    ceo = re.search(r"const stopped = err\.name === 'AbortError';[\s\S]{0,3000}?: m\)\);", chat)
+    check('the CEO failure bubble is still where it was', bool(ceo),
+          'ui/chat.jsx: could not find the CEO stream catch')
+    cb = ceo.group(0) if ceo else ''
+    check('the CEO climbs the same ladder as the floor',
+          'withRouteOut(' in cb and 'withHandoff(' not in cb,
+          'ui/chat.jsx: withHandoff stops after rung one, and on an empty '
+          'floor rung one does not exist — the bubble ended at the diagnosis')
+    check('...and is handed the roster, not just the candidates',
+          re.search(r'withRouteOut\([\s\S]{0,220}?agents, CafresoHQClient, agents\)', cb),
+          'ui/chat.jsx: the fourth argument is who is HIRED')
+    check('the front door speaks in the same shape as the floor',
+          'snagOpener(' in cb and 'snagSentence(' not in cb,
+          'ui/chat.jsx: snagSentence is the INBOX shape — those rows render '
+          '"NAME + text" and need the verb. In a bubble the CEO is speaking, '
+          'so it loses its subject and reads "⚠ hit a snag — couldn\'t reach '
+          'that brain — it looks offline from here": a log line with two '
+          'dashes in it, where the coworker bubble beside it has always used '
+          'the bare capitalised clause')
 
     # Same trap, second door. `chatErrorText` also ends in a hand-off hint,
     # and for a long time it handed `agents` straight through — so when Pip
@@ -346,9 +424,10 @@ console.log(JSON.stringify(R));
     check('chatErrorText drops the failing coworker before hinting',
           bool(m2) and 'selfId' in m2.group(1)
           and 'a.id !== selfId' in m2.group(0)
-          and 'handoffHint(others' in m2.group(0)
-          and 'withHandoff(out, others' in m2.group(0),
-          'app/storage.jsx: filter `selfId` out, then hint from the remainder')
+          and re.search(r'withRouteOut\(out, others,\s*C,\s*agents\)', m2.group(0)),
+          'app/storage.jsx: filter `selfId` out, hint from the remainder — and '
+          'hand the FULL roster as the fourth argument, or a one-coworker '
+          'office tells a boss who has hired somebody that nobody is hired')
 
     # A real LM Studio shelf turned these up falling through to the generic
     # row: a model whose own name says nano is the small-and-quick class.
