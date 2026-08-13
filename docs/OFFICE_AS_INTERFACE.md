@@ -1332,11 +1332,71 @@ read the separator's actual computed style — `rgba(0, 224, 160, 0.675)`
 matching the calculation exactly — and confirmed visually the ticker
 still reads cleanly (`SPX 7,700 ▲0.45 · GOLD 4,644 ▼0.32 ·`).
 
-Pinned by `scripts/test_ticker_wallstreet_contrast.py` — re-derives the
-contrast ratio from the live CSS values (not a hardcoded duplicate) using
-the same WCAG formula, so it tracks the real rule rather than a snapshot
-of it. Fire-tested by reverting to the original `#00e0a060` — failed with
-the exact measured 2.42:1, not just "does not pass."
+Pinned originally by `scripts/test_ticker_wallstreet_contrast.py` — see
+the follow-up entry immediately below, which superseded this test with a
+broader one after the same tick's own full audit turned up two more real
+failures in the same selector family.
+
+### The wallstreet fix above was one of three — full theme x day/night audit — 2026-08-13
+
+Fixing the wallstreet ticker separator in isolation left the job half
+done. Rather than stop at "the flagged theme is fixed," audited the
+whole matrix live: 7 themes (default, sepia, solarized, dracula,
+highcontrast, coffeeshop, wallstreet) x 2 modes (day, night) = 14 real
+combinations, measured with `getComputedStyle` on temporary DOM nodes in
+a throwaway office (real cascade resolution — CSS custom-property
+inheritance turned out to have a surprise in it that hand-reading the
+source got wrong the first pass, see below). **Two more genuine
+failures, plus a specificity bug explaining a third:**
+
+- **`theme-coffeeshop`, day mode: 4.09:1.** Same shape as wallstreet —
+  its own `--office-ticker-bg` (`#3e2c1e`) never got the base `.sep`
+  color (`#9a8d7c`) re-checked against it.
+- **Every theme, night mode: 3.77:1 — including, unexpectedly, the
+  wallstreet fix just shipped (4.01:1, still failing).** Root cause:
+  `body.night .ticker { background: #3a3050; color: #f3e8ff; }`
+  hardcodes the ticker's background app-wide whenever night mode is on,
+  at higher specificity (1 type + 2 classes) than the base `.ticker {
+  background: var(--office-ticker-bg) }` rule (1 class) — so it wins
+  regardless of which theme's own `--office-ticker-bg` variable is set.
+  Confirmed live: `coffeeshop.night`'s `#150e0a` and `wallstreet.night`'s
+  `#060610` — both real declared values — **never actually render**;
+  every theme's ticker in night mode uses this same `#3a3050`. This
+  pattern (identical `#3a3050`/`#f3e8ff` pair) matches ~15 OTHER
+  components in the same `body.night` block (`.gs-card`, `.memrow`,
+  `.task-card`, `.chip`, `.toast`, …), so read as deliberate — night
+  mode is one uniform palette across themes by design — and fixed at the
+  surface that's actually wrong (nobody had re-checked `.sep` against
+  it) rather than un-hardcoding 15 rules on a guess about intent. The
+  per-theme night-mode `--office-ticker-bg` variables (coffeeshop,
+  wallstreet) are consequently confirmed dead code — flagged, not
+  removed, since deleting CSS that visibly does nothing is a separate,
+  lower-urgency cleanup from fixing what's actually broken.
+
+Three additive fixes, each tuned to land at ~5.4:1 — matching the
+original fix's own 5.48:1 precedent rather than a fresh number each
+time — verified live after each:
+- `body.theme-coffeeshop .ticker-track .line .sep` (new, day only —
+  `#b5a390`, 5.43:1)
+- `body.night .ticker-track .line .sep` (new, generic — covers
+  default/sepia/solarized/dracula/highcontrast/coffeeshop.night at once
+  since they all share the same real night background — `#b8ab99`,
+  5.43:1)
+- `body.theme-wallstreet.night .ticker-track .line .sep` (new, combined
+  selector so it outranks both the generic night rule and the day-mode
+  wallstreet rule — keeps Trading Floor's own green in night mode
+  instead of falling back to a neutral tone — `#00e0a0d6`, 5.42:1)
+
+All 14 combinations re-measured after the fix: 5.42–5.52:1, uniformly.
+
+Pinned by `scripts/test_ticker_sep_contrast.py` (replaces the narrower
+`test_ticker_wallstreet_contrast.py` from earlier in this same tick) —
+resolves all four real backgrounds and five real winning `.sep` rules
+from source (HSL conversion for the default theme's token, direct hex
+for the rest) rather than hardcoding a duplicate snapshot, so it tracks
+the actual cascade. Fire-tested all three new rules separately (each
+reverted to its pre-fix color) — each failed with the exact ratio
+measured live (4.09, 3.77, 4.00), not just "does not pass."
 
 ### Every export tool was completely broken, and had never once been run — 2026-08-12
 

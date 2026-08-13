@@ -1298,6 +1298,16 @@ body.theme-coffeeshop.night {
   --tile:        #221812;
   --carpet:      #2a1e16;
 }
+/* Found auditing the wallstreet ticker-contrast fix above: Coffee Shop's
+   own --office-ticker-bg (#3e2c1e, day) never got the base .sep color
+   (#9a8d7c) re-checked against it either — measures 4.09:1, below AA.
+   (The .night variant's --office-ticker-bg is unreachable — see the
+   `body.night .ticker` comment in the night-mode block — so only day mode
+   needs its own override; night mode already gets the generic night fix.)
+   Same hue family as the base fix, lightened to land at 5.43:1. */
+body.theme-coffeeshop .ticker-track .line .sep {
+  color: #b5a390;
+}
 
 /* ─── Wolf of Wall Street theme ────────────────────────────────
    Bloomberg terminals, mahogany + gold, NYC trading floor. */
@@ -1439,6 +1449,18 @@ body.theme-wallstreet .ticker-track .line .kw {
    "looked about right" a second time. */
 body.theme-wallstreet .ticker-track .line .sep {
   color: #00e0a0ac;
+}
+/* Night mode overrides `.ticker`'s background app-wide to a uniform #3a3050
+   regardless of theme (`body.night .ticker`, see that rule's own comment in
+   the night-mode block) — including for this theme, whose OWN
+   --office-ticker-bg (#0a0a1a) the fix above was tuned against. #00e0a0ac
+   measures only 4.01:1 against #3a3050, below AA. A combined selector
+   (both classes on `body`) outranks both the plain `.theme-wallstreet` rule
+   above and the generic `.night` one, so Trading Floor keeps its own green
+   even in night mode, just re-tuned for the background that actually
+   applies then: alpha raised to land at 5.41:1. */
+body.theme-wallstreet.night .ticker-track .line .sep {
+  color: #00e0a0d6;
 }
 /* Market quotes (Trading Floor theme feeds live Coinbase prices into the ticker) */
 .ticker-track .line .mkt-up   { color: var(--ok, #1f8a4c); }
@@ -5185,6 +5207,25 @@ body.night .gs-tag  { background: rgba(201,184,224,0.30); color: #f3e8ff; }
 body.night .memrow { background: #3a3050; color: #f3e8ff; }
 body.night .ticker { background: #3a3050; color: #f3e8ff; }
 body.night .ticker .badge { background: var(--error); color: #fff8ee; }
+/* This hardcode wins over EVERY theme's own --office-ticker-bg variable —
+   `body.night .ticker` (2 classes + 1 type) beats the plain `.ticker {
+   background: var(--office-ticker-bg) }` base rule (1 class) regardless of
+   which theme set that variable. Confirmed live: coffeeshop.night and
+   wallstreet.night both declare their own --office-ticker-bg (#150e0a,
+   #060610) and neither ever actually renders — every theme's ticker in
+   night mode uses this SAME #3a3050, measured via getComputedStyle.
+   Consistent with every other component in this block (.gs-card, .memrow,
+   .task-card, .chip, …) all sharing the identical #3a3050/#f3e8ff pair, so
+   read as deliberate — night mode is one uniform palette across themes,
+   not a per-theme one — and fixed at the surface that's actually wrong
+   (the separator nobody re-checked against it) rather than un-hardcoding
+   15 rules on a guess about intent.
+
+   `.ticker-track .line .sep`'s own color (`#9a8d7c`, tuned for the DAY
+   ticker background) was never re-verified against #3a3050: measures
+   3.77:1, below WCAG AA. Same hue family, lightened to land at the same
+   ~5.4:1 the day-mode fix already established. */
+body.night .ticker-track .line .sep { color: #b8ab99; }
 
 /* Inspect panel */
 body.night .inspect { background: #2e2840; color: #f3e8ff; }
