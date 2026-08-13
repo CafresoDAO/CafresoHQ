@@ -4,16 +4,17 @@
 > **Two parts:** **Part A** is an overall critique of the CafresoHQ app (what to fix and why). **Part B** is the prioritized, ordered TODO that turns the whole strategy package into a build checklist.
 > **Severity:** 🔴 high · 🟡 medium · 🟢 low. **Priority:** P0 launch-blocking / safe quick-win · P1 needed for a credible MVP · P2 post-MVP / pre-SNS. **Effort:** S hours · M a day or two · L 1–2+ weeks.
 >
-> ⚠️ **Part A predates ~2.5 months of subsequent work. Five of its 🔴/🟡 items
-> were found stale on direct verification (2026-08-12)** — the build-step,
-> `shell=True`, agent/task/mission persistence, onboarding, and the
-> monolithic-files entries below are all corrected in place (the last one
-> only partially — `app.jsx`/`styles.css` are real, worsening problems, so
-> read that one's fix line, not just its status). Not a full re-audit — those
-> five were checked because this session had direct, load-bearing evidence
-> for each (things directly driven, measured, or built today), not because
-> the rest of Part A was reviewed. The remaining entries should be read as
-> "as of May", not "as of now", until someone does the same check on them.
+> ⚠️ **Part A predates ~2.5 months of subsequent work. Six of its 🔴/🟡 items
+> were found stale on direct verification (2026-08-12/13)** — the build-step,
+> `shell=True`, agent/task/mission persistence, onboarding, the
+> monolithic-files entries, and open-LLM-proxy-auth are all corrected in
+> place (the monolithic-files one only partially — `app.jsx`/`styles.css` are
+> real, worsening problems, so read that one's fix line, not just its
+> status). Not a full re-audit — those six were checked because this session
+> had direct, load-bearing evidence for each (things directly driven,
+> measured, or built today), not because the rest of Part A was reviewed. The
+> remaining entries should be read as "as of May", not "as of now", until
+> someone does the same check on them.
 
 ## Ecosystem mapping (corrected)
 The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\Anthony\Documents`:
@@ -45,7 +46,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 
 ### Security & ops (flag)
 - ✅ ~~**`subprocess.run(arg, shell=True)`** for the BASH tool~~ **Re-examined 2026-08-12 — this is the correct implementation, not a bug.** A BASH tool's entire purpose is running shell syntax (pipes, `&&`, redirects); `shell=True` is what makes that possible, and "drop it, use arg lists" would silently break the feature rather than secure it — an arg-list `subprocess.run` cannot execute `ls | grep foo`. The actual mitigation is already layered and, per the code's own comment at `serve.py:~184`, deliberate: `Bash` is excluded from `CAFRESOHQ_ALLOWED_TOOLS`'s default set specifically *because* "enabling it by default makes every unconfigured deployment one request away from arbitrary command execution" — it requires an explicit env-var opt-in on top of that. And reaching the endpoint at all requires the AGENT to be `elevated`, which requires a boss-approved `grant-elevation` request (`app.jsx`, `hq-runtime.jsx:1748`). Three gates (server opt-in, per-agent elevation, human approval), a 30s timeout, and a 4000-char output cap. Removing `shell=True` was never the fix; the fix (default-deny + explicit consent) already shipped.
-- 🟡 **Open LLM proxies without auth** (`serve.py:41–43`). *Fix:* require auth before any public exposure.
+- ✅ ~~**Open LLM proxies without auth** (`serve.py:41–43`). *Fix:* require auth before any public exposure.~~ **Already real, verified live 2026-08-13** — see the corrected Track 5 entry in Part B for the full evidence (a real bearer-key gate covering a much larger surface than "LLM proxies," confirmed 401/401/200 live against a running server, plus a startup warning for the unkeyed-and-non-loopback case).
 - ✅ **Non-portable hardcoded path** (`serve.py:187`) — **fixed** (see above).
 
 ### UX, accessibility, mobile
@@ -110,7 +111,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 - [x] ~~Introduce **Vite** → minified prod build; production React bundles; drop in-browser Babel/CDN for prod.~~ **Done 2026-08-12** — via `scripts/build_ui_bundle.mjs` (esbuild-based), not Vite. See Part A.
 - [ ] **P1 (M)** ~~Split monolithic `views.jsx`~~ / `styles.css` / `app.jsx`; move off `window` globals. **Partially done, re-measured 2026-08-12** — `views.jsx` (and `ui.jsx`, `modals.jsx`) were split into real per-file directories and are now thin barrels; see Part A. `styles.css` and `app.jsx` were not, and have grown to 11,104 and 5,814 LOC respectively since this was written. Still open for those two specifically.
 - [x] ~~Remove `shell=True` (`serve.py`); keep tool allowlist default-deny.~~ **Re-examined 2026-08-12 — not a bug, no action needed.** See Part A: `shell=True` is required for a shell tool to work, and the actual protection (default-deny + per-agent elevation + boss approval) already exists.
-- [ ] **P1 (S)** Pin `postMessage` origin; require auth on LLM proxies before public exposure.
+- [x] ~~Require auth on LLM proxies before public exposure.~~ **Already real, verified live 2026-08-13.** `serve.py`'s `CAFRESOHQ_API_KEY` bearer-key gate covers `/vault`, `/hermes`, `/terminal`, `/agents`, `/hq-state`, `/tools`, `/export`, `/generate` and more — a materially larger surface than "LLM proxies," with an explicit, documented boundary (static shell + `/health` stay open; `/fs` read-only preview routes are deliberately excluded and explained why; OCI-fleet mode defers to the Caddy gateway instead). Confirmed live, not read-only: no key → `401`, wrong key → `401` (timing-safe `hmac.compare_digest`), right key → `200`, `/health`/`hq.html` unaffected either way. A startup warning already fires when bound to a non-loopback interface with no key set (`serve.py:~4401`). The remaining gap in this bullet — **pin `postMessage` origin** — is in `frontend/src/routes/app/+page.svelte`, a file that does not exist in this repository (confirmed: no `frontend/` directory here at all) — same "wrong repository" situation already flagged for Track 3. Still open, but not fixable from here.
 
 ### Track 6 — Accessibility & mobile *(02 A3, Part A)*
 - [ ] **P1 (S)** Interactive targets ≥44px. *(Measured 2026-08-12 at 375×812:
