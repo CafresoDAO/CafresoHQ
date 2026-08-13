@@ -4512,3 +4512,34 @@ settings — never on the floor, the cards, or onboarding.
 > reverts separately (drop the `export`, drop the `<VaultTab />` mount) —
 > each one failed the test for its own specific reason, not just "does not
 > pass."
+
+> ✅ **Settings → Modules (Money & Payments, Publish to Web) — clean pass,
+> no code changed (2026-08-13).** Drove `IcpServicesPanel` live for the
+> first time this session, in a throwaway office with no `CafresoHQChain`
+> bridge available (i.e. the common case — a plain browser tab, not the
+> II-holding shell). Both toggles work correctly and neither pretends to
+> succeed at something it can't do yet:
+> - **Publish to Web** flips on/off instantly, persists to
+>   `cafresohq_client_v1.icpServices.publish` in `localStorage`, no error —
+>   matches the code's own comment that publish works via the local `/fs`
+>   bridge and only best-effort-syncs the on-chain flag when a bridge is
+>   reachable.
+> - **Money & Payments** shows its confirm dialog (already correctly
+>   labelled "Turn on" / "Turn off" — not one of the six `hqConfirm`
+>   call sites this session had to fix), flips on, and — critically —
+>   honestly tells the boss the module is on but *balances and sends need
+>   your Internet Identity, which lives in the CafresoHQ shell; until then
+>   agents cannot move any funds*, with a pointer to `ai.cafreso.com`. No
+>   dead end, no silent no-op, no fake success state.
+>
+> One console `502` appeared during the drive
+> (`GET /hermes/v1/models`) — traced to `hermesStatus()`
+> (`claude-client.jsx:736`), a liveness probe for a gateway this throwaway
+> instance never started. Already wrapped in try/catch and returns
+> `{configured:false, models:[]}` on any non-OK response; nothing leaked
+> into the UI. Benign network noise, not a defect — noted rather than
+> "fixed" because there was nothing to fix.
+>
+> No test added — nothing to pin; the panel's existing correctness isn't
+> at risk from an unrelated future edit the way an *unreachable* component
+> was.
