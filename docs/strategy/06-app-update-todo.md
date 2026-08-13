@@ -4,17 +4,17 @@
 > **Two parts:** **Part A** is an overall critique of the CafresoHQ app (what to fix and why). **Part B** is the prioritized, ordered TODO that turns the whole strategy package into a build checklist.
 > **Severity:** 🔴 high · 🟡 medium · 🟢 low. **Priority:** P0 launch-blocking / safe quick-win · P1 needed for a credible MVP · P2 post-MVP / pre-SNS. **Effort:** S hours · M a day or two · L 1–2+ weeks.
 >
-> ⚠️ **Part A predates ~2.5 months of subsequent work. Six of its 🔴/🟡 items
-> were found stale on direct verification (2026-08-12/13)** — the build-step,
-> `shell=True`, agent/task/mission persistence, onboarding, the
-> monolithic-files entries, and open-LLM-proxy-auth are all corrected in
-> place (the monolithic-files one only partially — `app.jsx`/`styles.css` are
-> real, worsening problems, so read that one's fix line, not just its
-> status). Not a full re-audit — those six were checked because this session
-> had direct, load-bearing evidence for each (things directly driven,
-> measured, or built today), not because the rest of Part A was reviewed. The
-> remaining entries should be read as "as of May", not "as of now", until
-> someone does the same check on them.
+> ⚠️ **Part A predates ~2.5 months of subsequent work. Seven of its 🔴/🟡
+> items were found stale on direct verification (2026-08-12/13)** — the
+> build-step, `window`-global module wiring, `shell=True`, agent/task/mission
+> persistence, onboarding, the monolithic-files entries, and
+> open-LLM-proxy-auth are all corrected in place (the monolithic-files one
+> only partially — `app.jsx`/`styles.css` are real, worsening problems, so
+> read that one's fix line, not just its status). Not a full re-audit — those
+> seven were checked because this session had direct, load-bearing evidence
+> for each (things directly driven, measured, or built today), not because
+> the rest of Part A was reviewed. The remaining entries should be read as
+> "as of May", not "as of now", until someone does the same check on them.
 
 ## Ecosystem mapping (corrected)
 The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\Anthony\Documents`:
@@ -35,7 +35,7 @@ The ecosystem is **~3 codebases + the per-user container**, all under `C:\Users\
 ### Architecture & build
 - ✅ ~~**No build step — Babel transpiles JSX in the browser.**~~ **Done, not via Vite — verified 2026-08-12.** `scripts/build_ui_bundle.mjs` self-hosts the vendor UMD globals (dropping the unpkg dependency), bundles the app's real ES modules into IIFE chunks, and hashes the output to `dist-ui/bundle/`; `hq.html` confirms in its own comment: "JSX is pre-transformed at build time (no @babel/standalone, no unpkg)". This session ran that build after nearly every code change today. The doc's goal (drop in-browser Babel/CDN, ship a minified prod build) is met by a purpose-built esbuild script instead of Vite — same outcome, different tool, and re-pointing this at Vite now would be a rewrite of something that already works, not a fix.
 - 🟡 **Monolithic files — mixed result, re-measured 2026-08-12.** `views.jsx`, `ui.jsx` and `modals.jsx` WERE split by feature as prescribed: all three are now thin barrels (721 / 50 / 16 bytes) re-exporting from `views/*.jsx` (7 files, 538–1,783 LOC each, 6,800 total — the original content, genuinely divided) and presumably equivalent `ui/`/`modals/` directories. But `app.jsx` and `styles.css` were NOT split, and both grew past the size that flagged them in the first place: `app.jsx` 3,754 → **5,814** LOC, `styles.css` 7,817 → **11,104** LOC. The fix landed for 3 of 5 named files and the other 2 got measurably worse in the same window. *Fix, unchanged for the remaining two:* split `app.jsx` and `styles.css` by feature.
-- 🟡 **`window`-global module wiring** (`app.jsx:6–10`). One failed script → cascading `undefined`. *Fix:* ES module imports once bundled.
+- ✅ ~~**`window`-global module wiring** (`app.jsx:6–10`). One failed script → cascading `undefined`. *Fix:* ES module imports once bundled.~~ **Already the fix — verified 2026-08-13, same session as the build-step correction above.** `app.jsx`'s own current lines 1–19 are genuine `import { X } from './y.jsx'` statements, not `window.X` reads — this is literally the doc's own prescribed fix, already shipped. Confirmed at the build-output level too, not just the source: rebuilt via `scripts/build_ui_bundle.mjs` and inspected `dist-ui/manifest.json` — `app.jsx` plus every one of its ~20 imports (`ui.jsx`, `modals.jsx`, `views.jsx`, `features.jsx`, `hq-runtime.jsx`, the `app/*.jsx` submodules, etc.) resolve into exactly **one** output file, `bundle/hq-app-*.js`, with imports settled by esbuild at build time. The specific failure mode this bullet names — one of several separate feature scripts 404s or throws, leaving its `window.X` unset and everything downstream `undefined` — cannot happen to the app's own code anymore, because there is no longer more than one script tag carrying app code for it to happen between. (Vendor libraries — React, ReactDOM, xterm — are still separate `<script>` tags, and the optional `graphEngine`/`analyticsWorker` chunks are deliberately split for lazy-load/worker-thread reasons; neither is the "CafresoHQ's own feature files wired via globals" problem this bullet described.)
 
 ### Duplication & data integrity
 - 🟡 **Two vault implementations** — root app writes plaintext via `/vault/note`; the SvelteKit frontend (`frontend/src/lib/stores/vault.js`) is the real E2E-encrypted client; the root app is embedded as an **iframe** bridged by `postMessage`. No conflict resolution. *Fix:* encrypted store = single source of truth; HQ writes via the bridge.
