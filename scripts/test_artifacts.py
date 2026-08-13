@@ -279,7 +279,7 @@ console.log(JSON.stringify(R));
     check('a search looks something up',
           out['notesSearch'] == ['- Looked up primary colours'], repr(out['notesSearch']))
     check('a vault visit opens a file',
-          out['notesVault'] == ['- Opened Research/notes.md'], repr(out['notesVault']))
+          out['notesVault'] == ['- Opened Research/notes.md in the cabinet'], repr(out['notesVault']))
     check('an unknown tool still reads as an action',
           out['notesOther'] == ['- Checked thing'], repr(out['notesOther']))
     check('the same source twice is listed once', len(out['notesDedup']) == 1)

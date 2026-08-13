@@ -6113,3 +6113,56 @@ stands: when a memory write DOES succeed, the visit head names the
 coworker's own relative path — "📝 Saved work/preferences.md" — which
 reads exactly like a path in the boss's project. The resolved location is
 only in the visit body. That is the next pass.
+
+---
+
+### A path names a file. It does not name whose.
+
+The disclosure half of the `projects/` collision, now closed. Three
+different destinations reach the floor's vocabulary as bare relative paths:
+
+    MEMORY_WRITE  work/preferences.md   → the coworker's own private notes
+    VAULT_NEW     work/preferences.md   → the boss's filing cabinet
+    FILE_WRITE    work/preferences.md   → the boss's project on disk
+
+All three rendered `📝 Saved work/preferences.md`, on every surface — the
+chat visit, the desk bubble, the activity feed, the provenance lines in a
+filed artifact. True of all three, useful for none. And it was the office
+saying it, in the one voice the boss is entitled to trust over the
+coworker's, which is what made the Site Check misfile so hard to see: the
+coworker's ambiguous sentence and the office's confirmation of it agreed.
+
+The same collision sat between the two searches. `[SEARCH: gold]` leaves
+the building and `[VAULT_SEARCH: gold]` goes through the boss's own files,
+and both said "Looked up gold".
+
+`VISIT_WHERE` adds the destination as a trailing clause, in the words the
+rest of the product already uses — their notes / the cabinet / the project
+— rather than three new nouns, which would just be a fourth vocabulary.
+Reads get it too, because "which budget.md did they open" is the same
+question. A FAILED trip does not get it: "Couldn't save x in their notes"
+reads as a save that was attempted at a place and failed there, and the
+honest shape for a trip that never happened is the one with no destination
+in it.
+
+Live on the office, real write, real file on disk:
+
+    📝 Saved work/preferences.md in their notes
+       Wrote 53 chars → Agents/Nova/work/preferences.md
+
+Two judgements inside this worth stating so they can be argued with.
+EXPORT_* and GENERATE_* are grouped with the cabinet — checked against the
+tool registry, whose own docs say "save to the vault", and the test reads
+that back off `hq-runtime.jsx` rather than trusting the comment beside it.
+And an unrecognised tool gets NO destination, on the same reasoning
+`VISIT_DEFAULT` already follows for the verb: a guessed place is worse
+than none.
+
+**Still open.** The visit BODY is the tool's own return string —
+`Wrote 53 chars → Agents/Nova/work/preferences.md` — a character count, an
+arrow and an internal path, which §6 would not accept in a head. It is
+left alone deliberately for now: that string is also what goes back into
+the coworker's context as the tool result, so rewriting it for the boss
+changes what the model reads next, and that trade deserves its own pass
+rather than a drive-by. The activity feed also still logs a turn that
+saved nothing as `finished "…" ✓`.

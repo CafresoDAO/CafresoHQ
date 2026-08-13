@@ -101,6 +101,42 @@ function visitSubject(arg, cap) {
   return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
 }
 
+/* A relative path names a file. It does not name WHOSE.
+
+   Three different destinations reach this function as bare relative paths,
+   and until this table they all rendered the same sentence:
+
+     MEMORY_WRITE  work/preferences.md   → the coworker's own private notes
+     VAULT_NEW     work/preferences.md   → the boss's filing cabinet
+     FILE_WRITE    work/preferences.md   → the boss's project on disk
+
+   "Saved work/preferences.md" is true of all three and useful for none.
+   The office already learned this the expensive way: a coworker asked to
+   build a file "in the Site Check project folder" filed it into its own
+   notes instead, said so in words that sounded like the project, and the
+   floor repeated the ambiguous path back in the office's own voice — the
+   one voice the boss is entitled to trust. The rename that fixed the
+   PROMPT is in hq-runtime.jsx; this is the reporting half.
+
+   Deliberately the same three words the rest of the product uses for these
+   places (their notes / the cabinet / the project), not new nouns. Read
+   tools get it too: "Opened budget.md in the cabinet" tells the boss which
+   budget.md was read, which is the same question. */
+const VISIT_WHERE = [
+  [/^MEMORY_/,               'in their notes'],
+  /* EXPORT_* and GENERATE_* take a vault path and their own docs say "save
+     to the vault", so they land in the same place VAULT_* does and get the
+     same words. Checked against the registry rather than assumed. */
+  [/^(VAULT|EXPORT|GENERATE)_/, 'in the cabinet'],
+  [/^(FILE|DIR)_/,           'in the project'],
+];
+
+function visitWhere(name) {
+  const n = String(name || '').toUpperCase();
+  for (const [re, where] of VISIT_WHERE) if (re.test(n)) return where;
+  return '';
+}
+
 /* The one-liner each surface composes from. `tense` is 'now' for a live
    bubble, 'past' for a log line or a filed note. Returns null when there's
    no subject to name — a visit with no argument has nothing honest to say
@@ -110,7 +146,11 @@ function visitLine(name, arg, tense, cap) {
   if (!subject) return null;
   const w = visitWords(name);
   const verb = tense === 'now' ? w.now : tense === 'fail' ? w.fail : w.past;
-  return `${verb} ${subject}`;
+  /* Not on a failed trip. "Couldn't save x in their notes" reads as a
+     place the attempt got to and a save that then failed there; the honest
+     shape for a trip that did not happen is the one without a destination. */
+  const where = tense === 'fail' ? '' : visitWhere(name);
+  return `${verb} ${subject}${where ? ' ' + where : ''}`;
 }
 
 /* Some tools take no argument at all — MEMORY_LIST is "show me everything
@@ -523,4 +563,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWords };
+export { attachVisit, cleanCause, deskKit, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };

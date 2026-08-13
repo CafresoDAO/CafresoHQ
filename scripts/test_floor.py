@@ -402,8 +402,8 @@ console.log(JSON.stringify(R));
           out['vWebNow'] == 'reading en.wikipedia.org/wiki/Paris', str(out['vWebNow']))
     check('a search looks something up', out['vSearch'] == 'Looked up primary colours', str(out['vSearch']))
     check('search wins over web on WEB_SEARCH', 'Read' not in str(out['vSearch']))
-    check('a memory read opens a file', out['vVault'] == 'Opened facts/france.md', str(out['vVault']))
-    check('…present tense for the bubble', out['vVaultNow'] == 'opening facts/france.md', str(out['vVaultNow']))
+    check('a memory read opens a file', out['vVault'] == 'Opened facts/france.md in their notes', str(out['vVault']))
+    check('…present tense for the bubble', out['vVaultNow'] == 'opening facts/france.md in their notes', str(out['vVaultNow']))
     check('an unknown tool still names an action', out['vUnknown'] == 'Checked stuff', str(out['vUnknown']))
     check('a visit with no subject says nothing', out['vNoArg'] is None and out['vNullArg'] is None)
     check('a runaway subject is capped', len(out['vCapped']) <= 94 and out['vCapped'].endswith('\u2026'),
@@ -445,7 +445,7 @@ console.log(JSON.stringify(R));
 
     # toVisit — the office's record as data
     check('a visit carries icon + office-words head',
-          out['tvHead']['icon'] == '\U0001F4C1' and out['tvHead']['head'] == 'Opened facts/france.md',
+          out['tvHead']['icon'] == '\U0001F4C1' and out['tvHead']['head'] == 'Opened facts/france.md in their notes',
           str(out['tvHead']))
     check('…and the real result as its body', out['tvHead']['body'] == 'nothing here')
     check('an argument-less visit falls back to the placard',
@@ -472,15 +472,15 @@ console.log(JSON.stringify(R));
     check('a failed argument-less visit does not borrow the prop placard',
           out['tvFailNoArg']['head'] == "couldn't do that", str(out['tvFailNoArg']))
     check('a visit that DID work still reads in the past tense',
-          out['tvOkStillPast'] == 'Opened ./site', out['tvOkStillPast'])
+          out['tvOkStillPast'] == 'Opened ./site in the project', out['tvOkStillPast'])
 
     check('every write reads as a write, not as a read',
           all(v.startswith('Saved ') for v in out['vWrites']), out['vWrites'])
     check('…and reads are untouched',
           all(v.startswith('Opened ') for v in out['vReads']), out['vReads'])
-    check('an export is something they made', out['vMade'] == 'Made deck.pptx', out['vMade'])
+    check('an export is something they made', out['vMade'] == 'Made deck.pptx in the cabinet', out['vMade'])
     check('a publish says published', out['vPub'] == 'Published site/', out['vPub'])
-    check('a vault search still looks it up', out['vSearchTool'] == 'Looked up gold', out['vSearchTool'])
+    check('a vault search still looks it up', out['vSearchTool'] == 'Looked up gold in the cabinet', out['vSearchTool'])
 
     # toolActivity — the activity feed is a RECORD, so it reads in the past
     # tense; that is exactly why it may only be written once the outcome is
@@ -490,11 +490,11 @@ console.log(JSON.stringify(R));
           and out['actOk']['color'] == '#8ab' and out['actOk']['action'] == 'tool',
           str(out['actOk']))
     check('a write that landed is filed as saved',
-          out['actOk']['text'] == 'saved report.md', str(out['actOk']))
+          out['actOk']['text'] == 'saved report.md in the cabinet', str(out['actOk']))
     check('a write that failed is NOT filed as saved',
           out['actFail']['text'] == "couldn't save report.md", str(out['actFail']))
     check('an event with no failed flag is treated as success',
-          out['actNoFlag'] == 'opened ./site', str(out['actNoFlag']))
+          out['actNoFlag'] == 'opened ./site in the project', str(out['actNoFlag']))
     check('a failed argument-less tool does not borrow the placard',
           out['actNoArg'] == "couldn't do that", str(out['actNoArg']))
     check('extra fields (taskId) ride along so the task card can show the trip',
