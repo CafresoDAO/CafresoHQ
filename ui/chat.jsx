@@ -1017,7 +1017,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       inventing a result and a vault path for a lookup that
                       returned nothing. Structured data can't be typed. */}
                   {(m.visits || []).map((v, i) => (
-                    <div className="msg-visit" key={i}>
+                    <div className={'msg-visit' + (v.failed ? ' failed' : '')} key={i}>
                       <div className="msg-visit-head">
                         <span className="msg-visit-icon" aria-hidden="true">{v.icon}</span>
                         {v.head}

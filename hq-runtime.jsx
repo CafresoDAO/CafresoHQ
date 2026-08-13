@@ -1209,7 +1209,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [FILE_READ: <path>] — read a local file. Path must be within the configured allowed directories.',
     docShort: 'Read a local file by absolute path within the allowed directories.',
-    run: async (path, { signal, cwd }) => CafresoHQClient.toolExec('FILE_READ', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd, meta }) => CafresoHQClient.toolExec('FILE_READ', path.trim(), { signal, cwd, meta }),
   },
   dir_list: {
     name: 'DIR_LIST',
@@ -1217,7 +1217,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [DIR_LIST: <path>] — list files and subdirectories at a path. Use to explore project structure before reading files.',
     docShort: 'List files and subdirectories at a path. Use to explore structure before reading.',
-    run: async (path, { signal, cwd }) => CafresoHQClient.toolExec('DIR_LIST', path.trim(), { signal, cwd }),
+    run: async (path, { signal, cwd, meta }) => CafresoHQClient.toolExec('DIR_LIST', path.trim(), { signal, cwd, meta }),
   },
   file_write: {
     name: 'FILE_WRITE',
@@ -1225,7 +1225,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [FILE_WRITE: <path>]\n<content>\n[/FILE_WRITE] — write (create or overwrite) a local file. Path must be within allowed directories.',
     docShort: 'Write (create or overwrite) a local file; body goes in the "body" field.',
-    run: async (path, { cwd }, body) => CafresoHQClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd }),
+    run: async (path, { cwd, meta }, body) => CafresoHQClient.toolExec('FILE_WRITE', path.trim(), { body: body || '', cwd, meta }),
   },
   bash: {
     name: 'BASH',
@@ -1233,7 +1233,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [BASH: <command>] — run a shell command on the proxy machine (cwd = project dir or first allowed dir). Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
     docShort: 'Run a shell command on the proxy machine. Requires Bash in CAFRESOHQ_ALLOWED_TOOLS.',
-    run: async (cmd, { signal, cwd }) => CafresoHQClient.toolExec('BASH', cmd.trim(), { signal, cwd }),
+    run: async (cmd, { signal, cwd, meta }) => CafresoHQClient.toolExec('BASH', cmd.trim(), { signal, cwd, meta }),
   },
   /* Per-agent memory — each agent gets a private vault folder at
      `Agents/<Name>/`. Provides persistent notes that survive across
@@ -2378,7 +2378,15 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
 
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
-    try { result = await call.tool.run(call.arg, { signal }, call.body); }
+    /* Did it actually work? Not the same question as "did it return". A
+       missing file, a path that isn't a directory, a command that exits
+       non-zero — all answer normally, with the explanation as the result,
+       because the coworker needs that text to recover. `meta.failed` is the
+       server saying so out of band; the throw path below sets it too.
+       Without it every surface captioned a failure as a success — watched
+       live as "Opened ./site" directly above "Not a directory: ./site". */
+    const meta = {};
+    try { result = await call.tool.run(call.arg, { signal, meta }, call.body); }
     /* Every tool failure in the office lands here, and the string goes to
        BOTH readers: the coworker, who needs the detail to try something
        else, and the boss, who sees it in the visit block. So keep the
@@ -2386,7 +2394,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
        letting the office appear to be announcing "Error:" in its own voice.
        NOT snagCause: that only classifies brain failures and would label a
        vault or shell error as a sign-in problem. */
-    catch (err) { result = `That didn't work — ${err.message}`; }
+    catch (err) { result = `That didn't work — ${err.message}`; meta.failed = true; }
     /* The visit does NOT go into the token stream any more.
 
        Everything in the text channel is forgeable, and a local model
@@ -2402,6 +2410,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
        carry the banner inline, and filing removes it by exact match. */
     if (onTool) {
       onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+               failed: !!meta.failed,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 
@@ -2584,10 +2593,19 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     }
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
+    /* Did it actually work? Not the same question as "did it return". A
+       missing file, a path that isn't a directory, a command that exits
+       non-zero — all answer normally, with the explanation as the result,
+       because the coworker needs that text to recover. `meta.failed` is the
+       server saying so out of band; the throw path below sets it too.
+       Without it every surface captioned a failure as a success — watched
+       live as "Opened ./site" directly above "Not a directory: ./site". */
+    const meta = {};
     try {
-      result = await call.tool.run(call.arg, { signal, cwd }, call.body);
+      result = await call.tool.run(call.arg, { signal, cwd, meta }, call.body);
     } catch (err) {
       result = `That didn't work — ${err.message}`;   // see the note on the sibling path
+      meta.failed = true;
     }
     toolsExecuted++;
 
@@ -2618,6 +2636,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
        carry the banner inline, and filing removes it by exact match. */
     if (onTool) {
       onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+               failed: !!meta.failed,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 

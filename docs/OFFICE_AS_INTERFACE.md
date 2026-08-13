@@ -5233,3 +5233,62 @@ settings — never on the floor, the cards, or onboarding.
 > office's memory instead. Separately, reusing port 8899 across successive
 > throwaway offices shares a localStorage origin, so a new office can
 > inherit the previous one's cached state; clear site data between runs.
+
+### 2026-08-13 — the office called failed work "done"
+
+> Went in to test the one sentence the north star is made of — a message
+> reaching several coworkers at once. It works: two coworkers assigned from
+> the new crew strip, one plain message with no @-mention, and the room
+> filed it "→ @Llama @Nova" with both replying in their own bubbles. That
+> part of the product is real.
+>
+> What the test surfaced was worse than a missing feature. Nova ran
+> `DIR_LIST` on a path that did not exist, and the chat rendered:
+>
+>     📁 Opened ./site
+>     Not a directory: ./site
+>
+> The head is the OFFICE speaking, in its own voice, asserting that a
+> directory was opened — one line above its own evidence that it wasn't.
+>
+> The cause is structural, not cosmetic. A tool can fail WITHOUT raising: a
+> missing file, a path that isn't a directory, a command that exits
+> non-zero are ordinary answers to ordinary questions, so the server
+> answers 200 with the explanation AS the result — deliberately, because
+> the coworker needs that text to try something else. That made "there is
+> a result" the only signal available, and every surface downstream read it
+> as "it worked": the visit card captioned it in the past tense with a prop
+> icon; the Workspace ledger filed a failed write as "wrote index.html",
+> claiming a file on disk had changed when it had not; the receipts tray
+> filed a receipt and the corkboard pinned a deliverable for an artifact
+> that was never produced.
+>
+> This is the same failure mode as the "Appended" receipt and the "Opened"
+> verb for writes, and it keeps recurring for one reason: **the office
+> infers outcomes from the shape of the data instead of being told them.**
+> The fix is to be told. `serve.py` now reports `failed` out of band (`ok`
+> stays True so the text still reaches the model), the client stamps it
+> onto a caller-owned `meta`, the runtime puts it on the `done` event, and
+> each surface reads it — the card switches to a `fail` tense and a ⚠ icon,
+> the ledger and the receipts tray file nothing at all.
+>
+> The vocabulary grew a third tense to match: every visit verb now has a
+> `fail` form ("Couldn't open", "Couldn't save", "Couldn't publish"), and
+> those forms are added to the office-voice stripper for the same reason
+> the others are there — a forged failure is as damaging as a forged
+> success, because it blames the tools for work they never declined to do.
+>
+> Verified live side by side: the pre-fix card ("📁 Opened ./site") sits
+> directly above the post-fix one ("⚠ Couldn't open ./site") for the same
+> call and the same result text. A successful write still files its ledger
+> line; a failed one files nothing.
+>
+> Pinned in `scripts/test_failed_tools_arent_wins.py`, fire-tested nine
+> ways across all six files in the chain.
+>
+> Standing note reconfirmed: asked afterwards for a plain directory
+> listing, the model emitted no marker and invented an entire tree —
+> `styles.css`, `js/script.js`, `footer.html`, none of which exist. The
+> office stayed silent about all of it: no visit card, no receipt, no
+> ledger line. The forgery was confined to the model's own bubble, which is
+> exactly the boundary this design exists to hold.

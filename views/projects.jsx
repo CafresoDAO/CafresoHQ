@@ -182,6 +182,15 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       setAgentStatus('working'); bumpIdle();
       if (phase === 'start') { markPulse(arg); return; }
       if (phase !== 'done') return;
+      /* A tool that failed did not do the thing. The ledger is the boss's
+         record of what their coworkers actually did to this folder, and a
+         failed write filed as "wrote index.html" is a claim the file
+         changed — it did not, and the tree pulse and follow-along that
+         follow would chase a file that was never written. The chat bubble
+         reports the failure with its own ⚠ card; this pane stays quiet
+         rather than filing a success. The presence pip set above stays as
+         it is — they ARE still working, the attempt just didn't land. */
+      if (d.failed) return;
       const isWrite = name === 'FILE_WRITE';
       const isVault = name === 'VAULT_NEW' || name === 'VAULT_APPEND';
       const isExport = name && name.indexOf('EXPORT') === 0;

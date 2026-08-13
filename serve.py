@@ -2152,11 +2152,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 p = pathlib.Path(tool_cwd) / p
             return self._validate_path(str(p))
 
+        # Some tools fail WITHOUT raising: a missing file or a path that
+        # isn't a directory are ordinary answers to an ordinary question, so
+        # they come back 200 with the explanation as the result. The
+        # coworker needs that text to recover — but every surface that
+        # renders the event was reading "there is a result" as "it worked",
+        # and captioning a failed DIR_LIST "📁 Opened ./site" directly above
+        # its own "Not a directory: ./site". Watched live 2026-08-13. The
+        # flag below is how the office tells the difference; `ok` stays True
+        # so the text still reaches the model.
+        failed = False
+
         try:
             if tool == 'FILE_READ':
                 p = _resolve_arg(arg)
                 if not p.exists():
                     result = f'File not found: {arg}'
+                    failed = True
                 else:
                     text = p.read_text(encoding='utf-8', errors='replace')
                     if len(text) > 8000:
@@ -2167,6 +2179,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 p = _resolve_arg(arg or tool_cwd)
                 if not p.is_dir():
                     result = f'Not a directory: {arg}'
+                    failed = True
                 else:
                     entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
                     lines = []
@@ -2198,11 +2211,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 result = (out or '(no output)')
                 if proc.returncode != 0:
                     result += f'\n(exit {proc.returncode})'
+                    failed = True   # a command that exited non-zero did not "run" successfully
 
             else:
                 return self._send_json(400, {'ok': False, 'error': f'Unknown tool: {tool}'})
 
-            return self._send_json(200, {'ok': True, 'result': result})
+            return self._send_json(200, {'ok': True, 'result': result, 'failed': failed})
 
         except PermissionError as e:
             return self._send_json(403, {'ok': False, 'error': str(e)})

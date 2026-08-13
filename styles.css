@@ -3302,6 +3302,11 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   gap: 6px;
   align-items: baseline;
 }
+/* A trip that didn't work. The sun-coloured rule reads as "the office did
+   something"; a failure has to be distinguishable at a glance from the
+   successes stacked above and below it. */
+.msg-visit.failed { border-left-color: var(--accent-rose, #c97a5e); }
+.msg-visit.failed .msg-visit-head { color: var(--accent-rose, #c97a5e); }
 .msg-visit-icon { font-size: 11px; }
 .msg-visit-body {
   margin-top: 4px;

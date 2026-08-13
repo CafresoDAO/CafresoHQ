@@ -2413,7 +2413,15 @@ async function vaultOciSync(direction = 'push') {
   return j;
 }
 
-async function toolExec(tool, arg, { body = '', signal, cwd } = {}) {
+/* `meta` is an optional caller-owned object this stamps `failed` onto.
+   Some tools fail without raising — a missing file, a path that isn't a
+   directory, a command that exits non-zero — and answer 200 with the
+   explanation AS the result, because the coworker needs that text to try
+   something else. The return value therefore cannot say whether it worked,
+   and every surface downstream was reading "got a result" as "it worked".
+   Kept off the return value so the dozens of callers that just want the
+   string are unaffected. */
+async function toolExec(tool, arg, { body = '', signal, cwd, meta } = {}) {
   const payload = { tool, arg, body };
   if (cwd) payload.cwd = cwd;
   const r = await fetch(_API_BASE + '/tools/exec', {
@@ -2424,6 +2432,7 @@ async function toolExec(tool, arg, { body = '', signal, cwd } = {}) {
   });
   const j = await r.json();
   if (!j.ok) throw new Error(j.error || 'tool error');
+  if (meta) meta.failed = !!j.failed;
   return j.result;
 }
 

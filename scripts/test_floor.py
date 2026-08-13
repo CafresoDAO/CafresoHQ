@@ -221,6 +221,15 @@ R.tvCapped = toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5
 R.tvCappedEllipsis = /\u2026$/.test(toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5000) }).body);
 // A visit object must expose no field a model could have authored as prose.
 R.tvKeys = Object.keys(toVisit({ name: 'MEMORY_READ', arg: 'x', result: 'y' })).sort().join(',');
+/* A tool can fail WITHOUT raising — a missing file, a path that isn't a
+   directory, a non-zero exit all answer normally with the explanation as the
+   result. Watched live 2026-08-13: a failed DIR_LIST rendered "Opened ./site"
+   directly above its own "Not a directory: ./site". The visit must take its
+   tense from the outcome, not from the fact that something came back. */
+R.tvFail      = toVisit({ name: 'DIR_LIST', arg: './site', result: 'Not a directory: ./site', failed: true });
+R.tvFailWrite = toVisit({ name: 'FILE_WRITE', arg: 'notes/x.md', result: 'nope', failed: true });
+R.tvFailNoArg = toVisit({ name: 'MEMORY_LIST', arg: '', result: 'nope', failed: true });
+R.tvOkStillPast = toVisit({ name: 'DIR_LIST', arg: './site', result: 'a\nb', failed: false }).head;
 /* The verb, not just the noun. This table keyed on VAULT|FILE|MEMORY alone,
    so every write came out "Opened notes/x.md" — the coworker saved something
    and the floor said they looked at it — and EXPORT/GENERATE/PUBLISH fell to
@@ -427,8 +436,23 @@ console.log(JSON.stringify(R));
           out['tvEmptyResult'] == '' and out['tvNullResult'] == '')
     check('a huge result is capped so it cannot bury the answer',
           out['tvCapped'] <= 620 and out['tvCappedEllipsis'] is True, str(out['tvCapped']))
-    check('the visit shape is exactly {at, body, head, icon}',
-          out['tvKeys'] == 'at,body,head,icon', out['tvKeys'])
+    check('the visit shape is exactly {at, body, failed, head, icon}',
+          out['tvKeys'] == 'at,body,failed,head,icon', out['tvKeys'])
+
+    # A trip that did not work must not be captioned as one that did.
+    check('a failed visit says it could not, and wears the warning icon',
+          out['tvFail']['head'] == "Couldn't open ./site"
+          and out['tvFail']['icon'] == '⚠'
+          and out['tvFail']['failed'] is True,
+          str(out['tvFail']))
+    check('…and keeps the real reason as its body',
+          out['tvFail']['body'] == 'Not a directory: ./site', str(out['tvFail']))
+    check('a failed write says it could not save, not that it saved',
+          out['tvFailWrite']['head'] == "Couldn't save notes/x.md", str(out['tvFailWrite']))
+    check('a failed argument-less visit does not borrow the prop placard',
+          out['tvFailNoArg']['head'] == "couldn't do that", str(out['tvFailNoArg']))
+    check('a visit that DID work still reads in the past tense',
+          out['tvOkStillPast'] == 'Opened ./site', out['tvOkStillPast'])
 
     check('every write reads as a write, not as a read',
           all(v.startswith('Saved ') for v in out['vWrites']), out['vWrites'])

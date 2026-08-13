@@ -57,17 +57,35 @@ const PROP_PLACARD = {
    verb rather than a confident wrong one. But "Opened" for a write is not
    claiming less, it is claiming something else, and it costs the boss the
    one bit that matters — whether anything changed. */
+/* `fail` is the third tense, and it is not decoration. A tool can fail
+   WITHOUT raising — a missing file, a path that isn't a directory, a
+   command that exits non-zero all answer normally, with the explanation as
+   the result, because the coworker needs that text to try something else.
+   Every surface here used to read "there is a result" as "it worked", and
+   caption it in the past tense. Watched live 2026-08-13: a DIR_LIST of a
+   path that did not exist rendered as
+
+     📁 Opened ./site
+     Not a directory: ./site
+
+   — the office asserting success in its own voice, one line above its own
+   evidence to the contrary. The boss scanning headers (which is what
+   headers are FOR) reads that as a directory that was opened. */
 const VISIT_WORDS = [
-  [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', icon: '🔎' }],
-  [/PUBLISH/,                    { now: 'publishing',    past: 'Published', icon: '🌍' }],
-  [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      icon: '🖨' }],
-  [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     icon: '📝' }],
-  [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      icon: '🌐' }],
-  [/VAULT|FILE|DIR|MEMORY|NOTE/, { now: 'opening',       past: 'Opened',    icon: '📁' }],
+  [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', fail: "Couldn't look up", icon: '🔎' }],
+  [/PUBLISH/,                    { now: 'publishing',    past: 'Published', fail: "Couldn't publish",  icon: '🌍' }],
+  [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      fail: "Couldn't make",     icon: '🖨' }],
+  [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     fail: "Couldn't save",     icon: '📝' }],
+  [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      fail: "Couldn't read",     icon: '🌐' }],
+  [/VAULT|FILE|DIR|MEMORY|NOTE/, { now: 'opening',       past: 'Opened',    fail: "Couldn't open",     icon: '📁' }],
 ];
 /* Anything we don't recognise still gets an ACTION, never the tool's name.
    "Checked X" claims less than a wrong-but-confident verb would. */
-const VISIT_DEFAULT = { now: 'checking', past: 'Checked', icon: '🗒' };
+const VISIT_DEFAULT = { now: 'checking', past: 'Checked', fail: "Couldn't check", icon: '🗒' };
+/* One icon for every failed trip, whatever the prop. The verb is the honest
+   part, but a boss skims icons first, and six different icons for six ways
+   of not working is six chances to miss that nothing happened. */
+const VISIT_FAIL_ICON = '⚠';
 
 function visitWords(name) {
   const n = String(name || '').toUpperCase();
@@ -91,7 +109,8 @@ function visitLine(name, arg, tense, cap) {
   const subject = visitSubject(arg, cap);
   if (!subject) return null;
   const w = visitWords(name);
-  return `${tense === 'now' ? w.now : w.past} ${subject}`;
+  const verb = tense === 'now' ? w.now : tense === 'fail' ? w.fail : w.past;
+  return `${verb} ${subject}`;
 }
 
 /* Some tools take no argument at all — MEMORY_LIST is "show me everything
@@ -105,6 +124,9 @@ function visitLine(name, arg, tense, cap) {
    the same words, in the same voice, for the same trip. */
 function visitPlace(name, tense) {
   const prop = toolProp(name);
+  /* A failed trip must not borrow the placard: "the bookshelf" reads as a
+     place they got to. Say plainly that they didn't. */
+  if (tense === 'fail') return "couldn't do that";
   if (prop && PROP_PLACARD[prop]) return PROP_PLACARD[prop];
   return tense === 'now' ? 'looking something up' : 'looked something up';
 }
@@ -116,12 +138,16 @@ const VISIT_RESULT_CAP = 600;
 
 function toVisit(ev) {
   if (!ev || !ev.name) return null;
-  const head = visitLine(ev.name, ev.arg, 'past', 60) || visitPlace(ev.name, 'past');
+  const tense = ev.failed ? 'fail' : 'past';
+  const head = visitLine(ev.name, ev.arg, tense, 60) || visitPlace(ev.name, tense);
   const raw = String(ev.result === undefined || ev.result === null ? '' : ev.result);
   const body = raw.length > VISIT_RESULT_CAP
     ? raw.slice(0, VISIT_RESULT_CAP).trimEnd() + '\n…'
     : raw;
-  return { icon: visitWords(ev.name).icon, head, body: body.trim(), at: ev.at || null };
+  return {
+    icon: ev.failed ? VISIT_FAIL_ICON : visitWords(ev.name).icon,
+    head, body: body.trim(), at: ev.at || null, failed: !!ev.failed,
+  };
 }
 
 /* Attach a visit to the message currently streaming. One helper because
@@ -169,10 +195,14 @@ function attachVisit(setChat, msgId, ev) {
 const _VISIT_VERBS = (() => {
   const words = VISIT_WORDS.map(([, w]) => w).concat([VISIT_DEFAULT]);
   const all = [];
-  for (const w of words) for (const v of [w.past, w.now]) if (all.indexOf(v) === -1) all.push(v);
+  /* `fail` belongs here for the same reason past and now do: it is office
+     voice, so a coworker must not be able to type it and have it render as
+     the office reporting. A forged failure is as damaging as a forged
+     success — it blames the tools for work they never declined to do. */
+  for (const w of words) for (const v of [w.past, w.now, w.fail]) if (v && all.indexOf(v) === -1) all.push(v);
   return all;
 })();
-const _VISIT_ICONS = VISIT_WORDS.map(([, w]) => w.icon).concat([VISIT_DEFAULT.icon]);
+const _VISIT_ICONS = VISIT_WORDS.map(([, w]) => w.icon).concat([VISIT_DEFAULT.icon, VISIT_FAIL_ICON]);
 
 function _officeVoiceRe() {
   const icons = _VISIT_ICONS.map(i => i.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');

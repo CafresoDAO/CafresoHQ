@@ -1433,6 +1433,13 @@ ${d.text}` : d.text,
   const recordToolReceipt = (agent, ev) => {
     if (!agent) return;
     if (ev.phase !== 'done') return;
+    /* A failed tool produced nothing to file a receipt FOR. The receipts
+       tray answers "what did my coworkers make?" and the corkboard shows
+       finished work on the wall — pinning a write that never landed puts a
+       deliverable on the wall that cannot be opened, and files a receipt
+       whose verb ("Wrote index.html") is simply untrue. The failure is
+       already reported honestly in the coworker's own bubble as a ⚠ card. */
+    if (ev.failed) return;
     /* Deliverables = tools that produce a real artifact the boss can open —
        vault notes, exported decks/docs/PDFs, generated media, published sites,
        workspace files. These also auto-pin to the office corkboard (quiet, no
@@ -2881,6 +2888,9 @@ ${d.text}` : d.text,
     // graph engine isn't loaded. Extra fields are ignored by older listeners.
     floorEmit('tool', {
       phase: ev.phase, name: ev.name, arg: ev.arg, result: ev.result,
+      // Whether it WORKED, not just whether it returned — listeners that file
+      // a receipt or pulse a file need this or they record a failure as a win.
+      failed: !!ev.failed,
       agentId: agent && agent.id, agentName: agent && agent.name, agentColor: agent && agent.color,
     });
     const g = window.CafresoHQGraph;
