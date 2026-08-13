@@ -160,6 +160,16 @@ _cafresohq_allowed_dirs = [d.strip() for d in
                           ).split(os.pathsep)
                           if d.strip()]
 
+# The standalone Terminal tab (views/misc.jsx TerminalView) needs a real cwd
+# to hand pty_server.py — it falls back to '/root/Documents', the container
+# image's code-agent sandbox dir, when `window._TERMINAL_CWD` is unset. That
+# global was never actually injected on any self-hosted (non-container) run,
+# so every Terminal tab 400'd with "directory not found: /root/Documents" —
+# a path that doesn't exist, and isn't even readable, outside the Dockerfile.
+# Mirrors CAFRESOHQ_ALLOWED_DIRS's own local-mode default one directory up.
+_cafresohq_terminal_cwd = os.environ.get('CAFRESOHQ_TERMINAL_CWD',
+                              os.path.join(os.path.expanduser('~'), 'Documents'))
+
 def _within_allowed_dirs(p):
     """True iff resolved path `p` is inside one of _cafresohq_allowed_dirs.
     Uses Path.relative_to (NOT str.startswith, which lets '/data/proj' authorize
@@ -1377,6 +1387,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if m.get('analyticsWorker'):
             parts.append('<script>window.__CAFRESO_BUNDLE__=%s;</script>'
                          % _json.dumps({'analyticsWorker': m['analyticsWorker']}))
+        parts.append('<script>window._TERMINAL_CWD=%s;</script>'
+                     % _json.dumps(_cafresohq_terminal_cwd))
         if m.get('graphEngine'):
             parts.append('<script src="%s"></script>' % m['graphEngine'])
         for js in m.get('app', []):

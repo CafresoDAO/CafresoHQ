@@ -4543,3 +4543,54 @@ settings — never on the floor, the cards, or onboarding.
 > No test added — nothing to pin; the panel's existing correctness isn't
 > at risk from an unrelated future edit the way an *unreachable* component
 > was.
+
+> ✅ **The standalone Terminal tab 400'd on every self-hosted install
+> (2026-08-13).** Drove Team (staff roster — clean pass, the CEO card's own
+> "Sit 1:1" already correctly opens `FocusMode`, matching the earlier fix
+> for the floor sofa) and Memory (add/categorize/delete a long-term memory
+> entry — clean pass, round-tripped correctly) live for the first time
+> this session, then opened the sidebar **Terminal** tab and hit a real
+> one: a Hermes PTY session connected, then immediately failed and retried
+> forever, with a WebSocket URL carrying `cwd=%2Froot%2FDocuments`.
+>
+> `/root` doesn't exist on this Mac (confirmed: `ls /root` →
+> "No such file or directory") — because `/root/Documents` is the
+> **container image's** code-agent sandbox dir, created by
+> `docker/Dockerfile` for the managed/OCI deployment where the process
+> runs as root. `views/misc.jsx`'s `TerminalView` already had the right
+> instinct — it reads `window._TERMINAL_CWD` with that path only as a
+> fallback, and its own comment even named the intended escape hatch:
+> *"local runs override via `CAFRESOHQ_TERMINAL_CWD` if they want."* But
+> nothing ever set `window._TERMINAL_CWD`, anywhere — not serve.py, not
+> any HTML template, not any other script. Every self-hosted Mac/Linux/
+> Windows install (the entire non-managed audience) got the container's
+> path by default, and `pty_server.py`'s own `/terminal/pty` handler
+> 400s outright whenever `cwd_path.is_dir()` is false — so this wasn't
+> cosmetic, it silently broke the Terminal feature end to end for anyone
+> not running the Docker image.
+>
+> Fix: `serve.py` now computes `_cafresohq_terminal_cwd` from
+> `CAFRESOHQ_TERMINAL_CWD` (default `~/Documents`) — the exact same
+> local-mode default pattern `CAFRESOHQ_ALLOWED_DIRS` already uses one
+> constant up — and injects it as `window._TERMINAL_CWD=...` in
+> `_hq_manifest_tags()`, right beside the existing
+> `window.__CAFRESO_BUNDLE__` injection. Because the container runs as
+> root, `~/Documents` there resolves to the exact same `/root/Documents`
+> as before (the Dockerfile creates it at that path specifically) —
+> **zero behavior change for the managed path, real behavior for every
+> self-hosted one.**
+>
+> Verified live: rebuilt the bundle, restarted the throwaway office,
+> confirmed `window._TERMINAL_CWD` was `/Users/<user>/Documents`, cleared
+> the stale reconnect session from `localStorage` (the retry loop had
+> latched onto the pre-fix cwd from before the reload), and opened a
+> fresh Hermes terminal tab — got a real PTY: *"Welcome to Hermes Agent!
+> Type your message or /help for commands."* Server log confirmed:
+> `WS detached: ... hermes @ /Users/anthonym/Documents`.
+>
+> Pinned by `scripts/test_terminal_cwd_wired.py` — imports `serve.py`
+> fresh under a controlled `HOME` to check both the default and the
+> env-var override, and calls `_hq_manifest_tags()` directly to confirm
+> the injection. Fire-tested against both reverts separately (hardcode
+> the old default back, drop the injected script tag) — each failed for
+> its own specific reason.
