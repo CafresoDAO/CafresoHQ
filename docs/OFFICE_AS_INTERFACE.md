@@ -7725,3 +7725,88 @@ surface may only assert what detection established — and a surface built
 from a data table can only assert what that table says, so the table is
 part of the surface. Testing the sentence generator against fixtures I wrote
 myself proved the generator, and proved nothing about the office.
+
+---
+
+## A filename was promised, and the board went green (2026-08-14)
+
+Fresh office, first task, the LAN brain, cabinet configured and working.
+Brief: "Write a 400-word briefing on why sourdough starters need feeding,
+and file it in the vault." The board marked it DONE. The entire deliverable
+was:
+
+    I will write a 400-word briefing explaining the necessity of feeding
+    sourdough starters and save it to the vault under
+    `Drafts/Sourdough_Feeding_Briefing.md`.
+
+A sentence in the future tense, a named file that does not exist, and a
+green DONE over the top of it. The filed sheet carried that line as the
+deliverable and then, eight lines below, its own Working record said
+"Nothing opened, saved or looked up for this one." Two true records of one
+run, disagreeing, neither pointing at the other. It is 6cf5957 exactly
+inverted — there the footer lied and the prose was honest.
+
+What the office is NOT asked to do here is decide whether prose is "only an
+intention". That is judging the writing, and §4 is explicit that detection
+is a hint rather than a verdict. It is asked something it knows precisely:
+a path was named, and nothing was written to the cabinet. Those two facts
+contradict each other on their face, the same way a citation dated next year
+is arithmetic rather than an accusation.
+
+So `claimedPaths` reads a SHAPE and never a meaning — folder, slash,
+document extension — and sits in app/artifacts.jsx directly beside
+`agentFiledPath`, which answers the opposite question off the visit log. One
+asks what was named, one asks what was written, and the gap between them is
+the claim. `unfiledPath` in hq-runtime pairs them and goes into
+`honestyNotes`, which is the function whose entire job is being the single
+copy: chat, the activity row and the task card all get it from one push, and
+the filed sheet gets its own line because it is built somewhere else
+entirely. Four surfaces, two call sites, both checked — 0a3e586 is the tick
+where a caveat that reached one surface out of four turned out not to be a
+caveat, and that lesson is now cheap enough to apply by default.
+
+Three things the pinning found that the fix had wrong.
+
+The first was mine and it printed a lie. Path segments originally admitted
+spaces, because real vault notes are allowed them, and on "Filed to
+Research/a.md and also Reports/b.md" the segment ran clean through the prose
+and matched `Research/a.md and also Reports/b.md` as ONE file. That is worse
+than missing both: the note would have quoted the boss a filename that
+neither the coworker nor the office had ever written. Spaces are out;
+`Research/My Notes.md` is now a miss, and a miss only costs the caveat.
+
+The second and third were dead guards, and both were found the same way —
+by an arm that deleted one and passed. A `head.indexOf('.')` test claimed to
+be what kept `example.com/report.md` out. It cannot fire: the folder charset
+`[\w-]` admits no dot, so the first segment is incapable of holding one. A
+look-behind for `/` and `@` claimed to keep URL tails and email addresses
+out. It cannot fire either: a match may only open at a boundary, so nothing
+mid-URL has anywhere to begin. Six probes across URL, elided and email forms
+produced zero hits between the two of them. Both deleted, and the arms
+rewritten onto the two features that actually carry the exclusion — the
+opening boundary and the folder charset — because a dead guard is precisely
+what you trust when the live one is the part that broke. Last tick's version
+of this was a comment describing the wrong mechanism; this one was code.
+
+Live, on the run that confirmed it, the office did better than the case it
+was built for. Asked to draft a note and save it, the coworker claimed two
+different paths in one reply and wrote to its own private notes folder,
+which is deliberately not the cabinet:
+
+    Saved work/cold_brew.md in their notes
+    `Drafts/cold_brew.md` and `work/cold_brew.md` are named above, but
+    nothing was written to the cabinet on this run — this sheet is the
+    only file it produced.
+
+Both paths named, the verb agreed, and the MEMORY_WRITE did not buy silence.
+One rough edge, recorded rather than smoothed: `work/cold_brew.md` really
+does exist, in the notes folder, so listing it beside a path that exists
+nowhere is a little broad. The sentence is still true — nothing reached the
+cabinet — and the Working line above names the notes write, so the two
+together tell the whole story. Narrowing it to cabinet-shaped claims only is
+a later tick's job, and worth doing.
+
+The through-line holds. A surface may only assert what detection
+established — and the corollary this tick adds is that a guard which cannot
+fire has established nothing, however carefully its comment explains what it
+is for.

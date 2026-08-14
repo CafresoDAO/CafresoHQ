@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
-import { citesOutside, officeDate, officeStamp, workingNotes } from './app/artifacts.jsx';
+import { agentFiledPath, citesOutside, claimedPaths, officeDate, officeStamp, workingNotes } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -963,6 +963,62 @@ function unverifiedSources(text, visits, citesFn, workingFn) {
     : null;
 }
 
+/* ── A filename promised, and no file ─────────────────────────────────────
+   Measured on a fresh office, first task, the LAN brain, cabinet configured
+   and working. Brief: "Write a 400-word briefing on why sourdough starters
+   need feeding, and file it in the vault." The board marked it DONE, and
+   the whole deliverable was:
+
+     I will write a 400-word briefing explaining the necessity of feeding
+     sourdough starters and save it to the vault under
+     `Drafts/Sourdough_Feeding_Briefing.md`.
+
+   A sentence in the future tense, a named file that does not exist, and a
+   green DONE over the top of it. The filed sheet carried that line as the
+   deliverable and then, eight lines below, its own Working record said
+   "Nothing opened, saved or looked up for this one." Both true statements
+   about the same run, one of them the office's and correct, and nobody
+   connected them.
+
+   The office is NOT asked to decide whether prose is "only an intention" —
+   that is judging the writing, and §4 says detection is a hint, not a
+   verdict. It is asked something it knows exactly: a path was named, and
+   nothing was written to the cabinet on this run. Those two facts are a
+   contradiction on their face, the same way a citation dated next year is
+   arithmetic rather than an accusation.
+
+   Narrow on purpose, and the narrowness is all in the path shape. It needs
+   a folder, a slash and a document extension, so a bare "the vault" or a
+   sentence about `Drafts` alone says nothing. A first segment containing a
+   dot is excluded, which drops `example.com/report.md` and every other URL
+   tail — a coworker naming a page it read is not claiming to have filed it.
+   A miss here costs the caveat; a false alarm calls an honest coworker a
+   liar, which is the more expensive mistake and the one 6cf5957 was about.
+
+   Silent whenever ANY cabinet write happened, without checking whether the
+   written path matches the named one. Two names for one file is a mistake
+   the office cannot tell from a coworker filing twice, and this note exists
+   for the run that filed nothing at all.
+
+   `claimedPaths` and `agentFiledPath` both live in app/artifacts.jsx, which
+   is where the delivery sheet needs them too and which this file already
+   imports from — one copy of each, not two kept in step by hope. They come
+   in as parameters for the same reason `unverifiedSources` takes its two:
+   scripts/test_reply_hygiene.py lifts these functions out of this file to
+   run under node, and a lifted function that calls an import is a
+   ReferenceError. */
+function unfiledPath(text, visits, pathsFn, filedFn) {
+  if (!Array.isArray(visits)) return null;         // unknowable, so silent
+  if ((filedFn || agentFiledPath)(visits)) return null;
+  const named = (pathsFn || claimedPaths)(text);
+  if (!named.length) return null;
+  const one = named.length === 1;
+  return '_(' + named.map(p => '`' + p + '`').join(' and ')
+    + (one ? ' is named above, but nothing' : ' are named above, but nothing')
+    + ' was written to the cabinet on this run, so '
+    + (one ? 'that file is not there' : 'those files are not there') + '.)_';
+}
+
 /* Every "the coworker claimed something the office did not do" check, run
    once, in one place.
 
@@ -1004,6 +1060,7 @@ function honestyNotes(raw, opts) {
   push(unsentAsk(extractAcks(raw).map(a => a.state), delivered));
   push(fabricatedRelay(raw, delivered, o.roster || []));
   push(unverifiedSources(raw, o.visits));
+  push(unfiledPath(raw, o.visits));
   return out;
 }
 
@@ -3012,7 +3069,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

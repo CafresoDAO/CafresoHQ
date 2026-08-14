@@ -301,6 +301,21 @@ function buildDelivery(task, agent, text, visits) {
       ? '- Every source this run tried to open was refused, so nothing above was checked against one — treat the citations as recalled.'
       : '- The note above mentions sources, but nothing was opened or searched while it was written — treat those as recalled, not checked.');
   }
+  /* A path named in the body with no cabinet write behind it. This is the
+     one the footer below was written for and could not reach: measured on a
+     fresh office, the LAN brain answered a "write it and file it" brief with
+     "I will write a 400-word briefing … and save it to the vault under
+     `Drafts/Sourdough_Feeding_Briefing.md`", the board went green, and this
+     sheet carried that sentence as the deliverable with "Nothing opened,
+     saved or looked up for this one" eight lines under it. Two true records
+     of one run, disagreeing, neither pointing at the other. */
+  const promised = agentFiledPath(visits) ? [] : claimedPaths(body);
+  if (promised.length) {
+    record.push(`- ${promised.map(p => `\`${p}\``).join(' and ')} `
+      + `${promised.length > 1 ? 'are' : 'is'} named above, but nothing was `
+      + `written to the cabinet on this run — this sheet is the only file it `
+      + `produced.`);
+  }
   const ahead = citedFutureYears(body);
   if (ahead.length) {
     record.push(`- ${ahead.join(' and ')} ${ahead.length > 1 ? 'have' : 'has'} not happened yet`
@@ -321,13 +336,19 @@ function buildDelivery(task, agent, text, visits) {
 
        That matters because of what models actually file. A real delivery came
        back "Yellow." followed by "[Vault path: Research/banana-colour.md]" —
-       an invented filing, no Research folder anywhere. The office cannot
-       detect the claim: it is prose, it carries no marker, and guessing which
-       sentences are claims would mean editing a coworker's words. But the
-       office knows exactly what IT did, and stating that plainly puts the
-       record directly beneath the claim, where a reader can see they
-       disagree. Same principle as the unclosed-write guard: an absence loses
-       against a confident sentence, so turn the absence into a statement. */
+       an invented filing, no Research folder anywhere. The office knows
+       exactly what IT did, and stating that plainly puts the record directly
+       beneath the claim, where a reader can see they disagree. Same
+       principle as the unclosed-write guard: an absence loses against a
+       confident sentence, so turn the absence into a statement.
+
+       This comment used to end "the office cannot detect the claim: it is
+       prose, it carries no marker, and guessing which sentences are claims
+       would mean editing a coworker's words." Half right, and the half it
+       got wrong sat here for two months. Guessing which SENTENCES are claims
+       would indeed be editing; recognising a path is not guessing, and
+       `claimedPaths` above does it off a shape rather than a meaning. The
+       record no longer waits to be read next to the claim — it names it. */
     '', '---', '', '**Working**', '',
     ...record,
     '',
@@ -357,6 +378,56 @@ function buildDelivery(task, agent, text, visits) {
    Getting that wrong would suppress the host's filing for a task that
    produced no cabinet artifact at all, which is worse than a duplicate. */
 const CABINET_WRITE = /^(VAULT_NEW|VAULT_APPEND|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)$/i;
+
+/* Paths a coworker NAMED in its prose, as opposed to paths it wrote.
+   `agentFiledPath` above answers the second question off the visit log; this
+   answers the first off the text, and the gap between them is the claim.
+
+   Narrow on purpose, and all of the narrowness is in the shape. A folder, a
+   slash and a document extension are all required, so "the vault" or a bare
+   `Drafts` says nothing. Two features carry every URL exclusion between
+   them, and both are in the pattern rather than in a test after it. A match
+   may only OPEN at a boundary — start of string, whitespace, backtick,
+   quote, paren, asterisk — and the folder charset `[\w-]` admits no dot. So
+   `https://example.com/docs/report.md` has nowhere to begin: not at
+   `example` (preceded by `/`), not at `com` (preceded by `.`), not at
+   `docs` or `report` either. A coworker naming a page it read is never
+   read as a coworker claiming to have filed it.
+
+   Two further guards used to sit in the loop below — a `head.indexOf('.')`
+   test and a look-behind for `/` or `@` — and the fire test found neither
+   could ever fire. The first segment cannot hold a dot, and nothing
+   mid-URL can open a match, so both were reassurance rather than logic:
+   six probes across URL, elided and email forms produced zero hits between
+   them. Deleted rather than left in, because a dead guard is exactly what
+   you trust when the live one is the part that broke — and the arm that
+   deleted one of them passed, which is how they were found. A miss costs a
+   caveat; a false alarm calls an honest coworker a liar, and that is the
+   more expensive mistake.
+
+   No spaces inside a segment, and that rule was written by the test. A
+   first cut allowed them, because real vault notes are allowed them —
+   `Research/My Notes.md` is a legal path — and on "Filed to Research/a.md
+   and also Reports/b.md" the segment ran straight through the prose and
+   matched `Research/a.md and also Reports/b.md` as ONE file. That is worse
+   than missing both: the note would have quoted the boss a filename that
+   nobody, coworker or office, had ever written. Models overwhelmingly emit
+   `Sourdough_Feeding_Briefing.md`, so the space costs little, and a miss
+   costs only the caveat. */
+const CLAIMED_PATH =
+  /(?:^|[\s`("'*])([A-Za-z][\w-]*(?:\/[\w.-]+)*\/[\w.-]+\.(?:md|txt|pptx|docx|pdf|csv|png|jpe?g))/g;
+
+function claimedPaths(text) {
+  const t = String(text || '');
+  const out = [];
+  let m;
+  CLAIMED_PATH.lastIndex = 0;
+  while ((m = CLAIMED_PATH.exec(t))) {
+    const p = m[1];
+    if (out.indexOf(p) < 0) out.push(p);
+  }
+  return out;
+}
 
 function agentFiledPath(visits) {
   let last = null;
@@ -400,4 +471,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, claimedPaths, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
