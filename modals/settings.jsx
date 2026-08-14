@@ -45,6 +45,13 @@ import { MediaTab } from './providers.jsx';
    managed box Cafreso holds it — the same argument the panel's own
    comment makes about why CONNECTIONS is self-hosted-only. */
 import { BraveTab } from './providers.jsx';
+/* BrowserKeysTab — the fourth and last panel out of that unmounted file,
+   and the only one whose absence the office was already complaining about
+   out loud. The brain picker offers Anthropic and Google on every install;
+   the manual hire form defaults to one of them; the form then says "can't
+   work until you add it in Settings → Connections" and sends the boss to a
+   tab that had no field for either. See the note on the component. */
+import { BrowserKeysTab } from './providers.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
         useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
@@ -79,6 +86,13 @@ const SETTINGS_INDEX = [
   { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
   { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain' },
   { tab:'connections', label:'Cloud provider keys', hint:'OpenRouter · Groq · Gemini — set as environment variables', kw:'connections key api openrouter groq gemini google env environment variable byok self-hosted' },
+  /* Two entries, not one, because a boss sent here by a hire warning is
+     searching the brand on the brain they picked — "claude" or "gemini" —
+     not a category name they have never seen. Both land on the same panel.
+     `sk-ant` and `AIza` are in the keywords because pasting a key into the
+     search box is a real thing people do when they cannot find the field. */
+  { tab:'connections', label:'Claude API key (pay-per-token)', hint:'for coworkers pinned to an anthropic: brain — kept in this browser, sent straight to Anthropic', kw:'connections anthropic claude api key sk-ant opus sonnet haiku brain model credits pay token byok signed in' },
+  { tab:'connections', label:'Gemini API key (pay-per-token)', hint:'for coworkers pinned to a google: brain — kept in this browser, sent straight to Google', kw:'connections google gemini api key aiza brain model credits pay token byok signed in' },
   { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
   { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
   { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
@@ -320,6 +334,12 @@ function ConnectionsPanel() {
           );
         })}
       </div>
+      {/* Directly under CLOUD KEYS, because a boss arriving here from the
+          hire form's "this brain isn't signed in yet" is looking for a key
+          and should not have to learn which of two key panels is theirs by
+          reading both. Ordered after it because CLOUD KEYS covers the free
+          tiers and this one is the pay-per-token pair. */}
+      <BrowserKeysTab />
       <BraveTab />
       <VaultTab />
     </div>

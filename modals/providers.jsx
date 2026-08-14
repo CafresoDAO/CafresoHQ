@@ -351,43 +351,14 @@ function ApiTab() {
       {s.provider === 'claudecode' && <ClaudeCodePanel s={s} update={update} />}
       {s.provider === 'codex' && <CodexPanel s={s} update={update} />}
 
-      {s.provider === 'anthropic' && (
-        <div className="cb-panel">
-          <h4>ANTHROPIC</h4>
-          <div className="form-row" style={{marginBottom:8}}>
-            <label>API KEY</label>
-            <input type="password" placeholder="sk-ant-…"
-              value={s.anthropicKey} onChange={e=>update({anthropicKey: e.target.value})}/>
-            <span className="hint">stored in this browser's localStorage only</span>
-          </div>
-          <div className="form-row">
-            <label>MODEL</label>
-            <select value={s.anthropicModel} onChange={e=>update({anthropicModel: e.target.value})}>
-              {CafresoHQClient.ANTHROPIC_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <span className="hint">used for the CEO and any helper without a brain of their own</span>
-          </div>
-        </div>
-      )}
-
-      {s.provider === 'google' && (
-        <div className="cb-panel">
-          <h4>GOOGLE (GEMINI)</h4>
-          <div className="form-row" style={{marginBottom:8}}>
-            <label>API KEY</label>
-            <input type="password" placeholder="AIza…"
-              value={s.googleKey} onChange={e=>update({googleKey: e.target.value})}/>
-            <span className="hint">stored in this browser's localStorage only</span>
-          </div>
-          <div className="form-row">
-            <label>MODEL</label>
-            <select value={s.googleModel} onChange={e=>update({googleModel: e.target.value})}>
-              {CafresoHQClient.GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <span className="hint">used for the CEO and any helper without a brain of their own</span>
-          </div>
-        </div>
-      )}
+      {/* These two used to be written out here, each gated on
+          `s.provider`, and they are the same two fields BrowserKeysTab now
+          renders in Settings → Connections. One definition rather than two:
+          this component is unmounted, so a second copy would drift without
+          anyone noticing — which is most of how it got into this state. The
+          provider gate is gone with them; see the note on BrowserKeysTab
+          for why that gate was asking a question nothing can answer. */}
+      <BrowserKeysTab />
 
       {s.provider === 'lmstudio' && (
         <div className="cb-panel">
@@ -957,6 +928,88 @@ export function MediaTab() {
         </div>
       )}
     </div>
+  );
+}
+
+/* BROWSER-SIDE BRAINS — the fourth and last panel rescued out of ApiTab.
+   These two keys were the ones with real consequences still attached.
+
+   `localModelOptions()` appends "Anthropic (Claude API · credits)" and
+   "Google (Gemini API · credits)" to EVERY brain picker, unconditionally.
+   The manual hire form defaults to `anthropic:claude-haiku-…`. It correctly
+   notices the brain is not signed in and says so — "they can be hired, but
+   can't work until you add it in Settings → Connections" — and Connections
+   had no Anthropic or Google field, because the only ones ever written sat
+   in a component nothing imports. Measured on a fresh office: the warning
+   fires, the boss follows it, and the room it names is empty. A failure
+   sentence with a route out that loops back to itself is the §7 rule
+   failing in the shape it was written to prevent.
+
+   Not gated on `s.provider`, unlike the panels these came from. That toggle
+   lives in the same unmounted component, so it has been pinned at its
+   default of 'hermes' for as long as the tab has been gone — which means
+   those panels were dead twice over. It is also the wrong question now:
+   `parseModelId` lets any agent pin `anthropic:…` regardless of the global
+   provider, and that is how brains are actually chosen. What makes this
+   panel relevant is that a coworker somewhere is pinned to one of these.
+
+   Not the same thing as CLOUD KEYS above, and the distinction is the whole
+   reason this panel is allowed to be a form at all. Those keys go to the
+   gateway and the panel deliberately refuses to accept them in the browser
+   — "keys never reach the browser" is a posture, not a gap. These two are
+   read only by `streamAnthropic`/`streamGoogle`, which call api.anthropic.com
+   and generativelanguage.googleapis.com straight from this tab with the key
+   as a request header. It never touches the Cafreso server, so there is no
+   posture to fight; it lives in localStorage, and the hint says so. */
+export function BrowserKeysTab() {
+  const [s, update] = useSettingsStore();
+  const C = CafresoHQClient;
+  const rows = [
+    { id: 'anthropic', h: '🧠 ANTHROPIC (CLAUDE API)', ph: 'sk-ant-…',
+      keyField: 'anthropicKey', modelField: 'anthropicModel',
+      models: C.ANTHROPIC_MODELS,
+      where: 'console.anthropic.com/settings/keys',
+      link: 'https://console.anthropic.com/settings/keys' },
+    { id: 'google', h: '🧠 GOOGLE (GEMINI API)', ph: 'AIza…',
+      keyField: 'googleKey', modelField: 'googleModel',
+      models: C.GEMINI_MODELS,
+      where: 'aistudio.google.com/apikey',
+      link: 'https://aistudio.google.com/apikey' },
+  ];
+  return (
+    <>
+      {rows.map(r => (
+        <div className="cb-panel" key={r.id}>
+          <h4>{r.h}</h4>
+          <div className="form-row" style={{ marginBottom: 8 }}>
+            <label>API KEY</label>
+            <input type="password" placeholder={r.ph} value={s[r.keyField] || ''}
+              onChange={e => update({ [r.keyField]: e.target.value })} />
+            {/* Where to get one, the same way SELF_HOST_PROVIDERS does it in
+                the CLOUD KEYS panel — a boss who has got this far because a
+                hire warning sent them here does not necessarily have a key
+                yet, and "add it in Settings" is only half an instruction. */}
+            <span className="hint">
+              stays in this browser · get one at{' '}
+              <a href={r.link} target="_blank" rel="noreferrer">{r.where}</a>
+            </span>
+          </div>
+          <div className="form-row">
+            <label>DEFAULT MODEL</label>
+            <select value={s[r.modelField] || ''}
+                    onChange={e => update({ [r.modelField]: e.target.value })}>
+              {r.models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            {/* Says what it is actually for. The old copy read "used for the
+                CEO and any helper without a brain of their own", which was
+                written when `s.provider` still selected one global brain. A
+                coworker pinned to `anthropic:claude-opus-…` carries its model
+                in the id and never consults this. */}
+            <span className="hint">for coworkers pinned to this provider without a model in their brain id</span>
+          </div>
+        </div>
+      ))}
+    </>
   );
 }
 

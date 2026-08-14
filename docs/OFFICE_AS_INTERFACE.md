@@ -7071,3 +7071,78 @@ it was asking for. Rewritten to count inside the catch blocks — and the
 first rewrite read 0 of 2, because a lazy `[^}]*` stops dead on the `}` of
 `${err.message}`. **A count of the whole file is a fence around the right
 behaviour.**
+
+### The office told the boss where to go, and the room was empty (2026-08-13)
+
+Direct follow-on from the entry above, which repointed six stale signposts
+at tabs that exist. This one is the next question: **does the room the
+signpost names contain the thing it promises?** For two of them it did not.
+
+Measured on a fresh office. `localModelOptions()` appends "Anthropic
+(Claude API · credits)" and "Google (Gemini API · credits)" to every brain
+picker on every install. The manual hire form's default brain is
+`anthropic:claude-haiku-4-5-20251001`. The form works out, correctly, that
+the brain is not signed in, and says so:
+
+> ⚠ this brain isn't signed in yet — they can be hired, but can't work
+> until you add it in Settings → Connections
+
+Followed it the way a boss would. Connections held four panels — ON THIS
+MACHINE, CLOUD KEYS, BRAVE WEB SEARCH, MARKDOWN VAULT — and exactly one
+password field, for Brave. No Anthropic. No Google. The only inputs that
+have ever written `anthropicKey` or `googleKey` sat inside `ApiTab`, in
+`modals/providers.jsx`, which nothing imports.
+
+Every step of that was working as designed. Detection was right, the
+warning was right, the destination existed, the copy was clear — and the
+boss still could not act on it. Hire anyway, drop a task, and
+`streamAnthropic` throws "No Anthropic API key — open Settings →
+Connections": the same sentence, pointing at the same empty room. §7 asks
+for one honest sentence **plus a way forward**. **A way forward that
+returns you to the message is a circle**, and it reads as a working feature
+right up until you try to use it.
+
+The fix is `BrowserKeysTab` — the fourth and last panel out of that
+unmounted file, after `VaultTab`, `MediaTab` and last tick's `BraveTab`,
+and the only one whose absence the office was already complaining about
+out loud. Self-sufficient via `useSettingsStore()`, same as its three
+siblings. Mounted directly under CLOUD KEYS, because a boss arriving from
+a hire warning is looking for a key field and should not have to work out
+which of two key panels is theirs by reading both. Each row carries where
+to get a key — "add it in Settings" is half an instruction to someone who
+does not have one yet.
+
+**The gate came off, and that is the more interesting half.** Both panels
+were written as `{s.provider === 'anthropic' && …}`. The only control that
+writes `s.provider` is a `<select>` in the same unmounted component, so it
+has been pinned at its default of `'hermes'` since the tab was removed —
+those two panels were dead twice over, and mounting them unchanged would
+have rendered nothing. It is also the wrong question now: `parseModelId`
+lets any coworker pin `anthropic:…` in their brain id regardless of the
+global provider, and that is how brains are actually chosen. **A gate on a
+setting nothing can set is not a gate, it is a deletion with extra steps.**
+
+`ApiTab` now renders `<BrowserKeysTab />` rather than keeping its own copy.
+Two definitions of a panel where one of them is unmounted is most of how
+this whole family of bugs got here.
+
+**Not fixed, and named precisely rather than waved at.** CONNECTIONS is
+filtered out of the nav on managed installs, by deliberate design — Cafreso
+holds the keys there. But the brain picker appends Anthropic and Google on
+managed too, so a managed boss who opens the manual hire form and pins one
+of those brains gets the identical warning naming a tab they do not have.
+I have no managed box to run, and inventing a fix for a path I cannot
+exercise is the thing this file exists to prevent. Recorded as its own
+task. The honest options are to make the warning's destination depend on
+the install, or to stop offering credit-card brains where no key can be
+entered — a product call, not a cleanup.
+
+**Eight arms, eight passes**, each reverted separately, and two of them
+were only pinned after the fire test rejected the first attempt. Putting
+the `s`/`update` props back made `brace_lift` raise, so the run died with a
+traceback instead of a named failure — **a test that crashes is not a test
+that reports** — fixed by checking the signature before lifting on it. And
+the "where to get a key" check read the `where`/`link` fields in the rows
+array, which survive deleting the hint that renders them; it now asserts
+the markup. Both are the same mistake in different clothes: checking that
+a fact exists somewhere, rather than that it reaches the boss.
