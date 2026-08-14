@@ -271,7 +271,12 @@ function OnboardingKeyStep() {
         {saved === 'err'   && '✕ Couldn\'t save — check the key and try again.'}
         {!saved && (onTrial
           ? 'Optional — your own key gives unlimited use and lets you pick the model.'
-          : 'Free · unique to you · you can change it anytime in Settings → API.')}
+          /* No tab named here on purpose. This line is read on a managed
+             container as often as a self-hosted one, and CONNECTIONS — the
+             tab that would be right for a self-hoster — is filtered out of
+             the nav on managed. A destination that exists for only half the
+             readers is the §5 problem, not the fix for it. */
+          : 'Free · unique to you · you can change it anytime in Settings.')}
       </div>
       <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', color: 'var(--ink-3)' }}>
         Want stronger output? Plug in your own Claude, GPT or paid key —{' '}

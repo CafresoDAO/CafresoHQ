@@ -1187,6 +1187,65 @@ function icpPublishEnabled() {
   } catch (_e) { return false; }
 }
 
+/* ── A 200 is not a page ──────────────────────────────────────────────────
+   Measured live on a fresh office, 2026-08-13. `search.requires()` reads
+   `braveEnabled && braveKey`, and until this same commit no control existed
+   anywhere in the UI to set either — so no coworker was ever handed
+   [SEARCH:]. BROWSER_FETCH, meanwhile, goes to anyone claiming 'web'
+   unconditionally. Asked to "search the web", Llama did the only thing left
+   open to it and fetched a search engine. All three majors answer 200 with
+   nothing in them:
+
+     google.com/search?q=…   200 · 104 chars · "If you're having trouble
+                             accessing Google Search, please click here"
+     duckduckgo.com/?q=…     200 ·  41 chars · the title, and no results
+     bing.com/search?q=…     200 · 631 chars · nav chrome, a few snippets
+
+   (Control, same office, same minute: en.wikipedia.org/wiki/Four-day_week
+   → 200 · 8032 chars.)
+
+   The tool returned `Status: 200` above the bot-check notice, the bubble
+   rendered "🌐 Read www.google.com/search?…" — and "Read" is a claim that
+   reading happened — and the model then wrote three headlines attributed
+   to the Guardian, CNBC and Forbes out of a page containing none of them.
+   The office filed it `finished ✓` into Done and told the boss "Nothing
+   needs you right now. 🎉".
+
+   The invention is the model's and this app cannot stop it. The claim that
+   a page was read is OURS. §4: detection is a hint, not a verdict — and a
+   status code is a hint about the request, never a verdict about the page.
+
+   So this measures the one thing that can honestly be measured — how much
+   readable text actually came back — and reports THAT, in the one string
+   both readers see: the boss in the bubble, and the model as its
+   [TOOL_RESULT]. The last clause is aimed at the model on purpose; it is
+   the only part of this that stands between an empty page and a citation.
+
+   The floor is deliberately low. This must not fire on a short-but-real
+   page, so it only speaks when there is essentially nothing there — and it
+   says what it counted rather than diagnosing why, except in the one case
+   the host name settles outright. */
+const READABLE_FLOOR = 220;
+const SEARCH_HOSTS = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:google\.[a-z.]+|duckduckgo\.com|bing\.com|search\.yahoo\.com|search\.brave\.com|baidu\.com|yandex\.(?:com|ru)|ecosia\.org|startpage\.com)\//i;
+
+function barrenPage(j, url) {
+  const n = String(j.text || '').replace(/\s+/g, ' ').trim().length;
+  if (n >= READABLE_FLOOR) return '';
+  const nothing = `it answered ${j.status} but only ${n} characters of readable text came back`;
+  const dontQuote = ' There is nothing on it to quote, cite or summarise.';
+  if (SEARCH_HOSTS.test(String(url || '').trim())) {
+    /* The host settles this one: search engines serve results to browsers
+       and a bot-check to everything else, so the honest cause is known and
+       §7 wants the way forward with it. */
+    return `that is a search engine's results page, and they hand automated `
+      + `readers a bot check instead of results — ${nothing}.${dontQuote}`
+      + ` To search properly the office needs a search provider: `
+      + `Settings → Connections → Brave Web Search.`;
+  }
+  return `${nothing} — pages that assemble themselves with JavaScript look `
+    + `like this to a plain fetch.${dontQuote}`;
+}
+
 const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
@@ -1419,10 +1478,20 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [BROWSER_FETCH: <url>] — fetch a URL and return its readable text content (HTML stripped, scripts/styles removed). For static pages, news, docs.',
     docShort: 'Fetch a URL and return readable text. Works for static pages, news, docs.',
-    run: async (url, { signal }) => {
+    run: async (url, { signal, meta }) => {
       const u = `/browser/fetch?url=${encodeURIComponent(url.trim())}&max_chars=8000`;
       const r = await fetch(u, { signal });
       const j = await r.json();
+      /* `meta.failed` exists for exactly this, and this tool was not using
+         it: a page that could not be read answers normally, with the reason
+         as its result, so nothing threw and every surface captioned it a
+         success. The visit header is built from the tool NAME and tense —
+         `fail` picks a different verb and icon — so without this the boss
+         got "🌐 Read www.google.com/search?…" as the headline and
+         "Couldn't read that page" as the body of the same element. The
+         sibling note on this mechanism already names the shape: "Opened
+         ./site" directly above "Not a directory: ./site". */
+      const fail = (why) => { if (meta) meta.failed = true; return `Couldn't read that page — ${why}`; };
       /* §7 wants an honest sentence, and the label was the machine-ish part
          ("Browser fetch error:"), not the message — `j.error` is authored by
          our own serve.py and already reads as English.
@@ -1434,9 +1503,14 @@ const TOOL_REGISTRY = {
          trouble". All confidently wrong about the wrong subject, which
          SNAG_CAUSES' own comment calls worse than a vague honest one. I had
          applied it here and had to take it back out. */
-      if (j.error) return `Couldn't read that page — ${j.error}`;
+      if (j.error) return fail(j.error);
+      /* A status code is a hint about the REQUEST. It is never a verdict
+         about the page — §4's line, on the one tool whose whole job is to
+         bring back a page. */
+      const barren = barrenPage(j, url);
+      if (barren) return fail(barren);
       const head = `URL: ${j.url}\nStatus: ${j.status}\nTitle: ${j.title || '(none)'}\n${'─'.repeat(40)}\n`;
-      return head + (j.text || '(no body)');
+      return head + j.text;
     },
   },
   browser_screenshot: {
@@ -2479,7 +2553,13 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
       if (!cleaned.trim()) {
         const orphans = extractHarmonyToolCalls(buf);
         if (orphans.length) {
-          emit(`_(model attempted ${orphans.map(o=>o.tool).join(', ')} but those aren't wired up — check Settings → API)_`);
+          /* Roster, not "API": there is no API tab, and there hasn't been
+             one since managed premium took the self-host setup surface out
+             of Settings. Which tools a coworker gets is a per-agent
+             question, and ROSTER is where those boxes are ticked. The very
+             next branch below already says "Settings → Connections" — that
+             message got updated in some earlier pass and this one didn't. */
+          emit(`_(model attempted ${orphans.map(o=>o.tool).join(', ')} but those aren't wired up — check Settings → Roster)_`);
         } else {
           const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
           emit(peek ? `_(empty after cleaning. Raw: "${peek}…")_`

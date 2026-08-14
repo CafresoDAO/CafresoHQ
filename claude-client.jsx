@@ -548,7 +548,7 @@ async function fetchStreamHead(url, init = {}, headMs = 20000) {
 
 async function streamAnthropic({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
   const s = _settings;
-  if (!s.anthropicKey) throw new Error('No Anthropic API key — open Settings → API');
+  if (!s.anthropicKey) throw new Error('No Anthropic API key — open Settings → Connections');
   const body = {
     model: model || s.anthropicModel,
     max_tokens: maxTokens || s.maxTokens || 1024,
@@ -597,8 +597,8 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
    reject that field with InvalidParameter. */
 async function streamOpenAICompat({ base, label, system, messages, model, temperature, maxTokens, onToken, onReasoning, onUsage, signal, defaultModel, apiKey, requireKey, extraHeaders, noStreamOptions, local }) {
   const root = (base || '').replace(/\/+$/, '');
-  if (!root) throw new Error(`No ${label} URL set — open Settings → API`);
-  if (requireKey && !apiKey) throw new Error(`No ${label} API key set — open Settings → API`);
+  if (!root) throw new Error(`No ${label} URL set — open Settings → Connections`);
+  if (requireKey && !apiKey) throw new Error(`No ${label} API key set — open Settings → Connections`);
   const msgs = [];
   if (system) msgs.push({ role: 'system', content: system });
   for (const m of messages) if (m.content && String(m.content).trim()) msgs.push(m);
@@ -1221,7 +1221,7 @@ async function stream(opts) {
 
 async function streamGoogle({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
   const s = _settings;
-  if (!s.googleKey) throw new Error('No Google API key — open Settings → API');
+  if (!s.googleKey) throw new Error('No Google API key — open Settings → Connections');
 
   const mdl = model || s.googleModel;
 
@@ -1638,7 +1638,16 @@ async function localModelOptions() {
 /* ---- Brave Web Search ---- */
 async function braveSearch(query, { count = 6, signal } = {}) {
   const s = _settings;
-  if (!s.braveKey) throw new Error('No Brave key — open Settings → API → Tools');
+  /* This used to name an API tab, and a Tools drawer inside it. Neither
+     exists. `SETTINGS_TABS` is account · connections · agents ·
+     icp-services · media · appearance, and has been since managed premium
+     pulled the self-host setup surface out of Settings — `ApiTab` still
+     sits in modals/providers.jsx with nothing importing it. Six strings
+     across four files were still sending the boss there; this one went
+     stale most quietly of all, because the panel it meant was mounted
+     nowhere, so nobody who followed the instruction ever got far enough to
+     report that it dead-ended. §5, pointing the boss at the wrong thing. */
+  if (!s.braveKey) throw new Error('No web-search key yet — open Settings → Connections');
   const params = new URLSearchParams({ q: query, count: String(count), safesearch: 'moderate' });
   const r = await fetch(_API_BASE + '/brave/search?' + params.toString(), {
     headers: { 'X-Brave-Key': s.braveKey },

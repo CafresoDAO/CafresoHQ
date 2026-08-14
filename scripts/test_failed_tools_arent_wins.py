@@ -104,10 +104,42 @@ check(
     "BOTH tool-running paths in hq-runtime must create a `meta` — there are "
     f"two loops and they drift; found {rt.count('const meta = {};')}.",
 )
+# Counted inside the catch blocks, not across the whole file. The original
+# form here was `rt.count('meta.failed = true;') == 2`, which said "exactly
+# two places in this file may mark a visit failed" when what it meant was
+# "neither catch block may forget to". A later fix gave browser_fetch a third,
+# legitimate one — a page that answers 200 with a bot check never throws, so
+# the catch blocks never see it — and this test went red for a change that
+# was more of what it was asking for. A count of the whole file is a fence
+# around the right behaviour.
+def _blocks(src, header):
+    """Each `header` occurrence plus its brace-balanced body.
+
+    Not a regex: one of these catch blocks is a single line containing
+    `${err.message}`, and a lazy `[^}]*` stops dead on that interpolation's
+    closing brace — which is how the first attempt at this check read 0 of 2.
+    """
+    out = []
+    for m in re.finditer(re.escape(header), src):
+        i = src.index('{', m.start())
+        d = 0
+        for k in range(i, len(src)):
+            if src[k] == '{':
+                d += 1
+            elif src[k] == '}':
+                d -= 1
+                if d == 0:
+                    out.append(src[m.start():k + 1])
+                    break
+    return out
+
+
+catches = _blocks(rt, 'catch (err) {')
+marked = [c for c in catches if 'meta.failed = true;' in c]
 check(
-    rt.count('meta.failed = true;') == 2,
+    len(marked) == 2,
     "BOTH catch blocks must mark the visit failed — a thrown tool error is "
-    f"a failure too; found {rt.count('meta.failed = true;')}.",
+    f"a failure too; {len(marked)} of {len(catches)} catch blocks do.",
 )
 check(
     rt.count('failed: !!meta.failed,') == 2,

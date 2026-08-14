@@ -6965,3 +6965,109 @@ one being pinned). One claim in the new test was wrong on first write: it
 compared the `noted` badge against a `.k-wrote` rule that does not exist —
 `wrote` *is* the base badge. Corrected to compare against the base, which
 is the question actually being asked.
+
+### The office read a page it could not read (2026-08-13)
+
+Found by asking the free front-desk hire (Llama, `tools: ['web']`) to look
+up some news on a fresh office. It came back with three headlines
+attributed to The Guardian, CNBC and Forbes. None of them existed. The
+office filed the job `finished ✓` into Done and told the boss "Nothing
+needs you right now. 🎉".
+
+Four things had to line up for that, and each is its own defect.
+
+**The door was mounted nowhere.** `TOOL_REGISTRY.search.requires()` reads
+`braveEnabled && braveKey`. The only controls that set either live in
+`BraveTab`, in `modals/providers.jsx` — a file nothing imports. So no boss
+could turn web search on by pressing anything, and no coworker was ever
+handed `[SEARCH: query]`, while the front desk hires them saying "can
+search the web" and the roster card stamps them `CAN USE: WEB`. This is
+the third orphan rescued out of that one file; `VaultTab` and `MediaTab`
+went the same way in earlier passes, and this was the one gating the tool
+the front desk advertises first. Mounting it meant making it
+self-sufficient — `useSettingsStore()` instead of `s`/`update` props, the
+shape its two rescued siblings already have. The first attempt passed a
+settings snapshot down as a prop, which toggles the switch without ever
+re-rendering it.
+
+**So the coworker improvised.** `BROWSER_FETCH` goes to anyone claiming
+`web`, unconditionally, so a coworker asked to search has exactly one
+thing left to try. Measured on that office, same minute:
+
+| fetched | status | readable text |
+|---|---|---|
+| `google.com/search?q=…` | 200 | 104 chars — "If you're having trouble accessing Google Search…" |
+| `duckduckgo.com/?q=…` | 200 | 41 chars — the title, no results |
+| `bing.com/search?q=…` | 200 | 631 chars — nav chrome and a few snippets |
+| `en.wikipedia.org/…` | 200 | 8032 chars — a real page, the control |
+
+**And the office called it a read.** The tool returned `Status: 200` above
+the bot-check notice and the bubble rendered `🌐 Read
+www.google.com/search?…`. **A status code is a hint about the REQUEST. It
+is never a verdict about the page** — §4's own line, on the one tool whose
+entire job is to bring back a page. `barrenPage()` now asks the question
+the status code cannot answer: under 220 characters of readable text, this
+is not a page you can quote. On a search host the cause is *known* — they
+serve results to browsers and a bot check to everything else — so §7's way
+forward comes with it, naming Settings → Connections → Brave Web Search.
+Off a search host it says the honest, vaguer thing about JavaScript-
+assembled pages and does not invent a cause it hasn't got. Every one of
+those sentences ends with "There is nothing on it to quote, cite or
+summarise", because that string *is* the `[TOOL_RESULT]` the model reads
+next, and it is the last thing standing between an empty page and an
+invented citation.
+
+The invention is the model's and this app cannot stop it. **The claim that
+a page was read is ours.**
+
+**And the headline disagreed with the body.** `meta.failed` already existed
+for exactly this — its own note reads *"Did it actually work? Not the same
+question as 'did it return'"* — and `browser_fetch` was not setting it. So
+even with an honest body, the visit header, which picks its verb and icon
+from tense, still said **Read**. Same shape that mechanism was written for:
+"Opened ./site" directly above "Not a directory: ./site". Now both the
+error path and the barren path mark the trip failed, and the header reads
+`⚠ Couldn't read www.google.com/search?…` over a body that agrees with it.
+
+**Six signposts pointed at a tab that does not exist.** The no-key error
+said "Settings → API → Tools" — naming both a tab and a drawer inside it
+that are gone. `SETTINGS_TABS` is account · connections · agents ·
+icp-services · media · appearance, and has been since managed premium
+pulled the self-host setup surface out of Settings; `ApiTab` still sits in
+`modals/providers.jsx` with nothing importing it. Five more strings across
+`claude-client.jsx`, `hq-runtime.jsx` and `ui/onboarding.jsx` were still
+sending the boss there. The one in `hq-runtime` is the sharpest: the
+*next branch down* already says "Settings → Connections", so that message
+was updated in some earlier pass and its neighbour was missed. This is §5
+at its quietest — a stale signpost never reports itself, because anyone
+who follows it finds nothing and assumes they misread.
+
+Three destinations, chosen by what is actually true at each: unwired tool
+calls → **Roster**, because which tools a coworker gets is a per-agent
+question and that is the per-agent tab; provider keys and URLs →
+**Connections**, the tab that names the exact environment variable;
+onboarding → **no tab at all**, just "in Settings", because that line is
+read on managed containers too and CONNECTIONS is filtered out of the nav
+there. A destination that exists for half the readers is the §5 problem,
+not the fix for it.
+
+**Observed, not fixed.** The roster card's `CAN USE: WEB` chip and the
+front desk's "can search the web" still assert a capability that, with no
+key, resolves only to `BROWSER_FETCH` — a weaker claim than the ones above
+it, since `web` does grant a real fetch. And the rest of `ApiTab` is still
+orphaned: the Anthropic key field, the Google key field, the provider
+picker and the two CLI panels have no door anywhere, which means
+`s.anthropicKey` and `s.googleKey` cannot be set from any surface at all.
+Pointing those errors at Connections makes them name a real tab; it does
+not make the setting reachable. That is the next thing in this file.
+
+**Twelve arms, twelve passes**, each reverted separately. The full suite
+caught one collision worth recording: `test_failed_tools_arent_wins.py`
+asserted `rt.count('meta.failed = true;') == 2`, which says "exactly two
+places in this file may mark a visit failed" when what it means is
+"neither catch block may forget to". Giving `browser_fetch` a third,
+legitimate one turned that test red for a change that was *more* of what
+it was asking for. Rewritten to count inside the catch blocks — and the
+first rewrite read 0 of 2, because a lazy `[^}]*` stops dead on the `}` of
+`${err.message}`. **A count of the whole file is a fence around the right
+behaviour.**

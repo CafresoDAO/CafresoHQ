@@ -440,7 +440,7 @@ function ApiTab() {
       )}
 
 
-      <BraveTab s={s} update={update} />
+      <BraveTab />
       <VaultTab />
     </div>
   );
@@ -960,7 +960,15 @@ export function MediaTab() {
   );
 }
 
-function BraveTab({ s, update }) {
+/* Self-sufficient, the same shape MediaTab and VaultTab already have: it
+   reads the settings store itself instead of taking `s`/`update` from a
+   parent. That prop pair was the reason this panel could only live inside
+   the one component in this file that holds the store — the component
+   nothing mounts. Settings → Connections has no such store to hand down,
+   and a snapshot passed as a prop would toggle the switch without ever
+   re-rendering it. */
+export function BraveTab() {
+  const [s, update] = useSettingsStore();
   const [probing, setProbing] = useStateM(false);
   const [result, setResult] = useStateM(null);
   const test = async () => {

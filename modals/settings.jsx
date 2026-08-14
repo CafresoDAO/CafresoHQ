@@ -25,6 +25,26 @@ import { VaultTab } from './providers.jsx';
    GENERATE_VIDEO — see the comment above MediaTab's own definition in
    providers.jsx for the full unreachable-tool story. */
 import { MediaTab } from './providers.jsx';
+/* BraveTab — the third door left behind in the same unmounted file, and
+   the one that was doing the most damage. It holds the ONLY controls that
+   set `braveEnabled` and `braveKey`, and those two are exactly what
+   `TOOL_REGISTRY.search.requires()` reads. Unmounted, no boss could ever
+   turn web search on by pressing anything, so no coworker was ever handed
+   `[SEARCH: query]` — while the front desk hires them saying "can search
+   the web" and the roster card stamps them CAN USE: WEB.
+
+   What a coworker DOES get is BROWSER_FETCH, which is handed to anyone
+   claiming 'web' unconditionally. Measured live on a fresh office: asked
+   to search, Llama did the only thing left and fetched
+   google.com/search?q=… — which answers 200 with a bot-check page — and
+   then wrote three headlines attributed to the Guardian, CNBC and Forbes
+   out of a page that contained none. See the note on BROWSER_FETCH in
+   hq-runtime for the other half of that.
+
+   Connections, not Media: this is a key the boss supplies, and on a
+   managed box Cafreso holds it — the same argument the panel's own
+   comment makes about why CONNECTIONS is self-hosted-only. */
+import { BraveTab } from './providers.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
         useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
@@ -69,6 +89,10 @@ const SETTINGS_INDEX = [
   { tab:'media', label:'Image generation', hint:'pick a provider to give coworkers GENERATE_IMAGE — off by default', kw:'media image generation dall-e dalle openai google gemini imagen fal automatic1111 a1111 stable diffusion picture pixel art' },
   { tab:'media', label:'Video generation', hint:'pick a provider to give coworkers GENERATE_VIDEO — off by default', kw:'media video generation fal sora veo comfyui seedance clip movie' },
   { tab:'media', label:'Media provider keys', hint:'API keys for image/video providers, stored in the encrypted vault', kw:'media image video key api vault openai google fal' },
+  /* A boss looking for this types "search", and until now the settings
+     search answered nothing because the panel was mounted nowhere. Both
+     halves of `search.requires()` live behind this one entry. */
+  { tab:'connections', label:'Web search', hint:'give coworkers a real [SEARCH:] tool — without it they can only fetch a URL you name', kw:'connections brave search web internet google lookup research news key api tool' },
   { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
@@ -296,6 +320,7 @@ function ConnectionsPanel() {
           );
         })}
       </div>
+      <BraveTab />
       <VaultTab />
     </div>
   );
