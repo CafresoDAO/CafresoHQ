@@ -7574,3 +7574,71 @@ The first draft of the fix shipped that last defect: `@Nova,`, comma
 included. The pinning test caught it before the commit did. Worth noting
 which one — the case written for the *ugliest* input, the one that felt
 like padding while I was typing it.
+
+### The office's own record called its coworker a liar for telling the truth
+
+Two brains again, and this time the flow a boss actually drives: task board
+→ assign → **START**. The task named two analyst URLs. Every page the
+coworker reached for refused it — Gartner 403, Forrester 404, McKinsey 403 —
+confirmed twice, once in `serve.py`'s request log and once by re-running the
+fetches by hand:
+
+    {"status": 403, "error": "HTTP 403: Forbidden", "text": "", "length": 0}
+
+Llama reported that accurately. The filed delivery's footer said:
+
+    - Read www.gartner.com/en/research/ai-agency-ai
+    - Read www.forrester.com/agentic-ai
+    - Read www.mckinsey.com/industries/…/agentic-ai
+
+Nothing was read. Zero bytes came back from any of them. Read top to bottom,
+the delivery shows a coworker claiming a 403 directly above the office's own
+record that the page was fine — so the boss concludes the coworker invented
+the error. **Every previous entry in this section is about the office's
+record correcting a coworker's prose. This is the first one where the record
+was the false statement and the prose was true.**
+
+What makes it worth the space is that it was already fixed. `failed` has
+been on the done event since 2026-08-13 — the "📁 Opened ./site" over "Not a
+directory: ./site" post-mortem — and `visitLine` has carried a `fail` tense
+since the same day, with the right verb already written for every prop. The
+chat card asks for it. The Workspace ledger asks for it. The receipts tray
+and the corkboard ask for it. Two places didn't: all three
+`toolVisits.push` sites dropped `ev.failed` before it could travel, and
+`workingNotes` asked for `'past'` unconditionally.
+
+So it is §3.1 one layer down, and it lands on the surface that can least
+afford it. The comment four lines above the bug already says so about the
+opposite error — *"the filed note is the one that outlives the session, so
+it least of all should be the surface that forgets"* — written about
+**under**-reporting the record, while the code beneath it **over**-reported
+the record the entire time. A rule stated in a comment is not a rule the
+code obeys, and the half you wrote the comment about is not the half that
+breaks.
+
+Two smaller repairs came out of the same drive:
+
+- `citesOutside` missed `(Gartner, 2027)`. It knew URLs and `Source:` tags,
+  and author-year is the most ordinary citation form in existence. A brief
+  came back with four of them, two dated a year that hasn't happened, on a
+  record that had consulted nothing — and the contradiction line stayed
+  silent because none of the four contained the word "source".
+- The gate for that line asked whether the record was **empty**. Three
+  refused fetches fill the record three rows deep and consult nothing. The
+  question is whether any trip arrived, not whether any was attempted.
+
+And one new sentence the office can say without judging anybody: a citation
+dated 2027, filed on 2026-08-14, cannot have been read. That is arithmetic,
+not an accusation, and it holds no matter what the record says — so unlike
+every other line in this section, it is not gated on one.
+
+A note on the detector's narrowness, because the fire test corrected me on
+it. I wrote that the lowercase-letter requirement in the author name is what
+keeps `(Q3, 2026)` out. It isn't — the name pattern admits no digits at all,
+and that is what excludes `Q3` and `FY24`. The lowercase rule governs
+something else: it drops bare acronyms, so `(HBR, 2026)` and `(IEEE, 2024)`
+are real citations this detector misses. Deliberate, same trade as the rest
+of the section — a miss falls back to the passive footer, a false alarm has
+nothing beneath it — but worth writing down as a miss rather than leaving
+it to read like a win. The arm that relaxed the wrong rule changed no
+behaviour at all, which is the only reason I found out.

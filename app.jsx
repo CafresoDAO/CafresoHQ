@@ -2014,8 +2014,13 @@ ${d.text}` : d.text,
           /* Collected here for the same reason the task path collects them:
              a tool that RAN leaves an echo, and the echo has to come out of
              the visible reply. Only the task path did this, so the most-used
-             route in the office had the weakest cleaning. */
-          if (ev.echo) toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
+             route in the office had the weakest cleaning.
+
+             `failed` travels with the visit — all three collection points
+             dropped it, so the filed note had no way to tell a page that was
+             read from one that answered 403, and wrote "Read" for both. If
+             you add a fourth site, carry it. */
+          if (ev.echo) toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
           if (ev.phase === 'dm') {
             dmQueue.push({ to: ev.arg, body: ev.body });
           } else if (ev.phase === 'spawn-subagent') {
@@ -3465,7 +3470,7 @@ ${d.text}` : d.text,
                visit on the delegate path threw a ReferenceError inside the
                onTool callback and no visit block was ever attached here.
                Found by eslint no-undef, not by looking. */
-            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
+            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
             attachVisit(setChat, agentId, ev);
             /* Filed on `done`, not `start`. This line went into the activity
                feed the instant the call was ISSUED, already in the past tense
@@ -3981,7 +3986,7 @@ ${d.text}` : d.text,
             onUpdateAgent(agent.id, { task: visitLine(ev.name, ev.arg, 'now', 24) || visitPlace(ev.name, 'now') });
             pulseGraph(ev, agent);
           } else if (ev.phase === 'done') {
-            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
+            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
             /* The visit renders as its own element on the message — it is
                no longer text in the bubble, so nothing the coworker types
                can look like the office reporting a trip it never made. */

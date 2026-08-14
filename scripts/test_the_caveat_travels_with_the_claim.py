@@ -167,8 +167,29 @@ def main():
     # floor's whole visit vocabulary (visitLine -> visitSubject -> ...), and
     # the only thing this guard asks of it is empty or not, which a two-line
     # stand-in answers exactly as well. `workingFn` exists for this.
+    #
+    # 2026-08-14: `citesOutside` grew a third shape (author-year, after it
+    # missed four "(Gartner, 2027)"s on an empty record) and started closing
+    # over two more module constants. This scope went undefined and the
+    # harness died before printing a single FAIL, which reads as "not
+    # pinned". Lift them, don't stub them -- MONTH is the guard that keeps
+    # "(January, 2026)" from being read as a source, and a stand-in for it
+    # would let this pass while the app cried wolf at a date.
+    lifts = [
+        ('OWN_HEAD', re.search(r"const OWN_HEAD = new RegExp\(.*?'i'\);", artifacts, re.S)),
+        ('MONTH', re.search(r'^const MONTH = .*$', artifacts, re.M)),
+        ('AUTHOR_YEAR', re.search(r'^const AUTHOR_YEAR = .*$', artifacts, re.M)),
+    ]
+    for label, hit in lifts:
+        check(f'{label} is still where the detector keeps it', bool(hit),
+              'citesOutside closes over it; a rename here kills the node '
+              'harness instead of failing a check')
+    if not all(hit for _, hit in lifts):
+        print()
+        print('FAILED (%d): %s' % (len(FAILS), ', '.join(FAILS)))
+        return 1
     scope = '\n'.join([
-        re.search(r"const OWN_HEAD = new RegExp\(.*?'i'\);", artifacts, re.S).group(0),
+        *(hit.group(0) for _, hit in lifts),
         brace_lift(artifacts, 'function citesOutside(text) {'),
         'const workingStub = (visits) => (visits || []).map(v => "- " + v.name);',
         brace_lift(runtime, 'function unverifiedSources(text, visits, citesFn, workingFn) {'),

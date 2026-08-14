@@ -124,7 +124,23 @@ function workingNotes(visits) {
        The live surfaces already fell back to the floor's placard; the filed
        note is the one that outlives the session, so it least of all should
        be the surface that forgets. */
-    const line = visitLine(v.name, v.arg, 'past') || visitPlace(v.name, 'past');
+    /* Past tense only for a trip that arrived. `failed` has been on the done
+       event since 2026-08-13, when the office was caught captioning a failed
+       DIR_LIST "📁 Opened ./site" above its own "Not a directory: ./site" —
+       and every live surface was taught to read it. This one was not, so the
+       filed note went on writing "Read www.gartner.com/…" for a page that
+       answered 403.
+
+       Measured 2026-08-14: a brief asked for analyst citations fetched
+       Gartner, Forrester and McKinsey, and got 403, 404, 403 — zero bytes,
+       confirmed against serve.py's own log and re-run by hand. The coworker
+       said so plainly in its reply. The footer beneath it listed all three
+       as Read, so the office's record called its own coworker a liar for
+       telling the truth. The note four lines up says the filed note least of
+       all should be the surface that forgets; it was forgetting the other
+       half of the same fact. */
+    const tense = v.failed ? 'fail' : 'past';
+    const line = visitLine(v.name, v.arg, tense) || visitPlace(v.name, tense);
     const row = `- ${line}`;
     if (seen.indexOf(row) === -1) seen.push(row);
   }
@@ -164,6 +180,33 @@ const OWN_HEAD = new RegExp('\\b(?:' + [
   'unsure', 'not sure', 'none', 'n/a',
 ].join('|') + ')\\b', 'i');
 
+/* The third shape, added 2026-08-14 after the guard above missed the most
+   ordinary citation form there is. A research brief came back with four
+   attributions — `(Gartner, 2027)`, `(Forrester, 2026)`, `(McKinsey, 2026)`,
+   `(Gartner, 2027)` — two of them wrapping quoted text, on an empty record.
+   Not one contains the word "source", so `citesOutside` returned false and
+   the extra line never printed. The footer said "Nothing opened, saved or
+   looked up" 200 words below the first citation and left it at that.
+
+   Author-year is a citation by construction: a proper name and a year in one
+   parenthesis points at a document. Three things keep the name narrow, and
+   they are not interchangeable — a fire arm that relaxed the wrong one
+   changed no behaviour at all, which is how the first draft of this comment
+   was caught crediting the wrong rule:
+
+   - no digits in the name, which is what actually excludes "(Q3, 2026)" and
+     "(FY24, 2025)";
+   - not a month, which excludes "(January, 2026)" — a date, not a source;
+   - at least one lowercase letter, which excludes bare acronyms.
+
+   That last rule costs real citations: "(HBR, 2026)" and "(IEEE, 2024)" are
+   missed. Deliberate, and the trade is the same one the rest of this section
+   makes — a miss falls back to the passive footer, which is the standing
+   mitigation, while a false alarm on an honest reply has nothing beneath
+   it. */
+const MONTH = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+const AUTHOR_YEAR = /\(\s*([A-Z][A-Za-z&.'-]*[a-z][A-Za-z&.'\- ]{0,38}?)\s*,\s*((?:19|20)\d{2})\s*\)/g;
+
 function citesOutside(text) {
   const s = String(text || '');
   if (/\bhttps?:\/\/[^\s)]|\bwww\.[a-z0-9-]+\.[a-z]{2}/i.test(s)) return true;
@@ -173,7 +216,36 @@ function citesOutside(text) {
     const named = m[1].trim();
     if (named && !OWN_HEAD.test(named)) return true;
   }
+  AUTHOR_YEAR.lastIndex = 0;
+  while ((m = AUTHOR_YEAR.exec(s)) !== null) {
+    const named = m[1].trim();
+    if (named && !MONTH.test(named) && !OWN_HEAD.test(named)) return true;
+  }
   return false;
+}
+
+/* A cited year that has not happened yet, which is a different and much
+   harder fact than "the record is empty". Two of the four attributions above
+   read `(Gartner, 2027)` and were filed on 2026-08-14. No record, empty or
+   full, explains reading a document dated next year — a coworker that DID
+   search still cannot have found it. So this line is not conditional on the
+   visit list, and it is not a judgement: the office states the year it was
+   handed and the year it is, and stops there.
+
+   Only years already inside a citation count. A forecast in prose — "adoption
+   should reach 50% by 2030" — is an ordinary sentence, and a detector that
+   read every four-digit number would flag every roadmap the office ever
+   writes. */
+function citedFutureYears(text, now) {
+  const year = (now || new Date()).getFullYear();
+  const found = [];
+  let m;
+  AUTHOR_YEAR.lastIndex = 0;
+  while ((m = AUTHOR_YEAR.exec(String(text || ''))) !== null) {
+    const n = Number(m[2]);
+    if (!MONTH.test(m[1].trim()) && n > year && found.indexOf(n) === -1) found.push(n);
+  }
+  return found.sort();
 }
 
 /* The office runs on the boss's clock. `toISOString()` stamps UTC, so a
@@ -215,9 +287,24 @@ function buildDelivery(task, agent, text, visits) {
   /* An empty record under a reply that names sources is a contradiction the
      office can state, not just make available — see citesOutside above. The
      wording reports what the office observed; it does not judge the reply. */
-  const emptyRecord = ['- Nothing opened, saved or looked up for this one.'];
-  if (!working.length && citesOutside(body)) {
-    emptyRecord.push('- The note above mentions sources, but nothing was opened or searched while it was written — treat those as recalled, not checked.');
+  const record = working.length
+    ? working.slice()
+    : ['- Nothing opened, saved or looked up for this one.'];
+  /* "Nothing was read" and "the record is empty" are different facts, and
+     the gate used to be the second one. Three refused fetches fill the
+     record three rows deep and still consult nothing, so a brief citing
+     sources on top of them slipped past a check written for exactly that
+     case. What matters is whether any trip arrived. */
+  const consulted = (visits || []).some(v => v && v.name && !v.failed);
+  if (!consulted && citesOutside(body)) {
+    record.push(working.length
+      ? '- Every source this run tried to open was refused, so nothing above was checked against one — treat the citations as recalled.'
+      : '- The note above mentions sources, but nothing was opened or searched while it was written — treat those as recalled, not checked.');
+  }
+  const ahead = citedFutureYears(body);
+  if (ahead.length) {
+    record.push(`- ${ahead.join(' and ')} ${ahead.length > 1 ? 'have' : 'has'} not happened yet`
+      + `, so nothing published ${ahead.length > 1 ? 'in those years' : 'that year'} can have been read — check ${ahead.length > 1 ? 'those citations' : 'that citation'} before relying on it.`);
   }
   const content = [
     `# ${(task && task.title) || 'Delivery'}`,
@@ -242,7 +329,7 @@ function buildDelivery(task, agent, text, visits) {
        disagree. Same principle as the unclosed-write guard: an absence loses
        against a confident sentence, so turn the absence into a statement. */
     '', '---', '', '**Working**', '',
-    ...(working.length ? working : emptyRecord),
+    ...record,
     '',
   ].join('\n');
   return { path: `${home}/${slug}.md`, content, kind: 'note' };
