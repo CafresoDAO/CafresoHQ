@@ -272,10 +272,30 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                     {t.result && (() => {
                       const by = agents.find(x => x.id === t.completedBy) || null;
                       const when = finishedLabel(t);
+                      /* A result is not a finish. This header keyed off the
+                         mere PRESENCE of `t.result`, so a card that came back
+                         empty — parked in `doing`, wearing the ✋ snag line
+                         and its reason three lines above — still carried
+                         `✓ finished` over the very text explaining that it
+                         had not. Watched on the board: "✋ hit a snag · just
+                         now / ✋ no file reached the cabinet …" and then
+                         "✓ finished" directly beneath it.
+
+                         `t.status === 'done'` is the gate the two surfaces
+                         above already use, and deliberately not `!== 'doing'`
+                         for the reason recorded there: the reload scrub sends
+                         doing cards back to `inbox` without clearing this
+                         field. When it is not a finish the text is still
+                         worth showing — it is what came back — so the label
+                         says that instead, and takes the muted treatment its
+                         neighbours use for a card that is not progressing. */
+                      const finished = t.status === 'done';
                       return (
                         <div>
-                          <div className="tc-worklog">
-                            ✓ {by ? `${by.name} finished this` : 'finished'}
+                          <div className={'tc-worklog' + (finished ? '' : ' is-idle')}>
+                            {finished
+                              ? `✓ ${by ? `${by.name} finished this` : 'finished'}`
+                              : `· ${by ? `${by.name} came back with this` : 'what came back'}`}
                             {when ? ` · ${when}` : ''}
                           </div>
                           <div className="tc-detail" style={{ marginBottom: 0 }}>

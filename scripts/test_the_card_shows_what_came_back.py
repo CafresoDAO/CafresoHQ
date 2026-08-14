@@ -61,7 +61,7 @@ def run(js):
     return json.loads(proc.stdout.strip().split('\n')[-1])
 
 
-def block(src, marker, span=1400):
+def block(src, marker, span=3200):
     """The JSX around `marker`, for the source-level assertions. features.jsx
     cannot be run here without a JSX transform, so the render checks are
     reads of the real source rather than measurements of real output — the
@@ -69,7 +69,13 @@ def block(src, marker, span=1400):
 
     Returns '' rather than raising when the marker is gone: deleting the
     whole block is the most likely regression, and a traceback there would
-    replace every named check below with a stack trace."""
+    replace every named check below with a stack trace.
+
+    `span` is a fixed character window, which makes it a comment budget as
+    much as a code window — three checks here went red the day a comment was
+    added above the JSX they read, having measured nothing but the distance
+    to the closing paren. Widened rather than made clever; if it bites a
+    third time the honest fix is to balance brackets instead of counting."""
     i = src.find(marker)
     if i < 0:
         return ''

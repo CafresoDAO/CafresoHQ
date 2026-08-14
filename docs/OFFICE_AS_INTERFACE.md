@@ -7904,3 +7904,120 @@ The through-line holds. A surface may only assert what detection established
 — and this tick's corollary is that detection establishing something once is
 not enough. If the same fact drives three claims, all three have to read it,
 or the two that do become alibis for the one that doesn't.
+
+---
+
+## One missing bracket put machine syntax in the filing cabinet
+
+Carried over from the last tick as an observation, and it turned out not to
+be reproducible as recorded — the cleaner handles every canonical shape of a
+lone `[VAULT_NEW: …]`. What it does not handle is the shape that was actually
+on the wire, and finding that needed a tool this repo did not have.
+
+**A canned brain.** Making a real model emit an exact string on demand is not
+possible; asked three different ways to return nothing, the LAN model
+narrated its own silence twice and hallucinated a vault marker once. So the
+*brain* got mocked, never the office: eighty lines of OpenAI-compatible
+server that answers every completion with the contents of `reply.txt`. The
+front desk detects it, the boss hires it like anyone else, and every honesty
+surface downstream can now be driven byte for byte. This is the second tick
+running that the hard part was controlling the input, and it is worth keeping.
+
+With it, the measured reply was:
+
+    [VAULT_NEW: Notes/scratch.md
+
+An opener whose **bracket** never closed. Three cleaners stood between that
+and the boss, and all three want a `]` before they will act — the closed-block
+pass, the lone-opener pass, and `ORPHAN_TAG_RE`. It walked through all of them.
+
+Then, in order:
+
+1. the board went green, because there *was* content to certify
+2. the office filed it, and the cabinet gained
+   `Deliveries/save-a-note-about-sourdough-to-the-vault.md` whose entire body,
+   between the title and the Working footer, is that broken marker
+3. filing set `deliveryFiled`, which puts VAULT_NEW into `skipKinds` — so the
+   office suppressed *"no file reached the cabinet"* on the strength of having
+   filed the very thing the note was about
+4. the card printed `✓ finished` over the top of it
+
+Four surfaces from one character, and the deepest of them is the file. Chat
+scrolls, the board gets cleared, and a .md sits in the cabinet until someone
+opens it in a month and reads machine syntax under their own task title.
+
+### The fix took two passes, and the first one changed nothing
+
+Pass one taught `stripBlocks` the whole-line unclosed-bracket opener. Fifteen
+checks green, ten fire arms caught, suite green — and the live office produced
+exactly the same cabinet file as before.
+
+`visibleReply` ends with `return raw.trim()`. When the strip leaves nothing,
+it hands back the original. Every cleaning pass above that line is discarded
+in precisely the case where it did the most work.
+
+That fallback is not an accident and its comment says why: *"if it wasn't
+protocol, it was text, and text is the boss's to see"* — written for a typo'd
+`[ACK: banana: …]`, which `stripAcks` deletes and `extractAcks` refuses to
+recognise, and which would otherwise erase a coworker's whole reply. Two
+doors already sit above it for markers the office *does* understand: one for
+a pure hand-off, one for a pure approval ask. Each was cut one marker at a
+time, after the same bug was watched live.
+
+So the fix is a third door, on the same principle rather than a new one:
+
+```js
+if (unsentBlocks(raw)) return '';
+```
+
+If `unsentBlocks` has a sentence for what consumed the reply, the office
+understands it exactly, and printing the syntax beside that sentence is
+showing the boss the machine's name for a failure already described in words.
+Reached only when nothing survived cleaning, so there is no prose to lose —
+and an empty reply is a case that became safe two ticks ago, when the card
+learned to park in `doing` and wear the guard's sentence as its reason.
+
+The typo'd ACK still comes through whole. So does a lone `[VAULT_READ: …]`,
+and so does `[BANANA_TIME: now`. The rule narrowed; it was not deleted.
+
+### And the sixth surface, found by looking at the fixed board
+
+With the card finally parked in `doing` and readable, it read:
+
+    ✋ hit a snag · just now
+    ✋ no file reached the cabinet — … Ask them to file it again.
+    ✓ finished
+
+That header keys off the presence of `t.result`, never its status. A result
+is not a finish. It now reads `· what came back` on anything that is not
+`done`, keeping the text — which is worth reading — and dropping the claim.
+Gated on `t.status === 'done'`, matching the two surfaces directly above it,
+and deliberately not `=== 'doing'`, for the reason recorded there: the reload
+scrub sends doing cards back to `inbox` with these fields intact.
+
+### What the tick cost in test-writing, which is the part worth remembering
+
+The first version of the pin tested `stripBlocks` in isolation, went green,
+and proved nothing about the product. Two fire arms aimed at the raw fallback
+both MISSED — the test never called `visibleReply` at all. Then the
+over-correction arm missed too, because both of its "must still survive"
+cases returned early and never reached the door they were meant to guard.
+
+Three separate ways of measuring the wrong thing, in one file:
+
+- testing the helper instead of the function that calls it
+- testing a function whose fixed 1400-character source window silently
+  excluded the code under test the moment a comment was added above it
+  (`test_the_card_shows_what_came_back.py`, widened, with a note)
+- testing a "must not change" case that never reaches the changed line
+
+Twenty-five checks and fifteen arms now, all caught. Verified live end to
+end: `DOING · 1` / `DONE · 0`, zero files in the cabinet, `outcome: snag`, no
+machine syntax on any surface — and then the same card restarted against a
+normal reply, went green, and filed real prose, which is the happy path the
+guard's own "start it again" sentence points at.
+
+The through-line holds. A surface may only assert what detection established
+— and this tick's corollary is about the tests rather than the product: a
+green test proves the thing it called. If that is not the thing the boss
+touches, it has established nothing, however many cases it runs.

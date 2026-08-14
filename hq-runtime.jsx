@@ -658,7 +658,39 @@ function stripBlocks(text) {
   const lone = new RegExp(
     '^[ \\t]*(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?' +
     '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)', 'gim');
-  return String(text || '').replace(re, '').replace(lone, '');
+  /* Third pass: the opener whose BRACKET never closed.
+
+     Both passes above need a `]` to match, and so does ORPHAN_TAG_RE, so a
+     marker that never closed its bracket walked through all three. Measured
+     end to end against a canned brain, one task, reply exactly:
+
+       [VAULT_NEW: Notes/scratch.md
+
+     The board went green. The stored deliverable was that string. The office
+     then FILED it, and the boss's cabinet gained
+     `Deliveries/save-a-note-about-sourdough-to-the-vault.md` whose entire
+     body — between the title and the Working footer — is a broken machine
+     marker. And because filing succeeded, the task path passed VAULT_NEW in
+     `skipKinds`, so the one guard that would have said "no file reached the
+     cabinet" stayed quiet: the office suppressed its own warning on the
+     strength of having filed the warning's subject.
+
+     One missing `]`, four surfaces wrong, and the deepest of them is a file
+     in the cabinet that the boss will open in a month. Fixing it here fixes
+     all four, because the other three all read what this returns.
+
+     WHOLE-LINE, which is the same bound ORPHAN_TAG_RE chose and for the same
+     reason. The `lone` pass above can afford to be looser because a closed
+     bracket is already strong evidence of intent; with no `]` at all, the
+     text is likelier to be prose that happens to mention a marker. So the
+     line must OPEN with the marker (a label ahead of it aside, same litter
+     rule as above) and reach end-of-line without ever closing — which is
+     what `[^\]\n]*$` says. `Use [DM_TO: Mika] to reach someone.` is
+     untouched, having both a `]` and prose before the bracket. */
+  const broken = new RegExp(
+    '^[ \\t]*(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?' +
+    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*$', 'gim');
+  return String(text || '').replace(re, '').replace(lone, '').replace(broken, '');
 }
 
 /* ── A handoff that never left the building ───────────────────────────────
@@ -1139,6 +1171,31 @@ function visibleReply(text, selfName) {
   if (ask) {
     return `Asked for your stamp — "${ask}". It's waiting on your desk.`;
   }
+  /* Third door, same principle as the two above, and the one that decides
+     the measured case. The fallback's own rule — stated at the top of this
+     block — is that raw survives for markers the office did NOT understand:
+     "if it wasn't protocol, it was text, and text is the boss's to see."
+     A write marker that opened and never closed is the opposite. The office
+     understands it exactly: `unsentBlocks` is, at this moment, composing a
+     full sentence about it for the same reply ("no file reached the cabinet
+     — that one needs a closing tag … Ask them to file it again"). Printing
+     the syntax back beside that sentence is not showing the boss what their
+     coworker said; it is showing them the machine's name for a failure the
+     office is already describing in words.
+
+     Measured before this door existed, against a canned brain returning
+     exactly `[VAULT_NEW: Notes/scratch.md`: the strip removed it correctly,
+     this fallback put it straight back, the board went green, and the office
+     FILED the marker — the boss's cabinet gained a .md whose whole body was
+     that string. The filing then set `deliveryFiled`, which suppressed the
+     very guard quoted above. Every one of those four follows from this line
+     handing back what the cleaner had just removed.
+
+     Returning empty is safe in a way it was not a few days ago: an empty
+     reply is now a case the office handles honestly rather than silently —
+     the card parks in `doing` and wears the guard's sentence as its reason.
+     Reached only when `cleaned` is empty, so there is no prose to lose. */
+  if (unsentBlocks(raw)) return '';
   if (!acks.length) return raw.trim();
   const note = String(acks[acks.length - 1].note || '').trim();
   return note || 'still working on it';
