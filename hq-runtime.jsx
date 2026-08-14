@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
-import { officeDate, officeStamp } from './app/artifacts.jsx';
+import { citesOutside, officeDate, officeStamp, workingNotes } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -890,6 +890,40 @@ function unsentBlocks(text, skipKinds) {
   return notes.length ? notes.join('\n') : null;
 }
 
+/* ── Sources named on a run that opened nothing ───────────────────────────
+   `buildDelivery` in app/artifacts.jsx already knows how to say this, and
+   says it well: when a delivery's Working record is empty and the prose
+   names outside sources, it writes "…nothing was opened or searched while
+   it was written — treat those as recalled, not checked" into the filed
+   note, directly beneath the claim.
+
+   It says it in exactly one place. Measured on a fresh office, first task,
+   local Llama, no search key: the brief came back citing CB Insights,
+   Gartner and Clarity, none of them opened. The filed .md carried the
+   caveat. The chat bubble the boss reads first did not. The task card they
+   open from DONE did not. The activity row's detail did not. Three of the
+   four surfaces showed the citations alone, and the one that told the
+   truth is the one you have to go looking for.
+
+   So it belongs here instead — this is the function whose whole job is
+   being the single copy, and whose own comment records the last two times
+   a guard lived on one path out of three. Chat gets it through `flush.note`
+   and the activity row through `honesty.join(' ')`, on all three dispatch
+   paths, for free.
+
+   `visits` absent is NOT the same as `visits` empty. A path that does not
+   count what it opened knows nothing about whether anything was opened,
+   and accusing a coworker of inventing sources on that basis is the §7
+   failure pointed the other way — the same reason `citesOutside` is
+   deliberately narrow. Unknowable means say nothing. */
+function unverifiedSources(text, visits, citesFn, workingFn) {
+  if (!Array.isArray(visits)) return null;
+  if ((workingFn || workingNotes)(visits).length) return null;
+  return (citesFn || citesOutside)(text)
+    ? '_(this names sources, but nothing was opened or searched while it was written — treat those as recalled, not checked.)_'
+    : null;
+}
+
 /* Every "the coworker claimed something the office did not do" check, run
    once, in one place.
 
@@ -930,6 +964,7 @@ function honestyNotes(raw, opts) {
   push(unsentBlocks(raw, o.skipKinds));
   push(unsentAsk(extractAcks(raw).map(a => a.state), delivered));
   push(fabricatedRelay(raw, delivered, o.roster || []));
+  push(unverifiedSources(raw, o.visits));
   return out;
 }
 
@@ -2884,7 +2919,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

@@ -1931,7 +1931,8 @@ ${d.text}` : d.text,
        turn where the office had just told the boss "nothing was saved to
        their memory" is the office's own ledger contradicting the office. */
     const honestyFor = (raw) => (HQ.honestyNotes
-      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name })
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name,
+          visits: toolVisits })
       : []);
     let honesty = null;
     /* Run-scoped, because the guard after the fan-out loop cannot ask the
@@ -3424,12 +3425,18 @@ ${d.text}` : d.text,
     let usedTokens = 0;
     let buf = '';
     const dmQueue = [];
+    /* The third path never kept this list. It did not need one — nothing
+       here files a delivery, so there was no Working footer to build — but
+       that is also why the sources guard could not run on the one path
+       where the boss has no filed note to fall back on. */
+    const toolVisits = [];
     /* Same pair as the @mention path: the guards are shown after the
        try/finally and needed before it, by the row that says the turn
        finished. `buf` is safe to read here — unlike the @mention path it is
        never rewritten with the cleaned text on this dispatch. */
     const honestyFor = (raw) => (HQ.honestyNotes
-      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: a.name })
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: a.name,
+          visits: toolVisits })
       : []);
     let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentId);
@@ -3458,6 +3465,7 @@ ${d.text}` : d.text,
                visit on the delegate path threw a ReferenceError inside the
                onTool callback and no visit block was ever attached here.
                Found by eslint no-undef, not by looking. */
+            toolVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo });
             attachVisit(setChat, agentId, ev);
             /* Filed on `done`, not `start`. This line went into the activity
                feed the instant the call was ISSUED, already in the past tense
@@ -3931,7 +3939,7 @@ ${d.text}` : d.text,
        that are telling the boss the truth. */
     const honestyFor = (raw) => (HQ.honestyNotes
       ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name,
-          skipKinds: deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined })
+          skipKinds: deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined, visits: toolVisits })
       : []);
     let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentMsgId);
@@ -4040,11 +4048,22 @@ ${d.text}` : d.text,
         deliveryFiled = !!filedPath;
       }
       honesty = honestyFor(buf);
+      const honestyText = honesty.length ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n' : '';
+      /* The card in DONE is the fourth surface, and the one the boss opens
+         on purpose days later when the chat has scrolled away and the
+         ticker has rolled over. It stored the body alone, so a guard that
+         fired in chat and on the activity row went quiet on the record that
+         outlives both. Same prefix, same shape as the row above — the point
+         of these notes is to sit WITH the claim, and a card is where the
+         claim gets re-read. Patched here rather than at the setTasks above
+         because `deliveryFiled` has to settle first for skipKinds. */
+      if (honestyText) {
+        setTasks(prev => prev.map(t => t.id === taskId
+          ? { ...t, result: honestyText + cleanBuf.slice(0, 600) } : t));
+      }
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId,
         text: doneLine(task.title, honesty.length),
-        detail: (honesty.length
-          ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n'
-          : '') + cleanBuf.slice(0, 600) });
+        detail: honestyText + cleanBuf.slice(0, 600) });
       recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });
       say(`${agent.name} completed "${task.title}"`, 'DONE');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);

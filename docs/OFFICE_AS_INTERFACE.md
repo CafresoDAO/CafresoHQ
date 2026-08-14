@@ -7227,3 +7227,83 @@ carries an entry in `CAN_DO_NEEDS`. The next tool that gets a condition
 bolted on fails this without anyone remembering to come back. A second arm
 holds `CAN_DO` and `NEVER_WIRED_TOOL_IDS` in step, since drifting apart is
 the whole of what happened here.
+
+## The office caught the lie and told one surface out of four
+
+Fourth tick on the same fault line, arriving from the opposite direction.
+The last three were surfaces asserting more than detection established.
+This one is detection establishing something true, correctly, in careful
+language — and then only one surface saying it.
+
+Driven end to end on a fresh office: hire Llama (local Ollama, the free
+one), take the starter Research brief, watch it land. The brief asks in so
+many words: *"Say where each finding came from — if you searched, name the
+source; if it came from what you already know, say so plainly. Never
+invent a citation."* What came back cited CB Insights, Gartner and
+Clarity. The run made zero tool calls. Nothing was opened.
+
+**The office knew, and had already written the sentence.**
+`buildDelivery` pairs an empty Working record with `citesOutside(body)`
+and puts the caveat in the filed note, directly beneath the claim:
+"nothing was opened or searched while it was written — treat those as
+recalled, not checked." It was there, correct, in the `.md`.
+
+It was in nothing else.
+
+| surface | what the boss sees | caveat |
+|---|---|---|
+| chat bubble | first thing, live | ✗ |
+| task card in DONE | opened days later | ✗ |
+| activity row detail | the office's ledger | ✗ |
+| filed `.md` | if they go looking | ✓ |
+
+The one surface that told the truth is the one you have to go looking for,
+and it is the last one a boss reads. The three that come first showed a
+confident sourced-looking brief with three plausible firm names on it.
+§4's rule is that a claim and the record that contradicts it must sit
+together, which is exactly why the footer is written even when empty — and
+then the pairing held on one surface out of four.
+
+The fix moves the judgement into `honestyNotes`, whose own comment is a
+record of this failure happening twice already: *"Three dispatch paths
+each grew their own copy of this block … copies drift."* From there chat
+gets it via `flush.note` and the activity row via `honesty.join(' ')`, on
+all three paths, for nothing. The DONE card is patched beside the row that
+already carried it — **the card outlives the chat and the ticker**, which
+makes it the surface that least deserved to be the quiet one.
+
+Two things the fix is careful about, both of which are the same rule as
+the last three ticks pointed the other way.
+
+**No visit list is not an empty visit list.** The delegate path never kept
+one — it files nothing, so it had no footer to build — and handing the
+guard an absence there would have had the office accuse a coworker of
+inventing sources on the strength of not having looked. `visits` absent
+returns null before anything else is evaluated. Unknowable means say
+nothing, in this direction too. The path now keeps a list, so the guard
+has something real to read.
+
+**The detector stays narrow, and a live run proved why.** A second task
+came back "a 2020 study by Gajendran & Harrison found…" — a prose
+citation, no `Source:` tag — and the guard correctly stayed silent.
+`citesOutside` ignores that shape on purpose, because widening to catch it
+means firing on ordinary sentences, and a false accusation has no
+fallback while a miss still has the passive footer. Confirmed rather than
+assumed, and pinned as its own arm so nobody "improves" it later.
+
+Verified on a third real run: `(Source: Buffer)`, zero tool calls, and the
+caveat present in the chat bubble, the DONE card and the activity detail —
+composed after the pre-existing unclosed-`MEMORY_WRITE` note, which fired
+on the same reply for an unrelated and equally real reason.
+
+**Seven arms, seven passes**, each reverted separately. Two test anchors
+had to be rewritten first: the surface checks were anchored on the first
+`honestyFor(buf)` in the file, which is the *delegate* path, so they were
+cheerfully asserting about the wrong function; and the visit-list checks
+looked only forward from each call site, while two of the three paths
+declare the array above it. Both were passing for the wrong reason before
+the fire test made them fail for the right one.
+
+Recorded, not fixed: the office ticker duplicates its track for the
+marquee loop and the second copy carries no `aria-hidden`, so a screen
+reader announces every event on the floor twice.
