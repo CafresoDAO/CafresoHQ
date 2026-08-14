@@ -217,24 +217,45 @@ function ConnectionsPanel() {
           const live = isDaemon ? det.version === 'reachable' : (!!det.installed && !broken);
           const label = { 'claude-code': 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI',
                           ollama: 'Ollama', lmstudio: 'LM Studio' }[id];
+          /* The daemon branch used to read "not answering — start it and
+             reopen this" whenever `det.installed`. For this driver family
+             `installed` is `bool(base_url)` and the base URL has a default,
+             so it is true on every machine ever — including one where the
+             software was never installed. Measured here: no LM Studio.app,
+             no `lms` on PATH, and the office instructing me to start it.
+             The other branch is unreachable.
+
+             Nothing in the detection path can tell "installed and stopped"
+             apart from "never installed", so the sentence must not pick
+             one. It says what was observed — a configured address, nothing
+             answering — and leaves both remedies open. */
           const offText = broken
             ? `installed, but it ${det.probeError} — a sign-in will not fix it`
             : isDaemon
-              ? (det.installed ? 'not answering — start it and reopen this' : 'not running on this machine')
+              ? (det.installed
+                  ? 'nothing answered — start it, or set it up if you have not yet'
+                  : 'no address configured for it')
               : 'not found on this machine';
           return (
             <div className="row-knob" key={id}>
               <div>
                 <div className="lbl">{label}</div>
-                <div className="sub" title={(broken && det.probeDetail) || undefined}>
+                <div className="sub"
+                     title={(broken && det.probeDetail) || (isDaemon && det.detail) || undefined}>
                   {live
-                    ? (det.authenticated ? 'found · signed in' : 'found · needs a sign-in before its first task')
+                    /* A local daemon has no account to sign in to — its
+                       `authenticated` is hardcoded true for exactly that
+                       reason — so "signed in" describes a step that does
+                       not exist. What was established is that it answered. */
+                    ? (isDaemon ? 'answering on this machine'
+                       : det.authenticated ? 'found · signed in'
+                       : 'found · needs a sign-in before its first task')
                     : offText}
                 </div>
               </div>
               <span className="tiny">
-                {live ? (det.authenticated ? '● ready' : '● sign in')
-                      : broken ? '○ broken' : (isDaemon ? '○ offline' : '○ absent')}
+                {live ? (isDaemon ? '● running' : det.authenticated ? '● ready' : '● sign in')
+                      : broken ? '○ broken' : (isDaemon ? '○ no answer' : '○ absent')}
               </span>
             </div>
           );

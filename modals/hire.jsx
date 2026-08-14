@@ -49,15 +49,28 @@ const FRONT_DESK = {
 
      Now in the same register as the rest. The tools it actually holds
      (web + files + shell) are what the card's stat bars and permission
-     chip already say. */
+     chip already say.
+
+     The found line was still making two claims nothing had checked:
+     "in your container" (on this machine Hermes is a binary in
+     ~/.local/bin and a config in ~/.hermes — no container anywhere in the
+     detection path) and "ready to work" (printed over a gateway that was
+     measurably down). Both replaced by what detect() actually establishes.
+
+     `service: true` marks the runtimes that have to be RUNNING to take
+     work, as opposed to a program that has to be repaired. It picks the
+     remedy sentence on a card that isn't ready — telling someone to
+     reinstall a service they only needed to start is the same wrong
+     diagnosis in a different costume. */
   'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Generalist', color: 'sky',
                    model: 'hermes:hermes-agent', tools: ['web', 'files', 'shell'], elevated: true,
-                   poweredBy: 'Nous Research', found: 'Already set up in your container — ready to work.' },
+                   service: true,
+                   poweredBy: 'Nous Research', found: 'Set up on this machine, with its gateway running.' },
   'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Generalist', color: 'teal',
-                   model: 'lmstudio:local-model', tools: ['web'],
+                   model: 'lmstudio:local-model', tools: ['web'], service: true,
                    poweredBy: 'LM Studio', found: 'Already running on this machine — cheap and tireless.' },
   'ollama':      { id: 'a_local_ollama', name: 'Llama', role: 'Generalist', color: 'sun',
-                   model: 'ollama:llama3.1', tools: ['web'],
+                   model: 'ollama:llama3.1', tools: ['web'], service: true,
                    poweredBy: 'Ollama', found: 'Already running on this machine — cheap and tireless.' },
   'openrouter':  { id: 'a_cloud_openrouter', name: 'OpenRouter', role: 'Generalist', color: 'rose',
                    model: 'openrouter:openai/gpt-oss-120b:free', tools: ['web'], cloud: true,
@@ -322,7 +335,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     {/* "ready to join" is a promise about every card below it,
                         so it cannot stand over one that will not start. */}
                     {deskCards.some(c => c.probeError)
-                      ? '— found on this machine · one of them needs fixing first'
+                      ? '— found on this machine · not all of them are ready'
                       : '— found on this machine, ready to join'}
                   </span>
                 </div>
@@ -332,14 +345,19 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   <div className="post-head">
                     <Sprite data={c.color} scale={2}/>
                     <div className="post-name">{c.name}</div>
-                    <span className="post-tag">{c.probeError ? "WON'T START" : 'FOUND'}</span>
+                    <span className="post-tag">
+                      {c.probeError ? (c.service ? 'NOT RUNNING' : "WON'T START") : 'FOUND'}
+                    </span>
                   </div>
                   <div className="post-role">{c.role}</div>
                   <div className="frontdesk-note" title={c.probeDetail || undefined}>
                     {c.probeError
                       ? `${c.name} is on this machine, but it ${c.probeError}. `
-                        + 'Signing in will not fix that — it needs repairing or '
-                        + 'reinstalling first. You can still hire them and try.'
+                        + (c.service
+                            ? 'Starting it is all it needs. You can hire them now '
+                              + 'and start it before their first task.'
+                            : 'Signing in will not fix that — it needs repairing or '
+                              + 'reinstalling first. You can still hire them and try.')
                       : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
                   </div>
                   <div className="post-meta">

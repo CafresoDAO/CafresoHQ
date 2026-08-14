@@ -370,7 +370,20 @@ class HermesDriver(OpenAICompatDriver):
         d.update({'installed': bool(bin_), 'authenticated': authed,
                   'auth': mech, 'detail': bin_ or d['detail']})
         if probe_version:
-            d['version'] = 'gateway up' if gateway_running() else ''
+            up = gateway_running()
+            d['version'] = 'gateway up' if up else ''
+            # Report a stopped gateway the same way a CLI reports a failed
+            # --version, so the surfaces need no hermes-shaped special case
+            # to say so. They had one, and it said the opposite: the front
+            # desk gated this runtime on the binary alone and printed
+            # "Already set up in your container — ready to work" over a
+            # gateway that was measurably down. §3.1's rule that no runtime
+            # gets special treatment cuts both ways — being exempt from the
+            # liveness check is special treatment.
+            d['probeError'] = '' if up else 'is not running'
+            d['probeDetail'] = ('' if up else
+                                f'nothing is listening on '
+                                f'{HERMES_HOST}:{HERMES_PORT}')
         return d
 
     def configure(self, settings):

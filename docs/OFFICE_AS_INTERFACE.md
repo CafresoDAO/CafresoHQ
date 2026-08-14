@@ -6666,3 +6666,79 @@ reverting one arm at a time surfaced it.
 your container — ready to work", but detection only ever found a CLI
 binary at `~/.local/bin/hermes`. Nobody has checked the container claim.
 It is on this list until someone does.
+
+---
+
+## Two things the office asserted that nothing had checked
+
+**Hermes said it was ready over a gateway that was down.**
+
+`HermesDriver.detect()` has always measured the gateway — a loopback
+connect, `version = 'gateway up' if gateway_running() else ''`. Nothing
+read it. The front desk gated Hermes on the binary existing and printed a
+constant:
+
+    Hermes                                  [FOUND]
+    Already set up in your container — ready to work.
+
+Measured while that card was on screen: `version: ''` — the gateway was
+down. And there is no container anywhere in the detection path; on this
+machine Hermes is `~/.local/bin/hermes` plus `~/.hermes/config.yaml`. Two
+assertions, neither checked, one false at the moment it rendered.
+
+Its siblings are not treated this way — ollama and lmstudio are gated on
+exactly this kind of liveness probe. §3.1 says no runtime gets special
+treatment and names Hermes as the original mistake. An earlier pass fixed
+that card's *register* and left its *exemption*. Being excused from the
+liveness check is special treatment; it just reads as generosity.
+
+Rather than add a Hermes-shaped branch to the view, the driver now reports
+a stopped gateway through the same `probeError` the CLI drivers use, so
+the surfaces need no special case at all — which is the actual content of
+§3.1. New badge `NOT RUNNING`, distinct from `WON'T START`: one is a
+five-second fix and one is not, and a shared badge sends the boss to
+investigate the wrong one. `service: true` on the three runtimes that have
+to be *running* picks the remedy sentence, because telling someone to
+reinstall a service they only had to start is last entry's wrong diagnosis
+in a different costume.
+
+**Settings told me to start software I have never installed.**
+
+    LM Studio        not answering — start it and reopen this        ○ offline
+
+There is no LM Studio.app on this machine and no `lms` on PATH. That
+branch fires on `det.installed`, and for the local-daemon family
+`installed` is `bool(base_url)` — the base URL has a default, so it is
+true on every machine that has ever run this app. The other branch, "not
+running on this machine", was unreachable.
+
+Nothing in the detection path can separate "installed and stopped" from
+"never installed". The fix is not a better guess: the row now says what
+was observed — a configured address, nothing answering — and leaves both
+remedies open. Same pass caught the daemon rows reading "found · signed
+in" and "● ready"; a local daemon's `authenticated` is hardcoded true
+precisely because there is no account, so "signed in" named a step that
+does not exist.
+
+**Both are the same rule.** Last entry's was a wrong diagnosis stated
+confidently. These are claims stated confidently with nothing behind them
+at all. The rule that covers all three: *a surface may only assert what
+detection established, and a constant cannot carry a live fact.*
+
+**A test whose anchor was the fix.** Fire-test arm F reverted the badge to
+one word and came back MISS. The badge lift was keyed off
+`{c.probeError ? (c.service` — the very text the arm deletes — so the lift
+returned empty and the check was *skipped* rather than failed. Anchors now
+point at the element (`className="post-tag"`), not at the expression under
+test.
+
+The sibling test had the same disease from the other direction: it sliced
+from `settings.find("{live ? (det.authenticated ? '● ready'")`, an
+unrelated correction to that same ternary moved the text, `find` returned
+-1, and the slice silently became the last character of the file. Both
+tests now bound the region by what the code *is* — the list of runtimes
+the rows map over, to the start of the next panel.
+
+Three entries running, the recurring lesson is not about product code:
+*fire-test every arm separately, and when one comes back MISS, suspect the
+check before the fix.*

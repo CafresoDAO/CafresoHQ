@@ -283,9 +283,19 @@ const localDaemon = false;
                     + lifted + 'console.log(JSON.stringify({broken,live}));')
         check('a working CLI is still live in Settings', ok['live'] is True, ok)
 
-    tiny = settings[settings.find("{live ? (det.authenticated ? '● ready'"):][:260]
+    # The driver-row block: from the list of runtimes it maps over to the
+    # start of the next panel. Bounded by what the code IS rather than by a
+    # magic character count or the spelling of the expression under test —
+    # the first version anchored on the exact ternary, an unrelated edit to
+    # that same ternary moved it, `str.find` returned -1, and the slice
+    # quietly became the last character of the file.
+    _i = settings.find("['claude-code'")
+    _e = settings.find('cb-panel', _i) if _i >= 0 else -1
+    rows = settings[_i:_e] if _i >= 0 and _e > _i else ''
+    check('the Settings driver rows are still there', bool(rows),
+          'modals/settings.jsx')
     check('the status dot has a word for broken',
-          "'○ broken'" in tiny,
+          "'○ broken'" in rows,
           '"○ absent" is the wrong word for a program that is present')
 
     print()
