@@ -2675,7 +2675,35 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const enabledTools = await toolsForAgent(agent, { peers });
   const enabledNames = enabledTools.map(t => t.name).join(', ') || 'none';
 
-  const base = agent.systemPrompt || `You are ${agent.name}, a specialist coworker at CafresoHQ. Role: ${agent.role}. Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
+  /* Identity is not the job description, and `||` used to conflate them.
+
+     The NEW HIRE form asks for NAME and ROLE / TITLE in their own fields,
+     then pre-fills JOB DESCRIPTION with a generic line ("You are a helpful
+     coworker. Be concise and warm."). So EVERY hire made through that form
+     arrives carrying a systemPrompt — and a systemPrompt used to replace
+     the one sentence in the entire prompt that says who they are.
+
+     Measured in the meeting room, two coworkers, same question. Llama
+     (front desk, no systemPrompt, fell through to the default below):
+     "I'm Llama, Generalist." Nova (NEW HIRE form, ROLE / TITLE set to
+     "Head of Inbox Wrangling", job description left at the pre-filled
+     default): "I'm Nova, Web Specialist." The meeting had asked it to
+     answer "from your role's perspective". It was not being evasive —
+     nothing in its prompt had ever told it what its role was, so it made
+     one up, and the boss reads an invented job title in a room they are
+     moderating.
+
+     The office collected the name and the role in two dedicated fields
+     and then wrote a prompt that mentioned neither. So state identity
+     ALWAYS and let systemPrompt be what the form calls it: the job
+     description. Every OPENSWARM_ROSTER persona already opens with "You
+     are <Name>, the <Role>", so for the cast this restates rather than
+     contradicts; for the transient helper (app.jsx) and the assistant
+     hire it fills in a name they never had. */
+  const identity = `You are ${agent.name}, a specialist coworker at CafresoHQ. Role: ${agent.role}.`;
+  const base = agent.systemPrompt
+    ? `${identity}\n\n${agent.systemPrompt}`
+    : `${identity} Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
 
 FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`;
   const toolsNote = enabledTools.length

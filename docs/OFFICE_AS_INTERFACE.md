@@ -7374,3 +7374,75 @@ commas, which tore `...on the type field, not the model id` into two
 phantom entries and reported a correctly-pinned arm as WRONG REASON. It
 reads the `FAIL` lines directly now. **A summary parsed as data is a
 different thing from the data**, and I wrote the summary myself.
+
+---
+
+## The office asked for a name and a title, and told the coworker neither
+
+Set out (finally) to audit the multi-coworker path, and got there. Two
+Ollama-backed coworkers on a fresh office: Llama, hired at the front desk,
+and Nova, hired through **BRING IN A HELPER → NEW HIRE** with ROLE / TITLE
+set to *Head of Inbox Wrangling*. Seated them both in the Meeting Room and
+asked one question: *name ONE risk in launching a paid product with only
+local models — one sentence each, and say who you are.*
+
+> **Llama:** I'm Llama, Generalist. …
+>
+> **Nova:** I'm Nova, **Web Specialist**. …
+
+Nova is not a Web Specialist. Nobody had ever called it that. And the
+meeting's own prompt had just asked each attendee to answer *"from your
+role's perspective"* — the office asked for something it had never
+supplied, and got a plausible invention back, in a room the boss is
+moderating.
+
+Same brain, both of them. The difference is the door they came in by.
+
+```js
+const base = agent.systemPrompt || `You are ${agent.name}, … Role: ${agent.role}. …`
+```
+
+Llama carries no `systemPrompt`, so it fell through to the default — **the
+one and only sentence in the entire prompt that says who they are**. Nova
+carries one, because the NEW HIRE form *pre-fills* the JOB DESCRIPTION box
+with `You are a helpful coworker. Be concise and warm.` So it is not "a
+boss who wrote a persona" that loses their identity. It is **every single
+hire made through the only path to a custom coworker**, by default, with
+nothing on screen to suggest it.
+
+The office was not short of facts. The form asks for NAME and ROLE / TITLE
+in two dedicated fields. It stores both on the agent. It prints them on
+the desk plate, the seat card, and the chair the coworker is sitting in
+while it invents a different job title. Then it wrote a prompt that
+mentioned neither. **Identity is not the job description, and `||` had
+quietly decided it was.**
+
+The fix states identity always and lets `systemPrompt` be what the form
+calls it — the job description, appended. Measured after, same room, same
+question: *"My name is Nova, Head of Inbox Wrangling at CafresoHQ."*
+
+Two halves of this are equally easy to get wrong later, so both are
+pinned. A fix that swapped `||` for the default alone would name the
+coworker correctly **and silently delete everything the boss typed** — so
+the brief has to survive, and the roster personas' briefs with it. And the
+default branch is the only place the FILE-DELIVERY rule is taught, so a
+front-desk hire has to keep it — while a job description must *not*
+silently inherit it, because quietly bolting office rules onto the boss's
+own text is the same conflation pointed the other way.
+
+Seven arms, all bit. Two other things fell out of the same drive and are
+recorded rather than fixed:
+
+- The CEO moderator dispatched to **Hermes** — three attempts at
+  `/hermes/v1/chat/completions` — in an office where the front desk itself
+  reports Hermes as NOT RUNNING and the boss hired only local coworkers.
+  The failure message was honest (*"couldn't reach that brain — it looks
+  offline from here"*), which is why this is a note and not a defect. The
+  default is a product decision, not mine to make.
+- Nova, in the first round, wrote *"It looks like the Gartner article is
+  restricted, so we can't access it directly."* No tool was called. That
+  is a claim about a **tool result that never happened**, and neither
+  `unsentBlocks` (which watches for promised sends) nor `unverifiedSources`
+  (which watches for tagged citations) catches that shape. Unmeasured
+  beyond this one sighting, and a guard for it needs its own drive before
+  I would trust it not to fire on ordinary sentences.
