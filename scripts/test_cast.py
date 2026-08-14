@@ -185,14 +185,28 @@ R.rungLastMan = withRouteOut(DIAG, [], fakeC, DEAD);
 R.rungMute   = withRouteOut(DIAG, DEAD, { parseModelId: fakeC.parseModelId,
                                           getSettings: fakeC.getSettings }, DEAD);
 // ── what a coworker can DO, in the boss's words ─────────────────────────
-R.cdOne    = canDoPhrase(['web']);
-R.cdTwo    = canDoPhrase(['web','vault']);
-R.cdThree  = canDoPhrase(['files','vault','db']);
-R.cdFour   = canDoPhrase(['web','email','cal','vault']);
-R.cdNone   = canDoPhrase([]);
-R.cdNull   = canDoPhrase(null);
-R.cdJunk   = canDoPhrase(['nope','web']);
-R.cdAllJunk= canDoPhrase(['nope','zzz']);
+// Grammar is tested with every condition satisfied, so the joining rules
+// are exercised on their own. The gating gets its own fixtures below.
+const ALL_ON = { canSearch: true, elevated: true, canMakeImages: true, moneyOn: true };
+R.cdOne    = canDoPhrase(['web'], ALL_ON);
+R.cdTwo    = canDoPhrase(['web','vault'], ALL_ON);
+R.cdThree  = canDoPhrase(['files','vault','code'], ALL_ON);
+R.cdFour   = canDoPhrase(['web','vault','files','code'], ALL_ON);
+R.cdNone   = canDoPhrase([], ALL_ON);
+R.cdNull   = canDoPhrase(null, ALL_ON);
+R.cdJunk   = canDoPhrase(['nope','web'], ALL_ON);
+R.cdAllJunk= canDoPhrase(['nope','zzz'], ALL_ON);
+// ── and what it refuses to promise ──────────────────────────────────────
+// The four with no tool behind them anywhere, even with every flag on.
+R.cdPhantom  = canDoPhrase(['email','cal','db','slack'], ALL_ON);
+// Vera as the front desk actually ships her.
+R.cdVera     = canDoPhrase(['web','email','cal','vault'], { canSearch: true });
+// No key: 'web' still buys a real fetch, so say the smaller true thing.
+R.cdWebNoKey = canDoPhrase(['web'], {});
+// No elevation: there is no lesser form of file access to fall back to.
+R.cdFilesFlat= canDoPhrase(['files','code'], {});
+// No ctx at all — unknowable, so promise nothing beyond the unconditional.
+R.cdNoCtx    = canDoPhrase(['web','files','vault']);
 // The gate on the hire shelf: do the four bars tell these cards apart?
 const barKey = (t) => { const b = statBars(t); return `${b.speed}${b.depth}${b.code}${b.cost}`; };
 const SEED   = ['cafreso:sonnet','cafreso:sonnet','cafreso:sonnet'].map(m => ({ model: m }));
@@ -442,15 +456,38 @@ console.log(JSON.stringify(R));
     check('one tool reads as one action', out['cdOne'] == 'search the web')
     check('two are joined with "and"', out['cdTwo'] == 'search the web and read your notes')
     check('three are joined with a comma then "and"',
-          out['cdThree'] == 'work with your files, read your notes and query your database')
+          out['cdThree'] == 'work with your files, read your notes and run code')
     check('a card is a glance, so it stops at three and counts the rest',
-          out['cdFour'] == 'search the web, send email and manage your calendar +1 more')
+          out['cdFour'] == 'search the web, read your notes and work with your files +1 more')
     # A coworker with no tools still DOES something -- the card must not
     # imply they are useless, and must never render an empty clause.
     check('no tools still reads as a capability', out['cdNone'] == 'talk things through')
     check('a null tool list does not crash the card', out['cdNull'] == 'talk things through')
     check('an unknown tool id is dropped, not printed raw', out['cdJunk'] == 'search the web')
     check('all-unknown falls back rather than emitting "Can "', out['cdAllJunk'] == 'talk things through')
+
+    # A card may only promise what the office can deliver. There is no
+    # EMAIL_SEND, CALENDAR, DATABASE or SLACK tool anywhere in the app; an
+    # earlier audit established that and hid the four from the hiring and
+    # roster checkboxes, but did not reach this line, so the front desk went
+    # on selling them. Measured on a fresh office before the fix: Vera's card
+    # read "CAN SEARCH THE WEB, SEND EMAIL AND MANAGE YOUR CALENDAR +1 MORE".
+    check('a capability with nothing behind it is not spoken at all',
+          out['cdPhantom'] == 'talk things through', out['cdPhantom'])
+    check('...so Vera advertises the two she really has',
+          out['cdVera'] == 'search the web and read your notes', out['cdVera'])
+    check('...and does not count the phantoms in "+N more"',
+          'more' not in out['cdVera'], out['cdVera'])
+    # The conditional ones. 'web' always buys BROWSER_FETCH, so there is a
+    # smaller true thing to say; file access has no lesser form.
+    check('without a search key, the card names the fetch it does have',
+          out['cdWebNoKey'] == 'read a web page you name', out['cdWebNoKey'])
+    check('without elevation, files and code promise nothing',
+          out['cdFilesFlat'] == 'talk things through', out['cdFilesFlat'])
+    check('with no context at all, it promises only the unconditional',
+          out['cdNoCtx'] == 'read a web page you name and read your notes',
+          out['cdNoCtx'] + ' — unknowable → do not promise, the mirror of '
+          'officeHasBrain\'s unknowable → do not alarm')
 
     # The bars key off the BRAIN. Every seed candidate pins one brain, so
     # rendering them produced eight identical stat blocks on the one surface

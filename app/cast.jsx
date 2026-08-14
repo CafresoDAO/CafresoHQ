@@ -103,21 +103,63 @@ function statBars(agent) {
 
    Capped at three because a card is a glance, not a spec sheet; the full
    list stays in the title attribute for anyone who wants it. */
+/* Four ids are missing from this map on purpose: 'email', 'cal', 'db' and
+   'slack'. There is no EMAIL_SEND, CALENDAR, DATABASE or SLACK tool anywhere
+   in the app — not ungated, absent — and an audit already established that
+   and hid them from the hiring and roster checkboxes. It did not reach here,
+   so the front desk kept selling them. Measured on a fresh office: Vera's
+   candidate card read "CAN SEARCH THE WEB, SEND EMAIL AND MANAGE YOUR
+   CALENDAR +1 MORE" and Dax's read "…AND QUERY YOUR DATABASE". This is the
+   first screen a new boss sees. A capability with nothing behind it is worse
+   said out loud than left off a list — the checkbox was merely inert, this
+   is a sales pitch. An id with no entry here contributes no words at all. */
 const CAN_DO = {
   web:    'search the web',
   vault:  'read your notes',
   files:  'work with your files',
   code:   'run code',
   img:    'make images',
-  email:  'send email',
-  cal:    'manage your calendar',
-  db:     'query your database',
-  slack:  'post to Slack',
   wallet: 'spend from your wallet',
 };
 
-function canDoPhrase(tools) {
-  const list = (tools || []).map(t => CAN_DO[t]).filter(Boolean);
+/* The rest are real, but conditionally, and a card that ignores the
+   condition is making the same promise the never-wired four were making.
+   Each value names the fact the CALLER has to establish; this file is
+   import-free by design (scripts/test_cast.py runs it verbatim under node),
+   so it cannot go and look any of them up, and that is the right shape
+   anyway — the card asserts what it was told, not what it assumed. */
+const CAN_DO_NEEDS = {
+  web:    'canSearch',        // TOOL_REGISTRY.search.requires() — a Brave key
+  files:  'elevated',         // toolsForAgent gates FILE_* and BASH on this
+  code:   'elevated',         // …the tools claim grants neither on its own
+  img:    'canMakeImages',    // settings.imageProvider
+  wallet: 'moneyOn',          // the Wallet ICP-Service, off by default
+};
+
+/* When the headline is not available, say the smaller true thing rather
+   than nothing. A 'web' coworker always gets BROWSER_FETCH, key or no key —
+   that is a real capability and worth naming, and naming it is also what
+   stops "search the web" from being the only way to describe this
+   coworker. The other four have no smaller version: without elevation
+   there is no file access at all, not a lesser one. */
+const CAN_DO_INSTEAD = {
+  web: 'read a web page you name',
+};
+
+/* `ctx` absent means the caller does not know, and unknowable → do not
+   promise. Same rule as officeCanSearch and officeHasBrain: the mirror of
+   "do not alarm on unknown" is "do not sell on unknown". */
+function canDoPhrase(tools, ctx) {
+  ctx = ctx || {};
+  const list = [];
+  for (const t of (tools || [])) {
+    const say = CAN_DO[t];
+    if (!say) continue;
+    const need = CAN_DO_NEEDS[t];
+    if (!need || ctx[need]) { if (list.indexOf(say) < 0) list.push(say); continue; }
+    const instead = CAN_DO_INSTEAD[t];
+    if (instead && list.indexOf(instead) < 0) list.push(instead);
+  }
   if (!list.length) return 'talk things through';
   const shown = list.slice(0, 3);
   const rest = list.length - shown.length;
@@ -382,4 +424,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, canDoPhrase, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

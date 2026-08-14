@@ -102,6 +102,30 @@ const FRONT_DESK = {
    what they can do). So the block appears only when it discriminates --
    when the cards on screen do not all share one profile. Seed roster: no
    bars. A shelf of templates on different brains: bars. */
+/* The facts `canDoPhrase` needs and cannot look up for itself. Each one is
+   read from the same place the runtime reads it when it decides whether to
+   hand the tool over, so the card and `toolsForAgent` cannot disagree:
+
+     canSearch      TOOL_REGISTRY.search.requires() — braveEnabled && braveKey
+     elevated       the candidate's own flag, which is what gates FILE_* / BASH
+     canMakeImages  settings.imageProvider, same check toolsForAgent makes
+     moneyOn        window.hqMoneyOn(), the Wallet ICP-Service switch
+
+   Wrapped in a try because this runs during render on the first screen of a
+   fresh install, and a settings store that is not up yet must produce a
+   quieter card, never a broken one — the catch leaves every flag false,
+   which is the do-not-promise default. */
+function capabilityFacts(t) {
+  const f = { elevated: !!(t && t.elevated) };
+  try {
+    const s = CafresoHQClient.getSettings();
+    f.canSearch = !!(s && s.braveEnabled && s.braveKey);
+    f.canMakeImages = !!(s && s.imageProvider);
+  } catch (_e) { /* leave both false */ }
+  try { f.moneyOn = !!(window.hqMoneyOn && window.hqMoneyOn()); } catch (_e) {}
+  return f;
+}
+
 function CastLine({ t, showBars }) {
   const bars = statBars(t);
   const vendor = poweredBy(t);
@@ -119,7 +143,7 @@ function CastLine({ t, showBars }) {
         ))}
       </div>}
       <div className="post-meta">
-        <span title={(t.tools||[]).join(', ') || 'no tools'}>Can {canDoPhrase(t.tools)}</span>
+        <span title={(t.tools||[]).join(', ') || 'no tools'}>Can {canDoPhrase(t.tools, capabilityFacts(t))}</span>
       </div>
       <div className="post-vendor" title={t.model || 'no brain assigned'}>
         {vendor ? `powered by ${vendor}` : `brain: ${brainName(t)}`}

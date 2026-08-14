@@ -7146,3 +7146,84 @@ the "where to get a key" check read the `where`/`link` fields in the rows
 array, which survive deleting the hint that renders them; it now asserts
 the markup. Both are the same mistake in different clothes: checking that
 a fact exists somewhere, rather than that it reaches the boss.
+
+## The front desk kept selling what the office stopped stocking
+
+Third tick in a row on the same fault line, and the clearest instance of
+it yet: **a surface may only assert what detection established.** The
+first was an ambiguous wire value becoming a confident wrong sentence. The
+second was a status code standing in for a verdict about a page. This one
+needs no detection at all to go wrong — it is a surface asserting a
+capability that has never existed in any build of this app.
+
+Measured on a fresh office. First screen, nothing configured, the hiring
+shelf a new boss is looking at before they have done anything:
+
+    Vera   VIRTUAL ASSISTANT
+           CAN SEARCH THE WEB, SEND EMAIL AND MANAGE YOUR CALENDAR +1 MORE
+    Dax    DATA ANALYST
+           CAN WORK WITH YOUR FILES, READ YOUR NOTES AND QUERY YOUR DATABASE
+
+There is no `EMAIL_SEND`, no `CALENDAR`, no `DATABASE` and no `SLACK` tool
+in this codebase. Not gated, not stubbed, not behind a setting — absent.
+An audit already established exactly that, wrote the four ids down in
+`NEVER_WIRED_TOOL_IDS` in `modals/settings.jsx`, and filtered them out of
+the hiring and roster checkbox grids so nobody could tick them. It did not
+reach `app/cast.jsx`, which turns the same raw `tools` array into a
+sentence in the boss's own words. **So the office removed the switch and
+kept the sales pitch** — and left it on the first screen.
+
+**It got worse when the checkbox went away, not better.** An inert
+checkbox grants nothing, silently; a boss who ticks it and sees no result
+learns something true about the office eventually. This says the thing out
+loud, unprompted, in exactly the register §6 asks for — "tool call → shown
+as the action itself", no jargon, plain verbs. Being good copy is what
+made it dangerous. **A capability with nothing behind it is worse said out
+loud than left off a list.**
+
+The conditional ones were the same fault one notch milder. `files` and
+`code` grant nothing on their own — `toolsForAgent` gates `FILE_READ`,
+`FILE_WRITE` and `BASH` on `agent.elevated`, which is a separate switch in
+the roster — and `web` only buys `[SEARCH:]` when a Brave key is set,
+which is the finding from two ticks ago. The card read the claims array
+and ignored every condition, **promising on behalf of a runtime it never
+consulted.**
+
+`canDoPhrase(tools, ctx)` now takes the facts. `app/cast.jsx` is
+import-free on purpose, so `scripts/test_cast.py` can run it verbatim
+under node — it *cannot* look anything up, which turns out to be the right
+shape rather than a constraint to work around: the card asserts what it
+was told, and no ctx means unknowable, and unknowable → do not promise.
+That is the rule `officeCanSearch()` in `modals/starter.jsx` already
+follows, now applied one screen earlier.
+
+Where a condition fails, the card degrades rather than going quiet.
+`web` without a key becomes "read a web page you name" — `BROWSER_FETCH`
+goes to anyone claiming `web`, key or no key, and that is a real thing a
+boss can use today. **The honest move is usually a smaller true claim, not
+silence**; §7 asks for a way forward, and a candidate card with nothing on
+it is not one.
+
+After, on the same fresh office:
+
+    Vera   VIRTUAL ASSISTANT   CAN READ A WEB PAGE YOU NAME AND READ YOUR NOTES
+    Dax    DATA ANALYST        CAN WORK WITH YOUR FILES AND READ YOUR NOTES
+    Pixel  IMAGE GENERATION    CAN READ YOUR NOTES
+
+Dax keeps the files line because Dax's template genuinely carries
+`elevated: true`. **Pixel is worth recording rather than smoothing over.**
+Its entire role is image generation, and on a fresh office it now offers
+only to read your notes, because `img` hangs on `settings.imageProvider`
+and nothing has set one. That is honest and it is also a bad first
+impression — the fix is to make the card say what turning the provider on
+would buy, not to go back to claiming it unconditionally. Noted, not done;
+it is a copy design question and this tick was a correctness one.
+
+**Six arms, six passes**, each reverted separately. The generalising arm
+is the one worth keeping: rather than hardcoding six ids, it parses
+`toolsForAgent` for every `claimed.has(…)` branch and requires that
+everything `CAN_DO` is willing to say is either granted there outright or
+carries an entry in `CAN_DO_NEEDS`. The next tool that gets a condition
+bolted on fails this without anyone remembering to come back. A second arm
+holds `CAN_DO` and `NEVER_WIRED_TOOL_IDS` in step, since drifting apart is
+the whole of what happened here.
