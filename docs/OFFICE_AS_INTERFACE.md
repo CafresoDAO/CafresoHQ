@@ -7307,3 +7307,70 @@ the fire test made them fail for the right one.
 Recorded, not fixed: the office ticker duplicates its track for the
 marquee loop and the second copy carries no `aria-hidden`, so a screen
 reader announces every event on the floor twice.
+
+## An embedding model was offered as a coworker's brain
+
+Set out to audit the multi-coworker path and did not get past hiring the
+second one. BRING IN A HELPER → NEW HIRE, the BRAIN picker, thirty-nine
+options, one of them:
+
+    text-embedding-nomic-embed-text-v1.5
+
+An embedding model cannot hold a conversation. Picking it seats a coworker
+at a desk with a name, a title and a job description who then fails every
+task forever. **The only clue available to the boss is the model's own
+id**, which requires knowing what an embedding model is — precisely the
+expertise the north star says nobody should need. A boss who does not know
+learns it by hiring someone, assigning work, and watching it break with no
+explanation that points back here.
+
+**The office had the answer and threw it away.**
+`lmStudioModelDetails` fetches LM Studio's `/api/v0/models` — the richer
+endpoint, chosen deliberately over the OpenAI-compatible `/v1/models`
+precisely because it reports more — and carries `type` back on every row.
+Confirmed live through the proxy: LM Studio says `type: "embeddings"` for
+this model, in the same response the office already parsed.
+`localModelOptions` then mapped over the list and used `id` and `state`.
+The evidence was requested, received, and dropped one line before it
+mattered.
+
+Same shape as the front-desk finding two ticks ago, one layer down, and
+worse in one respect: the front desk described a tool that did not exist,
+while this hands the boss **a hire that is guaranteed to fail and looks
+exactly like the ones that work.**
+
+**Two deliberate non-filters, and they are the interesting half.**
+
+`vlm` stays. Vision-language models chat fine, and five of the eleven
+survivors are `vlm` — a filter that kept only `llm` would have deleted
+most of the boss's usable local models to fix one bad row. Being right
+about the bad row is not enough if the fix costs more than the bug.
+
+An untyped row stays. `lmStudioModelDetails` falls back to bare `{id}`
+when `/api/v0/models` is unreachable, so *no type at all* is the normal
+shape on a whole class of setups. Dropping untyped rows would empty the
+group on exactly the installs least able to work out why. **Only a stated
+non-chat type counts as evidence** — an absence is not, which is the same
+rule as last tick's `visits` guard, pointed at a different absence.
+
+Also not done, on purpose: `nsfw_wan_14b-video` is plainly a video model
+by its name, and LM Studio reports it as `type: "llm"`. Filtering it would
+mean overriding a stated fact with a guess about a filename. It stays.
+The Ollama group is unfiltered too — `/api/tags` has no comparable type
+field, and inventing a heuristic for a path I cannot verify is the thing
+this file exists to prevent.
+
+Measured after: 12 LM Studio models offered → 11, the embedding one gone,
+every `vlm` and `llm` kept.
+
+**Six arms, and two of them failed for reasons worth writing down**, both
+familiar. The first arm made the test *crash* rather than report — with
+the filter deleted there was no filter to lift, and the lift raised
+`SystemExit` instead of recording a named failure. **A test that crashes
+is not a test that reports**, third time that has come up, now fixed by
+making a missing filter its own check. The second was in the fire harness,
+not the test: it read the `FAILED (n): a, b` summary line and split on
+commas, which tore `...on the type field, not the model id` into two
+phantom entries and reported a correctly-pinned arm as WRONG REASON. It
+reads the `FAIL` lines directly now. **A summary parsed as data is a
+different thing from the data**, and I wrote the summary myself.

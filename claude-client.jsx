@@ -1601,11 +1601,34 @@ async function localModelOptions() {
     lmStudioModelDetails().catch(() => []),
     listOllamaModels().catch(() => []),
   ]);
-  if (lm.length) {
+  /* A brain has to be able to hold a conversation.
+     `lmStudioModelDetails` already asks LM Studio's /api/v0/models for
+     `type` and carries it back, and this list threw it away — so the
+     BRAIN picker in the hire form offered
+     `text-embedding-nomic-embed-text-v1.5` alongside the real models.
+     Measured on a live office; LM Studio reports it as
+     `type: "embeddings"`, in the same response the office already read.
+
+     Hiring it gets you a coworker at a desk with a job description who
+     fails every task forever, and the only clue is the model's own name —
+     which needs you to know what an embedding model is. That is precisely
+     the expertise the north star says nobody should need. The office knew
+     and offered it anyway, which makes this the front-desk fault again,
+     one layer down: a capability with nothing behind it.
+
+     Filtered on POSITIVE knowledge only. `vlm` is vision-plus-language
+     and chats fine, so it stays. More importantly, the fallback path in
+     lmStudioModelDetails (when /api/v0/models is unavailable) returns
+     bare `{id}` with no type at all — dropping untyped entries would
+     empty the whole group on exactly the setups that need it most. An
+     absence is not evidence here; only a stated non-chat type is. */
+  const CHATLESS = new Set(['embeddings', 'embedding']);
+  const lmChat = lm.filter(m => !CHATLESS.has(String(m.type || '').toLowerCase()));
+  if (lmChat.length) {
     groups.push({
       label: 'LM Studio (local)',
       provider: 'lmstudio',
-      options: lm.map(m => ({
+      options: lmChat.map(m => ({
         id: 'lmstudio:' + m.id,
         label: m.id + (m.state === 'loaded' ? ' ✓' : ''),
       })),
