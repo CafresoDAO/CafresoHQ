@@ -318,6 +318,33 @@ function extractApproval(text) {
   return desc;
 }
 
+/* The work being stamped, sized for the approval tray's <pre>.
+
+   The tray renders `detail` under a comment stating the rule exactly:
+   the title is the REQUESTER's summary of its own request, and the gate
+   exists so the boss can see both. For the commonest approval in the
+   product — the stamp on a finished deliverable — nothing was ever passed
+   to it. Watched end to end in a virgin office: a coworker researched a
+   brief, filed it to the cabinet, and asked for a stamp, and the card read
+
+       Research brief on pros and cons of remote work for a small team
+       by Llama · awaiting stamp                      [APPROVE] [REJECT]
+
+   That title is not a description written by the office. It is the string
+   `extractApproval` lifted out of the coworker's own [NEEDS_APPROVAL: …]
+   marker — the requester grading its own homework. The brief itself was
+   in scope at every call site, and every one of them handed it to the
+   activity feed's detail and not to the card where the decision is made.
+
+   Truncation is announced: silently showing the first 1200 characters of
+   a longer piece would swap one false impression for another. */
+function approvalBody(text, limit = 1200) {
+  const s = String(text || '').trim();
+  if (!s) return '';
+  return s.length <= limit ? s
+    : s.slice(0, limit).trimEnd() + '\n\n… shortened for this card.';
+}
+
 /* Find ALL [ACK: <state>: <note>] markers in `text`. Returns
    [{state, note}, ...] in document order.
 
@@ -2768,7 +2795,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

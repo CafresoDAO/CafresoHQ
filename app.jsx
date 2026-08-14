@@ -2412,7 +2412,16 @@ ${d.text}` : d.text,
          so it least of all should hold the office's own scaffolding. */
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, (userText || 'a job').slice(0, 60));
       const approvalDesc = HQ.extractApproval(rawReply);
-      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
+      /* `elevated` on an approval means THIS DECISION carries privilege —
+         the tray draws a 🛡, a red rule and "coworker waiting on your call"
+         off it. These three stamp sites were setting it from
+         `agent.elevated`, which answers a different question: does this
+         coworker hold file and shell access. So a research brief written by
+         Claude rendered in the same visual language as "give me the run of
+         the filesystem". A deliverable is not a hazard whoever wrote it. */
+      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name,
+        kind: 'awaiting stamp', agentId: agent.id,
+        detail: HQ.approvalBody(cleanBuf) });
       // Message lifecycle resolution. The mid-stream scanner already
       // applied any agent-emitted ACK transitions — so we only need to
       // ensure the FINAL state is correct and only emit a transition if
@@ -3484,7 +3493,9 @@ ${d.text}` : d.text,
           : '') + cleanBuf.slice(0, 300) });
       if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
       const approvalDesc = HQ.extractApproval(buf);
-      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name, kind: 'awaiting stamp', agentId: a.id, elevated: !!a.elevated });
+      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name,
+        kind: 'awaiting stamp', agentId: a.id,
+        detail: HQ.approvalBody(cleanBuf) });
     } catch (err) {
       /* The controller's own signal is authoritative: an error can be
          re-wrapped on the way up (the retry layer used to do exactly
@@ -4054,7 +4065,9 @@ ${d.text}` : d.text,
         }
       }
       const approvalDesc = HQ.extractApproval(buf);
-      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name, kind: 'awaiting stamp', agentId: agent.id, elevated: !!agent.elevated });
+      if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: agent.name,
+        kind: 'awaiting stamp', agentId: agent.id, taskId,
+        detail: HQ.approvalBody(cleanBuf) });
       // Chain: if this task has a chainTo, activate the next step
       if (task.chainTo) {
         // tasksRef, not the `tasks` closure — this run can take minutes and

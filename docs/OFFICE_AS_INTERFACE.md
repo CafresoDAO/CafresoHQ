@@ -6742,3 +6742,77 @@ the rows map over, to the start of the next panel.
 Three entries running, the recurring lesson is not about product code:
 *fire-test every arm separately, and when one comes back MISS, suspect the
 check before the fix.*
+
+---
+
+## The boss was asked to stamp work the office never showed them
+
+Walked the first run end to end in a virgin office rather than reading
+code: hire the local Llama, take the "Research brief" starter card, wait.
+It worked — picked up, finished, filed to the cabinet, asked for a stamp.
+Then the card:
+
+    Research brief on pros and cons of remote work for a small team
+    by Llama · awaiting stamp                    [APPROVE] [REJECT]
+
+That is the entire card. The brief is not on it.
+
+And the title is not a description the office wrote. `extractApproval`
+lifts it out of the coworker's own `[NEEDS_APPROVAL: …]` marker — the
+requester grading its own homework. The tray has a `detail` slot for
+exactly this, under a comment that states the rule outright: *the title
+above is the REQUESTER's summary of its own request — this gate exists to
+catch a summary that doesn't match the action, so the boss has to be able
+to see both.* Three entries ago I wired that gate for the three kinds that
+ask permission and stopped there. The **stamp** — the commonest approval
+in the product, the one that fires on every finished deliverable — still
+passed nothing, at all four sites.
+
+The body was in scope at every one of them. Every site already handed it
+to `logActivity`'s detail. The activity feed could show you the work. The
+card where you decide could not.
+
+The first real run after wiring it produced, unprompted, the exact case
+the gate was written for:
+
+    title: research proposal on remote work's impact on small teams
+    body:  [two sentences of summary] … Now I need approval before
+           proceeding with further research on this topic.
+
+Those are not the same thing. Under the old card you would have stamped
+"a research proposal" and got a summary plus a promise.
+
+**The shield meant the wrong thing.** The same rows passed
+`elevated: !!agent.elevated`. On an approval `elevated` means *this
+decision carries privilege* — the tray draws a 🛡, a red left rule and
+"coworker waiting on your call" off it. Read from the agent it answers a
+different question: does this coworker hold file and shell access. So a
+research brief written by Claude rendered in the same visual language as
+"give me the run of the filesystem". Every ordinary deliverable from an
+elevated coworker spent a little of the one badge that is supposed to mean
+stop and read this. Fixed at the call sites, so the flag keeps one meaning
+everywhere rather than the tray learning exceptions.
+
+**Truncation is announced.** `approvalBody` caps at 1200 and says
+"shortened for this card" when it does. Showing the first 1200 characters
+of a longer brief in silence would replace one false impression with
+another — the boss would stamp it believing they had read it.
+
+**Two blind fixtures in one test, both caught the same way.** Arm H
+removes the length cap entirely; the check was `len(out) < len(BODY)`, and
+because `approvalBody` trims and the fixture ended in a space, an
+*uncapped* body still came back one character shorter and the check went
+green. Arm E removes the cleaning from the CEO site; the fixture put the
+`[NEEDS_APPROVAL: …]` marker at the END, past the 1200-character cut, so
+the scaffolding check never saw it. Neither arm was a product bug — both
+were checks that could not observe the thing they were named for.
+
+That is now four entries in a row where fire-testing arms separately
+caught a test rather than a fix. The habit is worth more than any single
+defect it has found: *a check that goes green when you break the thing it
+is named for is worse than no check, because it is also a claim.*
+
+**Unconfirmed, left open.** During the run the floor ticker appeared to
+list "picked up …" and "walked onto the floor" twice each. A marquee that
+repeats its content to scroll seamlessly would look exactly like that, and
+I did not reproduce it. Noted rather than fixed or dismissed.

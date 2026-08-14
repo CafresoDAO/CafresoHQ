@@ -633,7 +633,12 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     });
     const approvalDesc = HQ.extractApproval(flush.raw ? flush.raw() : finalText);
     if (approvalDesc && onApprovalRequest) {
-      onApprovalRequest({ title: approvalDesc, by: 'CafresoHQ', kind: 'awaiting stamp' });
+      /* Cleaned the same way the bubble below is, and for the same reason:
+         `finalText` is the pre-strip stream, so handing it over raw would
+         put routing markers on the one card the boss has to read closely. */
+      onApprovalRequest({ title: approvalDesc, by: 'CafresoHQ', kind: 'awaiting stamp',
+        detail: HQ.approvalBody(
+          HQ.cleanHarmony(HQ.visibleReply(String(finalText || ''), 'CafresoHQ'))) });
     }
     setStreaming(false);
 
