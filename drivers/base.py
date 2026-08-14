@@ -13,18 +13,46 @@ import threading
 import uuid
 
 
-def probe_cli_version(bin_, timeout=6):
-    """First line of `<bin> --version`, '' on any failure. Shared by every
-    kind='cli' driver's detect(probe_version=True)."""
+def probe_cli(bin_, timeout=6):
+    """(version, problem, detail) from `<bin> --version`.
+
+    Shared by every kind='cli' driver's detect(probe_version=True).
+
+    This used to return `stdout or stderr` without ever looking at the
+    return code, so a CLI that ran and CRASHED reported its crash as its
+    version. Measured on a real machine: the Codex shim was on PATH but its
+    vendored binary was gone, `codex --version` exited 1 printing
+
+        Error: spawn .../vendor/aarch64-apple-darwin/codex/codex ENOENT
+
+    and detect() handed that back as the version. Every surface downstream
+    reads detect() as proof the thing is fine, so the front desk offered
+    Codex as found-and-ready and told the boss it merely needed a sign-in.
+    A failed probe became a wrong diagnosis.
+
+    `problem` is a bare PREDICATE — "will not start", not "it is installed
+    but will not start" — because two different surfaces build a sentence
+    around it and each already supplies its own subject and contrast. The
+    first draft embedded both here and rendered "Codex is on this machine,
+    but it is installed but will not start", which is what happens when a
+    string tries to be a sentence in a place it cannot see. `detail` is the
+    first line the command actually printed, kept for a tooltip so the
+    person who can fix it has something to search for; §6 keeps that wire
+    text out of the sentence and in the tooltip.
+    """
     if not bin_:
-        return ''
+        return '', '', ''
     try:
         r = subprocess.run([bin_, '--version'], capture_output=True,
                            text=True, timeout=timeout)
-        out = (r.stdout or r.stderr or '').strip()
-        return out.splitlines()[0][:80] if out else ''
-    except Exception:
-        return ''
+    except subprocess.TimeoutExpired:
+        return '', 'did not respond', ''
+    except Exception as e:
+        return '', 'will not start', str(e)[:120]
+    first = ((r.stdout or r.stderr or '').strip().splitlines() or [''])[0][:120]
+    if r.returncode != 0:
+        return '', 'will not start', first
+    return first[:80], '', ''
 
 
 # ── Canonical event schema (DRIVER_CONTRACT.md §1.3) ─────────────────────────

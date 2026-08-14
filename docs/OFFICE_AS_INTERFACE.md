@@ -6594,3 +6594,75 @@ the check named for drift could not see drift. Same mistake as the paused-
 mission fixture two entries ago, caught the same way: fire-testing each arm
 separately rather than being satisfied that something went red. The fixture
 is now sized past the 1200-character cap the writers use.
+
+---
+
+## The office diagnosed a problem the boss did not have
+
+`codex --version` on this machine prints
+
+    Error: spawn /Users/…/@openai/codex/vendor/aarch64-apple-darwin/codex/codex ENOENT
+
+and exits 1. The shim is on PATH; the binary it wraps is gone.
+
+`probe_cli_version` in `drivers/base.py` ran that command and returned
+`stdout or stderr` without ever looking at the return code. So the crash
+text became the version string, and `detect()` — the only thing any
+surface sees — reported Codex as installed, version present, not
+authenticated. Both surfaces drew the obvious conclusion from those three
+facts and drew it out loud.
+
+The front desk, which is the *first screen a new user sees*:
+
+    Codex                                   [FOUND]
+    We found your Codex subscription on this machine.
+    Needs a sign-in before their first task.
+
+under a header reading "found on this machine, ready to join". Settings
+said the same thing twice: "found · needs a sign-in before its first
+task", and "● sign in".
+
+Every word of that is confident and wrong. The person goes and signs in.
+The sign-in succeeds. The card still says sign in. Nothing anywhere in the
+office says the program is broken, and "no expertise required" means they
+have no second way to find out. §7 is about lies to the boss; this is a
+subspecies worth naming — **the office guessed, and reported the guess in
+the voice it uses for facts.** Not knowing is fine. Saying the wrong thing
+confidently is not.
+
+**The fix.** `probe_cli` now checks `returncode` and returns
+`(version, problem, detail)`. A CLI that will not start yields no version.
+The card and the Settings row stay listed — a failing `--version` is not
+proof `codex exec` fails, and the file's own rule is that detection is a
+hint, not a verdict — but they say what was observed: `WON'T START`,
+"Codex is on this machine, but it will not start. Signing in will not fix
+that." The raw `Error: spawn …` line goes in a `title=` tooltip, so the
+person who *can* fix it has something to search for while the sentence
+stays readable (§6). The desk header stops promising "ready to join" when
+one of the cards below it is not.
+
+Saying "signing in will not fix that" out loud is deliberate. The wrong
+guess was already loose in the world; silence would leave it standing.
+
+**A string that tried to be a sentence.** The first draft had `problem`
+read "it is installed but will not start", which composed into "Codex is
+on this machine, but it is installed but will not start" at the front desk
+and "installed, but it is installed but will not start" in Settings. Two
+callers, each supplying its own subject and contrast. `problem` is now a
+bare predicate and the surfaces conjugate it. Caught by rendering it, not
+by reading it.
+
+**A check that could not fail.** The first version of the regression test
+asserted the predicate rule against phrases spelled out in the test file —
+`for phrase in ('will not start', 'did not respond')` — which is a test of
+its own literals. The stutter arm went red on an unrelated check and the
+fire-test reported a MISS, which is the only reason it was noticed. The
+section now runs over the strings the real probes actually returned. Third
+fixture-blindness in three entries; the pattern is always the same shape,
+*the check never touched the thing it was named for*, and each time only
+reverting one arm at a time surfaced it.
+
+**Still unverified.** The Hermes front-desk card says "Already set up in
+your container — ready to work", but detection only ever found a CLI
+binary at `~/.local/bin/hermes`. Nobody has checked the container claim.
+It is on this list until someone does.

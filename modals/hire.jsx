@@ -226,8 +226,17 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     const localDaemon = d.id === 'lmstudio' || d.id === 'ollama';
     if (def.cloud ? !det.authenticated
         : localDaemon ? det.version !== 'reachable' : !det.installed) return null;
+    /* `probeError` is set when the CLI RAN and failed — measured on a real
+       machine, a Codex shim on PATH whose vendored binary was gone. The
+       card still appears, because being installed-but-broken is worth
+       knowing and detection is a hint rather than a verdict; what it must
+       not do is keep saying "needs a sign-in", which is a different
+       diagnosis and sends the boss to fix the wrong thing. */
     return { ...def, driverId: d.id,
-             needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes' && !det.authenticated };
+             probeError: det.probeError || '',
+             probeDetail: det.probeDetail || '',
+             needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'
+                         && !det.probeError && !det.authenticated };
   }).filter(Boolean);
 
   const hireDetected = async (c) => {
@@ -309,7 +318,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               )}
               {deskCards.length > 0 && (
                 <div className="frontdesk-head" style={{gridColumn: '1 / -1'}}>
-                  AT THE FRONT DESK <span className="hint">— found on this machine, ready to join</span>
+                  AT THE FRONT DESK <span className="hint">
+                    {/* "ready to join" is a promise about every card below it,
+                        so it cannot stand over one that will not start. */}
+                    {deskCards.some(c => c.probeError)
+                      ? '— found on this machine · one of them needs fixing first'
+                      : '— found on this machine, ready to join'}
+                  </span>
                 </div>
               )}
               {deskCards.map(c => (
@@ -317,11 +332,15 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   <div className="post-head">
                     <Sprite data={c.color} scale={2}/>
                     <div className="post-name">{c.name}</div>
-                    <span className="post-tag">FOUND</span>
+                    <span className="post-tag">{c.probeError ? "WON'T START" : 'FOUND'}</span>
                   </div>
                   <div className="post-role">{c.role}</div>
-                  <div className="frontdesk-note">
-                    {c.found}{c.needsLogin ? ' Needs a sign-in before their first task.' : ''}
+                  <div className="frontdesk-note" title={c.probeDetail || undefined}>
+                    {c.probeError
+                      ? `${c.name} is on this machine, but it ${c.probeError}. `
+                        + 'Signing in will not fix that — it needs repairing or '
+                        + 'reinstalling first. You can still hire them and try.'
+                      : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
                   </div>
                   <div className="post-meta">
                     <span>powered by {c.poweredBy}</span>

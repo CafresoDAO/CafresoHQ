@@ -16,7 +16,7 @@ import threading
 
 from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
                    ev_status, ev_token, ev_tool_call, ev_tool_result,
-                   probe_cli_version)
+                   probe_cli)
 
 _GIT_BASH_DIRS = (r'C:\Program Files\Git\usr\bin',
                   r'C:\Program Files\Git\bin',
@@ -113,9 +113,13 @@ class CodexDriver(Driver):
     def detect(self, probe_version=False):
         bin_ = self.resolve()
         authed, mech = self.detect_auth()
-        version = probe_cli_version(bin_) if (bin_ and probe_version) else ''
+        version, problem, pdetail = (probe_cli(bin_) if (bin_ and probe_version)
+                                     else ('', '', ''))
         return {'installed': bool(bin_), 'authenticated': authed,
-                'auth': mech, 'version': version, 'detail': bin_}
+                'auth': mech, 'version': version, 'detail': bin_,
+                # A probe that RAN and failed. Absent/'' means either
+                # not probed or probed clean -- never 'broken'.
+                'probeError': problem, 'probeDetail': pdetail}
 
     def configure(self, settings):
         path = str((settings or {}).get('binary') or '').strip()

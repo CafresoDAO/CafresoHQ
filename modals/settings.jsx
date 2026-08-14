@@ -206,24 +206,35 @@ function ConnectionsPanel() {
              is merely closed sends them to a download page for something
              they already have. Say which it is. */
           const isDaemon = id === 'ollama' || id === 'lmstudio';
-          const live = isDaemon ? det.version === 'reachable' : !!det.installed;
+          /* `probeError` means the CLI was actually RUN and failed — not
+             that it is missing. Both states used to collapse into
+             `installed`, so a Codex shim whose vendored binary was gone
+             read as "found · needs a sign-in": a confident diagnosis of
+             the wrong problem, sending someone to a login screen for a
+             program that cannot start. Keep it out of `live` so neither
+             the sentence nor the dot claims readiness. */
+          const broken = !isDaemon && !!det.probeError;
+          const live = isDaemon ? det.version === 'reachable' : (!!det.installed && !broken);
           const label = { 'claude-code': 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI',
                           ollama: 'Ollama', lmstudio: 'LM Studio' }[id];
-          const offText = isDaemon
-            ? (det.installed ? 'not answering — start it and reopen this' : 'not running on this machine')
-            : 'not found on this machine';
+          const offText = broken
+            ? `installed, but it ${det.probeError} — a sign-in will not fix it`
+            : isDaemon
+              ? (det.installed ? 'not answering — start it and reopen this' : 'not running on this machine')
+              : 'not found on this machine';
           return (
             <div className="row-knob" key={id}>
               <div>
                 <div className="lbl">{label}</div>
-                <div className="sub">
+                <div className="sub" title={(broken && det.probeDetail) || undefined}>
                   {live
                     ? (det.authenticated ? 'found · signed in' : 'found · needs a sign-in before its first task')
                     : offText}
                 </div>
               </div>
               <span className="tiny">
-                {live ? (det.authenticated ? '● ready' : '● sign in') : (isDaemon ? '○ offline' : '○ absent')}
+                {live ? (det.authenticated ? '● ready' : '● sign in')
+                      : broken ? '○ broken' : (isDaemon ? '○ offline' : '○ absent')}
               </span>
             </div>
           );
