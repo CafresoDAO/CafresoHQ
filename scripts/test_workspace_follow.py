@@ -64,7 +64,10 @@ check(
     "is never assigned resolves every relative path against `undefined`.",
 )
 
-m = re.search(r'const resolveInProject = \(p\) => \{(.*?)\n  \};', src, re.S)
+# Second parameter since the "only report your own folder" pass: a relative
+# path is resolved against the directory the coworker was actually standing
+# in, not against whichever project happens to be selected.
+m = re.search(r'const resolveInProject = \(p, cwd\) => \{(.*?)\n  \};', src, re.S)
 check(m, "views/projects.jsx: `resolveInProject` is gone. Marker args arrive "
          "project-relative and every consumer in this pane is absolute; "
          "without this one conversion the tree pulse, Follow along and the "
@@ -88,11 +91,15 @@ if m:
         "resolveInProject must join against the CURRENT project's path via "
         "projectRef — that is the whole point of the conversion.",
     )
+    # This used to require the arg BACK unchanged when there was no project.
+    # Passing it through is what let an unresolvable path travel on and get
+    # filed anyway; '' is the honest answer and every caller reads it as
+    # "not mine". See test_the_workspace_only_reports_its_own_folder.py.
     check(
-        re.search(r'base \?.*: s', body),
+        re.search(r"if \(!s \|\| !base\) return '';", body),
         "with no project selected there is no root to resolve against; "
-        "resolveInProject must return the arg unchanged rather than "
-        "fabricating a path.",
+        "resolveInProject must say it cannot place the path rather than "
+        "handing back something that reads like one.",
     )
 
 # The conversion has to happen for FILE_* only: vault and export args are
@@ -106,7 +113,8 @@ if handler:
     h = handler.group(1)
     check(
         re.search(
-            r"name === 'FILE_WRITE' \|\| name === 'FILE_READ'\s*\)\s*\n?\s*\?\s*resolveInProject\(d\.arg\)",
+            r"name === 'FILE_WRITE' \|\| name === 'FILE_READ';[\s\S]{0,200}"
+            r"\?\s*resolveInProject\(d\.arg, d\.cwd\)",
             h,
         ),
         "onAgentTool must run FILE_WRITE/FILE_READ args through "
@@ -114,7 +122,7 @@ if handler:
         "the bug: a relative arg matches nothing in this pane.",
     )
     check(
-        re.search(r"resolveInProject\(d\.arg\)\s*\n?\s*:\s*String\(d\.arg \|\| ''\)\.trim\(\)", h),
+        re.search(r"resolveInProject\(d\.arg, d\.cwd\)\s*\n?\s*:\s*String\(d\.arg \|\| ''\)\.trim\(\)", h),
         "the ternary's OTHER branch must still take d.arg raw — only the "
         "FILE_* tools may be resolved against the project root, because "
         "vault and export args are vault-relative and gluing the project "

@@ -3073,6 +3073,10 @@ ${d.text}` : d.text,
       // Whether it WORKED, not just whether it returned — listeners that file
       // a receipt or pulse a file need this or they record a failure as a win.
       failed: !!ev.failed,
+      // WHERE it worked. `arg` is the path the coworker typed, and a typed
+      // path only means something next to the directory it was typed for.
+      // Undefined is a real answer: no working directory was in play.
+      cwd: ev.cwd,
       agentId: agent && agent.id, agentName: agent && agent.name, agentColor: agent && agent.color,
     });
     const g = window.CafresoHQGraph;

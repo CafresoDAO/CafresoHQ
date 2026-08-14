@@ -91,8 +91,13 @@ check(
     "with nobody hired, the crew strip must say so and point at Team — "
     "otherwise the pane is an empty box with no explanation.",
 )
+# The inline ternary this used to match has since moved into `ledgerEmpty()`,
+# which resolves agentIds into the actual coworkers (`crew`) so it can also
+# tell a crew that holds file access from one that does not — see
+# test_the_workspace_only_reports_its_own_folder.py. The claim being pinned
+# here is unchanged: no crew, say so.
 check(
-    re.search(r"\(project\.agentIds \|\| \[\]\)\.length === 0[\s\S]{0,160}Nobody is on this project yet", ws),
+    re.search(r"!crew\.length\)[\s\S]{0,80}Nobody is on this project yet", ws),
     "with nobody ASSIGNED, the ledger's empty state must say nobody is on "
     "the project — the old copy (\"Your coworkers share this folder & "
     "shell\") described a collaboration that was not happening.",

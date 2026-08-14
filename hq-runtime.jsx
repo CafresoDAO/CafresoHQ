@@ -2729,7 +2729,16 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
       messages.push({ role: 'user', content: refusal });
       continue;
     }
-    if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
+    /* `cwd` rides along on every tool event. A coworker reports the path
+       they typed — "index.html" — and that is only meaningful next to the
+       directory it was typed for. Listeners downstream (the Workspace's
+       file tree, activity ledger and presence pip) are ABOUT one folder,
+       and without this they had to guess: the guess was "assume it's mine",
+       which resolved another project's relative write into this project's
+       root and filed it as a change to this folder. Undefined here is
+       itself the honest answer — ceoStream runs its tools with no working
+       directory at all, so its events carry none. */
+    if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg, cwd });
     let result;
     /* Did it actually work? Not the same question as "did it return". A
        missing file, a path that isn't a directory, a command that exits
@@ -2774,7 +2783,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
        carry the banner inline, and filing removes it by exact match. */
     if (onTool) {
       onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
-               failed: !!meta.failed,
+               failed: !!meta.failed, cwd,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 

@@ -6816,3 +6816,77 @@ is named for is worse than no check, because it is also a claim.*
 list "picked up …" and "walked onto the floor" twice each. A marquee that
 repeats its content to scroll seamlessly would look exactly like that, and
 I did not reproduce it. Noted rather than fixed or dismissed.
+
+## The Workspace reported other people's work as its own
+
+*Resolving the note above first: the ticker duplication is not a defect.*
+`Ticker` in `ui/office.jsx` renders `segment('a')` and `segment('b')` —
+"the scroll keyframes translate -50%, so the line must be two identical
+halves". The DOM confirms two identical spans. A marquee repeating itself
+to scroll seamlessly is exactly what it is. Closed, not fixed.
+
+Walking the same first run one step further — step 5, "Create your first
+Project" — put me in the Workspace, which is where the north star's
+"watch them work" actually happens. One project, selected, with **nobody
+assigned to it**. The pane said so:
+
+> Nobody is on this project yet — add a coworker above …
+
+Then one `FILE_WRITE` of `index.html`, from a coworker who was not on this
+project and was not in this folder, replaced that sentence with
+
+> wrote  does-not-exist-yet/index.html
+
+titled with this project's absolute path. Nothing was written here.
+Clicking the row opens a file that never existed. A `WEB_SEARCH` from the
+same coworker flipped the presence pip to "coworker working…" while the
+empty state underneath still read "Nobody is on this project yet" — two
+claims about one project, contradicting each other in the same frame.
+
+Every coworker in the office broadcasts on one `cafresohq:agentTool` bus.
+The handler read `name`, `phase`, `arg` and `failed`, and never asked
+*where*. Then `resolveInProject` finished the job: any relative path got
+joined onto whichever project happened to be selected. That does not
+locate a file, it invents one — and the invented path is what the ledger
+row, the tree pulse and Follow along all then chased.
+
+The fix is upstream of the guess. `cwd` — the directory the coworker was
+actually standing in — now rides on the tool event, through `floorEmit`,
+to every listener. `agentStream` has it; `ceoStream` does not and sends
+none, which is itself the honest answer. Work belongs to this project when
+it happened in this folder: either that is where they were working, or
+they named a path inside it outright. Everything else belongs to some
+other screen.
+
+**Second claim, same pane.** The empty ledger read "Your coworkers share
+this folder & shell" for *any* crew. File and shell tools are handed out
+on `agent.elevated` alone — and Llama, the free local hire the front desk
+offers on a clean machine, comes with `elevated: false`. So a first-run
+boss with exactly one coworker was told they shared the folder and the
+shell, when they shared neither and never would, and the empty ledger
+below looked like patience rather than a setting nobody had turned on.
+The chip's own tooltip three elements up already said "(has file and shell
+access)" for the elevated ones only; the sentence beneath it just was not
+reading the same flag. It does now, it names who, and it says where to
+change it — verified by following its own instruction: Settings → Roster →
+File & shell access, and the copy switched.
+
+This is the same rule as the last three entries, applied to a third kind
+of surface: **a surface may only assert what detection established.** The
+new thing this one adds is that sometimes detection cannot establish it
+yet — and then the fix is not better guessing at the surface, it is
+carrying the missing fact down the wire.
+
+**Ten arms, ten passes, no blind fixtures.** First time in five passes
+that separate-arm fire-testing found nothing wrong with the test itself.
+Two existing tests did fail, both because they pinned the old shapes:
+`test_workspace_follow.py` required `resolveInProject` to hand an
+unresolvable arg *back unchanged*, which is precisely the behaviour that
+let a foreign path travel on and get filed. Its claim was updated, not
+deleted, with the reason recorded next to it.
+
+**Observed, not fixed.** Vault and export events still file into a
+project's ledger as `wrote <vault-relative path>` when the coworker is
+working in the project, and clicking such a row asks the project tree for
+a path that is not in it. Same family, different owner (the row's target,
+not its truth) — recorded rather than bundled in here.

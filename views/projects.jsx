@@ -164,21 +164,51 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
      stale content with no banner; the identical event carrying the absolute
      path reloaded it instantly. Resolve here, at the one place that knows
      the project root. FILE_* only — vault and export args are vault-relative
-     and have nothing to do with this tree. */
-  const resolveInProject = (p) => {
+     and have nothing to do with this tree.
+
+     `cwd` is the directory the coworker actually typed that path for, and it
+     is the whole reason this can be done honestly. Resolving a relative arg
+     against THIS project when the coworker was standing somewhere else does
+     not locate the file — it invents one. Returns '' for anything this
+     project cannot vouch for, and every caller treats '' as "not mine". */
+  const resolveInProject = (p, cwd) => {
     const s = String(p || '').trim();
-    if (!s || s.startsWith('/') || /^[A-Za-z]:[\\/]/.test(s)) return s;
     const base = projectRef.current && projectRef.current.path;
-    return base ? joinPath(base, s) : s;
+    if (!s || !base) return '';
+    if (s.startsWith('/') || /^[A-Za-z]:[\\/]/.test(s)) return isUnder(s, base) ? s : '';
+    // Relative: only this project's own working directory can resolve it.
+    return cwd && isUnder(cwd, base) ? joinPath(cwd, s) : '';
   };
 
   /* ── the agent event bus: the heart of co-habitation ── */
   React.useEffect(() => {
     const onAgentTool = (e) => {
       const d = e.detail || {}; const name = d.name, phase = d.phase;
-      const arg = (name === 'FILE_WRITE' || name === 'FILE_READ')
-        ? resolveInProject(d.arg)
-        : String(d.arg || '').trim();
+      /* Is this MY folder's work? Every coworker in the office broadcasts on
+         this one bus, and this pane speaks for exactly one project — the pip
+         claims somebody is working on it, the ledger is the boss's record of
+         "what your coworkers actually did to this folder", and the tree pulse
+         points at a file in it. None of that was checked.
+
+         Measured live on a fresh office, project selected, NOBODY assigned to
+         it: one FILE_WRITE of `index.html` from an unrelated coworker replaced
+         "Nobody is on this project yet" with a ledger row reading `wrote
+         does-not-exist-yet/index.html`, titled with this project's absolute
+         path — a file that was never written here, on a row that opens
+         nothing. A WEB_SEARCH from the same coworker flipped the pip to
+         "coworker working…". The pane's own empty state and its pip were
+         contradicting each other in the same frame.
+
+         `cwd` on the event is what makes the question answerable: it is the
+         directory the coworker was actually standing in. Work is this
+         project's if it happened in this folder — either because that is
+         where they were working, or because they named a path inside it
+         outright. Anything else belongs to some other screen. */
+      const base = projectRef.current && projectRef.current.path;
+      const isFile = name === 'FILE_WRITE' || name === 'FILE_READ';
+      const arg = isFile ? resolveInProject(d.arg, d.cwd) : String(d.arg || '').trim();
+      const here = !!base && !!d.cwd && isUnder(d.cwd, base);
+      if (!here && !(isFile && arg)) return;
       setAgentStatus('working'); bumpIdle();
       if (phase === 'start') { markPulse(arg); return; }
       if (phase !== 'done') return;
@@ -277,6 +307,35 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   const statusLabel = agentStatus === 'working' ? 'coworker working…' : 'coworker standing by';
 
+  /* What this pane can honestly promise depends on WHO is on the project.
+     "Your coworkers share this folder & shell" was printed for any crew at
+     all — including the one a first-run boss is most likely to have. Llama
+     is the free local hire the front desk offers on a clean machine; it
+     comes with `tools: ['web']` and `elevated: false`, and file and shell
+     tools are handed out on `elevated` alone (hq-runtime "File/shell tools
+     for elevated agents"). Putting them on a project grants nothing. So the
+     sentence promised a boss with exactly one coworker that their coworker
+     shared the folder and shell, when they shared neither and never would —
+     and then the empty ledger below it looked like patience rather than a
+     setting nobody had turned on. The chip's own tooltip two elements up
+     already says "(has file and shell access)" only for the elevated ones;
+     this reads the same flag. */
+  const crew = ((project && project.agentIds) || [])
+    .map(id => agents.find(a => a.id === id)).filter(Boolean);
+  const handed = crew.filter(a => a.elevated);
+  const nameList = (list) => list.map(a => a.name).join(', ')
+    .replace(/, ([^,]*)$/, list.length > 2 ? ', and $1' : ' and $1');
+  const ledgerEmpty = () => {
+    if (!crew.length) return 'Nobody is on this project yet — add a coworker above to give them this folder.';
+    if (!handed.length) {
+      return `${nameList(crew)} ${crew.length === 1 ? 'is' : 'are'} on this project, but `
+        + `${crew.length === 1 ? "doesn't" : "don't"} have file or shell access yet — so nothing `
+        + 'they do will land in this folder. Settings → Roster turns it on, one coworker at a time.';
+    }
+    return `${nameList(handed)} share${handed.length === 1 ? 's' : ''} this folder & shell. `
+      + 'Their writes, runs, and exports appear here as they work — click any line to jump to it.';
+  };
+
   /* ── pane bodies, reused by the desktop grid AND the mobile pane-switcher.
      Defined as functions so they're only evaluated when a project exists. ── */
   const filesPane = () => (
@@ -363,9 +422,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
             })}
       </div>
       <div className="ws-ledger">
-        {ledger.length === 0 && <div className="ws-led-empty">{(project.agentIds || []).length === 0
-          ? 'Nobody is on this project yet — add a coworker above and they share this folder & shell with you.'
-          : 'Your coworkers share this folder & shell. Their writes, runs, and exports appear here as they work — click any line to jump to it.'}</div>}
+        {ledger.length === 0 && <div className="ws-led-empty">{ledgerEmpty()}</div>}
         {ledger.map(l => (
           <div key={l.id} className={'ws-led k-' + l.kind} onClick={() => onLedgerClick(l)} title={l.path}>
             <span className="v">{l.kind}</span><span className="lb">{l.label}</span>
