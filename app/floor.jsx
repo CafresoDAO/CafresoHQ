@@ -579,8 +579,16 @@ function floorOn(kind, handler) {
    themselves — carried in the row's detail — are where the specifics
    belong. `finished` stays either way: the turn did end, and that part was
    never the lie. */
-function doneLine(subject, missed) {
+/* `empty` is the third state, and it exists because the other two both say
+   "finished". A run that produced no deliverable at all — nothing survived
+   cleaning, nothing was filed, nothing was journalled — was filed on the
+   feed as `finished "…" — but not all of it landed`, which reads as a
+   mostly-successful turn with a rough edge. None of it landed. The office
+   already knew: two lines away it declines to file and declines to journal
+   on exactly this test. */
+function doneLine(subject, missed, empty) {
   const s = String(subject || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (empty) return s ? `came back from "${s}" with nothing` : 'came back with nothing';
   const ok = !missed;
   if (!s) return ok ? 'finished and reported back ✓' : 'finished, but not all of it landed';
   return ok ? `finished "${s}" ✓` : `finished "${s}" — but not all of it landed`;

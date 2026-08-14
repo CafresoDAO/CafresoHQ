@@ -4025,14 +4025,39 @@ ${d.text}` : d.text,
       flush.cancel();
       setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanBuf } : m));
       screen.done(cleanBuf);
+      const produced = !!cleanBuf.trim();
+      /* `recent` fell back to the task TITLE on an empty run, so the
+         coworker's card on the floor quoted the boss's own brief back as
+         though it were the work. The desk read "Write a 400-word briefing
+         on sourdough…" under a coworker who had written nothing. */
       onUpdateAgent(agent.id, {
-        status: 'active', mood: 'done',
-        recent: cleanBuf.slice(0, 140) || task.title,
+        /* 'stuck', not a new word. MOOD_ICON in ui/office.jsx knows five
+           moods and renders '' for anything else, so a coworker who came
+           back empty would have sat at their desk with a blank badge —
+           the one state on the floor that looks like no state at all. */
+        status: 'active', mood: produced ? 'done' : 'stuck',
+        recent: produced ? cleanBuf.slice(0, 140) : 'came back with nothing',
         task: 'reporting back',
         tokens: (agent.tokens || 0) + usedTokens,
       });
       settleAfterRun(agent.id);
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...applyStatus(t, 'done'), result: cleanBuf.slice(0, 600) } : t));
+      /* Nothing survived cleaning: no answer, no file, no journal entry.
+         The two lines below already know it — `if (cleanBuf.trim())` gates
+         both the filing and the journal — and this line used to mark the
+         card DONE from the same fact the other two read as "there is
+         nothing here". Three decisions off one boolean, two honest.
+
+         Measured on a fresh office: a task whose entire stored result was
+         the office's OWN honesty notes ("no helper was ever brought in …
+         no file reached the cabinet …") sat green in DONE. The office
+         printed both sentences itself and then certified the job.
+
+         `doing` + `blockedReason` rather than a new column, matching the
+         [TASK_BLOCKED] handler above — tasks.json has no blocked column,
+         and inventing one here would put a card in a lane the board
+         cannot render. */
+      setTasks(prev => prev.map(t => t.id === taskId
+        ? { ...applyStatus(t, produced ? 'done' : 'doing'), result: cleanBuf.slice(0, 600) } : t));
       /* Filing happens BEFORE the row that says the turn finished, because
          that row now makes a claim the filing can settle. `deliveryFiled` is
          what tells the guards to stay quiet about an unclosed [VAULT_NEW]
@@ -4062,15 +4087,39 @@ ${d.text}` : d.text,
          of these notes is to sit WITH the claim, and a card is where the
          claim gets re-read. Patched here rather than at the setTasks above
          because `deliveryFiled` has to settle first for skipKinds. */
-      if (honestyText) {
+      /* The reason a card sits in `doing` has to be readable, and the
+         honesty notes are already the right sentences — they say what did
+         not happen AND what to do about it ("Ask them to try again, or
+         hand the job to a coworker yourself"), which is §7's sentence plus
+         a way forward, written months ago for a different container. They
+         were being shown on a DONE card, which is the wrong one.
+
+         The fallback matters as much as the notes. A run can come back
+         empty with no guard firing at all — the model returned whitespace,
+         or everything it said was scaffolding the cleaner removed — and a
+         card parked in `doing` with no reason is worse than the false DONE
+         it replaces, because at least DONE said something. */
+      const emptyReason = honestyText.trim()
+        || 'Nothing came back from this run — no answer and no file. Start '
+           + 'it again, or hand it to a different coworker.';
+      if (honestyText || !produced) {
         setTasks(prev => prev.map(t => t.id === taskId
-          ? { ...t, result: honestyText + cleanBuf.slice(0, 600) } : t));
+          ? { ...t, result: honestyText + cleanBuf.slice(0, 600),
+              ...(produced ? {} : { blockedReason: emptyReason, blockedAt: Date.now() }) } : t));
       }
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId,
-        text: doneLine(task.title, honesty.length),
+        text: doneLine(task.title, honesty.length, !produced),
         detail: honestyText + cleanBuf.slice(0, 600) });
-      recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'done', taskId, title: task.title });
-      say(`${agent.name} completed "${task.title}"`, 'DONE');
+      /* `snag`, not `done`. The experience ledger is the office's record of
+         what a coworker is good at, and paying out a completion for a turn
+         that produced nothing teaches it the opposite of what happened —
+         the error path thirty lines down already books a snag for exactly
+         this reason. */
+      recordXp({ agentId: agent.id, kind: taskKind(task), outcome: produced ? 'done' : 'snag',
+                 taskId, title: task.title });
+      say(produced ? `${agent.name} completed "${task.title}"`
+                   : `${agent.name} came back from "${task.title}" with nothing`,
+          produced ? 'DONE' : 'SNAG');
       if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
       /* The artifact lands (OFFICE_AS_INTERFACE §3.6): the deliverable goes
          into the cabinet, the coworker carries it to the out-tray, and the

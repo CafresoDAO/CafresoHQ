@@ -7810,3 +7810,97 @@ The through-line holds. A surface may only assert what detection
 established — and the corollary this tick adds is that a guard which cannot
 fire has established nothing, however carefully its comment explains what it
 is for.
+
+---
+
+## The board went green on a run that produced nothing
+
+Measured on a fresh office. A task's stored result, in full:
+
+> no helper was ever brought in — that needs the task on its own lines and
+> a closing tag. Ask them to try again, or hand the job to a coworker
+> yourself.
+> no file reached the cabinet — that one needs a closing tag to be written,
+> so the Vault does not have it. Ask them to file it again.
+
+Both sentences are the office's own. It wrote them itself, out of its own
+guards, stored them as the deliverable, and marked the card DONE. There was
+nothing else to store: the reply cleaned down to empty.
+
+What makes this a defect rather than an oversight is that the office already
+knew. Two lines below the status update, `if (cleanBuf.trim())` gates the
+filing — an empty run does not go in the cabinet. Two lines below that, the
+same expression gates the journal append — an empty run does not go in the
+coworker's history. Then `applyStatus(t, 'done')`, unconditional. Three
+decisions off one fact, two of them honest and one of them not, sitting
+inside twenty lines of each other.
+
+That is the shape worth naming, because it is not a missing check. The check
+was there, correct, and used twice. What was missing was reading it a third
+time.
+
+So the fact got a name — `const produced = !!cleanBuf.trim();` — and every
+surface that asserts an outcome now reads it:
+
+| surface | before | after |
+|---|---|---|
+| the board | `done` | `doing` + a reason |
+| the card's reason | — | the honesty notes, or a plain sentence |
+| the activity feed | `finished "…" — but not all of it landed` | `came back from "…" with nothing` |
+| the XP ledger | `done` | `snag` |
+| the desk badge | `✓` | `!` (`stuck`) |
+| the desk's line | the task TITLE | `came back with nothing` |
+| the announcement | `… completed "…"` | `… came back from "…" with nothing` |
+
+Two of those deserve their own note.
+
+**The desk was quoting the brief back.** `recent` fell back to `task.title`,
+so a coworker who had written nothing sat at their desk with `Write a
+400-word briefing on sourdough starters` under their name — the boss's own
+words, returned as the work. §5's rule is don't point the boss at the wrong
+thing, and there is no more wrong thing to point at than their own request
+wearing the coworker's face.
+
+**The feed had no word for this.** `doneLine` had two states, and both of
+them opened with "finished". A run that produced nothing was filed as
+`finished "…" — but not all of it landed`, which reads as a mostly-good turn
+with a rough edge. None of it landed. The third state says so.
+
+Every word here is one the office already owned. `stuck` because `MOOD_ICON`
+knows five moods and renders `''` for a sixth — an invented word would have
+put the coworker at their desk with a blank badge, the one state on the floor
+that looks like no state at all. `snag` because `xpRecord` accepts exactly
+`done` and `snag` and silently drops anything else, so a nicer word would
+have booked no entry. `doing` + `blockedReason` because that is the shape the
+`[TASK_BLOCKED]` handler established, and `tasks.json` has no blocked column
+to invent a third lane in.
+
+The fallback is the part that took the longest to get right, and it is the
+part that fired in the live test. A card parked in `doing` with no reason is
+worse than the false DONE it replaces, because at least DONE said something.
+The honesty notes are the right sentences when they exist — they already
+carry §7's failure-plus-a-way-forward, written months ago for a different
+container — but a run can come back empty with no guard firing at all. So
+there is a written sentence for that: *Nothing came back from this run — no
+answer and no file. Start it again, or hand it to a different coworker.*
+
+Live-verified on the real dispatch path. Making a real model return nothing
+on purpose turned out to be the hard part — the LAN brain, asked three
+different ways to emit nothing, narrated its own silence twice and hallucinated
+a vault marker once. So the *brain* got mocked rather than the office: a
+forty-line OpenAI-compatible server that answers every question with an empty
+completion, hired through the front desk like any other. The office found it,
+called it Local Brain, and ran a real task against it over the wire. The
+board came back `DOING · 1` / `DONE · 0`, the card read `⚠ Local Brain hit a
+snag on this` above the fallback sentence and a `▶ START` button, the feed
+row said `came back from "Write a 400-word briefing on sourdough s" with
+nothing`, and `experience.json` held exactly one entry: `"outcome":"snag"`.
+
+Fifteen fire-test arms, fifteen caught, including one that moves the new
+branch below the two that return — the dead-guard shape from the last tick,
+armed against on purpose this time.
+
+The through-line holds. A surface may only assert what detection established
+— and this tick's corollary is that detection establishing something once is
+not enough. If the same fact drives three claims, all three have to read it,
+or the two that do become alibis for the one that doesn't.
