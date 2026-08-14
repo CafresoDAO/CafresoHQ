@@ -7446,3 +7446,81 @@ recorded rather than fixed:
   (which watches for tagged citations) catches that shape. Unmeasured
   beyond this one sighting, and a guard for it needs its own drive before
   I would trust it not to fire on ordinary sentences.
+
+---
+
+## The office held two answers to "where is LM Studio", and said both
+
+The boss pointed me at LM Studio on 10.0.0.100 and asked for a second
+brain, so the office would have two genuinely different coworkers to hand
+work between. Getting there took a detour, because the office disagreed
+with itself about whether LM Studio existed.
+
+Same fresh office, same minute:
+
+> **NEW HIRE → BRAIN:** *LM Studio (local)* — eleven models, by name.
+>
+> **Front desk:** Claude, Codex (won't start), Llama, Hermes (not running).
+> No LM Studio card.
+
+Neither surface was wrong about what it had asked. They had asked
+different things. `serve.py` pinned the browser proxy to a literal —
+
+```py
+ROUTES = { '/lmstudio/': ('10.0.0.100', 1234), … }
+```
+
+— **a private LAN address, committed to a shipped file**, pointing at one
+machine on one network. Meanwhile `LMStudioDriver.base_url()` reads
+`CAFRESOHQ_LMSTUDIO_URL` / `LMSTUDIO_BASE_URL` and otherwise falls back to
+`http://localhost:1234/v1`, and the front desk only shows the card when
+*that* probe comes back reachable. The `/ollama/` line directly beneath it
+said `localhost` and had been right all along; nothing made the two agree,
+so nothing noticed.
+
+Two costs, and the second is the bigger one. Here, the office could name
+the boss's twelve local models on one screen and report not having found
+LM Studio on the next. Everywhere else, a shipped default proxies the
+boss's model traffic to **somebody else's IP** — and any boss whose LM
+Studio is not on localhost sees a front desk offering a subscription, a
+broken CLI and a stopped service, and concludes the app has nothing free
+for them while twelve local models sit there.
+
+One resolver now, read by both, defaulting to localhost. `PORT` directly
+above `ROUTES` is the precedent this file already contained: the thing a
+self-hoster has to change belongs in the environment, not in the source.
+`.env.example` documents it, because a setting nobody can discover is the
+same as no setting.
+
+**Then the fix made a sentence false, so the sentence had to move too.**
+"Already running on this machine" was the front desk's line for a local
+daemon, and it was true *by construction* while localhost was the only
+address anything probed. Making a remote backend detectable for the first
+time made that copy reachable and wrong — measured, on the first reload:
+`Local Brain · FOUND · Already running on this machine`, about a box three
+hops away. The card now reads the address detection actually probed:
+*"Running on 10.0.0.100, reachable from here."* Fixing the plumbing and
+leaving the copy would have traded a missing card for a lying one.
+
+Eight arms. Four of them failed first time and every one was a real hole:
+
+- Two behavioural arms restated the env names and default **in the test**
+  instead of reading them from the table. Mutating what the proxy asks for
+  changed nothing the resolver arm could see. The test derives both from
+  `ROUTES` now — which is also what catches a driver growing an env var the
+  proxy never learns about, the exact drift that started this.
+- One arm deleted the found-ternary, the lift returned `None`, and the file
+  died with an `AttributeError` — no FAILED line, arm reported as *not
+  pinned*. **A test that crashes is not a test that reports**, the fourth
+  time that has come up here; the three lifts are named checks now.
+- One arm's own regex stopped at the first `),` — which is the end of the
+  *argument tuple*, not the entry — and rewrote half a line, leaving
+  `serve.py` unparseable and the old default still sitting in the table,
+  which quietly satisfied the check it was supposed to break. **A mutation
+  that corrupts the file is not a mutation that reverts the fix.**
+
+And two existing test files broke honestly: both lift the card object and
+run it under node, and the object now closes over a `found` their scopes
+did not define. Stubbing the variable would have been the easy repair and
+the wrong one — they lift the real computation instead, so they keep
+testing the card the office actually builds.

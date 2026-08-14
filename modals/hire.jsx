@@ -82,6 +82,14 @@ const FRONT_DESK = {
                    model: 'gemini-api:gemini-2.5-flash', tools: ['web'], cloud: true,
                    poweredBy: 'Google', found: 'Your Google AI account is connected to this workspace.' },
 };
+/* Loopback, in the shapes a base URL actually arrives in. A local daemon
+   found HERE and one found across the LAN are the same card with a
+   different true sentence on it — see the note in deskCards. */
+const LOOPBACK = /^(localhost|127(?:\.\d+){3}|\[?::1\]?)$/i;
+/* Host out of a base URL, '' if it is not one. `new URL` throws on the
+   empty string, which is exactly what an undetected daemon reports. */
+const hostOf = (u) => { try { return new URL(String(u || '')).hostname; } catch (_e) { return ''; } };
+
 /* Section 2's card, on the SHELF as well as in the office. A saved
    candidate used to advertise itself as "SONNET · 4 tools" -- the two
    things the design system says a card must not lead with: the vendor's
@@ -269,7 +277,21 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
        knowing and detection is a hint rather than a verdict; what it must
        not do is keep saying "needs a sign-in", which is a different
        diagnosis and sends the boss to fix the wrong thing. */
-    return { ...def, driverId: d.id,
+    /* "Already running on this machine" is the FRONT_DESK line for both
+       local daemons, and it used to be true by construction: the proxy and
+       the driver disagreed about where LM Studio lived, and the only
+       address the DETECTOR ever asked was localhost — so a card that
+       appeared had, necessarily, been found locally. Both now read one
+       env-configurable address (serve.py `_local_route`), which means a
+       backend across the network can be detected for the first time, and
+       the same sentence would be a plain untruth on the first screen a new
+       boss reads. detect() carries the base URL it actually probed; when
+       that host is not loopback, say where it is instead of guessing. */
+    const host = localDaemon ? hostOf(det.detail) : '';
+    const found = host && !LOOPBACK.test(host)
+      ? `Running on ${host}, reachable from here — cheap and tireless.`
+      : def.found;
+    return { ...def, driverId: d.id, found,
              probeError: det.probeError || '',
              probeDetail: det.probeDetail || '',
              needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'

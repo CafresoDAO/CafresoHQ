@@ -55,9 +55,50 @@ from drivers.base import DriverError as _DriverError
 # Listen port. Env-configurable (the Dockerfile + entrypoint set PORT) so a
 # self-hoster can avoid a clash with another local service; defaults to 8787.
 PORT = int(os.environ.get('PORT', '8787') or '8787')
+
+def _local_route(env_names, default):
+    """Where a local backend lives — resolved from the SAME place the driver
+    asks, so the office cannot hold two answers at once.
+
+    It held two. `/lmstudio/` was pinned to ('10.0.0.100', 1234): a private
+    LAN address, committed to a shipped file, pointing at one particular
+    machine on one particular network. Meanwhile `LMStudioDriver.base_url()`
+    reads CAFRESOHQ_LMSTUDIO_URL / LMSTUDIO_BASE_URL and otherwise defaults
+    to http://localhost:1234/v1, and the front desk only shows the LM Studio
+    card when THAT probe comes back reachable.
+
+    Measured on the machine where the two disagree: the NEW HIRE BRAIN
+    picker listed eleven LM Studio models (browser → this proxy →
+    10.0.0.100) on the same run that the front desk offered no LM Studio
+    card at all (server → driver → localhost). The office could name the
+    boss's local models on one screen and say it had not found LM Studio on
+    the next. Neither surface was lying; they were reading different files.
+
+    So one resolver, both consumers, and the default is localhost — which is
+    what the driver already assumed and what the `/ollama/` line beside it
+    had right all along. `PORT` directly above is the precedent: the thing a
+    self-hoster has to change belongs in the environment, not in the source.
+
+    The default strings are written identically to the driver's so a future
+    reader diffing the two sees them match; only host and port are used
+    here, the path is the caller's.
+    """
+    raw = ''
+    for name in env_names:
+        raw = os.environ.get(name, '').strip()
+        if raw:
+            break
+    parts = urllib.parse.urlsplit(raw or default if '://' in (raw or default)
+                                  else 'http://' + (raw or default))
+    return (parts.hostname or 'localhost',
+            parts.port or (443 if parts.scheme == 'https' else 80))
+
+
 ROUTES = {
-    '/lmstudio/': ('10.0.0.100', 1234),
-    '/ollama/':   ('localhost', 11434),
+    '/lmstudio/': _local_route(('CAFRESOHQ_LMSTUDIO_URL', 'LMSTUDIO_BASE_URL'),
+                               'http://localhost:1234/v1'),
+    '/ollama/':   _local_route(('CAFRESOHQ_OLLAMA_URL',),
+                               'http://localhost:11434/v1'),
 }
 
 # Hermes Agent (Nous Research) — we proxy /hermes/* → the gateway's

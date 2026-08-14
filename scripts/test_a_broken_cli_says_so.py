@@ -211,16 +211,28 @@ def main():
     card = lift_object_after(hire, 'return { ...def, driverId: d.id,')
     check('the front desk still builds a card for a detected runtime',
           bool(card), 'modals/hire.jsx')
-    if card:
+    # The card object closes over `found`, which is no longer just def.found:
+    # a local daemon detected across the network names its host instead of
+    # claiming this machine. Lift that computation rather than stubbing the
+    # variable, so this file keeps running the real card builder.
+    bits = [re.search(r'const LOOPBACK = /.*?/i;', hire),
+            re.search(r'const hostOf = \(u\) => \{.*?\};', hire, re.S),
+            re.search(r"const host = localDaemon \? hostOf\(det\.detail\) : '';\n"
+                      r'\s*const found = .*?: def\.found;', hire, re.S)]
+    check('...and still chooses the found line from the detected address',
+          all(bits), 'modals/hire.jsx')
+    if card and all(bits):
         SCOPE = """
 const def = { id:'codex', name:'Codex', role:'Engineer', cloud:false,
               found:'We found your Codex subscription on this machine.' };
 const d = { id:'codex' };
 const localDaemon = false;
-"""
+""" + bits[0].group(0) + '\n' + bits[1].group(0) + '\n'
+        FOUND = '\n' + bits[2].group(0) + '\n'
         broken = run_js(SCOPE + "const det = { installed:true, authenticated:false,"
                                 " probeError:'will not start',"
                                 " probeDetail:'Error: spawn /x/y ENOENT' };"
+                                + FOUND +
                                 f'console.log(JSON.stringify({card}));')
         check('a broken CLI is NOT diagnosed as needing a sign-in',
               broken.get('needsLogin') is False,
@@ -233,6 +245,7 @@ const localDaemon = false;
 
         signin = run_js(SCOPE + "const det = { installed:true, authenticated:false,"
                                 " probeError:'', probeDetail:'' };"
+                                + FOUND +
                                 f'console.log(JSON.stringify({card}));')
         check('a CLI that works but is signed out still asks for a sign-in',
               signin.get('needsLogin') is True,

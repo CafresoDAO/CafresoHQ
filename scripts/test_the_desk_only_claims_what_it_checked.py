@@ -203,13 +203,23 @@ def main():
     # ── 3. the card carries the state through ───────────────────────────
     card = lift_braced(hire, '{ ...def, driverId: d.id,')
     check('the front desk still builds a card object', bool(card), 'modals/hire.jsx')
-    if card:
+    # `found` is no longer simply def.found — a local daemon detected across
+    # the network names its host rather than claiming this machine. Lifted
+    # rather than stubbed so this keeps running the real card builder.
+    bits = [re.search(r'const LOOPBACK = /.*?/i;', hire),
+            re.search(r'const hostOf = \(u\) => \{.*?\};', hire, re.S),
+            re.search(r"const host = localDaemon \? hostOf\(det\.detail\) : '';\n"
+                      r'\s*const found = .*?: def\.found;', hire, re.S)]
+    check('...and still picks the found line from the detected address',
+          all(bits), 'modals/hire.jsx')
+    if card and all(bits):
         SCOPE = ("const def = { id:'a_cli_hermes', name:'Hermes', service:true,"
                  " cloud:false, found:'x' };\nconst d = { id:'hermes' };\n"
                  "const localDaemon = false;\n"
                  "const det = { installed:true, authenticated:true,"
                  " probeError:'is not running', probeDetail:'nothing is"
-                 " listening on 127.0.0.1:8642' };\n")
+                 " listening on 127.0.0.1:8642' };\n"
+                 + '\n'.join(b.group(0) for b in bits) + '\n')
         obj = run_js(SCOPE + f'console.log(JSON.stringify({card}));')
         check('a stopped service is not diagnosed as needing a sign-in',
               obj.get('needsLogin') is False, obj)
