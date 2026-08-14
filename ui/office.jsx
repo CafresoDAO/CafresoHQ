@@ -1741,13 +1741,29 @@ function Ticker({ items, offline }) {
   const vocab = useVocab();
   const quotes = useMarketQuotes(!!vocab.marketTicker);
   /* The scroll keyframes translate -50%, so the line must be two identical
-     halves: segment = quotes + activity, rendered twice. */
-  const segment = (half) => (
+     halves: segment = quotes + activity, rendered twice.
+
+     The second half is scenery. It exists so the scroll has somewhere to go
+     and carries no information the first half does not — but nothing said
+     so, and a screen reader has no way to see that the two are the same
+     pixels twice. Measured while auditing the floor: every event on the
+     ticker is announced twice, in order, so "Llama picked up …" is
+     immediately followed by "Llama picked up …". A sighted boss reads a
+     loop; a listening one is told the office did everything twice.
+
+     `aria-hidden` on the duplicate is the whole fix: it stays in the layout
+     and leaves the accessibility tree, which is exactly what a decorative
+     copy is. It goes on each of half B's items rather than a wrapper around
+     them — `.line` is a flex row with a 22px gap and every item is a direct
+     child, so a wrapper would collapse half B into a single flex item at
+     the wrong width, and the `-50%` scroll only reads as a loop while the
+     two halves measure the same. */
+  const segment = (half, mute) => (
     <React.Fragment key={half}>
       {quotes.map((q) => {
         const f = fmtQuote(q);
         return (
-          <span key={half + q.sym}>
+          <span key={half + q.sym} aria-hidden={mute || undefined}>
             <span className="kw">{q.sym}</span>
             <span className={f.up ? 'mkt-up' : 'mkt-down'}>{f.price}{f.pct}</span>
             <span className="sep">•</span>
@@ -1755,7 +1771,7 @@ function Ticker({ items, offline }) {
         );
       })}
       {items.map((it, i) => (
-        <span key={half + '_' + i}>
+        <span key={half + '_' + i} aria-hidden={mute || undefined}>
           <span className="kw">{it.agent}</span>
           <span>· {it.msg}</span>
           <span className="sep">•</span>
@@ -1771,7 +1787,7 @@ function Ticker({ items, offline }) {
       <div className="ticker-track">
         <div className="line">
           {segment('a')}
-          {segment('b')}
+          {segment('b', true)}
         </div>
       </div>
     </div>

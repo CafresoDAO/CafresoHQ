@@ -125,8 +125,15 @@ const OPENSWARM_ROSTER = [
        screen that didn't exist. That screen now exists (modals/providers.jsx
        MediaTab, mounted at Settings -> Media), so the promise the prompt
        below makes is real. Reel (video) stays parked — that one is a
-       broader product-scope call (north-star section 5), not this gap. */
-    tools: ['vault'],
+       broader product-scope call (north-star section 5), not this gap.
+
+       'img' added 2026-08-14. `toolsForAgent` grants GENERATE_IMAGE off the
+       settings provider alone, never off this list, so ticking it changes
+       nothing about what Pixel can DO — but every card in the product is
+       written from this list, and a card built from ['vault'] introduced
+       the image specialist as "can read your notes". The claim was the one
+       thing missing. */
+    tools: ['img', 'vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.8,
     systemPrompt:

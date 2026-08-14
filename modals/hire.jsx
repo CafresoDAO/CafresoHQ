@@ -121,8 +121,12 @@ const hostOf = (u) => { try { return new URL(String(u || '')).hostname; } catch 
 
    Wrapped in a try because this runs during render on the first screen of a
    fresh install, and a settings store that is not up yet must produce a
-   quieter card, never a broken one — the catch leaves every flag false,
-   which is the do-not-promise default. */
+   quieter card, never a broken one. The catch leaves the flags ABSENT, not
+   false, and the difference is load-bearing in both directions: absent is
+   falsey, so nothing gets promised, and `canDoPhrase` can still tell "the
+   boss has not set an image provider" from "we could not find out", which
+   is what stops an unreadable settings store from telling a boss who
+   already configured one to go and configure one. */
 function capabilityFacts(t) {
   const f = { elevated: !!(t && t.elevated) };
   try {

@@ -7642,3 +7642,86 @@ of the section — a miss falls back to the passive footer, a false alarm has
 nothing beneath it — but worth writing down as a miss rather than leaving
 it to read like a win. The arm that relaxed the wrong rule changed no
 behaviour at all, which is the only reason I found out.
+
+---
+
+## The card was right and the shelf never claimed the tool (2026-08-14)
+
+Two tickets closed here. The second one is the lesson.
+
+The ticker first, because it is short. The floor's scroll keyframe
+translates `-50%`, so the line has to be two identical halves, and the code
+has said so in a comment since it was written. Nothing said it to a screen
+reader. A sighted boss watches a loop; a listening one is told the office
+did each thing twice, in order — `Local Brain · walked onto the floor`
+immediately followed by `Local Brain · walked onto the floor`. `aria-hidden`
+on the duplicate is the whole fix, and the only care needed was **where** it
+goes: `.ticker-track .line` is a flex row with a 22px gap and every item is
+a direct child, so a wrapper around half B collapses it into one flex item
+at the wrong width — and the `-50%` translate only reads as a loop while
+both halves measure the same. It renders, it looks almost right, and it
+breaks the thing the duplicate exists for. The attribute goes on the items.
+That wrong version has its own check now, because it is the one a later
+hand would reach for first.
+
+Now the second ticket, which I fixed twice.
+
+A fresh office introduced the image specialist like this:
+
+    Pixel   IMAGE GENERATION   CAN READ YOUR NOTES
+
+Every word true, and the worst first screen in the product. The tick before
+had stopped the front desk selling capabilities the app does not have, which
+was right, and left this behind: a coworker whose entire role is image
+generation, introducing itself by the one incidental thing it can do, reads
+as a broken hire rather than an unconfigured one, and hands the boss nothing
+to act on. §7 wants one honest sentence *plus a way forward*; this was the
+sentence with the way forward removed.
+
+So the card got a third phrase register — present tense for what a coworker
+can do now, the smaller true claim where one exists, and future tense for
+what a switch would buy. The future lines are collected in their own list
+and appended, so they can never push a present-tense one off a card that
+shows three. What a coworker can do today outranks what it could do after a
+trip to Settings. Two boundaries came with it, both the honest part:
+`elevated` gets no future-tense line, because it is fixed by which template
+you hire and not a switch anyone can flip — "run code once you elevate them"
+would point at a control that does not exist, which is the last tick's lie
+in the future tense. And **absent is not false**: a caller whose settings
+store would not open leaves the flag off the object entirely, and that must
+never become "you have not picked an image provider" on the card of a boss
+who picked one months ago. Do-not-promise-on-unknown has a mirror, and this
+is it.
+
+Eighteen checks green. Twelve fire arms caught. And the live office still
+read `CAN READ YOUR NOTES`.
+
+The shelf entry declares `tools: ['vault']`. It never claimed `img`. Every
+fixture I wrote to test the copy declared `['img', 'vault']`, because that
+is obviously what the image specialist has, and the fixtures passed
+beautifully against a defect they could not see. **A tool nothing claims
+cannot be described by any card in the product** — the copy was never the
+whole bug, and the half I could test was the half that already worked.
+
+What made it invisible is worth keeping. `toolsForAgent` grants
+GENERATE_IMAGE off `settings.imageProvider` alone and never consults the
+agent's tool list, so the missing `img` cost Pixel no capability whatsoever
+— it worked exactly as designed the moment a provider was set. The claim was
+the only thing missing, and claims are what cards are built from. Two data
+tables, one describing what a coworker may do and one describing what it is
+for, and only the second one reaches the boss.
+
+The test now reads the shipped shelf: the image specialist must claim the
+image tool, and every key in the unlock table must be tickable in
+`TOOLS_CATALOG` — an unlock line for a tool no hire form offers can only
+ever fire for a hand-edited agent. Both arms caught cleanly. Live on a fresh
+office, on the same port that produced the measurement above:
+
+    Pixel   IMAGE GENERATION
+    CAN READ YOUR NOTES AND MAKE IMAGES ONCE YOU PICK AN IMAGE PROVIDER
+
+The through-line from the last eight commits holds, with a piece added. A
+surface may only assert what detection established — and a surface built
+from a data table can only assert what that table says, so the table is
+part of the surface. Testing the sentence generator against fixtures I wrote
+myself proved the generator, and proved nothing about the office.

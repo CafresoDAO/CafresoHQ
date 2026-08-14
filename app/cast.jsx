@@ -146,23 +146,60 @@ const CAN_DO_INSTEAD = {
   web: 'read a web page you name',
 };
 
+/* And when there is no smaller true thing to say, say what switching it on
+   would buy. Measured on a fresh office, after the previous tick correctly
+   stopped the card promising what it could not deliver:
+
+     Pixel  IMAGE GENERATION  CAN READ YOUR NOTES
+
+   Every word of that is true and it is still a bad first screen. A
+   coworker whose entire role is image generation, introducing itself by
+   the one incidental thing it can do, reads as a broken hire rather than
+   an unconfigured one — and the boss is given nothing to act on. §7 asks
+   for a way forward, and the fix the last tick declined to guess at is
+   this one: name the switch, in the future tense, so the sentence is a
+   route rather than a claim.
+
+   Only for conditions the boss can actually flip from where they are
+   standing. `elevated` is deliberately absent: it is a property of the
+   candidate, decided by which template you hire, not a setting anyone can
+   turn on — "run code once you elevate them" would point at a control
+   that does not exist. */
+const CAN_DO_UNLOCK = {
+  img:    'make images once you pick an image provider',
+  wallet: 'spend from your wallet once you switch the Wallet service on',
+};
+
 /* `ctx` absent means the caller does not know, and unknowable → do not
    promise. Same rule as officeCanSearch and officeHasBrain: the mirror of
    "do not alarm on unknown" is "do not sell on unknown". */
 function canDoPhrase(tools, ctx) {
   ctx = ctx || {};
+  /* Absent is not false. A caller that could not read the settings store
+     leaves the flag off the object entirely, and "we do not know" must not
+     become "we know it is off" — that would put "once you pick an image
+     provider" on a card belonging to a boss who already picked one. Same
+     rule as the promise above, pointed the other way. */
+  const established = (k) => Object.prototype.hasOwnProperty.call(ctx, k);
   const list = [];
+  /* Kept separate so a future-tense line can never push a present-tense one
+     out of the three the card shows. What the coworker can do today always
+     outranks what it could do after a trip to Settings. */
+  const pending = [];
   for (const t of (tools || [])) {
     const say = CAN_DO[t];
     if (!say) continue;
     const need = CAN_DO_NEEDS[t];
     if (!need || ctx[need]) { if (list.indexOf(say) < 0) list.push(say); continue; }
     const instead = CAN_DO_INSTEAD[t];
-    if (instead && list.indexOf(instead) < 0) list.push(instead);
+    if (instead) { if (list.indexOf(instead) < 0) list.push(instead); continue; }
+    const unlock = CAN_DO_UNLOCK[t];
+    if (unlock && established(need) && pending.indexOf(unlock) < 0) pending.push(unlock);
   }
-  if (!list.length) return 'talk things through';
-  const shown = list.slice(0, 3);
-  const rest = list.length - shown.length;
+  const all = list.concat(pending);
+  if (!all.length) return 'talk things through';
+  const shown = all.slice(0, 3);
+  const rest = all.length - shown.length;
   let out = shown.length === 1 ? shown[0]
           : shown.slice(0, -1).join(', ') + ' and ' + shown[shown.length - 1];
   if (rest > 0) out += ` +${rest} more`;
@@ -424,4 +461,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
