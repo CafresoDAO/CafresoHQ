@@ -7524,3 +7524,53 @@ run it under node, and the object now closes over a `found` their scopes
 did not define. Stubbing the variable would have been the easy repair and
 the wrong one — they lift the real computation instead, so they keep
 testing the card the office actually builds.
+
+### The office told the boss to @mention a name nobody has
+
+Two brains in one office — Llama on Ollama, and the LM Studio card, which
+hires a coworker the front desk names **Local Brain**. Asked Llama to hand
+a question over. Llama wrote the `[DM_TO:]` inline instead of as a block,
+so nothing was delivered, and the guard said so, correctly, with a way
+forward:
+
+> _(the handoff to Local Brain didn't go out — a hand-off needs the
+> message on its own line and a closing tag. Nothing was sent; ask them
+> yourself with @Local.)_
+
+I typed exactly that. The CEO answered. Nothing on screen said the
+addressee had changed.
+
+Three defects, and the office needed all three to produce that afternoon:
+
+1. The guard suggested `who.split(/\s+/)[0]` — the first word of the name.
+   For "Nova" that is "Nova". For "Local Brain" it is nobody.
+2. `extractAllMentions` matched `@[A-Za-z][A-Za-z0-9_-]*`: one word, no
+   spaces. A coworker with a space in their name could not be addressed at
+   all — not by the boss, and not by the office itself, which writes
+   `` @${assignee.name} `` when a task opens a chat and would emit a
+   mention its own parser could not read back.
+3. The unknown-mention notice lived inside `if (dedup.length)`, so it
+   only ran when some *other* mention had matched. The single case where
+   the boss most needs telling — they addressed somebody by name and
+   nobody by that name exists — was the one case that said nothing.
+
+§7 asks for one honest sentence plus a way forward. Each of these passes
+§7 read alone. The failure is only visible end to end: the way forward
+from the first is a door the second has bricked up, and the third is why
+nobody mentions the brick. **A way forward is only a way forward if the
+next surface accepts it** — this is `1927f8e`'s circle again, walked in a
+straight line instead.
+
+The parser now takes the roster and matches longest-name-first, falling
+back to exactly the old one-word token when the name isn't on it, because
+an unknown name still has to parse in order to be reported as unknown.
+The guard prefers the roster spelling and completes a short form
+("Local" → "Local Brain"); failing both it takes the leading run of name
+characters, since "@Nova," is nobody either. And when nothing survives
+that, it says the name wasn't clear enough to route rather than inventing
+a handle — a way-forward-shaped object is not a way forward.
+
+The first draft of the fix shipped that last defect: `@Nova,`, comma
+included. The pinning test caught it before the commit did. Worth noting
+which one — the case written for the *ugliest* input, the one that felt
+like padding while I was typing it.

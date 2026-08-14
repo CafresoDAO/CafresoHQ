@@ -694,15 +694,47 @@ function stripBlocks(text) {
 
    A self-addressed marker does not hide a real one: every DM_TO in the
    reply is checked and the first with someone ELSE'S name still reports. */
-function unsentHandoff(text, deliveredCount, selfName) {
+/* `roster` is what makes the last clause of this sentence true.
+
+   It suggested `@${who.split(/\s+/)[0]}` — the first word of the name. For
+   "Nova" that is "Nova"; for a coworker called "Local Brain" it is "@Local",
+   which is nobody. Measured end to end: the guard printed "ask them yourself
+   with @Local", the boss typed exactly that, and the CEO answered instead.
+   A way forward that leads somewhere else is the failure this file has
+   already recorded twice — a note whose one piece of advice does not work
+   costs more than no note, because the boss spends the try.
+
+   With the roster in hand the name is resolved to the one the office
+   actually knows, and mentions now carry spaces (see extractAllMentions),
+   so the full name is a working instruction. Off-roster names keep the
+   first-word form: a model that emits `[DM_TO: Nova, the researcher]` has
+   named nobody, and "@Nova" is the better guess to hand the boss. */
+function unsentHandoff(text, deliveredCount, selfName, roster) {
   if (deliveredCount > 0) return null;
   const me = String(selfName || '').trim().toLowerCase();
+  const team = (roster || []).map(n => String(n || '').trim()).filter(Boolean);
   const re = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]/gi;
   let m;
   while ((m = re.exec(String(text || '')))) {
     const who = String(m[1]).trim().slice(0, 40);
     if (me && who.toLowerCase() === me) continue;
-    return `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent; ask them yourself with @${who.split(/\s+/)[0]}.)_`;
+    // The way forward has to be typeable, or it is just a shrug with a
+    // name in it. Three things can be inside a DM_TO the model wrote by
+    // hand: the exact roster name; a short form of it ("Local" for
+    // "Local Brain"); or a name with prose stuck to it ("Nova, the
+    // researcher"). Prefer the roster spelling, since that is the one the
+    // mention parser resolves. Otherwise take the leading run of
+    // name characters — "@Nova," is nobody, and neither is the whole
+    // sentence. If nothing survives that, say so rather than inventing a
+    // handle the boss will type into an empty room.
+    const lc = who.toLowerCase();
+    const known = team.find(n => n.toLowerCase() === lc)
+      || team.find(n => n.toLowerCase().startsWith(lc + ' '));
+    const how = known || (who.match(/^[A-Za-z][A-Za-z0-9_-]*/) || [''])[0];
+    const lead = `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent;`;
+    return how
+      ? `${lead} ask them yourself with @${how}.)_`
+      : `${lead} and no name in it was clear enough to route — send it again yourself.)_`;
   }
   return null;
 }
@@ -953,7 +985,7 @@ function honestyNotes(raw, opts) {
   const delivered = o.delivered || 0;
   const out = [];
   const push = (n) => { if (n) out.push(n); };
-  push(unsentHandoff(raw, delivered, o.self));
+  push(unsentHandoff(raw, delivered, o.self, o.roster));
   /* extractApproval on the same buffer answers "did a well-formed ask get
      raised this run" — a good one keeps this silent, only a malformed one
      is called out. Re-derived rather than passed in: the two call sites
@@ -1147,31 +1179,57 @@ function extractMention(text) {
      "  @plato  @selvin  @gpt  what's up"     (whitespace tolerant)
    Returns { targetNames: [...], body: "..." } where body is the message
    minus the leading mention block. Returns null if no mention found. */
-function extractAllMentions(text) {
+/* `roster` — the names actually on the team, longest matched first, so a
+   coworker whose name contains a space can be addressed at all.
+
+   The token was `@[A-Za-z][A-Za-z0-9_-]*`: one word, no spaces. The front
+   desk hires a coworker called **Local Brain**. The task→chat bridge writes
+   `@${assignee.name} ` verbatim. So the office generated a mention it could
+   not parse: `@Local Brain do X` read as a mention of "Local" with the body
+   "Brain do X", matched nobody, and fell through to the CEO.
+
+   Measured: the boss typed `@Local In one sentence, disagree` — the exact
+   words the office's own handoff guard had just told them to type — and the
+   CEO answered instead, with nothing anywhere saying the addressee had
+   changed.
+
+   Without a roster this behaves exactly as before, which is what keeps the
+   fallback honest: an unknown name still parses as one word and is still
+   reported as unknown. A roster name only ever wins where it matches
+   wholly, up to a space or the end, so "@Local Brain" cannot be stolen by a
+   coworker who happens to be called "Local". */
+function extractAllMentions(text, roster) {
   if (!text) return null;
-  // Match a contiguous block of @names at the start: one or more @name tokens
-  // separated by whitespace, then the rest of the message as the body.
-  const m = String(text).match(/^\s*((?:@[A-Za-z][A-Za-z0-9_-]*\s+)+)(.+)$/s);
-  if (!m) return null;
-  const namesBlob = m[1];
-  const body = m[2].trim();
-  if (!body) return null;
+  const names = (roster || []).map(n => String(n || '').trim()).filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const src = String(text);
   const targetNames = [];
-  const nameRe = /@([A-Za-z][A-Za-z0-9_-]*)/g;
-  let nm;
   /* Dedup case-insensitively but KEEP the first-seen original casing —
      the old check compared lowercase against a mixed-case array, so
      "@Plato @plato" produced two targets and a double dispatch. */
   const seen = new Set();
-  while ((nm = nameRe.exec(namesBlob)) !== null) {
-    const n = nm[1].trim();
-    if (!n) continue;
-    const lc = n.toLowerCase();
-    if (seen.has(lc)) continue;
-    seen.add(lc);
-    targetNames.push(n);
+  let i = 0;
+  for (;;) {
+    while (i < src.length && /\s/.test(src[i])) i++;
+    if (src[i] !== '@') break;
+    const rest = src.slice(i + 1);
+    // A whole roster name, or failing that the single-word token.
+    let hit = names.find(n => rest.slice(0, n.length).toLowerCase() === n.toLowerCase()
+                              && /^(\s|$)/.test(rest.slice(n.length)));
+    if (!hit) {
+      const m = rest.match(/^[A-Za-z][A-Za-z0-9_-]*/);
+      // Same trailing rule as the regex this replaced: a name runs up to
+      // whitespace, so "@plato," is not a mention of "plato".
+      if (!m || !/^(\s|$)/.test(rest.slice(m[0].length))) break;
+      hit = m[0];
+    }
+    i += 1 + hit.length;
+    const lc = hit.toLowerCase();
+    if (!seen.has(lc)) { seen.add(lc); targetNames.push(hit); }
   }
-  return targetNames.length ? { targetNames, body } : null;
+  const body = src.slice(i).trim();
+  if (!targetNames.length || !body) return null;
+  return { targetNames, body };
 }
 
 /* ===========================================================================

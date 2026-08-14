@@ -311,7 +311,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        via extractAllMentions and respect the active thread). */
     if (activeRoom && activeRoom.participants.length) {
       // Explicit @mentions inside a room override the default "send to all"
-      const explicit = HQ.extractAllMentions(text);
+      const explicit = HQ.extractAllMentions(text, activeRoom.participants.map(a => a.name));
       const recipients = explicit
         ? activeRoom.participants.filter(a => explicit.targetNames.some(n => n.toLowerCase() === a.name.toLowerCase()))
         : activeRoom.participants;
@@ -439,7 +439,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        with both replies streaming inline into the SAME thread. Saves
        round-trips when the boss already knows who they want, and lets two
        agents weigh in on the same prompt without manually re-asking. */
-    const mentionAll = HQ.extractAllMentions(text);
+    // The roster is what lets a coworker whose name has a space in it be
+    // addressed at all — the front desk hires one called "Local Brain".
+    const mentionAll = HQ.extractAllMentions(text, agents.map(a => a.name));
     if (mentionAll && onDispatchToAgent) {
       const matched = [];
       const unknown = [];
@@ -504,7 +506,30 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
         return;
       }
-      // No matches at all — fall through to CEO so they can clarify.
+      /* No matches at all — fall through to CEO so they can clarify, but
+         SAY SO first. The `unknown` note above lives inside `if
+         (dedup.length)`, so it only ever ran when some OTHER mention had
+         matched: the one case where the boss most needs telling — they
+         addressed somebody by name and nobody by that name exists — was
+         the one case that said nothing and quietly handed the message to
+         the CEO. Measured: "@Local In one sentence, disagree" to a roster
+         holding "Local Brain", answered by the CEO, with no line anywhere
+         saying the addressee had been changed. The CEO cannot clarify what
+         it was never told, and the boss reads a reply to a question they
+         believe went to a coworker. */
+      if (unknown.length) {
+        const targetThread = (typeof activeThread === 'string'
+          && (activeThread === 'direct' || activeThread.startsWith('project:') || activeThread.startsWith('meeting:')))
+          ? activeThread : 'direct';
+        const team = agents.map(a => '@' + a.name).join(', ');
+        setChat(prev => [...prev, {
+          id: HQ.uid('m'), from: 'system', name: 'HQ',
+          text: `(nobody here is called ${unknown.map(n => '@' + n).join(' or ')}`
+                + (team ? ` — the team is ${team}` : ' — nobody is hired yet')
+                + `. Sending this to CafresoHQ instead.)`,
+          thread: targetThread,
+        }]);
+      }
     }
 
     setInput('');
