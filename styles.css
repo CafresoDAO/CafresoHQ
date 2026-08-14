@@ -6875,6 +6875,11 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
 .ws-led .v { font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--accent-sun); color: #241a0e; flex-shrink: 0; }
 .ws-led.k-ran .v { background: #9bbf8f; }
 .ws-led.k-exported .v { background: #7fb0d6; }
+/* Filed in the cabinet, not in this folder — and the badge has to say so on
+   sight, or `noted` inherits the same sun colour `wrote` uses and the one
+   distinction the row exists to draw is invisible. Shares the export blue
+   because they share a destination. */
+.ws-led.k-noted .v { background: #7fb0d6; }
 /* Keyboard focus rings for Workspace controls (were missing). */
 .ws-seg button:focus-visible, .ws-projsel:focus-visible, .ws-save:focus-visible, .ws-talk:focus-visible,
 .ws-hd-acts button:focus-visible, .ws-led:focus-visible, .ws-follow input:focus-visible {

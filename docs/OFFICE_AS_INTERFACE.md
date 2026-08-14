@@ -6890,3 +6890,78 @@ project's ledger as `wrote <vault-relative path>` when the coworker is
 working in the project, and clicking such a row asks the project tree for
 a path that is not in it. Same family, different owner (the row's target,
 not its truth) — recorded rather than bundled in here.
+
+### A ledger row has to land where the work actually went (2026-08-13)
+
+Closing the "observed, not fixed" note above. The Workspace's activity
+ledger is captioned *"click any line to jump to it"*. Driven live in a
+throwaway office — one project, one coworker on it — three of those lines
+could not keep that promise:
+
+```
+wrote     Research/remote-work.md      ← a VAULT_NEW
+exported  Slides/pitch.pptx            ← an EXPORT_PPTX   (after the fix)
+wrote     Slides/pitch.pptx            ← what it said before
+```
+
+Neither file is in this folder. Every `EXPORT_*` tool's own doc string
+says where it goes — "the server renders the actual file and saves it to
+the vault" — and a vault note is a filing-cabinet object by definition.
+The ledger filed both with the same verb a real write into this directory
+uses, so on the boss's record of *what your coworkers did to this folder*
+they read as changes to the folder. Clicking them asked **this project**
+for a vault path:
+
+```
+GET /fs/file?path=Research%2Fremote-work.md   → 404
+GET /fs/file?path=Slides%2Fpitch.pptx         → 404
+```
+
+and nothing appeared on screen either way. The pane's one error slot lived
+*inside* the `openFile ?` branch — mounted only when a file is already
+open, which is exactly when a failure to open a file cannot happen. A dead
+click, invisible by construction. §7 says every failure is one honest
+sentence; this one was zero sentences, and the surface that was supposed
+to carry it had been built where it could never fire.
+
+Three fixes. **What the row says**: vault notes are `noted`, exports are
+`exported`, and only a real `FILE_WRITE` is `wrote` — and only a write
+pulses the file tree or refreshes it, because the other two point at a
+tree that will never contain them. **Where the click goes**: rows carry
+`where` (`'folder' | 'cabinet'`), and a cabinet row opens the cabinet
+through the one owner of that two-step — `app.jsx` publishes
+`window.cafresohqOpenNote` rather than a second copy that would also have
+to re-implement the mount latch and would rot. **That the failure is
+visible**: the error slot is hoisted out of the branch, so a click that
+cannot open anything says why.
+
+Making it visible immediately surfaced the next lie underneath, which is
+the part worth recording. The server answered two different questions with
+one string, `"not a file"` — missing, and *is a directory*. Downstream
+that string can only be mapped one way, and the way it mapped was
+`/not found/` → "the office couldn't find that — it may have been moved or
+renamed." Said about a folder that was found. **An ambiguous wire value
+does not stay ambiguous at the surface; it becomes a confident wrong
+sentence.** Split server-side (`404 no such file` / `400 that is a folder,
+not a file`, in both `_fs_file` and `_fs_stat`), mapped office-side — and
+the folder rule has to sit *before* the missing-file rule in
+`OFFICE_CAUSES`, because `/not found|no such file/` matches the folder
+string too and first match wins. Behind it, the fix is dead code. The new
+sentence also carries a way forward, which the generic one cannot: "that's
+a folder — open one of the files inside it."
+
+Both sentences verified live at the real surface, by clicking a ledger row
+for a directory and one for a file that was never written.
+
+Same rule as the entry above it, one layer down: **a surface may only
+assert what detection established** — and when the wire hands the surface
+one token for two facts, the surface has no detection to work with. The
+fix is upstream both times.
+
+**Eight arms, eight passes.** Each reverted separately; two arms needed
+rewriting before they were faithful (one deleted the error slot rather
+than moving it back inside the branch, which is a different bug than the
+one being pinned). One claim in the new test was wrong on first write: it
+compared the `noted` badge against a `.k-wrote` rule that does not exist —
+`wrote` *is* the base badge. Corrected to compare against the base, which
+is the question actually being asked.

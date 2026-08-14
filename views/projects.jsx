@@ -139,7 +139,16 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     clearTimeout(pulseTimers.current[path]);
     pulseTimers.current[path] = setTimeout(() => setPulse(prev => { const n = new Set(prev); n.delete(path); return n; }), 2600);
   };
-  const addLedger = (verb, name, arg) => setLedger(prev => [{ id: Math.random().toString(36).slice(2, 9), verb, name, path: arg, label: shortPath(arg), kind: verb }, ...prev].slice(0, 40));
+  /* `where` — 'folder' or 'cabinet'. Not decoration: it decides both what the
+     row SAYS and where clicking it goes. Vault notes and the EXPORT_* family
+     are saved to the filing cabinet, not to this project's directory ("the
+     server renders the actual file and saves it to the vault", every export
+     tool's doc string) — and the ledger filed them with the same verb as a
+     write into this folder, on a row captioned "click any line to jump to
+     it". Measured: `wrote Research/remote-work.md` in a project ledger, and
+     clicking it asked THIS project for that path — GET /fs/file?path=
+     Research/remote-work.md → 404, with nothing on screen either way. */
+  const addLedger = (verb, name, arg, where) => setLedger(prev => [{ id: Math.random().toString(36).slice(2, 9), verb, name, path: arg, label: shortPath(arg), kind: verb, where: where || 'folder' }, ...prev].slice(0, 40));
   const bumpIdle = () => { clearTimeout(idleTimer.current); idleTimer.current = setTimeout(() => setAgentStatus('idle'), 3500); };
 
   /* A coworker reports the path they were GIVEN — "index.html" — because that
@@ -226,8 +235,14 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       const isExport = name && name.indexOf('EXPORT') === 0;
       const isBash = name === 'BASH';
       if (isWrite || isVault || isExport) {
-        markPulse(arg); setTreeNonce(n => n + 1);
-        addLedger(isExport ? 'exported' : 'wrote', name, arg);
+        /* Vault notes and exports do not land in this folder, so they get
+           neither the tree pulse nor the tree refresh — both point at a
+           tree that will never contain them — and they say "noted" and
+           "exported" rather than borrowing the verb a real write into this
+           directory uses. `where` sends the click to the cabinet. */
+        if (isWrite) { markPulse(arg); setTreeNonce(n => n + 1); }
+        addLedger(isWrite ? 'wrote' : isExport ? 'exported' : 'noted',
+                  name, arg, isWrite ? 'folder' : 'cabinet');
         const cur = openFileRef.current;
         if (isWrite && cur && cur.path === arg) {
           if (cur.dirty) setConflict(true);   // surface banner — do not clobber
@@ -303,7 +318,21 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       return { ...p, agentIds: cur.includes(agentId) ? cur.filter(id => id !== agentId) : [...cur, agentId] };
     }));
   };
-  const onLedgerClick = (l) => { if (l.kind === 'ran') { setTermOpen(true); setTermMounted(true); LSset('term', true); return; } if (l.path) openPath(l.path); };
+  /* "click any line to jump to it" — so every line has to land somewhere.
+     A cabinet line asked THIS project for a vault path and got a 404 the
+     boss never saw, because the editor's error slot only renders when a
+     file is already open. Now each line goes where its work actually went:
+     a command to the terminal it ran in, a note or an export to the
+     cabinet, a write to the file in this tree. */
+  const onLedgerClick = (l) => {
+    if (l.kind === 'ran') { setTermOpen(true); setTermMounted(true); LSset('term', true); return; }
+    if (l.where === 'cabinet') {
+      if (window.cafresohqOpenNote) window.cafresohqOpenNote(l.path);
+      else toast('error', 'The filing cabinet is not open in this window.');
+      return;
+    }
+    if (l.path) openPath(l.path);
+  };
 
   const statusLabel = agentStatus === 'working' ? 'coworker working…' : 'coworker standing by';
 
@@ -366,6 +395,13 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   const editorPane = () => (
     <div className="ws-editorwrap">
+      {/* Hoisted out of the `openFile ?` branch. Every way this pane can fail
+          to OPEN a file leaves no file open, so the one slot that reported
+          those failures was mounted exactly when there were none to report:
+          a click that 404'd showed the "Open a file from the tree"
+          placeholder and nothing else. Same silent-failure shape the
+          Follow-along note above describes, one layer up. */}
+      {err && <div className="ws-err">{officeCause(err)}</div>}
       {openFile ? (
         <>
           <div className="ws-tabs">
@@ -389,7 +425,6 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
               <button onClick={() => setPubMsg(null)}>✕</button>
             </div>
           )}
-          {err && <div className="ws-err">{officeCause(err)}</div>}
           <div className="ws-stage">
             {previewMode ? <FilePreview file={openFile} nonce={previewNonce} /> : <IDEEditor value={openFile.content} onChange={onEdit} path={openFile.path} />}
           </div>

@@ -390,6 +390,11 @@ const OFFICE_CAUSES = [
    'that took too long, so I stopped waiting — try again'],
   [/\b5\d\d\b|internal server error|service unavailable/i,
    'the office ran into trouble doing that — not something you did'],
+  /* Before the missing-file rule: a folder IS found, so falling through to
+     "couldn't find that" told the boss the opposite of what happened. This
+     one has a fix in it, which the generic sentence cannot offer. */
+  [/is a folder, not a file|is a directory|eisdir/i,
+   "that's a folder — open one of the files inside it"],
   [/\b40[34]\b|not found|no such file|enoent/i,
    "the office couldn't find that — it may have been moved or renamed"],
   [/eacces|permission denied|\b403\b/i,

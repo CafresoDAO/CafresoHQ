@@ -174,8 +174,14 @@ def _fs_file(self):
         p = pathlib.Path(_client_path(req_path)).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
+    # "not a file" answered two different questions with one string, and the
+    # surfaces that print it could only relay the ambiguity: a boss clicking a
+    # ledger row for a folder was told the office "couldn't find that". Say
+    # which it is; the reader's cause table maps each to its own sentence.
+    if not p.exists():
+        return self._send_json(404, {'error': 'no such file'})
     if not p.is_file():
-        return self._send_json(404, {'error': 'not a file'})
+        return self._send_json(400, {'error': 'that is a folder, not a file'})
     # Serve only within CAFRESOHQ_ALLOWED_DIRS — every mode (was container-
     # only, which exposed unauthenticated arbitrary file read in local/BYO).
     if not _within_allowed_dirs(p):
@@ -229,8 +235,10 @@ def _fs_stat(self):
         return self._send_json(400, {'error': f'invalid path: {e}'})
     if not _within_allowed_dirs(p):
         return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
+    if not p.exists():
+        return self._send_json(404, {'ok': False, 'error': 'no such file'})
     if not p.is_file():
-        return self._send_json(404, {'ok': False, 'error': 'not a file'})
+        return self._send_json(400, {'ok': False, 'error': 'that is a folder, not a file'})
     try:
         st = p.stat()
         h = _hl.sha1(p.read_bytes()).hexdigest()[:16]

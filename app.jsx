@@ -1139,6 +1139,16 @@ ${d.text}` : d.text,
       try { window.dispatchEvent(new CustomEvent('cafresohq:openNote', { detail: { path } })); } catch (_e) {}
     }, 80);
   };
+  /* Published so surfaces outside this file can reach the cabinet without
+     re-implementing the two-step. The Workspace's activity ledger needs it:
+     a coworker's vault note or export is filed there, and clicking the row
+     used to ask the PROJECT for a vault path. Copying `goTo` + a bare event
+     into a second file would also copy the 80ms mount latch, which is the
+     kind of detail that rots in the duplicate. One owner. */
+  React.useEffect(() => {
+    window.cafresohqOpenNote = openVaultNote;
+    return () => { if (window.cafresohqOpenNote === openVaultNote) delete window.cafresohqOpenNote; };
+  });
 
   const onHire = (a) => {
     const firstEver = agents.length === 0 && tasks.length === 0;
