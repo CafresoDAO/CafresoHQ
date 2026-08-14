@@ -2881,19 +2881,25 @@ ${d.text}` : d.text,
       if (!proposedRole) proposedRole = 'Specialist';
       pendingHiresRef.current.add(agent.id);
       const proposalSummary = `Hire: ${proposedName} (${proposedRole})`;
+      const hireRationale = String(hire.body || '').slice(0, 1200);
       onApprovalRequest({
         title: proposalSummary,
         by: agent.name,
         kind: 'hire-agent',
         agentId: agent.id,
         elevated: false,
+        /* Their argument for the hire, shown rather than stored. The card
+           used to read "Hire: Kip (Specialist) · by Nova" and nothing else,
+           which asks the boss to approve a new AI on the strength of a
+           four-word title. */
+        detail: hireRationale,
         // Carry the proposal payload so onApprove can construct the agent.
         hireProposal: {
           proposedBy: agent.id,
           proposedByName: agent.name,
           name: proposedName,
           role: proposedRole,
-          rationale: String(hire.body || '').slice(0, 1200),
+          rationale: hireRationale,
         },
       });
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
@@ -2954,18 +2960,22 @@ ${d.text}` : d.text,
       // Default role if STILL missing (rare — name was given without role).
       if (!proposedRole) proposedRole = 'Assistant';
       pendingAssistantHiresRef.current.add(agent.id);
+      const assistantRationale = String(hire.body || '').slice(0, 1200);
       onApprovalRequest({
         title: `Assistant: ${proposedName} (${proposedRole}) — reports to ${agent.name}`,
         by: agent.name,
         kind: 'hire-assistant',
         agentId: agent.id,
         elevated: false,
+        /* Same gate as the senior-hire above. An assistant is a permanent
+           subordinate with inherited tools, so "why" is not decoration. */
+        detail: assistantRationale,
         assistantProposal: {
           proposedBy: agent.id,
           proposedByName: agent.name,
           name: proposedName,
           role: proposedRole,
-          rationale: String(hire.body || '').slice(0, 1200),
+          rationale: assistantRationale,
           // Inherit senior's tools (no escalation) and a sane sub-model.
           inheritTools: agent.tools || ['vault'],
           inheritColor: agent.color || 'sky',
@@ -2990,23 +3000,40 @@ ${d.text}` : d.text,
       }
       pendingElevationRef.current.add(agent.id);
       const reason = String(req.reason || '').trim().slice(0, 80) || '(no reason given)';
+      /* One string, used twice on purpose. `details` is what the approve
+         handler reads; `detail` is what the TRAY renders. They were allowed
+         to be different things once, and the result was that the highest
+         privilege in the product — file and shell access — was granted off
+         an 80-character summary the requester wrote about itself, while the
+         verbatim request sat unread on the record. */
+      const verbatim = String(req.body || '').slice(0, 1200);
+      const senior = agents.find(x => x.id === agent.reportsTo);
       onApprovalRequest({
-        title: `🛡 Give ${agent.name} file and shell access: ${reason}`,
+        /* No shield here: the tray prepends its own for `elevated` rows, and
+           the two together rendered as "🛡 🛡 Give Nova file and shell
+           access". The badge belongs to the tray, which is the thing that
+           knows how an elevated row is meant to look. */
+        title: `Give ${agent.name} file and shell access: ${reason}`,
         by: agent.name,
         kind: 'grant-elevation',
         agentId: agent.id,
         // Mark as elevated-flagged in the tray (red border, "agent waiting" treatment).
         elevated: true,
+        detail: verbatim,
         elevationRequest: {
           requestedBy: agent.id,
           requestedByName: agent.name,
           reason,
-          details: String(req.body || '').slice(0, 1200),
+          details: verbatim,
           // Snapshot context for the boss to review.
           currentTools: (agent.tools || []).slice(),
           isAssistant: !!agent.assistant,
           isTransient: !!agent.transient,
           reportsTo: agent.reportsTo || null,
+          /* The tray has no agents list, and "reports to a_k3f9" is not a
+             fact a boss can use. Resolve the name here, where the roster
+             is in scope, and leave the phrasing to the view. */
+          reportsToName: senior ? senior.name : null,
         },
       });
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',

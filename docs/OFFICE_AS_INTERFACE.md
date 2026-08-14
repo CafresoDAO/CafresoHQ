@@ -6512,3 +6512,85 @@ concurrent write during those few seconds would have been overwritten by my
 restore. Fire-testing a cross-file invariant is worth doing; mutating a file
 another session is holding is the part to avoid, and the safer shape is to
 assert the rule without reverting it.
+
+### The gate against a misleading summary was wired to one door of two
+
+The approval tray renders `p.detail` under a comment that states the rule
+better than I could:
+
+> The actual thing being authorised, verbatim. The title above is the
+> REQUESTER's summary of its own request — this gate exists to catch a
+> summary that doesn't match the action, so the boss has to be able to see
+> both.
+
+Exactly one caller ever set `detail`: the external bridge that surfaces
+Claude Code's tool-use requests. Every approval HQ raises itself — five
+kinds — passed none, so for all of them the gate rendered nothing and the
+boss saw only the summary it was built to cross-check.
+
+Including the highest privilege in the product. A coworker asking for file
+and shell access produced this card, entire:
+
+    🛡 Give Nova file and shell access: needs to read the CSVs
+    by Nova · grant-elevation · coworker waiting on your call
+
+Approve or reject the run of the filesystem, on the strength of eighty
+characters the requester wrote about itself. Its verbatim request — up to
+1200 characters, already collected, already stored — sat unread on the
+record. Both hire kinds had the same hole: `rationale` gathered, truncated,
+filed, never shown, so "Hire: Kip (Specialist)" was the whole case for
+adding an AI to the office.
+
+And the elevation request gathers a provenance snapshot under a comment
+reading *"Snapshot context for the boss to review"*. None of it was
+reviewable. The case that matters is the one the boss cannot detect any
+other way: a **transient** helper — spawned by another coworker mid-run,
+never hired, gone when the run ends — asking for shell access, rendered
+identically to a request from somebody the boss hired themselves.
+
+The fix is mostly wiring: one `detail` on each of the three requests that
+already collect a body, carrying the *same string* the record stores rather
+than a second slice of it. Plus a provenance line on elevation cards, with
+the senior's name resolved where the roster is in scope, because the tray
+has no agents list and "reports to a_k3f9" is not a fact a boss can use.
+Two things the audit turned up on the way: the elevation title carried its
+own 🛡 and the tray prepends one for elevated rows, so the card read
+"🛡 🛡 Give Nova…"; and `ap-detail`'s red left rule is tuned for a shell
+command about to run, which is the wrong signal over somebody making a case
+for a hire (§5), so it softens for the kinds that are not a hazard.
+
+Pinned in `scripts/test_the_approval_shows_the_request.py`. The three
+`onApprovalRequest({…})` literals are brace-matched out of `app.jsx` and
+**evaluated**, so the assertions are about the object the tray actually
+receives. Twelve arms, each reverted separately.
+
+**How this one was found.** Not by reading the approval code. By making the
+previous two entries' shape into a routine: a sweep for record fields that
+are written and never read back. `requestedByName` came out of it, which
+led to `elevationRequest`, which led here. The sweep is worth keeping —
+after CSS-property noise is filtered it is a short list, and three of the
+last four defects have been on it.
+
+**Two notes on measuring it.** The approval list is `useStateA([])` — pure
+in-memory, no seed path through localStorage or a state file — so the usual
+throwaway-office recipe cannot produce an elevation card, and a real one
+needs a coworker mid-run and a model. Instead I built a one-off esbuild
+bundle exposing `features.jsx`'s exports on `window`, and mounted the real
+`ApprovalTray` against fixtures in a page that loads the real `styles.css`.
+That is the actual compiled component with the actual stylesheet, which is
+worth more than a source assertion and less than the whole app: the render
+is real, the data path into it is not. Recipe worth keeping; the probe
+files were deleted after, and `build_ui_bundle.mjs` wipes `dist-ui/`, so a
+probe has to be rebuilt after any app rebuild.
+
+The measurement earned its keep twice — the doubled shield and the 108px
+scroll behaviour under a full 1200-character body were both things only
+looking would show.
+
+**And the fixture was wrong again.** Arm D reverts the card and the record
+to different slices of the same body. It passed. The fixture body was
+thirteen characters, and truncating that to 400 gives it back unchanged —
+the check named for drift could not see drift. Same mistake as the paused-
+mission fixture two entries ago, caught the same way: fire-testing each arm
+separately rather than being satisfied that something went red. The fixture
+is now sized past the 1200-character cap the writers use.

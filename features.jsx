@@ -1361,7 +1361,48 @@ function ApprovalTray({ pending, onApprove, onReject }) {
                 is the REQUESTER's summary of its own request — this gate
                 exists to catch a summary that doesn't match the action, so
                 the boss has to be able to see both. */}
-            {p.detail && <pre className="ap-detail">{p.detail}</pre>}
+            {/* The red left rule is tuned for a shell command about to run.
+                A hire proposal is not that — it is somebody making a case,
+                and colouring it like a hazard tells the boss to be afraid of
+                the wrong thing (§5). Inline rather than a new class because
+                the only difference is one border colour. */}
+            {p.detail && (
+              <pre className="ap-detail"
+                   style={p.elevated ? undefined : { borderLeftColor: 'var(--ink-3)' }}>
+                {p.detail}
+              </pre>
+            )}
+            {/* Who is actually asking for file and shell access.
+
+                Every fact below was already collected at request time under
+                a comment reading "Snapshot context for the boss to review",
+                and none of it was ever shown. It matters most in the case
+                the boss cannot otherwise detect: a TRANSIENT helper — one
+                coworker spawned by another, never hired, gone at the end of
+                the run — asking for the run of the filesystem. On the old
+                card that request was indistinguishable from one made by
+                somebody the boss hired themselves. */}
+            {p.kind === 'grant-elevation' && p.elevationRequest && (() => {
+              const er = p.elevationRequest;
+              const tools = (er.currentTools || []).filter(Boolean);
+              const senior = er.reportsToName || null;
+              return (
+                <div className="ap-sub" style={{ marginTop: 2 }}>
+                  {er.isTransient
+                    ? <span style={{ color: '#c44' }}>
+                        ⚠ a temporary helper{senior ? ` ${senior} spawned` : ' spawned'} mid-run
+                        {' '}— you did not hire them
+                      </span>
+                    : er.isAssistant
+                      ? <span>an assistant{senior ? ` reporting to ${senior}` : ''}</span>
+                      : <span>someone you hired</span>}
+                  {' · '}
+                  {tools.length
+                    ? `already has ${tools.join(', ')}`
+                    : 'has no tools yet'}
+                </div>
+              );
+            })()}
             <div className="ap-sub">
               by {p.by} · {p.amount ? '$' + p.amount : p.kind}
               {p.cwd && <span> · in {p.cwd}</span>}
