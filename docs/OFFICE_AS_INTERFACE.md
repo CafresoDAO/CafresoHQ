@@ -8021,3 +8021,87 @@ The through-line holds. A surface may only assert what detection established
 — and this tick's corollary is about the tests rather than the product: a
 green test proves the thing it called. If that is not the thing the boss
 touches, it has established nothing, however many cases it runs.
+
+---
+
+## A bullet in front of a marker was enough to publish it
+
+Same canned brain as the last entry, one task, this reply:
+
+    Saved. Here is what I did:
+
+    - **Vault Path:** [VAULT_NEW: Notes/sourdough.md]
+    - [MEMORY_WRITE: the boss bakes sourdough on weekends]
+
+    Anything else?
+
+Both bullets reached the boss verbatim, on three surfaces: the task card's
+result, the chat message, and `Deliveries/save-a-note-about-sourdough-to-
+the-vault.md` in the filing cabinet. The office was otherwise honest about
+the run — `unsentBlocks` fired correctly and said nothing had been written —
+so the boss got a careful paragraph explaining that no file exists, sitting
+directly above the raw machine syntax it was describing.
+
+`stripBlocks` has two whole-line passes and they are both written as
+
+    ^[ \t]*  (optional short label)  [MARKER: …]
+
+and "optional" is exactly what that group is not, because it sits directly
+behind the `^` anchor. When the group declines to match — a markdown bullet
+in front, an ordered-list number, a label one word past its 22-character
+bound — the anchor then demands a `[` where prose is, and the whole match
+fails. There is no fallback to stripping just the marker. The pass strips
+NOTHING.
+
+So a bound written to answer *should the label go too?* was quietly
+answering a different question, *should the boss see machine syntax?*, and
+answering it yes. Failing to recognise the wrapper had become permission to
+publish the contents.
+
+The fix separates the two decisions, because only one of them is a
+judgement call:
+
+- The marker is machine syntax and always goes.
+- How much of the wrapper goes with it is where a bound belongs.
+
+A list marker joins the short label as litter from this function's own cut —
+a bullet whose entire content was a marker is a bullet with nothing in it —
+and both whole-line passes now share one `LEAD + LABEL` prefix, because the
+two of them drifted apart once before and a fix to one missed the other. A
+fourth pass then strips a marker at end of line after a colon of any length,
+keeping the sentence:
+
+    I saved your notes and the path is here: [VAULT_NEW: a.md]
+    → I saved your notes and the path is here:
+
+That leaves a dangling colon, which is the litter the original bound existed
+to avoid. Accepted, and it is the right trade: the alternative is eating a
+real sentence, and unlike a raw marker a trailing colon cannot be mistaken
+for something the office did. The tempting fix — just widen 22 to 80 — is
+fire-tested as an arm, because it eats that sentence.
+
+The whole-line bound is honoured by the new pass too. `Use [DM_TO: Mika] to
+reach someone.` and `Path: [VAULT_NEW: a.md] is where I put it.` are both
+untouched: prose after the marker still means the coworker was talking about
+it rather than asking for it. And the colon must sit flush against the
+bracket, or `Meet at 10:30 [DM_TO: Mika]` would go too.
+
+Twenty-four checks, fifteen arms, all caught. Verified live on the same
+office: card, chat and cabinet sheet all clean, `__guardHits` empty.
+
+Known and left alone, recorded rather than fixed:
+
+- A marker at end of line with no colon and no bullet — `The path is
+  [VAULT_NEW: a.md]` — still reaches the boss. Stripping it would need to
+  eat prose on evidence this pass does not have.
+- `Here is what I did:` now heads a list whose every item was a marker, so
+  it introduces nothing. The honesty note above it already says no file was
+  written, so the boss is not misled, only left with a stub sentence.
+- The honesty note itself says *that note needs a closing tag to be
+  written*. "Closing tag" is the machine's name for something, in a sentence
+  written for the boss — §6, in the one place that exists to obey §7.
+
+The through-line holds. A surface may only assert what detection
+established — and this tick's corollary: when detection cannot classify
+something, that is a reason to say less, not a licence to pass the raw thing
+through. An unparsed wrapper is still not the boss's problem to read.

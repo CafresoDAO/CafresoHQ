@@ -655,9 +655,24 @@ function stripBlocks(text) {
      immediately before a marker that is itself being removed. A label
      followed by real content is untouched, because the marker regex will
      not match there. */
+  /* LEAD also allows a markdown list marker, because the reply that made
+     this necessary was a coworker being tidy:
+
+       Saved. Here is what I did:
+
+       - **Vault Path:** [VAULT_NEW: Notes/sourdough.md]
+       - [MEMORY_WRITE: the boss bakes sourdough on weekends]
+
+     Both lines reached the boss verbatim — on the task card, in chat, and
+     inside the filed cabinet sheet. A bullet is not the model's prose any
+     more than the label is; it is the wrapper the marker arrived in, and a
+     bullet whose whole content was machine syntax is a bullet with nothing
+     in it. Same litter rule, one line further out. */
+  const LEAD = '^[ \\t]*(?:[-*+\u2022]|\\d{1,2}[.)])?[ \\t]*';
+  const LABEL = '(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?';
   const lone = new RegExp(
-    '^[ \\t]*(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?' +
-    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)', 'gim');
+    LEAD + LABEL + '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*\\][ \\t]*(?=\\n|$)',
+    'gim');
   /* Third pass: the opener whose BRACKET never closed.
 
      Both passes above need a `]` to match, and so does ORPHAN_TAG_RE, so a
@@ -687,10 +702,40 @@ function stripBlocks(text) {
      rule as above) and reach end-of-line without ever closing — which is
      what `[^\]\n]*$` says. `Use [DM_TO: Mika] to reach someone.` is
      untouched, having both a `]` and prose before the bracket. */
-  const broken = new RegExp(
-    '^[ \\t]*(?:\\*{0,2}[\\w ][\\w \\-]{0,22}:\\*{0,2}[ \\t]*)?' +
-    '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*$', 'gim');
-  return String(text || '').replace(re, '').replace(lone, '').replace(broken, '');
+  const broken = new RegExp(LEAD + LABEL + '\\[\\s*(' + NAMES + ')\\s*:[^\\]\\n]*$',
+    'gim');
+  /* Fourth pass, and the reason the other two needed rewriting.
+     `LABEL` is written as an optional group, but it sits directly behind a
+     `^` anchor, so optional is exactly what it is not: when the label runs
+     one word past the 22-char bound, the group declines to match, the
+     anchor then demands a `[` where prose is, and the whole match fails.
+     The pass does not fall back to removing just the marker — it removes
+     NOTHING. So a bound written to decide "should the label go too?"
+     silently answered a different question, "should the boss see machine
+     syntax?", and answered it yes:
+
+       **Here is the vault path for you:** [VAULT_NEW: Notes/a.md]
+
+     That is backwards. Failing to recognise the wrapper is not permission
+     to publish the contents. The two decisions are separate and only one
+     of them is a judgement call: the marker is machine syntax and always
+     goes, and how much of the surrounding text goes with it is where a
+     bound belongs.
+
+     So this pass strips the marker alone, after a colon of any length,
+     keeping everything the model wrote. It leaves a dangling `:` on a long
+     label, which is the litter the `lone` bound was avoiding — accepted,
+     because the alternative is eating a real sentence. `I saved your notes
+     and the path is here:` is worth more to the boss than tidiness, and
+     unlike the raw marker it cannot be mistaken for something the office
+     did. Anchored to end of line and to a colon immediately before the
+     bracket, so `Use [DM_TO: Mika] to reach someone.` and `Meet at 10:30`
+     are both untouched. */
+  const residue = new RegExp(
+    '(:\\*{0,2})[ \\t]*\\[\\s*(?:' + NAMES + ')\\s*:[^\\]\\n]*(?:\\][ \\t]*)?$',
+    'gim');
+  return String(text || '').replace(re, '').replace(lone, '')
+    .replace(broken, '').replace(residue, '$1');
 }
 
 /* ── A handoff that never left the building ───────────────────────────────
