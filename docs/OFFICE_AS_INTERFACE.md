@@ -10630,3 +10630,98 @@ grew a second door.
 
 A surface may only assert what detection established — and a claim of a
 deed the office cannot do is established false the moment it is made.
+
+## The office asked leave to bin work that had already come back empty
+
+Measured on office 9261, 2026-08-15. Vera's run on "Empty hands three"
+had ended with nothing — the card parked in `doing` with its reason
+("Nothing came back from this run — no answer and no file"), her desk
+read idle with the snag badge the settle fix now preserves. I assigned
+her a fresh task and clicked ▶ START. The office answered with a danger
+dialog:
+
+    Vera is working on "Empty hands three".
+
+    Start "DM relay" instead? "Empty hands three" goes back to the inbox
+    and whatever they had done on it so far is lost.
+
+Both sentences false, and the board behind the dialog knew it: the card
+it named was stamped with the office's own words saying the run came
+back empty. Vera was not working on anything. There was nothing in
+flight to kill and nothing done-so-far to lose. The boss was being asked
+to accept a cost that did not exist — and a boss who believes the office
+here either backs out of dispatching work that is perfectly safe to
+start, or learns that the office's warnings can be waved through, which
+is worse than having no warnings at all.
+
+### How it was found
+
+By a button that seemed to eat clicks. I was reproducing a different
+candidate (a cabinet warning drawn from a path inside a private
+message), needed Vera to run a task, and START did nothing I could see —
+no card movement, no chat, no request at the brain. I watch the office
+through its stores when driving it headless, and a modal dialog lives in
+none of them. The click had worked every time; each one had opened a
+confirm I never answered. First lesson of the round, recorded for the
+next time a button "does nothing": look at the page before suspecting
+the handler.
+
+The second misdiagnosis was mine to keep: I suspected the settle fix's
+own persistent stuck badge had made snag-bitten coworkers
+un-dispatchable — my own regression. Wrong. The badge was innocent; the
+trigger was the CARD the same empty run had parked in `doing`. The two
+fixes share an ancestor (the empty-handed run), not a defect.
+
+### The lie's mechanics
+
+The displaced-work check read one bit: any other card of this coworker's
+sitting in `doing`. But a card whose run comes back empty PARKS in
+`doing` with a `blockedReason` by design — the board has no blocked
+column, and the parked presentation is itself a fix this ledger records.
+So the design that kept the snag visible fed the confirm a false
+premise, and every coworker who ever came back empty-handed put a false
+danger dialog between the boss and their next dispatch. The chain path
+rode the same find: a workflow step landing on a "busy" coworker wrote
+"still on X when this step came up" on a card whose X had ended.
+
+The dialog's claim is about the ABORT — starting a second run kills the
+first, that is the cost it asks the boss to accept. Only the abort's own
+registry knows whether anything can be killed: an entry exists exactly
+while a stream is open, and the run's `finally` and every abort path
+clear it. So `displacedTask` (hq-runtime.jsx) now takes `running` from
+that registry and refuses to name a displacement without it — no live
+run, nothing can be lost. And independently, a card carrying a
+`blockedReason` is never the run in flight even when the coworker IS
+mid-run on something else — only the run-end path stamps it, so it is
+definitionally a run that ended. Two gates, each alone enough to kill
+the measured lie. A surface may only assert what detection established —
+and "you will lose work" is established by the registry that would do
+the losing, not by a column on a board.
+
+### The proof
+
+scripts/test_a_parked_card_is_not_work_in_flight.py lifts displacedTask
+and drives nine scenarios — the measured parked-idle case, the parked
+card beside a live run (the live card is the one named), the stale
+`doing` card with no run behind it, restart-of-the-parked-card-itself,
+and the real-work direction that must keep displacing — then pins the
+app.jsx call site to the registry so the pure function cannot be fed a
+guess. Seven fire arms, all caught, including a full revert of the call
+site to the status-only find.
+
+Live, both directions. The measured sequence — park the snag, assign
+fresh work, START — now dispatches silently: no dialog, the new task ran
+to done through the canned brain, and the parked card kept its story
+untouched. For the other direction the canned brain grew a delay door
+(a route may now say {"file": …, "delay": 9} — taking time being the one
+thing a real model does that a file could not), and with a run genuinely
+in flight the dialog still comes up, every word of it now true.
+
+Full runner: 129/129.
+
+Noted in passing, not chased: a reload un-parks the snag — the mount
+scrub returns every `doing` card to the inbox, so the parked
+presentation survives only until the next refresh. The card keeps its
+reason and gains the scrub's own sentence ("the run stopped when the
+page reloaded"), so nothing lies; but the two presentations of one snag
+are worth a look of their own someday.

@@ -4011,9 +4011,19 @@ ${d.text}` : d.text,
        from a boss-stop and one from a handover are the same signal — which
        is why the honest sentence has to be written HERE, where the office
        knows the reason. Ask first (the work in flight is lost), then say on
-       the displaced card why it moved. */
-    const displaced = tasks.find(t =>
-      t && t.id !== taskId && t.assignedTo === agent.id && t.status === 'doing');
+       the displaced card why it moved.
+
+       "Working on" needs evidence stronger than a card sitting in `doing`,
+       because a card whose run came back EMPTY parks there with a
+       blockedReason (the run-end path below). This find used to read card
+       status alone, and raised the danger dialog for a coworker sitting
+       idle at her desk — asking leave to bin work that had already come
+       back empty. Gated now on the aborter registry (the abort is what
+       the dialog warns about, so the abort's own registry says whether
+       anything can be lost) and on the card's ended-run stamp — see
+       displacedTask's comment in hq-runtime.jsx. */
+    const displaced = HQ.displacedTask(tasks, agent.id, taskId,
+      agentAbortersRef.current.has(agent.id));
     if (displaced && opts.auto) {
       /* A chain step landing on someone mid-run. Don't ask, don't displace
          — leave it in the inbox saying so, and let the boss start it. */

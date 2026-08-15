@@ -3919,6 +3919,39 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   if (onHint) onHint('_(they did as much as they can in one go and stopped there. If this is part of a running project it will carry on by itself; otherwise ask again and they will pick it up.)_');
 }
 
+/* Whether handing `taskId` to this coworker would displace real work.
+
+   The board's ▶ START warns the boss before it buries a run — "X is
+   working on Y … whatever they had done on it so far is lost" — and the
+   evidence for "working on" used to be card status alone: any card
+   sitting in `doing`. But a card whose run came back empty PARKS in
+   `doing` with a `blockedReason` by design (the board has no blocked
+   column), so the office asked leave to bin work that had already come
+   back empty. Measured 2026-08-15: Vera idle at her desk, her only
+   `doing` card stamped "Nothing came back from this run — no answer and
+   no file", and ▶ START on a fresh task raised the danger dialog
+   claiming she was working on it and that what she had done would be
+   lost. Both halves false — the run had ended, and there was nothing in
+   flight to lose.
+
+   Two conditions, each enough on its own to kill that lie, both kept:
+
+   `running` — the caller passes the office's own in-flight check (the
+   aborter registry holds an entry exactly while a stream is open; the
+   run's `finally` and every abort path clear it). The confirm exists to
+   warn about beginAgentRun's ABORT, so it is gated on the abort's own
+   truth: no live run, nothing can be killed, nothing can be lost.
+
+   `!blockedReason` — a blocked card is definitionally a card whose run
+   ENDED (only the run-end path stamps it). Even while this coworker IS
+   mid-run on something else, a parked snag is never the run in flight,
+   so it is never the work a new start would destroy. */
+function displacedTask(tasks, agentId, taskId, running) {
+  if (!running) return null;
+  return (tasks || []).find(t => t && t.id !== taskId && t.assignedTo === agentId
+    && t.status === 'doing' && !t.blockedReason) || null;
+}
+
 function resolveModel(m) {
   if (!m) return undefined;
   if (m === 'lmstudio') return undefined;
@@ -3928,7 +3961,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, throttleTokens, cleanHarmony, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
