@@ -2235,6 +2235,42 @@ function claimHitsMediaDoor(names, agent) {
   return (names || []).some(n => claimNeedsMediaDoor(n, agent));
 }
 
+/* Which of `known` marker names this reply OPENED, whatever else it says.
+
+   `known` and the granted list come in as parameters rather than being read
+   off TOOL_REGISTRY here, for the reason the comments on `unsentBlocks` and
+   `stripBlocks` both give: scripts/test_reply_hygiene.py lifts named
+   functions out of this file to run under node, and a lifted function that
+   reaches for a module-level const is a ReferenceError. Same rule as
+   `unfiledPath`'s injected `pathsFn`/`filedFn`.
+
+   Openers only, closed or not. A closed block whose tool never ran is the
+   case this exists for; an unclosed one is `unsentBlocks`' business and it
+   runs on the same raw buffer. */
+function openedMarkers(text, known) {
+  const t = String(text || '');
+  const out = [];
+  for (const name of known || []) {
+    if (out.includes(name)) continue;
+    if (new RegExp('\\[\\s*' + name + '\\s*:', 'i').test(t)) out.push(name);
+  }
+  return out;
+}
+
+/* One sentence, two callers — the empty-reply branch below and the branch
+   that fires when a coworker wrapped the same reach in prose. It read as
+   two independent notes and would have drifted the way the three honesty
+   blocks did before `honestyNotes` collected them. */
+function reachedForNote(missing, agent) {
+  const want = claimLabels(missing, agent);
+  const media = claimHitsMediaDoor(missing, agent);
+  return want
+    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}, or @-mention a coworker who already has it.)_`
+    : media
+    ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
+    : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`;
+}
+
 /* Build the tools section of the agent system prompt, restricted to tools
    the agent has claimed AND that are configured/enabled. Returns a Promise
    since some `requires` checks (vault status) are async. */
@@ -3281,6 +3317,13 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     : [{ role: 'user', content: prompt }];
 
   let toolsExecuted = 0;
+  /* Accumulated across hops, not read off the last one. A coworker can call
+     a tool they DO have on hop 1 and reach for one they don't on hop 2 (or
+     the reverse), and only the final hop's buffer reaches the branch below.
+     A Set because the same reach repeated over three hops is one thing to
+     tell the boss. */
+  const reachedFor = new Set();
+  const KNOWN_MARKERS = Object.keys(TOOL_REGISTRY).map(k => TOOL_REGISTRY[k].name);
   for (let hop = 0; hop < maxToolHops; hop++) {
     let buf = '';
     await CafresoHQClient.stream({
@@ -3301,6 +3344,13 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
     // for a tool round-trip. The host extracts them from `buf` after the
     // stream completes and routes to MessageRegistry.transition().
     const detectable = enabledTools.filter(t => t.name !== 'ACK');
+    /* A marker whose tool this coworker does not have can never have run —
+       that is not a judgement about the writing, it is arithmetic, the same
+       kind `unfiledPath` does. Recorded every hop, reported once at the end. */
+    {
+      const has = new Set(enabledTools.map(t => t.name));
+      for (const n of openedMarkers(buf, KNOWN_MARKERS)) if (!has.has(n)) reachedFor.add(n);
+    }
     const call = detectable.length ? detectToolCall(buf, detectable) : null;
     if (!call) {
       /* No matching tool fired. Surface a useful hint based on what the
@@ -3312,7 +3362,8 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
       if (!cleaned.trim()) {
         const orphans = extractHarmonyToolCalls(buf);
         const enabledSet = new Set(enabledTools.map(t => t.name));
-        const missing = [...new Set(orphans.map(o => o.tool).filter(n => !enabledSet.has(n)))];
+        const missing = [...new Set([...orphans.map(o => o.tool), ...reachedFor]
+          .filter(n => !enabledSet.has(n)))];
         /* §6 again, and this branch was the worst of it. It used to read
            "Try a stronger model — sonnet/opus or claudecode:sonnet — for
            the synthesis step, or lower temperature", which is three
@@ -3335,24 +3386,49 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
         if (toolsExecuted > 0) {
           emit(`_(${agent.name} did the legwork but never wrote it up. Ask them to summarise what they found, or hand the job to a coworker on a stronger brain.)_`);
         } else if (missing.length) {
-          const want = claimLabels(missing, agent);
           /* The second door, and only when it is the shut one — see
              claimNeedsMediaDoor. A coworker with the box already on is
-             sent to the screen that will actually change something. */
-          const media = claimHitsMediaDoor(missing, agent);
-          emit(want
-            /* "tick it" named the wrong ACTION as well as, for file and
-               shell work, the wrong control: that door is a switch, not a
-               checkbox. "Turn it on" is true of both, so one sentence
-               still covers every door on the card. */
-            ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}, or @-mention a coworker who already has it.)_`
-            : media
-            ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
-            : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`);
+             sent to the screen that will actually change something.
+
+             "tick it" named the wrong ACTION as well as, for file and shell
+             work, the wrong control: that door is a switch, not a checkbox.
+             "Turn it on" is true of both, so one sentence still covers
+             every door on the card. See reachedForNote. */
+          emit(reachedForNote(missing, agent));
         } else if (orphans.length) {
           emit(`_(${agent.name} talked themselves through it but never answered. Ask them again, or hand the job to a coworker on a stronger brain.)_`);
         } else {
           emit('_(nothing came back from them this time — your office may be offline, or their brain may be busy. Ask them again in a moment.)_');
+        }
+      } else if (reachedFor.size) {
+        /* The reply is not empty — and until this branch existed, that was
+           enough to say nothing at all. Everything above answers "nothing
+           came back"; a coworker who reaches for a door they don't have and
+           then writes a confident paragraph around it fell through all of
+           it.
+
+           Measured on a canned brain: Vera (web, email, cal, vault — no
+           file access) answered "write the vendor brief" with a well-formed
+           [FILE_WRITE: brief.md] block and the sentence "Done — the brief is
+           saved as brief.md." `stripBlocks` removed the block, correctly,
+           so the boss never saw the attempt. Nothing was written. The
+           office printed the claim with no correction, and the one note
+           that exists for precisely this was sitting behind `!cleaned`.
+
+           That is the worst arrangement of the three: silent when the reply
+           is empty is merely unhelpful, but silent when the reply CLAIMS
+           SUCCESS is the office backing the claim.
+
+           Only doors that can be named are reported. A marker with no
+           Roster door behind it (DM_TO, HANDOFF_TO, HIRE_AGENT, the memory
+           pair) belongs to `unsentHandoff`/`unsentBlocks`, which run on the
+           same raw buffer — reporting it here would be a second note about
+           one event, and the generic "something they haven't been given"
+           would be a caveat the boss cannot act on. Silence is right when
+           there is no door to point at. */
+        const missing = [...reachedFor];
+        if (claimLabels(missing, agent) || claimHitsMediaDoor(missing, agent)) {
+          emit(reachedForNote(missing, agent));
         }
       }
       return;

@@ -9145,3 +9145,79 @@ assistant turns outright.
 A surface may only assert what detection established — and the role field
 is an assertion about who spoke, made to every brain the office will ever
 support.
+
+### The office backed a claim it knew was false — 2026-08-15
+
+Found by running the MVP loop rather than a surface: boss asks for a
+deliverable, coworker produces one, the artifact lands. Vera holds web,
+email, cal and vault — no file access, `elevated: false`. Asked to "write
+the vendor brief" she answered, through the canned brain:
+
+    On it — drafting the brief now.
+
+    [FILE_WRITE: brief.md]
+    # Vendor comparison brief
+    …
+    [/FILE_WRITE]
+
+    Done — the brief is saved as brief.md.
+
+`stripBlocks` removed the block, which is exactly its job, so what
+reached the boss was two sentences:
+
+    On it — drafting the brief now.
+
+    Done — the brief is saved as brief.md.
+
+`find` on the workspace returned nothing. No file, no note, no activity
+row saying otherwise. The only account of that run the boss had was the
+coworker's, and it was false — and the office, which knew the tool was
+never granted and therefore never ran, said nothing.
+
+The note for this already existed, in the right words, with the right
+door:
+
+    _(… reached for File & shell access, which they don't have — turn it
+      on from their card in Settings → Roster, or @-mention a coworker
+      who already has it.)_
+
+It was sitting behind `if (!cleaned.trim())`. So the office could tell
+the boss about a reach that arrived with no words at all, and could not
+tell them about a reach wrapped in a claim of success. Of the three
+possible arrangements that is the worst one: silence over an empty reply
+is unhelpful; silence over a false claim is endorsement. §4 says never
+claim work that isn't happening — this was the office letting someone
+else make the claim and then standing behind it.
+
+Two smaller holes went with it. `missing` was built only from
+harmony-style orphan calls, so the BRACKET form — the one most local
+brains actually emit, and the one in the reproduction — was invisible on
+every path, including the empty one. And it was read off the final hop's
+buffer only, so a coworker who used a granted tool first and reached for
+an ungranted one afterwards lost the second event; it accumulates across
+hops now, in a Set, because the same reach on three hops is one thing to
+tell the boss.
+
+What it deliberately does not do is fire when no Roster door can be
+named. `DM_TO`, `HANDOFF_TO`, `HIRE_AGENT` and the memory pair are
+`unsentHandoff`/`unsentBlocks` business, and those run on the same raw
+buffer — a note here would be a second sentence about one event, and the
+generic "something they haven't been given" is a caveat the boss cannot
+act on. Silence is right when there is no door to point at.
+
+The false-alarm case was checked live and matters more than the fix: a
+`[VAULT_NEW: …]` marker from the same coworker, who DOES hold vault,
+produced no note at all. A missed reach costs a caveat; a false one calls
+an honest coworker a liar, and that is the more expensive mistake — the
+same reasoning `unfiledPath` records.
+
+Writing the fire test taught the suite something. Three checks passed
+against a deliberately broken note because they searched the whole
+function body: strip the way forward from the branch the boss actually
+reads, and a SIBLING branch still contained the phrase. The checks run
+per template now. The same shape as the count-bounded source windows —
+a check whose scope is wider than the thing it is checking reports on
+something other than what it claims to.
+
+A surface may only assert what detection established — and staying
+silent while someone else asserts it is the office asserting it too.
