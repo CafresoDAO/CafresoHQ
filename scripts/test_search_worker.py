@@ -195,6 +195,28 @@ def _mode(m):
     serve._SW_CAPS.clear()
 
 
+class _TickClock:
+    """Deterministic stand-in for the worker's `time` module.
+
+    monotonic() advances a fixed tick per CALL, so "elapsed time" becomes a
+    function of the code path alone — how many times the worker consulted the
+    clock — never of machine load. Everything else delegates to the real
+    module. Installed as `serve.time` for one call and restored; the fake
+    gateway and the test's own measurements import their own `time` and never
+    see it."""
+
+    def __init__(self, tick, base=1000.0):
+        self.now = base
+        self.tick = tick
+
+    def monotonic(self):
+        self.now += self.tick
+        return self.now
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
 def test_llm(port, label):
     """The SAME assertion body, run once per path. These only ever assert on
     _sw_llm's return, so both routes must satisfy them identically."""
@@ -203,12 +225,50 @@ def test_llm(port, label):
     serve._SW_IDLE_TIMEOUT = 3.0          # keep the stall cases quick
 
     # The deadline lands mid-generation → salvage rather than lose everything.
-    _mode('slow'); TOKEN_SLEEP = 0.25
-    t = time.monotonic()
-    s, _m, _n, tok = serve._sw_llm('what is ICP', R, deadline=time.monotonic() + 4)
-    el = time.monotonic() - t
+    #
+    # On a FAKE clock, deliberately. The first cut of this case raced real
+    # sleeps against a real deadline: TOKEN_SLEEP=0.25 streamed the first
+    # complete sentence at ~3s and the deadline fired at 4s, so the whole
+    # check hung on ~1s of scheduler slack. On 2026-08-15 it failed inside a
+    # full runner pass while a local LLM inference had the box, then went
+    # 5/5 standalone — and the service's copy of this suite had ALREADY been
+    # padded 4s→5s once for the same reason. Widening a real-time margin
+    # trains everyone to re-run rather than read; removing real time from
+    # the fixture is the fix.
+    #
+    # So: the worker's `time` is swapped for a per-call tick clock and the
+    # fake streams with NO sleeps. _sw_chat consults the clock at two
+    # _sw_left calls, once per readline at the loop top, and once more at
+    # the first delta — a fixed sequence for a fixed byte stream — so the
+    # loop-top `monotonic() > deadline` break crosses after the same read
+    # every run, regardless of load. Measured sweep (2026-08-15): any tick
+    # in 0.06–0.14 lands the cut after the first sentence is complete
+    # (chunk 12) and before the stream ends (chunk 35); 0.10 is the middle
+    # of that plateau, cutting at ~40 clock reads. A worker refactor would
+    # have to nearly halve or nearly double the clock reads on this path to
+    # escape the window — and if one does, this fails the same way every
+    # run, which is the point.
+    _mode('slow'); TOKEN_SLEEP = 0.0
+    clk = _TickClock(tick=0.10)
+    dl = clk.now + 4
+    serve.time = clk
+    try:
+        s, _m, n, tok = serve._sw_llm('what is ICP', R, deadline=dl)
+    finally:
+        serve.time = time
     check('deadline salvages a real summary', bool(s) and 'blockchain' in s, repr(s)[:70])
-    check('deadline is respected', el < 7, '%.1fs' % el)
+    # The stream must really have been CUT, not merely finished fast: a
+    # truncated stream never carries the final usage chunk (so tokens fall
+    # back to the delta count, never 1234) and loses at least one note.
+    # These two carry the job the old wall-clock bound did — with no real
+    # sleeps left, a deleted deadline break makes the stream complete in
+    # milliseconds and the salvage check alone would still see 'blockchain'.
+    check('...and the stream really was cut short', tok != 1234 and len(n) < 3,
+          'tok=%s notes=%d — a full stream means the deadline never fired' % (tok, len(n)))
+    # The worker came back on its FIRST look at the clock past the deadline —
+    # the return-in-time promise, stated in clock reads instead of seconds.
+    check('deadline is respected', dl < clk.now <= dl + 2 * clk.tick,
+          'clock at return %.2f vs deadline %.2f' % (clk.now, dl))
     check('salvage still counts tokens (delta fallback)', tok > 0, tok)
 
     # Stalled backend: abort on the idle bound, don't burn the whole budget.
