@@ -815,7 +815,7 @@ function unsentHandoff(text, deliveredCount, selfName, roster) {
     const known = team.find(n => n.toLowerCase() === lc)
       || team.find(n => n.toLowerCase().startsWith(lc + ' '));
     const how = known || (who.match(/^[A-Za-z][A-Za-z0-9_-]*/) || [''])[0];
-    const lead = `_(the handoff to ${who} didn't go out — a hand-off needs the message on its own line and a closing tag. Nothing was sent;`;
+    const lead = `_(the handoff to ${who} didn't go out — they started the message and stopped partway. Nothing was sent;`;
     return how
       ? `${lead} ask them yourself with @${how}.)_`
       : `${lead} and no name in it was clear enough to route — send it again yourself.)_`;
@@ -913,7 +913,7 @@ function unsentElevation(text, raised) {
   const t = String(text || '');
   if (!/\[\s*REQUEST_ELEVATION\s*:/i.test(t)) return null;
   if (/\[\s*\/\s*REQUEST_ELEVATION\s*\]/i.test(t)) return null;   // well-formed
-  return '_(that request for file and shell access never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Roster.)_';
+  return '_(that request for file and shell access never reached you — they started writing it out and stopped partway. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Roster.)_';
 }
 
 /* The rest of the "request that leaves someone waiting" class.
@@ -974,23 +974,61 @@ function unsentBlocks(text, skipKinds) {
   /* Table lives inside the function: scripts/test_reply_hygiene.py lifts
      named functions out of this file to run them under node, so a
      module-level const beside it is invisible to the harness. */
+  /* Every sentence here is written for the boss, so §6 binds it — and §6 is
+     what these sentences used to break. Each one diagnosed the failure as
+     "it needs a closing tag", "it needs the detail lines", "the message on
+     its own line". A closing tag is not a thing in the boss's world. They
+     cannot supply one, cannot ask for one, and cannot tell a coworker who
+     forgot one from a coworker who is simply not very good.
+
+     Worse than useless, it teaches. The whole office is built so the boss
+     never learns there is a marker protocol underneath; these notes are the
+     surface that told them, and they told them at the exact moment the boss
+     was already being handed bad news. Two ticks ago the raw marker printed
+     BESIDE this sentence was removed, on the reasoning that it was showing
+     the machine's name for a failure already described in words. The words
+     kept the machine's name. Same rule, one layer in.
+
+     What replaced it is not a metaphor, it is the plainer description: an
+     opener with no closer IS a coworker who began the write and stopped
+     partway. That is true, it is in the office's own vocabulary, and it
+     tells the boss the one thing that changes what they do next — the
+     coworker meant to do it, so asking again is worth the trouble.
+
+     What did NOT change is the shape §7 requires: the contradiction first,
+     because the coworker may have just claimed success and that claim is
+     what the boss actually read, and then the way forward. Only the middle
+     clause was ever the problem.
+
+     ...except that nine of the fourteen never had the second half. Found by
+     writing the test for the first half and letting it check the shape it
+     assumed was already there:
+
+       no deck was produced — that export needs a closing tag. Nothing was
+       created.
+
+     Full stop. Bad news, jargon, and nothing to do about it. §7 is one
+     honest sentence PLUS a way forward, and the honest half on its own is
+     the thing the section exists to rule out — it tells the boss the office
+     is broken and leaves them holding it. Every note ends with a next step
+     now, and the test refuses any that doesn't. */
   const KINDS = [
-    ['HIRE_AGENT',      'that request to hire never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals.'],
-    ['HIRE_ASSISTANT',  'that request for an assistant never reached you — it needs the detail lines and a closing tag. Nothing is waiting in your approvals.'],
-    ['SPAWN_SUBAGENT',  'no helper was ever brought in — that needs the task on its own lines and a closing tag. Ask them to try again, or hand the job to a coworker yourself.'],
-    ['HANDOFF_TO',      'that hand-off never went out — it needs the message on its own lines and a closing tag. Nothing was sent.'],
+    ['HIRE_AGENT',      'that request to hire never reached you — they started writing it out and stopped partway. Nothing is waiting in your approvals. Ask them again, or hire someone yourself from an empty desk in the office.'],
+    ['HIRE_ASSISTANT',  'that request for an assistant never reached you — they started writing it out and stopped partway. Nothing is waiting in your approvals. Ask them again, or hire someone yourself from an empty desk in the office.'],
+    ['SPAWN_SUBAGENT',  'no helper was ever brought in — they started asking for one and stopped partway. Ask them to try again, or hand the job to a coworker yourself.'],
+    ['HANDOFF_TO',      'that hand-off never went out — they started the message and stopped partway. Nothing was sent. Ask them again, or @-mention whoever should have it.'],
     /* Write-class. Phrased to contradict the success the coworker may have
        just claimed, because that claim is what the boss actually read. */
-    ['MEMORY_WRITE',    'nothing was saved to their memory — that note needs a closing tag to be written, so it is not there however it was described above. Ask them to save it again.'],
-    ['MEMORY_APPEND',   'nothing was added to their memory — that note needs a closing tag to be written. Ask them to try again.'],
-    ['VAULT_NEW',       'no file reached the cabinet — that one needs a closing tag to be written, so the Vault does not have it. Ask them to file it again.'],
-    ['VAULT_APPEND',    'nothing was appended in the cabinet — that one needs a closing tag to be written. Ask them to try again.'],
-    ['FILE_WRITE',      'nothing was written to the workspace — that one needs a closing tag. The file is unchanged.'],
-    ['EXPORT_PPTX',     'no deck was produced — that export needs a closing tag. Nothing was created.'],
-    ['EXPORT_DOCX',     'no document was produced — that export needs a closing tag. Nothing was created.'],
-    ['EXPORT_PDF',      'no PDF was produced — that export needs a closing tag. Nothing was created.'],
-    ['GENERATE_IMAGE',  'no image was made — that one needs a closing tag. Nothing was created.'],
-    ['GENERATE_VIDEO',  'no video was made — that one needs a closing tag. Nothing was created.'],
+    ['MEMORY_WRITE',    'nothing was saved to their memory — they started the note and stopped partway, so it is not there however it was described above. Ask them to save it again.'],
+    ['MEMORY_APPEND',   'nothing was added to their memory — they started the note and stopped partway. Ask them to try again.'],
+    ['VAULT_NEW',       'no file reached the cabinet — they started filing it and stopped partway, so the Vault does not have it. Ask them to file it again.'],
+    ['VAULT_APPEND',    'nothing was appended in the cabinet — they started writing and stopped partway. Ask them to try again.'],
+    ['FILE_WRITE',      'nothing was written to the workspace — they started the file and stopped partway. The file is unchanged. Ask them to try again.'],
+    ['EXPORT_PPTX',     'no deck was produced — they started the export and stopped partway. Nothing was created. Ask them to try again.'],
+    ['EXPORT_DOCX',     'no document was produced — they started the export and stopped partway. Nothing was created. Ask them to try again.'],
+    ['EXPORT_PDF',      'no PDF was produced — they started the export and stopped partway. Nothing was created. Ask them to try again.'],
+    ['GENERATE_IMAGE',  'no image was made — they started it and stopped partway. Nothing was created. Ask them to try again.'],
+    ['GENERATE_VIDEO',  'no video was made — they started it and stopped partway. Nothing was created. Ask them to try again.'],
   ];
   const t = String(text || '');
   const skip = Array.isArray(skipKinds) ? skipKinds : [];

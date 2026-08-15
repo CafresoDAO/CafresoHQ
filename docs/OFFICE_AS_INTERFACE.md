@@ -8105,3 +8105,70 @@ The through-line holds. A surface may only assert what detection
 established — and this tick's corollary: when detection cannot classify
 something, that is a reason to say less, not a licence to pass the raw thing
 through. An unparsed wrapper is still not the boss's problem to read.
+
+---
+
+## The honesty notes spoke the machine's language
+
+§6 above is a jargon table, and its heading says *binding for all UI copy*.
+The copy breaking it hardest turned out to be the copy written to protect
+the boss. All fourteen notes in `unsentBlocks`, plus `unsentHandoff` and
+`unsentElevation`, diagnosed the failure the same way:
+
+    nothing was saved to their memory — that note needs a closing tag to be
+    written, so it is not there however it was described above. Ask them to
+    save it again.
+
+A closing tag is not a thing in the boss's world. They cannot supply one,
+cannot ask for one, and cannot tell a coworker who forgot one from a
+coworker who is simply not very good. And it teaches: the whole office is
+built so the boss never learns there is a marker protocol underneath, and
+this was the surface that told them — at the exact moment they were already
+being handed bad news.
+
+Two entries above, the raw marker printed *beside* this sentence was removed
+on the reasoning that it showed the machine's name for a failure already
+described in words. The words kept the machine's name. Same rule, one layer
+in.
+
+The replacement is not a metaphor, it is the plainer description: an opener
+with no closer **is** a coworker who began the write and stopped partway.
+True, in the office's own vocabulary, and it tells the boss the one thing
+that changes what they do next — the coworker meant to do it, so asking
+again is worth the trouble. All sixteen share the phrasing, because sixteen
+hand-rolled sentences for one condition is how the tool-visit row ended up
+described four different ways (§6 pass four).
+
+### What the test found that the audit didn't
+
+The check for §7's shape was written on the assumption it was already
+satisfied. Nine of the fourteen never had it:
+
+    no deck was produced — that export needs a closing tag. Nothing was
+    created.
+
+Full stop. Bad news, jargon, and nothing to do about it. §7 is one honest
+sentence **plus a way forward**, and the honest half alone is the thing the
+section exists to rule out — it tells the boss the office is broken and
+leaves them holding it. Every note ends with a next step now, and the test
+refuses any that doesn't.
+
+### And the way forward pointed at the wrong door
+
+The first draft of the two hire notes said *hire someone yourself from the
+Team page*. It sounds right. Hiring is a vacant desk on the office floor
+(`ui/office.jsx`, the `px-room vacant` unit, and the onboarding checklist
+says so too) — there is no hire button on the Team page. §5 is about exactly
+this: a way forward aimed at the wrong surface is worse than none, because
+the boss goes there, finds nothing, and the office has now lied to them
+twice in one message. Caught before it shipped, and pinned by a check that
+reads the vacant unit's own handler rather than trusting the sentence.
+
+Fifteen checks, fourteen arms, all caught. Verified live: a coworker opened
+a cabinet write and never closed it, and the chat carried the new sentence
+with no machine word in it.
+
+The through-line holds, on the surface that exists to serve it. A surface
+may only assert what detection established — and the corollary here is that
+detection understanding something exactly is not permission to explain it in
+the terms detection used. The boss is owed the fact, not the mechanism.
