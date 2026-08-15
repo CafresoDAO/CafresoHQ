@@ -67,10 +67,17 @@ def _fs_browse(self):
     # anything else 400'd "not a directory", so a caller with no key could ask
     # about any path on the host and read the difference. See _fs_file for the
     # measured table. Nothing outside the sandbox gets probed first.
+    # The refusal names the rule, never the territory. This body used to
+    # carry 'allowed': the full configured directory list — on a route that
+    # is deliberately keyless — so the caller who had just proved they were
+    # asking about paths they were never allowed to ask about was handed
+    # the complete map of the paths they COULD ask about. Nothing consumed
+    # the field (the picker prints only `error`; no script reads it), and
+    # the one reader entitled to the list already gets it from the
+    # key-gated /cafresohq/status. Same at _fs_file's guard below.
     if not _within_allowed_dirs(p):
         return self._send_json(403, {
             'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
-            'allowed': _cafresohq_allowed_dirs,
         })
 
     if not p.is_dir():
@@ -207,9 +214,9 @@ def _fs_file(self):
     # The exists/is_file split below is #74's work and is deliberately KEPT:
     # inside the sandbox the boss is owed the specific sentence. It is only
     # withheld for paths the caller was never allowed to ask about.
+    # No 'allowed' list in the body — see the twin guard in _fs_browse.
     if not _within_allowed_dirs(p):
-        return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
-                                     'allowed': _cafresohq_allowed_dirs})
+        return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
     # "not a file" answered two different questions with one string, and the
     # surfaces that print it could only relay the ambiguity: a boss clicking a
     # ledger row for a folder was told the office "couldn't find that". Say

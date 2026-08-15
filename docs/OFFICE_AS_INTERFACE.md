@@ -11049,3 +11049,72 @@ This is the converse the office forgot: work in flight is not always a
 card. The registry that owns the abort is the only witness that sees
 every kind of run, so any door that can cut one off has to ask the
 registry — not the board — whether anyone is standing behind it.
+
+## The refusal that guards the sandbox handed out its map
+
+**What was measured (2026-08-15, office 9261, no key supplied).**
+
+    GET /fs/browse?path=/etc      403  {"error": "path is outside
+    GET /fs/file?path=/etc/hosts  403   CAFRESOHQ_ALLOWED_DIRS",
+                                        "allowed": [<every configured
+                                        directory, in full>]}
+
+The `/fs` read routes are deliberately keyless — serve.py's
+`_KEY_PROTECTED_PREFIXES` comment says the allowed-dirs boundary "caps
+the read routes instead", and #79 made that boundary answer *first* so
+the refusal stopped being an existence oracle. But the refusal *body*
+still carried `allowed`: the complete configured directory list, served
+to precisely the caller who had just proved they were asking about paths
+they were never allowed to ask about. On a real install that list is the
+boss's project and client directories — home paths, client names —
+free to any local process that can reach the port.
+
+**Who read it: nobody entitled.** The picker popup prints only `error`.
+No script, runner, or tool wrapper reads `allowed` from these responses.
+The one reader with a claim to the list — the authenticated shell's
+settings panel — gets it from `/cafresohq/status`, which sits behind the
+API key. The field was pure leak: a courtesy for a caller the route had
+just decided to refuse.
+
+**The fix.** Both refusal bodies (`_fs_browse`, `_fs_file`) now carry
+the rule and nothing else: `{"error": "path is outside
+CAFRESOHQ_ALLOWED_DIRS"}`. The refusal names the rule, never the
+territory.
+
+**What this does not close, recorded rather than hidden.** `/fs/browse`
+with no path still defaults to the *first* allowed directory and lists
+it, keyless — that is the picker's door, and the design's documented
+trade (keyless in-sandbox reads are what the preview iframe and the
+picker are built on). An outsider can still learn root one by walking in
+through it. What they no longer get is the full map, bundled with every
+refusal, for the price of asking about `/etc`.
+
+**Verified.**
+- `scripts/test_a_refusal_keeps_the_map_to_itself.py` (new, 13 checks):
+  sweeps every `_send_json` body in fs_routes.py for the allow-list (a
+  named-doors check would pass the file whose next door repeats the
+  defect — #79's lesson, kept); boots a real serve.py on a random port
+  with a sentinel-named sandbox root and asserts outside refusals carry
+  no sentinel, no key but `error`, and are word-for-word identical
+  across existing/absent paths (the body must not become the oracle the
+  status code stopped being); pins that the picker's default start and
+  in-sandbox listings still work, and that the key-gated status door
+  still serves `allowedDirs` to the shell that is owed it.
+- Fire-tested (fire91.py): 5 arms — browse leaks again, file leaks
+  again, the list smuggled into the error string, the body made an
+  oracle via an echoed path, full revert — 5/5 caught. One needle
+  collision found and fixed during arming: the one-line refusal shape
+  also lives in `_fs_stat`, so the `_fs_file` needle is anchored by its
+  comment line.
+- Live: fresh instance on 9263, `curl /fs/browse?path=/etc` and
+  `/fs/file?path=/etc/hosts` → rule-only bodies. (The long-lived 9261
+  rig keeps the old module in memory until its next restart — Python
+  imports don't hot-reload; noted so nobody re-measures the leak there
+  and files it twice.)
+
+**The through-line.** #79 taught that a refusal is a reply, and made
+every outside path draw the same one. This is the half it left on the
+table: the reply's *body* was still talking. A guard that names what it
+guards is not a guard — it is a signpost. The refusal owes the caller
+one bit — no — and everything past that bit belongs to the doors that
+check credentials.
