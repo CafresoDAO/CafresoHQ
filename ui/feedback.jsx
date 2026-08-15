@@ -191,7 +191,13 @@ function DialogHost() {
             placeholder={req.opts.placeholder || ''} />
         )}
         <div className="oc-dialog-acts">
-          <button className="px-btn secondary" onClick={() => done(cancelValue)}>{req.opts.cancelLabel || 'Cancel'}</button>
+          {/* An informational dialog has one way out, and offering "Cancel"
+              next to "Got it" asks the boss to choose between two words
+              that mean the same thing. Escape and the backdrop still
+              resolve, so nothing becomes untrappable. */}
+          {!req.opts.hideCancel && (
+            <button className="px-btn secondary" onClick={() => done(cancelValue)}>{req.opts.cancelLabel || 'Cancel'}</button>
+          )}
           <button ref={okRef} className={'px-btn ' + (danger ? 'danger' : 'primary')} onClick={() => done(okValue())}>
             {req.opts.okLabel || (danger ? 'Delete' : 'OK')}
           </button>

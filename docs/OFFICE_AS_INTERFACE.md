@@ -8824,3 +8824,79 @@ variants are worth hunting down rather than bumping.
 A surface may only assert what detection established — and a control the
 boss can tick is a surface: ticking it has to change what happens, and
 un-ticking it has to change it back.
+
+### Seven candidates advertising a brain the office just failed to find — 2026-08-15
+
+Reproduced on a machine with no Claude on it, which is the ordinary case
+for a stranger opening this app. `CAFRESOHQ_CLAUDE_BIN=/nonexistent/claude`
+is enough to make one: `/cafresohq/status` reports `configured: false`,
+and `/agent/drivers?probe=1` reports claude-code `installed: false` while
+LM Studio and Ollama both come back `reachable`.
+
+On **one screen**, the front desk correctly dropped the Claude card —
+detection did its job — and one row below it, all seven candidate
+templates read **POWERED BY CLAUDE**, over a **SEED SWARM +7** tile
+offering to hire every one of them at once. Two rows of the same modal,
+drawn from the same page load, disagreeing about a fact the office had
+already measured; and the half a first-run boss is most likely to click
+was the half that was wrong.
+
+`poweredBy(agent)` is a pure function of the model string, and every
+`OPENSWARM_ROSTER` template pins `cafresohq:sonnet`. The chip was never
+reporting a brain — it was reporting a hardcoded template field. Then
+SEED SWARM hired seven coworkers onto that field, so the decorative chip
+became seven silently broken desks, discovered one at a time.
+
+The fix resolves the brain from the **same** driver probe the front desk
+is drawn from, ordered free-and-local first (LM Studio, Ollama), then
+flat-rate subscriptions, then metered cloud — and remaps the templates
+*before they render*, so the chip on the card and the brain the hire
+actually gets are one fact rather than two.
+
+Three distinctions the fix turns on, each of which was a way to
+reintroduce the bug while looking correct:
+
+**A desk card is not a brain.** Hermes gets a card reading NOT RUNNING and
+Codex one reading WON'T START. Both are worth showing — the boss should
+know they are there and what is wrong with them — and neither can take a
+job. Readiness for *being chosen* is deliberately stricter than readiness
+for *being displayed*, or SEED SWARM quietly hires seven specialists onto
+a gateway that is down.
+
+**Nothing found is an answer, and it has to look like one.** `candidateBrain`
+returns `null`, and the card renders that as `no brain yet — add one in
+Settings → Connections` rather than as a blank chip or a fallback to
+Claude. The SEED SWARM tile refuses outright and names the free options,
+because §7 wants the honest sentence *and* the way forward. Two of the
+26 fire-test arms are exactly this defect moved one line outward — a
+`|| 'claudecode:sonnet'` at the call site instead of inside the function
+— and the first draft of the regression test caught neither.
+
+**Probing is not "nothing found".** A deep probe takes a few seconds.
+`undefined` means the answer has not arrived and the template's own value
+stands; `null` means it arrived and was empty. Collapsing the two flashes
+a false line at every boss for the length of every probe — the same lie
+with a short life, which is still a lie and is harder to catch.
+
+The guard needed a dialog with one way out, and passed `hideCancel: true`
+to `hqConfirm` — an option `DialogHost` did not have, which would have
+rendered a pointless Cancel next to "Got it". Fixing an inert checkbox by
+adding an inert dialog option would have been the previous tick's ticket
+one file over, so `hideCancel` is now real and pinned.
+
+**And the surface nobody was looking at.** The Getting Started checklist
+renders each step's hint under `!s.done` and nowhere else, so its brain
+step's *"Gemma 4 by Cafreso is included — bring your own brain anytime"*
+was on screen in exactly the state that makes it false: offices with no
+brain at all. Managed containers do include Gemma, which is why the line
+was written — but on those the step is already ticked and the hint never
+renders, so the only reading that was true was the one nobody ever saw.
+Two messages away in the same viewport, the CEO says *"We don't have a
+shared brain here."* The hint now states what is true when it is visible,
+and names no tab, because CONNECTIONS is filtered out of the nav on
+managed and a destination that exists for half the readers is the §5
+problem rather than the fix for it.
+
+A surface may only assert what detection established — and when two
+surfaces on one screen read the same detection, they have to read the
+same copy of it, or the office argues with itself in front of the boss.

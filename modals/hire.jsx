@@ -1,7 +1,7 @@
 import { CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
-import { brainName, canDoPhrase, poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
+import { brainName, candidateBrain, canDoPhrase, poweredBy, specialtyTag, statBars } from '../app/cast.jsx';
 import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
@@ -167,8 +167,15 @@ function CastLine({ t, showBars }) {
       <div className="post-meta">
         <span title={(t.tools||[]).join(', ') || 'no tools'}>Can {canDoPhrase(t.tools, capabilityFacts(t))}</span>
       </div>
-      <div className="post-vendor" title={t.model || 'no brain assigned'}>
-        {vendor ? `powered by ${vendor}` : `brain: ${brainName(t)}`}
+      {/* No model at all is not "brain: not set yet" on this shelf — it is
+          the shelf reporting that nothing on this machine can run this role
+          yet, which is a §7 moment and needs a door. `brainName` still
+          covers the saved-template case, where a boss really did leave the
+          brain blank on a card they made themselves. */}
+      <div className="post-vendor" title={t.model || 'no brain on this machine yet'}>
+        {vendor ? `powered by ${vendor}`
+                : t.model ? `brain: ${brainName(t)}`
+                : 'no brain yet — add one in Settings → Connections'}
       </div>
     </>
   );
@@ -261,8 +268,35 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
      path, the onboarding and the pitch, and this shelf is where a first-run
      stranger meets the cast. A parked template keeps its full definition in
      OPENSWARM_ROSTER; it just does not get offered here. */
+  /* The brain the shelf will actually use, from the SAME detection the
+     front-desk row above is drawn from — see candidateBrain in cast.jsx for
+     what this is fixing. `driverList === null` means still probing, and
+     unknown is not "nothing found": the cards hold their brain line until
+     the probe lands rather than flashing "no brain yet" at every boss for
+     the few seconds a deep probe takes.
+
+     readyIds is deliberately STRICTER than "has a desk card". Hermes gets a
+     card reading NOT RUNNING and Codex one reading WON'T START — both worth
+     showing, neither able to take a job — so neither may be the brain a
+     specialist is silently hired onto. */
+  const candidateReady = (d) => {
+    const det = (d && d.detect) || {};
+    if (d.id === 'lmstudio' || d.id === 'ollama') return det.version === 'reachable';
+    if (d.id === 'hermes') return det.installed && det.version === 'reachable';
+    if (FRONT_DESK[d.id] && FRONT_DESK[d.id].cloud) return !!det.authenticated;
+    return !!det.installed && !det.probeError;
+  };
+  const probing = driverList === null;
+  const readyIds = (driverList || []).filter(candidateReady).map(d => d.id);
+  const shelfBrain = probing ? undefined : candidateBrain(readyIds);
+
   const candidates = (HQ.OPENSWARM_ROSTER || [])
-    .filter(t => !t.parked && !hiredNames.has(t.name.toLowerCase()));
+    .filter(t => !t.parked && !hiredNames.has(t.name.toLowerCase()))
+    /* The template's own `model` is a placeholder for a brain this office
+       may not have. Overwriting it here — rather than at hire time — is
+       what keeps the card's chip and the hired coworker's brain the same
+       fact. `undefined` while probing leaves the template's value alone. */
+    .map(t => (shelfBrain === undefined ? t : { ...t, model: shelfBrain || '' }));
 
   /* Do the four bars tell these cards apart, or do they say one thing eight
      times? Computed over exactly what is on screen (candidates + saved
@@ -462,11 +496,21 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 <div
                   className="post-card hire-tile"
                   onClick={async () => {
+                    /* Hiring seven coworkers onto a brain that does not
+                       exist is seven desks that can never answer, and the
+                       confirm used to promise it cheerfully. */
+                    if (!probing && !shelfBrain) {
+                      await window.hqConfirm(
+                        `There is no brain on this machine yet, so these ${candidates.length} would sit at their desks unable to work.\n\n` +
+                        `Add one in Settings → Connections — a free local one (LM Studio, Ollama) is enough — then hire the shelf.`,
+                        { okLabel: 'Got it', hideCancel: true });
+                      return;
+                    }
                     const ok = await window.hqConfirm(
                       `Hire ${candidates.length} openswarm-style specialist${candidates.length === 1 ? '' : 's'}: ${candidates.map(t => t.name).join(', ')}?`,
                       { okLabel: `Hire ${candidates.length}` });
                     if (!ok) return;
-                    HQ.spawnOpenswarmRoster(currentAgents, onHire);
+                    HQ.spawnOpenswarmRoster(currentAgents, onHire, shelfBrain);
                     onClose();
                   }}
                   style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}

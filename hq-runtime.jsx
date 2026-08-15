@@ -178,7 +178,12 @@ const OPENSWARM_ROSTER = [
 /* Hire any OPENSWARM_ROSTER specialists that aren't already on the team.
    Returns the number of new agents added. Matches by name (case-insensitive)
    so users who hand-edited their roster don't get dupes. */
-function spawnOpenswarmRoster(existingAgents, addAgent) {
+/* `model` overrides every template's pinned brain — see candidateBrain in
+   app/cast.jsx. The shelf resolves ONE brain from detection and hands it in,
+   so the seven coworkers this hires run on the same brain their cards
+   advertised. Omitted (undefined) keeps the template's own value, which is
+   what any non-UI caller with no detection to offer should do. */
+function spawnOpenswarmRoster(existingAgents, addAgent, model) {
   const have = new Set((existingAgents || []).map(a => String(a.name || '').toLowerCase()));
   let added = 0;
   for (const tpl of OPENSWARM_ROSTER) {
@@ -186,6 +191,7 @@ function spawnOpenswarmRoster(existingAgents, addAgent) {
     if (have.has(tpl.name.toLowerCase())) continue;
     const agent = {
       ...tpl,
+      ...(model ? { model } : {}),
       id: uid('a'),
       status: 'idle',
       task: 'standing by',

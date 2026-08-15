@@ -50,6 +50,55 @@ function _modelCore(model) {
   return m.replace(/^[a-z][a-z0-9_-]*:/, '');   // strip one driver prefix
 }
 
+/* ── Which brain a role-shaped candidate actually runs on ─────────────────
+   Every OPENSWARM_ROSTER template pins `cafresohq:sonnet`, and the shelf
+   rendered that verbatim. Measured 2026-08-15 on an office started with
+   CAFRESOHQ_CLAUDE_BIN pointed at a path that does not exist: /agent/drivers
+   reported claude-code installed:false, the front desk correctly DROPPED the
+   Claude card — and one row below it, seven candidate cards still read
+   POWERED BY CLAUDE. Same screen, same detection result, one row apart.
+
+   The templates describe a ROLE — docs, slides, research, data — not a
+   vendor. Pinning them to one brain is what made the shelf decorative on
+   every office that does not have that brain: hire the Docs Agent on an
+   Ollama-only box and it goes to a desk it can never work from.
+
+   So the brain is chosen from what was DETECTED, and the chip reports that
+   choice. `ready` is the set of driver ids the caller established are ready
+   to take work — the caller must pass the same readiness it used to draw
+   the front-desk cards, or the two rows go back to disagreeing, which was
+   the whole defect.
+
+   Order is free-and-local first, then subscriptions already paid for, then
+   metered cloud. A boss who has both LM Studio running and a Claude
+   subscription is not billed for a first hire they made by clicking a
+   template — and they can change the brain on the card afterwards, which
+   is the point of naming it there.
+
+   Returns null when nothing is ready. Null is a real answer and callers
+   must render it as one: a card with no brain is not a card that quietly
+   picks Claude. */
+const CANDIDATE_BRAINS = [
+  { id: 'cafresohq',   model: 'cafresohq:sonnet' },
+  { id: 'lmstudio',    model: 'lmstudio:local-model' },
+  { id: 'ollama',      model: 'ollama:llama3.1' },
+  { id: 'claude-code', model: 'claudecode:sonnet' },
+  { id: 'codex',       model: 'codex:gpt-4.1' },
+  { id: 'gemini',      model: 'gemini:gemini-2.5-pro' },
+  { id: 'hermes',      model: 'hermes:hermes-agent' },
+  { id: 'openrouter',  model: 'openrouter:openai/gpt-oss-120b:free' },
+  { id: 'groq',        model: 'groq:llama-3.3-70b-versatile' },
+  { id: 'gemini-api',  model: 'gemini-api:gemini-2.5-flash' },
+];
+
+function candidateBrain(ready) {
+  const have = new Set(ready || []);
+  for (const b of CANDIDATE_BRAINS) {
+    if (have.has(b.id)) return b.model;
+  }
+  return null;
+}
+
 function poweredBy(agent) {
   const m = String((agent && agent.model) || '').toLowerCase().trim();
   if (!m) return null;
@@ -474,4 +523,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

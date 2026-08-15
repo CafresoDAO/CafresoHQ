@@ -308,9 +308,20 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
     if (onCollapsedChange) onCollapsedChange(v);
   };
   const steps = [
-    // Managed containers include Cafreso's Gemma 4 brain — this step self-
-    // completes on those, and stays actionable only for standalone setups.
-    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Gemma 4 by Cafreso is included — bring your own brain anytime.', act: onAddKey, cta: 'Brain settings' },
+    /* The hint renders under `!s.done` and nowhere else, so this sentence
+       is on screen in EXACTLY the state that makes it false: it announced
+       "Gemma 4 by Cafreso is included" only to bosses whose office had no
+       brain at all. Managed containers do include Gemma, which is why the
+       line was written — but on those the step is already ticked and the
+       hint never renders, so the true reading was the one nobody saw.
+       Two messages away the CEO says "We don't have a shared brain here".
+
+       Names no tab on purpose: CONNECTIONS, the right door for a
+       self-hoster, is filtered out of the nav on managed — see the note on
+       OnboardingKeyStep's footer for why naming a half-existing
+       destination is the §5 problem rather than the fix for it. The button
+       below exists for every reader. */
+    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Nothing here can think yet. A free local brain or your own key both work — start here.', act: onAddKey, cta: 'Brain settings' },
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
