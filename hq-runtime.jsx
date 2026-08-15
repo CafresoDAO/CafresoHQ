@@ -2928,38 +2928,107 @@ function extractHarmonyToolCalls(text) {
   return out;
 }
 
-/* Map a harmony JSON payload to the {arg, body} our tool runners expect.
-   Different tools take different arg keys; we check JSON first, fall back
-   to the raw payload string. */
+/* Which JSON key holds the ARGUMENT, and which holds the BODY.
+
+   This used to be a switch with a case per tool and `default: { arg:
+   payload }` underneath, which covered ten of the office's thirty-one
+   tools. The other twenty-one — every file, export, publish, memory and
+   wallet tool, i.e. the entire surface on which a coworker produces
+   something the boss keeps — fell through, and the WHOLE JSON OBJECT was
+   handed over as the argument.
+
+   Reproduced on office 9262, 2026-08-15, gpt-oss-20b via LM Studio. The
+   boss asked for a landing page at site/index.html. The model got it
+   exactly right:
+
+     <|channel|>commentary to=FILE_WRITE <|constrain|>json<|message|>
+     {"path":"site/index.html","content":"<!DOCTYPE html>\n…"}
+
+   The office took that entire string as the path. Every `/` in the HTML —
+   `</title>`, `</head>`, `</h1>`, `</p>`, `</body>`, `</html>` — became a
+   directory separator, so the workspace got a seven-level tree of
+   directories named after fragments of the boss's own web page, with an
+   empty file at the bottom. The visit block read:
+
+     Saved {"path":"site/index.html","content":"<html>… in the project
+     Wrote 0 chars → …/sp62/{"path":"site/index.html","content":"…
+
+   "Saved" and "0 chars", in the same block, about a path nobody asked for.
+   §4: the office said work happened. Nothing did.
+
+   So the mapping is now driven by key lists with a generic default, and a
+   tool added later is covered without anyone remembering to come back
+   here. That is the whole lesson: an allow-list of tools is a list that
+   silently stops being complete. */
+const JSON_ARG_KEYS = ['path', 'file', 'filename', 'filepath', 'file_path',
+  'dir', 'directory', 'folder', 'query', 'q', 'search', 'url', 'link',
+  'command', 'cmd', 'to', 'name', 'agent', 'recipient', 'coworker', 'target'];
+/* `prompt` is deliberately body-only. GENERATE_IMAGE takes a vault path as
+   its argument and the description as its body; if a model sends only a
+   prompt there is no path, and using the description as one would put us
+   right back to writing files named after their own contents. */
+const JSON_BODY_KEYS = ['content', 'body', 'text', 'message', 'details',
+  'description', 'outline', 'prompt'];
+
+/* Per-tool key lists, for the ones whose argument is not a path or a query.
+   These reproduce the old switch exactly — the point of the rewrite is the
+   DEFAULT, not a change of behaviour for the tools that already worked. */
+const JSON_KEYS_BY_TOOL = {
+  SEARCH:            { arg: ['query', 'q', 'search'] },
+  VAULT_SEARCH:      { arg: ['query', 'q'] },
+  VAULT_READ:        { arg: ['path', 'file'] },
+  VAULT_APPEND:      { arg: ['path', 'file'], body: ['content', 'body', 'text'] },
+  VAULT_NEW:         { arg: ['path', 'file'], body: ['content', 'body', 'text'] },
+  DM_TO:             { arg: ['to', 'name', 'agent', 'recipient'], body: ['message', 'body', 'text', 'content'] },
+  HANDOFF_TO:        { arg: ['to', 'name', 'agent', 'recipient', 'specialist'], body: ['message', 'body', 'text', 'content'] },
+  SPAWN_SUBAGENT:    { arg: ['role', 'specialty', 'kind'], body: ['task', 'description', 'brief', 'body', 'message'] },
+  REQUEST_ELEVATION: { arg: ['reason', 'why', 'summary', 'arg'], body: ['details', 'rationale', 'body', 'message'] },
+  PEER_JOURNAL:      { arg: ['name', 'coworker', 'agent', 'who'] },
+};
+
+/* Map a harmony JSON payload to the {arg, body} our tool runners expect. */
 function harmonyArgsFor(tool, payload) {
   let parsed = null;
   try { parsed = JSON.parse(payload); } catch (_e) {}
-  const get = (...keys) => {
-    if (!parsed || typeof parsed !== 'object') return null;
-    for (const k of keys) if (parsed[k] != null) return String(parsed[k]);
+  const isObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+  /* A payload that is not a JSON object is the argument, verbatim — a bare
+     query string or path is a perfectly ordinary thing for a model to send
+     and always worked. Only the OBJECT case was broken. */
+  if (!isObj) return { arg: payload };
+
+  const get = (keys) => {
+    for (const k of keys) {
+      if (parsed[k] == null) continue;
+      const v = parsed[k];
+      if (typeof v === 'object') continue;   // an object is not an argument
+      return String(v);
+    }
     return null;
   };
-  switch (tool.name) {
-    case 'SEARCH':         return { arg: get('query', 'q', 'search') || payload };
-    case 'VAULT_SEARCH':   return { arg: get('query', 'q') || payload };
-    case 'VAULT_READ':     return { arg: get('path', 'file') || payload };
-    case 'VAULT_APPEND':
-    case 'VAULT_NEW':      return { arg: get('path', 'file') || '', body: get('content', 'body', 'text') || '' };
-    case 'DM_TO':          return { arg: get('to', 'name', 'agent', 'recipient') || '', body: get('message', 'body', 'text', 'content') || '' };
-    case 'SPAWN_SUBAGENT': return { arg: get('role', 'specialty', 'kind') || '', body: get('task', 'description', 'brief', 'body', 'message') || '' };
-    case 'REQUEST_ELEVATION': return { arg: get('reason', 'why', 'summary', 'arg') || '', body: get('details', 'rationale', 'body', 'message') || '' };
-    case 'HIRE_AGENT':
-    case 'HIRE_ASSISTANT': {
-      const name = get('name', 'agent_name', 'agentName', 'title');
-      const role = get('role', 'specialty', 'position');
-      let arg = '';
-      if (name && role) arg = name + ' · ' + role;
-      else if (name) arg = name;
-      else arg = get('nameAndRole', 'name_and_role') || '';
-      return { arg, body: get('rationale', 'reason', 'details', 'body', 'message') || '' };
-    }
-    default:               return { arg: payload };
+  const spec = JSON_KEYS_BY_TOOL[tool.name] || {};
+  const body = get(spec.body || JSON_BODY_KEYS) || '';
+
+  /* Composed arguments: two tools take one string built from two fields. */
+  if (tool.name === 'HIRE_AGENT' || tool.name === 'HIRE_ASSISTANT') {
+    const name = get(['name', 'agent_name', 'agentName', 'title']);
+    const role = get(['role', 'specialty', 'position']);
+    const arg = (name && role) ? (name + ' · ' + role)
+      : name || get(['nameAndRole', 'name_and_role']) || '';
+    return { arg, body: get(['rationale', 'reason', 'details', 'body', 'message']) || '' };
   }
+  /* WALLET_SEND is deliberately NOT mapped. Its argument is a compound —
+     `<token> <amount> <to-principal> : <memo>` — and a generic key match
+     would build a plausible-looking one out of whichever fields happened to
+     be present. Every other tool on this list fails by doing nothing; this
+     one would fail by moving somebody's money. An unmapped argument stops
+     it, which is the correct outcome for a transfer nobody can parse. */
+  if (tool.name === 'WALLET_SEND') return { arg: '', body };
+
+  /* No key matched. The office does not know what was meant, and the one
+     thing it must not do is hand the raw object on as if it did — that is
+     the defect this whole block exists for. An empty argument fails the
+     tool, which the boss sees as a failed visit rather than as a save. */
+  return { arg: get(spec.arg || JSON_ARG_KEYS) || '', body };
 }
 
 const CEO_SYSTEM = `You are CafresoHQ, the CEO and ORCHESTRATOR for the boss's team of AI sub-agents. You are a warm, decisive chief of staff — direct, concise, with light personality. Sign messages as "CafresoHQ" (not "CafresoHQ"). Keep replies tight (2-4 sentences).

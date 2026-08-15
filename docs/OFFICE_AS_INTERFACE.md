@@ -9589,3 +9589,66 @@ passed at baseline. Neither was measuring anything.
 
 A surface may only assert what detection established — and a window on
 the conversation is an assertion about when it was read.
+
+---
+
+## A correct tool call became a filename, and the office called it "Saved"
+
+The boss asked for a landing page at `site/index.html`. Office 9262,
+2026-08-15, gpt-oss-20b through LM Studio. The model got it entirely
+right, in the format its own tokenizer declares:
+
+    <|channel|>commentary to=FILE_WRITE <|constrain|>json<|message|>
+    {"path":"site/index.html","content":"<!DOCTYPE html>\n…"}
+
+The office used that whole string as the path. Every `/` in the boss's own
+HTML — `</title>`, `</head>`, `</h1>`, `</p>`, `</body>`, `</html>` —
+is a directory separator, so the workspace got a seven-level tree of
+directories named after fragments of the page, an empty file at the
+bottom, and no `site/index.html` anywhere. What the boss saw:
+
+    📝 Saved {"path":"site/index.html","content":"<!DOCTYPE html>… in the project
+       Wrote 0 chars → …/sp62/{"path":"site/index.html","content":"…
+
+"Saved", and "0 chars", in the same block, about a path nobody asked for.
+§4 twice over: work reported that did not happen, and a place named for it
+that the boss could go and fail to find.
+
+`harmonyArgsFor` maps a JSON payload to the `{arg, body}` the runners take.
+It was a switch with a case per tool and `default: { arg: payload }`
+underneath. Ten of thirty-one tools had a case. The twenty-one that did
+not are the ones on which a coworker produces something the boss keeps:
+every file, export, publish, memory and wallet tool. The MVP surface was
+the uncovered one, and nothing anywhere said so — a switch reports no
+coverage, it just falls through.
+
+So the fix is not a case for FILE_WRITE. An allow-list of tools is a list
+that silently stops being complete; it had already stopped twenty-one
+times, and a twenty-second entry leaves the next tool exactly where this
+one was. The mapping is key lists with a generic default, and the suite
+sweeps EVERY tool in the registry — read out of the registry, not typed
+into the test, for the same reason.
+
+Two rules came with it. A payload that is not an object is still the
+argument verbatim, because a bare query string always worked and only the
+object case was broken. And WALLET_SEND is deliberately left unmapped: its
+argument is `<token> <amount> <to-principal> : <memo>`, and a generic key
+match would assemble a plausible one out of whichever fields turned up.
+Every other tool on this list fails by doing nothing. That one would fail
+by moving somebody's money.
+
+Same office, same question, after:
+
+    📝 Saved site/index.html in the project
+       Wrote 467 chars → …/sp62/site/index.html
+
+One of this suite's own arms MISSED and taught the rest. Deleting DM_TO's
+key list changed nothing the suite could see, because the generic list
+also covers `to` and `message` — two independent guards, so no single
+mutation reaches the check. What the per-tool lists uniquely do is
+RESTRICT: they are narrower than the generic one on purpose, and without
+DM_TO's entry the generic list answers, where `path` comes first. The
+check is now that a tool which addresses a person never addresses a path.
+
+A surface may only assert what detection established — and "Saved" is an
+assertion about a place the boss can go and look.
