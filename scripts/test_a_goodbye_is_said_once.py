@@ -63,12 +63,14 @@ def main():
     if bare.count(tpl) == 1 and n_guard == 1:
         tpl_at = bare.index(tpl)
         guard_at = bare.index(GUARD)
-        timer_at = bare.rfind('setTimeout(() => {', 0, tpl_at)
+        # The timer body is a named function now (#97's deferral needs to
+        # re-arm itself); the guard must still be its first act.
+        timer_at = bare.rfind('const dismissWhenQuiet = () => {', 0, tpl_at)
         check('the guard sits inside the timer, before anything else',
               timer_at != -1 and timer_at < guard_at < tpl_at
-              and guard_at < bare.index('abortAgentRun(transientAgent.id)',
+              and guard_at < bare.index('agentAbortersRef.current.has(',
                                         timer_at),
-          'an empty desk means the whole firing is moot — abort and '
+          'an empty desk means the whole firing is moot — deferral and '
           'removal included, not just the words')
 
     # ── the door still says its own goodbye ─────────────────────────────
@@ -78,15 +80,17 @@ def main():
           'goes silent, a boss-dismissed helper leaves without a word')
 
     # ── behavior: the lifted timer, fired over both floors ──────────────
-    # Anchor on the goodbye template and walk out to ITS enclosing timer —
-    # the first `setTimeout(() => {` in the file is somebody else's.
+    # The timer body is the named dismissWhenQuiet function; its span runs
+    # from the declaration to the arming line right after it.
     body = None
     if bare.count(tpl) == 1:
         tpl_at = bare.index(tpl)
-        open_at = bare.rfind('setTimeout(() => {', 0, tpl_at)
-        close_at = bare.find('}, 30_000);', tpl_at)
-        if open_at != -1 and close_at != -1:
-            body = bare[open_at + len('setTimeout(() => {'):close_at]
+        open_marker = 'const dismissWhenQuiet = () => {'
+        open_at = bare.rfind(open_marker, 0, tpl_at)
+        arm_at = bare.find('setTimeout(dismissWhenQuiet, 30_000);', tpl_at)
+        close_at = bare.rfind('};', 0, arm_at) if arm_at != -1 else -1
+        if open_at != -1 and close_at != -1 and open_at < close_at:
+            body = bare[open_at + len(open_marker):close_at]
     check('the timer body lifts', body is not None)
     if body is None or not shutil.which('node'):
         if not shutil.which('node'):
@@ -106,17 +110,19 @@ def main():
         'let calls;\n'
         'let floor;\n'
         'const agentsRef = { current: [] };\n'
-        'const abortAgentRun = () => { calls.aborted++; };\n'
+        'const agentAbortersRef = { current: new Map() };\n'
+        'const setTimeout = (fn, ms) => { calls.rearms++; };\n'
         'const setAgents = (fn) => { calls.agentsWrites++; floor = fn(floor); agentsRef.current = floor; };\n'
         'const setChat = (fn) => { calls.chat = fn(calls.chat); };\n'
-        'const fire = () => {' + body + '};\n'
+        'const dismissWhenQuiet = () => {' + body + '};\n'
+        'const fire = dismissWhenQuiet;\n'
         + '''
 const run = (startFloor) => {
-  calls = { aborted: 0, agentsWrites: 0, chat: [] };
+  calls = { rearms: 0, agentsWrites: 0, chat: [] };
   floor = startFloor;
   agentsRef.current = floor;
   fire();
-  return { aborted: calls.aborted, agentsWrites: calls.agentsWrites,
+  return { rearms: calls.rearms, agentsWrites: calls.agentsWrites,
            chat: calls.chat.map(m => m.text), floorIds: floor.map(a => a.id) };
 };
 const R = {
@@ -137,14 +143,14 @@ console.log(JSON.stringify(R));
           len(r['present']['chat']) == 1
           and 'dismissed — task complete.' in r['present']['chat'][0]
           and r['present']['floorIds'] == ['a_kip']
-          and r['present']['aborted'] == 1,
+          and r['present']['rearms'] == 0,
           r['present'])
     check('a helper already let go gets no second goodbye',
           r['gone']['chat'] == [],
           [r['gone']['chat'], '— the measured double: "has been let go" '
            'at the door, then "dismissed — task complete." from the timer'])
     check('an empty desk means the timer touches nothing',
-          r['gone']['aborted'] == 0 and r['gone']['agentsWrites'] == 0
+          r['gone']['rearms'] == 0 and r['gone']['agentsWrites'] == 0
           and r['gone']['floorIds'] == ['a_kip'],
           r['gone'])
 

@@ -11525,3 +11525,69 @@ adoption heal and the incidental CLI-sync flush now pass through the
 filter, so live timing cannot attribute which one healed the file —
 the suite pins the adoption mechanism in source and in node, which is
 the one that is guaranteed.
+
+## The desk timer cut a conversation the boss was still having
+
+Measured 2026-08-15 on office 9261, canned brain. Vera spawned a
+transient helper (Sub-fact-4wf) for a fact-check; the check came back
+and the 30-second grace window opened so the boss could read it. The
+boss did read it — and had a follow-up. Twenty seconds into the grace
+window they typed "@Sub-fact-4wf tell me more" and the helper started
+answering, a reply that would stream for about 25 seconds.
+
+At the 30-second mark the dismissal timer fired anyway, and its
+belt-and-braces abortAgentRun call did three dishonest things in one
+motion:
+
+- the helper's answer was cut mid-stream to " …(stopped)" — a
+  conversation binned with no warning, the exact move the #90 family
+  outlawed at the task-start door ("when the boss is driving, ask
+  first");
+- the registry filed the boss's own question as state 'cancelled',
+  note **'aborted by user'** — a stop the boss never made. The timer
+  made it. Line 2666's abort handler stamps that note on ANY aborted
+  stream, and here the office aborted itself and blamed the boss;
+- the next chat line was "🍂 Sub-fact-4wf (transient) dismissed —
+  task complete." — completion announced directly over the boss's
+  open, unanswered question.
+
+Each lie alone has a prior ticket in its family (#90 for the silent
+kill, #94 for the goodbye that reads a verdict, #95 for the timer
+that doesn't look before it speaks). Together they compound: the boss
+asked a question, the office killed the answer, signed the kill with
+the boss's name, and called the whole thing complete.
+
+The fix renames the timer body to dismissWhenQuiet and gives it one
+new rule: a live stream on the helper's desk means the conversation
+is still happening, so the timer re-arms itself for another 30
+seconds and touches nothing. Only a quiet desk is cleared. The order
+inside the timer is #95's floor guard first (nobody home beats
+everything), the busy check second (defer, not destroy), and only
+then the removal and the outcome-read goodbye. The abortAgentRun
+call is deleted outright — at dismissal time the quiet check has
+just established there is no stream to abort, so the belt-and-braces
+was pure downside: it could only ever fire against a conversation.
+Deferral terminates because endAgentRun deletes the desk's aborter
+whenever a run settles, so the next check finds quiet.
+
+Verified live both ways. A spawn left untouched is dismissed at the
+first fire, ~30 seconds, one goodbye, as before. A spawn @mentioned
+mid-grace with a deliberately slow (25s) answer now lands the full
+answer intact — no " …(stopped)" — with both registry records
+'completed' and no 'aborted by user' anywhere, and the goodbye
+arrives one deferral later, after the conversation actually ended.
+The mistimed first attempt at the repro doubled as its own finding:
+an @mention that arrives AFTER dismissal gets #71's front-desk
+redirect ("nobody here is called…"), which is the honest answer to
+addressing someone who already left.
+
+Residue, recorded honestly: the 'aborted by user' note at line 2666
+still stamps every aborted stream, including environment aborts like
+a page unmount — those are not boss-made stops either, but every
+OFFICE-initiated abort now confirms with the boss first (#90, #92)
+or no longer exists (this ticket), so the note is fair on the paths
+that remain reachable from the office's own hands. The unmount case
+is parked, not solved. And the deferral has no upper bound: a stream
+that never settles would defer dismissal forever — acceptable,
+because #90's own timeout machinery bounds every stream, and a floor
+that keeps a talking helper is more honest than one that shoots it.

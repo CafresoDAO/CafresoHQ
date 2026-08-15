@@ -2978,15 +2978,14 @@ ${d.text}` : d.text,
       // Schedule dismissal — 30s grace lets user see the sub-agent's reply
       // appear in the team UI before the desk clears. The dispatch above is
       // awaited, so by the time this fires the run has settled and the
-      // registry already holds its outcome (abortAgentRun is belt-and-braces
-      // for a stream something re-armed on this desk in the meantime).
+      // registry already holds its outcome.
       //
       // The dismissal line READS that outcome rather than asserting one.
       // It used to say "task complete." unconditionally — a helper whose
       // run died on the wire (registry: failed, snag already on the boss's
       // desk) was dismissed with "task complete" in the same room, thirty
       // seconds after the office wrote the opposite in its own record.
-      setTimeout(() => {
+      const dismissWhenQuiet = () => {
         // The boss can beat this timer to the door: LET GO on the helper's
         // card removes them and says "has been let go" right then. Firing
         // anyway announced the same departure a second time, seconds later,
@@ -2994,7 +2993,19 @@ ${d.text}` : d.text,
         // somebody no longer here. If the desk is already empty, there is
         // nothing left to do and nothing true left to say.
         if (!(agentsRef.current || []).some(a => a.id === transientAgent.id)) return;
-        abortAgentRun(transientAgent.id);
+        // A live stream on this desk is a conversation still happening —
+        // measured: the boss @mentioned the helper inside the grace window
+        // and this timer (then an abortAgentRun belt-and-braces) cut the
+        // reply mid-stream to " …(stopped)", filed the boss's own question
+        // as 'aborted by user' — a stop the boss never made — and said
+        // "task complete." over it. When the boss is driving, the office
+        // does not bin the conversation to keep a tidy floor: come back
+        // when the desk is quiet. endAgentRun deletes the aborter when a
+        // run settles, so this always terminates.
+        if (agentAbortersRef.current.has(transientAgent.id)) {
+          setTimeout(dismissWhenQuiet, 30_000);
+          return;
+        }
         setAgents(prev => prev.filter(a => a.id !== transientAgent.id));
         const rec = MessageRegistry.getMessage(spawnMsgId);
         const outcome = rec && rec.state === 'completed' ? 'task complete.'
@@ -3004,7 +3015,8 @@ ${d.text}` : d.text,
           : 'desk cleared.';
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `🍂 ${transientAgent.name} (transient) dismissed — ${outcome}`, thread: 'team' }]);
-      }, 30_000);
+      };
+      setTimeout(dismissWhenQuiet, 30_000);
     }
 
     /* Try to recover a "Name · Role" from the rationale body when the
