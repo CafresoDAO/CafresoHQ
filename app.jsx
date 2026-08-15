@@ -3975,7 +3975,24 @@ ${d.text}` : d.text,
     // A RUNNING task needs the same guard and never had it: the old check
     // keyed on `t.result`, which a task in flight has not got yet, so live
     // work was the one kind you could delete without being asked.
-    const running = t.status === 'doing' && !!t.assignedTo;
+    //
+    // "Running" here used to be status-only — the witness #86 outlawed at
+    // the START door, surviving at this one in a different spelling. A
+    // parked card (doing + blockedReason, run ENDED) drew "working on it
+    // right now" — false — and the confirm's abort-by-assignee then killed
+    // whatever the assignee actually had in flight: measured, deleting a
+    // card parked five hours earlier cancelled a mid-stream @mention
+    // conversation, which was filed as "aborted by user". The premise
+    // "their in-flight stream IS this task's" only holds for an unparked
+    // doing card with the registry bit set: a conversation aborts any such
+    // card's run on its way in (its catch returns the card to the inbox),
+    // so registry + doing + no-blockedReason pins the stream to THIS card.
+    // Parked cards carry `result` (the run-end path writes it with the
+    // park), so they fall through to the result-guard confirm below —
+    // deleting one still asks, it just stops claiming live work. Falsy
+    // check on blockedReason on purpose: progress notes clear it to ''.
+    const running = t.status === 'doing' && !t.blockedReason && !!t.assignedTo
+      && agentAbortersRef.current.has(t.assignedTo);
     if (running) {
       const who = (agents.find(a => a.id === t.assignedTo) || {}).name || 'someone';
       if (!(await window.hqConfirm(`${who} is working on "${t.title}" right now.\n\nDelete it and stop them?`, { danger: true }))) return;

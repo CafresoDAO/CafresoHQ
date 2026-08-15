@@ -11118,3 +11118,96 @@ table: the reply's *body* was still talking. A guard that names what it
 guards is not a guard — it is a signpost. The refusal owes the caller
 one bit — no — and everything past that bit belongs to the doors that
 check credentials.
+
+## Deleting a parked card stopped somebody else's live run
+
+**What was measured (2026-08-15, office 9261, canned brain).** "Empty
+hands three" had been parked on Vera's desk for five hours — status
+`doing` plus `blockedReason`, the run-end path's stamp for a run that
+came back all lead-in and no work. Vera was mid-reply to "@Vera hold
+that thought eleven", a live @mention conversation. Clicking ✕ on the
+PARKED card drew:
+
+    Vera is working on "Empty hands three" right now.
+
+    Delete it and stop them?
+
+That sentence was false — the run behind that card ended when the card
+parked. Confirming then executed `abortAgentRun(t.assignedTo)`, which
+cancelled whatever the assignee actually had in flight: the
+conversation. The registry filed it as "aborted by user". Two lies for
+one click — a dialog claiming live work on a dead card, and a stop the
+boss never chose, blamed on the boss, landed on a run the dialog never
+mentioned.
+
+**Where the door went wrong.** `onDeleteTask` decided "running" with
+
+    const running = t.status === 'doing' && !!t.assignedTo;
+
+— the status-only witness #86 outlawed at the START door, surviving at
+the DELETE door in a different spelling. #86's regression suite pins
+the absence of the exact spelling it fixed (`t.assignedTo === agent.id
+&& t.status === 'doing'`), and this one reads the same two facts in a
+different order with different operands, so the pin never saw it. A
+column on a kanban board is where a card sits; it is not testimony
+about a stream. Three doors read the truth correctly by then — start,
+displacement, reload — and the delete door was still reading furniture.
+
+**The premise the abort rode on.** The abort call was annotated with
+"their in-flight stream IS this task's". That premise only holds when
+three facts agree: the card is `doing`, it is not parked, and the
+aborter registry holds a live entry for the assignee. A conversation
+aborts any doing-unparked card's run on its way in (its catch returns
+the card to the inbox), so registry + doing + no-blockedReason pins the
+in-flight stream to that specific card. Any weaker witness lets the
+abort reach past the card it was asked about.
+
+**The fix.** The delete door now reads the full witness:
+
+    const running = t.status === 'doing' && !t.blockedReason && !!t.assignedTo
+      && agentAbortersRef.current.has(t.assignedTo);
+
+Falsy check on `blockedReason` on purpose — progress notes clear it to
+`''`. A parked card no longer claims live work and no longer reaches
+for the abort. It does not go silent either: the park writer stores the
+run's lead-in under `result` alongside the stamp, so a parked-card
+delete falls through to the existing result-guard confirm — "Your
+coworker's work on it will be lost." The boss is still asked; the
+dialog just stops testifying to work that is not happening.
+
+**Verified.**
+- `scripts/test_a_delete_stops_only_its_own_run.py` (new, 11 checks):
+  lifts the real `onDeleteTask` by brace-walk and drives six desks
+  through it — parked card mid-conversation, parked card on an idle
+  desk, genuinely live card (confirmed and declined), a `doing` card
+  with no registry entry behind it, an archived card with a result.
+  Pins the full witness at the source, pins the absence of the
+  status-only spelling, and pins that the abort still sits behind the
+  same answer the dialog gave.
+- Fire-tested (fire92.py): 5 arms — status-only again, park stamp
+  ignored, registry ignored, abort detached from the confirm, full
+  revert — 5/5 caught, baseline all-PASS across this suite plus #90's
+  and #86's.
+- Full runner: 135/135 suites.
+- Live, both directions: with "hold that thought twelve" streaming,
+  ✕ on the five-hour-parked "Empty hands" drew the result-guard dialog
+  — no "right now", no abort — and after Cancel the conversation ran to
+  `completed` with its full reply. A fresh "hold that thought thirteen"
+  started and deleted mid-run still drew the "right now" danger dialog.
+- Residue, recorded not hidden: a `doing` card whose stream died
+  without settling (browser crash mid-run) now deletes without the
+  "right now" dialog — correct, nobody is there — but if it carries
+  neither result nor a park stamp it deletes without any confirm at
+  all. Same behavior as any other never-started card with no output;
+  noted in the suite as the stray_doing desk.
+
+**The through-line.** #86 named the principle: a parked snag is not
+work in flight. #88 made the reload witness honest, #90 made the START
+door ask before cutting a conversation, and this ticket found the same
+status-only witness holding the knife at the DELETE door. The lesson
+that keeps repeating: "is anyone actually working?" has exactly one
+honest answer in this codebase — registry bit, `doing`, no park stamp —
+and every door that asks the question with fewer than all three facts
+eventually lies to the boss, or worse, stops a run the boss never aimed
+at. When a fix outlaws a spelling, the defect survives in paraphrase;
+the suites that last pin the witness, not the words.
