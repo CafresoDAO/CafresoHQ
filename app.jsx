@@ -105,6 +105,15 @@ function App() {
     return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
   }, []);
   const [chat, setChat] = useStored(k('chat'), HQ.INITIAL_CHAT, persistableChat);
+  /* The live conversation, readable from a closure that was built some
+     renders ago. `chat` itself is a per-render snapshot, and the dispatch
+     helpers below are handed to the chat panel as props: by the time the
+     chief of staff has finished streaming a reply and fanned out to two
+     specialists, the `onDispatchToAgent` the panel is holding closed over
+     the chat as it stood BEFORE any of that. The ref object is stable
+     across renders, so a stale closure still reads the current value. */
+  const chatRef = useRefA(chat);
+  chatRef.current = chat;
 
   /* One-time migration: rename "CafresoHQ" → "CafresoHQ" on any persisted
      chat messages so users with old localStorage state don't see the legacy
@@ -2024,8 +2033,17 @@ ${d.text}` : d.text,
        messages) — too much history drifts smaller / less-instruction-tuned
        models (gpt-oss-20b especially) into confusing the CURRENT request
        with past unrelated threads. The agent's persistent journal already
-       holds longer-term memory. */
-    const recentChat = chat.slice(-6);
+       holds longer-term memory.
+
+       Read off the ref, not the prop. Typing "@Vera …" reaches this line in
+       the same tick, so the snapshot was right and the defect was invisible
+       for as long as anyone tested it that way. The chief of staff's fan-out
+       does not: it streams a reply, dispatches, awaits, and only then calls
+       in here — through the prop it was handed two renders back. Measured on
+       office 9261, 2026-08-15: the boss's marker word was in the CEO's
+       request and in neither specialist's, and both their windows stopped
+       two turns short. */
+    const recentChat = chatRef.current.slice(-6);
     const screen = makeScreenEmitter(agent.id);
     /* What this coworker ends up saying out loud, hoisted past the try so
        the caller can be handed it. `cleanBuf` itself is born inside the
@@ -3514,7 +3532,10 @@ ${d.text}` : d.text,
     let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentId);
     const controller = beginAgentRun(a.id);
-    const recentChat = chat.slice(-6);
+    /* Same ref as the @mention path. This one is reached from a button, in
+       the same tick, so it is not stale today — but "not stale today" is a
+       fact about the caller, and the caller is a prop. */
+    const recentChat = chatRef.current.slice(-6);
     const screen = makeScreenEmitter(a.id);
     try {
       await HQ.agentStream(a, brief, tok => {

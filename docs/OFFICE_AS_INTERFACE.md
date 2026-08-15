@@ -9535,3 +9535,57 @@ nothing, which is strictly worse than a check that fails.
 
 A surface may only assert what detection established — and "I sent this
 on" is an assertion about something that has to have been sent.
+
+---
+
+## A fanned-out specialist answered the question before the one they were asked
+
+The boss asked "MARKERALPHA what is the vendor margin, both angles?" and
+the chief of staff put it to two specialists. Measured on office 9261,
+2026-08-15, by reading what actually left the building:
+
+    CEO            MARKERALPHA present: True   (45 msgs)
+    Vera, a spec   MARKERALPHA present: False   (8 msgs)
+    Kip, a speci   MARKERALPHA present: False   (8 msgs)
+    CEO            MARKERALPHA present: True   (2 msgs)
+
+Not a window too small to hold the question. Vera's window ended two turns
+back, on a reply to something that was no longer being asked, and then the
+brief arrived on top of it. She answered competently. On screen it was a
+normal fan-out.
+
+One line: `const recentChat = chat.slice(-6)` inside `dispatchToAgent`.
+`chat` is a per-render snapshot, and that function reaches the coworker
+through a prop. Typing "@Vera …" calls it in the same tick, so the
+snapshot is correct and the line has been correct every time anyone tested
+it that way — and the @mention path was measured on the same run and was
+NOT stale, which is the whole difficulty. The chief of staff's fan-out
+streams a reply, dispatches, awaits, and only then calls in, through the
+`onDispatchToAgent` the panel was handed renders ago.
+
+The fix is the ref from the previous entry, one level up: the ref object
+is stable across renders, so a closure built at any render reads the
+current value, and which prop it travelled on stops deciding what the
+specialist knows. Both dispatchers read it. The delegate one is reached
+from a button in the same tick and was not stale today — but "not stale
+today" is a fact about the caller, and the caller is a prop.
+
+Verified live, same office, same fixture: all four requests carry the
+boss's word, and Vera's window now ends on the question itself, one line
+above the brief.
+
+The task path keeps NO history and the suite pins that too. It is not an
+oversight of the same kind — back-to-back tasks about pears and then plums
+once produced a plums deliverable describing pears, filed and kept — and
+the next sweep for this hazard would otherwise "fix" it.
+
+Two of the suite's own checks were wrong in the direction that matters.
+One lifted the wrong call: three `agentStream` calls, two of them opening
+`(agent,`, and taking the first meant reading the @mention path while
+reporting on the task path. The other started paren-matching past the
+opening paren, so every call came back truncated at the first inner one —
+and the truncated text contained no `chat:`, so the check passed. Both
+passed at baseline. Neither was measuring anything.
+
+A surface may only assert what detection established — and a window on
+the conversation is an assertion about when it was read.
