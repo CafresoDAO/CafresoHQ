@@ -107,7 +107,7 @@ const SETTINGS_INDEX = [
      search answered nothing because the panel was mounted nowhere. Both
      halves of `search.requires()` live behind this one entry. */
   { tab:'connections', label:'Web search', hint:'give coworkers a real [SEARCH:] tool — without it they can only fetch a URL you name', kw:'connections brave search web internet google lookup research news key api tool' },
-  { tab:'agents', label:'Agent model & temperature', hint:'per-agent brain settings', kw:'roster model temperature creativity' },
+  { tab:'agents', label:'Coworker brain & creativity', hint:'per-coworker brain settings', kw:'roster model temperature creativity brain coworker' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
   { tab:'agents', label:'Tool call format', hint:'JSON vs bracket fallback', kw:'json bracket format' },
   { tab:'agents', label:'File and shell access', hint:'file/shell access per agent', kw:'elevated computer shell files access security' },
@@ -1045,12 +1045,22 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                 <h4>{sel ? `${sel.name.toUpperCase()} · CONFIG` : 'NO AGENT'}</h4>
                 {sel && (
                   <div className="stack">
+                    {/* §6's table, on the two rows that had been printing
+                        the machine's word for years: `model (as a selector)`
+                        → coworker, and `temperature` → hidden, or a
+                        "creativity" dial if it ever surfaced. It surfaced.
+                        The coworker card settled on **Brain** for the
+                        selector in the 2026-08-06 audit; this is the same
+                        control on a different screen and gets the same
+                        word. Labels only — the stored fields are still
+                        `model` and `temperature`, so nothing about an
+                        agent's saved settings moves. */}
                     <div className="row-knob">
-                      <span className="lbl">Model</span>
+                      <span className="lbl">Brain</span>
                       <ModelPicker value={sel.model} onChange={v=>update({model:v})}/>
                     </div>
                     <div className="row-knob" style={{flexDirection:'column',alignItems:'stretch',gap:4}}>
-                      <div className="row" style={{justifyContent:'space-between'}}><span className="lbl">Temperature</span><span className="sub">{sel.temperature?.toFixed(2)}</span></div>
+                      <div className="row" style={{justifyContent:'space-between'}}><span className="lbl">Creativity</span><span className="sub">{sel.temperature?.toFixed(2)}</span></div>
                       <input type="range" className="pxslider" min="0" max="1" step="0.05" value={sel.temperature||0} onChange={e=>update({temperature:parseFloat(e.target.value)})}/>
                     </div>
                     <div style={{marginTop:6}}>

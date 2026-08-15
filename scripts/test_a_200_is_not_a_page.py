@@ -268,10 +268,19 @@ def main():
     check('the search key error names a tab that is really there',
           re.search(r'open Settings → Connections', client),
           'the tab BraveTab is now mounted in')
+    # Was pinned to the whole sentence — "aren't wired up — check Settings →
+    # Roster" — which made it a hostage to the wording as well as the
+    # destination, and it went red the day that sentence was rewritten for
+    # §6 (the raw tool names and "wired up" both went). The destination is
+    # what this check is named for and all it should hold: both branches of
+    # the hint, the one that can name the box and the one that can't, still
+    # send the boss to the tab where tools are ticked.
+    reached = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', rt)
     check('the unwired-tools hint points at where tools are ticked',
-          re.search(r"aren't wired up — check Settings → Roster", rt),
-          'which tools a coworker gets is a per-agent question, and ROSTER '
-          'is the per-agent tab')
+          len(reached) >= 4,
+          f'{len(reached)} of the hint branches name Roster — which tools a '
+          'coworker gets is a per-agent question, and ROSTER is the '
+          'per-agent tab')
     check('onboarding names no tab at all',
           re.search(r'change it anytime in Settings\.', onboard),
           'this line is read on managed containers too, and CONNECTIONS — '

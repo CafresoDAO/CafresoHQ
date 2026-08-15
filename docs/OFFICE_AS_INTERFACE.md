@@ -8172,3 +8172,107 @@ The through-line holds, on the surface that exists to serve it. A surface
 may only assert what detection established — and the corollary here is that
 detection understanding something exactly is not permission to explain it in
 the terms detection used. The boss is owed the fact, not the mechanism.
+
+## The hints named dials that aren't on the wall, then never arrived
+
+`onHint` is the out-of-band channel the office uses when a run produced no
+answer at all. It is the last thing the boss reads before deciding whether
+the product works, and it was breaking §6 on eight strings:
+
+    tool results came back but Nova's model didn't write a final answer.
+    Last attempt: "…". Try a stronger model — sonnet/opus or
+    claudecode:sonnet — for the synthesis step, or lower temperature.
+
+    model produced only commentary — try a different model or raise
+    max_tokens
+
+    per-turn tool budget exhausted (12 hops); ask again to continue
+
+Three table rows broken at once — `model` as a selector, `temperature`
+outright hidden, `tokens` as work done — plus `claudecode:sonnet`, a raw
+routing id of exactly the kind `brainName()` exists to keep off a coworker
+card, and a hop count the boss cannot change about a limit they were never
+told existed.
+
+I first wrote in the code comment that none of those dials exist. Half
+wrong, and the correction is worth keeping: there is no max_tokens field,
+but there **is** a slider in Settings → Roster, and it was labelled
+Temperature. So a commit calling the word jargon would have shipped
+alongside a screen printing it. Both labels are renamed here — Brain and
+Creativity, the table's own prescription and the word the coworker-card
+audit already settled on — and the settings search keeps both spellings so
+a rename doesn't make the control unfindable for anyone who knows it by the
+old name. The reason the advice goes is not that the dial is missing. It is
+that "lower temperature" asks a boss with no expertise for a judgement they
+have no way to make, about a control the product deliberately keeps at the
+back. What they *can* judge is whether to ask again or give the job to
+someone else, and that is what the sentences now say.
+
+### The box has a name printed on it, and it wasn't the one we used
+
+Underneath the jargon sat a §5 problem. Two hints named the tool by its
+runtime name:
+
+    model attempted WEB_SEARCH, VAULT_NEW but those aren't wired up —
+    check Settings → Roster
+
+Settings → Roster has no box called WEB_SEARCH. It has one called **Web
+Search**. Sending the boss to a checkbox under a name that is not printed
+on it is the same wrong door as pointing them at a page that doesn't hire.
+
+The fix reads the label off `TOOLS_CATALOG` — the list the checkboxes are
+rendered from — so the sentence and the box cannot drift apart. Only the
+runtime-name → catalog-id grouping is new, and it mirrors the grants in
+`toolsForAgent`, which is the one place a ticked box becomes a real tool.
+A tool with no box (its own memory, an ACK, a DM to a coworker) returns
+nothing rather than something wrong, and the caller has a vaguer true
+sentence for that case. Seven tools behind the Vault checkbox are named
+once, not seven times: a coworker who opened, appended and exported has
+still only missed one box.
+
+### And then the sentence was written and immediately erased
+
+Driving the fixed hints live is what found the rest of it. Fresh office,
+one hire, a brain that answers with two harmony tool calls and no prose.
+`agentStream` reached the branch, built the sentence, handed it to
+`flush.note` — and the stored message came out as the raw buffer with
+nothing appended. No note in the bubble, on any path.
+
+`throttleTokens` keeps notes in a `suffix` that bypasses `cleanHarmony`,
+and `flushNow` paints `cleanHarmony(raw) + suffix`. Its comment calls
+itself "the LAST paint this throttle ever makes", and it is — but it is not
+the last paint the *bubble* gets. Every dispatch path does `flushNow()`,
+then `cancel()`, then one more `setChat` of its own with the finished text,
+computed from `buf` alone. `suffix` is not in `buf`. So the note was
+painted and wiped, every run, on the three busiest routes in the app:
+@mention, delegate, and a task dropped on a desk.
+
+This is the same shape as the bug `flushNow` was written to fix, one step
+further along the chain — a later write recomputing from the unstripped
+source and undoing the considered one. Ending the throttle is not enough
+when the caller writes again. `withNotes(text)` is a pure function on the
+throttle: the caller's text goes through it, and the two halves stay
+together no matter which is written last. Pure rather than a `seal()` that
+owns the write, because the three sites differ — one deletes the message
+instead of writing it, one picks between the coworker's words and the
+office's.
+
+Thirty checks, twenty arms, all caught. Verified live on both halves: an
+@mention run and a task dropped on a desk, same office, and both bubbles
+now read *Local Brain reached for Code Exec and File Access, which they
+don't have — tick it on their card in Settings → Roster, or @-mention a
+coworker who already has it.* Two boxes, both of them real, joined into a
+sentence. On the task path the note is the only thing in the bubble, which
+is precisely the run where it was previously lost.
+
+Recorded, not fixed: on the @mention path the bubble text is
+`visibleReply(buf)` with no `cleanHarmony` around it, so the raw
+`<|channel|>commentary…` block reaches the boss verbatim. The two sibling
+paths already wrap it. Filed rather than fixed here — it is the busiest
+dispatch path in the app and `cleaned` feeds four other readers, so it
+deserves its own driven verification rather than a ride-along.
+
+The through-line holds, and gains a delivery clause. A surface may only
+assert what detection established — and a sentence the boss never sees
+asserts nothing at all. Getting the words right is half the work; the other
+half is making sure nothing downstream throws them away.

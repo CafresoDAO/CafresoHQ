@@ -294,6 +294,41 @@ function throttleTokens(setChat, msgId) {
   ontok.flushNow = () => { flush(); cancelled = true; };
   ontok.cancel = () => { cancelled = true; };
   ontok.raw = () => raw;
+  /* The note has to be carried by whoever writes last, and on three paths
+     that is NOT this throttle.
+
+     The comment above says flushNow is "the LAST paint this throttle ever
+     makes", and it is — but it is not the last paint the BUBBLE gets. The
+     dispatch paths do `flushNow()`, then `cancel()`, then one more
+     `setChat` of their own with the finished text, computed from `buf`
+     alone. `suffix` is not in `buf`. So the office's note was painted by
+     flushNow and wiped by the very next write, every time, on the three
+     busiest routes in the app: @mention, delegate, and a task dropped on a
+     desk.
+
+     Measured on a fresh office (port 9249, one hire, a brain that answers
+     with two harmony tool calls and no prose). agentStream reached the
+     `!cleaned.trim()` branch and emitted the note; `flush.note` stored it;
+     the stored message came out as the raw buffer with no note attached,
+     and the boss got a coworker who had said nothing and an office that
+     said nothing about it either. The two sentences added in this commit
+     were correct and unreachable.
+
+     This is the same shape as the bug flushNow was written to fix, one
+     step further along the chain — a later write recomputing from the
+     unstripped source and undoing the considered one. The fix there was to
+     end the throttle; ending it is not enough when the caller writes
+     again. So the caller's text goes through here, and the two halves stay
+     together no matter which of them is written last.
+
+     A pure function on purpose: the sites differ (one deletes the message
+     instead of writing it, one picks between the coworker's words and the
+     office's), and a `seal(text)` that owned the setChat could not serve
+     all three. This composes with any write shape. */
+  ontok.withNotes = (text) => {
+    if (!suffix) return text;
+    return (String(text || '').trimEnd() + suffix).trim().replace(/\n{3,}/g, '\n\n');
+  };
   return ontok;
 }
 
@@ -2050,6 +2085,67 @@ const TOOL_REGISTRY = {
   },
 };
 
+/* ── Naming a capability the boss can actually go and find ───────────────
+   A coworker that reaches for something it wasn't given produces a hint,
+   and that hint used to print the runtime's own name for it:
+
+     _(model attempted WEB_SEARCH, VAULT_NEW but those aren't wired up —
+       check Settings → Roster)_
+
+   Two §6 breaks in one line ("model", and the tool call by its raw name),
+   and a §5 one underneath them: Settings → Roster does not have a box
+   called WEB_SEARCH. It has one called **Web Search**. Sending the boss to
+   a checkbox under a name that is not printed on it is the same wrong door
+   as pointing them at a page that doesn't hire.
+
+   So the label comes from TOOLS_CATALOG — the very list the checkboxes are
+   rendered from — and only the grouping is written here. That grouping is
+   not a new opinion either: it mirrors the grants in `toolsForAgent`
+   directly below, which is the one place a claimed box becomes a real
+   tool. If a label is reworded, this follows it; if a grant moves, this
+   table is wrong in the same commit that moved it, which is the closest a
+   lookup like this gets to being self-checking.
+
+   Deliberately NOT a second copy of the floor's visit vocabulary
+   (`visitLine`/`visitWords`, imported at the top of this file). That table
+   answers "what is this coworker doing right now"; this one answers "which
+   box would let them". Different questions, and the floor's answer —
+   "searching for X" — cannot be typed into a settings search field. */
+const TOOL_CLAIM_GROUPS = [
+  [/^(WEB_)?SEARCH|BROWSER_|FETCH|HTTP/i,        'web'],
+  [/^VAULT_|^EXPORT_/i,                          'vault'],
+  [/^GENERATE_(IMAGE|VIDEO)/i,                   'img'],
+  [/^BASH$|^SHELL/i,                             'code'],
+  [/^FILE_|^DIR_/i,                              'files'],
+];
+
+function toolClaimLabel(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  for (const [re, id] of TOOL_CLAIM_GROUPS) {
+    if (!re.test(n)) continue;
+    const entry = TOOLS_CATALOG.find(t => t.id === id);
+    if (entry) return entry.label;
+  }
+  return '';
+}
+
+/* The hint's subject, as a list the boss can read out loud. Anything with
+   no checkbox behind it is DROPPED rather than named: a coworker reaching
+   for MEMORY_WRITE (which every coworker already has) is not a capability
+   question, and printing the raw name to fill the gap is exactly the habit
+   this function exists to break. If nothing survives, the caller says the
+   vaguer true thing instead of the precise wrong one. */
+function claimLabels(names) {
+  const seen = [];
+  for (const n of names || []) {
+    const label = toolClaimLabel(n);
+    if (label && !seen.includes(label)) seen.push(label);
+  }
+  if (seen.length <= 1) return seen[0] || '';
+  return seen.slice(0, -1).join(', ') + ' and ' + seen[seen.length - 1];
+}
+
 /* Build the tools section of the agent system prompt, restricted to tools
    the agent has claimed AND that are configured/enabled. Returns a Promise
    since some `requires` checks (vault status) are async. */
@@ -2856,11 +2952,12 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
              question, and ROSTER is where those boxes are ticked. The very
              next branch below already says "Settings → Connections" — that
              message got updated in some earlier pass and this one didn't. */
-          emit(`_(model attempted ${orphans.map(o=>o.tool).join(', ')} but those aren't wired up — check Settings → Roster)_`);
+          const want = claimLabels(orphans.map(o => o.tool));
+          emit(want
+            ? `_(they reached for ${want}, which they don't have — tick it on their card in Settings → Roster and ask again.)_`
+            : "_(they reached for something they haven't been given — check what they're allowed to do in Settings → Roster.)_");
         } else {
-          const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
-          emit(peek ? `_(empty after cleaning. Raw: "${peek}…")_`
-            : '_(no response from the model. On a free model this usually means the prompt was too large — try **Settings → Connections → Coworker capability → "Lite"**, or pick a smaller/paid model.)_');
+          emit('_(nothing came back from them this time. If they are on a free brain this usually means you asked for too much at once — try **Settings → Connections → Coworker capability → "Lite"**, or give them a smaller job.)_');
         }
       }
       return;
@@ -2928,7 +3025,11 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Do NOT repeat the tool call.` });
   }
-  if (onHint) onHint(`_(per-turn tool budget exhausted (${MAX_TOOL_HOPS} hops); ask again to continue)_`);
+  /* "per-turn tool budget exhausted (12 hops)" told the boss a number
+     they cannot change about a limit they did not know existed. What is
+     true and useful is that the coworker is still mid-job and asking
+     again picks it up. */
+  if (onHint) onHint('_(they did as much as they can in one go and stopped there. Ask again and they will carry on from where they left off.)_');
 }
 
 async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTool, onHint, maxTokens, peers = [], maxToolHops = MAX_TOOL_HOPS, cwd } = {}) {
@@ -3059,18 +3160,36 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
         const orphans = extractHarmonyToolCalls(buf);
         const enabledSet = new Set(enabledTools.map(t => t.name));
         const missing = [...new Set(orphans.map(o => o.tool).filter(n => !enabledSet.has(n)))];
+        /* §6 again, and this branch was the worst of it. It used to read
+           "Try a stronger model — sonnet/opus or claudecode:sonnet — for
+           the synthesis step, or lower temperature", which is three
+           breaches stacked: `model` as a selector, a raw routing id at the
+           boss, and `temperature`, which the table says is hidden
+           outright. The sibling below said "raise max_tokens".
+
+           I first wrote here that none of those dials exist. Half wrong,
+           and worth keeping the correction: there IS no max_tokens field,
+           but there IS a slider in Settings → Roster — which the table
+           says should never have been called Temperature, and which is
+           renamed Creativity in the same commit as this. So the reason
+           these sentences go is not that the dial is missing. It is that
+           "lower temperature" asks a boss with no expertise to make a
+           judgement they have no way to make, about a control the product
+           deliberately keeps at the back.
+
+           What they CAN judge is whether to ask again or give the job to
+           someone else, and that is what these now say. */
         if (toolsExecuted > 0) {
-          const peek = (orphans[0] && orphans[0].payload || buf).slice(0, 200).replace(/\n+/g,' ').trim();
-          emit(`_(tool results came back but ${agent.name}'s model didn't write a final answer. Last attempt: "${peek}…". Try a stronger model — sonnet/opus or claudecode:sonnet — for the synthesis step, or lower temperature.)_`);
+          emit(`_(${agent.name} did the legwork but never wrote it up. Ask them to summarise what they found, or hand the job to a coworker on a stronger brain.)_`);
         } else if (missing.length) {
-          emit(`_(${agent.name} tried to call ${missing.join(', ')} but doesn't have that capability. Edit their tools in Settings, or @-mention a coworker who does.)_`);
+          const want = claimLabels(missing);
+          emit(want
+            ? `_(${agent.name} reached for ${want}, which they don't have — tick it on their card in Settings → Roster, or @-mention a coworker who already has it.)_`
+            : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`);
         } else if (orphans.length) {
-          emit('_(model produced only commentary — try a different model or raise max_tokens)_');
+          emit(`_(${agent.name} talked themselves through it but never answered. Ask them again, or hand the job to a coworker on a stronger brain.)_`);
         } else {
-          const peek = buf.slice(0, 240).replace(/\n+/g,' ').trim();
-          emit(peek
-            ? `_(empty after cleaning. Raw: "${peek}…")_`
-            : '_(no answer came back — your office may be offline, or the brain may be rate-limited)_');
+          emit('_(nothing came back from them this time — your office may be offline, or their brain may be busy. Ask them again in a moment.)_');
         }
       }
       return;
@@ -3197,7 +3316,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   }
   /* Hop budget exhausted. Out-of-band hint so it doesn't end up in the
      agent's journal or in user-visible chat as if it were the model speaking. */
-  if (onHint) onHint(`_(per-turn tool budget exhausted (${maxToolHops} hops). If you're inside a research mission this iteration is done — the next iteration will pick up.)_`);
+  if (onHint) onHint('_(they did as much as they can in one go and stopped there. If this is part of a running project it will carry on by itself; otherwise ask again and they will pick it up.)_');
 }
 
 function resolveModel(m) {

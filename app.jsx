@@ -2149,9 +2149,12 @@ ${d.text}` : d.text,
            overwriting them with the office's sentence would throw away
            what they actually said to make room for a line about it. */
         const promising = handedOff && askedForHelp;
-        const text = promising
+        /* withNotes, not the bare string: whichever half wins, the office's
+           note about what silently went nowhere has to ride along. See the
+           note on withNotes — this write is the one that used to erase it. */
+        const text = flush.withNotes(promising
           ? `Asked ${nameLine} — watch the team room, and I'll bring their answer back here.`
-          : cleaned;
+          : cleaned);
         return prev.map(m => m.id === agentMsgId ? { ...m, text } : m);
       });
       /* Everything below that SCANS for markers must read this, not `buf`.
@@ -3499,7 +3502,9 @@ ${d.text}` : d.text,
          EXCEPT the one the boss is actually reading, which kept whatever
          the throttled stream last wrote. */
       flush.cancel();
-      setChat(prev => prev.map(m => m.id === agentId ? { ...m, text: cleanBuf } : m));
+      // withNotes — see hq-runtime. The records below want the reply alone;
+      // only the bubble carries the office's note about what never happened.
+      setChat(prev => prev.map(m => m.id === agentId ? { ...m, text: flush.withNotes(cleanBuf) } : m));
       screen.done(cleanBuf);
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
@@ -4023,7 +4028,9 @@ ${d.text}` : d.text,
       const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
       // Same gap as the dispatch path: every record got cleanBuf, the bubble did not.
       flush.cancel();
-      setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanBuf } : m));
+      // withNotes — see hq-runtime. An empty run is exactly when the note is
+      // the only thing in the bubble, and this is where it was being dropped.
+      setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: flush.withNotes(cleanBuf) } : m));
       screen.done(cleanBuf);
       const produced = !!cleanBuf.trim();
       /* `recent` fell back to the task TITLE on an empty run, so the
