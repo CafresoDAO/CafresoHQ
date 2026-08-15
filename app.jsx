@@ -1786,6 +1786,46 @@ ${d.text}` : d.text,
         thread,
       }]);
     }
+    /* A live stream on this desk is a conversation still happening.
+       beginAgentRun below evicts any prior run on the same desk — and
+       every office-initiated dispatch rode that eviction straight through
+       a coworker's open reply. Measured 2026-08-15, office 9261: the boss
+       asked Kip AND Vera one question; Kip finished first and DM'd Vera,
+       and the DM cut Vera's in-flight answer TO THE BOSS to " …(stopped)",
+       filed the boss's own question as 'aborted by user' — a stop the
+       boss never made — and put Kip's note on her desk in its place.
+       Nothing outranks the boss's open question silently (#90, #97), so
+       an office-initiated dispatch waits its turn: one team-room line
+       says so, then it checks every 750ms until the desk is quiet.
+       Termination is #97's argument — endAgentRun releases the desk
+       whenever a run settles, and the stream timeouts bound every run.
+       The boss's own sends can't arrive here busy (the composer
+       serializes them), so the sender named in the wait note is always
+       the sender the office actually has. */
+    if (agentAbortersRef.current.has(agent.id)) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${dmFrom ? `${dmFrom.name}'s note` : `the office's note`} for ${agent.name} waits its turn — they're still finishing another reply.)`,
+        thread: 'team' }]);
+      while (agentAbortersRef.current.has(agent.id)) {
+        await new Promise(res => setTimeout(res, 750));
+      }
+      /* The desk can empty while we wait — LET GO mid-defer deletes the
+         aborter AND the coworker. Dispatching anyway would resurrect a
+         dismissed coworker's bubble; saying so is the honest ending. */
+      if (!(agentsRef.current || []).some(x => x.id === agent.id)) {
+        MessageRegistry.transition(messageId, 'failed', {
+          by: 'host',
+          note: `${agent.name} left the office before this was delivered`,
+          failureCause: { kind: 'recipient-gone', retryable: false,
+            message: `${agent.name} was dismissed while this message waited for their desk.`,
+            actionNeeded: 'Re-send to another coworker if the question still needs an answer.' },
+        });
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+          text: `(${agent.name} left the office before this note reached their desk — not delivered.)`,
+          thread: 'team' }]);
+        return '';
+      }
+    }
     const agentMsgId = HQ.uid('m');
     setChat(prev => [...prev, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true, thread, agentId: agent.id }]);
     /* CORRECTION to what this comment used to say. It claimed `prompt` is

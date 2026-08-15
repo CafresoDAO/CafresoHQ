@@ -11591,3 +11591,69 @@ is parked, not solved. And the deferral has no upper bound: a stream
 that never settles would defer dismissal forever — acceptable,
 because #90's own timeout machinery bounds every stream, and a floor
 that keeps a talking helper is more honest than one that shoots it.
+
+## A coworker's DM cut a teammate's answer to the boss mid-sentence
+
+Measured 2026-08-15 on office 9261, canned brain. The boss asked Kip
+AND Vera one question in the same breath — "@Kip @Vera check the
+ledger". Kip finished first and, as instructed by his own reply, sent
+Vera a follow-up DM. Delivering that DM destroyed Vera's answer to
+the boss:
+
+- her in-flight reply to the boss's direct question was cut to
+  " …(stopped)";
+- the registry filed the boss's question as state 'cancelled', note
+  **'aborted by user'** — timestamped +12.16s after send, the exact
+  instant Kip's delayed reply settled and his DM chain fired. The
+  boss stopped nothing; a coworker's private note did;
+- Kip's DM took the boss's place on Vera's desk — she answered the
+  DM, and the boss's question to her was simply never answered.
+
+The mechanism: dispatchToAgent had no busy-desk check, and
+beginAgentRun evicts any prior run on the same desk. The boss's own
+sends never arrive at a busy desk — the composer serializes them and
+the retry buttons carry their own "give it a moment" doors — so the
+eviction ONLY ever fired against conversations nobody chose to end:
+DM chains, approval and elevation walk-backs, workflow chain steps.
+Every one of those is the office talking to itself, and the office
+was resolving its own scheduling problem by killing whichever
+conversation was already on the desk and signing the kill with the
+boss's name.
+
+The fix is #97's stance applied at the dispatch door: an
+office-initiated dispatch WAITS for the desk to go quiet. One
+team-room line says so — "(Kip's note for Vera waits its turn —
+they're still finishing another reply.)" — then the dispatch checks
+every 750ms until the desk's aborter is gone. The wait sits before
+the reply bubble, the busy paint, and the registry's 'in_progress'
+stamp, so nothing claims the coworker is answering a note they have
+not seen; the record honestly stays 'delivered' while it queues.
+Termination is the same argument as #97: endAgentRun releases the
+desk whenever a run settles, and the stream timeouts bound every run.
+
+One new edge the wait creates, closed honestly: the coworker can be
+LET GO while a note waits for their desk. Dispatching anyway would
+resurrect a dismissed coworker's bubble, so the message is filed
+'failed' with a recipient-gone cause and a plain team-room line —
+"(Vera left the office before this note reached their desk — not
+delivered.)" — instead of pretending the conversation happened.
+
+Verified live both ways. The repro re-run: both coworkers' answers to
+the boss landed intact, the wait note appeared once, the deferred DM
+was delivered after the desk quieted and answered normally, and all
+four registry records read 'completed' — no 'aborted by user'
+anywhere. The counter-direction rode the same run: Vera's own DM to
+Kip found his desk already quiet and went straight through with no
+wait note and no delay.
+
+Residue, recorded honestly: the delegate button path and the task
+path have their own beginAgentRun calls and are not covered by this
+door — the task path sits behind #90's confirm-first dialog (a
+boss-made stop, fairly attributed), but a Delegate click aimed at a
+coworker who is mid-reply still evicts silently; that is a
+boss-initiated surface and wants a #90-style ask, not a silent wait —
+a future round's ticket. And STOP ALL clears every aborter, so a note
+waiting out a stream the boss just killed will dispatch the moment
+the floor goes quiet — same as it would have before the wait existed,
+but worth a look if STOP ALL should also empty the office's own
+outbox.
