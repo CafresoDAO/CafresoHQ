@@ -8276,3 +8276,76 @@ The through-line holds, and gains a delivery clause. A surface may only
 assert what detection established — and a sentence the boss never sees
 asserts nothing at all. Getting the words right is half the work; the other
 half is making sure nothing downstream throws them away.
+
+## Every record got the clean reply. The chat got the raw one.
+
+Filed at the end of the last pass as recorded-not-fixed, then reproduced
+before touching anything. Fresh office on port 9250, one hire, a brain
+answering `Here is the answer.` followed by a dangling harmony commentary
+block. Reading localStorage straight after:
+
+    cafresohq_hq_v1:activity   detail: "Here is the answer."
+    cafresohq_hq_v1:chat       text:   "Here is the answer.\n\n
+                                        <|channel|>commentary
+                                        to=functions.bash<|constrain|>json
+                                        <|message|>{"command":"ls -la"}
+                                        <|call|>"
+
+The chat was the only key in the entire store holding a harmony token. The
+desk monitor, the activity detail, the journal, the report-back and the
+approval scan all had the cleaned text. The one surface the boss actually
+reads had the raw buffer.
+
+### Four paths, four spellings of the same sentence
+
+    @mention   bubble  ← visibleReply(buf)                        ← weakest
+               records ← cleanHarmony(visibleReply(stripToolEcho(buf, …)))
+    delegate   both    ← cleanHarmony(visibleReply(buf))          ← no echo strip
+    task       both    ← cleanHarmony(visibleReply(stripToolEcho(buf, …)))
+
+The @mention path computed *both*, two hundred lines apart, and handed the
+weaker one to the chat. Its sibling's own comment already names the shape —
+"every record got cleanBuf, the bubble did not" — written when the delegate
+path had the same split and it was fixed there. This one was left, and it
+is the busiest route in the app.
+
+The delegate path turned out to have a third variant nobody had noticed: it
+collects `echo` on every tool visit and then never used it, so a coworker
+parroting the tool's own output back got that parroting shown and filed.
+
+Two sources, one rule — the fourth time this session that split has *been*
+the bug. The @mention path now has a single `dress()` that both readers
+call, and all four sites run the same three strips in the same order:
+echoes out, markers out, harmony out.
+
+### The check that would have called the broken order fixed
+
+`stripToolEcho` undoes the runtime's own append by literal string match, so
+it has to run before anything that reformats the reply. To prove that
+rather than assert it, the test runs the strip on the outside and expects
+the echo to survive. First draft asserted the exact echo string was still
+there. It wasn't — `visibleReply` collapses `\n{3,}`, so the literal bytes
+were gone while every line of tool output was still on the screen. An
+equality test would have reported the broken order as fixed. The check
+looks for the *content* now, which is what the boss would see.
+
+Two more misses worth keeping. The desk-monitor check asked whether
+`screen.done(cleanBuf)` appeared *anywhere* — there are three of them, so
+it stayed green while one path was handed the raw buffer; it counts now,
+because the failure mode this section guards against is levelling the two
+recipes DOWN instead of up. And the node harness lifted nine functions when
+`visibleReply` needs twelve: the three missing ones are only reached when a
+reply cleans down to nothing, which is exactly what a bad strip produces,
+so the harness crashed on the one input that mattered instead of reporting
+on it.
+
+Thirteen checks, thirteen arms, all caught. Verified live in one store,
+before and after in the same conversation: message 4 carries the harmony
+block, message 6 — same office, same brain, same question, after the
+rebuild — reads `Here is the answer.` and nothing else. The echo half is
+covered by the composed-recipe test and the reverted delegate arm, not by a
+live drive; it needs a real tool round-trip to reproduce.
+
+A surface may only assert what detection established — and when four
+surfaces read the same fact, the one the boss looks at cannot be the one
+reading the weakest copy.

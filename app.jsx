@@ -2108,7 +2108,38 @@ ${d.text}` : d.text,
          then silently overwritten one frame later — which is why the fix
          above looked like it had done nothing. */
       flush.cancel();
-      const cleaned = HQ.visibleReply(buf, agent && agent.name);
+      /* ONE recipe, and every reader of this reply goes through it.
+         `dress` is the full strip: tool echoes out, markers out, harmony
+         channels out. It used to exist twice on this path, at different
+         strengths, and the weaker one was the one the boss saw.
+
+         The bubble was written from `visibleReply(buf)` alone; `cleanBuf`
+         below — `cleanHarmony(visibleReply(stripToolEcho(buf, …)))` — was
+         computed 200 lines later and handed to the desk monitor, the
+         activity detail, the journal, the report-back and the approval
+         scan. Every record got the clean text. The chat did not.
+
+         Measured on a fresh office (port 9250) with a brain that answers
+         "Here is the answer." followed by a dangling commentary block. The
+         activity feed's `detail` read `Here is the answer.`; the chat
+         bubble read the sentence with `<|channel|>commentary
+         to=functions.bash<|constrain|>json<|message|>{"command":"ls -la"}
+         <|call|>` under it. Grepping localStorage, the chat was the ONLY
+         key in the whole store holding a harmony token — the one surface
+         the boss actually reads.
+
+         The comment on `cleanBuf` already names this exact shape ("every
+         record got cleanBuf, the bubble did not") because the sibling
+         delegate path had it too and it was fixed there. This path was
+         left, and it is the busiest one in the app.
+
+         Two sources, one rule — the fourth time this session that split
+         has BEEN the bug. Now there is one function, so a strip added to
+         either reader is added to both. */
+      const dress = (t) => HQ.cleanHarmony(
+        HQ.visibleReply(stripToolEcho(t, toolVisits.map(v => v.echo)),
+                        agent && agent.name));
+      const cleaned = dress(buf);
       /* The hand-off placeholder gets re-dressed for the room it is in.
          visibleReply writes one generic sentence ("Sent this to X — their
          reply lands in the team room") because it cannot know the thread.
@@ -2315,8 +2346,11 @@ ${d.text}` : d.text,
          line is redundant scaffolding by definition, and the model had
          copied the tool's own documentation text after the marker, which is
          why the whole-line orphan strip walked past it. */
-      const cleanBuf = HQ.cleanHarmony(
-        HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), agent && agent.name));
+      /* Recomputed rather than reusing `cleaned`, because `buf` may have
+         moved since: the TASK_* block above rewrites it to `spoken` when
+         the coworker updated the board. Same `dress`, so the two can no
+         longer disagree about what a clean reply is. */
+      const cleanBuf = dress(buf);
       screen.done(cleanBuf);
       saidAloud = cleanBuf;
       /* The last link of a boss-started chain reports back to the boss.
@@ -3495,8 +3529,17 @@ ${d.text}` : d.text,
       });
       flush.flushNow();
       /* Third dispatch path, same gap the task path had: no ACK stripping,
-         so a bare marker reached the bubble and the journal. */
-      const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(buf, a && a.name));
+         so a bare marker reached the bubble and the journal.
+
+         `stripToolEcho` added with the harmony fix on the @mention path —
+         this one collects `echo` on every visit (see the onTool handler
+         above) and then never used it, so a coworker who parroted the
+         tool's own output got that parroting filed and shown. Four
+         dispatch paths, four hand-written spellings of "clean this reply",
+         and each gap was found separately. Same recipe on all of them now:
+         echoes out, markers out, harmony out. */
+      const cleanBuf = HQ.cleanHarmony(
+        HQ.visibleReply(stripToolEcho(buf, toolVisits.map(v => v.echo)), a && a.name));
       /* …and into the bubble. cleanBuf already fed the desk monitor, the
          activity detail, the journal and the approval scan — every record
          EXCEPT the one the boss is actually reading, which kept whatever
