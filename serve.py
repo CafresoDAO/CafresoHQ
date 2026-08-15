@@ -1411,6 +1411,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None
 
     # --- HQ UI build (no in-browser Babel) ------------------------------------
+    # STALENESS. hq.html loads dist-ui/, built by scripts/build_ui_bundle.mjs,
+    # and this server never rebuilds it. So editing a .jsx and reloading the
+    # page exercises the LAST build, silently: the corrected file is served
+    # correctly over HTTP with Cache-Control: no-store, and nothing loads it.
+    # Measured 2026-08-14 — a fix verified in the browser reported the old
+    # behaviour for eight tool calls before anyone thought to check the
+    # manifest's mtime.
+    #
+    # The dependency set is every .jsx, not the thirteen the builder names.
+    # Those thirteen (APP_FILES) are barrels; 45 of the 58 .jsx files in the
+    # tree are reached only through their imports, which is why the builder's
+    # own --watch mode also misses them (fixed there too).
     # The HQ app is built into dist-ui/ by scripts/build_ui_bundle.mjs: vendor
     # globals (React/ReactDOM/xterm) + content-hashed, pre-transformed JSX. hq.html
     # carries an <!--HQ_SCRIPTS--> placeholder; we substitute it from the manifest.
@@ -1441,6 +1453,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with open(os.path.join(os.getcwd(), 'hq.html'), encoding='utf-8') as fh:
                 html = fh.read()
             html = html.replace('<!--HQ_SCRIPTS-->', self._hq_manifest_tags())
+            # A stale bundle is invisible from the browser and looks exactly
+            # like a fix that did not work — the corrected .jsx is even
+            # served correctly over HTTP, because nothing loads it. Said
+            # where the confusion happens rather than only in the log.
+            stale = _ui_bundle_stale()
+            if stale:
+                html = html.replace('</body>',
+                    '<script>console.warn(%s);</script>\n</body>'
+                    % json.dumps(_ui_stale_sentence(stale)))
         except Exception as e:
             return self.send_error(500, 'HQ UI not built: %s (run `npm run build`)' % e)
         body = html.encode('utf-8')
@@ -4263,6 +4284,64 @@ class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
 
 
+def _ui_sources(root=None):
+    """Every file the UI bundle is built from.
+
+    Deliberately a walk rather than the builder's APP_FILES list: those
+    thirteen are barrels, and 45 of the tree's 58 .jsx files are reached
+    only through their imports. A staleness check that trusted the named
+    list would have gone on reporting "fresh" for exactly the files most
+    likely to be edited.
+    """
+    root = root or os.getcwd()
+    skip = {'node_modules', 'dist-ui', '.git', '__pycache__', '.dfx'}
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith('.')]
+        for fn in filenames:
+            if fn.endswith('.jsx') or fn in ('graph-engine.js', 'analytics.worker.js'):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def _ui_bundle_stale(root=None):
+    """(newest_source_path, age_seconds) if the bundle is behind, else None.
+
+    Missing manifest is NOT reported here — that is a different failure with
+    its own message (`_serve_hq_html` 500s and names the build command), and
+    conflating "never built" with "out of date" would send someone to the
+    wrong remedy.
+    """
+    root = root or os.getcwd()
+    manifest = os.path.join(root, 'dist-ui', 'manifest.json')
+    try:
+        built = os.path.getmtime(manifest)
+    except OSError:
+        return None
+    newest, newest_at = None, 0.0
+    for src in _ui_sources(root):
+        try:
+            at = os.path.getmtime(src)
+        except OSError:
+            continue
+        if at > newest_at:
+            newest, newest_at = src, at
+    if newest is None or newest_at <= built:
+        return None
+    return (os.path.relpath(newest, root), newest_at - built)
+
+
+def _ui_stale_sentence(stale):
+    """§7 shape: what is wrong, in one sentence, plus the way forward."""
+    path, age = stale
+    mins = int(age // 60)
+    when = ('%dh %dm' % (mins // 60, mins % 60)) if mins >= 60 else (
+        '%dm' % mins if mins else 'less than a minute')
+    return ('This page is running a UI bundle built %s before the newest '
+            'change to %s — what you are looking at is the previous build. '
+            'Run `node scripts/build_ui_bundle.mjs` and reload.' % (when, path))
+
+
 def _local_ip():
     """Best-effort LAN IP (not loopback) for sharing with mobile devices."""
     try:
@@ -4479,6 +4558,16 @@ if __name__ == '__main__':
 
         lan = _local_ip()
         print(f'CafresoHQ -> {_scheme}://localhost:{PORT}/hq.html')
+        _stale = _ui_bundle_stale()
+        if _stale:
+            # flush: stdout is BLOCK-buffered whenever it is not a terminal —
+            # nohup, a redirect to a log file, Electron capturing the pipe. The
+            # request log lines come from BaseHTTPRequestHandler, which writes
+            # to stderr, so a log read back that way shows the traffic and not
+            # the banner. Measured on port 9252: the warning was correct, in
+            # the code, and sitting in an unflushed buffer. A warning that only
+            # appears on a tty is not a warning.
+            print('  ⚠  ' + _ui_stale_sentence(_stale), flush=True)
         if lan:
             print(f'  📱 Mobile / LAN  -> {_scheme}://{lan}:{PORT}/hq.html')
         if _tls_on and _local_deploy:

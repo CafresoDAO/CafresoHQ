@@ -8456,3 +8456,102 @@ access switch.
 
 A surface may only assert what detection established — and a surface that
 does not know a door exists will send the boss to a decoy instead.
+
+## 2026-08-15 — Two invisible surfaces: the previous build, and the 88 suites nobody ran
+
+Both of these are dev-facing rather than boss-facing, and both are the same
+failure the rest of this document is about: a surface reported a state it
+had not established.
+
+### The browser was running the previous build and nothing said so
+
+Diagnosed at the tail of the entry above. The fix is two-sided, because
+the two sides fail differently.
+
+**What is measured.** `_ui_bundle_stale()` compares `dist-ui/manifest.json`
+against every source the bundle is built from. Every `.jsx` in the tree —
+not the thirteen `APP_FILES`. Those are BARRELS: 45 of the 58 `.jsx` files
+are reached only through their imports, and they are where the UI actually
+lives. A staleness check built on the named list would have inherited the
+exact blind spot it exists to close, and gone on reporting "fresh" for
+`modals/settings.jsx` and `app/cast.jsx` — the two files whose edits went
+unnoticed in the first place.
+
+The builder's own `--watch` had that blind spot. It watched the thirteen
+named files plus a NON-recursive `fs.watch` on the root, which cannot see
+under `modals/` and would not have matched anyway: a write inside a
+subdirectory surfaces as `"modals"`, and `"modals".endsWith('.jsx')` is
+false. It printed `watching for changes…` the whole time. The watch is now
+recursive, with a per-directory fallback for platforms where recursive
+`fs.watch` is unavailable.
+
+**Where it is said.** Two places, because they are two different moments:
+a `console.warn` in the page, and a line in the startup banner. The log
+line alone is not where someone asking "why didn't my change land" is
+looking, and the page alone is not there when the server starts.
+
+One sentence, shared by both, in §7 shape — what is wrong, plus the way
+forward:
+
+> This page is running a UI bundle built 22m before the newest change to
+> modals/settings.jsx — what you are looking at is the previous build.
+> Run `node scripts/build_ui_bundle.mjs` and reload.
+
+Never-built is deliberately NOT reported as stale. A missing manifest is a
+different failure with a different remedy, and calling it "stale" would
+send someone to rebuild when they never built.
+
+**The banner was correct, present, and invisible.** Found by verifying it
+rather than by reading it: started an office on port 9252 under `nohup
+… > log`, and the log showed the request traffic and no banner. Python
+block-buffers stdout when it is not a tty; the request lines come from
+`BaseHTTPRequestHandler`, which writes to stderr. Every non-tty launch —
+nohup, systemd, Electron capturing the pipe — swallowed it. `flush=True`,
+and a check that asserts the flush rather than the line, because "the line
+is in the code" and "the line reaches the reader" are different claims and
+only the second one is the ticket.
+
+Verified live on port 9253: banner in the redirected log, `console.warn` in
+the browser, and — the part that makes the sentence a door rather than a
+decoy — running the command it names clears both.
+
+### "The full suite is green" meant 13 of 101
+
+`scripts/run_tests.py` carried a hand-written list of 13 suites while 101
+sat in `scripts/`. Every honesty regression test written from ticket #39
+onward was absent, including the ones added by the same commits that wrote
+it. Nothing was broken; they were simply never run, so no cross-ticket
+regression could be caught and every "full suite green" in a commit message
+since #39 measured 13% of the suite.
+
+Suites are now DISCOVERED. What stays hand-written is only what discovery
+cannot infer — a longer timeout and the slow flag — and an override naming
+a file that is not on disk is a FAILURE, not a skip, because that is the
+shape of a suite renamed or deleted without anyone noticing it stopped
+running. First full run: 103/103.
+
+### What the checks pin now
+
+- the source set is the real tree, and specifically contains
+  `modals/settings.jsx` and `app/cast.jsx`
+- the Python walk and the JS `listUiSources` agree on the file count, so
+  the warning and the rebuild cannot disagree about which edits count
+- the page asks, and says so in the page, using the one shared sentence
+- the sentence names the file, names the command, and is a sentence rather
+  than a status word
+- a fresh bundle is not called stale; a never-built one is not either
+- the watch is recursive AND its fallback is FILLED from the source walk
+
+That last one is this ticket's own defect wearing a different hat. The
+first draft asked only whether `listUiSources` and `fs.watch(d` appeared
+somewhere in the builder, and passed with the fallback gutted: the name
+still matched its own definition, and the watch call still matched a loop
+over a Set nothing put anything into. A fallback that iterates an empty set
+still logs that it is watching. Scoped by brace-matching now, not by
+proximity.
+
+Eighteen arms, all caught — after three did not. Two of those were my
+expectations being wrong rather than the checks; the third was real.
+
+A surface may only assert what detection established — and a message that
+only survives on a tty was never a message.

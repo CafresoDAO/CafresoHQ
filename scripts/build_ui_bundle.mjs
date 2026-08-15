@@ -168,10 +168,40 @@ async function build() {
   return manifest;
 }
 
+/* The same source set serve.py's staleness check walks (_ui_sources).
+   Two implementations of one fact, in two languages — kept honest by
+   scripts/test_the_bundle_says_when_it_is_stale.py, which runs both and
+   requires them to agree on the file count. */
+function listUiSources(root) {
+  const skip = new Set(['node_modules', 'dist-ui', '.git', '__pycache__', '.dfx']);
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (!skip.has(e.name) && !e.name.startsWith('.')) walk(path.join(dir, e.name));
+      } else if (e.name.endsWith('.jsx')
+                 || e.name === 'graph-engine.js' || e.name === 'analytics.worker.js') {
+        out.push(path.join(dir, e.name));
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
 async function main() {
   await build();
   if (process.argv.includes('--watch')) {
     console.log('[ui] watching for changes…');
+    // APP_FILES are BARRELS. Watching only those thirteen meant an edit to
+    // any of the 45 .jsx files they import — modals/settings.jsx,
+    // app/cast.jsx, essentially all the real UI code — never triggered a
+    // rebuild, so --watch reported itself as watching while the browser
+    // kept serving the previous build. The recursive watch below is the
+    // actual dependency set; these stay listed because a named file is
+    // still watched if the recursive watch is unavailable.
     const watched = new Set([
       ...APP_FILES.map((n) => path.join(ROOT, `${n}.jsx`)),
       ...ENGINE_BUNDLES.map((b) => path.join(ROOT, b.entry)),
@@ -186,10 +216,30 @@ async function main() {
     for (const f of watched) {
       try { fs.watch(f, rebuild); } catch { /* file may not exist yet */ }
     }
-    // Also watch the root dir to catch the engine files being created later.
-    fs.watch(ROOT, (_ev, fname) => {
-      if (fname && (fname.endsWith('.jsx') || fname === 'graph-engine.js' || fname === 'analytics.worker.js')) rebuild();
-    });
+    // Recursive, so a change under modals/ or app/ is seen. `fname` is a
+    // path relative to ROOT here, not a bare basename, which is why the
+    // old non-recursive watch could not have matched them even if it had
+    // been notified: a write inside modals/ surfaces as "modals", and
+    // "modals".endsWith('.jsx') is false.
+    const onChange = (_ev, fname) => {
+      if (!fname) return;
+      const f = String(fname);
+      if (f.includes('node_modules') || f.includes('dist-ui')) return;
+      if (f.endsWith('.jsx') || f === 'graph-engine.js' || f === 'analytics.worker.js') rebuild();
+    };
+    try {
+      fs.watch(ROOT, { recursive: true }, onChange);
+    } catch {
+      // Recursive watch is not available on every platform (Linux, notably).
+      // Fall back to one watcher per directory that holds a source file, so
+      // the blind spot does not silently come back.
+      const dirs = new Set();
+      for (const f of listUiSources(ROOT)) dirs.add(path.dirname(f));
+      for (const d of dirs) {
+        try { fs.watch(d, onChange); } catch { /* unreadable dir */ }
+      }
+      console.log(`[ui] recursive watch unavailable — watching ${dirs.size} directories`);
+    }
   }
 }
 
