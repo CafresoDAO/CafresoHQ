@@ -1348,7 +1348,7 @@ ${d.text}` : d.text,
       agentAbortersRef.current.delete(agentId);
     }
   };
-  /* Sit back down after a SUCCESSFUL run.
+  /* Sit back down after a run that ended still-`active`.
 
      A finished run sets `status: 'active' · mood: 'done' · task: 'reporting
      back'` so §4's done-stretch plays and the boss sees the ✓. Nothing ever
@@ -1359,8 +1359,24 @@ ${d.text}` : d.text,
      a count of live work. Measured: one finished chat run, nothing
      streaming, header still reading "1 WORKING".
 
-     Every failure path already reset to idle correctly, which is exactly
-     why a session spent testing failures never surfaced this.
+     One caller reaches here NOT having succeeded: a task run that streamed
+     to completion but produced nothing lands `active · stuck · "came back
+     with nothing"`, and the unconditional wipe below used to erase that
+     snag four seconds later — floor reading `idle / standing by`, blank
+     badge, while the very same run sat on the Tasks board parked in
+     `doing` with a blockedReason. Two surfaces disagreeing about one run,
+     and the only stuck badge in the office with an expiry date (every
+     error path sets idle+stuck directly, no settle, and persists).
+     Measured on office 9261, task "Empty hands two", 2026-08-15: sample at
+     0.3s `active/stuck/"reporting back"`, sample at 4.2s
+     `idle/idle/"standing by"` — card `doing`+blocked in both.
+
+     So the landing reads the mood at fire time: a stuck run keeps its
+     badge and its story (only `status` drops, and the desk line becomes
+     the snag itself so the floor and the board tell one story); anything
+     else gets the original full wipe. Reading mood at fire time needs no
+     caller changes, and the id+state guard below still protects both a
+     re-dispatch inside the window ('busy') and the error paths ('idle').
 
      The linger keeps the beat (same order as the 2.5s error freeze and the
      1.6s prop return), then hands the desk back. Guarded on both id and
@@ -1373,8 +1389,13 @@ ${d.text}` : d.text,
     if (prev) clearTimeout(prev);
     const t = setTimeout(() => {
       settleTimersRef.current.delete(agentId);
-      setAgents(prev2 => prev2.map(a => (a.id === agentId && a.status === 'active')
-        ? { ...a, status: 'idle', mood: 'idle', task: 'standing by' } : a));
+      setAgents(prev2 => prev2.map(a => {
+        if (a.id !== agentId || a.status !== 'active') return a;
+        if (a.mood === 'stuck') {
+          return { ...a, status: 'idle', task: a.recent || a.task };
+        }
+        return { ...a, status: 'idle', mood: 'idle', task: 'standing by' };
+      }));
     }, 4000);
     settleTimersRef.current.set(agentId, t);
   };

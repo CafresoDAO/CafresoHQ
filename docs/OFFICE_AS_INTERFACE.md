@@ -10433,3 +10433,93 @@ needs from that file", and naming the parts is guessing at that.
 
 A surface may only assert what detection established — and a file the office
 opened is a file the office may not report missing.
+
+## A snag on the desk fades to "standing by" in four seconds
+
+Measured on office 9261, 2026-08-15, task "Empty hands two", a coworker
+whose brain streamed a lead-in and nothing else. Sampled from the moment
+the START button went down:
+
+    0.3s  status active · mood stuck · desk "reporting back" · card doing+blocked
+    4.2s  status idle   · mood idle  · desk "standing by"    · card doing+blocked
+
+The run itself was handled honestly at every step. The stream produced no
+substance, so the desk landed `active · stuck · "came back with nothing"`
+and the Tasks board parked the card in `doing` with a blockedReason — two
+surfaces, one story. Then `settleAfterRun`'s four-second timer fired, and
+its landing — hard-coded when the settle was built for the finished-run
+case — wrote `idle · idle · "standing by"` over whatever was on the desk.
+The floor showed a blank-badge coworker standing by; the board held the
+same run parked as blocked. A boss glancing at the floor sees an office
+with nothing wrong in it.
+
+### The only stuck badge with an expiry date
+
+Every error path in the office sets `idle + stuck` directly and never
+calls settle, so those badges persist until the next dispatch — which is
+the correct behaviour, and also exactly why a session spent testing
+failures never surfaced this. The empty-handed task run is the one snag
+that ends still-`active` (it has to: the done-stretch and the
+reporting-back beat ride `active`), so it is the one snag that rides the
+settle timer, and the settle knew only one way to land. The office's most
+common soft failure — a local brain that streams boilerplate and stops —
+was the only failure whose evidence had a four-second shelf life.
+
+### The wipe asserted what detection had just un-established
+
+The through-line holds from the other side this time. `hasSubstance` ran,
+came back false, and the office recorded that verdict on three surfaces:
+the mood, the desk line's source (`recent: 'came back with nothing'`),
+and the card's blockedReason. The settle then asserted "standing by" —
+a claim about the desk that detection had established the opposite of,
+240 ticks earlier. A surface may only assert what detection established;
+a timer is a surface on a delay, and it does not get to assert yesterday's
+default over today's verdict.
+
+### The landing reads the mood at fire time
+
+The fix is one branch, placed where the timer fires rather than where it
+is armed — the mood at arm time is stale the moment a re-dispatch or an
+abort lands inside the window, and settle already solved that problem
+once with its `status === 'active'` guard. A stuck run now keeps its
+badge and its story: only `status` drops to `idle`, and the desk line
+becomes the snag itself (`a.recent`, falling back to the existing line
+when there is none), so the floor and the board finally agree about what
+happened. Any other landing gets the original wipe. No caller changes;
+the id+state guard still leaves a re-dispatched (`busy`) coworker and the
+error paths (`idle`) entirely alone. Measured after, both directions:
+
+    Empty hands three   0.3s active/stuck/"reporting back" → 4.2s idle/stuck/"came back with nothing" · card doing+blocked
+    Vendor sanity pass  0.3s active/done/"reporting back"  → 4.2s idle/idle/"standing by"             · card done
+
+### A fixture must be able to see the trespass it guards against
+
+`test_a_snag_survives_the_settle.py` lifts `settleAfterRun` out of
+app.jsx and drives both landings plus the guards. Two of its checks
+earned their shape in the fire:
+
+The guard-loss arm (settle drops its `active` check) was invisible to the
+error-path fixture on the first pass — an already-idle stuck agent with
+an empty `recent` falls through the new stuck branch and comes out
+byte-identical, so the check passed under the very mutation it existed to
+catch. The fixture now carries a non-empty `recent` (realistic: error
+paths keep whatever the coworker last said), which the trespassing branch
+would smear over the snag sentence. A guard test whose fixture is a fixed
+point of the guarded code tests nothing.
+
+And the re-arm check failed against the real code on the first pass
+because the harness's stubbed `setTimeout` returned 0 for its first
+handle — `settleAfterRun` guards `if (prev)`, and a falsy handle dodged
+the clear. Browser timer handles are never 0; the stub is now 1-based.
+The bug was in the stand-in, not the code — the same species as #83's
+clock, where the fixture's model of the platform is itself part of what
+the suite asserts.
+
+Seven fire arms, all caught: the unconditional wipe restored, the badge
+wiped inside the stuck branch, the guard losing its active check, the
+stuck run never sitting down, the fallback dropped from the desk line,
+the desk line left saying "reporting back", and the empty-handed caller
+unhooked from settle entirely.
+
+A surface may only assert what detection established — and a timer that
+lands later is still a surface, asserting into a present it has not seen.
