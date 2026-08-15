@@ -18,9 +18,12 @@ footer was the false one.
 
 The office is NOT asked whether prose is "only an intention". That is
 judging the writing, and §4 says detection is a hint, not a verdict. It is
-asked something it knows exactly: a path was named, and nothing was written
-to the cabinet. Those two facts contradict each other on their face, the
-same way a citation dated next year is arithmetic rather than an accusation.
+asked something it knows exactly: a path was named, and the coworker's own
+visit log wrote no such file. Those two facts contradict each other on
+their face, the same way a citation dated next year is arithmetic rather
+than an accusation. (#89 narrowed the note's wording to exactly that
+witness — the coworker's log — because "nothing was written to the cabinet"
+was falsified by the office's own delivery filing moments later.)
 
 So the detector reads a SHAPE, never a meaning: folder, slash, document
 extension. What that buys and what it costs are both pinned below, because
@@ -172,10 +175,13 @@ def main():
 
     check('the measured reply is contradicted',
           r['measured'] and 'Drafts/Sourdough_Feeding_Briefing.md' in r['measured']
-          and 'not there' in r['measured'],
-          f"{r['measured']} — this is the exact text the board called DONE")
+          and 'never wrote it' in r['measured'],
+          f"{r['measured']} — this is the exact text the board called DONE; "
+          '#89: the note swears to the coworker\'s log, not the cabinet, '
+          'because the office\'s own delivery filing lands after these notes '
+          'and falsified "nothing was written"')
     check('...and the note names the file rather than scolding',
-          r['measured'] and 'nothing was written to the cabinet' in r['measured']
+          r['measured'] and 'to the cabinet on this run' in r['measured']
           and 'claim' not in r['measured'].lower(),
           f"{r['measured']} — §7 wants the fact, not a verdict on the writer")
     check('a run that filed something says nothing', r['filed'] is None,

@@ -1278,16 +1278,27 @@ function unverifiedSources(text, visits, citesFn, workingFn) {
    same half-question in them. It comes in as a parameter for the same reason
    `unverifiedSources` takes its two: scripts/test_reply_hygiene.py lifts
    these functions out of this file to run under node, and a lifted function
-   that calls an import is a ReferenceError. */
+   that calls an import is a ReferenceError.
+
+   The message says "they never wrote it", not "nothing was written" or "it
+   is not there", because that is all the witness saw. The detection reads
+   the SPEAKER'S visit log; it cannot see the office's own filing (the task
+   path runs fileDelivery AFTER these notes are computed — measured on a
+   done card whose artifact row said Deliveries/briefing-status.md two lines
+   from a note swearing nothing was written to the cabinet on that run), and
+   it cannot see what earlier runs left in the cabinet, so "that file is not
+   there" was a guess wearing a verdict's clothes. A note that outclaims its
+   witness gets one contradiction on a card, and then every note after it
+   reads as machine noise. */
 function unfiledPath(text, visits, unwrittenFn) {
   if (!Array.isArray(visits)) return null;         // unknowable, so silent
   const named = (unwrittenFn || unwrittenPaths)(text, visits);
   if (!named.length) return null;
   const one = named.length === 1;
   return '_(' + named.map(p => '`' + p + '`').join(' and ')
-    + (one ? ' is named above, but nothing' : ' are named above, but nothing')
-    + ' was written to the cabinet on this run, so '
-    + (one ? 'that file is not there' : 'those files are not there') + '.)_';
+    + (one ? ' is named above, but they never wrote it' : ' are named above, but they never wrote them')
+    + ' to the cabinet on this run — ask them to file '
+    + (one ? 'it if you need it' : 'those if you need them') + '.)_';
 }
 
 /* Every "the coworker claimed something the office did not do" check, run

@@ -10895,3 +10895,75 @@ Full runner: 131/131.
 
 A status column is a claim with a population behind it — when a new kind
 of card moves in, every reader of that column inherits a re-check.
+
+## The cabinet note swore to more than its witness saw
+
+Measured 2026-08-15 on the task path, canned brain, office 9261 — the
+residual #87 flagged and did not chase. Task "briefing status": Vera's
+whole reply was a prose promise, "Saved the briefing to
+Drafts/briefing.md for you.", with an empty visit log. The note fired,
+and was right to. It said:
+
+    `Drafts/briefing.md` is named above, but nothing was written to the
+    cabinet on this run, so that file is not there.
+
+The DONE card carrying that sentence had an artifact row reading
+Deliveries/briefing-status.md — a file the office wrote to the cabinet
+on that very run, two lines below a note swearing nothing was.
+
+The guard's witness is the SPEAKER'S visit log and nothing else. It runs
+before fileDelivery, so it cannot see the office's own filing; it never
+reads the cabinet, so it cannot know what earlier runs left there. Its
+one established fact was "the coworker never wrote this file this run" —
+and the sentence dressed that fact in two verdicts the witness never
+saw: "nothing was written to the cabinet" (falsified by the office
+moments later) and "that file is not there" (falsified by any earlier
+run that filed the same path). A third falsifier does not exist and the
+new suite pins why: a speaker who files ANYTHING silences the guard
+entirely, #50's own rule, so "the run wrote other files" can never make
+this note false.
+
+The fix is the sentence, not the detection. The note now reads:
+
+    `Drafts/briefing.md` is named above, but they never wrote it to the
+    cabinet on this run — ask them to file it if you need it.
+
+Every clause is the witness's own: "they" is the speaker whose log was
+read, and the way forward points at the one party who can keep the
+promise. What the office filed instead is the artifact row's story, told
+by the surface that owns it — the same division of narration #87 drew
+between the visit row and this note.
+
+The delivery sheet's cousin sentence in buildDelivery keeps its blanket
+opening only because its next clause corrects it by naming itself —
+"this sheet is the only file it produced" — and the new suite pins that
+correction staying put; if it ever goes, the sheet inherits this ticket.
+The pre-fix cards keep their old sentences: rewriting stored results is
+#88's defect, not a cure.
+
+scripts/test_the_note_only_swears_to_what_it_saw.py: four wording pins at
+the source (speaker-scoped claim present, blanket clause gone, absence
+verdict gone, §7 way forward present) and seven behavior cases through
+the lifted composition (the measured promise still draws the note; #82's
+opened-file silence and #50's filed-anything silence kept; plural verbs
+agree; an uncounted visit log accuses nobody). Repairs in
+test_a_promised_file_was_never_written.py updated its two wording pins
+and its docstring's own copy of the over-claim, meaning intact.
+
+Fire-tested with six arms — wording reverted, way-forward dropped,
+cabinet verdict reintroduced, plural agreement broken, guard silenced,
+full revert — all six caught, four by more than one suite.
+
+Verified live on a fresh "briefing status two" card: same route, same
+promise, and the board now shows the note swearing only to the writer,
+with Deliveries/briefing-status-two.md on the artifact row beneath it —
+no clause on the card contradicting another. (The first re-verify click
+started the wrong card — the button-climb crossed card boundaries in a
+filtered column — caught by the canned brain's request log naming a task
+I had not started; the recipe that maps buttons to titles by climbing
+from the button, not the title, is the one that holds.)
+
+Full runner: 132/132.
+
+A note may only dress its witness's fact in the witness's words — the
+rest of the story belongs to the surfaces that saw it happen.
