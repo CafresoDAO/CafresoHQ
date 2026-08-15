@@ -59,16 +59,22 @@ def _fs_browse(self):
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
 
-    if not p.is_dir():
-        return self._send_json(400, {'error': 'not a directory'})
-
     # Only browse within allowed dirs — enforced in EVERY mode (was
     # container-only, which left local/BYO reads unbounded).
+    #
+    # This runs BEFORE is_dir(). It used to run after, which made the refusal
+    # itself an answer: outside the sandbox, an existing directory 403'd and
+    # anything else 400'd "not a directory", so a caller with no key could ask
+    # about any path on the host and read the difference. See _fs_file for the
+    # measured table. Nothing outside the sandbox gets probed first.
     if not _within_allowed_dirs(p):
         return self._send_json(403, {
             'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
             'allowed': _cafresohq_allowed_dirs,
         })
+
+    if not p.is_dir():
+        return self._send_json(400, {'error': 'not a directory'})
 
     try:
         raw = list(p.iterdir())
@@ -180,6 +186,30 @@ def _fs_file(self):
         p = _workspace_path(req_path).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
+    # Serve only within CAFRESOHQ_ALLOWED_DIRS — every mode (was container-
+    # only, which exposed unauthenticated arbitrary file read in local/BYO).
+    #
+    # This runs BEFORE exists() and is_file(). It used to run last, and the
+    # three refusals below it are all DIFFERENT, so the refusal answered the
+    # question it was refusing. Measured on office 9262 with the sandbox set
+    # to a temp workspace, no key supplied, key CONFIGURED:
+    #
+    #   GET /fs/file?path=/etc/hosts       403  (exists, is a file)
+    #   GET /fs/file?path=/etc/zzz-nope    404  (does not exist)
+    #   GET /fs/file?path=/etc             400  (exists, is a directory)
+    #   POST /tools/exec                   401  (key-gated, for contrast)
+    #
+    # These read routes are deliberately keyless — see _KEY_PROTECTED_PREFIXES
+    # in serve.py, whose own comment says "the allowed-dirs boundary caps the
+    # read routes instead". That makes this check the ONLY boundary, so it goes
+    # first and every path outside the sandbox gets one identical answer.
+    #
+    # The exists/is_file split below is #74's work and is deliberately KEPT:
+    # inside the sandbox the boss is owed the specific sentence. It is only
+    # withheld for paths the caller was never allowed to ask about.
+    if not _within_allowed_dirs(p):
+        return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
+                                     'allowed': _cafresohq_allowed_dirs})
     # "not a file" answered two different questions with one string, and the
     # surfaces that print it could only relay the ambiguity: a boss clicking a
     # ledger row for a folder was told the office "couldn't find that". Say
@@ -188,11 +218,6 @@ def _fs_file(self):
         return self._send_json(404, {'error': 'no such file'})
     if not p.is_file():
         return self._send_json(400, {'error': 'that is a folder, not a file'})
-    # Serve only within CAFRESOHQ_ALLOWED_DIRS — every mode (was container-
-    # only, which exposed unauthenticated arbitrary file read in local/BYO).
-    if not _within_allowed_dirs(p):
-        return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS',
-                                     'allowed': _cafresohq_allowed_dirs})
     try:
         if p.stat().st_size > 50 * 1024 * 1024:
             return self._send_json(413, {'error': 'file too large to preview (>50 MiB)'})

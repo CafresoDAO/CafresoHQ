@@ -10002,3 +10002,103 @@ path outside the workspace exists.
 
 A surface may only assert what detection established — and one string must
 not mean two directories.
+
+## A refused path still answered whether it exists
+
+The `/fs` read routes are keyless on purpose. `_KEY_PROTECTED_PREFIXES` in
+serve.py protects only the /fs *mutation* prefixes, because the preview
+iframe fetches a site's sibling assets from the browser with no key, and
+its comment names the compensating control: "the allowed-dirs boundary
+(enforced in every mode below) caps the read routes instead."
+
+So that boundary is the whole boundary. At two of the eight `/fs` routes it
+ran second, behind checks that answered with three different codes.
+Measured on office 9262, 2026-08-15, sandbox set to a temp workspace, with
+`CAFRESOHQ_API_KEY` CONFIGURED and no key supplied:
+
+    GET  /fs/file?path=/etc/hosts      403   exists, is a file
+    GET  /fs/file?path=/etc/zzz-nope   404   does not exist
+    GET  /fs/file?path=/etc            400   exists, is a directory
+    GET  /fs/browse?path=/etc          403   exists, is a directory
+    GET  /fs/browse?path=/etc/hosts    400   exists, is not a directory
+    POST /tools/exec                   401   key-gated, for contrast
+
+Nothing was ever served, and every one of those answers is a refusal. But a
+refusal is a reply, and three distinct replies over a caller-chosen path
+are an existence-and-type oracle for the whole host — available to anyone
+who can reach the port, including with the key set. The 401 on the last
+line is the point of comparison: that door tells an unauthenticated caller
+one thing regardless of what is behind it.
+
+`_fs_stat` already had the right order, as did collect, site, upload,
+mkdir, rename and delete. Six of eight. The two that were wrong were
+exactly the two keyless read doors — the ones whose only boundary this is.
+That is the same shape as #78 (`5eefde5`, `c268eae`): a discipline held at
+most doors and quietly missed at the ones that mattered most, with nothing
+in the repo requiring the others to keep holding it.
+
+The fix moves the guard in front. What it deliberately does NOT do is
+flatten the answers: inside the sandbox `/fs/file` still says "no such
+file" and "that is a folder, not a file", because #74 split those apart
+precisely so a boss clicking a ledger row for a folder stops being told the
+office "couldn't find that". Specific inside, uniform outside — the
+distinction is withheld only from callers who were never allowed to ask.
+
+The suite's durable half is a sweep, not a pair of route names: it reads
+every route out of the module in source order and requires that no route
+consults the filesystem before it consults the allow-list. Naming the two
+would pass a file whose next route repeats the defect, which is precisely
+how this survived — six routes were right and nothing required the seventh
+and eighth to match. It also asserts the read routes are still keyless, so
+that if they are ever key-gated the suite says so instead of going green on
+a uniform 401 for a reason nobody wrote down.
+
+Three fire-test findings, one of which is about fire-testing itself.
+
+An arm that leaves the guard in place and makes it inert (`if False and
+…`) passes the static sweep completely — the call site is still there, in
+the right order. Only the live server catches it. That is the argument for
+a suite that spends the seconds to boot a real process rather than reading
+source and calling it proof.
+
+The route-pattern hazard from #78 recurred and was fixed at the root this
+time rather than papered over. `^def (_fs_\w+)\(self\):` drops a route that
+gains a parameter, so the remedy is to broaden what the sweep recognises —
+`\(self[^)]*\)` — and keep an explicit coverage assertion naming the two
+known-bad doors as a backstop. Broadening the pattern is the fix; asserting
+coverage is the tripwire for whatever the pattern still misses.
+
+And the harness itself reported a real arm as a MISS for a reason that had
+nothing to do with the code under test. An arm that REORDERS code keeps the
+file byte-identical, and `restore()` plus the next arm's write land inside
+the same wall-clock second. CPython's timestamp `.pyc` validation compares
+(mtime in WHOLE SECONDS, size), so the source presented the exact pair the
+previous arm's bytecode was cached under:
+
+    PYC fs_routes.cpython-314.pyc flags=0
+        stored=(1786794253,25193)  source=(1786794253,25193)   MATCH
+
+The next server imported the PREVIOUS arm's code. `os.utime` does not help
+— the collision is inside one second — so the `.pyc` has to be deleted
+between arms. The dangerous direction is not the lost arm: consecutive arms
+here share the expectation 'no fs route touches the filesystem before it
+checks the sandbox', which the static half reads off the real file, so an
+arm expecting only that name would have been recorded as CAUGHT while never
+having run at all. A fire-test that silently re-runs its previous arm
+reports confidence it did not earn.
+
+One check is recorded as deliberately unarmed: the sweep's "did I find at
+least eight routes" tripwire. Every mechanical way to make the parser find
+nothing also stops the module working, since serve.py binds these by name.
+The first attempt at that arm renamed a route and "passed" only because the
+server never booted — it proved the harness notices a dead server, not that
+the check works. Kept, because its failure mode is real and it costs
+nothing; recorded as unarmed rather than counted as covered.
+
+Noticed and not folded in: the 403 body names the configured allowed dirs.
+That is the caller's own sandbox and arguably useful, and no check reads
+the body — an arm that removed it was indistinguishable, which is recorded
+here rather than left as an untested surface someone assumes is covered.
+
+A surface may only assert what detection established — and a refusal must
+not answer the question it is refusing.
