@@ -123,6 +123,20 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const screenRef = useRef(null);
   const bottomRef = useRef(null);
   const abortRef = useRef(null);
+  /* The current chat, readable from an async continuation.
+
+     The `chat` prop is captured per render, so a handler that has awaited
+     a dispatch is holding a snapshot from before the coworkers answered.
+     The send path works around that with `setChat(prev => { captured =
+     prev; return … })` — and that only reads back because React happens
+     to run the FIRST updater of a fresh event eagerly. The synthesis pass
+     used the same line after a stream's worth of queued updates, where it
+     does not: measured on 2026-08-15, `immediate=0, afterTick=20`. The
+     capture was read one tick before it was written, every time.
+
+     A ref written on every render has no such window. */
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [openActionsId, setOpenActionsId] = useState(null);
@@ -811,10 +825,21 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
              Only do this for 2+ specialists (single DMs should have been a
              HANDOFF_TO per the orchestrator prompt). Captures the latest reply
              from each delegated specialist by scanning chat history after the
-             fan-out completed. */
+             fan-out completed.
+
+             It read `chatRef`, not a `setChat(prev => …)` capture, and the
+             difference is the whole feature. With the capture this block
+             scanned an EMPTY array on every run, found nought replies,
+             failed `replies.length >= 2`, and returned — so the combined
+             answer the boss is meant to get after a two-way fan-out has
+             never once been produced. Not degraded: absent, silently, for
+             as long as the code has existed. Measured on 2026-08-15 with
+             both specialists back and `targets=2`: `synthChat=0`, and
+             `asked.jsonl` on the brain shows no synthesis request at all.
+             See the note on `chatRef` for why the same line works 250
+             lines up and not here. */
           if (targets.length >= 2) {
-            let synthChat = [];
-            setChat(prev => { synthChat = prev; return prev; });
+            const synthChat = chatRef.current;
             const targetNames = new Set(targets.map(t => t.agent.name.toLowerCase()));
             const replies = [];
             for (let i = synthChat.length - 1; i >= 0 && replies.length < targets.length; i--) {
@@ -832,10 +857,23 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               const synthId = HQ.uid('m');
               setChat(prev => [...prev, { id: synthId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
               const synthFlush = HQ.throttleTokens(setChat, synthId);
+              /* The fifth collection site. Same rule as the other four:
+                 gated on an echo, carrying `failed`, because a page that
+                 answered 403 and a page that was read are not the same
+                 visit. */
+              const synthVisits = [];
               try {
-                await HQ.ceoStream(synthPrompt, synthFlush, { chat: synthChat, agents, signal: controller.signal,
+                /* No `chat:` — see ceoStream, where passing it discards the
+                   prompt. `synthPrompt` is written to stand alone anyway: it
+                   restates the boss's question and quotes both replies in
+                   full, because summarising is the whole job here and the
+                   room's earlier turns are what it must NOT paste back. */
+                await HQ.ceoStream(synthPrompt, synthFlush, { agents, signal: controller.signal,
                      onUsage: u => onCeoUsage && onCeoUsage(u),
-                     onTool: ev => { if (ev.phase === 'done') attachVisit(setChat, synthId, ev); },
+                     onTool: ev => {
+                       if (ev.echo) synthVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
+                       if (ev.phase === 'done') attachVisit(setChat, synthId, ev);
+                     },
                      onHint: synthFlush.note });
                 synthFlush.flushNow();
                 /* throttleTokens runs cleanHarmony but NOT visibleReply, so
@@ -846,6 +884,27 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                   const c = HQ.cleanHarmony(HQ.visibleReply(String(m.text || ''), 'CafresoHQ'));
                   return (c && c !== m.text) ? { ...m, text: c } : m;
                 }));
+                /* …and the guards, for the same reason the reply above them
+                   has them — with one line of extra weight here. This is the
+                   only prompt in the office that ASKS for a file path: "cite
+                   vault paths if any were saved". `unfiledPath` is the guard
+                   for a named path nothing wrote, and turning this feature on
+                   without it would have shipped, on its first working run,
+                   precisely the defect it exists to catch.
+
+                   `delivered: targets.length` — the DMs on this run really
+                   did go out, which is what keeps fabricatedRelay and
+                   unsentHandoff quiet about a fan-out that actually
+                   happened. */
+                if (HQ.honestyNotes && synthFlush.note) {
+                  const rawSynth = synthFlush.raw ? synthFlush.raw() : '';
+                  for (const n of HQ.honestyNotes(rawSynth, {
+                    delivered: targets.length,
+                    roster: agents.map(a => a.name),
+                    self: 'CafresoHQ',
+                    visits: synthVisits,
+                  })) synthFlush.note(n);
+                }
               } catch (_synthErr) {
                 /* Best-effort — if synthesis fails, the raw specialist replies
                    are already visible in the thread. */

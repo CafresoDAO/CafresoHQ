@@ -9401,3 +9401,78 @@ mechanisms is a test that defends neither.
 
 A surface may only assert what detection established — and a mechanism
 wired to three of four paths is not wired, it is drifting.
+
+### The combined answer after a fan-out had never once been produced — 2026-08-15
+
+When the chief of staff DMs two specialists in parallel, the boss is meant
+to get one tight combined answer rather than two disconnected replies. The
+code for that exists, reads clearly, and has never run. Not once, not
+degraded — absent, for as long as it has been in the file.
+
+It was dead twice over, and either half alone was enough.
+
+The first is a timing bug wearing the costume of an idiom that works. The
+block read the chat through `setChat(prev => { synthChat = prev; return
+prev; })`. React runs that updater on a later tick than the line that
+reads the captured variable, so `synthChat` was `[]`, `replies` was empty,
+`replies.length >= 2` was false, and the block returned. Measured on the
+office at 9261 with both specialists back and `targets=2`: `immediate=0,
+afterTick=20`. The array was there. It arrived one tick after the only
+line that wanted it.
+
+What makes that survivable for years is that the SAME line 250 lines up
+does read back — React evaluates the first updater of a fresh event
+eagerly, and the send path is always the first update of a keydown. So the
+idiom is not wrong; it is conditionally right, and the condition is
+invisible at the call site. The synthesis pass copied a working line into
+a place where the queue is never empty. A ref written on every render has
+no such window, which is what it uses now.
+
+The second is a discarded argument. Even fed a full chat, the block called
+`ceoStream(synthPrompt, …, { chat })` — and `ceoStream` reads `prompt`
+only when `chat` is absent. That contract is right for the send path,
+where the boss's message is already the last entry in `chat` and appending
+it again would double the turn. For this caller it meant the instruction
+the whole block is built around was dropped by the callee. Confirmed on
+the brain's request log with the first half fixed and the second not: a
+synthesis turn went out and the string "Now synthesize" did not appear in
+it. The office replayed the conversation instead of summarising it, and
+produced a second copy of the delegation reply.
+
+Neither failure raises anything. A capture read early is an empty array; a
+discarded argument is not an error. Both are silent by construction, which
+is why a feature could be wholly missing from the product while reading as
+present in the source.
+
+Turning it on brought its own hazard, and it had to be closed in the same
+pass. The synthesis prompt is the only prompt in the office that ASKS for
+a file path — "cite vault paths if any were saved" — and `unfiledPath` is
+the guard for a named path nothing wrote. Shipping the feature without the
+guards would have shipped, on its first working run, exactly the defect
+the guard exists to catch. The first run after the fix is the proof:
+
+    Both are back. Vera has the vendor list, Kip has the arithmetic, and
+    they agree on the shape. I've saved the combined write-up to
+    Reports/vendor-margin.md for you.
+
+    _(`Reports/vendor-margin.md` is named above, but nothing was written
+    to the cabinet on this run, so that file is not there.)_
+
+`delivered: targets.length`, not zero: the DMs on that run really did go
+out, and telling the guards otherwise would have the office accusing
+itself of faking a dispatch the boss had just watched happen. A fifth
+visit-collection site came with it, gated on an echo and carrying
+`failed`, per the instruction the first site left for whoever added the
+fourth. Verified on the other side too: a synthesis reply claiming no file
+produces no note at all.
+
+The suite counts. `HQ.ceoStream(` callers in the panel and honesty guards
+in the panel, and it asserts they are equal — because the previous entry
+wired the guards to one CEO reply path and this ticket found the second
+one in the same file with none. A census that names the entry point it
+knows about will keep finding exactly one. And the count matches the
+GUARD, not the call: fire-testing found the weaker form green with the
+call left in place behind `if (false && …)`.
+
+A surface may only assert what detection established — and code that
+cannot run asserts nothing, however clearly it reads.

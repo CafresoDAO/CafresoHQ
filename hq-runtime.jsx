@@ -3175,6 +3175,15 @@ async function registrySnippet() {
   return _registryCache.inflight;
 }
 
+/* `prompt` and `chat` are ALTERNATIVES, not a prompt plus its history:
+   pass `chat` and `prompt` is never read. That is right for the send path,
+   where the boss's message is already the last entry in `chat` and adding
+   it again would double the turn — and it is a trap for anyone else. The
+   fan-out synthesis passed both for as long as it existed, so the one
+   instruction that block is built around ("Here are their replies… now
+   synthesize") was dropped on the floor by this line; the office re-ran
+   the conversation instead. Named here because the call site cannot see
+   it: a discarded argument raises no error and logs nothing. */
 async function ceoStream(prompt, onToken, { chat, agents, system, model, temperature, signal, onUsage, onTool, onHint, maxTokens } = {}) {
   const messages = chat
     ? chatToMessages(chat, { omitLastCeo: true })
