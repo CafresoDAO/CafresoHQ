@@ -11314,3 +11314,71 @@ model's mouth — and then filed its own narration under the boss's name.
 Every lie in this ticket was downstream of one wrong field at one write
 site. When the record is true, honesty is not a property each reader
 must implement; it is a property the record has.
+
+## A failed helper was dismissed as "task complete"
+
+Measured 2026-08-15 on office 9261, canned brain. Vera brought in a
+transient helper (Sub-fact-wpv, a fact checker) whose one dispatch died
+on the wire with an HTTP 500. The office was honest at every surface
+that looked at the run: the helper's own bubble told the boss the
+brain's service was having trouble, the direct thread got a snag notice
+("Sub-fact-wpv hit a snag on the way to your answer — details in the
+team room."), and the registry filed the spawn message failed with
+"unknown: Inspect error and retry". Thirty seconds later, in the same
+team room, two lines below the failure it had just narrated, the office
+posted:
+
+    🍂 Sub-fact-wpv (transient) dismissed — task complete.
+
+The dismissal timer's chat line was a fixed string. The dispatch above
+it is wrapped in `catch (_e) {}` — the timer never knew whether the run
+it was eulogizing had lived. This is the #67 family in its purest form:
+the office backing a claim its own record had already contradicted, not
+because two witnesses disagreed, but because one line never looked at
+the witness at all.
+
+A timing fact worth recording: the transient's dispatch is AWAITED, so
+by the time the 30-second timer arms, the run has already settled and
+the registry already holds its outcome. The `abortAgentRun` call inside
+the timer is near-dead code — belt-and-braces for a stream something
+else re-armed on that desk — and the "grace period" is purely for the
+boss to read the reply before the desk clears. There was never a reason
+to guess: the truth was sitting in the registry the whole thirty
+seconds.
+
+The fix makes the goodbye read the record instead of asserting one. At
+timer fire the handler looks up the spawn's registry entry
+(MessageRegistry.getMessage(spawnMsgId)) and words the line to match
+the witnessed outcome: completed keeps "task complete."; failed says
+"the task hit a snag — details above."; cancelled says "the run was
+stopped early."; blocked says so; and a missing or unsettled record
+claims nothing beyond the one thing the office actually did ("desk
+cleared."). The helper still leaves the floor in every case — reading
+the record changes what the office SAYS, never what it does.
+
+Verification:
+- New suite scripts/test_the_dismissal_reads_the_record.py (12 checks):
+  pins the goodbye as a single writer whose verdict is interpolated
+  from a registry read at fire time (the FACT, not the spelling — a
+  fixed string here is an assertion, and "— all done." would be the
+  same defect in paraphrase); lifts the real verdict expression and
+  drives it across completed / failed / cancelled / blocked / missing /
+  unsettled; pins that the helper still leaves the floor and that the
+  goodbye stays office voice in the team room.
+- Fire-tested: 6 arms (unconditional string again, verdict ignoring the
+  record, failed reading "task complete", helper never leaving,
+  boss-voice goodbye, full revert) — 6/6 caught, baseline all-PASS.
+- Full runner: 137/137 suites.
+- Live both directions on 9261: a failed spawn (Sub-fact-ok4, registry
+  failed) was dismissed with "the task hit a snag — details above.";
+  a successful spawn (Sub-fact-alm, registry completed via its ACK) was
+  still dismissed with "task complete." — the honest goodbye did not
+  cost the earned one.
+
+Residue, recorded: goodbyes persisted before the fix keep their old
+"task complete." text — stories are not rewritten (#88's stance). The
+30-second grace is still fixed and the abort still fires inside it, so
+if a future change ever makes the dispatch non-awaited, a run genuinely
+longer than thirty seconds would be cut mid-flight and its goodbye would
+read whatever the registry held at that moment — the suite's "unsettled
+record claims nothing" arm is the tripwire that matters on that day.

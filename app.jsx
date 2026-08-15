@@ -2971,12 +2971,27 @@ ${d.text}` : d.text,
         });
       } catch (_e) {}
       // Schedule dismissal — 30s grace lets user see the sub-agent's reply
-      // appear in the team UI before the desk clears.
+      // appear in the team UI before the desk clears. The dispatch above is
+      // awaited, so by the time this fires the run has settled and the
+      // registry already holds its outcome (abortAgentRun is belt-and-braces
+      // for a stream something re-armed on this desk in the meantime).
+      //
+      // The dismissal line READS that outcome rather than asserting one.
+      // It used to say "task complete." unconditionally — a helper whose
+      // run died on the wire (registry: failed, snag already on the boss's
+      // desk) was dismissed with "task complete" in the same room, thirty
+      // seconds after the office wrote the opposite in its own record.
       setTimeout(() => {
         abortAgentRun(transientAgent.id);
         setAgents(prev => prev.filter(a => a.id !== transientAgent.id));
+        const rec = MessageRegistry.getMessage(spawnMsgId);
+        const outcome = rec && rec.state === 'completed' ? 'task complete.'
+          : rec && rec.state === 'failed' ? 'the task hit a snag — details above.'
+          : rec && rec.state === 'cancelled' ? 'the run was stopped early.'
+          : rec && rec.state === 'blocked' ? 'the task is blocked — details above.'
+          : 'desk cleared.';
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `🍂 ${transientAgent.name} (transient) dismissed — task complete.`, thread: 'team' }]);
+          text: `🍂 ${transientAgent.name} (transient) dismissed — ${outcome}`, thread: 'team' }]);
       }, 30_000);
     }
 
