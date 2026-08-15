@@ -10102,3 +10102,115 @@ here rather than left as an untested surface someone assumes is covered.
 
 A surface may only assert what detection established — and a refusal must
 not answer the question it is refusing.
+
+## A sentence introducing work was enough to call the task done
+
+The office already gets the hard half of this right. A reply that is
+nothing but tool markers strips down to the empty string, and every
+surface reports it honestly — SNAG, "came back with nothing", no XP, the
+card left in `doing` with a reason on it. That behaviour is #51's, and it
+still works.
+
+One surviving line flipped all of it. Measured against a canned brain
+returning exactly:
+
+    Here is what I did:
+
+    [VAULT_NEW: Research/colours.md]
+    [MEMORY_WRITE: decisions/colours.md]
+
+Both markers are stray — the runtime never acted on either, and the
+cleaner strips a line that is entirely one marker — so `cleanBuf` came out
+as the seventeen-character string `Here is what I did:`. Non-empty. The
+sheet that landed in the cabinet read:
+
+    # Primary colours
+    *Delivered by Nova · 2026-08-15*
+    ---
+    Here is what I did:
+    ---
+    **Working**
+    - Nothing opened, saved or looked up for this one.
+
+A promise with nothing behind it, and eight lines below it the office's
+own record contradicting it. Two true records of one run, disagreeing on
+the page the boss actually opens.
+
+The gate was `const produced = !!cleanBuf.trim()`, which measures LENGTH.
+It has been replaced by `hasSubstance`, which asks about CONTENT: is there
+at least one non-blank line that is not a heading and does not end in a
+colon. The predicate lives in `app/artifacts.jsx` beside the thing it was
+first needed for, and is exported so there is one of it.
+
+### #51 fixed which decisions read the boolean; this fixes the boolean
+
+#51's entry closes on "Three decisions off one fact, two honest" — the
+filing and the journal declined an empty run while the card went green.
+The remedy there was to make all six surfaces read one `produced`. That
+remedy is exactly why this defect had the blast radius it did: correcting
+where the answer is read does nothing if the answer itself is wrong, and
+one wrong derivation now drove the board, the card's reason, the feed row,
+the XP ledger, the desk badge and the spoken announcement in unison.
+
+So the fix keeps #51's invariant rather than competing with it. `produced`
+is still derived once; the filing gate and the task journal now READ it
+instead of each re-deriving `cleanBuf.trim()` for themselves, and the two
+sibling journal gates on the chat and dispatch paths ask the same
+`hasSubstance`. One question, asked once, answered once — which also meant
+updating #51's suite rather than adding a second, differently-worded test
+next to it. Two checks pinning the same invariant in different words is
+how the invariant stops being one thing.
+
+### Measured live, both directions
+
+Canned brain on 9236, office on 9261, coworkers on `lmstudio:local-model`.
+
+The lead-in-only reply: card sits in `doing` with `blockedReason` set, the
+feed reads `came back from "Primary colours" with nothing`, the desk reads
+`came back with nothing`, the ledger books `outcome: snag`, the board
+shows `⚠ Vera hit a snag on this`, nothing was written to the coworker's
+journal, and `vault/Deliveries/` has no file for it.
+
+The control matters as much: the SAME lead-in with one real sentence under
+it — `Here is what I did:\n\nRed, yellow and blue are…` — still goes
+`done`, still files, and the sheet on disk carries the answer above the
+working record. A guard that eats real deliveries would be a worse defect
+than the one it replaces.
+
+### What this deliberately does not do
+
+One non-lead-in line is enough. A reply can be mostly scaffolding and
+still count, because the alternative is grading quality, and the office
+has no standing to do that.
+
+A bulleted marker — `- [VAULT_NEW: x]` — reads as substance, because #53
+decided a bullet in front of a marker is a line the boss can see. That
+stays #53's call, not something quietly re-decided here.
+
+And there is a narrow false negative that is chosen, not overlooked: a
+coworker who genuinely files a file and then writes only a lead-in about
+it is now recorded as a snag. That is a wrong record. It is the smaller
+wrong record than certifying a run whose entire deliverable was a promise,
+and the honesty notes on the card name the file, so the boss is pointed at
+what actually exists.
+
+### Two findings about writing the checks, not the code
+
+An anchor must not encode the thing under test. #51's suite lifted the run
+block with `app.index('if (cleanBuf.trim()) appendJournal(')` — the gate's
+own expression. Changing that gate made the `.index()` RAISE, so the suite
+crashed instead of reporting a failure. That is the third spelling of the
+same lesson #74 and #77 each taught once: a suite that dies proves
+nothing, and it dies loudest exactly when the code it guards changes.
+Re-anchored on `appendJournal(agent.id, cleanBuf, task.title)`, which
+names the call site rather than the condition.
+
+And a bare search finds its own documentation. The new negative check —
+"nothing re-derives `cleanBuf.trim()`" — failed on first run against a
+comment that QUOTES the old gate to explain why it changed. The fix is to
+strip comments before any negative source check; the honest habit of
+quoting the defect in the code that replaced it will otherwise trip every
+grep-shaped test that comes after.
+
+A surface may only assert what detection established — and a lead-in is
+not the work.

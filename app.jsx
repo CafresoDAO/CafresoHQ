@@ -9,7 +9,7 @@ import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { brainName, officeHasBrain } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
-import { agentFiledPath, cabinetIsEncrypted, fileDelivery, officeDate, stripToolEcho } from './app/artifacts.jsx';
+import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, doneLine, floorEmit, officeCause, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
@@ -2526,7 +2526,7 @@ ${d.text}` : d.text,
       });
       /* Same reason as the desk bubble above — the journal is a KEPT record,
          so it least of all should hold the office's own scaffolding. */
-      if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, (userText || 'a job').slice(0, 60));
+      if (hasSubstance(cleanBuf)) appendJournal(agent.id, cleanBuf, (userText || 'a job').slice(0, 60));
       const approvalDesc = HQ.extractApproval(rawReply);
       /* `elevated` on an approval means THIS DECISION carries privilege —
          the tray draws a 🛡, a red rule and "coworker waiting on your call"
@@ -3632,7 +3632,7 @@ ${d.text}` : d.text,
         detail: (honesty.length
           ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n'
           : '') + cleanBuf.slice(0, 300) });
-      if (cleanBuf.trim()) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
+      if (hasSubstance(cleanBuf)) appendJournal(a.id, cleanBuf, brief.slice(0, 60));
       const approvalDesc = HQ.extractApproval(buf);
       if (approvalDesc) onApprovalRequest({ title: approvalDesc, by: a.name,
         kind: 'awaiting stamp', agentId: a.id,
@@ -4141,7 +4141,12 @@ ${d.text}` : d.text,
       // the only thing in the bubble, and this is where it was being dropped.
       setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: flush.withNotes(cleanBuf) } : m));
       screen.done(cleanBuf);
-      const produced = !!cleanBuf.trim();
+      /* Not `!!cleanBuf.trim()`. A reply that is only a lead-in — "Here is
+         what I did:" with every line under it stripped as a stray marker —
+         is a non-empty string and was certifying the run. hasSubstance is
+         the same question asked about content instead of length; see
+         app/artifacts.jsx for the sheet it filed. */
+      const produced = hasSubstance(cleanBuf);
       /* `recent` fell back to the task TITLE on an empty run, so the
          coworker's card on the floor quoted the boss's own brief back as
          though it were the work. The desk read "Write a 400-word briefing
@@ -4158,10 +4163,15 @@ ${d.text}` : d.text,
       });
       settleAfterRun(agent.id);
       /* Nothing survived cleaning: no answer, no file, no journal entry.
-         The two lines below already know it — `if (cleanBuf.trim())` gates
-         both the filing and the journal — and this line used to mark the
-         card DONE from the same fact the other two read as "there is
-         nothing here". Three decisions off one boolean, two honest.
+         The two lines below already know it — the filing and the journal are
+         gated on `produced` too — and this line used to mark the card DONE
+         from the same fact the other two read as "there is nothing here".
+         Three decisions off one boolean, two honest.
+
+         They now read the boolean rather than each re-deriving it from
+         `cleanBuf.trim()`, which is what let #80 happen: the derivation was
+         corrected in one place and the other two would have kept the old
+         meaning. One question, asked once, answered once.
 
          Measured on a fresh office: a task whose entire stored result was
          the office's OWN honesty notes ("no helper was ever brought in …
@@ -4183,7 +4193,7 @@ ${d.text}` : d.text,
          cabinet, the out-tray, the first-delivery sheet) stay where they
          were, after it, so the feed still reads finished-then-filed. */
       let filedPath = null;
-      if (cleanBuf.trim()) {
+      if (produced) {
         /* If the coworker already filed to the cabinet themselves — the
            specialist roles are instructed to, at a path they chose and
            named to the boss — that IS the deliverable. Filing a second
@@ -4248,7 +4258,7 @@ ${d.text}` : d.text,
       say(produced ? `${agent.name} completed "${task.title}"`
                    : `${agent.name} came back from "${task.title}" with nothing`,
           produced ? 'DONE' : 'SNAG');
-      if (cleanBuf.trim()) appendJournal(agent.id, cleanBuf, task.title);
+      if (produced) appendJournal(agent.id, cleanBuf, task.title);
       /* The artifact lands (OFFICE_AS_INTERFACE §3.6): the deliverable goes
          into the cabinet, the coworker carries it to the out-tray, and the
          very first one earns a sheet. Filing is best-effort and never

@@ -77,6 +77,44 @@ function stripToolMarkers(text) {
     .trim();
 }
 
+/* Is there anything here, or only the announcement of it?
+
+   `!!text.trim()` is the question the office used to ask, in three places,
+   and it gets the all-markers case right: a reply that is nothing but
+   [VAULT_NEW: …] lines strips to empty, and the run is correctly recorded as
+   "came back with nothing" — SNAG, no XP, card not certified.
+
+   One surviving line flips all of it. Measured 2026-08-15 against a canned
+   brain answering with exactly this:
+
+       Here is what I did:
+
+       [VAULT_NEW: Research/colours.md]
+       [MEMORY_WRITE: decisions/colours.md]
+
+   cleanBuf came out as the string "Here is what I did:" — non-empty, so the
+   task went green in DONE, XP was booked as a success, the floor announced
+   "Nova completed …", and the cabinet got a sheet whose entire body was that
+   sentence, eight lines above the office's own "Nothing opened, saved or
+   looked up for this one."
+
+   A lead-in is a promise about content, so a body of nothing but lead-ins is
+   materially the empty run the office already knows how to report. Narrow on
+   purpose: one line that is not a lead-in is enough to count, so a real
+   answer, a heading with a body under it, or a sentence containing a colon
+   anywhere but the end all pass untouched.
+
+   Deliberately NOT swept in: a body of bulleted markers ("- [VAULT_NEW: x]")
+   survives the strip by #53's decision and reads as substance here. Changing
+   that is a change to what gets stripped, not to what counts as content. */
+function hasSubstance(text) {
+  return String(text || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .some(l => !/:$/.test(l) && !/^#{1,6}\s/.test(l));
+}
+
 /* ── The transcript is not the deliverable ────────────────────────────────
    While a coworker works, the floor streams every tool visit inline — the
    fetched page, the search hits, the file it opened. That is right for the
@@ -274,7 +312,10 @@ function officeStamp(now) {
    so it renders when opened. */
 function buildDelivery(task, agent, text, visits) {
   const body = stripToolMarkers(stripToolEcho(text, (visits || []).map(v => v && v.echo)));
-  if (!body) return null;
+  /* Not `if (!body)`. That guard was right about what it was for and drew the
+     line one character too generously — see hasSubstance for the sheet a
+     lead-in-only body produced. */
+  if (!hasSubstance(body)) return null;
   const home = STARTER_HOME[task && task.starter] || DEFAULT_HOME;
   const slug = slugify(task && task.title);
   const who = (agent && agent.name) || 'your team';
@@ -471,4 +512,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, claimedPaths, extractHtml, fileDelivery, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, claimedPaths, extractHtml, fileDelivery, hasSubstance, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };

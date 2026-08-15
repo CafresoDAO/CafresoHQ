@@ -94,12 +94,35 @@ def main():
     # cannot make any of these pass.
     i = app.index('const cleanBuf = HQ.cleanHarmony(HQ.visibleReply(stripToolEcho(buf, '
                   'toolVisits.map(v => v.echo)), agent && agent.name));')
-    block = app[i:app.index('if (cleanBuf.trim()) appendJournal(', i)]
+    # Anchored on appendJournal alone. The anchor used to carry the gate's own
+    # expression, `if (cleanBuf.trim()) appendJournal(`, so #80 changing that
+    # gate made this .index() RAISE — the suite crashed instead of reporting,
+    # which is the failure mode #74 and #77 both taught. An anchor must not
+    # encode the thing under test.
+    block = app[i:app.index('appendJournal(agent.id, cleanBuf, task.title)', i)]
 
+    # #80: the expression changed, the invariant did not. `!!cleanBuf.trim()`
+    # called a reply that was only a lead-in ("Here is what I did:", every
+    # line under it stripped as a stray marker) a produced run, and certified
+    # it on all six surfaces below. hasSubstance asks the same question about
+    # content rather than length. What this check is really pinning is that
+    # there is exactly ONE such question in the run — so it now also requires
+    # the filing and journal gates to read the answer rather than re-derive
+    # it, which is the drift the original wording warned about.
     check('the run decides once whether anything was produced',
-          re.search(r'const produced = !!cleanBuf\.trim\(\);', block),
-          'the filing and the journal already read this exact expression; '
+          re.search(r'const produced = hasSubstance\(cleanBuf\);', block),
+          'the filing and the journal already read this exact fact; '
           'a second, differently-worded test is how the three drift apart')
+    # Comment-blind for the negative half: the block carries a comment that
+    # QUOTES the old gate to explain why it changed, and a bare search found
+    # its own documentation and reported a defect that was not there.
+    code = re.sub(r'/\*[\s\S]*?\*/', '', block)
+    check('...and the filing and the journal read that same answer',
+          re.search(r'if \(produced\) \{', code)
+          and re.search(r'if \(produced\) appendJournal\(', re.sub(r'/\*[\s\S]*?\*/', '', app[i:]))
+          and not re.search(r'if \(cleanBuf\.trim\(\)\)', code),
+          're-deriving "is there anything here" is how two of the three '
+          'ended up honest and the third did not')
 
     # ── the six surfaces ─────────────────────────────────────────────────
     check('the board does not certify an empty run',
