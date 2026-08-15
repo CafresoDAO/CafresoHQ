@@ -9054,3 +9054,94 @@ answers a different question than the one being asked.
 A surface may only assert what detection established — and a checklist
 that ticks a step the boss never took has not lost a checkbox, it has lost
 the lesson that step existed to teach.
+
+### A coworker was shown the chief of staff's words as her own — 2026-08-15
+
+Found by reading what actually goes on the wire rather than what the app
+displays. A canned brain on port 9236 appends every request body it
+receives to `asked.jsonl`; hire Vera, send one `@Vera hello`, and the
+request under a system prompt reading *"You are Vera, a specialist
+coworker at CafresoHQ"* opened like this:
+
+    system     You are Vera, a specialist coworker at CafresoHQ…
+    assistant  Welcome to your HQ — I'm CafresoHQ, your chief of staff…
+    assistant  We don't have a shared brain here… I'm opening the
+               candidate book now…
+    assistant  Welcome aboard, Vera! I've set up a desk.
+    user       [Direct request from the boss]: hello
+
+Vera was shown greeting herself, and shown introducing herself as the
+chief of staff. `assistant` is not a display label. It is the one role
+every chat API defines as *"you said this"* — the model's own prior
+turns — so this is not a cosmetic mislabel, it is three sentences of
+identity instruction delivered in the most authoritative slot the
+protocol has.
+
+The mirror image sat in the same two lines. Vera's own prior replies were
+labelled `[Vera · Virtual Assistant]: …` under `user`. So the only turns
+marked as hers were ones she had never said, and none of the ones she
+had. A specialist that starts answering in the chief of staff's voice is
+not a model being unruly; it is a model doing exactly what the transcript
+told it it had been doing.
+
+`chatToMessages` is the single choke point where stored chat becomes
+prompt — the same function, and the same reasoning, as the
+`stripOfficeVoice` fix already commented there. It simply had no idea who
+it was building the transcript *for*, and answered the same way for every
+reader. It now takes `selfName`: omit it and the reader is the chief of
+staff (`ceoStream`, unchanged, where `ceo → assistant` was always right);
+pass a coworker's name and the reader is that coworker, so the CEO
+becomes a labelled third party and the coworker's own turns become
+`assistant`.
+
+The peer form on the final line — `[Name · Role]: …` under `user` — was
+always the correct shape for a third party. Nothing new had to be
+invented; the CEO simply *is* a third party whenever the reader is not
+the CEO.
+
+Measured on the same canned brain after the fix, with a CEO message in
+the chat:
+
+    user       [CafresoHQ]: Welcome aboard, Kip! I've set up a desk.
+    user       [Direct request from the boss]: status please
+
+and, on a chat carrying Vera's own prior reply:
+
+    user       @Vera hello
+    assistant  Understood, on it.
+
+Two details worth keeping. The coworker's own turn is pushed **without**
+the `[Vera · Role]:` label: an assistant turn is theirs by role, and the
+label inside it is exactly the shape small models copy to the top of
+their next reply — the echo that defeats `ORPHAN_TAG_RE` and is already
+documented above. And the CEO branch is tested *before* the self branch,
+so a coworker who happens to be named CafresoHQ cannot inherit the chief
+of staff's turns; a fire arm swaps the order and the suite catches it.
+
+There is a prompt line further down the same request reading *"Focus on
+THIS request only. Any earlier conversation in your context is
+background — do not assume past turns are yours."* Someone had already
+noticed coworkers behaving as though the history belonged to them, and
+answered it with an instruction asking the model to disbelieve its own
+transcript. That is the tell: when a prompt has to talk a model out of
+what the envelope is telling it, fix the envelope. The instruction is
+harmless and stays, but it is no longer load-bearing.
+
+This is the most runtime-agnostic surface in the product. Every brain —
+Ollama, LM Studio, an OpenAI-compatible endpoint, a hosted gateway — is
+handed this same envelope, and every one of them reads `assistant` the
+same way. Authorship here is worth more than any per-provider fix, and
+it is squarely what "agnostic agentic workflow" has to mean: the office
+must be able to tell each worker who they are, in the one field that
+carries that meaning everywhere.
+
+The chief of staff's own path was verified by harness, not by driving it,
+because the CEO's configured brain in this office would have dispatched
+to a hosted gateway and the standing constraint is local brains only. The
+suite pins that branch unchanged in both directions — a fire arm that
+makes `ceoStream` pass a `selfName`, and one that strips the CEO's
+assistant turns outright.
+
+A surface may only assert what detection established — and the role field
+is an assertion about who spoke, made to every brain the office will ever
+support.

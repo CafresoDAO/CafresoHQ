@@ -2918,9 +2918,42 @@ OUTPUT STYLE
 - After a HANDOFF_TO block, STOP — don't keep talking.
 - After parallel DM_TOs return, give the boss ONE combined reply with the synthesized result and any vault paths.`;
 
-function chatToMessages(chat, { omitLastCeo = false } = {}) {
+/* `selfName` is who this transcript is being built FOR, and it decides who
+   the `assistant` turns belong to. Omit it and the recipient is the chief
+   of staff (ceoStream); pass a coworker's name and the recipient is that
+   coworker.
+
+   Without it, every reader got the CEO's turns as `assistant` — and
+   `assistant` is not decoration, it is the one role every chat API defines
+   as "you said this". Measured on a canned brain, the request sent to a
+   newly hired Vera (system prompt: "You are Vera, a specialist coworker")
+   opened with three assistant turns she had never spoken:
+
+     assistant  Welcome to your HQ — I'm CafresoHQ, your chief of staff…
+     assistant  We don't have a shared brain here… I'm opening the
+                candidate book now…
+     assistant  Welcome aboard, Vera! I've set up a desk.
+     user       [Direct request from the boss]: hello
+
+   So Vera was shown greeting herself, and shown claiming to be the chief
+   of staff. Meanwhile her OWN prior replies arrived as `[Vera · Role]: …`
+   under `user` — the mirror image of the same error. The only turns marked
+   as hers were the ones she did not say, and none of the ones she did.
+
+   A small local brain reads that as an instruction about who it is; this
+   is precisely the failure that ends with a specialist answering in the
+   chief of staff's voice. It is also the most runtime-agnostic surface in
+   the product — every brain, local or hosted, is handed this envelope — so
+   getting authorship right here is worth more than any per-provider fix.
+
+   The peer form on the last line was always the correct shape for a third
+   party. The CEO simply is one, whenever the reader is not the CEO. */
+function chatToMessages(chat, { omitLastCeo = false, selfName = '' } = {}) {
   const src = (omitLastCeo && chat.length && chat[chat.length - 1].from === 'ceo')
     ? chat.slice(0, -1) : chat;
+  /* Bubbles are captioned `${name} · ${role}`; the name is what identifies
+     the speaker across a role edit. */
+  const speaker = (m) => String(m.name || '').split(' · ')[0].trim();
   const out = [];
   for (const m of src) {
     /* stripOfficeVoice: the office's report of its OWN actions must not
@@ -2933,7 +2966,14 @@ function chatToMessages(chat, { omitLastCeo = false } = {}) {
     const text = stripOfficeVoice(m.text);
     if (!text) continue;
     if (m.from === 'user') out.push({ role: 'user', content: text });
-    else if (m.from === 'ceo') out.push({ role: 'assistant', content: text });
+    /* `m.from !== 'ceo'` guards the self branch as well as the CEO branch:
+       a coworker who happened to be named CafresoHQ must not inherit the
+       chief of staff's turns as their own. */
+    else if (m.from === 'ceo') {
+      if (selfName) out.push({ role: 'user', content: `[${m.name}]: ${text}` });
+      else out.push({ role: 'assistant', content: text });
+    }
+    else if (selfName && speaker(m) === selfName) out.push({ role: 'assistant', content: text });
     else out.push({ role: 'user', content: `[${m.name}]: ${text}` });
   }
   return out;
@@ -3237,7 +3277,7 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   const sys = [base + toolsNote + elevatedNote + approvalNote, toolSnippet, agentMemoryNote, journalNote, mem, reg].filter(Boolean).join('\n\n');
 
   const messages = chat
-    ? chatToMessages(chat).concat([{ role: 'user', content: prompt }])
+    ? chatToMessages(chat, { selfName: agent.name }).concat([{ role: 'user', content: prompt }])
     : [{ role: 'user', content: prompt }];
 
   let toolsExecuted = 0;
