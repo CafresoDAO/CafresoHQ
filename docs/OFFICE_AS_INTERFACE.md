@@ -10967,3 +10967,85 @@ Full runner: 132/132.
 
 A note may only dress its witness's fact in the witness's words — the
 rest of the story belongs to the surfaces that saw it happen.
+
+## A task start silently killed a conversation in flight
+
+**What was measured (2026-08-15, office 9261, canned brain).** Chatted
+"@Vera hold that thought nine" and, while her reply streamed, clicked
+▶ START on "Empty hands" — a card parked on her desk. No dialog appeared.
+The task started as if the desk were free. The chat bubble ended
+" …(stopped)". The message registry filed the run as **cancelled** with
+the note **"aborted by user"** — recorded as written *by Vera* — for a
+stop the boss never made. Four bubbles tell the whole story: the boss's
+question, " …(stopped)", "(dropped \"Empty hands\" on Vera's desk)", and
+then Vera speaking again — about the task. Nothing on any surface says
+the second event caused the first.
+
+**Why it happened.** One coworker, one run: `beginAgentRun` aborts
+whatever is already in flight for that agent before registering the new
+controller. Ticket #86 put a danger dialog in front of exactly this
+abort — but its witness is `displacedTask`, which only speaks for
+*cards*. An @mention conversation and a delegate hand-off register an
+aborter without ever putting a folder on the desk, so `displaced` came
+back null, both confirm branches were skipped, and the abort went out
+unannounced. The abort catch then did the only thing it could from where
+it stands — an AbortSignal from a boss-stop and one from a handover are
+the same signal — and wrote "aborted by user", which happened to be
+false. #86's own comment already knew this: the honest sentence has to
+be written where the office knows the reason.
+
+**The fix.** `onTaskDropOnAgent` now reads the same registry the abort
+rides, after the card branches have spoken:
+
+    const chatCut = !displaced && agentAbortersRef.current.has(agent.id);
+
+A run in flight with no displaced card behind it is a conversation — the
+@mention and delegate paths are `beginAgentRun`'s only cardless call
+sites, and both are chat surfaces. Boss-driven starts get the same
+danger dialog a displaced card gets ("Vera is mid-conversation in chat.
+Start \"Empty hands\" now? Their reply stops where it is, and the rest
+of it is lost."). Chain steps park in the inbox with a note — "Vera was
+mid-conversation when this step came up — start it when they're free" —
+because the `opts.auto` doctrine holds here too: automation must not bin
+a running job to make room, and a conversation is a running job.
+
+The false post-mortem largely dissolves with consent: on the manual path
+the boss now *did* choose the stop, so "aborted by user" becomes true
+the only time it is still written; on the auto path no abort happens at
+all. The residue — a boss-stop and a task-start still filing the same
+sentence — stays visible at the abort catch, noted there by #86.
+
+**What the first reproduction taught.** The first attempt used the
+existing 45-second route "Empty hands three" — and Vera answered
+instantly with the *briefing* reply. The canned brain matches routes
+against the whole request payload, first match wins, and the chat
+history riding along contained "briefing status" from an earlier round.
+By the time START was clicked the run had already ended, so that click
+proved nothing: the kill needs a victim, and the victim had gone home.
+The fix for the repro was a phrase no surface had ever used ("hold that
+thought"), inserted at the *front* of the route table. A reproduction
+has a witness problem of its own — the trigger has to be something only
+this run could have said.
+
+**Verified.**
+- `scripts/test_a_conversation_is_work_in_flight.py` (new, 15 checks):
+  lifts the real segment from `const displaced` through the chatCut
+  branches plus the real `displacedTask`, and drives eight desks through
+  it — idle, displaced card (manual + auto, #86 kept), conversation
+  (declined / accepted / auto-parked), and a parked card with and
+  without a conversation behind it. Pins the registry read, the
+  wording, and that `beginAgentRun` still has exactly three call sites —
+  a fourth would have to decide whether a cardless run is still a
+  conversation before riding this dialog.
+- Fire-tested (fire90.py): 6 arms — guard dropped, card test removed
+  from the conjunction, auto branch binned, wording drift, decline
+  ignored, full revert — 6/6 caught. Baseline all-PASS.
+- Live, both directions: mid-chat START drew the dialog with the exact
+  sentence; Cancel kept the conversation, which then completed normally
+  and delivered its reply. Idle START asked nothing.
+
+**The through-line.** #86 said a parked card is not work in flight.
+This is the converse the office forgot: work in flight is not always a
+card. The registry that owns the abort is the only witness that sees
+every kind of run, so any door that can cut one off has to ask the
+registry — not the board — whether anyone is standing behind it.

@@ -4059,6 +4059,38 @@ ${d.text}` : d.text,
         : t));
     }
 
+    /* The registry can hold a run with no card behind it — an @mention
+       conversation or a delegate hand-off registers an aborter but never
+       puts a folder on the desk. displacedTask only speaks for cards, so
+       a mid-conversation desk fell through both branches above, and the
+       beginAgentRun below cut the conversation off with no warning.
+       Measured: chatted "@Vera hold that thought nine", started "Empty
+       hands" on her mid-reply — no dialog, the bubble ended " …(stopped)",
+       and the registry filed "aborted by user" for a stop the boss never
+       made. Same rule as the displaced card: when the boss is driving,
+       ask first; when automation is driving, don't bin the conversation —
+       park the step and say why. The wording only claims what the
+       registry establishes — a run in flight with no card on this desk —
+       and every cardless registrant is a chat surface (the @mention and
+       delegate paths are beginAgentRun's only other call sites). */
+    const chatCut = !displaced && agentAbortersRef.current.has(agent.id);
+    if (chatCut && opts.auto) {
+      setTasks(prev => prev.map(t => t.id === taskId
+        ? { ...t, assignedTo: agent.id,
+            stalledNote: `${agent.name} was mid-conversation when this step came up — start it when they're free` }
+        : t));
+      logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
+        action: 'progress', text: `couldn't pick up "${task.title}" — mid-conversation` });
+      return;
+    }
+    if (chatCut) {
+      const ok = await window.hqConfirm(
+        `${agent.name} is mid-conversation in chat.\n\n` +
+        `Start "${task.title}" now? Their reply stops where it is, ` +
+        `and the rest of it is lost.`, { danger: true, okLabel: 'Start it' });
+      if (!ok) return;
+    }
+
     /* Starting clears the note: it explains why a card is sitting in the
        inbox, so it must not outlive the sitting. `blockedReason` goes with
        it for the same reason — a fresh run is not still stuck on what the
