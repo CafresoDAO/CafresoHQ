@@ -4567,14 +4567,28 @@ ${d.text}` : d.text,
           try {
             const r = await CafresoHQClient.publishSite(p.path,
               p.tip && p.agentId ? { tipJar: { agentId: p.agentId, agentName: p.agentName } } : {});
-            const where = r.mode === 'canister'
-              ? 'live on the Internet Computer (public)'
-              : 'a local preview link (public hosting needs the shell)';
+            /* The clause was already honest ("a local preview link"), but it
+               hung off the headline "🚀 Shipped" — and a headline is what
+               gets read. The boss stamped a PUBLISH; being told it shipped,
+               with a rocket, is the wrong first word for a link only they
+               can open. Headline, activity line and the spoken cue all move
+               together, because a boss who hears "Shipped" has stopped
+               reading. Same rule as the button in views/projects.jsx: the
+               name matches the outcome, and the outcome is read off r.mode
+               rather than assumed from the fact that a URL came back. */
+            const wentPublic = r.mode === 'canister';
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-              text: `🚀 Shipped — ${where}:\n${r.url}\nClickable link filed at ${r.file}` }]);
+              text: wentPublic
+                ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}\nClickable link filed at ${r.file}`
+                : `🔗 Preview only — not on the web. This link opens on this machine `
+                  + `only; publishing for real needs the Cafreso app that holds your `
+                  + `identity (open this office at ai.cafreso.com):\n${r.url}\n`
+                  + `Clickable link filed at ${r.file}` }]);
             logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'artifact',
-              text: `shipped "${String(p.path).slice(0, 40)}" ${r.mode === 'canister' ? 'to the Internet Computer 🚀' : 'as a preview link'}` });
-            say('Shipped', 'PUBLISH');
+              text: wentPublic
+                ? `shipped "${String(p.path).slice(0, 40)}" to the Internet Computer 🚀`
+                : `built a local preview of "${String(p.path).slice(0, 40)}" — not published` });
+            say(wentPublic ? 'Shipped' : 'Preview ready', 'PUBLISH');
           } catch (err) {
             /* A bare CLAUSE, never snagSentence().replace(…) — regexing the
                spine off snagSentence's output is exactly the pattern that

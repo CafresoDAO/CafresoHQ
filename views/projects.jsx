@@ -1,6 +1,6 @@
 import { ProjectTerminal } from './terminal.jsx';
 import { ideLangFromPath } from './ide.jsx';
-import { CafresoHQClient } from '../claude-client.jsx';
+import { CafresoHQClient, CafresoHQChain } from '../claude-client.jsx';
 import { officeCause, repoCause } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
@@ -379,18 +379,57 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} onChange={e => { doUpload(e.target.files, uploadDirRef.current); e.target.value = ''; uploadDirRef.current = null; }} />
     </div>
   );
+  /* pubMsg is a SHAPE, not a string. It used to be the URL, and the render
+     decided what had happened by sniffing it: /^https?:/ matched, so the
+     slot said "Published — link copied." That test establishes "this is a
+     URL" and concludes "this went public", which are different facts.
+
+     publishSite() falls back to an owner-scoped /fs/site preview link
+     whenever the II-holding shell is absent — which is EVERY standalone and
+     self-hosted office, not an edge case. So the default outcome was the
+     word "Published", a localhost URL, and that URL placed on the boss's
+     clipboard ready to paste to someone it will never work for. The base64
+     segment carries their absolute filesystem path, too.
+
+     sharePage() already refuses this exact fallback, and says why in its
+     own comment: a "share" that hands back a localhost link is the §4 kind
+     of lie. The preview link is still genuinely useful, so this does not
+     remove it — it stops calling it publishing, stops putting it on the
+     clipboard, and names the door to the real thing. */
   const [pubMsg, setPubMsg] = useSV(null);
   const canPublish = () => {
     try { return !!CafresoHQClient.getSettings().icpServices?.publish; } catch (_e) { return false; }
   };
+  /* Whether public hosting is REACHABLE, as opposed to switched on. The
+     setting above is the boss's intent; this is detection. The button uses
+     it to name what it is about to do — but the RESULT below is still read
+     off r.mode, because chain.publish can also fail after a successful
+     handshake, and only the outcome knows which happened. */
+  const publicHostingReady = () => {
+    try { return !!(CafresoHQChain && CafresoHQChain.isAvailable && CafresoHQChain.isAvailable()); }
+    catch (_e) { return false; }
+  };
   const publishOpen = async () => {
     if (!openFile) return;
-    setPubMsg('Publishing…');
+    setPubMsg({ kind: 'busy', text: publicHostingReady() ? 'Publishing…' : 'Building preview…' });
     try {
       const r = await CafresoHQClient.publishSite(openFile.path);
-      setPubMsg(r.url);
-      try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
-    } catch (e) { setPubMsg('Publish failed — ' + officeCause((e && e.message) || String(e))); }
+      if (r.mode === 'canister') {
+        setPubMsg({ kind: 'public', url: r.url, text: 'Published — link copied.' });
+        try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
+        return;
+      }
+      /* Deliberately NOT copied. The clipboard is what turns "I looked at a
+         local link" into "I sent someone a dead link". */
+      setPubMsg({
+        kind: 'preview', url: r.url,
+        text: 'Not public — this preview opens on this machine only. '
+            + 'Putting it on the web needs the Cafreso app that holds your '
+            + 'identity; open this office at ai.cafreso.com to publish for real.',
+      });
+    } catch (e) {
+      setPubMsg({ kind: 'err', text: 'Publish failed — ' + officeCause((e && e.message) || String(e)) });
+    }
   };
 
   const editorPane = () => (
@@ -408,8 +447,14 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
             <span className="ws-tab on">{ideFileIcon ? ideFileIcon(openFile.path) : '📄'} <span className="nm">{baseName(openFile.path)}</span>{openFile.dirty ? <span className="dirty">•</span> : ''}</span>
             {!openFile.binary && <div className="ws-seg ws-cpseg"><button className={!previewMode ? 'on' : ''} onClick={() => setPreviewMode(false)}>Code</button><button className={previewMode ? 'on' : ''} onClick={() => setPreviewMode(true)}>Preview</button></div>}
             {!openFile.binary && openFile.dirty && <button className="ws-save" onClick={() => save(false)} disabled={busy}>Save</button>}
+            {/* A button does the thing it is named after — the same rule the
+                empty-state CTA below was rewritten for. Without the shell
+                there is nothing to publish TO, so the button says what it
+                will actually produce instead of promising the other thing. */}
             {!openFile.binary && /\.html?$/i.test(openFile.path || '') && canPublish() &&
-              <button className="ws-save" title="Publish this site + drop a clickable .url link into the project" onClick={publishOpen}>🚀 Publish</button>}
+              (publicHostingReady()
+                ? <button className="ws-save" title="Publish this site to the web + drop a clickable .url link into the project" onClick={publishOpen}>🚀 Publish</button>
+                : <button className="ws-save" title="Build a preview link you can open on this machine — publishing to the web needs the Cafreso app that holds your identity" onClick={publishOpen}>🔗 Preview link</button>)}
           </div>
           {conflict && (
             <div className="ws-conflict">⚠ Your coworker changed this file while you had edits.
@@ -418,10 +463,10 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
             </div>
           )}
           {pubMsg && (
-            <div className="ws-conflict" style={{ background: 'var(--paper-2,#f0e9d8)' }}>
-              {/^https?:/.test(pubMsg)
-                ? <>Published — link copied. <a href={pubMsg} target="_blank" rel="noopener noreferrer">{pubMsg}</a></>
-                : pubMsg}
+            <div className={'ws-conflict ws-pubmsg ' + pubMsg.kind}
+                 style={{ background: 'var(--paper-2,#f0e9d8)' }}>
+              <span className="ws-pubtext">{pubMsg.text}</span>
+              {pubMsg.url && <> <a href={pubMsg.url} target="_blank" rel="noopener noreferrer">{pubMsg.url}</a></>}
               <button onClick={() => setPubMsg(null)}>✕</button>
             </div>
           )}

@@ -8555,3 +8555,90 @@ expectations being wrong rather than the checks; the third was real.
 
 A surface may only assert what detection established — and a message that
 only survives on a tty was never a message.
+
+## 2026-08-15 — "Published — link copied" handed the boss a localhost URL
+
+Reproduced on a live standalone office before touching anything: added a
+project, opened its `index.html`, clicked 🚀 Publish, and got
+
+> **Published — link copied.**
+> `http://127.0.0.1:9254/fs/site/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEv…/index.html`
+
+with that URL written to the clipboard.
+
+`publishSite()` degrades to an owner-scoped `/fs/site` preview link
+whenever the II-holding shell is absent. That is not an edge case — it is
+every standalone and self-hosted office, so the fallback IS the default
+path. Three problems in one sentence:
+
+1. It was not published.
+2. The clipboard write is what turns "I opened a local link" into "I sent
+   someone a dead link".
+3. The base64 segment decodes to the absolute filesystem path of the
+   boss's machine, in a URL the copy invited them to share.
+
+The render decided what had happened by testing `/^https?:/` against the
+message. That establishes "this is a URL" and concludes "this went
+public".
+
+`sharePage()` already refuses the same fallback and says why in its own
+comment — a "share" that hands back a localhost link is the §4 kind of
+lie. So the product already held the right policy; one of its two publish
+surfaces did not implement it.
+
+### The fix is not to remove the preview
+
+The preview link works and is useful. What was wrong was calling it
+publishing. So: it is still built, still offered, still files the
+clickable `.url` deliverable — it is no longer copied to the clipboard,
+and it is named correctly at three moments.
+
+**The button** now reads `🔗 Preview link` when public hosting is
+unreachable, and `🚀 Publish` when it is. A button does the thing it is
+named after — the rule this same file already had written above its
+empty-state CTA.
+
+**The result** is still read from `r.mode`, never from the button's
+pre-check. A reachable shell and a completed upload are different facts:
+the handshake can succeed and `chain.publish` still fail. The pre-check
+names the expected outcome; only the outcome knows the actual one.
+
+**The message** on the preview path:
+
+> Not public — this preview opens on this machine only. Putting it on the
+> web needs the Cafreso app that holds your identity; open this office at
+> ai.cafreso.com to publish for real.
+
+**The stamp path** in `app.jsx` had an honest clause under a dishonest
+headline: "a local preview link (public hosting needs the shell)" hanging
+off "🚀 Shipped". A boss who reads "Shipped" has stopped reading. Headline,
+activity line and the spoken cue now move together with the outcome.
+
+### What the checks pin now
+
+- `publishSite` still builds the preview, and still reports which of the
+  two happened — deleting the capability would also pass a naive check
+- the handler branches on the reported mode, and the clipboard write sits
+  inside the branch that actually went public
+- the word "Published" does not survive downstream of that branch
+- the preview message says it is not public AND names the door
+- reachability is a check distinct from the `icpServices.publish` setting,
+  the button label is chosen by it, and the RESULT is not
+- the stamp's headline and activity line both follow the outcome
+- `sharePage` still refuses the fallback outright
+
+Twelve arms, all caught first pass. One weakness surfaced in the checks
+themselves: the source-window helper searched for its end marker from the
+START of the start marker, so `'function '` matched six characters into
+`'async function sharePage'` and the window collapsed to the string
+`"async "`. Here it failed loudly, because the check was a positive
+match — but the negative half of the same check would have passed on an
+empty window. A window that can collapse to nothing reports agreement.
+
+Verified live on the rebuilt bundle: button reads 🔗 Preview link, the
+message names the door, `navigator.clipboard.writeText` is never called,
+the preview URL still serves the page, `mysite.url` still lands in the
+project, and no paid gateway was touched (`__guardHits` empty).
+
+A surface may only assert what detection established — and the fallback a
+feature takes by default is not a fallback, it is the feature.
