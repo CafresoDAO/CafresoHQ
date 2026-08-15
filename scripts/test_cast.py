@@ -514,9 +514,28 @@ console.log(JSON.stringify(R));
           'north-star section 5: exporter-zoo row changed — re-read before trusting this rule')
 
     rt = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
-    reel = re.search(r"name: 'Reel',[\s\S]{0,900}?systemPrompt", rt)
+
+    def shelf_entry(name):
+        """One template, bounded by where the object actually closes.
+
+        These two were `[\\s\\S]{0,900}?systemPrompt` and `{0,1200}?`. A
+        length in a window is a guess about how long the code will stay,
+        and on 2026-08-15 the Pixel entry's comment grew past 1200 — the
+        regex stopped matching, `pixel` came back None, and the check
+        reported "still parked" about an entry that is not parked. A
+        window that can miss is the same defect as a window that can
+        collapse: it answers a question it never looked at.
+        """
+        m = re.search(r"name: '%s',[\s\S]*?\n  \},\n" % re.escape(name), rt)
+        return m.group(0) if m else ''
+
+    reel = shelf_entry('Reel')
+    check('the shelf entries were found where the check expects them',
+          reel and shelf_entry('Pixel'),
+          'hq-runtime.jsx: the AGENT_TEMPLATES shelf moved or was '
+          'reshaped, so the two parked checks below are measuring nothing')
     check('Reel (video generation) is marked parked',
-          bool(reel) and 'parked: true' in reel.group(0),
+          bool(reel) and 'parked: true' in reel,
           'hq-runtime.jsx: the parked template must say so')
     # Pixel was parked for the SAME reason Reel is (section 5's exporter-zoo
     # row), plus a live-relevant one: toolsForAgent only ever granted
@@ -526,9 +545,9 @@ console.log(JSON.stringify(R));
     # exist. modals/providers.jsx's MediaTab (mounted at Settings -> Media,
     # see scripts/test_media_settings_wired.py) closed that gap 2026-08-13,
     # so Pixel is un-parked: the promise its prompt makes is real now.
-    pixel = re.search(r"name: 'Pixel',[\s\S]{0,1200}?systemPrompt", rt)
+    pixel = shelf_entry('Pixel')
     check('Pixel (image generation) is no longer parked',
-          bool(pixel) and 'parked: true' not in pixel.group(0),
+          bool(pixel) and 'parked: true' not in pixel,
           'hq-runtime.jsx: Settings -> Media exists now (modals/providers.jsx MediaTab) '
           '— Pixel should not still be marked parked')
     settings_src = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')

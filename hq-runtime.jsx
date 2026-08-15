@@ -127,12 +127,14 @@ const OPENSWARM_ROSTER = [
        below makes is real. Reel (video) stays parked — that one is a
        broader product-scope call (north-star section 5), not this gap.
 
-       'img' added 2026-08-14. `toolsForAgent` grants GENERATE_IMAGE off the
-       settings provider alone, never off this list, so ticking it changes
-       nothing about what Pixel can DO — but every card in the product is
-       written from this list, and a card built from ['vault'] introduced
-       the image specialist as "can read your notes". The claim was the one
-       thing missing. */
+       'img' added 2026-08-14, at which point `toolsForAgent` granted
+       GENERATE_IMAGE off the settings provider alone, never off this list,
+       so ticking it changed nothing about what Pixel could DO — it was
+       added because every card in the product is written from this list,
+       and a card built from ['vault'] introduced the image specialist as
+       "can read your notes". As of 2026-08-15 the claim is load-bearing:
+       the grant reads this list AND the provider, so this line is now the
+       only reason Pixel can make images at all. Do not remove it. */
     tools: ['img', 'vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.8,
@@ -2157,14 +2159,40 @@ function toolClaimLabel(name) {
    question, and printing the raw name to fill the gap is exactly the habit
    this function exists to break. If nothing survives, the caller says the
    vaguer true thing instead of the precise wrong one. */
-function claimLabels(names) {
+function claimLabels(names, agent) {
   const seen = [];
   for (const n of names || []) {
+    if (claimNeedsMediaDoor(n, agent)) continue;
     const label = toolClaimLabel(n);
     if (label && !seen.includes(label)) seen.push(label);
   }
   if (seen.length <= 1) return seen[0] || '';
   return seen.slice(0, -1).join(', ') + ' and ' + seen[seen.length - 1];
+}
+
+/* 'img' is the only claim with TWO doors, and they are on different
+   screens: the box on the coworker's card, and a provider in Settings →
+   Media. `toolsForAgent` needs both, so "which door is shut" is a
+   different answer for two coworkers missing the same tool — and naming
+   the wrong one costs the boss a trip and teaches them the hint is
+   unreliable.
+
+   The box being ALREADY TICKED is the case the shipped sentence got
+   wrong. "Turn it on from their card in Settings → Roster" sends the boss
+   to a control that is on, they turn it off and on again, nothing
+   changes, and the actual shut door — a screen away — is never mentioned.
+
+   `agent` absent means the caller does not know which boxes are ticked
+   (the CEO path has an office, not one coworker). Unknown is not false:
+   name the box, say nothing about the second screen. Same rule
+   app/cast.jsx's `established()` applies to the coworker card. */
+function claimNeedsMediaDoor(name, agent) {
+  if (!/^GENERATE_/i.test(String(name || '').trim())) return false;
+  return ((agent && agent.tools) || []).indexOf('img') >= 0;
+}
+
+function claimHitsMediaDoor(names, agent) {
+  return (names || []).some(n => claimNeedsMediaDoor(n, agent));
 }
 
 /* Build the tools section of the agent system prompt, restricted to tools
@@ -2186,13 +2214,37 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
                TOOL_REGISTRY.export_pdf);
     }
   }
-  // Media generation tools — available when a media provider is configured
-  // in settings (Settings → Media). Otherwise agents would happily emit the
-  // marker and the call would 400 with "provider required".
+  /* Media generation. TWO facts have to hold, and the shipped code read
+     only one of them.
+
+     A provider in Settings → Media is what makes the call work — without
+     it the marker fires and the request comes back "provider required".
+     That check was here and is still here. What was NOT here is
+     `claimed.has('img')`: the moment any boss picked an image provider,
+     GENERATE_IMAGE went into the prompt of EVERY coworker in the office,
+     including ones whose Image Gen box had never been ticked. Measured
+     2026-08-15 on a fresh office — a hire named Marge, tools ['web',
+     'files'], no 'img' — and her system prompt carried
+     `[GENERATE_IMAGE: <vault path>]` all the same.
+
+     So the box granted nothing and, worse, removing it removed nothing:
+     two directions of the same lie, on a control the boss is looking
+     straight at. The provider is the OTHER door, on another screen, and
+     the fix is not to pick one of them — it is to require both, which is
+     what app/cast.jsx already tells the boss on the coworker card
+     (CAN_DO.img + CAN_DO_NEEDS.img = 'canMakeImages').
+
+     Video rides the same claim deliberately. There is no 'video' id in
+     TOOLS_CATALOG, so leaving GENERATE_VIDEO on its provider alone would
+     have kept exactly this defect alive for the half nobody had a box
+     for — and TOOL_CLAIM_GROUPS has always answered "Image Gen" when a
+     coworker reached for video, a sentence that was wrong when it was
+     written and is true now. One box, both kinds of media, each still
+     needing its own provider. */
   try {
     const s = (CafresoHQClient && CafresoHQClient.getSettings) ? CafresoHQClient.getSettings() : {};
-    if (s && s.imageProvider) out.push(TOOL_REGISTRY.generate_image);
-    if (s && s.videoProvider) out.push(TOOL_REGISTRY.generate_video);
+    if (claimed.has('img') && s && s.imageProvider) out.push(TOOL_REGISTRY.generate_image);
+    if (claimed.has('img') && s && s.videoProvider) out.push(TOOL_REGISTRY.generate_video);
   } catch (_e) { /* settings store may not be ready during init */ }
   // File/shell tools for elevated agents — available regardless of LLM provider.
   if (agent.elevated) {
@@ -3203,13 +3255,19 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
         if (toolsExecuted > 0) {
           emit(`_(${agent.name} did the legwork but never wrote it up. Ask them to summarise what they found, or hand the job to a coworker on a stronger brain.)_`);
         } else if (missing.length) {
-          const want = claimLabels(missing);
+          const want = claimLabels(missing, agent);
+          /* The second door, and only when it is the shut one — see
+             claimNeedsMediaDoor. A coworker with the box already on is
+             sent to the screen that will actually change something. */
+          const media = claimHitsMediaDoor(missing, agent);
           emit(want
             /* "tick it" named the wrong ACTION as well as, for file and
                shell work, the wrong control: that door is a switch, not a
                checkbox. "Turn it on" is true of both, so one sentence
                still covers every door on the card. */
-            ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster, or @-mention a coworker who already has it.)_`
+            ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}, or @-mention a coworker who already has it.)_`
+            : media
+            ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
             : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`);
         } else if (orphans.length) {
           emit(`_(${agent.name} talked themselves through it but never answered. Ask them again, or hand the job to a coworker on a stronger brain.)_`);

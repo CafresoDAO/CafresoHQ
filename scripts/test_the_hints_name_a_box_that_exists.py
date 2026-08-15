@@ -72,8 +72,26 @@ def check(name, cond, detail=''):
 
 
 def brace_lift(src, opener):
+    # The body opener is the first `{` at paren depth ZERO. `src.index('{')`
+    # lifts a DESTRUCTURED PARAMETER instead when the signature has one —
+    # `f(agent, { peers = [] } = {})` balances inside itself, so the "body"
+    # comes back as the signature and every scan over it finds nothing.
+    # None of the functions lifted below has one today; the sibling file
+    # test_the_image_box_is_a_real_door.py hit it on toolsForAgent and
+    # failed loudly only because its checks were positive.
     i = src.index(opener)
-    j = src.index('{', i)
+    parens = 0
+    j = None
+    for k in range(i, len(src)):
+        if src[k] == '(':
+            parens += 1
+        elif src[k] == ')':
+            parens -= 1
+        elif src[k] == '{' and parens == 0:
+            j = k
+            break
+    if j is None:
+        raise AssertionError('no body brace found lifting ' + opener)
     depth = 0
     for k in range(j, len(src)):
         if src[k] == '{':
@@ -103,6 +121,11 @@ def main():
     js += re.search(r"^const ELEVATION_DOOR = '[^']*';$", src, re.M).group(0) + '\n'
     js += re.search(r'^const TOOL_CLAIM_GROUPS = \[[\s\S]*?^\];$', src, re.M).group(0) + '\n'
     js += brace_lift(src, 'function toolClaimLabel(') + '\n'
+    # claimLabels gained a second door for 'img' — see
+    # test_the_image_box_is_a_real_door.py, which owns that behaviour. Lifted
+    # here only so this harness still runs; every call below passes one
+    # argument, which is the unchanged path.
+    js += brace_lift(src, 'function claimNeedsMediaDoor(') + '\n'
     js += brace_lift(src, 'function claimLabels(') + '\n'
     js += r'''
 const R = { one: {}, lists: {} };

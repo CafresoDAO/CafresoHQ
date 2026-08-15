@@ -386,13 +386,21 @@ function ConnectionsPanel() {
    is what makes hiding them safe rather than a capability removal. The
    hint now names that switch instead (hq-runtime.jsx, ELEVATION_DOOR).
 
-   'img' stays visible and stays inert, and is a genuinely different case:
-   GENERATE_IMAGE/GENERATE_VIDEO are real tools gated on the
-   imageProvider/videoProvider settings that Settings → Media (MediaTab,
-   providers.jsx) writes, so this checkbox's real door is on ANOTHER
-   screen, not this card. Hiding it here would leave the coworker card
-   silent about images altogether. Filed separately rather than guessed
-   at here. */
+   'img' stayed visible and stayed inert, as a genuinely different case:
+   GENERATE_IMAGE/GENERATE_VIDEO are real tools that were gated on the
+   imageProvider/videoProvider settings Settings → Media (MediaTab,
+   providers.jsx) writes, so this checkbox's real door was on ANOTHER
+   screen, not this card. Hiding it here would have left the coworker card
+   silent about images altogether, so it was filed separately rather than
+   guessed at.
+
+   Settled 2026-08-15, and not by hiding it: the box is a real door now.
+   `toolsForAgent` requires BOTH the claim and a provider, so ticking this
+   grants and unticking it removes, which is the whole contract of a
+   checkbox. The provider remains a second, separate requirement on
+   another screen — and the hint channel now names whichever of the two is
+   actually shut (hq-runtime.jsx, claimNeedsMediaDoor) rather than always
+   sending the boss back to this card. */
 const NEVER_WIRED_TOOL_IDS = new Set(['email', 'cal', 'db', 'slack']);
 /* Real capability, but this checkbox is not its door — see DECOYS above. */
 const GRANTED_ELSEWHERE_TOOL_IDS = new Set(['code', 'files']);

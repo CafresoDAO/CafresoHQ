@@ -8726,3 +8726,101 @@ uncut on all three surfaces that show it.
 A surface may only assert what detection established — and a sentence
 repaired for the surface someone was looking at is still broken on the one
 they weren't.
+
+## 2026-08-15 — A checkbox that granted nothing, and removed nothing
+
+`ALLOWED TOOLS` on the hire form and the Roster card renders three boxes:
+Web Search, Vault Notes, Image Gen. Hired a coworker on a fresh office
+with the third one untouched — stored as `tools: ['web','files']` — and
+read the request body the brain actually received:
+
+    - [GENERATE_IMAGE: <vault path, e.g. Images/concept.png>]
+
+Her Image Gen box had never been ticked. `toolsForAgent` read
+`getSettings().imageProvider` and nothing else, so the moment any boss
+picked a provider, the tool went into the prompt of **every coworker in
+the office**. Two directions of the same lie: ticking the box granted
+nothing, and un-ticking it took nothing away.
+
+This one had been seen and deferred. The audit that hid Code Exec and
+File Access — one capability, three controls, two of them decoys — looked
+straight at `img` and wrote:
+
+> 'img' stays visible and stays inert … this checkbox's real door is on
+> ANOTHER screen, not this card.
+
+That reading was right about the geography and wrong about the
+conclusion. Two doors is not a reason to make one of them fake. Pixel's
+own source comment had already conceded the point in as many words:
+*"ticking it changes nothing about what Pixel can DO."*
+
+And the product had already decided the correct answer, on the surface
+the boss actually reads. `app/cast.jsx` models images as claim **AND**
+provider — `CAN_DO.img` gated on `CAN_DO_NEEDS.img = 'canMakeImages'` —
+so the coworker card and the runtime disagreed about what a coworker
+could do, and the runtime was the one that decided. The fix is not to
+pick a winner between the two doors. It is to require both, which is
+what the card was saying all along.
+
+**Video rides the same claim, deliberately.** There is no `video` id in
+TOOLS_CATALOG, so leaving GENERATE_VIDEO on its provider alone would have
+kept this exact defect alive for the half with no box at all. It also
+retroactively repairs a sentence: `TOOL_CLAIM_GROUPS` has always answered
+"Image Gen" when a coworker reached for video, which was wrong when it was
+written and is true now.
+
+### The second door, and why naming the nearest one is not enough
+
+Making the box load-bearing broke the hint that points at it. The
+sentence was:
+
+> (Nova reached for Image Gen, which they don't have — turn it on from
+> their card in Settings → Roster …)
+
+For the coworker whose box is *already on* and whose provider is missing,
+every word of that is a wrong door. They go to the card, find the switch
+already on, toggle it twice, and the one screen that would have fixed it
+is never mentioned. So the hint now asks which of the two is actually
+shut and names that one — `claimNeedsMediaDoor` — and the Roster route is
+withheld precisely when the Roster is not the problem.
+
+`agent` absent means the caller could not know which boxes are ticked
+(the CEO path holds an office, not one coworker). Unknown is not false:
+name the box, say nothing about the second screen. Same rule
+`canDoPhrase`'s `established()` already applies on the card.
+
+The Media tab was carrying the old one-key story too — *"Coworkers get the
+GENERATE_IMAGE tool once a provider is set here"* — a §6 break and, after
+this tick, simply untrue. It now names both switches, and its `<select>`
+is labelled IMAGE PROVIDER rather than PROVIDER, so the card's promise
+("once you pick an image provider") matches a control that is printed.
+That closes a pin `test_a_card_names_the_switch.py` had been holding open
+at the single word `provider`, with the looseness written down as the
+finding.
+
+### Three source windows that were measuring nothing
+
+The regression test lifts `toolsForAgent` by brace-matching. The first
+draft took the first `{` after the function name — which is the
+**destructured parameter**, `(agent, { peers = [] } = {})`, balanced
+inside its own signature. The "body" came back as the signature and every
+scan over it found nothing. It failed loudly only because those checks are
+positive; the negative half of the same scan would have passed on an empty
+string. That is the third window this repo has shipped that can collapse
+to nothing.
+
+Then the full suite turned up two more of the same family, from the other
+end. `test_cast.py` and `test_a_card_names_the_switch.py` both bounded
+Pixel's shelf entry with a **character count** — `{0,1200}?`, `{0,2000}?`
+— and this commit's comment grew the entry past both. Neither reported
+"could not find the entry". They reported that Pixel was still parked and
+had lost its `img` claim: two confident, specific, false statements about
+code that had not changed. A window with a length in it is a guess about
+how long the code will stay, and when the guess expires the check does not
+go quiet — it answers a question it never looked at. All three are bounded
+structurally now, and the two-suite failure is why the fixed-length
+variants are worth hunting down rather than bumping.
+
+A surface may only assert what detection established — and a control the
+boss can tick is a surface: ticking it has to change what happens, and
+un-ticking it has to change it back.

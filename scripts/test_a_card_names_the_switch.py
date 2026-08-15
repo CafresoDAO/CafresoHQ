@@ -119,15 +119,14 @@ def main():
     UNLOCK_MUST_NAME = {
         'files':  ('file & shell access', SETTINGS),
         'code':   ('file & shell access', SETTINGS),
-        # Deliberately loose, and the looseness is the finding. The card
-        # says "once you pick an image provider"; the Media tab prints the
-        # heading IMAGE GENERATION and a bare <select>, and the phrase
-        # "image provider" appears nowhere a boss can read it — it was only
-        # ever in a source comment. So this pins the one word that IS
-        # printed beside the control. Tightening it means changing the
-        # card copy or the heading so the two match exactly, which belongs
-        # with the rest of the 'img' work rather than here.
-        'img':    ('provider',            MEDIA),
+        # Was deliberately loose — the single word 'provider' — and the
+        # looseness was itself the finding: the card said "once you pick an
+        # image provider" while the Media tab printed a heading and a
+        # <select> labelled PROVIDER, so the exact phrase the card promised
+        # appeared nowhere a boss could read it. Tightened 2026-08-15 with
+        # the rest of the 'img' work: the control is labelled IMAGE
+        # PROVIDER now, so the card's words and the label match.
+        'img':    ('image provider',      MEDIA),
         'wallet': ('wallet',              SETTINGS),
     }
     unlock_tbl = brace_lift(bare, 'const CAN_DO_UNLOCK = {')
@@ -221,7 +220,10 @@ def main():
           f'{bogus} appear in FRONT_DESK `tools:` arrays but in no '
           'TOOLS_CATALOG entry, so they are stored on the agent and read '
           'by nothing — not a grant, not a card line, not a stat bar')
-    pixel = re.search(r"name: 'Pixel',(.{0,2000}?)\n  \},", runtime, re.S)
+    # Bounded by where the object closes, not by a character count. As
+    # `{0,2000}?`, this stopped matching on 2026-08-15 when the entry's
+    # comment grew — and reported that Pixel had lost a claim it still has.
+    pixel = re.search(r"name: 'Pixel',([\s\S]*?)\n  \},", runtime)
     check('the image specialist claims the image tool',
           pixel and re.search(r"tools: \[[^\]]*'img'", pixel.group(1)),
           'this is the whole of the bug this test was written for: the card '

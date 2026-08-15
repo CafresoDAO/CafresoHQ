@@ -850,12 +850,29 @@ export function MediaTab() {
     <div className="control-board">
       <div className="cb-panel">
         <h4>IMAGE GENERATION</h4>
+        {/* Was: "Coworkers get the GENERATE_IMAGE tool once a provider is
+            set here". Two problems, both fixed 2026-08-15. §6: it handed
+            the boss a raw tool name. And it was simply untrue — it was
+            describing a one-key gate that was itself the defect, since
+            picking a provider here used to hand the tool to every
+            coworker in the office including the ones whose Image Gen box
+            was never ticked. Two switches, two screens, and this is the
+            screen that has to say so, because the other one is a checkbox
+            with no room for a sentence.
+
+            The label reads IMAGE PROVIDER rather than PROVIDER because the
+            coworker card promises "once you pick an image provider" —
+            scripts/test_a_card_names_the_switch.py pins card copy to a
+            control that is printed, and until now that pin had to be
+            loosened to the single word "provider" to pass. */}
         <div className="sub" style={{ lineHeight: 1.6, marginBottom: 8 }}>
-          Coworkers get the GENERATE_IMAGE tool once a provider is set here — leave
-          it off to keep image generation out of their toolbelt entirely.
+          Two things have to be on before a coworker can make images: an image
+          provider here, and their <strong>Image Gen</strong> box, on their own
+          card in Settings → Roster. Leaving this off keeps image making out of
+          the whole office's reach.
         </div>
         <div className="form-row" style={{ marginBottom: 8 }}>
-          <label>PROVIDER</label>
+          <label>IMAGE PROVIDER</label>
           <select value={s.imageProvider || ''} onChange={e => update({ imageProvider: e.target.value })}>
             <option value="">— off —</option>
             {IMAGE_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -887,7 +904,10 @@ export function MediaTab() {
           return a clean error instead of a video.
         </div>
         <div className="form-row" style={{ marginBottom: 8 }}>
-          <label>PROVIDER</label>
+          {/* Same claim as image: the Image Gen box is the one door for both
+              kinds of media, because there is no 'video' id in
+              TOOLS_CATALOG to give video a box of its own. */}
+          <label>VIDEO PROVIDER</label>
           <select value={s.videoProvider || ''} onChange={e => update({ videoProvider: e.target.value })}>
             <option value="">— off —</option>
             {VIDEO_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
