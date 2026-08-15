@@ -48,12 +48,18 @@ def run_js(cases_js):
     if not pconst:
         raise SystemExit('could not find PLACEHOLDER_ARG')
     wanted.append(pconst.group(0))
-    mconst = re.search(r'^const ORPHAN_TAG_RE\s*=\s*$\n\s*/.*?/gim;', text, re.M | re.S)
-    if not mconst:
-        mconst = re.search(r'^const ORPHAN_TAG_RE\s*=.*?;', text, re.M | re.S)
-    if not mconst:
-        raise SystemExit('could not find ORPHAN_TAG_RE')
-    wanted.append(mconst.group(0))
+    # Every ORPHAN_TAG_* const, in file order so dependencies resolve.
+    #
+    # A prefix sweep rather than a list of names. This lift used to pin the
+    # exact SHAPE of one regex literal (`const ORPHAN_TAG_RE =\n  /.../gim;`),
+    # and #81 split that literal into a shared vocabulary plus two anchorings
+    # — which made four suites crash on a NoneType instead of reporting.
+    # Whatever the next split looks like, it keeps the prefix.
+    consts = [m.group(0) for m in
+              re.finditer(r'^const ORPHAN_TAG_\w+\s*=[\s\S]*?;$', text, re.M)]
+    if not consts:
+        raise SystemExit('could not find any ORPHAN_TAG_* const')
+    wanted.extend(consts)
     for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'extractApproval', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:

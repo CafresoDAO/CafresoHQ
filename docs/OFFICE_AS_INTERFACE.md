@@ -10214,3 +10214,140 @@ grep-shaped test that comes after.
 
 A surface may only assert what detection established — and a lead-in is
 not the work.
+
+## A marker with prose in front of it reached the boss verbatim
+
+Two functions strip protocol markers out of a reply before the boss sees it,
+and each had written down half of one rule.
+
+`ORPHAN_TAG_RE`, in its own comment: *"Use [DM_TO: Mika] to reach someone."
+has prose BEFORE the marker, so it is a coworker explaining and survives
+untouched. A line that OPENS with a protocol marker is machine syntax by
+construction.* So it anchored to line start.
+
+`stripBlocks`, two hundred lines below: *"a marker the model meant as an
+instruction ends the line, one it is talking about has a sentence after it."*
+So its passes require the marker to end the line — and, through a `LEAD`
+anchor nobody restated in prose, to be preceded by nothing, a bullet, or a
+short label ending in a colon.
+
+Read together the two halves agree, and the joint rule is the right one:
+machine syntax unless there is prose on **both** sides of it. Read apart,
+each door let through exactly what the other would have caught, and plain
+prose then a marker then end of line satisfied neither anchor.
+
+Measured live against a canned brain, one task, and this is what the office
+filed into the boss's cabinet:
+
+    # Which vendor
+    *Delivered by Kip · 2026-08-15*
+    ---
+    I checked the vendor list [VAULT_READ: Research/vendors.md]
+    B wins on cost, so B is the one to go with.
+    ---
+    **Working**
+    - Opened Research/vendors.md in the cabinet
+    - `Research/vendors.md` is named above, but nothing was written to the
+      cabinet on this run — this sheet is the only file it produced.
+
+Three claims about one act, disagreeing. And the marker is not an orphan
+here: `re` in TOOL_REGISTRY is unanchored, so a marker behind prose executes
+exactly like one at line start. The tool RAN, the office rendered a proper
+visit for it — that is the footer's first line, in English — and then printed
+the machine syntax for the same act above it. §6's banned row, *tool call →
+shown as the action itself*, reappearing one space to the right of where it
+was fixed.
+
+### One rule, one place
+
+`ORPHAN_TAG_RE` now has a second branch: any prose, then the marker, then the
+end of the line. `Use [DM_TO: Mika] to reach someone.` is still untouched,
+because it has a sentence after the bracket — the discriminator both halves
+always agreed on.
+
+The em-dash trailer is allowed on the line-START branch only. There, `] —
+<description>` is the registry's own doc string coming back. Behind prose it
+is likelier to be the coworker's sentence continuing, and eating a real
+clause is the worse error.
+
+A fifth pass was also written into `stripBlocks` for the same shape, and then
+deleted. The fire test is what caught it: removing that pass changed nothing,
+because `ORPHAN_TAG_RE` already covered it. `stripBlocks`' whole vocabulary
+is a strict subset of the orphan one, and its only caller runs the orphan
+stripper over its output. Two passes implementing one rule is the shape of
+this defect, not a fix for it. The comment where the pass would have gone now
+says so, because the next reader will have the same idea.
+
+### The vocabulary was the other half of it
+
+The suite's durable check reads tool names out of TOOL_REGISTRY — the
+authority on what actually executes — rather than trusting the stripper's
+list. On its first run it failed, and named five: `PUBLISH_SITE`,
+`PEER_JOURNAL`, `WALLET_BALANCE`, `WALLET_SEND` and `ACK`. The first four
+were absent from that vocabulary entirely, not behind prose and not at line
+start either. Every one of them executes and then prints its own machine
+syntax to the boss. The marker for putting a page live and the marker for
+moving money were both leaking in every position, and nothing was watching.
+`HANDOFF_TO` and `HIRE_ASSISTANT` were missing too — `stripBlocks` carried
+them and the orphan list did not, which is the drift a thirty-name list
+copied into two places produces. It is now one string read twice, and the
+suite pins that structurally, because every behavioural case names a marker
+that is in both lists today: a fresh copy would pass all of them on the day
+it was made and only start lying later.
+
+`ACK` stays out on purpose — `stripAcks` owns it, and has to read the status
+out of it before removing it. The exemption is only written down because
+there is a behavioural case above it proving ACK is in fact stripped. An
+exemption with no measurement behind it is how a vocabulary goes stale.
+
+This is the #79 remedy earning its keep on the first run after it was
+adopted: broaden what the sweep recognises, AND keep an assertion that names
+the authority, because the enumerated list is always the half that rots.
+
+### Measured after, both directions
+
+Same office, same canned brain, tool actually executed (`tool :: opened
+research/vendors.md in the cabinet` in the feed):
+
+    # Vendor pick
+    ---
+    I checked the vendor list
+    Vendor B is the cheaper of the two, so go with B.
+    ---
+    **Working**
+    - Opened Research/vendors.md in the cabinet
+
+The bracket is gone, the coworker's sentence is intact, and the footer makes
+the one true claim about the one thing that happened.
+
+### Two things this did not fix, both recorded rather than assumed
+
+An unclosed marker behind prose — `I mentioned [VAULT_NEW: to her` — is still
+left alone, and there is a check pinning that. With no `]` there is nothing
+to say where the marker stops, and consuming to end of line eats the
+sentence. That is the bound `broken` already drew and it holds here for the
+same reason.
+
+The false honesty note in the chat bubble and the stored result is a separate
+defect, and the first draft of this entry blamed it on the leak. Measuring
+after the fix disproved that: the note still fires, because `honestyNotes`
+reads the RAW buffer, not the visible text. The office reads a file and then
+tells the boss *"`Research/vendors.md` is named above, but nothing was
+written to the cabinet on this run, so that file is not there"* — about a
+file it had just opened, contradicting its own visit line. Filed as its own
+ticket. It did leave the delivered sheet's footer, which reads the cleaned
+body; the sheet above is the proof.
+
+### And one about the harness
+
+A canned brain routed on a substring can be invalidated by its own history.
+The two-turn setup routed the second turn on `"B wins on cost"`, a phrase
+from the tool result — which by then was also sitting in the chat log the
+office sends as context, so the FIRST request matched it, the marker was
+never emitted, and the tool never ran. The arm went green for the wrong
+reason and looked like a regression in the working footer. Caught by checking
+the activity feed for the `tool` row rather than reading the outcome and
+believing it. Route on something only the injected result can contain.
+
+A surface may only assert what detection established — and a marker is
+machine syntax wherever on the line it sits.

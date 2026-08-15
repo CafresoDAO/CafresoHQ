@@ -98,8 +98,17 @@ def main():
     # Lifted from the real files rather than restated, so a rewrite of any
     # of these is measured here instead of quietly diverging.
     js = re.search(r'^const PLACEHOLDER_ARG\s*=.*?;$', src, re.M).group(0) + '\n'
-    orphan = re.search(r'const ORPHAN_TAG_RE =\n(.*?);\n', src, re.S)
-    js += 'const ORPHAN_TAG_RE =\n' + orphan.group(1) + ';\n'
+    # Every ORPHAN_TAG_* const, in file order so dependencies resolve. A
+    # prefix sweep, not a pinned literal shape: this lift used to match
+    # `const ORPHAN_TAG_RE =\n  /.../gim;` exactly, and #81 split that literal
+    # into a shared vocabulary plus two anchorings, which crashed this suite
+    # on a NoneType instead of reporting. Whatever the next split looks like,
+    # it keeps the prefix.
+    orphan = [c.group(0) for c in
+              re.finditer(r'^const ORPHAN_TAG_\w+\s*=[\s\S]*?;$', src, re.M)]
+    if not orphan:
+        raise SystemExit('could not find any ORPHAN_TAG_* const')
+    js += '\n'.join(orphan) + '\n'
     # placeholderRefusal and unsentBlocks are only reached when the reply
     # cleans down to nothing — which is exactly the case a bad strip
     # produces, so leaving them out made the harness crash instead of

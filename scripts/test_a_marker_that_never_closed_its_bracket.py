@@ -119,9 +119,18 @@ def main():
         print('  SKIP  node not on PATH')
         return 1 if FAILS else 0
 
-    m = re.search(r'const ORPHAN_TAG_RE =\n(.*?);\n', src, re.S)
+    # Every ORPHAN_TAG_* const, in file order so dependencies resolve. A
+    # prefix sweep, not a pinned literal shape: this lift used to match
+    # `const ORPHAN_TAG_RE =\n  /.../gim;` exactly, and #81 split that literal
+    # into a shared vocabulary plus two anchorings, which crashed this suite
+    # on a NoneType instead of reporting. Whatever the next split looks like,
+    # it keeps the prefix.
+    orphan = [c.group(0) for c in
+              re.finditer(r'^const ORPHAN_TAG_\w+\s*=[\s\S]*?;$', src, re.M)]
+    if not orphan:
+        raise SystemExit('could not find any ORPHAN_TAG_* const')
     js = re.search(r'^const PLACEHOLDER_ARG\s*=.*?;$', src, re.M).group(0) + '\n'
-    js += 'const ORPHAN_TAG_RE =\n' + m.group(1) + ';\n'
+    js += '\n'.join(orphan) + '\n'
     # visibleReply itself, not just the strippers it calls. The first cut of
     # this test pinned stripBlocks alone, went green, and the live office was
     # unchanged — because visibleReply's last line hands the RAW text back

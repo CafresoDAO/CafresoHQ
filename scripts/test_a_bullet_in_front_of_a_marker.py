@@ -83,8 +83,17 @@ def main():
     # Lifted from the real file rather than restated, so a rewrite of any
     # of these functions is measured here instead of quietly diverging.
     js = re.search(r'^const PLACEHOLDER_ARG\s*=.*?;$', src, re.M).group(0) + '\n'
-    orphan = re.search(r'const ORPHAN_TAG_RE =\n(.*?);\n', src, re.S)
-    js += 'const ORPHAN_TAG_RE =\n' + orphan.group(1) + ';\n'
+    # Every ORPHAN_TAG_* const, in file order so dependencies resolve. A
+    # prefix sweep, not a pinned literal shape: this lift used to match
+    # `const ORPHAN_TAG_RE =\n  /.../gim;` exactly, and #81 split that literal
+    # into a shared vocabulary plus two anchorings, which crashed this suite
+    # on a NoneType instead of reporting. Whatever the next split looks like,
+    # it keeps the prefix.
+    orphan = [c.group(0) for c in
+              re.finditer(r'^const ORPHAN_TAG_\w+\s*=[\s\S]*?;$', src, re.M)]
+    if not orphan:
+        raise SystemExit('could not find any ORPHAN_TAG_* const')
+    js += '\n'.join(orphan) + '\n'
     for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'extractApproval',
                'isHandoffPlaceholder', 'placeholderRefusal', 'unsentBlocks',
@@ -208,6 +217,11 @@ console.log(JSON.stringify(R));
           repr(B['labelProse']) + ' — end of line is what tells a marker the '
           'model MEANT apart from one it is talking about, and the fourth '
           'pass has to honour that bound as much as the first three do')
+    # A STAGE assertion, not the boss-visible outcome. stripBlocks leaves this
+    # bracket standing and ORPHAN_TAG_RE removes it downstream (#81 — a marker
+    # ending the line is machine syntax whatever sits before it). What this
+    # pins is narrower and still worth pinning: the colon heuristic must not
+    # fire on a clock time and eat "Meet at 10:30".
     check('a colon that is not a label leaves the line alone',
           B['clockTime'] == 'Meet at 10:30 [DM_TO: Mika]',
           repr(B['clockTime']) + ' — the fourth pass keys off a colon, and '

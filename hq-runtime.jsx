@@ -560,9 +560,68 @@ function stripAcks(text) {
    The line-START anchor is what keeps this safe, and the suite already
    pins it: "Use [DM_TO: Mika] to reach someone." has prose BEFORE the
    marker, so it is a coworker explaining and survives untouched. A line
-   that OPENS with a protocol marker is machine syntax by construction. */
-const ORPHAN_TAG_RE =
-  /^[ \t]*\[\s*\/?\s*(?:DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF|NEEDS[_ ]APPROVAL|REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|SEARCH|VAULT_SEARCH|VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO)\b[^\]\n]*\][ \t]*(?:—[^\n]*)?/gim;
+   that OPENS with a protocol marker is machine syntax by construction.
+
+   ── and a line that ENDS with one is too ──────────────────────────────
+   "Prose before it means the coworker is explaining" was half a rule, and
+   `stripBlocks` two hundred lines down had the other half — "a marker the
+   model meant as an instruction ends the line, one it is talking about has
+   a sentence after it". Read together they agree: the marker is machine
+   syntax unless there is prose on BOTH sides of it. Read apart, each door
+   let through exactly what the other would have caught, and the shape that
+   satisfies neither anchor walked past both. Measured live against a canned
+   brain, one task, and the office filed this into the cabinet:
+
+     I checked the vendor list [VAULT_READ: Research/vendors.md]
+     B wins on cost, so B is the one to go with.
+     ---
+     **Working**
+     - Opened Research/vendors.md in the cabinet
+     - `Research/vendors.md` is named above, but nothing was written to
+       the cabinet on this run — this sheet is the only file it produced.
+
+   Three claims about one act, disagreeing. The tool RAN — `re` in
+   TOOL_REGISTRY is unanchored, so a marker behind prose executes exactly
+   like one at line start — and the footer already reports it in English on
+   the line above. That is §6's banned row ("tool call → shown as the action
+   itself") reappearing one space to the right of where it was fixed. The
+   footer's second line went with it: that one reads the CLEANED body, so the
+   leaked path was warning the boss about a file the office had just opened.
+   The same sentence in the chat bubble and the stored result survives this
+   fix — `honestyNotes` reads the RAW buffer — and is its own ticket.
+
+   So the second branch below: any prose, then the marker, then the end of
+   the line. `Use [DM_TO: Mika] to reach someone.` is still untouched — it
+   has a sentence after the bracket, which is the discriminator both halves
+   of the rule always agreed on.
+
+   No em-dash trailer on that branch, deliberately. On the line-START branch
+   `] — <description>` is the registry's own doc string coming back. Behind
+   prose it is likelier to be the coworker's sentence continuing, and eating
+   a real clause is the worse error of the two. */
+const ORPHAN_TAG_NAMES =
+  'DM_TO|TASK_DONE|TASK_PROGRESS|TASK_BLOCKED|HANDOFF_TO|HANDOFF|NEEDS[_ ]APPROVAL|' +
+  'REQUEST_ELEVATION|SPAWN_SUBAGENT|HIRE_AGENT|HIRE_ASSISTANT|SEARCH|VAULT_SEARCH|' +
+  'VAULT_READ|VAULT_NEW|VAULT_APPEND|MEMORY_LIST|MEMORY_READ|MEMORY_WRITE|' +
+  'MEMORY_APPEND|FILE_READ|FILE_WRITE|DIR_LIST|BASH|BROWSER_FETCH|' +
+  'BROWSER_SCREENSHOT|EXPORT_PPTX|EXPORT_DOCX|EXPORT_PDF|GENERATE_IMAGE|GENERATE_VIDEO|' +
+  /* These four were never in this list at all — not behind prose, not at
+     line start either. Every one of them EXECUTES and then prints its own
+     machine syntax to the boss. Found by the coverage check in
+     scripts/test_a_marker_behind_prose.py, which reads the names out of
+     TOOL_REGISTRY rather than trusting this string, on its first run. That
+     is the #79 remedy doing its job: broaden what the sweep recognises AND
+     keep an assertion that names the authority, because the enumerated list
+     is always the half that goes stale. */
+  'PUBLISH_SITE|PEER_JOURNAL|WALLET_BALANCE|WALLET_SEND';
+/* One core, two anchorings. Written as a shared string rather than two
+   literals because a thirty-name vocabulary copied twice is a vocabulary
+   that drifts — the same hazard that left HANDOFF_TO and HIRE_ASSISTANT out
+   of this list entirely while `stripBlocks` carried them. */
+const ORPHAN_TAG_CORE = '\\[\\s*\\/?\\s*(?:' + ORPHAN_TAG_NAMES + ')\\b[^\\]\\n]*\\]';
+const ORPHAN_TAG_RE = new RegExp(
+  '^[ \\t]*' + ORPHAN_TAG_CORE + '[ \\t]*(?:\u2014[^\\n]*)?'
+  + '|[ \\t]*' + ORPHAN_TAG_CORE + '[ \\t]*$', 'gim');
 
 /* The header line above a tool result in the live transcript.
 
@@ -811,6 +870,19 @@ function stripBlocks(text) {
   const residue = new RegExp(
     '(:\\*{0,2})[ \\t]*\\[\\s*(?:' + NAMES + ')\\s*:[^\\]\\n]*(?:\\][ \\t]*)?$',
     'gim');
+  /* No fifth pass here, and the absence is the point.
+     `Filed it [VAULT_NEW: Research/x.md]` — prose, marker, end of line — has
+     no colon, no bullet and no label, so all four passes above decline it,
+     and that is the leak #81 measured. The obvious fix is a pass right here
+     that strips a trailing marker whatever sits before it. Written, and then
+     removed: `ORPHAN_TAG_RE` now carries exactly that rule, this function's
+     entire NAMES list is a strict subset of that vocabulary, and the only
+     caller of stripBlocks runs stripOrphanTags over its output. Two passes
+     implementing one rule is the shape of the defect, not a fix for it — it
+     is what let the line-start half and the end-of-line half disagree for as
+     long as they did. So the trailing form is owned in one place, and this
+     function keeps the job only it can do: closed blocks and their payload,
+     the wrapper litter, and the opener whose bracket never closed. */
   return String(text || '').replace(re, '').replace(lone, '')
     .replace(broken, '').replace(residue, '$1');
 }
