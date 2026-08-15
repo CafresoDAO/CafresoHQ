@@ -499,6 +499,47 @@ _CLAIMS_A_WRITE_RE = re.compile(
     r'|\b(?:wrote|saved|added|created)\b[^.\n]{0,40}\b(?:note|vault|file)\b',
     re.IGNORECASE)
 
+# A write claim at least describes something the night shift CAN do, so the
+# check above compares it against the writes ledger. A PUBLISH claim has no
+# ledger to check because there is no tool behind it at night at all — and
+# measured 2026-08-15 against a canned brain, a reply with no marker and no
+# write ("Reviewed the vendor copy… I published the updated site —
+# cafreso.com is live with the new vendor page.") sailed through both
+# checks: writes [], error None, errors 0 — and run_iteration's
+# `summary = strip_unsupported_markers(reply)[-300:]` made the fabricated
+# claim ITSELF the morning summary of a clean night. The boss wakes up to
+# a Gazette asserting their site changed overnight.
+#
+# Two shapes, both anchored, because §4's cost analysis cuts the other way
+# here — the night shift is a RESEARCH agent and its notes legitimately
+# discuss other people publishing things ("the vendor published a report in
+# 2024" must never trip this):
+#   - a sentence that OPENS with the bare verb — the same status-line shape
+#     as "Wrote 1" above; third-party mentions carry a subject before the
+#     verb, so they cannot sit at sentence start. This branch also demands
+#     a site/page/live/update object so a heading like "Published figures
+#     show…" (verb as adjective) stays quiet.
+#   - first person + verb, with at most one auxiliary from a fixed list
+#     between them ("I published", "we've deployed", "I just launched") —
+#     an open [^.\n]{0,N} gap here would match "we noticed they published
+#     a fix", which is reporting, not claiming.
+# Three verbs, deliberately: published/deployed/launched are the publish
+# surface's own vocabulary. Claims of other undoable deeds (sent money,
+# emailed someone, ran a shell command) are NOT covered — that is a
+# judgment-call taxonomy with no registry to sweep, and each shape added
+# is another chance to call an honest coworker a liar. Also uncovered, as
+# a known recall hole: the coordinated form ("Saved the note and
+# published the site update") — a regex cannot tell a subjectless
+# coordination from a subject three words back ("the vendor rebranded
+# and launched a new page"), and the false alarm is the expensive error.
+# Both prices pinned in scripts/test_a_publish_claimed_at_night.py.
+_CLAIMS_A_PUBLISH_RE = re.compile(
+    r'(?:^|(?<=[.!?]\s))(?:published|deployed|launched)\b'
+    r'[^.\n]{0,60}\b(?:site|page|live|update)'
+    r'|\b(?:I|we)(?:[\'’]ve| have| just| also| then)?\s+'
+    r'(?:published|deployed|launched)\b',
+    re.IGNORECASE | re.MULTILINE)
+
 
 def _harmony_args_for(name, payload):
     """Map a harmony JSON payload to the (arg, body) night_runner's own
@@ -662,13 +703,22 @@ def run_iteration(ctx, sched, iteration, total_iters):
         return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': str(e)}
     summary = strip_unsupported_markers(reply)[-300:]
     error = None
-    reached = find_unsupported_tool('\n'.join(replies))
+    all_replies = '\n'.join(replies)
+    reached = find_unsupported_tool(all_replies)
     if reached:
-        # Ahead of the write-claim check below on purpose. Both describe an
-        # empty writes list, but this one names the actual cause and a door
-        # the boss can walk through; "said it saved a note" would be true
-        # and useless next to it.
+        # Ahead of the claim checks below on purpose. All three can describe
+        # one bad night, but this one names the actual cause and a door the
+        # boss can walk through; "said it published" would be true and
+        # useless next to it.
         error = night_cannot_sentence(reached)
+    elif _CLAIMS_A_PUBLISH_RE.search(all_replies):
+        # NOT gated on `writes`: a real vault note does not back a claim
+        # that the SITE changed — "saved the note and published the site"
+        # is still half a lie with a write in the ledger. And every hop's
+        # reply, not just the last, for the same reason the marker scan
+        # above reads them all: a hop that lied and a hop that reached are
+        # equally absent from a final status line.
+        error = 'said it published, but nothing went live'
     elif not writes and _CLAIMS_A_WRITE_RE.search(reply or ''):
         # The prompt's own closing rule demands a status line like "Wrote
         # X." -- and a model that skips the actual VAULT_NEW/VAULT_APPEND

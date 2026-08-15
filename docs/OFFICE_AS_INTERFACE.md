@@ -10523,3 +10523,110 @@ unhooked from settle entirely.
 
 A surface may only assert what detection established — and a timer that
 lands later is still a surface, asserting into a present it has not seen.
+
+## The morning report carried a publish that never happened
+
+Measured 2026-08-15, the real driver path, a canned brain: a night
+iteration whose reply claimed — in prose, no marker anywhere —
+
+    Reviewed the vendor copy and refreshed the landing text overnight. I
+    published the updated site — cafreso.com is live with the new vendor
+    page. Next iteration could tidy the changelog.
+
+came back `{writes: [], error: None}`. errors: 0, a clean night. And
+because `run_iteration`'s summary is the final reply's tail, the
+fabricated claim was not merely missed — it was PROMOTED: the Gazette's
+one line about the night asserts the boss's site changed while they
+slept.
+
+### Two checks bracket it, and both miss
+
+The night shift already catches a coworker REACHING for the publish tool
+— `find_unsupported_tool` sees the marker and the morning report says
+"reached for publishing — do it in the office" (that was 51590cc's
+work). And it already catches a fabricated WRITE claim — "Wrote 1" with
+an empty ledger draws "said it saved a note, nothing reached the vault".
+But a reach is not a claim, and the write check knows only write verbs.
+A publish claim slots exactly between them: no marker for the first, no
+vocabulary in the second.
+
+The asymmetry that makes this one different: a write claim describes
+something the night shift CAN do, so the office checks it against the
+writes ledger — evidence first, verdict second. A publish claim has no
+ledger to consult because there is no tool behind it at night at all.
+PUBLISH_SITE is in NIGHT_CANNOT; the claim is false by construction,
+before any evidence is read. The office did not need to investigate this
+sentence. It needed only to remember what it cannot do.
+
+### Anchored like a marker, because reporting is not claiming
+
+The night shift is a research agent, and its notes legitimately say "the
+vendor published a report in 2024" all night long. So the claim shape
+borrows c456cd9's discipline — anchors, not vocabulary sweeps: a sentence
+that OPENS with the bare verb (the "Wrote 1" status-line shape;
+third-party mentions carry a subject before the verb, so they cannot sit
+at sentence start), or first person with at most one fixed auxiliary
+between pronoun and verb. An open `[^.\n]{0,N}` gap in the first-person
+branch would have matched "we noticed they published a fix" — reporting,
+not claiming — and §4's cost analysis is the same as ever: the false
+alarm calls an honest coworker a liar, and that is the expensive error.
+
+Two prices paid for that strictness, both pinned in the suite as
+deliberate non-coverage rather than left to be rediscovered: the
+coordinated form ("Saved the note and published the site update" — a
+regex cannot tell a subjectless coordination from a subject three words
+back), and the bare state assertion ("The site is now live" — no publish
+verb to anchor on). The first was found by this ticket's own fixture: the
+writes-gate check originally used the coordinated sentence, and the check
+failed against the REAL code — the fixture had walked into the recall
+hole while aiming at a different property. A check that fails for a
+reason you did not design is a measurement; it got its own pin.
+
+The check is deliberately NOT gated on the writes ledger — a real vault
+note does not back a claim that the SITE changed — and reads every hop's
+reply, for the same reason the marker scan does: a hop that lied and a
+hop that reached are equally absent from a final status line. A reach
+still outranks a claim when both appear, because the reach names the
+actual cause and a door. The sentence itself, "said it published, but
+nothing went live", is 40 characters: under the CLI's 50-char slice, the
+narrowest of the four surfaces that cut night errors, and the existing
+source-literal budget check picks it up automatically — the fire arm
+that lengthened it was caught by that suite, not this one.
+
+### The full runner rejected the first sentence, twice over
+
+The sentence originally read "said it published — publishing needs the
+boss", and `test_gazette_error_copy.py` failed it on the full-runner
+pass: a claim-report sentence must state the CONSEQUENCE — "the
+consequence is the half the boss can act on" — and naming the door is
+not naming what happened. The suite was right. "Nothing went live" is
+the fact the boss needs on the one screen that summarises their night;
+"needs the boss" was this ticket explaining itself.
+
+And the way the suite failed exposed its own rot: it validated "the
+sentence" via the FIRST `error = '…'` literal in night_runner, which was
+correct for exactly as long as the file had one. The new branch landing
+ABOVE the write-claim's silently swapped which sentence was under guard
+and dropped the other — the same single-point pattern as every
+enumerated lift before it, in a suite this time rather than a test's
+import block. It now findall's every error literal and holds each to
+every obligation (cap, wire-format ban, consequence clause), with the
+consequence check keyed on the "said it" claim-report shape rather than
+on one sentence's wording. The fire arm that strips the consequence
+clause is caught by that widened check — the sibling suite proving its
+teeth on this ticket's own sentence. `test_night_says_what_it_cannot_do`
+was checked for the same assumption and already sweeps every literal.
+
+### A raw string defeated the lifted needle
+
+One fire-harness note: the needle-lifting rule ("lifted from the file,
+never retyped") met its first needle that could not be lifted BY REGEX —
+the claim pattern's own raw-string source lines, where every `\s` and
+`\b` needs double-escaping in the lifting pattern and one miss aborts the
+lift. The harness now lifts those by LINE (find the line containing a
+distinctive plain substring, take n lines verbatim), which cannot
+mis-escape because it never interprets. The rule stands; the method
+grew a second door.
+
+A surface may only assert what detection established — and a claim of a
+deed the office cannot do is established false the moment it is made.

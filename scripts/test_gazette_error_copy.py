@@ -58,19 +58,26 @@ def main():
     feats = FEATURES.read_text(encoding='utf-8')
     floor = FLOOR.read_text(encoding='utf-8')
 
-    # ── The sentence that lands in the report ───────────────────────────
-    m = re.search(r"^\s*error = '([^']+)'", runner, re.M)
-    check('night_runner sets a boss-facing error sentence', m is not None,
-          'night_runner.py: expected a single-quoted error assignment')
-    if not m:
+    # ── The sentences that land in the report ───────────────────────────
+    # findall, not search: this file checked "the sentence" (the first
+    # match) for as long as night_runner had exactly one claim-check
+    # literal. The moment a second one landed ABOVE it — the publish-claim
+    # branch, 2026-08-15 — the first-match read silently swapped which
+    # sentence was under guard and dropped the other, the same
+    # single-point rot as every enumerated lift before it. Every literal
+    # assigned to `error` is a boss-facing sentence; all of them carry
+    # every obligation below.
+    sentences = re.findall(r"^\s*error = '([^']+)'", runner, re.M)
+    check('night_runner sets boss-facing error sentences', bool(sentences),
+          'night_runner.py: expected single-quoted error assignments')
+    if not sentences:
         print('\ngazette error copy: FAILED')
         return 1
-    sentence = m.group(1)
 
-    leaked = [t for t in PROTOCOL_TOKENS if t in sentence]
-    check('...with no wire-format token in it',
+    leaked = [(t, s) for s in sentences for t in PROTOCOL_TOKENS if t in s]
+    check('...with no wire-format token in any of them',
           not leaked,
-          f'{leaked!r} in {sentence!r} — §6 bans these on human surfaces. Rename '
+          f'{leaked!r} — §6 bans these on human surfaces. Rename '
           'the PROSE, never the token itself')
 
     # ── The display cap must not edit the sentence ──────────────────────
@@ -80,14 +87,21 @@ def main():
           f'found {caps!r} — expected exactly one lastError slice in features.jsx')
     cap = caps[0] if caps else 0
 
-    check('the sentence survives that cap intact',
-          len(sentence) <= cap,
-          f'{len(sentence)} chars vs a {cap}-char cap — it would be cut to '
-          f'{sentence[:cap]!r}, which is how the tokens survived and the meaning '
-          'did not')
-    check('...and it still says what it MEANS, not just what was claimed',
-          re.search(r'nothing|no note|never (?:reached|landed)', sentence, re.I) is not None,
-          f'{sentence!r} — "said it saved a note" alone is half the story; the '
+    cut = [s for s in sentences if len(s) > cap]
+    check('every sentence survives that cap intact',
+          not cut,
+          f'{cut!r} vs a {cap}-char cap — a cut sentence is how the tokens '
+          'survived and the meaning did not')
+    # A claim-report sentence must state the CONSEQUENCE, not just repeat
+    # the claim: "nothing reached the vault", "nothing went live". The
+    # word list is the consequence vocabulary, not a sentence enumeration
+    # — any honest "said it X, but <nothing happened>" shape lands here.
+    dull = [s for s in sentences
+            if re.search(r'\bsaid it\b', s, re.I)
+            and not re.search(r'nothing|no note|never (?:reached|landed)', s, re.I)]
+    check('...and each says what it MEANS, not just what was claimed',
+          not dull,
+          f'{dull!r} — "said it saved a note" alone is half the story; the '
           'consequence is the half the boss can act on')
 
     # ── The cap must be >= what the cause classifiers produce ───────────
