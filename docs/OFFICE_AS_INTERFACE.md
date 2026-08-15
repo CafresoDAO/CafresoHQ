@@ -9476,3 +9476,62 @@ call left in place behind `if (false && …)`.
 
 A surface may only assert what detection established — and code that
 cannot run asserts nothing, however clearly it reads.
+
+### A mistyped name sent the chief of staff an empty conversation — 2026-08-15
+
+Type `@Dana can you follow up on that margin thread?` at an office staffed
+by Vera and Kip and everything on screen is right. The office says so:
+
+    (nobody here is called @Dana — the team is @Vera, @Kip. Sending this
+    to CafresoHQ instead.)
+
+Then the boss's message, then a confident reply from CafresoHQ. What
+actually left the office on that turn was one message: the system prompt.
+No history, and not the boss's question either. The chief of staff was
+asked to reply to a conversation with nothing in it, and did. Measured on
+office 9261 — `roles: ['system']`.
+
+The office had just said, in its own voice, "Sending this to CafresoHQ
+instead." It sent nothing. §4, on the surface that is hardest to doubt:
+the office reporting its own action.
+
+The cause is the previous entry's first half, one line away and wearing
+the same disguise. The send path built the CEO's message list by capturing
+it out of a state updater — `setChat(prev => { pendingChat = [...prev,
+userMsg]; return pendingChat; })` — which reads back only while that
+hook's queue is untouched, because React evaluates the first updater of an
+untouched queue eagerly. `setInput('')` a few lines above never disturbed
+it, because eager evaluation is per queue and that is a different hook.
+That near-miss is exactly why the line survived inspection: it looks
+disturbed and is not.
+
+The stray-name branch IS the same queue. Once it has pushed its note, the
+capture returns `[]`, `chatToMessages([])` returns `[]`, and nothing
+downstream objects — an empty list is a perfectly legal conversation.
+Silent at every step: no error, no warning, no shorter reply. Just a
+plausible answer to a question the model never saw.
+
+Two changes, and the second was already asked for in the branch's own
+comment. The state write is now a plain append, which cannot clobber
+whatever landed since the last render — the hazard the capture was
+originally written to avoid, now handled by not returning a snapshot at
+all. And what the CEO is SENT is built separately, from the ref, WITH the
+stray note in it. The comment above that branch reads "The CEO cannot
+clarify what it was never told"; the note it describes existed only in
+state, so the CEO was never told. It is now the last thing before the
+question, in the model's own view of the conversation.
+
+Verified live: same input, 41 messages ending with the note and then the
+question; a plain message with no mention, 43, unbroken.
+
+The suite bans the idiom rather than fixing the line. Two sites had it,
+one dead and one conditionally alive, and the difference between those
+cases is invisible where you read it — so the check is that NO updater in
+the panel is used to read state back out, plus a count proving the panel
+has updaters at all, so the ban cannot pass by vacuity. One of the suite's
+own checks used `.index()` and crashed the run on a mutant that removed
+what it looked for; it uses `.find()` now. A check that raises reports
+nothing, which is strictly worse than a check that fails.
+
+A surface may only assert what detection established — and "I sent this
+on" is an assertion about something that has to have been sent.

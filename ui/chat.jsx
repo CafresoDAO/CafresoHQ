@@ -456,6 +456,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     // The roster is what lets a coworker whose name has a space in it be
     // addressed at all — the front desk hires one called "Local Brain".
     const mentionAll = HQ.extractAllMentions(text, agents.map(a => a.name));
+    /* Declared out here because it is written in the @mention block and
+       read on the CEO path below — the two are the same turn. */
+    let strayNote = null;
     if (mentionAll && onDispatchToAgent) {
       const matched = [];
       const unknown = [];
@@ -536,13 +539,21 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           && (activeThread === 'direct' || activeThread.startsWith('project:') || activeThread.startsWith('meeting:')))
           ? activeThread : 'direct';
         const team = agents.map(a => '@' + a.name).join(', ');
-        setChat(prev => [...prev, {
+        /* Built once and kept, because it goes to TWO readers. On screen it
+           is the line telling the boss their addressee was changed. In the
+           CEO's context it is the only thing that explains why a message
+           addressed to somebody else has arrived — and the comment above
+           says exactly that: "The CEO cannot clarify what it was never
+           told." It used to be told nothing, because this bubble only
+           existed in state. */
+        strayNote = {
           id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(nobody here is called ${unknown.map(n => '@' + n).join(' or ')}`
                 + (team ? ` — the team is ${team}` : ' — nobody is hired yet')
                 + `. Sending this to CafresoHQ instead.)`,
           thread: targetThread,
-        }]);
+        };
+        setChat(prev => [...prev, strayNote]);
       }
     }
 
@@ -580,12 +591,31 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        to 'direct', so a user typing in an empty project/meeting room (zero
        participants falls through to this path) watched their message vanish
        from the room they were looking at.
-       Functional update + capture: the old `[...chat, userMsg]` snapshot
-       replaced the whole array from a stale closure, erasing anything that
-       landed in state since the last render (agent DMs, research lines). */
+       The state write is an APPEND — `[...chat, userMsg]` from a stale
+       closure used to replace the whole array, erasing anything that had
+       landed since the last render (agent DMs, research lines). An append
+       cannot do that, whatever it is holding.
+
+       What the CEO is SENT is built separately, from the ref. It used to
+       be captured out of the updater above — `setChat(prev => { pendingChat
+       = [...prev, userMsg]; return pendingChat; })` — which reads back only
+       while this hook's queue is untouched, because React evaluates that
+       first updater eagerly. The stray-name branch pushes to chat a few
+       lines up, and on that path the queue is not untouched: `pendingChat`
+       stayed `[]` and `chatToMessages([])` is `[]`, so the chief of staff
+       was asked to reply to a conversation with nothing in it — no history
+       and not even the boss's question. Reproduced on 2026-08-15 with
+       "@Dana can you follow up on that margin thread?" against a roster of
+       Vera and Kip: the request that left the office carried exactly one
+       message, the system prompt. On screen it looked ordinary — the note,
+       the question, a confident answer to neither.
+
+       `setInput('')` above is not the same hazard: it is a different hook,
+       and eager evaluation is per queue. That is precisely why this held
+       for so long and then failed on one branch. */
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: activeThread };
-    let pendingChat = [];
-    setChat(prev => { pendingChat = [...prev, userMsg]; return pendingChat; });
+    const pendingChat = [...chatRef.current, ...(strayNote ? [strayNote] : []), userMsg];
+    setChat(prev => [...prev, userMsg]);
     setStreaming(true);
     const ceoId = HQ.uid('m');
     setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
