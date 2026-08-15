@@ -763,12 +763,40 @@ function App() {
   const goTo = React.useCallback((view) => {
     if (navToRef.current) navToRef.current(view);
   }, []);
+  /* "Has the boss delegated a task?" — asked by the coach mark below and by
+     the Getting Started checklist, and it has to be ONE question or the two
+     surfaces disagree about what the boss has done.
+
+     `action: 'assigned'` is NOT that question. It is logged for every chat
+     dispatch too (see the logActivity above agentStream's peer list) —
+     the feed row reads `picked up "hello…"` and as a feed row that is
+     true: a coworker did pick up a job. Both readers translated it to
+     "the boss created a task and dropped it on a desk", which is a
+     different claim about a different actor.
+
+     Measured on a fresh office (port 9261): hire Vera, send one `@Vera
+     hello`, never open the Tasks board. The checklist went 2/6 -> 5/6
+     with "✓ Give them a task" ticked over `tasks: []`, and the coach mark
+     that would have said "drop a task on their desk" was suppressed by
+     the same event. So the one step that teaches the central act of the
+     product — delegation — marks itself done for a boss who has not seen
+     it, and then hides the pointer that would have shown them.
+
+     `taskId` is already on the event and already tells the two apart: the
+     task path passes a real one, the chat path logs null. Requiring it
+     keeps the reason the activity fallback exists (a task assigned and
+     then completed no longer carries `assignedTo`) without answering yes
+     to a question nobody asked. */
+  const taskDelegated = useMemoA(
+    () => tasks.some(t => t.assignedTo)
+      || activity.some(e => e.action === 'assigned' && e.taskId),
+    [tasks, activity]);
   const coachMark = React.useMemo(() => {
     if (gsDismissed) return null;
     const seen = coachSeen || {};
     const hired = agents.length > 0;
     const chatted = (chat || []).some(m => m.from === 'user');
-    const assigned = tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned');
+    const assigned = taskDelegated;
     const sawWork = activity.some(e => e.action === 'done');
     if (hired && !chatted && !seen.chat)
       return { k: 'chat', text: 'Your first hire is at their desk — say hi and brief them.', cta: 'Open chat', act: () => goTo('chat') };
@@ -777,7 +805,10 @@ function App() {
     if (assigned && !sawWork && !seen.watch)
       return { k: 'watch', text: 'Work is in flight — watch the desk light up.', cta: 'Open office', act: () => goTo('visual') };
     return null;
-  }, [gsDismissed, coachSeen, agents, chat, tasks, activity]);
+    /* `taskDelegated`, not `tasks` — the body no longer reads `tasks`
+       directly, and a deps list that names a value the body doesn't use
+       while omitting the one it does is a stale pill waiting to happen. */
+  }, [gsDismissed, coachSeen, agents, chat, taskDelegated, activity]);
 
   // On mobile, chat is the primary view. If the stored value is the desktop
   // default ('visual'), redirect to 'chat' on first mount so the user lands
@@ -5882,7 +5913,10 @@ ${d.text}` : d.text,
           hasKey={officeCanWork}
           hired={agents.length > 0}
           chatted={(chat || []).some(m => m.from === 'user')}
-          assigned={tasks.some(t => t.assignedTo) || activity.some(e => e.action === 'assigned')}
+          /* One question, one place — see taskDelegated. This copy read
+             `action === 'assigned'` with no taskId and ticked "Give them
+             a task" for a boss who had only sent a chat message. */
+          assigned={taskDelegated}
           built={(projects || []).length > 0}
           sawWork={activity.some(e => e.action === 'done')}
           onAddKey={() => openSettings('keys')}

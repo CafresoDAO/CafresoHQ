@@ -8971,3 +8971,86 @@ fails the check it was written to fail.
 
 A surface may only assert what detection established — and a write that
 appends to what is already on screen has to know what is already on screen.
+
+### The checklist ticked a step the boss never took — 2026-08-15
+
+Found by running first-run onboarding on a cleared office (port 9261,
+`localStorage.clear()`), watching the Getting Started score rather than
+reading it:
+
+    fresh                                          0/6
+    hire Vera onto a local brain                   2/6
+    send one `@Vera hello`, never open Tasks       5/6
+
+The fifth tick was step 4 — **"✓ Give them a task"** — over `tasks: []`.
+The step whose own hint reads *"Add a task, then drop it on a desk to
+delegate"* marked itself done for a boss who had done neither.
+
+The event behind it is logged for **every** chat dispatch:
+
+    action: dmFrom ? 'dm' : 'assigned',
+    text:   `picked up "hello…"`
+
+As a feed row that is true. A coworker did pick up a job, `views/core.jsx`
+maps `assigned` to 📋 to say so, and the row reads correctly in the
+activity feed. As an answer to *"has the boss created a task and dropped it
+on a desk"* it is a different claim about a different actor. Two onboarding
+surfaces asked the second question and read the first answer.
+
+The second half is worse than the tick. The coach mark reads:
+
+    if (chatted && !assigned && !seen.task)
+      return { k: 'task', text: 'Give them something real: drop a task on
+               their desk.', cta: 'Open tasks', ... }
+
+so the same ambiguous event that ticked the step also **suppressed the
+pill pointing at the thing the step was teaching**. The office concluded
+the boss had learned delegation and, on that basis, stopped showing them
+delegation. Delegation is the central act of the product — it is what
+separates this from a chat window — and the one surface built to teach it
+switched itself off in response to a `hello`.
+
+The fix is not to rename the action. The feed legitimately consumes
+`assigned` and its row is honest; renaming it to satisfy onboarding would
+break a truthful surface to repair a false one. The discriminator was
+already in the data: the task path passes a real `taskId`, the chat path
+logs `null`. One shared memo asks the question once, and both surfaces
+read it:
+
+    const taskDelegated = useMemoA(
+      () => tasks.some(t => t.assignedTo)
+        || activity.some(e => e.action === 'assigned' && e.taskId),
+      [tasks, activity]);
+
+The activity clause is not redundant with the tasks clause: a task that was
+assigned and then completed no longer carries `assignedTo`, so without it
+the step would *un*-tick itself the moment the work finished. Requiring
+`taskId` keeps that fallback without answering yes to a question nobody
+asked. A fire arm deletes each clause separately.
+
+Making it shared moved the deps, too. The coach-mark memo no longer reads
+`tasks` in its body, so a deps list that still named `tasks` while omitting
+`taskDelegated` would have been a pill rendering yesterday's answer — a
+stale-by-construction surface introduced *by* the deduplication. The deps
+name the memo now, and a check pins it.
+
+Verified live on the rebuilt bundle, both halves, because only fixing the
+visible half would have left the more damaging one in place: 4/6 with step
+4 unticked and its "Open tasks →" CTA showing, and the pill back with
+*"Give them something real: drop a task on their desk."* (The pill is
+suppressed whenever the checklist is expanded — a deliberate earlier fix
+for two colliding bottom-anchored surfaces — so it is read with the
+checklist collapsed. That gate is why the first post-fix reading said "no
+coach mark" and looked like a failure.)
+
+This is the third defect in three tickets with the same shape — four
+surfaces reading one fact where the boss's read the weakest copy
+(`1a33ca4`), two surfaces on one screen disagreeing (`6c27d29`), and now
+two surfaces of one onboarding flow. The pattern is not "duplicated code".
+It is that a *derived* fact — "the boss has delegated" — gets re-derived at
+each call site from whatever raw event is nearest, and the raw event
+answers a different question than the one being asked.
+
+A surface may only assert what detection established — and a checklist
+that ticks a step the boss never took has not lost a checkbox, it has lost
+the lesson that step existed to teach.
