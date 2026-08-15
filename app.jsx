@@ -2982,6 +2982,13 @@ ${d.text}` : d.text,
       // desk) was dismissed with "task complete" in the same room, thirty
       // seconds after the office wrote the opposite in its own record.
       setTimeout(() => {
+        // The boss can beat this timer to the door: LET GO on the helper's
+        // card removes them and says "has been let go" right then. Firing
+        // anyway announced the same departure a second time, seconds later,
+        // in a different voice with a different framing — a goodbye for
+        // somebody no longer here. If the desk is already empty, there is
+        // nothing left to do and nothing true left to say.
+        if (!(agentsRef.current || []).some(a => a.id === transientAgent.id)) return;
         abortAgentRun(transientAgent.id);
         setAgents(prev => prev.filter(a => a.id !== transientAgent.id));
         const rec = MessageRegistry.getMessage(spawnMsgId);

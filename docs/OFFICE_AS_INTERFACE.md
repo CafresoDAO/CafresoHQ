@@ -11382,3 +11382,63 @@ if a future change ever makes the dispatch non-awaited, a run genuinely
 longer than thirty seconds would be cut mid-flight and its goodbye would
 read whatever the registry held at that moment — the suite's "unsettled
 record claims nothing" arm is the tripwire that matters on that day.
+
+## A helper already let go got a second goodbye
+
+Measured 2026-08-15 on office 9261, canned brain. A transient helper
+(Sub-fact-7q6) finished its task inside the 30-second grace window, and
+the boss clicked LET GO on its Team card before the dismissal timer
+fired. The door did its whole job: the helper left the floor and the
+chat said "Sub-fact-7q6 has been let go." (19:51:42, the office voice).
+Nine seconds later the timer fired anyway and posted
+
+    🍂 Sub-fact-7q6 (transient) dismissed — task complete.
+
+The same departure, announced twice, in two voices, with two framings —
+#64's family: the office telling the boss the same thing again as if it
+were news. Worse, the second line reads as the OFFICE dismissing the
+helper, when the boss had already done it themselves at the door. A
+boss who acts inside the grace window should not be corrected by a
+timer that didn't notice.
+
+Why it happened: the timer body assumed the desk it was armed over
+would still be occupied when it fired. Every line in it — the abort,
+the roster removal, the goodbye — presumed a helper to act on. The
+door's LET GO path (onDismiss) removes the agent and says its own
+farewell, but nothing told the timer.
+
+The fix is a floor check, not a handshake: at fire time the timer looks
+up `agentsRef` for the helper's id; if the desk is already empty it
+returns before touching anything — no abort, no roster write, no
+goodbye. The door's farewell was the record, and it stands alone. When
+the helper IS still at their desk, the timer behaves exactly as before,
+outcome-read goodbye (#94) included. No new state, no cancellation
+plumbing between door and timer — the floor itself is the source of
+truth both already share.
+
+Verification:
+- scripts/test_a_goodbye_is_said_once.py — 8 checks: single goodbye
+  writer; the guard exists once and sits inside the timer before the
+  abort; the door's own farewell is still filed (the guard is only
+  honest BECAUSE the door already spoke); the lifted timer body driven
+  in node over both floors — occupied desk gets the one goodbye with
+  abort and removal, empty desk gets nothing at all (no abort, no
+  roster write, no words).
+- Fire-test: 5/5 arms caught (guard removed, guard inverted, guard on
+  the wrong id, door farewell silenced, full revert).
+- Full runner: 138/138 suites.
+- Live both directions on 9261: boss clicked LET GO on Sub-fact-90a
+  inside the grace (19:55:31, timer due ~:40) — exactly one goodbye,
+  the door's "has been let go.", no 🍂 line, helper off the floor. An
+  untouched spawn (Sub-fact-6dh, registry completed) still got its one
+  🍂 "dismissed — task complete." — the guard silences nothing in the
+  normal case.
+
+Residue, recorded: pre-fix double goodbyes persisted in chat keep both
+lines — stories are not rewritten (#88's stance). A LET GO mid-run
+aborts the stream and the registry books 'cancelled'; the door's
+farewell now stands alone there too, which is the truthful shape. And a
+reload during the grace window still leaks a persisted transient whose
+timer died with the page — a pre-existing hole the guard neither opens
+nor closes; it is the floor-truth the guard reads, so whoever fixes the
+leak inherits the guard for free.
