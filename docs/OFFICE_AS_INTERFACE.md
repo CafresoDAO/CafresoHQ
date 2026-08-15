@@ -11442,3 +11442,86 @@ reload during the grace window still leaks a persisted transient whose
 timer died with the page — a pre-existing hole the guard neither opens
 nor closes; it is the floor-truth the guard reads, so whoever fixes the
 leak inherits the guard for free.
+
+## The roster on disk keeps a helper the office already dismissed
+
+Measured 2026-08-15 on office 9261, canned brain. During a transient
+helper's 30-second grace window, the roster the office keeps on disk —
+memory/agents.json, and hq-agents.md, the human-readable "CafresoHQ
+Agent Roster" serve.py renders from every PUT of it — listed the helper
+as a member of staff:
+
+    ## Sub-fact-3j9 — Transient: fact checker
+
+complete with `"transient": true`, a field persistableAgents can never
+emit — proof the write path never ran the filter. Then the office was
+closed mid-grace (the page navigated away, taking the dismissal timer
+with it): 66+ seconds after the dismissal was due, with nothing left
+alive to say otherwise, both records still listed the helper — and
+would have for as long as the office stayed shut. Overnight. Days. On
+reopen the record healed only by ACCIDENT: a no-op-tolerant CLI-sync
+effect happens to call setAgents at +2.5s, and the setter flushes
+whatever the boot-filtered floor holds. Nothing owned the job.
+
+First, a correction to the previous entry's residue note. It said a
+reload during the grace window "still leaks a persisted transient" —
+recorded from reading the spawn path, not from measurement. Measured:
+FALSE for the floor. persistableAgents runs on both read paths (boot
+seed and file adoption), so the floor comes back clean every time. What
+actually leaks is the RECORD. Stories are not rewritten (#88); the
+correction is filed here, where the measurement happened.
+
+Root cause: useFileStored is documented "Like useStored", and
+useStored's write path has applied its transform all along. But
+useFileStored's persist() sent the RAW value to localStorage and to
+the file PUT, running the transform only on the read paths.
+persistableAgents — whose own comment says "strip ephemeral fields
+before persisting" — never once ran at persist time. The office's
+durable record received the floor's raw working state, transients,
+busy sprites and all, and only the read-side laundering kept anyone
+from noticing.
+
+The fix is an opt-in `persistTransform` in useFileStored, applied to
+BOTH sinks (localStorage and the file PUT), wired for the agents call
+site. Opt-in, not blanket, and that distinction is load-bearing:
+tasksOnLoad and missionsOnLoad are load-SCRUBS — "a doing card at load
+is a run that died with the tab" — and running them at write time
+would stamp "the run stopped when the page reloaded" onto a run that
+is alive. The read and write transforms stay separate concepts on
+purpose. Adoption also heals now: if the file holds what the write
+filter would never put there, the freshly adopted value is written
+back — a record poisoned by a session that died mid-grace is cleaned
+deterministically at the next open, not whenever an unrelated write
+happens by.
+
+Verification:
+- scripts/test_the_roster_file_never_lists_a_helper.py — 14 checks:
+  both sinks drink from the filtered value; the heal-at-adoption
+  compare; the agents call site opts in; tasksOnLoad/missionsOnLoad
+  provably do NOT; the persist body lifted and driven in node over
+  both sinks — a roster with a transient and a busy coworker persists
+  as one idle coworker, and with the option absent persists raw (the
+  opt-in contract, pinned from both sides); the filter is idempotent,
+  so the heal compare is stable.
+- Fire-test: 6/6 arms caught (PUT unfiltered, localStorage unfiltered,
+  heal removed, call-site option removed, full revert of each file).
+- Full runner: 139/139 suites.
+- Live, both directions on 9261: the genuinely poisoned record from
+  the repro (Sub-fact-3j9, poisoned five minutes earlier) healed
+  within ~6 seconds of the office opening on the fixed bundle; a fresh
+  spawn (Sub-fact-3rp) then ran its whole floor lifecycle — 🌱 spawn,
+  run completed, 🍂 goodbye — while the record was WRITTEN mid-grace
+  (hq-agents.md _Updated during the window) and never once listed it.
+
+Residue, recorded: the localStorage mirror now also holds the filtered
+roster, so mid-grace the helper exists only in memory — nothing reads
+that mirror mid-session (checked), and a helper is one-shot by design,
+so a crash loses nothing real. The messages family has the same
+write-path gap in miniature: persistableMessages caps at 500 entries /
+30 history turns, so the messages FILE receives uncapped growth
+between boots — bloat rather than a lie, and the persistTransform door
+now exists for it; a future round's ticket. And on reopen, both the
+adoption heal and the incidental CLI-sync flush now pass through the
+filter, so live timing cannot attribute which one healed the file —
+the suite pins the adoption mechanism in source and in node, which is
+the one that is guaranteed.

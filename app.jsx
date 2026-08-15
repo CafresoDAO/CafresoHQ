@@ -35,7 +35,12 @@ function App() {
      spent / tasks done) is gone with the seed. */
   const seedAgents = HQ.INITIAL_AGENTS;
 
-  const [agents, setAgents] = useFileStored(k('agents'), 'memory', 'agents', seedAgents, persistableAgents);
+  // persistTransform too: the same filter must run at WRITE time, or the
+  // durable roster (agents.json + the hq-agents.md rendered from it) lists
+  // a 30-second helper as a member of staff for as long as the office
+  // stays closed. The floor keeps the raw value — only the record filters.
+  const [agents, setAgents] = useFileStored(k('agents'), 'memory', 'agents', seedAgents, persistableAgents,
+    { persistTransform: persistableAgents });
 
   // Keep the agent_runner shim aware of the current hired agents so it can
   // pick the right model when graph actions are dispatched.

@@ -88,7 +88,14 @@ function useStored(key, initial, transform) {
    On mount, fetches the file and merges (file wins over localStorage).
    On change, writes to localStorage immediately AND to the file (debounced 1.5s).
    Pass sensitive:true to skip file persistence (API keys etc). */
-function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false } = {}) {
+/* `transform` runs on the READ paths (boot seed, file adoption) — several
+   callers pass load-scrubs (tasksOnLoad, missionsOnLoad) that must NEVER run
+   at write time: a scrub that files "the run stopped when the page reloaded"
+   is a lie when stamped onto a run that is alive. `persistTransform` is the
+   opt-in WRITE filter: what persist() sends to localStorage and to disk goes
+   through it, so the durable record never receives what the filter exists to
+   keep out of it. The two are separate on purpose — do not unify them. */
+function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false, persistTransform = null } = {}) {
   const [val, setVal] = useStateA(() => {
     const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
@@ -143,7 +150,15 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   const hydratedRef = useRefA(false);
 
   const persist = React.useCallback((v) => {
-    try { localStorage.setItem(lsKey, JSON.stringify(v)); } catch (err) {
+    /* What goes to disk is not the floor. Measured 2026-08-15: during a
+       transient helper's 30-second grace, this wrote the RAW roster —
+       `transient: true` and all, a field persistableAgents can never emit —
+       into memory/agents.json, and serve.py rendered hq-agents.md listing
+       Sub-fact-3j9 as a member of staff. Close the office mid-grace and
+       nothing ever takes them off the record. useStored's write path has
+       applied its transform all along; this one silently didn't. */
+    const out = persistTransform ? persistTransform(v) : v;
+    try { localStorage.setItem(lsKey, JSON.stringify(out)); } catch (err) {
       /* Sensitive keys (API keys) have NO file fallback — if this write
          fails (quota, private mode) the key silently doesn't survive a
          reload. Surface it like useStored does instead of swallowing. */
@@ -158,10 +173,10 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(v),
+        body: JSON.stringify(out),
       }).catch(() => {});
     }, 1500);
-  }, [lsKey, fileScope, fileName, sensitive]);
+  }, [lsKey, fileScope, fileName, sensitive, persistTransform]);
 
   useEffectA(() => {
     if (sensitive) return;
@@ -182,6 +197,21 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
         valRef.current = merged;
         setVal(merged);
         try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
+        /* A file written by a session that died mid-grace (or by a build
+           before the write filter existed) can hold what persist would now
+           never write — a transient helper listed as staff. Adopting it
+           silently leaves the record lying until some unrelated write
+           happens to flush; the only healer today is a no-op-tolerant CLI
+           sync that has no idea it owns that job. If the record on disk
+           differs from what the write filter would put there, heal it now,
+           deterministically. hydratedRef is already true — this is a
+           write-back of what was just read, so the boot-wipe hazard the
+           flag exists for does not apply. */
+        if (persistTransform) {
+          try {
+            if (JSON.stringify(persistTransform(merged)) !== JSON.stringify(data)) persist(merged);
+          } catch (_e) {}
+        }
       })
       /* Unreachable server counts as settled too, or an offline office
          could never write to disk again. */
