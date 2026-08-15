@@ -21,12 +21,22 @@ const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
    the office door plate, so hiring the local Llama produced a room labelled
    "LLAMA · HARDWARE". Where the brain runs is already carried honestly by
    the powered-by chip and the found line; the role says what they do. */
+/* `tools` here is a DISPLAY signal as much as a stored claim — app/cast.jsx
+   turns it into the card's "can do" line, and the stat bars and permission
+   chip read it too. Four of these cards listed 'shell', which is not an id
+   in TOOLS_CATALOG and is not a key in cast.jsx's CAN_DO either, so it was
+   read by nothing: the three coding-agent cards and Hermes silently never
+   said they could run code, on cards whose entire role is "Coding Agent".
+   The catalog id is 'code'. All four now carry it, which is honest for
+   these four specifically because they also carry `elevated: true` — the
+   flag that actually grants BASH — so the card's claim and the coworker's
+   real capability agree. */
 const FRONT_DESK = {
   'claude-code': { id: 'a_cli_claude', name: 'Claude', role: 'Coding Agent', color: 'leaf',
-                   model: 'claudecode:sonnet', tools: ['files', 'shell', 'web'], elevated: true,
+                   model: 'claudecode:sonnet', tools: ['files', 'code', 'web'], elevated: true,
                    poweredBy: 'Claude', found: 'We found your Claude subscription on this machine.' },
   'codex':       { id: 'a_cli_codex', name: 'Codex', role: 'Coding Agent', color: 'mint',
-                   model: 'codex:gpt-4.1', tools: ['files', 'shell'], elevated: true,
+                   model: 'codex:gpt-4.1', tools: ['files', 'code'], elevated: true,
                    poweredBy: 'OpenAI', found: 'We found your Codex subscription on this machine.' },
   /* Gemini CLI (drivers/gemini_cli.py) — distinct from the 'gemini-api'
      cloud card below: this one is the agent CLI on this machine, working
@@ -35,7 +45,7 @@ const FRONT_DESK = {
      back office could detect and even install the CLI, but the front desk
      never offered it — a detected subscription the boss couldn't use. */
   'gemini':      { id: 'a_cli_gemini', name: 'Gemini', role: 'Coding Agent', color: 'blush',
-                   model: 'gemini:gemini-2.5-pro', tools: ['files', 'shell'], elevated: true,
+                   model: 'gemini:gemini-2.5-pro', tools: ['files', 'code'], elevated: true,
                    poweredBy: 'Google', found: 'We found your Google sign-in on this machine.' },
   /* North-star §3.1: no runtime gets special treatment, "not in code, not in
      copy, not in defaults" — and Hermes is the runtime that section names as
@@ -63,7 +73,7 @@ const FRONT_DESK = {
      reinstall a service they only needed to start is the same wrong
      diagnosis in a different costume. */
   'hermes':      { id: 'a_cli_hermes', name: 'Hermes', role: 'Generalist', color: 'sky',
-                   model: 'hermes:hermes-agent', tools: ['web', 'files', 'shell'], elevated: true,
+                   model: 'hermes:hermes-agent', tools: ['web', 'files', 'code'], elevated: true,
                    service: true,
                    poweredBy: 'Nous Research', found: 'Set up on this machine, with its gateway running.' },
   'lmstudio':    { id: 'a_local_lmstudio', name: 'Local Brain', role: 'Generalist', color: 'teal',

@@ -31,6 +31,24 @@ Two boundaries this pins, both of which are the honest part:
   fixed by which template you hire, not a switch anyone can flip — "run
   code once you elevate them" would point at a control that does not
   exist, which is the same lie the last tick removed, in the future tense.
+
+  OVERTURNED 2026-08-14. That paragraph was wrong on its facts, and this
+  test kept it in force for three ticks. There is a switch: every
+  coworker's card in Settings → Roster carries a 🛡 File & shell access
+  pxswitch, behind a danger-styled confirm, that sets exactly this flag —
+  and REQUEST_ELEVATION lets a coworker ask for it mid-job, with the boss
+  deciding in the approvals tray. Elevation is not fixed at hire and never
+  was. So the effect of the rule was the opposite of its intent: the one
+  capability in the whole table with a real, per-agent, boss-operated
+  control was the only one the card refused to give a route to. §7 asks
+  for a way forward; this withheld a true one out of caution about a
+  false one.
+
+  What replaces it is not the opposite opinion. An unlock line may now
+  name any control, INCLUDING elevation, provided the label it prints is
+  found in the settings source — so the sentence and the switch cannot
+  drift apart without this test noticing. That check is what would have
+  caught the original error, in either direction.
 - Absent is not false. A caller whose settings store would not open leaves
   the flag off the ctx object entirely, and that must not become "you have
   not picked an image provider" on the card of a boss who picked one
@@ -52,6 +70,8 @@ from test_the_front_desk_sells_what_exists import (  # noqa: E402
 CAST = ROOT / 'app' / 'cast.jsx'
 HIRE = ROOT / 'modals' / 'hire.jsx'
 RUNTIME = ROOT / 'hq-runtime.jsx'
+SETTINGS = ROOT / 'modals' / 'settings.jsx'
+MEDIA = ROOT / 'modals' / 'providers.jsx'
 FAILS = []
 
 
@@ -80,19 +100,66 @@ def main():
                                   brace_lift(bare, 'const CAN_DO_UNLOCK = {'), re.M)),
           'an unlock line for a tool with no condition can never fire — '
           'the tool is already granted')
-    # Derived, not spelled out: an unlock entry is wrong for ANY tool whose
-    # condition is `elevated`, whatever the tool is called. Checking for the
-    # literal word "elevated" inside the table passed happily against an arm
-    # that added `code: 'run code once you elevate them'`.
-    needs = brace_lift(bare, 'const CAN_DO_NEEDS = {')
-    unlock_keys = re.findall(r'^\s{2}(\w+):',
-                             brace_lift(bare, 'const CAN_DO_UNLOCK = {'), re.M)
-    by_elevation = [k for k in unlock_keys
-                    if re.search(r"^\s{2}%s:\s*'elevated'" % k, needs, re.M)]
-    check('nothing gated on elevation is offered as a switch', not by_elevation,
-          f'{by_elevation} — elevation is fixed by which template you hire; '
-          'a card offering to unlock it points at a control that does not '
-          'exist, which is the last tick\'s lie in the future tense')
+    # This slot used to hold the inverse check — "nothing gated on elevation
+    # is offered as a switch" — on the stated grounds that "elevation is
+    # fixed by which template you hire". That was never true. Every
+    # coworker's card in Settings → Roster carries a 🛡 File & shell access
+    # pxswitch that calls `update({ elevated: … })` behind a danger confirm
+    # (modals/settings.jsx), and REQUEST_ELEVATION exists so a coworker can
+    # ask for it mid-job. So the one capability with a real, per-agent,
+    # boss-operated switch was the only one the card refused to name a route
+    # to, and this test held that refusal in place. Overturned 2026-08-14.
+    #
+    # Replaced with the check that would have caught it, and which is
+    # stronger than either opinion: an unlock line may only name a control
+    # whose printed label actually appears in the settings source. Same rule
+    # as the labels in hq-runtime's hint table — a sentence pointing the boss
+    # somewhere has to be checkable against the thing it points at, or the
+    # two drift and only the boss finds out.
+    UNLOCK_MUST_NAME = {
+        'files':  ('file & shell access', SETTINGS),
+        'code':   ('file & shell access', SETTINGS),
+        # Deliberately loose, and the looseness is the finding. The card
+        # says "once you pick an image provider"; the Media tab prints the
+        # heading IMAGE GENERATION and a bare <select>, and the phrase
+        # "image provider" appears nowhere a boss can read it — it was only
+        # ever in a source comment. So this pins the one word that IS
+        # printed beside the control. Tightening it means changing the
+        # card copy or the heading so the two match exactly, which belongs
+        # with the rest of the 'img' work rather than here.
+        'img':    ('provider',            MEDIA),
+        'wallet': ('wallet',              SETTINGS),
+    }
+    unlock_tbl = brace_lift(bare, 'const CAN_DO_UNLOCK = {')
+    unlock_keys = re.findall(r'^\s{2}(\w+):', unlock_tbl, re.M)
+    unnamed = [k for k in unlock_keys if k not in UNLOCK_MUST_NAME]
+    check('every unlock line is pinned to a named control', not unnamed,
+          f'{unnamed} — a new future-tense line has to say which control it '
+          'is sending the boss to, so this test can go and check the control '
+          'is there')
+    wrong, missing = [], []
+    for k in unlock_keys:
+        if k not in UNLOCK_MUST_NAME:
+            continue
+        label, source = UNLOCK_MUST_NAME[k]
+        phrase = re.search(r"^\s{2}%s:\s*'([^']*)'" % k, unlock_tbl, re.M)
+        if not phrase or label not in phrase.group(1).lower():
+            wrong.append((k, phrase.group(1) if phrase else None, label))
+        # Comments stripped, entities decoded. Against the raw file this
+        # matched the ASCII-art diagram in the comment that documented the
+        # fix, not the rendered label — so renaming the switch left the
+        # card still promising the old name and this check still green.
+        src_txt = source.read_text(encoding='utf-8')
+        src_txt = re.sub(r'/\*[\s\S]*?\*/', '', src_txt)
+        src_txt = re.sub(r'^\s*//.*$', '', src_txt, flags=re.M)
+        if label not in src_txt.replace('&amp;', '&').lower():
+            missing.append((k, label, source.name))
+    check('...and names it the way it is printed on the control',
+          not wrong, f'{wrong} — (key, line, label it must contain)')
+    check('...and that control really exists in the settings source',
+          not missing, f'{missing} — (key, label, file searched); this is the '
+          'anti-drift half: rename or delete the control and the card stops '
+          'being allowed to promise it')
     check('future-tense lines are kept in their own list',
           re.search(r'const pending = \[\];', bare)
           and re.search(r'const all = list\.concat\(pending\);', bare),
@@ -112,11 +179,48 @@ def main():
     runtime = RUNTIME.read_text(encoding='utf-8')
     catalog = runtime[runtime.index('const TOOLS_CATALOG = ['):]
     catalog = catalog[:catalog.index('\n];')]
+    # This loop was called 'a boss can actually tick "<id>"' and measured
+    # membership in TOOLS_CATALOG, which was never the same question — the
+    # four NEVER_WIRED ids are in the catalog and have never been tickable
+    # by anyone. It went on passing for 'code' and 'files' after both were
+    # hidden from the rendered grid on 2026-08-14, still reporting that a
+    # boss could tick them.
+    #
+    # The question the unlock line actually depends on is whether any
+    # coworker can END UP HOLDING the claim, which has two real sources:
+    # the rendered checkbox grid, or a front-desk preset that writes the id
+    # at hire. Measured against both, so hiding a checkbox no longer
+    # silently invalidates a card's copy, and neither does dropping an id
+    # from the presets.
+    settings_src = SETTINGS.read_text(encoding='utf-8')
+    hidden = set()
+    for name in ('NEVER_WIRED_TOOL_IDS', 'GRANTED_ELSEWHERE_TOOL_IDS'):
+        m = re.search(r'const %s = new Set\(\[([^\]]*)\]' % name, settings_src)
+        if m:
+            hidden |= set(re.findall(r"'([^']+)'", m.group(1)))
+    tickable = {i for i in re.findall(r"id: '([^']+)'", catalog)} - hidden
+    preset_claims = set(re.findall(r"'([^']+)'",
+                                   ' '.join(re.findall(r'tools: \[([^\]]*)\]', hire))))
     for key in unlock_keys:
-        check(f'a boss can actually tick "{key}"',
-              re.search(r"id: '%s'" % key, catalog),
-              'an unlock line for a tool absent from TOOLS_CATALOG can only '
-              'ever fire for a hand-edited agent')
+        where = ('the roster grid' if key in tickable else
+                 'a front-desk preset' if key in preset_claims else None)
+        check(f'a coworker can actually end up claiming "{key}"',
+              where is not None,
+              f'"{key}" is in neither the rendered checkbox grid (hidden: '
+              f'{sorted(hidden)}) nor any FRONT_DESK preset, so its unlock '
+              'line can only ever fire for a hand-edited agent')
+    # The other direction, and the one that was never asked: a preset may
+    # only hand a coworker an id that means something. Four FRONT_DESK
+    # cards carried 'shell', which is in no catalog and no CAN_DO table, so
+    # the three Coding Agent cards and Hermes silently never said they
+    # could run code. Nothing failed; the word was simply read by nobody.
+    catalog_ids = set(re.findall(r"id: '([^']+)'", catalog))
+    bogus = sorted(preset_claims - catalog_ids)
+    check('every tool a front-desk preset hands over is a real id',
+          not bogus,
+          f'{bogus} appear in FRONT_DESK `tools:` arrays but in no '
+          'TOOLS_CATALOG entry, so they are stored on the agent and read '
+          'by nothing — not a grant, not a card line, not a stat bar')
     pixel = re.search(r"name: 'Pixel',(.{0,2000}?)\n  \},", runtime, re.S)
     check('the image specialist claims the image tool',
           pixel and re.search(r"tools: \[[^\]]*'img'", pixel.group(1)),
@@ -156,8 +260,13 @@ def main():
                     {'elevated': True, 'canMakeImages': False}),
         # A coworker with nothing but an off switch still gets a route.
         'only_img': (['img'], {'canMakeImages': False}),
-        # Elevation is not a switch, so there is no future tense for it.
+        # Elevation IS a switch — one per coworker, on their own card in
+        # Settings → Roster — so it gets a future tense like the rest.
         'not_elevated': (['code'], {'elevated': False}),
+        # …and stays silent when the caller could not read the flag at all,
+        # same mirror rule as pixel_unknown. A boss who granted computer
+        # access months ago must not be told to go and switch it on.
+        'elev_unknown': (['code'], {}),
         # The smaller true claim still beats a future-tense one.
         'web_no_key': (['web'], {'canSearch': False}),
     }
@@ -199,10 +308,25 @@ def main():
           r['only_img'] == 'make images once you pick an image provider',
           f"{r['only_img']} — the alternative is \"talk things through\", "
           'which is §7 with the way forward removed')
-    check('elevation gets no unlock line',
-          r['not_elevated'] == 'talk things through',
-          f"{r['not_elevated']} — there is no Settings switch for this, so "
-          'naming one would be a new false claim')
+    check('elevation gets an unlock line naming its switch',
+          r['not_elevated'] == 'run code once you switch on their file & shell access',
+          f"{r['not_elevated']} — measured as \"talk things through\" before "
+          'this fix: the one capability with a real per-agent switch was the '
+          'only one the card would not give a route to')
+    check('...and says nothing when the elevation flag could not be read',
+          r['elev_unknown'] == 'talk things through',
+          f"{r['elev_unknown']} — absent is not false, same as pixel_unknown")
+    # Counted, not merely present. Two tools ride the elevation switch and
+    # both need the line; an existence test stayed green with the `code:`
+    # entry deleted, because the `files:` one still carried the string.
+    # Same existence-vs-count weakness that let a levelled-down record
+    # through in test_the_bubble_gets_the_same_clean.
+    n_routes = cast.count('once you switch on their file & shell access')
+    check('the old refusal is not silently still in force',
+          n_routes >= 2,
+          f'{n_routes} of 2 elevation-gated tools name the switch in '
+          'cast.jsx — the two checks above run against a lifted copy, so '
+          'this one pins the shipped file itself')
     check('a tool with no unlock line keeps its smaller true claim',
           r['web_no_key'] == 'read a web page you name',
           f"{r['web_no_key']} — BROWSER_FETCH works with no key at all")

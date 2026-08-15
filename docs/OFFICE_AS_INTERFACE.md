@@ -8349,3 +8349,110 @@ live drive; it needs a real tool round-trip to reproduce.
 A surface may only assert what detection established — and when four
 surfaces read the same fact, the one the boss looks at cannot be the one
 reading the weakest copy.
+
+---
+
+## One capability, three controls, two of them decoys
+
+The coworker card in Settings → Roster renders, in this order:
+
+    TOOLS   [ Web Search ] [ Vault Notes ] [ Code Exec ] [ File Access ]
+    …
+    🛡 File & shell access                              (•——)  ← the switch
+
+Real file and shell access is granted by that switch and by nothing else.
+`toolsForAgent` reads `claimed.has('web')`, `'vault'`, `'browser'` and
+`'wallet'`; there is no `claimed.has('code')` and no `claimed.has('files')`
+anywhere in the app. FILE_*, DIR_* and BASH ride `agent.elevated`, which
+the switch sets — or which the boss grants by approving a
+REQUEST_ELEVATION.
+
+So a boss could tick both checkboxes, watch nothing change, and never look
+twenty lines further down the same card. Two audits had already walked
+past it. The 2026-08-13 never-wired sweep found it and deferred it, on the
+grounds that removing a checkbox with a real capability behind it "needs a
+product decision this filter shouldn't make silently". That reasoning was
+sound for `img`, whose door is on another screen entirely, and wrong here:
+the door for these two is already on the same card, so hiding them removes
+a decoy rather than a capability. Nothing is lost.
+
+What turned a parked wart into a live §5 breach was the previous tick. The
+unwired-tools hint began naming the boxes by their printed labels and
+telling the boss to go and tick them — so the honesty copy written to
+protect the boss was sending them to the one control guaranteed not to
+help. The hint names the switch now, and says "turn it on" rather than
+"tick it", because one sentence covers every door on the card and only one
+of those doors is a checkbox.
+
+`app/cast.jsx` had the same error from the opposite side. Its unlock table
+carried a comment declining to offer a route to elevation because that
+would "point at a control that does not exist" — and a test held the
+refusal in place for three ticks. The control exists. So the one capability
+in the table with a real, per-agent, boss-operated switch was the only one
+the card would not give the boss a way forward to: §7 inverted, a true
+route withheld out of caution about a false one.
+
+And four front-desk presets listed `'shell'`, which is in no catalog and no
+CAN_DO table. Read by nothing. The three Coding Agent cards and Hermes
+silently never said they could run code.
+
+### Three checks in this commit matched their own commit message
+
+The fire-test caught five weaknesses in checks written minutes earlier, and
+three were the same one. Each check went looking for a string in a source
+file, and found it — in the comment added by this commit to explain the
+defect.
+
+- "the switch the hint names is printed on the card" matched the ASCII-art
+  diagram at the top of this section, not the JSX label (which spells the
+  ampersand `&amp;` and would never have matched).
+- "that control really exists in the settings source" matched the same
+  diagram.
+- "every checkbox still on the card is read by toolsForAgent" searched for
+  `claimed.has('code')` and found it inside the sentence *denying* that it
+  exists.
+
+A commit that documents a defect manufactures the exact strings that make a
+naive check believe the defect is gone. All three strip comments now, and
+the label checks decode entities and narrow to the rendered block.
+
+Two more misses of the older kinds: an existence test stayed green with one
+of two elevation routes deleted (counted now), and `hidden` was computed
+from the declared filter sets rather than the ones the filter chain
+applies, so deleting the `.filter(...)` line left the invariant reading a
+set that no longer hid anything.
+
+### The bundle the browser actually runs
+
+The first live drive reported the decoys still on the card, after the fix,
+with the corrected file provably being served — `curl` showed the filter at
+line 402 and the response carried `Cache-Control: no-store`. Neither a
+service worker nor a cache was involved. The app does not load the `.jsx`
+at all: `hq.html` injects tags from `dist-ui/manifest.json`, and the JSX is
+pre-transformed by `scripts/build_ui_bundle.mjs`. `serve.py` serves that
+bundle and never rebuilds it.
+
+So a drive after any `.jsx` edit tests the last build, silently, and looks
+exactly like a fix that did not work. Rebuilt, the card shows three chips
+and the switch. Worth knowing before the next verification: the browser is
+never the source of truth about the source.
+
+### What the checks pin now
+
+- the shell and file tools both name the elevation switch, by the label
+  printed on it, and that label is checked against the rendered block
+- no hint may name a control filtered off the card
+- the hint's verb has to be one a switch can take
+- every checkbox still rendered is read by `toolsForAgent`, or is listed
+  as kept-but-inert with the reason (only `img`, whose door is Settings →
+  Media)
+- every unlock line on a coworker card names a control whose printed label
+  is in the settings source, elevation included
+- every tool id a front-desk preset hands over is a real catalog id
+
+Eleven arms, all caught. Verified live on a rebuilt office: three chips —
+Web Search, Vault Notes, Image Gen — above a working 🛡 File & shell
+access switch.
+
+A surface may only assert what detection established — and a surface that
+does not know a door exists will send the boss to a decoy instead.

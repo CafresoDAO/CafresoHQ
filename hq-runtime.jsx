@@ -2099,32 +2099,53 @@ const TOOL_REGISTRY = {
    as pointing them at a page that doesn't hire.
 
    So the label comes from TOOLS_CATALOG — the very list the checkboxes are
-   rendered from — and only the grouping is written here. That grouping is
-   not a new opinion either: it mirrors the grants in `toolsForAgent`
-   directly below, which is the one place a claimed box becomes a real
-   tool. If a label is reworded, this follows it; if a grant moves, this
-   table is wrong in the same commit that moved it, which is the closest a
-   lookup like this gets to being self-checking.
+   rendered from — and only the grouping is written here.
+
+   That paragraph used to continue: "it mirrors the grants in
+   `toolsForAgent` directly below, which is the one place a claimed box
+   becomes a real tool." Two of the five rows never did. There is no
+   `claimed.has('code')` and no `claimed.has('files')` anywhere in
+   `toolsForAgent` — FILE_*, DIR_* and BASH are gated on `agent.elevated`
+   alone, and `elevated` is granted by the 🛡 switch on the coworker's card
+   (modals/settings.jsx, ~twenty lines BELOW the checkbox grid) or by the
+   boss approving a REQUEST_ELEVATION. The two checkboxes printed "Code
+   Exec" and "File Access" were decoys: the boss could tick both, watch
+   nothing change, and never notice the working switch further down the
+   same card.
+
+   So this table is the wrong shape for those two. A group does not map to
+   a checkbox id; it maps to a DOOR, and the door for file and shell work
+   is a switch with its own printed label. The checkbox rows still resolve
+   through TOOLS_CATALOG so a reworded label still follows; the elevation
+   rows carry their label directly, because there is no catalog entry
+   behind them to follow — that was the whole defect. `code` and `files`
+   are no longer rendered as chips at all (see the audit note in
+   modals/settings.jsx), so resolving them through the catalog would now
+   name a box the boss cannot even see.
 
    Deliberately NOT a second copy of the floor's visit vocabulary
    (`visitLine`/`visitWords`, imported at the top of this file). That table
    answers "what is this coworker doing right now"; this one answers "which
    box would let them". Different questions, and the floor's answer —
    "searching for X" — cannot be typed into a settings search field. */
+const ELEVATION_DOOR = 'File & shell access';
 const TOOL_CLAIM_GROUPS = [
   [/^(WEB_)?SEARCH|BROWSER_|FETCH|HTTP/i,        'web'],
   [/^VAULT_|^EXPORT_/i,                          'vault'],
   [/^GENERATE_(IMAGE|VIDEO)/i,                   'img'],
-  [/^BASH$|^SHELL/i,                             'code'],
-  [/^FILE_|^DIR_/i,                              'files'],
+  [/^BASH$|^SHELL/i,                             ELEVATION_DOOR],
+  [/^FILE_|^DIR_/i,                              ELEVATION_DOOR],
 ];
 
 function toolClaimLabel(name) {
   const n = String(name || '').trim();
   if (!n) return '';
-  for (const [re, id] of TOOL_CLAIM_GROUPS) {
+  for (const [re, door] of TOOL_CLAIM_GROUPS) {
     if (!re.test(n)) continue;
-    const entry = TOOLS_CATALOG.find(t => t.id === id);
+    // A door written out in full is a control that has no catalog entry —
+    // today that is the elevation switch, which is not a checkbox.
+    if (door === ELEVATION_DOOR) return ELEVATION_DOOR;
+    const entry = TOOLS_CATALOG.find(t => t.id === door);
     if (entry) return entry.label;
   }
   return '';
@@ -2954,7 +2975,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
              message got updated in some earlier pass and this one didn't. */
           const want = claimLabels(orphans.map(o => o.tool));
           emit(want
-            ? `_(they reached for ${want}, which they don't have — tick it on their card in Settings → Roster and ask again.)_`
+            ? `_(they reached for ${want}, which they don't have — turn it on from their card in Settings → Roster and ask again.)_`
             : "_(they reached for something they haven't been given — check what they're allowed to do in Settings → Roster.)_");
         } else {
           emit('_(nothing came back from them this time. If they are on a free brain this usually means you asked for too much at once — try **Settings → Connections → Coworker capability → "Lite"**, or give them a smaller job.)_');
@@ -3184,7 +3205,11 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
         } else if (missing.length) {
           const want = claimLabels(missing);
           emit(want
-            ? `_(${agent.name} reached for ${want}, which they don't have — tick it on their card in Settings → Roster, or @-mention a coworker who already has it.)_`
+            /* "tick it" named the wrong ACTION as well as, for file and
+               shell work, the wrong control: that door is a switch, not a
+               checkbox. "Turn it on" is true of both, so one sentence
+               still covers every door on the card. */
+            ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster, or @-mention a coworker who already has it.)_`
             : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`);
         } else if (orphans.length) {
           emit(`_(${agent.name} talked themselves through it but never answered. Ask them again, or hand the job to a coworker on a stronger brain.)_`);

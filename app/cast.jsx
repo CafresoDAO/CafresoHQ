@@ -161,13 +161,26 @@ const CAN_DO_INSTEAD = {
    route rather than a claim.
 
    Only for conditions the boss can actually flip from where they are
-   standing. `elevated` is deliberately absent: it is a property of the
-   candidate, decided by which template you hire, not a setting anyone can
-   turn on — "run code once you elevate them" would point at a control
-   that does not exist. */
+   standing.
+
+   `elevated` was excluded here on the grounds that it is "a property of
+   the candidate, decided by which template you hire, not a setting anyone
+   can turn on — 'run code once you elevate them' would point at a control
+   that does not exist." That was wrong when it was written. The control
+   does exist and always has: a 🛡 File & shell access switch on the
+   coworker's own card in Settings → Roster (modals/settings.jsx), behind
+   a danger-styled confirm, which sets exactly this flag. Declining to
+   name it did not protect anyone — it left the one capability with a real
+   door as the only one the card refused to give a route to, which is the
+   §7 miss inverted: not a false way forward, a true one withheld.
+
+   Worded as the switch is printed, not as the flag is named, so the
+   sentence can be followed to a control the boss can see. */
 const CAN_DO_UNLOCK = {
   img:    'make images once you pick an image provider',
   wallet: 'spend from your wallet once you switch the Wallet service on',
+  files:  'work with your files once you switch on their file & shell access',
+  code:   'run code once you switch on their file & shell access',
 };
 
 /* `ctx` absent means the caller does not know, and unknowable → do not

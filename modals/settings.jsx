@@ -360,20 +360,46 @@ function ConnectionsPanel() {
    protected (its prompt separates "claimed" from "wired up for real
    execution", so it correctly refuses to act on a phantom capability),
    but the boss saw a checkbox with no effect and no warning. Hidden
-   rather than left half-true. 'code'/'files' are a different case (real
-   file/shell access exists, gated on `agent.elevated`, not on this
-   claim) and 'img' is a different case again: GENERATE_IMAGE/GENERATE_VIDEO
-   are real tools, gated on the imageProvider/videoProvider settings that
-   Settings -> Media (MediaTab, providers.jsx) now writes — but this
-   catalog checkbox itself still gates nothing (`claimed.has('img')`
-   appears nowhere in toolsForAgent). Left as an inert checkbox rather than
-   hidden, since removing it is a separate product decision than the one
-   made here. Neither removed here, since both need a product decision
-   this filter shouldn't make silently. */
+   rather than left half-true.
+
+   DECOYS: 'code'/'files' were left visible by that audit, on the grounds
+   that the capability behind them is real and removing them "needs a
+   product decision this filter shouldn't make silently". Revisited
+   2026-08-14, on this card, in this order:
+
+     TOOLS   [ Web Search ] [ Vault Notes ] [ Code Exec ] [ File Access ]
+     …
+     🛡 File & shell access                              (•——)  ← the switch
+
+   Real file and shell access is granted by that switch, twenty lines
+   below the grid, and by nothing else. So the boss is shown three
+   controls for one capability and two of them are decoys — tick both,
+   watch nothing happen, and never look further down the card. That is
+   not a product decision being deferred; it is a §5 wrong door being
+   left in place, and it got worse when the unwired-tools hint started
+   naming these two boxes by their printed labels and telling the boss to
+   go and tick them.
+
+   Hidden, therefore, on the same grounds as the four above — with one
+   difference worth stating: nothing is lost. The four had no door
+   anywhere; these two have a working one already on the same card, which
+   is what makes hiding them safe rather than a capability removal. The
+   hint now names that switch instead (hq-runtime.jsx, ELEVATION_DOOR).
+
+   'img' stays visible and stays inert, and is a genuinely different case:
+   GENERATE_IMAGE/GENERATE_VIDEO are real tools gated on the
+   imageProvider/videoProvider settings that Settings → Media (MediaTab,
+   providers.jsx) writes, so this checkbox's real door is on ANOTHER
+   screen, not this card. Hiding it here would leave the coworker card
+   silent about images altogether. Filed separately rather than guessed
+   at here. */
 const NEVER_WIRED_TOOL_IDS = new Set(['email', 'cal', 'db', 'slack']);
+/* Real capability, but this checkbox is not its door — see DECOYS above. */
+const GRANTED_ELSEWHERE_TOOL_IDS = new Set(['code', 'files']);
 const visibleToolsCatalog = () =>
   HQ.TOOLS_CATALOG
     .filter(t => !NEVER_WIRED_TOOL_IDS.has(t.id))
+    .filter(t => !GRANTED_ELSEWHERE_TOOL_IDS.has(t.id))
     .filter(t => t.id !== 'wallet' || (window.hqMoneyOn && window.hqMoneyOn()));
 
 const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };

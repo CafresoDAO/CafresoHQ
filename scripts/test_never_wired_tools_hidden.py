@@ -38,7 +38,16 @@ HIRE = ROOT / 'modals' / 'hire.jsx'
 
 NEVER_WIRED = ['email', 'cal', 'db', 'slack']
 STILL_REAL = ['web', 'vault', 'wallet']
-INTENTIONALLY_KEPT_BUT_INERT = ['code', 'files', 'img']
+# 'code' and 'files' were on this list until 2026-08-14, and the check that
+# read it was named "kept visible on purpose" — which stayed green while
+# both were hidden, because they moved into a SECOND filter set rather than
+# into NEVER_WIRED_TOOL_IDS. They are hidden now: real file/shell access is
+# granted by the 🛡 switch on the same card and by nothing these boxes did.
+# 'img' genuinely is kept-but-inert — its real door is Settings → Media, so
+# hiding it would leave the coworker card silent about images altogether.
+INTENTIONALLY_KEPT_BUT_INERT = ['img']
+# Hidden because the capability is real and its door is somewhere else.
+GRANTED_ELSEWHERE = ['code', 'files']
 
 FAILS = []
 
@@ -100,9 +109,65 @@ def main():
 
     # 4. The intentionally-kept-but-inert ids are still offered — this test
     #    should not silently start hiding more than the four it audited.
+    g = re.search(r'GRANTED_ELSEWHERE_TOOL_IDS\s*=\s*new Set\(\[([^\]]*)\]\)',
+                  settings_src)
+    # A declared set hides nothing on its own. Built from the sets the
+    # filter chain actually APPLIES, because the arm that deletes the
+    # `.filter(...)` line leaves both declarations in place — and read
+    # from the declaration, `hidden` still listed two ids that were back
+    # on the screen, so the invariant below sailed through the exact
+    # regression it exists to catch.
+    chain = re.search(r'visibleToolsCatalog\s*=\s*\(\)\s*=>[\s\S]{0,400}?;',
+                      settings_src)
+    applied = chain.group(0) if chain else ''
+    hidden = set()
+    for name, mm in (('NEVER_WIRED_TOOL_IDS', m),
+                     ('GRANTED_ELSEWHERE_TOOL_IDS', g)):
+        if mm and name in applied:
+            hidden |= set(re.findall(r"'([a-z_]+)'", mm.group(1)))
     for tid in INTENTIONALLY_KEPT_BUT_INERT:
-        check(f"'{tid}' is NOT in NEVER_WIRED_TOOL_IDS (kept visible on purpose)",
-              m is not None and tid not in set(re.findall(r"'([a-z_]+)'", m.group(1))))
+        check(f"'{tid}' is still rendered (kept visible on purpose)",
+              tid not in hidden,
+              f"'{tid}' got filtered out by one of the two hide-sets; its "
+              'real door is on another screen, so hiding it here leaves the '
+              'card unable to say anything about it at all')
+
+    # 5. The invariant the four checks above are each a special case of: a
+    #    checkbox the boss can see has to be READ somewhere. Every previous
+    #    audit here worked the other way round — start from a known-dead id
+    #    and confirm it is hidden — which is why 'code' and 'files' survived
+    #    two audits: nobody asked the question from the checkbox's side.
+    check('GRANTED_ELSEWHERE_TOOL_IDS is defined and filters the catalog',
+          bool(g) and bool(re.search(
+              r'visibleToolsCatalog\s*=\s*\(\)\s*=>\s*[\s\S]{0,300}'
+              r'GRANTED_ELSEWHERE_TOOL_IDS', settings_src)),
+          'settings.jsx: the second hide-set is missing from the filter chain')
+    check('the second hide-set holds exactly the audited ids',
+          bool(g) and set(re.findall(r"'([a-z_]+)'", g.group(1))) == set(GRANTED_ELSEWHERE),
+          g.group(1) if g else None)
+
+    runtime_src = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
+    catalog = runtime_src[runtime_src.index('const TOOLS_CATALOG = ['):]
+    catalog = catalog[:catalog.index('\n];')]
+    rendered = [i for i in re.findall(r"id: '([^']+)'", catalog) if i not in hidden]
+    # Comments stripped before the scan, and this is not a tidiness point.
+    # Written against the raw source, this check passed while 'code' and
+    # 'files' were unread — because the commit that FIXED them added a
+    # comment reading "there is no claimed.has('code') … anywhere in
+    # toolsForAgent", and the scan found the literal inside the sentence
+    # denying it. Three checks in that commit matched its own prose. A
+    # commit that documents a defect manufactures the strings that make a
+    # naive check believe the defect is gone.
+    code_only = re.sub(r'/\*[\s\S]*?\*/', '', runtime_src)
+    code_only = re.sub(r'^\s*//.*$', '', code_only, flags=re.M)
+    unread = [i for i in rendered
+              if i not in INTENTIONALLY_KEPT_BUT_INERT
+              and f"claimed.has('{i}')" not in code_only]
+    check('every checkbox still on the card is read by toolsForAgent',
+          not unread,
+          f'{unread} render as ticking checkboxes but no claimed.has() reads '
+          'them, so ticking one grants nothing — hide them, wire them, or '
+          'add them to INTENTIONALLY_KEPT_BUT_INERT with the reason')
 
     print()
     if FAILS:

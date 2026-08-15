@@ -46,6 +46,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME = ROOT / 'hq-runtime.jsx'
+SETTINGS = ROOT / 'modals' / 'settings.jsx'
 FAILS = []
 
 # Same list as the honesty-notes test, plus the terms specific to this
@@ -99,6 +100,7 @@ def main():
 
     # ── 1. the label comes from the catalog, run for real ───────────────
     js = re.search(r'^const TOOLS_CATALOG = \[[\s\S]*?^\];$', src, re.M).group(0) + '\n'
+    js += re.search(r"^const ELEVATION_DOOR = '[^']*';$", src, re.M).group(0) + '\n'
     js += re.search(r'^const TOOL_CLAIM_GROUPS = \[[\s\S]*?^\];$', src, re.M).group(0) + '\n'
     js += brace_lift(src, 'function toolClaimLabel(') + '\n'
     js += brace_lift(src, 'function claimLabels(') + '\n'
@@ -145,20 +147,81 @@ console.log(JSON.stringify(R));
           one['GENERATE_IMAGE'] == 'Image Gen'
           and one['GENERATE_VIDEO'] == 'Image Gen',
           repr([one['GENERATE_IMAGE'], one['GENERATE_VIDEO']]))
-    check('the shell tool names Code Exec, not File Access',
-          one['BASH'] == 'Code Exec', repr(one['BASH']) + ' — two different '
-          'boxes, and sending the boss to the wrong one costs them the same '
-          'trip as naming no box at all')
-    check('...and the file tools name File Access',
-          one['FILE_WRITE'] == 'File Access' and one['DIR_LIST'] == 'File Access',
+    # These two read "the shell tool names Code Exec, not File Access" and
+    # "...and the file tools name File Access", with the rationale that
+    # "sending the boss to the wrong one costs them the same trip as naming
+    # no box at all". Both boxes were decoys. Nothing anywhere in
+    # toolsForAgent reads claimed.has('code') or claimed.has('files') —
+    # FILE_*, DIR_* and BASH ride `agent.elevated` — so this test spent its
+    # care distinguishing between two wrong doors while the right one, a 🛡
+    # switch twenty lines further down the same card, went unnamed. The two
+    # checkboxes are gone (modals/settings.jsx), and the hint names the
+    # switch.
+    check('the shell tool names the file & shell switch',
+          one['BASH'] == 'File & shell access', repr(one['BASH'])
+          + ' — BASH is granted by `agent.elevated` and by nothing else, so '
+            'the switch that sets it is the only true door to name')
+    check('...and so do the file tools, which ride the same switch',
+          one['FILE_WRITE'] == 'File & shell access'
+          and one['DIR_LIST'] == 'File & shell access',
           repr([one['FILE_WRITE'], one['DIR_LIST']]))
 
-    check('every label returned is really on a checkbox',
-          all(v in catalog for v in one.values() if v),
-          repr(sorted({v for v in one.values() if v} - set(catalog)))
-          + ' — the whole point is that the sentence and the box cannot '
-            'drift apart, so nothing may be returned that the catalog '
-            'does not contain')
+    # Strengthened in the same pass. Membership in TOOLS_CATALOG was never
+    # the property that mattered: an id can sit in the catalog and be
+    # filtered out of the rendered grid (four always were), in which case
+    # naming its label sends the boss looking for a box that is not on the
+    # screen. What has to hold is that every label names a control the boss
+    # can SEE — a rendered checkbox, or the elevation switch.
+    settings_src = SETTINGS.read_text(encoding='utf-8')
+    hidden = set()
+    for name in ('NEVER_WIRED_TOOL_IDS', 'GRANTED_ELSEWHERE_TOOL_IDS'):
+        m = re.search(r'const %s = new Set\(\[([^\]]*)\]' % name, settings_src)
+        if m:
+            hidden |= set(re.findall(r"'([^']+)'", m.group(1)))
+    rendered = {lbl for ident, lbl in
+                re.findall(r"id: '([^']+)',\s*label: '([^']+)'",
+                           src[src.index('const TOOLS_CATALOG = ['):])
+                if ident not in hidden}
+    door = re.search(r"^const ELEVATION_DOOR = '([^']*)';$", src, re.M).group(1)
+    reachable = rendered | {door}
+    check('every label returned names a control the boss can see',
+          all(v in reachable for v in one.values() if v),
+          repr(sorted({v for v in one.values() if v} - reachable))
+          + f' — reachable controls are {sorted(reachable)}; the whole point '
+            'is that the sentence and the control cannot drift apart')
+    # `reachable` contains ELEVATION_DOOR by construction, so the check above
+    # cannot notice the switch being renamed out from under the hint. This is
+    # the half that goes and looks at the control.
+    # Written first as `door.lower() in settings_src.lower()`, which passed
+    # against BOTH halves of the arm that renames the switch — because the
+    # string it found was the ASCII-art diagram inside a comment added in
+    # the same commit, not the rendered label. The real label is JSX and
+    # spells the ampersand `&amp;`, so the literal never matched the
+    # control at all. Comments stripped, entities decoded, and the search
+    # narrowed to the elevated-opt block, so this can only match the label
+    # a boss can actually read.
+    settings_code = re.sub(r'/\*[\s\S]*?\*/', '', settings_src)
+    settings_code = re.sub(r'^\s*//.*$', '', settings_code, flags=re.M)
+    settings_code = settings_code.replace('&amp;', '&')
+    elev_block = re.search(r'elevated-opt[\s\S]{0,600}', settings_code)
+    check('the switch the hint names is printed on the card',
+          bool(elev_block) and door.lower() in elev_block.group(0).lower(),
+          repr(door) + ' is not the label rendered on the elevation switch '
+          'in modals/settings.jsx — the hint would send the boss looking '
+          'for a control under a name that is not printed on it')
+    # One sentence covers every door on the card, so its verb has to be true
+    # of a switch as well as a checkbox. "Tick it" was neither wrong nor
+    # harmless: it told the boss to look for a checkbox.
+    hints = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', src)
+    check('...and the hint asks for an action a switch can take',
+          hints and not any('tick it' in h or 'tick them' in h for h in hints),
+          repr([h for h in hints if 'tick' in h])
+          + f' — {len(hints)} hint(s) checked')
+    check('...and no label names a box that was filtered off the card',
+          not ({v for v in one.values() if v} & (set(catalog) - rendered)),
+          repr(sorted({v for v in one.values() if v} & (set(catalog) - rendered)))
+          + ' — in the catalog but not rendered is the exact shape of the '
+            'defect this check missed the first time')
 
     # ── 2. a tool with no box says nothing rather than something wrong ──
     check('a tool every coworker already has names no box',
