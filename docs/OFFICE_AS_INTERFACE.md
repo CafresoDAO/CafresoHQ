@@ -9718,3 +9718,61 @@ append to have closed.
 A surface may only assert what detection established — and a capability
 that is switched off is something the office knows and the coworker
 does not.
+
+---
+
+## A coworker's entire reply was the word "final"
+
+Same office, same afternoon. Mika's bubble, in full:
+
+    MIKA · BUILDER
+    final
+
+`cleanHarmony` removes the analysis and commentary blocks whole — content
+and all — and keeps the `final` channel's content, which is the one the
+boss is meant to read. To do that it matched the final header exactly: the
+literal name, and a closing `<|message|>`. A stream that stopped before
+`<|message|>` arrived matched nothing, fell through to the
+belt-and-suspenders `<|…|>` catch-all, and that removes the TAG while
+leaving the channel NAME behind as prose.
+
+What makes this more than a rare edge is `throttleTokens`, which re-runs
+cleanHarmony over the ACCUMULATED buffer on every animation frame. Every
+prefix of the model's emission is therefore a frame that goes on screen.
+The header arrives in one frame and `<|message|>` in a later one, so the
+word "final" has been rendering in the coworker's bubble on the way past
+every single time a harmony model answers. It only STAYS there when the
+stream also ends around that point, which is what happened here.
+
+So the sweep in the suite is not arbitrary truncation — it is every frame
+the boss can see, replayed on token boundaries. An earlier draft sliced
+per character and duly reported `<|`, `<|c`, `<|cha` as frames, which the
+transport cannot produce: `<|channel|>` is one token in this model's
+vocabulary and cannot arrive in halves. A check has to model the real
+boundary or it is measuring its own fiction. The reported defect survives
+the stricter model exactly: one token, then the next, and the frame
+between them is the bare word.
+
+The sweep then found a second leak nobody had reported. Block removal
+enumerated the two channels it knew, so a model writing a third —
+
+    <|channel|>critic<|message|>Too terse.<|end|>
+    <|channel|>final<|message|>Rewritten.<|return|>
+
+— put "Too terse.Rewritten." in the bubble: an internal critique welded
+onto the front of the answer, reading as though the coworker said both.
+The docstring on that function has always said it keeps the final channel
+and only the final channel. It enumerated instead. Both halves of the fix
+are the same correction: not final, not shown; and a header is framing
+whatever it is called, `<|message|>` or no `<|message|>`. #73's lesson one
+level down — a list of names is a list that silently stops being complete.
+
+One arm of the fire-test found a line that defends nothing. The named-tag
+strip (`<|end|>`, `<|call|>`, `<|return|>`…) is fully subsumed by the
+catch-all beneath it: delete it and no output changes, so no check can
+tell. It is kept as documentation of what is expected there, and now says
+so, because a line that reads like a guard and is not one is how two
+guards end up defending nothing.
+
+A surface may only assert what detection established — and the name of the
+channel a sentence arrived on is not the sentence.

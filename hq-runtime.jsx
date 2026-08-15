@@ -2948,14 +2948,66 @@ function supportsJsonToolFormat(model) {
 function cleanHarmony(text) {
   if (!text || text.indexOf('<|') < 0) return text;
   let out = String(text);
-  // Remove analysis + commentary blocks entirely (CoT + tool calls aren't
-  // for the user). Match up to the next channel/end/call/return marker.
+  /* Remove every channel block that is not `final`, content and all —
+     chain of thought and tool calls are not for the boss. Match up to the
+     next channel/end/call/return marker.
+
+     This named the two channels it knew, `analysis` and `commentary`, and
+     kept the content of anything else. Found by sweeping this function
+     against a stream carrying a third: a model that writes
+
+         <|channel|>critic<|message|>Too terse.<|end|>
+         <|channel|>final<|message|>Rewritten.<|return|>
+
+     put "Too terse.Rewritten." in the coworker's bubble — an internal
+     critique welded onto the front of the answer, reading as though the
+     coworker said both. The docstring above has always said this function
+     keeps the final channel and only the final channel; it enumerated
+     instead, and an enumeration is a list that silently stops being
+     complete (#73). Now the rule is the one that was written down: not
+     final, not shown. */
   out = out.replace(
-    /<\|channel\|>\s*(?:analysis|commentary)\b[\s\S]*?(?=<\|channel\||<\|end\|>|<\|call\|>|<\|return\|>|$)/g,
+    /<\|channel\|>\s*(?!final\b)[A-Za-z0-9_.]*[\s\S]*?(?=<\|channel\||<\|end\|>|<\|call\|>|<\|return\|>|$)/g,
     ''
   );
-  // Strip any remaining harmony framing tags.
-  out = out.replace(/<\|channel\|>\s*final\b\s*(?:to=[^\s<]+\s*)?(?:<\|constrain\|>\w+\s*)?<\|message\|>/g, '');
+  /* Any remaining channel header, and the header is framing whatever it is
+     called. This used to require the literal name `final` AND a closing
+     `<|message|>`; anything else fell through to the catch-all below, which
+     removes the TAG and leaves the channel NAME sitting in the reply as
+     prose.
+
+     Measured on screen, office 9262, 2026-08-15, gpt-oss-20b through LM
+     Studio: a coworker's entire reply, in their own bubble, was the single
+     word
+
+         final
+
+     — a stream that stopped at `<|channel|>final` before the model got to
+     `<|message|>`. Reproduced deterministically against this function. The
+     same input truncated one channel earlier vanishes correctly, because
+     the analysis/commentary regex above eats its whole block; `final` is
+     the one channel whose content is KEPT, so it is the one whose header
+     had to be matched exactly, and the one that leaks when it isn't.
+
+     Two things are deliberate. The name is optional and unenumerated —
+     #73's lesson one level down, that a list of names is a list which
+     silently stops being complete, and a channel this office has never
+     heard of must not become the coworker's first word either. And
+     `<|message|>` is optional, because that is precisely the token that
+     was missing. The word "final" in ordinary prose is untouched: nothing
+     matches without the literal `<|channel|>` in front of it.
+
+     A truncated stream now cleans to empty, which is what it is, and the
+     empty reply already has an honest line of its own. */
+  out = out.replace(
+    /<\|channel\|>\s*[A-Za-z0-9_.]*\s*(?:to=[^\s<]+\s*)?(?:<\|constrain\|>\w+\s*)?(?:<\|message\|>)?/g,
+    ''
+  );
+  /* Subsumed by the line below it, which matches any `<|…|>` at all —
+     deleting this one changes no output, and the fire-test for this fix
+     proved it by deleting it. Kept as documentation of the tokens that
+     are expected here; do not read it as a guard. The catch-all is the
+     guard, and it is the one carrying an unknown token like `<|refusal|>`. */
   out = out.replace(/<\|(?:end|call|return|start|message|constrain)\|>/g, '');
   out = out.replace(/<\|[^|]*\|>/g, '');  // belt-and-suspenders: any leftover
   return out.trim();
