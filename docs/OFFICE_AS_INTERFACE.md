@@ -11211,3 +11211,106 @@ and every door that asks the question with fewer than all three facts
 eventually lies to the boss, or worse, stops a run the boss never aimed
 at. When a fix outlaws a spelling, the defect survives in paraphrase;
 the suites that last pin the witness, not the words.
+
+## A stage direction became the boss's ask
+
+**What was measured (2026-08-15, office 9261, canned brain).** Starting
+a task wrote this into the chat:
+
+    { from: 'user', name: 'You',
+      text: '(dropped "briefing status check" on Vera\'s desk)' }
+
+— a message the boss never typed, filed in the boss's voice, with no
+marker of any kind. Every reader believed the record:
+
+1. *The model's transcript.* chatToMessages turns any `from:'user'`
+   entry into a bare `role:'user'` turn, so brains were told the boss
+   typed the stage direction. In the same payload, the REAL typed ask
+   arrived framed "[Direct request from the boss]" and every coworker's
+   words arrived labeled "[Vera · Virtual Assistant]:" — the office
+   labeled everyone's speech except its own fabrications, which rode
+   bare, wearing the boss's voice. Attribution exactly inverted.
+2. *The hand-off.* onDelegate's last-ask finder skips only its OWN
+   wrapper (`delegated: true` — the "four deep" fix, which marked one
+   sibling and not the other three). An empty hand-off right after a
+   task drop picked the stage direction as "what the boss asked" and
+   dispatched Kip on `(dropped "briefing status check two" on Vera's
+   desk)` — marching orders about somebody else's desk. The transcript
+   then carried the proof in the boss's own bubble:
+
+       (delegated "(dropped "briefing status check two" on Vera's
+       desk)" to Kip)
+
+3. *Getting Started.* The "has the boss chatted" gate — the same
+   two-reader shape whose `assigned` half was fixed under "Getting
+   Started ticks a step the boss never did" — is
+   `chat.some(m => m.from === 'user')`, so a pure click ticked "say hi
+   in chat" over a boss who had never typed a word, and suppressed the
+   coach mark that would have taught it.
+
+Three fabricated writes shared the pattern: the task drop/start line,
+`✓ APPROVED — …`, and `✕ REJECTED — …`. All three narrate a CLICK; none
+contain a word the boss authored.
+
+**The fix: make the record true, not the readers suspicious.** The
+office already has a voice for narrating gestures — `from: 'system',
+name: 'HQ'`, the same filing as the helper-cap and empty-hand-off
+notices. The three writes now use it. With the record true, every
+reader self-corrects with zero changes: the renderer shows a quiet
+stage-direction line instead of a "You" bubble, chatToMessages labels
+it `[HQ]:` like every other non-boss speaker, the last-ask finder and
+the chatted gate stop seeing it entirely, and the command palette stops
+captioning it "You:". No reader was taught to distrust the record; a
+future fifth reader of `from:'user'` inherits the honesty for free —
+which is the inverse of the #86→#92 arc, where a fact was re-derived at
+each door and each door drifted. Attribution is written once, at the
+write.
+
+**Kept on purpose.** The delegate wrapper `(delegated "brief" to Kip)`
+stays `from:'user'` + `delegated: true`: its quoted interior is the
+boss's typed brief, so the boss's voice is the honest filing, and the
+flag already keeps it out of the finder. It still counts for "the boss
+chatted" — the boss authored those words.
+
+**Verified.**
+- `scripts/test_a_stage_direction_is_not_the_boss.py` (new, 22 checks):
+  pins all three writes as office voice by their TEXT templates (the
+  window around each template must say system/HQ and must not say
+  from:'user' — pinning the fact, not the spelling, per the #92
+  lesson), pins that the drop entry is still filed at all (deleting it
+  would also pass a voice check), lifts the real chatToMessages and the
+  real finder/gate arrows and drives them: boss speech stays bare,
+  stage directions arrive `[HQ]:`-labeled and never bare, a drop is not
+  an ask, a drop alone hands over nothing, a click does not tick
+  "chatted", a typed message does.
+- Fire-tested (fire93.py): 6 arms — drop back to boss voice, APPROVED
+  back to boss voice, the entry silently un-filed, the delegate wrapper
+  unflagged, the finder forgetting the flag, full revert — 6/6 caught,
+  baseline all-PASS alongside the Getting Started suite.
+- Full runner: 136/136 suites.
+- Live, before/after on 9261: pre-fix payloads captured both lies
+  (bare `(dropped …)` user turns in Vera's context; Kip dispatched ON
+  the stage direction). Post-fix: the drop files as system/HQ, renders
+  as a stage-direction line with zero "You" bubbles carrying it,
+  reaches Kip's context as `[HQ]: (dropped "briefing status three" on
+  Vera's desk)`, and the same empty hand-off now hands Kip the boss's
+  real last ask, with the wrapper reading
+  `(delegated "@Vera quick sanity line" to Kip)`.
+
+**Residue, recorded not hidden.** Entries persisted before the fix keep
+their old `from:'user'` filing — stories are not rewritten (the #88
+stance), so an OLD stage direction still reads as boss speech to every
+consumer, including the finder; the suite pins this so a future
+migration flips the check on purpose. And the reuse-last-message
+hand-off can still forward an ask that @mentions someone else (Kip was
+handed "@Vera quick sanity line") — a pre-existing design quirk of
+"hand them my last message", out of this ticket's scope, noted here so
+it isn't re-discovered as a fresh defect.
+
+**The through-line.** The office keeps a careful ledger of who said
+what — bracket-labels for coworkers, a frame for the boss's direct
+requests, stripOfficeVoice so its own tool echoes never re-enter a
+model's mouth — and then filed its own narration under the boss's name.
+Every lie in this ticket was downstream of one wrong field at one write
+site. When the record is true, honesty is not a property each reader
+must implement; it is a property the record has.

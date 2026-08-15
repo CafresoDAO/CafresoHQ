@@ -4128,10 +4128,24 @@ ${d.text}` : d.text,
           ? `\n\nWhat the previous step produced:\n${String(opts.priorResult).slice(0, 800)}`
           : '');
     // "started" for a starter card (the user clicked), "dropped" for a drag.
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You',
+    //
+    // Office voice, not the boss's. This line was filed from:'user' /
+    // name:'You' — a message the boss never typed — and every reader
+    // believed the record: chatToMessages handed it to brains as a bare
+    // boss turn (measured: the REAL ask arrives framed "[Direct request
+    // from the boss]" while the fabricated one rode unlabeled), the
+    // empty hand-off's last-ask finder picked it up as the brief and
+    // dispatched a coworker on `(dropped "…" on Vera's desk)`, and the
+    // Getting Started "chatted" gate ticked "say hi" off a click. The
+    // office already has a voice for narrating gestures — from:'system',
+    // name:'HQ', same as the helper-cap and empty-hand-off lines — and
+    // filing it there makes every reader, including future ones, honest
+    // without teaching each to distrust the record. Entries persisted
+    // before this keep their old attribution; stories are not rewritten.
+    const dropMsg = { id: HQ.uid('m'), from: 'system', name: 'HQ',
       text: `(${taskFresh ? 'started' : 'dropped'} "${task.title}" on ${agent.name}'s desk)` };
     const agentMsgId = HQ.uid('m');
-    setChat(prev => [...prev, userMsg, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true }]);
+    setChat(prev => [...prev, dropMsg, { id: agentMsgId, from: 'agent', name: `${agent.name} · ${agent.role}`, text: '', streaming: true }]);
 
     let buf = '';
     let usedTokens = 0;
@@ -4761,7 +4775,10 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     const rcId = recordReceipt(ap, 'approved');
     if (ap) {
-      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✓ APPROVED — ${ap.title}` }]);
+      /* Office voice — the boss clicked Approve, they didn't type this.
+         See the dropMsg note in onTaskDropOnAgent for the three readers
+         a fabricated from:'user' entry lied to. */
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ', text: `✓ APPROVED — ${ap.title}` }]);
       /* Ship-to-chain: the stamp is what actually publishes. Async on
          purpose (canister upload can take a while) — the outcome lands in
          chat + activity either way, and a failure is one honest sentence,
@@ -5007,7 +5024,8 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     recordReceipt(ap, 'rejected');
     if (ap) {
-      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✕ REJECTED — ${ap.title}` }]);
+      /* Office voice — same reasoning as the APPROVED line above. */
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ', text: `✕ REJECTED — ${ap.title}` }]);
       // Hire-agent rejection: just release the proposer's pending-hire slot
       // so they can propose again later if circumstances change.
       if (ap.kind === 'hire-agent' && ap.hireProposal) {
