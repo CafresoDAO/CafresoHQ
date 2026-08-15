@@ -51,6 +51,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_artifacts import pure_source  # noqa: E402
 CHAT = (ROOT / 'ui' / 'chat.jsx').read_text(encoding='utf-8')
 RUNTIME = (ROOT / 'hq-runtime.jsx').read_text(encoding='utf-8')
 FAILS = []
@@ -181,21 +183,20 @@ def main():
     if not shutil.which('node'):
         print('  SKIP  node not on PATH — the guard check needs it')
     else:
-        # `unfiledPath` reaches into app/artifacts.jsx for both of its
-        # decisions — what the reply NAMED and what the run actually WROTE.
-        # Lifting the guard without them ran, and threw, which is the
+        # `unfiledPath` reaches into app/artifacts.jsx for its decision —
+        # what the reply NAMED, minus what the run actually touched.
+        # Lifting the guard without that ran, and threw, which is the
         # honest failure; a stub would have made the harness agree with
         # itself instead of with the shipped code.
-        art = strip_comments((ROOT / 'app' / 'artifacts.jsx').read_text(encoding='utf-8'))
-        js = ''
-        for name in ('CLAIMED_PATH', 'CABINET_WRITE'):
-            m = re.search(r'^const ' + name + r' =[\s\S]*?;\s*$', art, re.M)
-            if not m:
-                check('the harness can lift ' + name, False, 'not found')
-                return 1
-            js += m.group(0) + '\n'
-        js += brace_lift(art, 'function claimedPaths(') + '\n'
-        js += brace_lift(art, 'function agentFiledPath(') + '\n'
+        #
+        # The whole pure half of artifacts.jsx comes in, rather than the two
+        # constants and two functions this used to name. #82 replaced those
+        # two functions with one shared `unwrittenPaths`, and a lift that
+        # knew only the old names died on a ReferenceError instead of
+        # reporting — the same enumerated-list rot as #79 and #81. The
+        # dependency is "whatever the guard needs from that file", so lift
+        # that instead of guessing at it.
+        js = pure_source() + '\n'
         js += brace_lift(code, 'function unfiledPath(') + '\n'
         js += r'''
 // The reproduced synthesis reply, byte for byte off the live run.
@@ -220,7 +221,8 @@ const R = {
 };
 console.log(JSON.stringify(R));
 '''
-        p = subprocess.run(['node', '-e', js], capture_output=True, text=True)
+        p = subprocess.run(['node', '--input-type=module', '-e', js],
+                           cwd=ROOT, capture_output=True, text=True)
         if p.returncode != 0:
             check('the guard harness runs', False, p.stderr.strip()[:400])
         else:

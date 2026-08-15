@@ -93,19 +93,25 @@ def main():
           len(re.findall(r'visits: toolVisits', app)) >= 3,
           'unfiledPath returns null on a non-array, so a path that forgot '
           'to pass visits would go quiet rather than fail loudly')
+    # The sheet still says it in its own words — the WORDING is per-surface,
+    # because the sheet is talking about itself and the chat note is not. The
+    # DETECTION is not: #82 found both doors carrying their own copy of it and
+    # both copies asking the same half-question, so they now share one
+    # function. See scripts/test_a_file_it_just_opened.py.
     check('the filed sheet gets its own line',
-          re.search(r'const promised = agentFiledPath\(visits\) \? \[\] : claimedPaths\(body\);',
-                    artifacts),
+          re.search(r'const promised = unwrittenPaths\(body, visits\);', artifacts),
           'buildDelivery runs in another file and shares no code with the '
           'chat path — the sheet is the record that outlives the session')
-    check('the detector lives beside the thing it is compared against',
-          'function claimedPaths' in artifacts
-          and 'claimedPaths' in re.search(r'^import .*artifacts\.jsx.;', runtime, re.M).group(0),
-          'agentFiledPath answers "what was written" and claimedPaths "what '
-          'was named"; two copies of either would drift apart')
+    check('...and reads the same detection the chat note does',
+          re.search(r'function unwrittenPaths\(text, visits\)', artifacts)
+          and 'unwrittenPaths' in re.search(r'^import .*artifacts\.jsx.;', runtime,
+                                            re.M).group(0),
+          'agentFiledPath answers "what was written", claimedPaths "what was '
+          'named" and unwrittenPaths the difference; two copies of that '
+          'subtraction is what #82 was')
     check('...and comes in as a parameter, not a closure over the import',
-          re.search(r'function unfiledPath\(text, visits, pathsFn, filedFn\)', runtime)
-          and re.search(r'\(filedFn \|\| agentFiledPath\)\(visits\)', runtime),
+          re.search(r'function unfiledPath\(text, visits, unwrittenFn\)', runtime)
+          and re.search(r'\(unwrittenFn \|\| unwrittenPaths\)\(text, visits\)', runtime),
           'test_reply_hygiene lifts these functions out to run under node, '
           'and a lifted function that calls an import is a ReferenceError')
 

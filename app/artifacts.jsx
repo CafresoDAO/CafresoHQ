@@ -349,8 +349,12 @@ function buildDelivery(task, agent, text, visits) {
      `Drafts/Sourdough_Feeding_Briefing.md`", the board went green, and this
      sheet carried that sentence as the deliverable with "Nothing opened,
      saved or looked up for this one" eight lines under it. Two true records
-     of one run, disagreeing, neither pointing at the other. */
-  const promised = agentFiledPath(visits) ? [] : claimedPaths(body);
+     of one run, disagreeing, neither pointing at the other.
+
+     `unwrittenPaths` below owns the detection, and drops any path this run
+     actually opened — see its comment for the run where these two lines of
+     the record contradicted each other about one file. */
+  const promised = unwrittenPaths(body, visits);
   if (promised.length) {
     record.push(`- ${promised.map(p => `\`${p}\``).join(' and ')} `
       + `${promised.length > 1 ? 'are' : 'is'} named above, but nothing was `
@@ -480,6 +484,61 @@ function agentFiledPath(visits) {
   return last;
 }
 
+/* ── A file the office OPENED is a file that is there ─────────────────────
+   Measured live 2026-08-15, office 9261, task "Vendor pick". The coworker
+   read a vault note and said so; the sheet's own Working record said so on
+   the line above; and then the next line said this:
+
+     - Opened Research/vendors.md in the cabinet
+     - `Research/vendors.md` is named above, but nothing was written to the
+       cabinet on this run — this sheet is the only file it produced.
+
+   Two consecutive lines of the office's own record, contradicting each
+   other about one file. The second is the "named a path, wrote nothing"
+   guard, and it was asking only half of its own question: it checked
+   whether anything had been WRITTEN and never whether this path had been
+   READ. On a read, the two facts it calls a contradiction are not one —
+   nothing was written because nothing needed to be, and the file it says is
+   not there is the file the office had open a moment earlier.
+
+   §7's rule is no lies to the boss, and the expensive direction here has
+   always been the false alarm: a miss costs a caveat, a false alarm calls an
+   honest coworker a liar. This is that mistake with the office's own visit
+   log sitting right there disproving it.
+
+   Only a trip that ARRIVED suppresses. A failed read proves the opposite —
+   the file could not be opened — and the note's conclusion holds, so
+   `failed` visits are skipped here exactly as they are in the Working
+   record's tense and in `consulted` above.
+
+   Any tool, not just the cabinet ones. `FILE_WRITE src/index.js` followed by
+   "saved to src/index.js" hit the same false alarm — the note would say a
+   file the office had just written to disk was not there, because the write
+   was to the workspace rather than the vault. What the office knows is
+   narrower and truer than the tool taxonomy: it touched this exact path this
+   run, and the trip arrived.
+
+   One function, and both doors call it. `unfiledPath` in hq-runtime.jsx and
+   `buildDelivery`'s footer above each carried their own copy of "named, and
+   nothing wrote it" — the same two-implementations-of-one-rule shape #81 was
+   about, and both had this same half-question in them. The wordings still
+   differ, because the sheet is talking about itself and the chat note is
+   not; the DETECTION is now in one place. */
+function normVisitPath(s) {
+  return String(s || '').trim().replace(/^(?:\.\/|\/)+/, '').toLowerCase();
+}
+
+function unwrittenPaths(text, visits) {
+  if (agentFiledPath(visits)) return [];
+  const touched = [];
+  for (const v of (visits || [])) {
+    if (!v || v.failed) continue;
+    const p = normVisitPath(v.arg);
+    if (p) touched.push(p);
+  }
+  return claimedPaths(text).filter(p => touched.indexOf(normVisitPath(p)) < 0);
+}
+
 /* True when the cabinet really is end-to-end encrypted — i.e. this HQ is
    framed by the trusted shell that holds the user's identity and does the
    vetKeys work. A plain local vault folder is NOT encrypted, and the
@@ -512,4 +571,4 @@ async function fileDelivery(task, agent, text, visits) {
 /* One line on purpose: scripts/test_artifacts.py lifts the pure half of this
    file by dropping lines that START with `export`, so a wrapped export list
    leaves an orphan line behind and the harness won't parse. */
-export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, claimedPaths, extractHtml, fileDelivery, hasSubstance, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, workingNotes };
+export { agentFiledPath, buildDelivery, cabinetIsEncrypted, citesOutside, claimedPaths, extractHtml, fileDelivery, hasSubstance, officeDate, officeStamp, slugify, stripToolEcho, stripToolMarkers, unwrittenPaths, workingNotes };

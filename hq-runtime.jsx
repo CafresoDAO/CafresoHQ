@@ -1,7 +1,7 @@
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { stripOfficeVoice, visitLine, visitPlace, visitWords } from './app/floor.jsx';
 import { memoryRoot } from './app/cast.jsx';
-import { agentFiledPath, citesOutside, claimedPaths, officeDate, officeStamp, workingNotes } from './app/artifacts.jsx';
+import { citesOutside, officeDate, officeStamp, unwrittenPaths, workingNotes } from './app/artifacts.jsx';
 /* ==========================================================================
    CafresoHQ — mock data + small utilities
    Integration points for real API calls are marked with   // INTEGRATE:
@@ -1264,17 +1264,22 @@ function unverifiedSources(text, visits, citesFn, workingFn) {
    the office cannot tell from a coworker filing twice, and this note exists
    for the run that filed nothing at all.
 
-   `claimedPaths` and `agentFiledPath` both live in app/artifacts.jsx, which
-   is where the delivery sheet needs them too and which this file already
-   imports from — one copy of each, not two kept in step by hope. They come
-   in as parameters for the same reason `unverifiedSources` takes its two:
-   scripts/test_reply_hygiene.py lifts these functions out of this file to
-   run under node, and a lifted function that calls an import is a
-   ReferenceError. */
-function unfiledPath(text, visits, pathsFn, filedFn) {
+   Silent, too, for a path this run OPENED — see `unwrittenPaths` in
+   app/artifacts.jsx, which owns that detection. The office telling the boss
+   a file is not there while its own visit log says it read that file is the
+   false alarm this whole note is written to avoid, and #82 measured it.
+
+   The detection lives in app/artifacts.jsx, which is where the delivery
+   sheet needs the identical answer and which this file already imports from
+   — one rule in one place, not two kept in step by hope. That door and this
+   one each carried their own copy of it until #82, and both copies had the
+   same half-question in them. It comes in as a parameter for the same reason
+   `unverifiedSources` takes its two: scripts/test_reply_hygiene.py lifts
+   these functions out of this file to run under node, and a lifted function
+   that calls an import is a ReferenceError. */
+function unfiledPath(text, visits, unwrittenFn) {
   if (!Array.isArray(visits)) return null;         // unknowable, so silent
-  if ((filedFn || agentFiledPath)(visits)) return null;
-  const named = (pathsFn || claimedPaths)(text);
+  const named = (unwrittenFn || unwrittenPaths)(text, visits);
   if (!named.length) return null;
   const one = named.length === 1;
   return '_(' + named.map(p => '`' + p + '`').join(' and ')

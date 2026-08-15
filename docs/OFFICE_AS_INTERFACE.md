@@ -10351,3 +10351,85 @@ believing it. Route on something only the injected result can contain.
 
 A surface may only assert what detection established — and a marker is
 machine syntax wherever on the line it sits.
+
+## The office warned the boss about a file it had just opened
+
+**2026-08-15.** Office 9261, a canned brain, task "Vendor pick". One vault
+read, and the office's own Working record filed these two consecutive lines
+about it:
+
+    - Opened Research/vendors.md in the cabinet
+    - `Research/vendors.md` is named above, but nothing was written to the
+      cabinet on this run — this sheet is the only file it produced.
+
+The chat bubble carried the same warning under the same reply, and the feed
+summarised the run as *finished "Vendor pick" — but not all of it landed*. A
+successful task, a truthful coworker, one tool call that worked — and three
+surfaces telling the boss a file was missing that the office had open a
+moment earlier, by its own record, one line above.
+
+### Half of its own question
+
+The guard is #50's: a path named in prose with no write behind it is a
+contradiction the office can state as arithmetic. Its comment names the
+stake precisely — *a miss costs the caveat; a false alarm calls an honest
+coworker a liar, which is the more expensive mistake* — and that framing is
+what convicts this defect, because the guard was only asking half of its own
+question. It checked whether anything had been WRITTEN and never whether the
+named path had been READ. On a read, the two facts it calls a contradiction
+are not one: nothing was written because nothing needed to be.
+
+Probing found the same false alarm beyond the cabinet. `FILE_WRITE
+src/index.md` followed by "see src/index.md" earned the same warning,
+because the write went to the workspace rather than the vault and the
+suppression only knew the cabinet-write markers. What the office actually
+knows is narrower and truer than the tool taxonomy: it touched this exact
+path this run, and the trip arrived.
+
+### One rule, one place — again
+
+This is #81's shape, arrived at from the other side. `unfiledPath` (the chat
+note) and `buildDelivery`'s footer (the sheet) each carried their own copy of
+"named, and nothing wrote it", and both copies had the same half-question in
+them. The fix is one function, `unwrittenPaths` in app/artifacts.jsx: what
+the reply named, minus every path this run touched on a trip that arrived.
+Both doors now read it; the wordings stay per-surface because the sheet is
+talking about itself and the chat note is not, but the DETECTION no longer
+has two spellings to drift apart.
+
+The subtraction is deliberately narrow in both directions:
+
+- **A path match, not a filename match.** Case and a leading `./` are
+  normalised, because those are spellings of one path; a different folder is
+  a different file, and letting `Research/vendors.md` vouch for
+  `Reports/vendors.md` would be the false-silence version of this same
+  defect. The fire test carries an arm for exactly that loosening.
+- **A trip that FAILED does not vouch.** A read that could not open the file
+  is evidence FOR the note, and the same `failed` flag that fixes the
+  Working record's tense decides it here.
+- **The cabinet-write short circuit stays.** Any real cabinet write still
+  silences the note entirely — two names for one file is indistinguishable
+  from filing twice, and #50 settled that call.
+
+### Measured after, both directions
+
+The same office, rebuilt bundle, two runs. "Vendor recheck" — the coworker
+reads the vault note and names it in prose (`Source: Research/vendors.md`) —
+now files a sheet whose Working record is one line, the visit, and whose
+chat bubble carries no note at all; the feed says *finished ✓*. "Ghost file"
+— the coworker claims `Research/ghost-note.md` and runs no tool — still
+draws the full contradiction in chat, in the result, and on the sheet. The
+expensive direction to break was silence, and it did not break.
+
+### The suite that lifted by name died again
+
+`test_the_synthesis_reply_exists.py` hand-lifted `claimedPaths`,
+`agentFiledPath` and two constants by name, and replacing those functions
+with one shared one killed it with a ReferenceError instead of a report —
+the fourth suite this quarter to rot an enumerated lift (#79's `_fs_` sweep,
+#81's four siblings). It now takes `pure_source()` — the whole pure half of
+artifacts.jsx — because its real dependency was always "whatever the guard
+needs from that file", and naming the parts is guessing at that.
+
+A surface may only assert what detection established — and a file the office
+opened is a file the office may not report missing.
