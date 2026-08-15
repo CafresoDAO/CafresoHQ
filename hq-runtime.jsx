@@ -2179,18 +2179,26 @@ const TOOL_CLAIM_GROUPS = [
   [/^FILE_|^DIR_/i,                              ELEVATION_DOOR],
 ];
 
-function toolClaimLabel(name) {
+/* Which family a marker belongs to, as the group id — the same question
+   `toolClaimLabel` asks, one step earlier. Split out because the chief of
+   staff needs the same classification and a DIFFERENT door name for it
+   (see CEO_DOORS): a second copy of these five regexes on the CEO path is
+   precisely the drift this file keeps paying for. */
+function toolClaimGroup(name) {
   const n = String(name || '').trim();
   if (!n) return '';
-  for (const [re, door] of TOOL_CLAIM_GROUPS) {
-    if (!re.test(n)) continue;
-    // A door written out in full is a control that has no catalog entry —
-    // today that is the elevation switch, which is not a checkbox.
-    if (door === ELEVATION_DOOR) return ELEVATION_DOOR;
-    const entry = TOOLS_CATALOG.find(t => t.id === door);
-    if (entry) return entry.label;
-  }
+  for (const [re, door] of TOOL_CLAIM_GROUPS) if (re.test(n)) return door;
   return '';
+}
+
+function toolClaimLabel(name) {
+  const door = toolClaimGroup(name);
+  if (!door) return '';
+  // A door written out in full is a control that has no catalog entry —
+  // today that is the elevation switch, which is not a checkbox.
+  if (door === ELEVATION_DOOR) return ELEVATION_DOOR;
+  const entry = TOOLS_CATALOG.find(t => t.id === door);
+  return entry ? entry.label : '';
 }
 
 /* The hint's subject, as a list the boss can read out loud. Anything with
@@ -2269,6 +2277,79 @@ function reachedForNote(missing, agent) {
     : media
     ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
     : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`;
+}
+
+/* ── The same sentence, for the one speaker who has no card ──────────────
+   Everything above is written for a hire: "their card", "Settings →
+   Roster", "@-mention a coworker". The chief of staff is none of those
+   things, and until this existed it was handed the coworker copy anyway.
+   Measured 2026-08-15 on a throwaway office (port 9261, canned brain on
+   9236), asking the chief of staff "what's the price of cycles today?":
+
+     CafresoHQ  _(they reached for Web Search, which they don't have —
+                 turn it on from their card in Settings → Roster and ask
+                 again.)_
+
+   Two wrong things in one sentence the office says about itself. "They"
+   casts the speaker as a third party — the boss reads it as a coworker
+   having failed, when the office is describing its own reach. And the
+   Roster renders `agents.map(...)`; opening it live on that same office
+   listed Vera and Kip and nobody else. There is no card to go to.
+
+   The doors that ARE real: `ceoTools` is built from
+   `TOOL_REGISTRY.search.requires()` (braveEnabled + braveKey) and
+   `isVaultReady` — and both switches live on ONE screen, Settings →
+   Connections, as the 🔍 BRAVE WEB SEARCH and MARKDOWN VAULT panels.
+   Opening Connections on the reproducing office confirmed both were
+   present, so the note has a true door to name.
+
+   Anything else the chief of staff reaches for — image work, files, a
+   shell — is not a switch it can be given at all. There is no setting
+   that grants the office a shell, so pointing anywhere in Settings would
+   be a second wrong door. §7 still wants a way forward, and there is a
+   real one: a coworker can hold those tools even though the office can't. */
+const CEO_DOORS = {
+  web: 'Settings → Connections',
+  vault: 'Settings → Connections',
+};
+
+function ceoReachedForNote(missing) {
+  /* Split first. One reply can reach for both kinds — "let me look that up
+     and check the logs" is two markers — and a single door named for both
+     sends the boss to Connections looking for a shell switch that is not
+     there and never will be.
+
+     Nothing is filtered on the way in. A marker with no label — DM_TO,
+     MEMORY_WRITE — falls into `unavailable` and is then dropped by
+     claimLabels, which is the one place that rule lives. A guard here
+     would be a second copy of that decision, and fire-testing it proved
+     the point: an arm that deleted the guard changed no output at all. */
+  const openable = [];
+  const unavailable = [];
+  for (const n of missing || []) {
+    (CEO_DOORS[toolClaimGroup(n)] ? openable : unavailable).push(n);
+  }
+  const open = claimLabels(openable);
+  const none = claimLabels(unavailable);
+  if (!open && !none) return '';
+  const doors = [];
+  for (const n of openable) {
+    const d = CEO_DOORS[toolClaimGroup(n)];
+    if (!doors.includes(d)) doors.push(d);
+  }
+  /* First person throughout, because `from: 'ceo'` renders these as the
+     office speaking. Each of the three leaves a way forward (§7): a
+     switch for what can be switched on, and a coworker for what can't. */
+  /* Each family named ONCE. The first draft opened "I reached for X and Y"
+     and then said X and Y again to give each its door — which makes the
+     boss parse the same list twice, the habit #64 was filed against. */
+  if (open && none) {
+    return `_(I reached for ${open}, which isn't switched on yet — you can turn it on in ${doors.join(' and ')}. I also reached for ${none}, which isn't something I can be given at all — @-mention a coworker who has it, or hire one from the front desk.)_`;
+  }
+  if (open) {
+    return `_(I reached for ${open}, which isn't switched on yet — you can turn it on in ${doors.join(' and ')}, then ask me again.)_`;
+  }
+  return `_(I reached for ${none}. That isn't something I can be given — I run the office, I don't hold tools of my own. @-mention a coworker who has it, or hire one from the front desk.)_`;
 }
 
 /* Build the tools section of the agent system prompt, restricted to tools
@@ -3116,6 +3197,13 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
   const ceoToolSnippet = ceoTools.length ? (useJsonCeo ? toolsPromptSnippetJson(ceoTools) : toolsPromptSnippet(ceoTools)) : '';
   const sys = system || (buildCeoSystem(agents || [], reg) + (ceoToolSnippet ? '\n\n' + ceoToolSnippet : ''));
 
+  /* Accumulated across hops, not read off the last one — the same
+     arithmetic agentStream does. A reach on hop 1 is still a reach when
+     hop 3 is the one that ends up empty. */
+  const reachedFor = new Set();
+  const CEO_HAS = new Set(ceoTools.map(t => t.name));
+  const KNOWN_MARKERS = Object.keys(TOOL_REGISTRY).map(k => TOOL_REGISTRY[k].name);
+
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let buf = '';
     await CafresoHQClient.stream({
@@ -3128,26 +3216,45 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
       signal,
       maxTokens,
     });
+    /* Recorded before the tool-call check, so a hop that DOES fire a tool
+       still contributes any second, ungranted marker it opened. */
+    for (const n of openedMarkers(buf, KNOWN_MARKERS)) {
+      if (!CEO_HAS.has(n)) reachedFor.add(n);
+    }
     const call = ceoTools.length ? detectToolCall(buf, ceoTools) : null;
     if (!call) {
       const cleaned = cleanHarmony(buf);
       const emit = (msg) => { if (onHint) onHint(msg); else onToken(msg); };
       if (!cleaned.trim()) {
         const orphans = extractHarmonyToolCalls(buf);
-        if (orphans.length) {
-          /* Roster, not "API": there is no API tab, and there hasn't been
-             one since managed premium took the self-host setup surface out
-             of Settings. Which tools a coworker gets is a per-agent
-             question, and ROSTER is where those boxes are ticked. The very
-             next branch below already says "Settings → Connections" — that
-             message got updated in some earlier pass and this one didn't. */
-          const want = claimLabels(orphans.map(o => o.tool));
-          emit(want
-            ? `_(they reached for ${want}, which they don't have — turn it on from their card in Settings → Roster and ask again.)_`
-            : "_(they reached for something they haven't been given — check what they're allowed to do in Settings → Roster.)_");
+        const missing = [...new Set([...orphans.map(o => o.tool), ...reachedFor]
+          .filter(n => !CEO_HAS.has(n)))];
+        const note = missing.length ? ceoReachedForNote(missing) : '';
+        if (note) {
+          emit(note);
+        } else if (orphans.length) {
+          emit('_(I talked myself through that one and never actually answered. Ask me again.)_');
         } else {
-          emit('_(nothing came back from them this time. If they are on a free brain this usually means you asked for too much at once — try **Settings → Connections → Coworker capability → "Lite"**, or give them a smaller job.)_');
+          /* Was: "If they are on a free brain … try Settings → Connections
+             → Coworker capability → Lite". Three wrong things. The control
+             is labelled "Agent capability", not "Coworker capability"; it
+             renders only when `s.provider === 'hermes'`, so it is hidden in
+             exactly the free-brain case the sentence invokes; and "they"
+             is the office describing itself in the third person. Measured
+             on the reproducing office: with the provider on lmstudio, the
+             only occurrence of the word "capability" anywhere on the
+             Connections screen was this note bleeding through from the
+             chat behind it. */
+          emit('_(nothing came back from me that time — the brain running this office may be offline or busy. Ask me again in a moment, or check Settings → Connections.)_');
         }
+      } else if (reachedFor.size) {
+        /* The reply is not empty, so the boss has prose — and the marker
+           inside it was stripped before they saw it. Reproduced on port
+           9261: "Sure — let me pull the current figure for you." arrived
+           on its own, with no figure behind it and no note. Silence there
+           is the office endorsing a promise it knows was not kept (§4). */
+        const note = ceoReachedForNote([...reachedFor]);
+        if (note) emit(note);
       }
       return;
     }

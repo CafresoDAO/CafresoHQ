@@ -120,6 +120,12 @@ def main():
     js = re.search(r'^const TOOLS_CATALOG = \[[\s\S]*?^\];$', src, re.M).group(0) + '\n'
     js += re.search(r"^const ELEVATION_DOOR = '[^']*';$", src, re.M).group(0) + '\n'
     js += re.search(r'^const TOOL_CLAIM_GROUPS = \[[\s\S]*?^\];$', src, re.M).group(0) + '\n'
+    # toolClaimLabel delegates the "which family is this?" question to
+    # toolClaimGroup (added with #68, so the chief of staff's door map can
+    # ask it too without a second copy of TOOL_CLAIM_GROUPS). Lifted here
+    # because a lifted function that calls an unlifted one is a
+    # ReferenceError, which is how the full suite caught this.
+    js += brace_lift(src, 'function toolClaimGroup(') + '\n'
     js += brace_lift(src, 'function toolClaimLabel(') + '\n'
     # claimLabels gained a second door for 'img' — see
     # test_the_image_box_is_a_real_door.py, which owns that behaviour. Lifted

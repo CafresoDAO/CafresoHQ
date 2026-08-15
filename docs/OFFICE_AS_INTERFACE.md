@@ -9221,3 +9221,100 @@ something other than what it claims to.
 
 A surface may only assert what detection established — and staying
 silent while someone else asserts it is the office asserting it too.
+
+---
+
+## The chief of staff was handed a coworker's failure notes
+
+The last entry fixed the reach note on the coworker path. The chief of
+staff — the one every new boss talks to first, before a single hire —
+had its own copy of that code, and every sentence in it had been written
+for a hire.
+
+Asked "what's the price of cycles today?" on a throwaway office (port
+9261, canned brain on 9236), with a reply reaching for a tool it does
+not hold, the office said this about ITSELF:
+
+    _(they reached for Web Search, which they don't have — turn it on
+      from their card in Settings → Roster and ask again.)_
+
+Two wrong things in one sentence. "They" casts the speaker as a third
+party, so the boss reads it as a coworker having failed and goes looking
+for one. And there is no card: the Roster renders `agents.map(…)`.
+Opening it live on that same office listed Vera and Kip and nobody else.
+
+The comment above the line recorded, in good faith, why an earlier pass
+had changed it from "API" to "Roster" — *"which tools a coworker gets is
+a per-agent question, and ROSTER is where those boxes are ticked."* Every
+word of that is true about a coworker. It was written on the chief of
+staff's path.
+
+The sibling branch was worse. On an empty reply:
+
+    _(nothing came back from them this time. If they are on a free brain
+      this usually means you asked for too much at once — try **Settings
+      → Connections → Coworker capability → "Lite"**, or give them a
+      smaller job.)_
+
+Three wrong things. The control is labelled **Agent capability**, not
+"Coworker capability" — that exact phrase appeared nowhere in the product
+except the sentence naming it. It renders only under `s.provider ===
+'hermes'`, so it is hidden in precisely the free-brain case the sentence
+invokes. And "they" again. Measured: with the office on lmstudio, Settings
+→ Connections was opened and the only occurrence of the word "capability"
+anywhere on the screen was this note itself, bleeding through from the
+chat behind the modal.
+
+The third hole is the one the last entry closed for coworkers and left
+open here. Prose plus an ungranted marker produced, in full:
+
+    CafresoHQ  Sure — let me pull the current figure for you.
+
+No figure. No note. `stripBlocks` removed the marker and the office
+endorsed a promise it knew could not be kept (§4).
+
+The doors that ARE real were sitting on the screen the note should have
+named. `ceoTools` is gated on `TOOL_REGISTRY.search.requires()`
+(braveEnabled + braveKey) and `isVaultReady`, and both switches live in
+Settings → Connections as the BRAVE WEB SEARCH and MARKDOWN VAULT
+panels — both confirmed present on the reproducing office. So the office
+now has a door map of its own, and it reads the same classifier the
+coworker path does (`toolClaimGroup`, split out of `toolClaimLabel`)
+rather than keeping a second copy of the five regexes.
+
+Anything else the office might reach for — image work, files, a shell —
+is not a switch it can be given at all. There is no setting that grants
+the office a shell, so naming any screen there would just be a second
+wrong door. §7 still wants a way forward and there is a real one: a
+coworker can hold what the office cannot. A reply reaching for both kinds
+gets both answers, each family named once:
+
+    _(I reached for Web Search, which isn't switched on yet — you can turn
+      it on in Settings → Connections. I also reached for File & shell
+      access, which isn't something I can be given at all — @-mention a
+      coworker who has it, or hire one from the front desk.)_
+
+Verified live after the fix, all four cases: the reach note names
+Connections in the first person; the promise now carries its own
+correction underneath it; the empty-reply sentence no longer sends a free
+brain to a Hermes-only control; and a reply that merely *mentions*
+`[SEARCH]` without a colon produces no note at all — talking about a tool
+is not reaching for one, and the false alarm is the more expensive
+mistake.
+
+Two suites had to move, and both moves are the finding repeating itself
+one level up. `test_a_200_is_not_a_page.py` required **four** matches of
+"reached for … Settings → Roster" across hq-runtime.jsx — and two of
+those four were the chief of staff's copies. A file-wide count cannot
+tell "a coworker branch was weakened" from "the wrong speaker stopped
+borrowing this sentence"; it is scoped to `reachedForNote` now. And
+`test_the_office_does_not_back_a_false_claim.py` anchored its window with
+`code.find('const reachedFor = new Set();')` — which this ticket put a
+second, EARLIER copy of into the file, sliding the window silently onto
+the wrong function. It brace-matches `agentStream` now. Both are the
+collapsing source window again: a scope defined by proximity rather than
+by structure will eventually measure its neighbour and report the result
+with full confidence.
+
+A surface may only assert what detection established — and a sentence
+about who failed is an assertion about who was speaking.

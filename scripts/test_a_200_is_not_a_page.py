@@ -275,12 +275,22 @@ def main():
     # what this check is named for and all it should hold: both branches of
     # the hint, the one that can name the box and the one that can't, still
     # send the boss to the tab where tools are ticked.
-    reached = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', rt)
+    # Scoped to reachedForNote, and no longer a file-wide count. It used to
+    # require >= 4 matches across hq-runtime.jsx, and two of those four were
+    # ceoStream's copies of this sentence — which #68 removed, because the
+    # chief of staff has no Roster card to send anyone to. A file-wide
+    # threshold could not tell "a coworker branch was weakened" from "the
+    # wrong speaker stopped borrowing this sentence", and counted the second
+    # as if it were the first.
+    coworker_note = rt[rt.index('function reachedForNote('):]
+    coworker_note = coworker_note[:coworker_note.index('\n}\n') + 3]
+    reached = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', coworker_note)
     check('the unwired-tools hint points at where tools are ticked',
-          len(reached) >= 4,
-          f'{len(reached)} of the hint branches name Roster — which tools a '
-          'coworker gets is a per-agent question, and ROSTER is the '
-          'per-agent tab')
+          len(reached) == 2,
+          f'{len(reached)} of the coworker hint branches name Roster — which '
+          'tools a coworker gets is a per-agent question, and ROSTER is the '
+          'per-agent tab. The third branch names Settings → Media on '
+          'purpose (the image provider is not on the card).')
     check('onboarding names no tab at all',
           re.search(r'change it anytime in Settings\.', onboard),
           'this line is read on managed containers too, and CONNECTIONS — '

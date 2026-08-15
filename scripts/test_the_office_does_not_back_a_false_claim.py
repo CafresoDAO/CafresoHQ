@@ -151,16 +151,17 @@ def main():
                     r'for \(let hop = 0;', code),
           '— declared before the loop: only the final hop\'s buffer reaches '
           'the branch, so a reach on hop 1 was lost whenever hop 2 spoke')
-    # Scoped to the coworker loop. `ceoStream` has its own `if (!call)` and
-    # its own differently-worded reach sentence ("…and ask again", no name),
-    # both of which sit EARLIER in the file — an unscoped `.index` here
-    # measured the chief of staff's code and failed on correct source.
-    at = code.find('const reachedFor = new Set();')
-    region = code[at:] if at >= 0 else ''
+    # Scoped to the coworker loop, by BRACE MATCH rather than by a string
+    # search from the first `const reachedFor`. `ceoStream` has its own
+    # `if (!call)` and, since #68, its own accumulator — and it sits EARLIER
+    # in the file, so a `find`-anchored window silently slid onto the chief
+    # of staff's copy and measured the wrong function on correct source. A
+    # window bounded by the structure it belongs to cannot drift that way.
+    region = brace_lift(code, 'async function agentStream(')
     add_at, call_at = region.find('reachedFor.add(n)'), region.find('if (!call) {')
     check('...and recorded before the tool-call check, not after',
-          at >= 0 and add_at >= 0 and call_at >= 0 and add_at < call_at,
-          [at, add_at, call_at, '— a hop where a granted tool DID fire never '
+          add_at >= 0 and call_at >= 0 and add_at < call_at,
+          [add_at, call_at, '— a hop where a granted tool DID fire never '
            'reaches the branch below, and that hop can still contain a reach'])
     check('...as a set, so one reach is one sentence',
           'reachedFor = new Set()' in code,

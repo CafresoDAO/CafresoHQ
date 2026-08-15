@@ -178,6 +178,11 @@ def main():
         js = re.search(r'^const TOOLS_CATALOG = \[[\s\S]*?^\];$', RUNTIME, re.M).group(0) + '\n'
         js += re.search(r"^const ELEVATION_DOOR = '[^']*';$", RUNTIME, re.M).group(0) + '\n'
         js += re.search(r'^const TOOL_CLAIM_GROUPS = \[[\s\S]*?^\];$', RUNTIME, re.M).group(0) + '\n'
+        # toolClaimGroup first — toolClaimLabel calls it (see #68; the chief
+        # of staff's door map needed the same classification without a second
+        # copy of TOOL_CLAIM_GROUPS). Lifting the caller alone is a
+        # ReferenceError at node time, not a check failure.
+        js += brace_lift(RUNTIME, 'function toolClaimGroup(') + '\n'
         js += brace_lift(RUNTIME, 'function toolClaimLabel(') + '\n'
         js += brace_lift(RUNTIME, 'function claimNeedsMediaDoor(') + '\n'
         js += brace_lift(RUNTIME, 'function claimHitsMediaDoor(') + '\n'
