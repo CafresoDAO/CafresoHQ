@@ -8900,3 +8900,74 @@ problem rather than the fix for it.
 A surface may only assert what detection established — and when two
 surfaces on one screen read the same detection, they have to read the
 same copy of it, or the office argues with itself in front of the boss.
+
+### The office told the boss the same correction twice — 2026-08-15
+
+Found by running the core loop rather than by reading code: fresh office on
+port 9260, one hire (Vera) resolved onto a local brain, a reply naming
+`Research/vendor-comparison.md` and filing nothing. The bubble ended:
+
+    Recommendation: B for now, revisit at scale.
+
+    _(`Research/vendor-comparison.md` is named above, but nothing was
+      written to the cabinet on this run, so that file is not there.)_
+
+    _(`Research/vendor-comparison.md` is named above, but nothing was
+      written to the cabinet on this run, so that file is not there.)_
+
+One `unfiledPath` note. The activity row prints `honesty.join(' ')` and
+showed it **once**, so the array had one entry. Instrumenting the emit loop
+showed **one** `note()` call. Two copies in the message.
+
+Instrumenting `throttleTokens` gave the order, and the order is the finding:
+
+    [P] flushNow
+    [P] emit#1  (honesty.length = 1)
+    [P] note()      cancelled=true
+    [P] withNotes   suffix="\n\n_(`Research/…` is named above, …"
+
+`flush.withNotes(...)` is called at app.jsx:2186 — **lexically before** the
+note is emitted at 2614 — but it is called from inside a
+`setChat(prev => …)` updater. React runs updaters when it processes the
+queue, not when the caller enqueues them. So the write requested first is
+evaluated last, over a `suffix` that grew in between, and both mechanisms
+that exist so the note is never *lost* applied it.
+
+Only one of the two writes could be reordered safely, and the asymmetry is
+the general lesson. `withNotes` is **absolute** — it computes the whole
+text — so running it late, twice, or not at all still yields one copy.
+`note()`'s direct branch is **relative**: it reads the current text and
+appends, so it duplicates whatever an absolute write already included. A
+relative write is only correct when you know what ran before it, and inside
+a React update queue you do not. Asking "is this already there" before
+appending makes it idempotent in either order, which is what the fix does.
+
+The direct branch could not simply be deleted. The abort route calls
+`cancel()` and then writes its own text without ever calling `withNotes`,
+so on that path the direct write is the *only* thing carrying the note —
+deleting it would trade a stutter for silence, which is the more expensive
+mistake. Both halves are pinned: one arm of the fire test suppresses both
+copies and the suite catches the missing sentence, not just the extra one.
+
+All three dispatch paths call `withNotes` from inside an updater, so all
+three said it twice. Measured before and after on two of them — @mention
+2 → 1, Delegate 2 → 1 — by rebuilding the pre-fix bundle and re-running the
+same drive, rather than inferring the second path from the first's code
+shape.
+
+A doubled sentence is not cosmetic here. This note exists to tell the boss
+the office did not do the thing it was asked to do. §7 asks for one honest
+sentence and a way forward; a correction that stutters reads like the
+office is unsure of its own correction, which is exactly the credibility
+the note was written to have.
+
+Two smaller things went with it. `suffix += (suffix ? '\n\n' : '\n\n')` had
+two identical arms — it read as if the first note were special-cased, and
+that false asymmetry is part of why the real one took so long to see. And
+the regression test's ordering check used `.index`, which raises when the
+needle is gone: two fire arms came back as HARNESS CRASH and told me
+nothing about which invariant they had violated. `.find` returns -1 and
+fails the check it was written to fail.
+
+A surface may only assert what detection established — and a write that
+appends to what is already on screen has to know what is already on screen.

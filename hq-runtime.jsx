@@ -261,12 +261,46 @@ function throttleTokens(setChat, msgId) {
      cleaned text the caller just wrote. Getting this wrong silently kills
      exactly the warnings that exist because a request went silently
      nowhere. */
+  /* The containment guard is not defensive tidiness — without it the boss
+     reads the office's honesty correction TWICE, in a row, verbatim.
+
+     Measured on port 9260, one hire on a local brain, a reply naming
+     `Research/vendor-comparison.md` with nothing filed. One `unfiledPath`
+     note, one `note()` call — and two identical sentences in the bubble.
+     Instrumented, the order came out:
+
+         flushNow  ->  note() cancelled=true  ->  withNotes suffix="\n\n_(…)_"
+
+     `withNotes` is called at app.jsx:2186 — LEXICALLY BEFORE the note is
+     emitted at 2614 — but it is called *inside* a `setChat(prev => …)`
+     updater, and React runs updaters when it processes the queue, not when
+     the caller enqueues them. So the write that was requested first is
+     evaluated last, and it reads a `suffix` that grew in between. Both
+     mechanisms that exist so the note is never LOST then applied it: the
+     deferred `withNotes` painted `cleaned + suffix`, and this branch
+     appended the same sentence on top.
+
+     The append is the half that cannot be reordered safely, because it is
+     RELATIVE — it reads the current text and adds to it, so it duplicates
+     anything an absolute write already included. Asking "is it already
+     there" makes this branch idempotent whichever order React picks, and
+     leaves the no-`withNotes` paths (the abort route writes its own text
+     and never calls it) working exactly as before.
+
+     All three dispatch paths call `withNotes` from inside an updater —
+     @mention, Delegate and a task dropped on a desk — so all three said it
+     twice. A doubled sentence is not cosmetic here: this note exists to
+     tell the boss the office did not do the thing it was asked to do, and
+     a correction that stutters reads like the office is unsure of it. */
   ontok.note = (text) => {
-    suffix += (suffix ? '\n\n' : '\n\n') + text;
+    suffix += '\n\n' + text;
     if (cancelled) {
-      setChat(prev => prev.map(m => m.id === msgId
-        ? { ...m, text: ((m.text || '') + '\n\n' + text).replace(/\n{3,}/g, '\n\n') }
-        : m));
+      setChat(prev => prev.map(m => {
+        if (m.id !== msgId) return m;
+        const cur = String(m.text || '');
+        if (cur.indexOf(text) >= 0) return m;   // a deferred withNotes beat us to it
+        return { ...m, text: (cur + '\n\n' + text).replace(/\n{3,}/g, '\n\n') };
+      }));
       return;
     }
     schedule();
