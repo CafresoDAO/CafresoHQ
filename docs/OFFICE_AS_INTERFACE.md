@@ -10812,3 +10812,86 @@ Full runner: 130/130.
 
 A surface may only assert what detection established — and detection
 has to run on the surface it speaks for.
+
+## A reload rewrote the story of a run that already ended
+
+Measured 2026-08-15 on the task board, canned brain, office 9261. "Empty
+hands" was parked in DOING exactly as the settle left it:
+
+    ✋ Nothing came back from this run — no answer and no file. Start it
+      again, or hand it to a different coworker.
+
+One page reload later it sat in the INBOX reading
+
+    ↩ the run stopped when the page reloaded — start it again when you
+      want it
+    ✋ Nothing came back from this run — no answer and no file. Start it
+      again, or hand it to a different coworker.
+
+Two stories about one run, stacked on the surface that exists to say what
+actually happened — and the new one is false. Nothing stopped at reload.
+The run ended minutes earlier, on its own, and its ending was already
+written one field over. Three more cards on the live board carried the
+same stacked pair, one for every reload since their snags settled.
+
+The seam is a premise that used to be true. The load-scrub was written
+against a measured fact — start a task, reload five seconds in, and the
+card sits in DOING forever over a run nothing will ever finish — so it
+reasoned: a run lives in the page, therefore every `doing` card at load
+time is a run the tab took down with it. Then the settle started PARKING
+snags in DOING (`blockedReason`, whose only writer is the run-end path),
+and the board grew a second population of doing-at-load cards the premise
+had never met. The scrub never learned the difference; it filed a card
+that says "my run ended, here is how" under "my run was killed, nobody
+saw the end." The rendering code knew better than the writing code: the
+gate that shows ✋ on non-done cards carries a comment calling "start it
+again" bad advice for a job that will hit the same wall — while the scrub
+stamped that exact advice onto every parked card at every refresh.
+
+The fix is one clause. The scrub now asks the question displacedTask
+already asks — is this card a run in flight, or a snag the settle parked?
+— and only touches a `doing` card with no `blockedReason`. Falsy check on
+purpose: a progress note clears the field to '' rather than deleting it,
+and a card mid-run when the tab closed must still scrub.
+
+scripts/test_a_parked_snag_survives_the_reload.py runs the real statement
+lifted from app.jsx: the dead run still goes to the inbox with the note in
+its exact shipped words; the parked snag is not touched at all; an empty
+reason is not a park; cards outside DOING are not the scrub's business;
+null entries and a corrupt store still load. Two wiring pins: the
+discriminator literal, and the false note having exactly one writer in
+the file, behind that guard.
+
+test_a_blocked_card_says_so pinned the OLD behavior — "a reload keeps the
+reason while moving the card" — as the justification for rendering ✋ on
+non-done cards. The intent of that check was that a reload must never
+hide the reason; it is now served more strongly by not touching the card,
+so the check demands doing + reason + no stalled note. The render gate
+itself stays: onMoveTask routes through applyStatus, which touches only
+status and startedAt, so the boss dragging a blocked card off DOING by
+hand still carries the reason with it — verified in app/worklog.jsx
+before rewording the check's rationale.
+
+Fire-tested with seven arms — guard dropped, guard inverted, reason
+cleared in transit, false note stamped on a parked card, empty string
+treated as a park, note wording drifted, full revert — all seven caught,
+five of them independently by both suites.
+
+Verified live in both directions, and the second direction took two
+tries: the 9-second canned-brain delay settled before my reload landed
+(browser round-trips ate the window), so the first "mid-run" reload
+actually re-proved the parked case. Bumped the route to 45 seconds and
+reloaded genuinely mid-run. One snapshot then showed the whole fix at
+once: the killed card in the inbox wearing a ↩ note that is finally
+true, and the parked card two slots over still in DOING wearing only the
+settle's own words.
+
+Not chased here, noted before: the residue cards un-parked by pre-fix
+reloads keep their stale ↩ lines until their next START clears them —
+the scrub does not retroactively edit inbox cards, and it should not
+start; rewriting history is this ticket's defect, not its cure.
+
+Full runner: 131/131.
+
+A status column is a claim with a population behind it — when a new kind
+of card moves in, every reader of that column inherits a re-check.

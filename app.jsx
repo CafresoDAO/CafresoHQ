@@ -734,9 +734,22 @@ function App() {
      Back to `inbox`, keeping the assignee, so it returns to the board as
      ready-to-start rather than pretending to be underway — and the boss
      presses ▶ START when they want it, which is the office's model for who
-     decides that. */
+     decides that.
+
+     Except a parked snag. The settle leaves a card in DOING with a
+     `blockedReason` when a run ENDS empty-handed — and the run-end path is
+     that field's only writer, so `doing` + `blockedReason` at load time is
+     definitionally a run that already finished, not one the reload killed.
+     The premise above ("a doing card at load is a run that died with the
+     tab") simply does not cover it: there is nothing here to clean up.
+     Before this guard, the scrub moved the parked card to the inbox and
+     stamped "the run stopped when the page reloaded" one line above the
+     settle's own "nothing came back from this run" — two contradictory
+     stories about a single run, on the surface that exists to say what
+     actually happened. Falsy check on purpose: the field is cleared to ''
+     rather than deleted, the same convention worklogLine relies on. */
   const tasksOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
-    .map(t => t && t.status === 'doing'
+    .map(t => t && t.status === 'doing' && !t.blockedReason
       ? { ...t, status: 'inbox', stalledNote: 'the run stopped when the page reloaded — start it again when you want it' }
       : t), []);
   const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS, tasksOnLoad);

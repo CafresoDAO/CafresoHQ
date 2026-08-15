@@ -136,11 +136,11 @@ console.log(JSON.stringify(R));
     if m:
         check("...gated the same way stalledNote is, not on 'doing'",
               m.group(1).strip() == "!== 'done'",
-              f'{m.group(1).strip()!r} — the reload scrub sends every DOING '
-              "task back to 'inbox' WITHOUT clearing this field, so a "
-              'doing-only gate hides a live reason the moment the boss '
-              'refreshes, and "start it again" is bad advice for a job that '
-              'will hit the same wall')
+              f'{m.group(1).strip()!r} — the boss can drag a blocked card off '
+              'DOING by hand (onMoveTask -> applyStatus keeps the field), so a '
+              'doing-only gate hides a live reason the moment the card moves, '
+              'and "start it again" is bad advice for a job that will hit the '
+              'same wall — the reason must follow the card')
     # The scrub really does leave the field alone — the premise of the gate.
     scrub = re.search(r'const tasksOnLoad = React\.useCallback\([\s\S]*?\), \[\]\);', app)
     check('the reload scrub is still one statement', bool(scrub), 'app.jsx')
@@ -151,11 +151,19 @@ const React = { useCallback: (f) => f };
 console.log(JSON.stringify(tasksOnLoad([{ id:'t1', status:'doing',
   blockedReason:'the sheet is locked' }])[0]));
 """ % scrub.group(0))
-        check('a reload keeps the reason while moving the card',
+        # Written when the scrub moved every DOING card to inbox; since the
+        # parked-snag guard it must not touch this card at all. The intent is
+        # unchanged — a reload must never hide the reason — it is now served
+        # by leaving the settled card exactly as the settle left it.
+        check('a reload leaves a parked card exactly as the settle left it',
               scrubbed.get('blockedReason') == 'the sheet is locked'
-              and scrubbed.get('status') == 'inbox',
-              f'{scrubbed!r} — if this ever starts clearing it, the gate above '
-              'can go back to DOING-only')
+              and scrubbed.get('status') == 'doing'
+              and not scrubbed.get('stalledNote'),
+              f'{scrubbed!r} — a doing card with a blockedReason is a run that '
+              'ENDED (the run-end path is the field\'s only writer); moving it '
+              'and stamping "the run stopped when the page reloaded" told a '
+              'second, false story about a run whose true ending was already '
+              'on the card')
 
     # ── 3. the three ways off a block, run for real ─────────────────────
     handler = lift_block(app, 'setTasks(prev => prev.map(t => {')
