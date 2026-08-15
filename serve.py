@@ -231,6 +231,52 @@ def _within_allowed_dirs(p):
         except (ValueError, Exception):
             continue
     return False
+
+
+def _workspace_path(path, strict=False):
+    """`path` as a pathlib.Path, with a RELATIVE path anchored to the
+    workspace root rather than to wherever serve.py happens to be running.
+
+    /tools/exec has always read a relative arg that way — its _resolve_arg
+    anchors to the request's cwd — but every /fs route resolved against the
+    server process cwd, so one string meant two directories. Measured on
+    office 9262, 2026-08-15, with site/index.html in the workspace and
+    serve.py started from the repo:
+
+      POST /tools/exec  DIR_LIST  arg=site      200  the workspace's site/
+      POST /tools/exec  FILE_WRITE site/x.txt   200  written to the workspace
+      GET  /fs/collect?path=site                403  outside allowed dirs
+      POST /fs/upload?path=site                 403
+      GET  /fs/site/<b64 'site/'>/index.html    403
+
+    A coworker wrote site/index.html, listed site/, emitted
+    [PUBLISH_SITE: site/], the boss stamped it — and the publish 403'd on a
+    folder the office had just made. publishSite calls fsCollect FIRST inside
+    the II-shell branch and swallows the throw, so even with the shell
+    present a relative path degraded to a preview link that was also 403.
+
+    allowed_dirs[0] is the anchor because this codebase already treats it as
+    the workspace root: it is what /fs/browse and /fs/upload fall back to when
+    given no path at all. This only ANCHORS — every caller still resolves and
+    runs its own whitelist check afterwards, so `../` escapes stay refused.
+
+    Not applied in the local no-whitelist case: there the defaults are ~ and
+    ~/Documents, which are not a workspace, and nothing is refused anyway — so
+    cwd-relative stays what it has always been for local development.
+    """
+    p = pathlib.Path(_client_path(path))
+    skip = (not strict and not _ALLOWED_DIRS_EXPLICIT
+            and _RUNTIME_ENV == 'local')
+    # `is_absolute()` is here to be read, not to decide: pathlib already
+    # discards the left side when the right is absolute, so Path(ws) /
+    # Path('/etc') is '/etc' with or without it. Deleting it changes no
+    # output and the fire-test for this fix proved that by deleting it — do
+    # not read it as a guard.
+    if not p.is_absolute() and not skip and _cafresohq_allowed_dirs:
+        p = pathlib.Path(_cafresohq_allowed_dirs[0]) / p
+    return p
+
+
 _cafresohq_allowed_tools = [t.strip() for t in
                            os.environ.get('CAFRESOHQ_ALLOWED_TOOLS',
                                # Default set — discovery, reading and editing,
@@ -277,6 +323,7 @@ import pty_server
 pty_server._client_path = _client_path
 exporters._vault_root = lambda: _vault_root
 fs_routes._client_path = _client_path
+fs_routes._workspace_path = _workspace_path
 fs_routes._RUNTIME_ENV = _RUNTIME_ENV
 fs_routes._within_allowed_dirs = _within_allowed_dirs
 fs_routes._cafresohq_allowed_dirs = _cafresohq_allowed_dirs
@@ -1968,7 +2015,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         keyless). For those the skip would be an unauthenticated arbitrary-read
         hole, so an explicit sandbox is required — see _site_sandbox_ok.
         """
-        p = pathlib.Path(_client_path(path)).resolve()
+        # Relative → the workspace, not the server's own cwd. One anchor for
+        # every door; see _workspace_path for what the two used to mean.
+        p = _workspace_path(path, strict=strict).resolve()
         if not strict and not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
             return p  # local default: no restriction, user accesses own files
         for d in _cafresohq_allowed_dirs:

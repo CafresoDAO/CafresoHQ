@@ -21,6 +21,12 @@ import urllib.parse
 
 # Injected by serve.py right after import.
 _client_path = None
+# Anchors a relative path to the workspace root before it is resolved. The
+# three routes below that resolve their OWN path (browse / file / stat) must
+# use it rather than pathlib.Path(_client_path(x)) — otherwise a relative path
+# means the workspace at the doors that go through _validate_path and the
+# server's cwd at these three, which is the split #78 was about.
+_workspace_path = None
 _RUNTIME_ENV = 'local'
 _cafresohq_allowed_dirs = ()
 _ALLOWED_DIRS_EXPLICIT = False
@@ -49,7 +55,7 @@ def _fs_browse(self):
                 req_path = os.getcwd()
 
     try:
-        p = pathlib.Path(_client_path(req_path)).resolve()
+        p = _workspace_path(req_path).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
 
@@ -171,7 +177,7 @@ def _fs_file(self):
     if not req_path:
         return self._send_json(400, {'error': 'path required'})
     try:
-        p = pathlib.Path(_client_path(req_path)).resolve()
+        p = _workspace_path(req_path).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
     # "not a file" answered two different questions with one string, and the
@@ -230,7 +236,7 @@ def _fs_stat(self):
     if not req_path:
         return self._send_json(400, {'error': 'path required'})
     try:
-        p = pathlib.Path(_client_path(req_path)).resolve()
+        p = _workspace_path(req_path).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
     if not _within_allowed_dirs(p):

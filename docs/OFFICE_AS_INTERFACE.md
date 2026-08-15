@@ -9912,3 +9912,93 @@ render fails them.
 
 A surface may only assert what detection established — and the record of a
 decision is not a record of what it did.
+
+## A relative path meant the workspace at one door and the repo at another
+
+A coworker wrote a page, listed the folder to confirm it, asked to publish
+it, and the boss stamped it. The publish failed with
+
+    Path outside allowed directories: 'site/'
+
+on a folder the office had just made. Both halves of that sentence were
+true at once, because `site/` did not name the same directory at the two
+doors involved.
+
+`/tools/exec` has always read a relative path as workspace-relative — its
+`_resolve_arg` anchors to the request's cwd before resolving. Every `/fs`
+route resolved against the SERVER PROCESS cwd instead. Measured on office
+9262, with `site/index.html` in the workspace and `serve.py` started from
+the repo:
+
+    POST /tools/exec  DIR_LIST  arg=site      200  the workspace's site/
+    POST /tools/exec  FILE_WRITE site/x.txt   200  written to the workspace
+    GET  /fs/collect?path=site                403  outside allowed dirs
+    POST /fs/upload?path=site                 403
+    GET  /fs/browse?path=site                 400  not a directory
+    GET  /fs/site/<b64 'site/'>/index.html    403
+    ...every absolute equivalent              200
+
+So the office could create a thing at a name and then deny that name
+existed, and the denial was the security refusal — the strongest-sounding
+message it has. Nothing was outside the workspace. One string meant two
+directories.
+
+The reach was wider than the 403 the boss saw. `publishSite` calls
+`fsCollect` FIRST inside the `chain.isAvailable()` branch, and swallows the
+throw in `catch (_e) { /* fall through to the preview link */ }`. A
+relative path therefore never reached a canister even WITH the II shell
+present — it degraded silently to a preview link, and that preview link
+was `/fs/site/<b64>` and 403 too. The whole publish surface was
+unreachable by the path a coworker naturally emits. This is a concrete
+cause of the gap (3) that `5af5527` addressed at the message layer: the
+honest "preview only" sentence was correct about what happened and could
+not say why what happened was avoidable.
+
+The first fix anchored inside `_validate_path` and stopped. Three routes —
+`/fs/browse`, `/fs/file`, `/fs/stat` — resolve their own path and never
+call it, so the split would have survived at three doors out of five while
+looking fixed at the two the reproduction had used. That is the `5eefde5`
+pattern again: a mechanism wired to some of the paths that need it is
+drifting, not done. The shipped fix is one shared `_workspace_path`, used
+by `_validate_path` and injected into `fs_routes` for the three that
+resolve for themselves, so there is one place where "relative" acquires a
+meaning.
+
+The suite drives a real server whose cwd is the repo, deliberately, and
+requires each door to answer the same for the relative form as for the
+absolute — including a real multipart `/fs/upload`, asserting the file
+lands in the workspace and that no `site/` appears in the repo. Anchoring
+happens before `resolve()`, so the escape probes still 403.
+
+Three fire-test findings.
+
+`_validate_path`'s whitelist loop was entirely untested. Every escape probe
+went through `_within_allowed_dirs` — a different guard on the browse and
+file routes — so the whole `for d in _cafresohq_allowed_dirs` block could
+be deleted and the suite stayed green. Two guards defending the same idea
+is not the same as two guards being tested, which is the `aed4da6` lesson
+arriving from the other direction: there, one mutation reached neither
+guard; here, every probe reached only one of them.
+
+A structural check that captures what it recognises cannot see a door that
+stopped being recognisable. The draft asserted every match of
+`p = (\S+)\(req_path\)\.resolve\(\)` used the new anchor — and a door
+reverted to `pathlib.Path(_client_path(req_path)).resolve()` does not match
+that pattern at all, so it left the list rather than failing it, and
+`all()` over the two remaining doors stayed True. The enumerated allow-list
+hazard, in regex form. It now asserts the OLD spelling is ABSENT.
+
+And an `is_absolute()` guard in the anchor is decorative: `Path('/ws') /
+Path('/etc')` is `/etc` — pathlib discards the left side when the right is
+absolute, with or without the check. Deleting it changed no output, so the
+arm was dropped and the fact written into a comment that says the line is
+there to be read, not to decide. Per `1a33ca4`'s discipline: document what
+a line does not do rather than leave a reader to assume it defends
+something.
+
+Noticed and deliberately not folded in: `_fs_browse` runs `is_dir()`
+BEFORE the allowed-dirs check, so a 400-vs-403 difference reports whether a
+path outside the workspace exists.
+
+A surface may only assert what detection established — and one string must
+not mean two directories.
