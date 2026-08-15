@@ -4625,6 +4625,30 @@ ${d.text}` : d.text,
       elevated: ap.elevated,
     };
     setReceipts(prev => [r, ...prev]);
+    return r.id;
+  };
+  /* A stamp is a decision, and for `publish` the stamp is ALSO the act: the
+     handler below performs the publish inline. The receipt was written at
+     the moment of the decision and never touched again, so all three
+     outcomes — shipped to a canister, degraded to a local preview, failed
+     outright — left the same green ✓ on a row reading
+
+       publish "site/" to the public internet
+
+     Measured live 2026-08-15, office 9262: chat said "⚠ The publish didn't
+     make it out — Path outside allowed directories: 'site/'" and the tray,
+     whose own subtitle is "stamped approvals · audit trail", said only that
+     the boss approved it. Chat is scrollback; the tray is the record.
+
+     So the outcome lands back on the SAME receipt rather than a second row
+     — one decision, one row, now carrying what came of it. Same shape as
+     the on-chain anchor at anchorWorkReceipt, which already amends a
+     receipt after its async settles. */
+  const settleReceipt = (rcId, outcome, text) => {
+    if (!rcId) return;
+    setReceipts(prev => prev.map(r => (
+      r.id === rcId ? { ...r, outcome, outcomeText: text, settledAt: Date.now() } : r
+    )));
   };
   /* Elevated approval handlers actually dispatch a follow-up to the agent
      so it can resume (or stand down) cleanly. Non-elevated approvals stay
@@ -4632,7 +4656,7 @@ ${d.text}` : d.text,
   const onApprove = (id) => {
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
-    recordReceipt(ap, 'approved');
+    const rcId = recordReceipt(ap, 'approved');
     if (ap) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text: `✓ APPROVED — ${ap.title}` }]);
       /* Ship-to-chain: the stamp is what actually publishes. Async on
@@ -4662,6 +4686,14 @@ ${d.text}` : d.text,
                   + `only; publishing for real needs the Cafreso app that holds your `
                   + `identity (open this office at ai.cafreso.com):\n${r.url}\n`
                   + `Clickable link filed at ${r.file}` }]);
+            /* Same words as the headline above, because a boss reading the
+               tray a week later is asking the same question the headline
+               answered in the moment. */
+            settleReceipt(rcId, wentPublic ? 'shipped' : 'preview',
+              wentPublic
+                ? `Shipped — live on the Internet Computer: ${r.url}`
+                : `Preview only — never went public. Opens on this machine `
+                  + `only: ${r.url}`);
             logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'artifact',
               text: wentPublic
                 ? `shipped "${String(p.path).slice(0, 40)}" to the Internet Computer 🚀`
@@ -4678,6 +4710,8 @@ ${d.text}` : d.text,
                was unreachable. */
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
               text: `⚠ The publish didn't make it out — ${officeCause(err && err.message || String(err))}` }]);
+            settleReceipt(rcId, 'failed',
+              `Didn't make it out — ${officeCause(err && err.message || String(err))}`);
             logActivity({ agentId: p.agentId, agentName: p.agentName || 'a coworker', action: 'failed',
               priority: 'attention', text: 'publish failed after approval',
               detail: (err && err.message || String(err)).slice(0, 240) });
@@ -5319,7 +5353,12 @@ ${d.text}` : d.text,
       out.push({
         id: 'r-' + r.id,
         kind: 'receipt',
-        msg: (r.decision === 'approved' ? '✓ ' : (r.decision === 'rejected' ? '✕ ' : '')) + r.title,
+        /* The bell and the tray read the same receipt, so they say the same
+           thing: a stamped publish that failed must not sit in the bell
+           under a bare ✓ (#44 — one event, one story, on every surface). */
+        msg: (r.decision === 'approved' ? '✓ ' : (r.decision === 'rejected' ? '✕ ' : '')) + r.title
+             + (r.outcome === 'failed' ? ' — didn\'t make it out'
+                : r.outcome === 'preview' ? ' — preview only, never went public' : ''),
         ts: r.decidedAt,
         unread: (r.decidedAt || 0) > notifSeenAt,
         source: r.by,

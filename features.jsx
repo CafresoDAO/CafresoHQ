@@ -1342,6 +1342,24 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
                   act. Receipts written before this shipped have no detail
                   and simply omit the box; nothing is invented for them. */}
               {r.detail && <pre className="ap-detail rc-detail">{r.detail}</pre>}
+              {/* What the stamp DID. For `publish` the stamp is also the act,
+                  and the act has three endings — shipped, preview only,
+                  didn't make it out — which the row above cannot tell apart:
+                  it says the boss approved, which stays true in all three.
+                  The stamp column is left alone for the same reason (it is
+                  the boss's ✓, and it was given). Receipts stamped before
+                  this shipped carry no outcome and simply omit the line;
+                  nothing is guessed for them, same rule as r.detail. */}
+              {r.outcomeText && (
+                <div className="rc-outcome tiny" style={{
+                  margin: '3px 0 4px',
+                  color: r.outcome === 'failed' ? 'var(--error)' : 'inherit',
+                  opacity: r.outcome === 'failed' ? 1 : 0.85,
+                }}>
+                  {r.outcome === 'shipped' ? '🚀 ' : (r.outcome === 'preview' ? '🔗 ' : '⚠ ')}
+                  {r.outcomeText}
+                </div>
+              )}
               <div className="rc-meta">
                 <span>by {r.by}</span>
                 <span>·</span>

@@ -9846,3 +9846,69 @@ when they were written. They are updated, not deleted, and each says why.
 
 A surface may only assert what detection established — and a request is
 not the act.
+
+---
+
+## The audit trail recorded the stamp and never what the stamp did
+
+For most approval kinds a stamp is only a decision. The act happens
+somewhere else, later, and the receipt has nothing to say about it.
+`publish` is the exception: `onApprove` performs the publish inline, right
+there in the handler, and it has three endings — shipped to a canister, a
+preview link that opens on this machine only, or nothing went anywhere.
+
+The receipt was written at the moment of the decision and never touched
+again, so all three left the identical row. Measured live 2026-08-15,
+office 9262, stamping a real agent-requested publish that failed. Chat
+said the honest thing:
+
+    ⚠ The publish didn't make it out — Path outside allowed
+      directories: 'site/'
+
+and the tray — whose own subtitle reads "stamped approvals · audit
+trail" — said:
+
+    ✓  publish "site/" to the public internet
+       by Mika · publish · Aug 15
+
+Chat is scrollback. The tray is the record, and the record was of a
+decision, not an event. A boss scrolling back a week later to answer "did
+that ever go live?" finds a green tick and the words *to the public
+internet*, and the true answer is nowhere in the building.
+
+Two rows now sit one above the other in that tray, the same failed publish
+fourteen minutes apart, and they are the whole ticket: the earlier one is a
+bare tick, the later one carries the reason in red.
+
+The outcome lands back on the SAME receipt rather than a second row. One
+decision, one row, now carrying what came of it — the shape
+`anchorWorkReceipt` already used to write a verify URL onto a receipt after
+its async settled. The stamp column is deliberately left alone: the boss's
+✓ was given, and that stays true in all three endings. It was never the
+part that lied. What was missing was the sentence underneath.
+
+The words are the ones chat had already used in the moment — "Shipped",
+"Preview only — never went public", "Didn't make it out" — because the
+tray is read later with no headline above it, and inventing a second
+vocabulary for the same event is the §6 failure one surface over. The bell
+reads the same receipt and now tells the same story (#44).
+
+The durable part is not the publish branch. The suite finds every branch
+of `onApprove` that performs its own act — an `await CafresoHQClient.…`
+inside the handler — and requires it to settle its receipt on every exit,
+by counting the endings it ANNOUNCES to the boss and demanding the same
+number are written down. A fourth ending added later cannot slip through
+silent, and a second inline-acting approval kind is swept without anyone
+reading that file.
+
+Two of the suite's own checks were guarding air and the fire-test found
+both. `.split(…)[1]` on a call the arm had just deleted raised, crashed the
+harness and proved nothing — the same lesson `.index()` taught on #74, in a
+new spelling. And the tray checks searched the whole modal for
+`r.outcomeText`, which survives `{false && ( … {r.outcomeText} … )}`
+untouched: a block can keep every string a substring check looks for while
+rendering nothing. They now read out of the guarded block itself, so a dead
+render fails them.
+
+A surface may only assert what detection established — and the record of a
+decision is not a record of what it did.
