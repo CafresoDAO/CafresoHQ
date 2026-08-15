@@ -479,7 +479,11 @@ console.log(JSON.stringify(R));
     check('…and reads are untouched',
           all(v.startswith('Opened ') for v in out['vReads']), out['vReads'])
     check('an export is something they made', out['vMade'] == 'Made deck.pptx in the cabinet', out['vMade'])
-    check('a publish says published', out['vPub'] == 'Published site/', out['vPub'])
+    # Said 'Published site/' until #76 — PUBLISH_SITE queues an approval and
+    # publishes nothing, so the past tense here sat one line above its own
+    # "Nothing is public yet".
+    check('a publish says it was asked for, not done',
+          out['vPub'] == 'Asked to publish site/', out['vPub'])
     check('a vault search still looks it up', out['vSearchTool'] == 'Looked up gold in the cabinet', out['vSearchTool'])
 
     # toolActivity — the activity feed is a RECORD, so it reads in the past

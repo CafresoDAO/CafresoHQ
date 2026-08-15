@@ -73,7 +73,22 @@ const PROP_PLACARD = {
    headers are FOR) reads that as a directory that was opened. */
 const VISIT_WORDS = [
   [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', fail: "Couldn't look up", icon: '🔎' }],
-  [/PUBLISH/,                    { now: 'publishing',    past: 'Published', fail: "Couldn't publish",  icon: '🌍' }],
+  /* Asking, not doing. PUBLISH_SITE is the one tool here whose SUCCESS is a
+     request: `run()` queues an approval and returns "Asked the boss to
+     publish X — waiting for the stamp. Nothing is public yet." on every
+     path. Its own doc says NOTHING is public until they stamp it, and the
+     actual publish happens later, in the approval handler.
+     Measured live 2026-08-15, office 9262:
+
+       🌍 Published index.html
+       Asked the boss to publish "index.html" — waiting for the stamp.
+       Nothing is public yet.
+
+     The heading and the line under it are about the same event and they
+     disagree, and the heading is the half a boss skims. The table above
+     models three outcomes — doing, did, failed — and this is a fourth:
+     succeeded at ASKING. */
+  [/PUBLISH/,                    { now: 'asking to publish', past: 'Asked to publish', fail: "Couldn't ask to publish", icon: '🌍' }],
   [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      fail: "Couldn't make",     icon: '🖨' }],
   [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     fail: "Couldn't save",     icon: '📝' }],
   [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      fail: "Couldn't read",     icon: '🌐' }],

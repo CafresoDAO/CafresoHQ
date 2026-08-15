@@ -52,7 +52,13 @@ if m:
     expectations = [
         ('VAULT_APPEND', 'Appended',
          "VAULT_APPEND is the ONLY tool that appends — it must keep that verb."),
-        ('PUBLISH_SITE', 'Published', "PUBLISH_SITE publishes."),
+        # This row said 'Published' until #76. It does not: PUBLISH_SITE
+        # queues an approval and returns "Nothing is public yet", and the
+        # real publish happens later in the approval handler. See
+        # scripts/test_a_request_is_not_the_act.py, which sweeps the whole
+        # registry for tools whose own result says nothing has happened.
+        ('PUBLISH_SITE', 'Asked to publish',
+         "PUBLISH_SITE only ASKS — the boss still has to stamp it."),
         ('EXPORT_', 'Exported', "the EXPORT_* family exports."),
         ('GENERATE_', 'Generated', "the GENERATE_* family generates."),
     ]

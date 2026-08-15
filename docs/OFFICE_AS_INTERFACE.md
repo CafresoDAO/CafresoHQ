@@ -9776,3 +9776,73 @@ guards end up defending nothing.
 
 A surface may only assert what detection established — and the name of the
 channel a sentence arrived on is not the sentence.
+
+---
+
+## A publish REQUEST was filed as a published site
+
+The office's headline capability, driven end to end. Publish module on,
+LM Studio brain, a page in the workspace, and a coworker asked to put it
+live. What came back:
+
+    MIKA · BUILDER
+    🌍 Published index.html
+    Asked the boss to publish "index.html" — waiting for the stamp.
+    Nothing is public yet.
+
+Two lines, one event, and they contradict each other. The heading is the
+half a boss skims.
+
+`PUBLISH_SITE` does not publish. It queues an approval and says so on
+every path — its own doc says NOTHING is public until they stamp it — and
+the real publish happens later, in the approval handler, which is careful
+about what it claims (#61 taught it to tell a canister from a localhost
+preview). The captions above it were not careful. Both tables read the
+tool NAME and matched `/PUBLISH/`, and both had been written with three
+outcomes in mind: doing it, did it, couldn't. This is a fourth they had no
+row for — succeeded at ASKING.
+
+The verb did not stay on screen. It went to the corkboard as finished
+work, and into the receipts tray, which is the permanent record:
+
+    { "title": "Published index.html", "kind": "deliverable",
+      "decision": "executed" }
+
+and `anchorWorkReceipt` writes that title on-chain, where it cannot be
+taken back. Meanwhile the publish that DOES happen, on approval, files no
+receipt at all. So the permanent record held the thing that had not
+happened, and not the thing that did. Only the verb is fixed here; the
+missing receipt on the approval path is its own ticket, and is named
+rather than quietly folded in.
+
+The fix is four words in two caption tables. The part meant to outlive
+the ticket is the check: rather than naming PUBLISH_SITE, the suite reads
+the tool registry, finds every tool whose own returned result says nothing
+has happened yet, and requires both captions to agree with it. A second
+request-shaped tool is covered without anyone remembering this page
+exists. It also pins the four tools that really do finish their job, so
+the correction cannot be over-applied — softening every verb would trade
+this defect for its mirror image, where finished work reads as a maybe.
+
+Two of the suite's own checks were measuring nothing, and the first run
+exposed both. Tool bodies were extracted as "up to the next `name:`",
+which hands the LAST tool in the registry everything to the end of the
+file: HANDOFF_TO came back carrying PUBLISH_SITE's sentences and was
+reported as request-shaped. And the receipt sweep asked `deliverableVerb`
+about every tool in the registry, when it is only ever CALLED for the
+deliverable set — so its fallback was being reported as a caption a boss
+could see, which is a finding about nothing. Both now measure the real
+thing: braces matched backwards from the name to the tool's own `{`, and
+the sweep scoped to the set the function actually serves.
+
+The fire-test then found that the pending sentence occurs twice in the
+runtime, which was not a second tool but the agent-bound override
+`toolsForAgent` pushes — and that override, not the registry entry, is
+the copy the coworker actually gets. The suite now checks both; the
+registry copy alone would have left the live path free to drift.
+
+Two older suites failed on the corrected verb, having pinned the wrong one
+when they were written. They are updated, not deleted, and each says why.
+
+A surface may only assert what detection established — and a request is
+not the act.

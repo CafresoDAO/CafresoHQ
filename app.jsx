@@ -1487,9 +1487,23 @@ ${d.text}` : d.text,
      for "wrote" — it promises the previous contents survived, which is the
      opposite of what FILE_WRITE and the exporters do. The corkboard pin four
      lines below already had the right ladder; both read from here now. */
+  /* PUBLISH_SITE is the exception on this ladder: it is the only tool here
+     whose success is a REQUEST. `run()` queues an approval and returns
+     "…waiting for the stamp. Nothing is public yet." on every path, and the
+     real publish happens later in the approval handler. Filed as
+     "Published" it made the permanent record say the opposite of the truth
+     — measured live 2026-08-15, this exact object was in the tray with
+     nothing public and the stamp not yet given:
+
+       { title: "Published index.html", kind: "deliverable",
+         decision: "executed" }
+
+     and `anchorWorkReceipt` writes that title on-chain, where it cannot be
+     taken back. The verb is the one thing the receipts tray promises to
+     get right (see the note above), so it says what happened: they asked. */
   const deliverableVerb = (name) => (
     name === 'VAULT_APPEND' ? 'Appended'
-      : name === 'PUBLISH_SITE' ? 'Published'
+      : name === 'PUBLISH_SITE' ? 'Asked to publish'
       : String(name).indexOf('EXPORT_') === 0 ? 'Exported'
       : String(name).indexOf('GENERATE_') === 0 ? 'Generated'
       : 'Wrote'          // VAULT_NEW, FILE_WRITE — create or overwrite
