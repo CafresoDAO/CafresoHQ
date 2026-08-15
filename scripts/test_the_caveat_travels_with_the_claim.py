@@ -96,7 +96,7 @@ def main():
           'honestyNotes exists so these checks have exactly one copy')
     notes = brace_lift(runtime, 'function honestyNotes(raw, opts) {')
     check('...and honestyNotes actually calls it',
-          re.search(r'push\(unverifiedSources\(raw,\s*o\.visits\)\)', notes),
+          re.search(r'push\(unverifiedSources\(shown,\s*o\.visits\)\)', notes),
           notes)
 
     # ── 2. all three dispatch paths hand it the run's visits ─────────────

@@ -60,7 +60,7 @@ def run_js(cases_js):
     if not consts:
         raise SystemExit('could not find any ORPHAN_TAG_* const')
     wanted.extend(consts)
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'visibleReply', 'extractAllDMs', 'extractApproval', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
+    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks', 'stripSelfLabel', 'shownBody', 'visibleReply', 'extractAllDMs', 'extractApproval', 'isHandoffPlaceholder', 'vaultPaths', 'upToToolCall', 'placeholderRefusal', 'unsentHandoff', 'unsentElevation', 'unsentBlocks', 'unsentAsk', 'fabricatedRelay'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')

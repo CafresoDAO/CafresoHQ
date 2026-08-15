@@ -82,7 +82,7 @@ def main():
 
     # ── one copy, and it is the shared one ───────────────────────────────
     check('the note is pushed from honestyNotes',
-          re.search(r'push\(unfiledPath\(raw, o\.visits\)\);', runtime),
+          re.search(r'push\(unfiledPath\(shown, o\.visits\)\);', runtime),
           'a guard wired into one dispatch path out of three is the defect '
           'unverifiedSources was moved here to stop repeating')
     sites = re.findall(r'HQ\.honestyNotes\(raw, \{', app)

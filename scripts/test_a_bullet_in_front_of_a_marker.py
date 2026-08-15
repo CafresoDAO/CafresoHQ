@@ -97,7 +97,7 @@ def main():
     for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'extractApproval',
                'isHandoffPlaceholder', 'placeholderRefusal', 'unsentBlocks',
-               'visibleReply'):
+               'shownBody', 'visibleReply'):
         js += brace_lift(src, 'function ' + fn + '(') + '\n'
 
     # `blocks` measures stripBlocks ALONE and `seen` measures the whole

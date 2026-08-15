@@ -587,8 +587,10 @@ function stripAcks(text) {
    itself") reappearing one space to the right of where it was fixed. The
    footer's second line went with it: that one reads the CLEANED body, so the
    leaked path was warning the boss about a file the office had just opened.
-   The same sentence in the chat bubble and the stored result survives this
-   fix — `honestyNotes` reads the RAW buffer — and is its own ticket.
+   The same sentence in the chat bubble and the stored result survived this
+   fix for a while — `honestyNotes` read the RAW buffer — until #87 pointed
+   its two surface-claim guards at `shownBody`, the same text the bubble
+   shows. The marker guards still read raw; see the note in honestyNotes.
 
    So the second branch below: any prose, then the marker, then the end of
    the line. `Use [DM_TO: Mika] to reach someone.` is still untouched — it
@@ -1328,20 +1330,48 @@ function honestyNotes(raw, opts) {
   push(unsentBlocks(raw, o.skipKinds));
   push(unsentAsk(extractAcks(raw).map(a => a.state), delivered));
   push(fabricatedRelay(raw, delivered, o.roster || []));
-  push(unverifiedSources(raw, o.visits));
-  push(unfiledPath(raw, o.visits));
+  /* Two kinds of guard, two inputs — the split is the point.
+
+     Everything above detects MARKERS: unsent blocks, orphaned hand-offs,
+     acks. Markers exist only in the raw buffer — the strip chain deletes
+     them — so those guards must read raw or go blind.
+
+     These last two assert about the boss's SURFACE: "is named above",
+     "this names sources". Their notes render under the CLEANED bubble, so
+     their "above" has to be the bubble's text, not the wire's. Measured
+     (office 9261, 2026-08-15): a coworker DM'd a teammate "Please check
+     Research/plan.md", the block was stripped and delivered, the boss's
+     bubble read "On it." — and beneath it the office warned that
+     `Research/plan.md` "is named above" when no such name was above, on a
+     card that showed the run's own Deliveries/ artifact two lines down.
+     A note about what the boss can read must read what the boss reads. */
+  const shown = shownBody(raw, o.self);
+  push(unverifiedSources(shown, o.visits));
+  push(unfiledPath(shown, o.visits));
   return out;
+}
+
+/* What the boss actually sees: the one strip chain, shared.
+
+   Blocks first: their delimiters are also whole-line markers, so letting
+   stripOrphanTags run first would remove the tags stripBlocks needs to find
+   the payload by, and strand the body exactly as before. stripSelfLabel
+   FIRST: while the echoed label is still there the marker is not at column
+   zero, and the line-anchored strips below cannot see it.
+
+   Extracted from visibleReply because a second reader appeared: the two
+   honesty guards that assert about the boss's surface ("is named above")
+   were reading the RAW buffer, and the chain existed in exactly one place —
+   so their "above" and the bubble's "above" were two different texts. One
+   rule, one place; both surfaces now read the same body. */
+function shownBody(text, selfName) {
+  return stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(String(text || ''), selfName))))
+    .replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function visibleReply(text, selfName) {
   const raw = String(text || '');
-  // Blocks first: their delimiters are also whole-line markers, so letting
-  // stripOrphanTags run first would remove the tags this needs to find the
-  // payload by, and strand the body exactly as before.
-  // stripSelfLabel FIRST: while the echoed label is still there the marker
-  // is not at column zero, and the line-anchored strip below cannot see it.
-  const cleaned = stripOrphanTags(stripAcks(stripBlocks(stripSelfLabel(raw, selfName))))
-    .replace(/\n{3,}/g, '\n\n').trim();
+  const cleaned = shownBody(raw, selfName);
   /* A CLOSED [DM_TO]...[/DM_TO] block is fully consumed by stripBlocks
      above, tag and body together -- so when a reply is prose plus a
      well-formed hand-off ("On it.\n[DM_TO: Nano]\nq\n[/DM_TO]"), `cleaned`

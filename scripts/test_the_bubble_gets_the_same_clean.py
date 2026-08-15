@@ -116,7 +116,7 @@ def main():
     for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'isHandoffPlaceholder',
                'placeholderRefusal', 'unsentBlocks', 'extractApproval',
-               'visibleReply', 'cleanHarmony'):
+               'shownBody', 'visibleReply', 'cleanHarmony'):
         js += brace_lift(src, 'function ' + fn + '(') + '\n'
     js += brace_lift(artifacts, 'function stripToolEcho(') + '\n'
     js += r'''

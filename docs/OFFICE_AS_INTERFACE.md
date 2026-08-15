@@ -10725,3 +10725,90 @@ presentation survives only until the next refresh. The card keeps its
 reason and gains the scrub's own sentence ("the run stopped when the
 page reloaded"), so nothing lies; but the two presentations of one snag
 are worth a look of their own someday.
+
+## A path in a private message drew a cabinet warning
+
+Measured on office 9261, 2026-08-15, the task path, canned brain. Vera's
+whole reply to "DM relay" was four lines:
+
+    On it.
+    [DM_TO: Kip]
+    Please check Research/plan.md for the vendor summary.
+    [/DM_TO]
+
+The office did the delivery exactly right — block stripped, DM handed to
+Kip, the boss's bubble reading "On it." — and then printed beneath that
+bubble:
+
+    _(`Research/plan.md` is named above, but nothing was written to the
+    cabinet on this run, so that file is not there.)_
+
+No such name was above. The path lived only in teammate-directed text
+the boss never sees; naming a file to a colleague is not promising it to
+the boss. The DONE card compounded it: the same sentence stored as the
+head of its result, two lines above the card's own artifact row showing
+Deliveries/dm-relay.md — written to the cabinet, on this run, by the
+office itself. A warning built to catch false claims was manufacturing
+one.
+
+### The seam
+
+honestyNotes runs seven guards on a reply. Five detect MARKERS — unsent
+blocks, orphaned hand-offs, malformed acks — and markers exist only in
+the raw buffer; the strip chain deletes them. Those five must read raw
+or go blind. But two guards assert about the boss's SURFACE: unfiledPath
+("is named above") and unverifiedSources ("this names sources"). Their
+notes render under the CLEANED bubble, and they were reading the RAW
+buffer — so their "above" and the bubble's "above" were two different
+texts. The strip chain lived in exactly one place, visibleReply, and the
+guards were not behind it.
+
+The fix is the smallest honest one: the chain is now shownBody(text,
+selfName), visibleReply calls it, and honestyNotes feeds it to exactly
+those two guards — `const shown = shownBody(raw, o.self)` — while the
+marker guards keep raw. A note about what the boss can read must read
+what the boss reads. This closes the seam #81 parked in a comment
+("honestyNotes reads the RAW buffer — and is its own ticket"); that
+comment now records where the fix went.
+
+Two consequences pinned deliberately in the suite. A source cited
+inside a DM no longer draws the recalled-not-checked caveat —
+unverifiedSources shared the seam, one line up. And a path inside a
+stripped tool MARKER no longer draws the cabinet note either (probe:
+a failed [VAULT_READ: Research/ghost.md] used to fire it); the
+failed-visit row, rendered from structured visit data, is the surface
+that owns that story, and it already tells it.
+
+### The proof, and what the fire run broke open
+
+scripts/test_a_dm_is_not_a_claim_to_the_boss.py drives the lifted
+composition through eight cases — the measured DM, prose promises (#50
+kept), written paths (#82 kept), the marker consequence, sources both
+ways, and a mixed reply whose note names the visible promise and not
+the DM's path — then pins the wiring: shown for the two surface guards,
+raw for the marker guards, the chain in exactly one place.
+
+The first fire baseline failed on FOUR NEIGHBOR SUITES, and that was
+the fire test working: two of them pin the guards' call text inside
+honestyNotes (their pins now demand `shown` — under mutation they fail
+alongside this suite, two guards on each line of the seam), and two
+lift visibleReply into node and needed shownBody added to their lift
+lists. Seven arms after the repairs, all caught, several by the
+neighbors independently. Then the FULL runner found two more lift
+harnesses with the same missing dependency that my hand-picked
+neighbor set had not included — the bullet-marker and unclosed-bracket
+suites — which is the reason the workflow runs the whole suite after
+the fire pass instead of trusting a curated list: six suites lift this
+chain, and I had found five of them by judgment.
+
+Live, both directions through the @mention path: the measured DM reply
+now shows "On it." and nothing else — same brain, same route that
+printed the warning an hour earlier — and a prose claim ("Saved the
+briefing to Drafts/briefing.md for you", nothing filed) still draws the
+note, with its "named above" finally pointing at text that is, in fact,
+above.
+
+Full runner: 130/130.
+
+A surface may only assert what detection established — and detection
+has to run on the surface it speaks for.
