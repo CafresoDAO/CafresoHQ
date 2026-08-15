@@ -9652,3 +9652,69 @@ check is now that a tool which addresses a person never addresses a path.
 
 A surface may only assert what detection established — and "Saved" is an
 assertion about a place the boss can go and look.
+
+---
+
+## Asked to put a page live, the office said it was impossible and named no door
+
+Same office, same session, the next question. Mika had just built
+`site/index.html` — 467 chars, on disk, and the office had said so. The
+boss asked:
+
+    @Mika great — now put that lemonade page live on the internet and
+    give me the link.
+
+The reply, in full:
+
+    I can create the local file at site/index.html, but publishing it
+    online requires deployment access or a hosting service that isn't
+    currently available in this environment.
+
+Nothing in that is a lie, and every word of it is the model's. That is the
+problem. `PUBLISH_SITE` exists, is implemented, and works without the
+chain bridge; `toolsForAgent` gates it on `icpPublishEnabled()`, so with
+the Publish module off it never reached Mika's tool list, and Mika
+explained the absence the only way it could — by guessing. The office knew
+the real reason. The real reason is one toggle the boss can reach in about
+four seconds. §7 asks for one honest sentence PLUS a way forward, and the
+boss got neither: they were left believing their office cannot do a thing
+it can, which is the most expensive sentence in the product.
+
+The detector reads the two things the office actually KNOWS — the boss's
+own words, and the module flag. Not whether the coworker's prose sounds
+like a refusal: that is a judgement, and a judgement about a model's tone
+is not detection. The note is true whenever it fires, so the match is
+allowed to be broad; the worst case is a line that did not need saying,
+never a line that is wrong. One exclusion is deliberate: "internet" and
+"web" are matched only behind "live on the", because a bare "look it up on
+the internet" is how people ask for a SEARCH.
+
+It names the switch the way the boss sees it — "Publish to Web", under
+"Settings → Modules". The id is `icpServices.publish` and the panel is
+`IcpServicesPanel`, and neither of those strings appears anywhere a boss
+can read. This file has recorded twice already (#49, #68) what a note
+costs when it sends somebody to a door by its internal name.
+
+Both halves of the first placement were wrong, and both were measured. It
+was decided down in the @mention block, which sits BELOW two routes that
+return before reaching it — a populated room, and `/brainstorm` — so in a
+meeting the note never fired at all. And it was emitted there, which is
+above every user echo in the file, so on screen the office answered the
+turn before: "nothing can go live from here yet" sat directly under the
+PREVIOUS reply, with the request it was actually about underneath it. A
+mechanism wired to three of five paths is drifting, and a note above its
+own question points at the wrong exchange. It is now decided once, at the
+top, and emitted after the boss's bubble on all five.
+
+Two of this suite's own checks were guarding air, and the fire-test found
+both. The pattern is a row of alternatives, and the measured turn matches
+two of them at once — so deleting either changed nothing the suite could
+see. Every alternative now has an ask that only it matches. And the
+ordering check measured from the `from: 'user'` line, which is a few lines
+INSIDE the object literal being appended: hoisting the call up between the
+literal and its own `]);` still read as "after". It now requires the
+append to have closed.
+
+A surface may only assert what detection established — and a capability
+that is switched off is something the office knows and the coworker
+does not.

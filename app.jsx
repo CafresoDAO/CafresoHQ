@@ -4180,6 +4180,18 @@ ${d.text}` : d.text,
         deliveryFiled = !!filedPath;
       }
       honesty = honestyFor(buf);
+      /* The other place the boss states a goal. "Build and publish a landing
+         page" is an ordinary card, and with the module off it fails exactly
+         the way the chat path did — a coworker guessing at why publishing is
+         not available, and no door. Keyed on the BRIEF here rather than a
+         typed message, since that is what the boss wrote.
+
+         One note, on the one reply a task run has, so the duplication the
+         chat side had to avoid does not arise. */
+      if (HQ.publishDoorNote) {
+        const doorNote = HQ.publishDoorNote(brief, HQ.icpPublishEnabled && HQ.icpPublishEnabled());
+        if (doorNote) honesty = honesty.concat([doorNote]);
+      }
       const honestyText = honesty.length ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n' : '';
       /* The card in DONE is the fourth surface, and the one the boss opens
          on purpose days later when the chat has scrolled away and the

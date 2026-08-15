@@ -1561,6 +1561,53 @@ function icpPublishEnabled() {
   } catch (_e) { return false; }
 }
 
+/* The boss asking for something the office can do and has switched off.
+
+   Measured on office 9262, 2026-08-15. Mika had just built site/index.html
+   — the file was on disk, 467 chars, and the office had said so. The boss
+   then asked: "put that lemonade page live on the internet and give me the
+   link." The reply, in full:
+
+     I can create the local file at site/index.html, but publishing it
+     online requires deployment access or a hosting service that isn't
+     currently available in this environment.
+
+   Nothing in that is a lie, and every word of it is the model's. That is
+   the problem. PUBLISH_SITE exists, is implemented, and works; it is gated
+   on `icpPublishEnabled()`, so with the module off it never reached the
+   coworker's tool list, and the coworker explained the absence the only way
+   it could — by guessing. The office knew the real reason and said nothing,
+   which left the boss at a dead end one toggle away from the thing they
+   asked for. §7: a failure is one honest sentence PLUS a way forward.
+
+   Keyed on the BOSS's own words, not on the coworker's prose. Whether the
+   reply "sounds like a refusal" is a judgement; whether the boss asked to
+   put something live is nearly in the text, and whether the module is off
+   is a flag. Both halves are things the office knows.
+
+   The sentence is true whenever it fires, even if the boss meant something
+   else by "deploy" — the worst case is a line that did not need saying,
+   never a line that is wrong. So the match is allowed to be broad, with one
+   deliberate exclusion: "internet" and "web" are only matched behind "live
+   on the", because a bare "look it up on the internet" is how people ask
+   for a SEARCH and has nothing to do with publishing. Everything else is
+   let through on purpose. "publish" inside a filename will fire this, and
+   that is the cheap direction to be wrong in.
+
+   Named the way the boss sees it. The setting's id is `icpServices.publish`
+   and the panel function is IcpServicesPanel, but the tab reads MODULES and
+   the row reads "Publish to Web" — and this file has twice recorded what a
+   note costs when it names a door by its internal name (#49, #68). */
+const ASKS_TO_PUBLISH =
+  /\b(?:publish|deploy)\b|\bgo(?:es|ing)?\s+live\b|\bput\s+[^.!?\n]{0,40}\blive\b|\blive\s+on\s+the\s+(?:internet|web)\b|\bship\s+[^.!?\n]{0,30}\blive\b/i;
+
+function publishDoorNote(askText, publishOn) {
+  if (publishOn) return null;
+  if (!ASKS_TO_PUBLISH.test(String(askText || ''))) return null;
+  return '_(nothing can go live from here yet — Publish to Web is switched off.'
+       + ' Turn it on in Settings → Modules, then ask again.)_';
+}
+
 /* ── A 200 is not a page ──────────────────────────────────────────────────
    Measured live on a fresh office, 2026-08-13. `search.requires()` reads
    `braveEnabled && braveKey`, and until this same commit no control existed
@@ -3752,7 +3799,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, clearVaultReadyCache, throttleTokens, cleanHarmony,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, throttleTokens, cleanHarmony,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.

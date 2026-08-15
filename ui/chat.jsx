@@ -318,6 +318,37 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       return;
     }
 
+    /* Decided ONCE per boss turn, above every route, and deliberately not
+       on each reply. The boss asked to put a page live; publishing is real,
+       implemented, and switched off, so no coworker on any route was going
+       to be handed the tool. Attaching this to replies instead would print
+       it three times on a two-way fan-out — the CEO's and both
+       specialists' — which is the shape of #64. The turn is the thing that
+       is true here, not any one participant's answer.
+
+       It goes on screen only. Unlike the stray-name note it explains
+       nothing about routing, so the coworker does not need it, and telling
+       a model its own tools are missing is an invitation to narrate the
+       absence rather than do the rest of the job.
+
+       DECIDED here, EMITTED after the boss's own bubble on whichever route
+       this turn takes. The first draft decided AND emitted down at the
+       @mention block, which sits below two routes that return before it
+       (a populated room, and /brainstorm) and above every user echo. Both
+       halves of that placement were wrong, and both were measured: in a
+       meeting room the note never fired at all, and on the @mention path
+       it printed above the request it answers, so on screen the office
+       said "nothing can go live from here yet" directly under the PREVIOUS
+       reply. A note above its own question points at the wrong exchange. */
+    const doorNoteText = HQ.publishDoorNote
+      ? HQ.publishDoorNote(text, HQ.icpPublishEnabled && HQ.icpPublishEnabled())
+      : null;
+    const emitDoorNote = (thread) => {
+      if (!doorNoteText) return;
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: doorNoteText, thread }]);
+    };
+
     /* If the boss is composing inside a project or meeting room, the default
        behavior is "send to everyone in the room" — fan out in parallel,
        both/all replies stream into THIS thread. The boss can still narrow
@@ -337,6 +368,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           id: HQ.uid('m'), from: 'user', name: 'You',
           text, target: targetLabel, thread: activeThread,
         }]);
+        emitDoorNote(activeThread);
         setStreaming(true);
         /* `userText` existed for exactly this and no caller ever set it, so
            every downstream surface that wanted "what the boss asked" had to
@@ -423,6 +455,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       }
       setInput('');
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: 'team' }]);
+      emitDoorNote('team');
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `🧠 Brainstorm: "${topic}" — asking ${agents.length} coworker${agents.length === 1 ? '' : 's'}. They will DM each other once and synthesize.`,
         thread: 'team' }]);
@@ -459,6 +492,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     /* Declared out here because it is written in the @mention block and
        read on the CEO path below — the two are the same turn. */
     let strayNote = null;
+
     if (mentionAll && onDispatchToAgent) {
       const matched = [];
       const unknown = [];
@@ -482,6 +516,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           id: HQ.uid('m'), from: 'user', name: 'You',
           text, target: targetLabel, thread: targetThread,
         }]);
+        emitDoorNote(targetThread);
         /* If this chat message originated from "→ CHAT" on a task card,
            the prefilled text includes a `_(from task TKID)_` footer. When
            the user actually @-mentions an agent and sends, infer the
@@ -572,6 +607,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         id: HQ.uid('m'), from: 'user', name: 'You',
         text, target: '@' + handoffAgent.name, thread: activeThread,
       }]);
+      emitDoorNote(activeThread);
       setStreaming(true);
       try {
         await onDispatchToAgent(handoffAgent, text, {
@@ -616,6 +652,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', text, thread: activeThread };
     const pendingChat = [...chatRef.current, ...(strayNote ? [strayNote] : []), userMsg];
     setChat(prev => [...prev, userMsg]);
+    emitDoorNote(activeThread);
     setStreaming(true);
     const ceoId = HQ.uid('m');
     setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
