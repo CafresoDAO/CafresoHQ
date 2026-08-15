@@ -8642,3 +8642,87 @@ project, and no paid gateway was touched (`__guardHits` empty).
 
 A surface may only assert what detection established — and the fallback a
 feature takes by default is not a fallback, it is the feature.
+
+## 2026-08-15 — A clean night, zero errors, and a coworker who could not do the job
+
+Gap (4) of the MVP list — "night_runner and CLI-native runs don't ride the
+publish tool surface" — turned out not to be a missing capability. The
+seam is deliberate and correct: publishing signs with the boss's identity
+and at 3am nobody is holding it. What was missing was the admission.
+
+Reproduced against a canned brain replying:
+
+    I have built the landing page and it is ready to go live.
+    [PUBLISH_SITE: /private/tmp/…/scratchpad/sp54/mysite]
+    Published the site for you.
+
+`run_iteration` returned `writes: [], error: None` — a night the morning
+report counts as CLEAN — and the summary carried the raw marker verbatim,
+absolute filesystem path and all.
+
+`find_first_tool` returns None for every one of the **23** TOOL_REGISTRY
+tools outside the night subset, the hop loop's `if not hit: break` fires
+on the first turn, and nothing records that a reach happened. Publishing
+was one of 23 silent no-ops. This is the same shape `find_first_tool`'s
+own docstring already condemns for harmony syntax — "a quiet night and a
+broken tool-call format are indistinguishable to the boss" — fixed there
+for the parser and left open for the tool set.
+
+### Admitting the reach, not granting it
+
+`NIGHT_CANNOT` names all 23 in office words, `NIGHT_IGNORES` holds the one
+that implies no work (`ACK`), and the check requires the union to cover
+every name in the browser's registry — so a tool added to the browser
+cannot quietly become a 24th. The seam itself stays pinned: PUBLISH_SITE
+must not be night-callable, and that check now exists in two files.
+
+The reach is reported ahead of the generic write-claim line. Both describe
+an empty writes list; only one names a door.
+
+> reached for publishing — do it in the office
+
+The raw marker is stripped from anything headed for the morning report.
+It is wire format (§6), and in the reproduced case it also carried an
+absolute path from the boss's own machine into a summary line — the same
+leak as the `/fs/site` link in the entry above.
+
+### The sentence was being cut anyway
+
+Four surfaces slice `lastError`, at **90 / 60 / 200 / 50**. The tightest is
+the CLI night report, which is the other half of what gap (4) called
+"CLI-native runs".
+
+The existing message had already been shortened once, after a 90-character
+version was cut exactly at the end of its protocol tokens. It came out at
+**51**. The CLI slices at 50. So the carefully-repaired sentence has been
+arriving as "…nothing reached the vaul" for as long as that surface has
+existed — repaired for the surface someone was looking at, still broken on
+the one they weren't.
+
+Hand-counting is what produced 51. `NIGHT_ERROR_MAX = 50` is now a named
+budget, every message is measured against it, and the budget is measured
+against what the JSX actually slices — scanned out of the three files
+rather than trusted to a fourth copy of the number. A surface that
+tightens below the producer fails the check just as loudly as a message
+that grows past it.
+
+### What the checks pin now
+
+- every browser tool is supported, named, or explicitly ignored — and
+  nothing is named that the browser has dropped
+- the seam holds: publishing is still not night-callable
+- every sentence fits the narrowest surface, and the budget is derived
+  from the surfaces rather than declared next to them
+- no sentence hands the boss a protocol name; each names a way forward
+- bracket, harmony, and lowercase reaches are all seen; bracketed prose
+  and `[ACK: …]` are not
+- the marker is stripped from the summary, its path with it, and the
+  sentences around it survive
+
+Seventeen arms, all caught first pass. Verified live: a full mission
+against the canned brain records `errors: 1`, and the sentence renders
+uncut on all three surfaces that show it.
+
+A surface may only assert what detection established — and a sentence
+repaired for the surface someone was looking at is still broken on the one
+they weren't.

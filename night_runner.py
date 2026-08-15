@@ -68,6 +68,113 @@ MAX_ITER_TOKENS = 2048     # parity with missions.jsx maxTokens
 # trusting it.
 ERROR_STREAK_AUTO_PAUSE = 3
 
+# Every surface that shows a night error SLICES it, and they disagree:
+# features.jsx's Gazette at 90, missions.jsx's list at 60, its detail pane at
+# 200, and views/terminal.jsx's CLI night report at 50. The tightest wins,
+# because a sentence is only as complete as the narrowest place it is read.
+#
+# Measured 2026-08-15: the message below this block was deliberately shortened
+# once already, after an earlier 90-character version was cut exactly at the
+# end of its protocol tokens. It came out at 51 — one over — so the CLI report
+# has been printing "…nothing reached the vaul" for as long as it has existed.
+# Counting by hand is what produced 51; this constant plus the check in
+# scripts/test_night_says_what_it_cannot_do.py is what stops the next one.
+NIGHT_ERROR_MAX = 50
+
+# The 23 TOOL_REGISTRY tools the night shift does NOT carry, each with the
+# office word for what was being reached for. The seam itself is deliberate
+# and stays: anything that signs, spends, publishes or mutates the host
+# filesystem needs the boss's identity, and at 3am nobody is holding it.
+#
+# What was NOT deliberate is what happened when a coworker reached anyway.
+# find_first_tool returned None, the hop loop's `if not hit: break` fired,
+# and the run recorded errors: 0 — a clean night, with the reach nowhere in
+# the record. That is the same shape this file's own find_first_tool
+# docstring condemns for harmony syntax: a quiet night and a coworker who
+# could not do the job are indistinguishable to whoever reads the morning
+# report. Reproduced 2026-08-15 against a canned brain emitting
+# [PUBLISH_SITE: …] — writes: [], error: None, and the raw marker printed
+# verbatim in the summary, absolute filesystem path and all.
+#
+# Phrases are short on purpose; see NIGHT_ERROR_MAX. The test asserts that
+# this table plus NIGHT_IGNORES covers every name in hq-runtime.jsx's
+# TOOL_REGISTRY, so a tool added to the browser cannot quietly become a
+# 24th silent no-op.
+NIGHT_CANNOT = {
+    'BASH':               'shell commands',
+    'BROWSER_SCREENSHOT': 'screenshots',
+    'DM_TO':              'messaging',
+    'EXPORT_DOCX':        'exports',
+    'EXPORT_PDF':         'exports',
+    'EXPORT_PPTX':        'exports',
+    'FILE_WRITE':         'file changes',
+    'GENERATE_IMAGE':     'image making',
+    'GENERATE_VIDEO':     'video making',
+    'HANDOFF_TO':         'handoffs',
+    'HIRE_AGENT':         'hiring',
+    'HIRE_ASSISTANT':     'hiring',
+    'MEMORY_APPEND':      'memory',
+    'MEMORY_LIST':        'memory',
+    'MEMORY_READ':        'memory',
+    'MEMORY_WRITE':       'memory',
+    'PEER_JOURNAL':       'peer notes',
+    'PUBLISH_SITE':       'publishing',
+    'REQUEST_ELEVATION':  'access requests',
+    'SPAWN_SUBAGENT':     'sub-agents',
+    'WALLET_BALANCE':     'wallet reads',
+    'WALLET_SEND':        'spending',
+}
+
+# ACK is a protocol acknowledgement, not a request to do work — a night reply
+# containing one has not tried and failed at anything, so reporting it would
+# be noise in the morning report. Listed rather than omitted so the coverage
+# check can tell "decided to ignore" from "forgot about".
+NIGHT_IGNORES = {'ACK'}
+
+# Marker scan for the tools above. Deliberately NOT built from TOOL_RES: the
+# night regexes capture arguments, and here only the NAME matters — matching
+# on membership in NIGHT_CANNOT is what keeps prose like "[NOTE: ...]" from
+# tripping it.
+_UNSUPPORTED_RE = re.compile(r'\[\s*([A-Za-z_]{3,})\s*[:\]]')
+
+
+def night_cannot_sentence(tool):
+    """§7 shape, inside NIGHT_ERROR_MAX: what happened, plus the way forward."""
+    what = NIGHT_CANNOT.get(tool)
+    return ('reached for %s — do it in the office' % what) if what else ''
+
+
+def find_unsupported_tool(text):
+    """First out-of-subset tool NAME reached for in `text`, or None.
+
+    Checks the harmony form too, because a model that speaks harmony reaches
+    for unavailable tools in harmony as well — find_first_tool already
+    returns None for both, so both were silent.
+    """
+    for m in _UNSUPPORTED_RE.finditer(text or ''):
+        name = m.group(1).upper()
+        if name in NIGHT_CANNOT:
+            return name
+    hm = _HARMONY_RE.search(text or '')
+    if hm:
+        name = re.sub(r'^functions\.', '', hm.group(1)).replace('.', '_').upper()
+        if name in NIGHT_CANNOT:
+            return name
+    return None
+
+
+def strip_unsupported_markers(text):
+    """Drop out-of-subset markers from text headed for the morning report.
+
+    The reach is reported as an error, in office words. The raw marker is
+    wire format — §6 — and in the reproduced case it also carried the
+    absolute path of a folder on the boss's machine into a summary line.
+    """
+    def _drop(m):
+        return '' if m.group(1).upper() in NIGHT_CANNOT else m.group(0)
+    out = re.sub(r'\[\s*([A-Za-z_]{3,})\s*:[^\]\n]*\]', _drop, text or '')
+    return ' '.join(out.split())
+
 
 class NightContext(object):
     """Everything a run needs to reach the host serve.py + providers."""
@@ -530,10 +637,16 @@ def run_iteration(ctx, sched, iteration, total_iters):
     messages = [{'role': 'system', 'content': persona},
                 {'role': 'user', 'content': prompt}]
     writes, tokens_used, reply = [], 0, ''
+    # Every reply, not just the last. A hop can pick up a supported tool and
+    # leave an out-of-subset marker behind it in the same message —
+    # find_first_tool takes the earliest match — and that reach would
+    # otherwise vanish when the next hop overwrote `reply`.
+    replies = []
     try:
         for _hop in range(MAX_TOOL_HOPS):
             reply, used = llm_call(ctx, messages)
             tokens_used += used
+            replies.append(reply or '')
             hit = find_first_tool(reply)
             if not hit:
                 break
@@ -547,9 +660,16 @@ def run_iteration(ctx, sched, iteration, total_iters):
                              'or finish with your plain status line.' % (name, result)})
     except Exception as e:
         return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': str(e)}
-    summary = ' '.join((reply or '').split())[-300:]
+    summary = strip_unsupported_markers(reply)[-300:]
     error = None
-    if not writes and _CLAIMS_A_WRITE_RE.search(reply or ''):
+    reached = find_unsupported_tool('\n'.join(replies))
+    if reached:
+        # Ahead of the write-claim check below on purpose. Both describe an
+        # empty writes list, but this one names the actual cause and a door
+        # the boss can walk through; "said it saved a note" would be true
+        # and useless next to it.
+        error = night_cannot_sentence(reached)
+    elif not writes and _CLAIMS_A_WRITE_RE.search(reply or ''):
         # The prompt's own closing rule demands a status line like "Wrote
         # X." -- and a model that skips the actual VAULT_NEW/VAULT_APPEND
         # call but still produces that sentence has written a LIE, not a
@@ -569,7 +689,10 @@ def run_iteration(ctx, sched, iteration, total_iters):
         # the protocol tokens, so the boss read two wire-format names and
         # LOST the clause that says what it means. §6 bans those names on
         # a human surface; the truncation made it jargon-only.
-        error = 'said it saved a note, but nothing reached the vault'
+        # 51 characters, and the CLI night report slices at 50 — so this
+        # carefully-shortened sentence has been arriving as "…reached the
+        # vaul". One word out; see NIGHT_ERROR_MAX, which is now checked.
+        error = 'said it saved a note, nothing reached the vault'
     return {'writes': writes, 'tokens': tokens_used, 'summary': summary, 'error': error}
 
 
