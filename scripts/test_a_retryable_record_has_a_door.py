@@ -55,7 +55,21 @@ SIG = 'onResend = null'
 GATE = 'onResend && TERMINAL_STATES.has(m.state) && m.failureCause && m.failureCause.retryable'
 BUTTON = '↻ RE-SEND'
 CLEAR_GATE = '!TERMINAL_STATES.has(m.state)'
-TERMSET = "const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed']);"
+# Shape, not spelling — the same lesson as the confirm door above, and the
+# fourth time in this run of tickets that a sibling suite pinned today's
+# wording instead of the claim. This was the literal `new Set(['completed',
+# 'cancelled', 'failed'])`, the set exactly as written the day it was added,
+# so deriving it from the one table that decides terminality (2026-08-16,
+# #119 — the chip list turned out to be a state behind and this set was the
+# other hand-written copy) read as the set going missing.
+#
+# What this suite actually needs is that the two gates below consult a set
+# that really does hold 'cancelled': a stopped-all cancellation carrying a
+# retryable cause is the row that went doorless in the first place. So the
+# declaration is LIFTED and evaluated against the real MSG_STATES table
+# rather than restated here. Where the answer comes from is #119's business.
+TERM_DECL = re.compile(r'^const TERMINAL_STATES = new Set\((?:.|\n)*?\);', re.M)
+MSG_STATES_HEAD = 'const MSG_STATES = {'
 
 
 def check(name, cond, detail=''):
@@ -114,7 +128,10 @@ def main():
 
     # ── the row's button, gated exactly as its label ────────────────────
     check('InboxModal declares the prop', SIG in cbare)
-    check('the terminal-state set is unchanged', TERMSET in cbare)
+    termdecl = TERM_DECL.search(cbare)
+    check('the terminal-state set is declared once', bool(termdecl)
+          and cbare.count('const TERMINAL_STATES') == 1,
+          'the gates below have nothing to consult')
     check('the button gate matches the label', cbare.count(GATE) == 1,
           f'{cbare.count(GATE)} gates')
     check('the button exists once', cbare.count(BUTTON) == 1,
@@ -138,8 +155,17 @@ def main():
     check('resendMessage lifts', rm_full.startswith(DECL) and rm_full.endswith('};'))
     check('the gate lifts', gate_at != -1)
 
+    # The set the gate consults, taken from the source rather than restated
+    # — a stub here would keep passing after the shipped set lost a state.
+    windows = (ROOT / 'app' / 'windows.jsx').read_text(encoding='utf-8')
+    states_src = re.search(r'^const MSG_STATES = \{.*?^\};', windows,
+                           re.M | re.S)
+    check('the state table lifts', bool(states_src))
+
     js = ('const RESEND_SRC = ' + json.dumps(rm_full) + ';\n'
           'const GATE_SRC = ' + json.dumps(GATE) + ';\n'
+          'const STATES_SRC = ' + json.dumps(states_src.group(0) if states_src else '') + ';\n'
+          'const TERM_SRC = ' + json.dumps(termdecl.group(0) if termdecl else '') + ';\n'
           + r'''
 async function drive(scenario) {
   const calls = { warns: [], errors: [], oks: [], confirms: [], dispatches: [] };
@@ -167,7 +193,8 @@ async function drive(scenario) {
 }
 
 const gateFn = new Function('onResend', 'TERMINAL_STATES', 'm', 'return !!(' + GATE_SRC + ');');
-const TERM = new Set(['completed', 'cancelled', 'failed']);
+const TERM = new Function(STATES_SRC + '\n' + TERM_SRC
+                          + '\n return TERMINAL_STATES;')();
 const door = () => {};
 const R = {
   liveChild: await drive('liveChild'),
@@ -177,6 +204,7 @@ const R = {
   declined: await drive('declined'),
   bossOrigin: await drive('bossOrigin'),
   peerOrigin: await drive('peerOrigin'),
+  termStates: [...TERM],
   gate: {
     stoppedAll: gateFn(door, TERM, { state: 'cancelled', failureCause: { retryable: true } }),
     noDoor: gateFn(null, TERM, { state: 'cancelled', failureCause: { retryable: true } }),
@@ -225,6 +253,11 @@ console.log(JSON.stringify(R));
           len(peer) == 1 and peer[0]['opts']['dmFrom']
           and peer[0]['opts']['dmFrom']['name'] == 'Kip',
           peer)
+    # The content claim, not the spelling: whatever the set is derived
+    # from, a cancellation has to be in it or the gate below cannot open.
+    check("the shipped set counts a cancellation as finished",
+          set(r['termStates']) >= {'completed', 'failed', 'cancelled'},
+          r['termStates'])
     check('the gate opens for a stopped-all cancellation',
           r['gate']['stoppedAll'] is True, r['gate'])
     check('…and for a retryable failure', r['gate']['failedRetryable'] is True)

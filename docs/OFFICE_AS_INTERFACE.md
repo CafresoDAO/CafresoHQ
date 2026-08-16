@@ -13457,3 +13457,71 @@ real `resendMessage` with `confirm: false` and gets no door on a whole
 record and a door on a trimmed one — and by two fire arms, but that is a
 weaker witness than a click, and the Inbox's own ↻ RE-SEND passes
 `confirm: true`, so the live door proves the wording rather than the gate.
+
+## The registry filed a run under a name the Inbox could not spell
+
+Measured 2026-08-16, office 9272. The boss presses **■ Stop** on a turn
+they no longer want. The office does exactly the right thing: the record
+transitions to `cancelled`, history reads `stopped by the boss`, and the
+count is filed. Then the boss goes to look for it, and the Inbox has no
+chip called CANCELLED.
+
+The filter row was a hand-written list — `['active','blocked','failed',
+'completed','all']` — written when the registry had two terminal states.
+It has three. Five call sites file `cancelled`: the boss stopping their
+own turn, both dispatch paths, and the catches on the @mention and
+Delegate routes. `stateCounts` counted every one of them into
+`c[m.state]`, faithfully, and no chip ever rendered the number. ACTIVE
+means "not terminal", so it excludes them by design. The only door to a
+run the boss stopped ON PURPOSE was ALL, mixed in with the entire
+registry — and ALL is the filter you use when you have given up looking.
+
+The sentence underneath made it worse. With ACTIVE selected and nothing
+in flight, the modal says *"No messages match this filter. Try widening
+the state filter."* On a fresh office whose only history is one stopped
+run, that is the screen the boss sees, and the widening it recommends is
+one the chips cannot perform. §5 again: a wrong door is worse than a
+locked one. This one was a door pointing at a wall it had drawn itself.
+
+The fix is not "add a CANCELLED chip". Adding the chip fixes today and
+leaves the mechanism — a list of finished states, written by hand, next
+to a table that decides what finished means. So the chips are DERIVED
+from `MSG_STATES`, and a fourth terminal state gets a door the day it is
+added rather than the day somebody notices it has none. `blocked` stays
+named on purpose: it is not terminal, so the derivation would not produce
+it, and it is the one unfinished state a boss goes hunting for.
+
+Two things worth saying plainly about the shape of the fix.
+
+The file held a SECOND hand-written copy of the same answer, ten lines
+above the first — `TERMINAL_STATES`, the set the ↻ RE-SEND and ✓ CLEAR
+THIS gates consult. That one was current; it listed all three. It was not
+a shipped defect and it is not being claimed as one. It was one merge
+away from being the identical bug, and it is now derived from the same
+table, so the modal no longer answers "is this finished?" anywhere in its
+own words.
+
+And the chip order changed as a side effect: deriving from the table
+yields COMPLETED before FAILED, where the hand-written row had FAILED
+first. Nobody asked for that and no test demanded it; it is what taking
+the answer from the lifecycle order costs. Named here rather than
+discovered later in a screenshot diff.
+
+Verified live on 9272 against the canned brain: a boss turn stopped
+mid-stream filed `cancelled` with history `queued → delivered →
+cancelled: stopped by the boss`; the Inbox then rendered `ACTIVE 0 ·
+BLOCKED · COMPLETED 1 · FAILED 3 · CANCELLED 1 · ALL 5`, and the
+CANCELLED chip opened onto that one thread — the same screen that, a
+moment earlier, had offered to widen a filter that could not widen.
+
+`scripts/test_every_state_has_a_door.py` defends the general claim rather
+than the chip: it lifts the real derivation, the real `matchesState` and
+the real `stateCounts`, runs them against the real `MSG_STATES`, and
+asserts that EVERY state the registry can file is reachable from some
+filter other than ALL — including a terminal state invented at test time
+that the source has never seen. It also keeps the original repro alive:
+the same code, given the old hardcoded row, must still leave a cancelled
+record doorless, or the suite is proving nothing. Sixteen fire arms, all
+caught, including the two that hurt: a set that is hand-written and
+happens to be right today, and a derivation that reads the table's
+predicate backwards.

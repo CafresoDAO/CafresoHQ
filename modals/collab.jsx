@@ -1,5 +1,6 @@
 import { CafresoHQChain } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
+import { MSG_STATES } from '../app/windows.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
@@ -263,12 +264,36 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
    happened to a handoff: who sent it, what state it's in, what artifacts
    came out of it, and on failure the structured cause + action needed.
 
-   Filters by state (active / blocked / failed / completed / all) and by
-   counterpart agent. Threads can be expanded to see the full child chain.
+   Filters by state (active / blocked / one chip per terminal state / all)
+   and by counterpart agent. Threads can be expanded to see the full child
+   chain.
    ───────────────────────────────────────────────────────────────────── */
 /* The states that need no action from the boss. Anything else is still
-   counted in the topbar badge, so anything else gets a way to clear it. */
-const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed']);
+   counted in the topbar badge, so anything else gets a way to clear it.
+
+   DERIVED, both of these, from the one table that decides what terminal
+   means (app/windows.jsx). This file used to keep two hand-written copies
+   of that answer, and on 2026-08-16 one of them was a state behind. */
+const TERMINAL_STATES = new Set(
+  Object.keys(MSG_STATES).filter(s => MSG_STATES[s].terminal));
+
+/* Which filter chips exist. This was the hardcoded list
+   `['active','blocked','failed','completed','all']`, written when the
+   registry had two terminal states. It has three. Measured 2026-08-16:
+   five call sites file 'cancelled' — a boss pressing ■ Stop on their own
+   turn, the two dispatch paths, and the @mention and Delegate catches —
+   `stateCounts` counted every one of them into `c[m.state]`, and no chip
+   ever rendered that number. ACTIVE excludes it (terminal), so the only
+   way to a run the boss stopped ON PURPOSE was ALL, mixed in with
+   everything, and the empty state told them to "try widening the state
+   filter" — a widening the chips could not do.
+
+   `blocked` stays named: it is not terminal, so the derivation would not
+   produce it, and it is the one unfinished state a boss goes looking for
+   on purpose. Everything else here follows the table, so a fourth
+   terminal state gets a door the day it is added rather than the day
+   somebody notices it has none. */
+const FILTER_PILLS = ['active', 'blocked', ...TERMINAL_STATES, 'all'];
 
 function InboxModal({ open, onClose, onResend = null }) {
   // Pick up an initial filter from sessionStorage when the modal is
@@ -535,7 +560,7 @@ function InboxModal({ open, onClose, onResend = null }) {
                         : ' total')}
            size="xl">
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
-        {['active','blocked','failed','completed','all'].map(s => (
+        {FILTER_PILLS.map(s => (
           <button key={s} className={`px-btn ${filterState === s ? 'primary' : 'secondary'}`}
                   style={{fontSize:9}} onClick={() => setFilterState(s)}>
             {s.toUpperCase()} {stateCounts[s] != null && <span style={{opacity:0.6,marginLeft:4}}>{stateCounts[s]}</span>}
