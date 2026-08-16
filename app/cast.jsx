@@ -268,6 +268,72 @@ function canDoPhrase(tools, ctx) {
   return out;
 }
 
+/* The same four tables, answered as a LIST instead of a sentence.
+
+   `canDoPhrase` is the shelf's voice: one line of prose under a candidate's
+   name. Two other surfaces ask the same question in chips — the coworker
+   card's "Can use" row (views/core.jsx) and the inspect panel's (ui/panels.jsx)
+   — and both of them answered it by printing `agent.tools` raw, which is the
+   stored CLAIM, not the grant.
+
+   Measured live on office 9261, 2026-08-16, hiring Dax off the candidate
+   shelf. His shelf card read "Can work with your files and read your notes",
+   which is this file being careful: `db` has no CAN_DO entry so it
+   contributed no words, and `files` was promoted off the template's
+   `elevated` flag. One click later the hire form dropped elevation (see
+   `loadCandidate`) — and his coworker card read
+
+       CAN USE   FILES   VAULT   DB
+
+   with a tooltip promising these are "what this coworker is allowed to
+   reach". `files` needs elevation `toolsForAgent` was never given; `db`
+   reaches nothing anywhere and has since the 2026-08-13 audit. Neither can
+   be unticked at the door the same tooltip names, because
+   `visibleToolsCatalog` hides both. The product told the truth on the shelf
+   and reverted to the sales pitch the moment the boss said yes.
+
+   So: an id with no CAN_DO entry is dropped, exactly as it contributes no
+   words to the phrase. An id whose condition is MET is granted. An id whose
+   condition is unmet but which has a smaller true version — 'web' without a
+   Brave key still gets BROWSER_FETCH — is granted, carrying the smaller
+   claim as its own words. Anything else is LOCKED, not dropped: the
+   capability is real, the switch is nameable, and §7 wants the route shown
+   rather than the row quietly shrinking.
+
+   `established` is `canDoPhrase`'s rule and is load-bearing here for the
+   same reason: a settings store that could not be read leaves the fact
+   ABSENT, and absent must not become "off" — a card that cannot see the
+   image provider says nothing about images rather than telling a boss who
+   already picked one to go and pick one. */
+function grantedTools(tools, ctx) {
+  ctx = ctx || {};
+  const established = (k) => Object.prototype.hasOwnProperty.call(ctx, k);
+  const granted = [];
+  const locked = [];
+  const seen = {};
+  for (const t of (tools || [])) {
+    const say = CAN_DO[t];
+    if (!say || seen[t]) continue;
+    seen[t] = 1;
+    const need = CAN_DO_NEEDS[t];
+    if (!need || ctx[need]) { granted.push({ id: t, say }); continue; }
+    const instead = CAN_DO_INSTEAD[t];
+    if (instead) { granted.push({ id: t, say: instead }); continue; }
+    if (established(need)) locked.push({ id: t, unlock: CAN_DO_UNLOCK[t] || '' });
+  }
+  return { granted, locked };
+}
+
+/* One tooltip, two surfaces. The coworker card and the inspect panel print
+   the same list and have twice been fixed one at a time — "the twin of the
+   inspect panel's row, missed when that one was renamed" is the comment on
+   the card today. Same words from one place, so the next rewording is one
+   edit and cannot land on only half of them. */
+const CAN_USE_TIP = 'What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.';
+/* Appended only when something is actually dimmed, because a legend for a
+   thing that is not on screen is just more words to read. */
+const CAN_USE_OFF_TIP = '\n\nDimmed and marked "off" means the capability is real but a switch it needs is not on — hover one to see which switch.';
+
 /* The one-line specialty tag: an EARNED affinity beats the class default —
    "12 research briefs" is a résumé line, "cheap and tireless" is a hunch. */
 function specialtyTag(agent, xpAffinityText) {
@@ -523,4 +589,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAN_USE_OFF_TIP, CAN_USE_TIP, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, grantedTools, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

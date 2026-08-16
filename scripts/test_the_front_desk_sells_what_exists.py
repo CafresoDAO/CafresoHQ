@@ -147,15 +147,27 @@ def main():
           'is a real capability and worth naming')
 
     # ── 4. the caller supplies facts, from the same places ───────────────
-    facts = brace_lift(hire, 'function capabilityFacts(t) {')
+    # Lifted from the runtime since 2026-08-16: the reader sat in the hire
+    # modal, private to the one surface, while the coworker card and the
+    # inspect panel — which describe the same coworker after the hire — read
+    # nothing at all and printed the raw claim. It now lives next to
+    # `toolsForAgent`, and these checks follow it there rather than relax.
+    facts = brace_lift(runtime, 'function capabilityFacts(subject) {')
     check('the card is given facts rather than left to guess',
           re.search(r'canDoPhrase\(t\.tools,\s*capabilityFacts\(t\)\)', hire),
           'canDoPhrase(t.tools) alone means every condition reads as met')
+    check('...and by the runtime\'s reader, not a copy of its own',
+          'HQ.capabilityFacts(t)' in hire and 'function capabilityFacts' not in hire,
+          'two readers of the same four facts is how they drift')
+    # Stronger than the old assertion, which only checked that the modal
+    # spelled `s.braveEnabled && s.braveKey` the same way the registry does:
+    # it now calls requires() itself, so there is one expression, not two
+    # that have to be kept matching by hand.
     check('...canSearch read the same way requires() reads it',
-          're.braveEnabled' not in facts and 's.braveEnabled && s.braveKey' in facts,
+          'TOOL_REGISTRY.search.requires()' in facts and 'TOOL_REGISTRY.search.requires()' in grant,
           facts)
-    check('...elevated read off the candidate itself',
-          't.elevated' in facts, facts)
+    check('...elevated read off the subject itself',
+          'subject && subject.elevated' in facts, facts)
     check('...imageProvider, the same setting toolsForAgent checks',
           's.imageProvider' in facts and 's.imageProvider' in grant, facts)
     check('a settings store that is not up yet leaves the flags false',

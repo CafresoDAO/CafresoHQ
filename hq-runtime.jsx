@@ -57,15 +57,27 @@ const INITIAL_AGENTS = [];
    Seven specialists modeled on github.com/VRSEN/openswarm. CafresoHQ (CEO) is
    the orchestrator; these are the workers. Each template provides a name, a
    crisp role, a tailored system prompt, and the tools they need.
-   Tools currently wired in CafresoHQ: 'web' (search), 'vault' (notes), 'files'
-   (read/write for elevated agents), 'email', 'cal' (calendar), 'db' (data).
+   Tools currently wired in CafresoHQ: 'web' (search), 'vault' (notes), 'img'
+   (media, with a provider), and file/shell work, which is NOT a tools entry —
+   it rides the 🛡 File & shell access switch.
+
+   The three this list used to also name — 'email', 'cal', 'db' — were audited
+   out on 2026-08-13: no EMAIL_SEND, no CALENDAR, no DATABASE tool exists, so
+   `toolsForAgent` has never had anything to hand over for them, and both
+   pickers hide them (modals/settings.jsx, NEVER_WIRED_TOOL_IDS). This comment
+   went on saying they were wired, and Vera and Dax went on being minted with
+   them, which is how a hired coworker's card ended up advertising "DB". They
+   are gone from the templates below. The catalog entries stay where the audit
+   left them; what changes here is that the shelf stops handing out claims
+   nothing can honour.
+
    Use spawnOpenswarmRoster(setAgents, existingAgents) to hire missing ones. */
 const OPENSWARM_ROSTER = [
   {
     name: 'Vera',
     role: 'Virtual Assistant',
     color: 'rose',
-    tools: ['web','email','cal','vault'],
+    tools: ['web','vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.4,
     systemPrompt:
@@ -85,7 +97,7 @@ const OPENSWARM_ROSTER = [
     name: 'Dax',
     role: 'Data Analyst',
     color: 'sun',
-    tools: ['files','vault','db'],
+    tools: ['files','vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.2,
     elevated: true,
@@ -2517,6 +2529,38 @@ function ceoReachedForNote(missing) {
   return `_(I reached for ${none}. That isn't something I can be given — I run the office, I don't hold tools of my own. @-mention a coworker who has it, or hire one from the front desk.)_`;
 }
 
+/* The facts app/cast.jsx needs and deliberately refuses to look up for
+   itself — read HERE, in the file that hands the tools over, so that a card
+   and `toolsForAgent` cannot quietly drift apart. Each line below is the
+   SAME expression the grant uses, a few dozen lines further down:
+
+     canSearch      TOOL_REGISTRY.search.requires() — braveEnabled && braveKey
+     elevated       the subject's own flag, which gates FILE_* / BASH
+     canMakeImages  settings.imageProvider, the second door for 'img'
+     moneyOn        icpWalletEnabled() — money module, install AND bridge
+
+   It lived in modals/hire.jsx, where exactly one surface used it and the
+   comment above it promised the card and the runtime "cannot disagree".
+   That promise held only on the shelf: the two surfaces that render a HIRED
+   coworker never called it. A shared fact-reader next to the grant is what
+   makes that sentence structural instead of aspirational.
+
+   Every read is wrapped, and a failed read leaves the fact ABSENT rather
+   than false — see `grantedTools`. Absent is "we could not find out", which
+   must never be shown to the boss as "you have not set it up".
+
+   `subject` is an agent or a candidate template; both carry `.elevated`. */
+function capabilityFacts(subject) {
+  const f = { elevated: !!(subject && subject.elevated) };
+  try { f.canSearch = !!TOOL_REGISTRY.search.requires(); } catch (_e) { /* settings unreadable */ }
+  try {
+    const s = (CafresoHQClient && CafresoHQClient.getSettings) ? CafresoHQClient.getSettings() : null;
+    if (s) f.canMakeImages = !!s.imageProvider;
+  } catch (_e) { /* settings unreadable */ }
+  try { f.moneyOn = icpWalletEnabled(); } catch (_e) { /* never throws, but the rule is the rule */ }
+  return f;
+}
+
 /* Build the tools section of the agent system prompt, restricted to tools
    the agent has claimed AND that are configured/enabled. Returns a Promise
    since some `requires` checks (vault status) are async. */
@@ -4004,6 +4048,10 @@ const HQ = {
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, throttleTokens, cleanHarmony, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
+  /* Exported for the three surfaces that describe a coworker's reach — the
+     candidate shelf, the coworker card, the inspect panel. They must all ask
+     the same question of the same file that answers it for real. */
+  capabilityFacts,
 };
 // Back-compat alias so older call sites keep working; routes to the real CEO stream.
 HQ.mockStream = (prompt, onToken, opts) => ceoStream(prompt, onToken, opts);

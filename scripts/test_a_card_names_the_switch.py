@@ -230,8 +230,13 @@ def main():
           'copy was right and the shelf entry never claimed img, so Pixel '
           'introduced itself by its vault access')
 
+    # The reader moved to hq-runtime.jsx on 2026-08-16, beside the grant it
+    # mirrors, because the coworker card and the inspect panel needed it too
+    # and a private copy per surface is the drift this check exists to catch.
+    # Both halves still asserted: the fact is read from `imageProvider`, and
+    # the shelf still hands what it read to `canDoPhrase`.
     check('the hire form still hands over the facts it read',
-          re.search(r'f\.canMakeImages = !!\(s && s\.imageProvider\);', hire)
+          re.search(r'f\.canMakeImages = !!s\.imageProvider;', runtime)
           and re.search(r'canDoPhrase\(t\.tools,\s*capabilityFacts\(t\)\)', hire),
           'the card and toolsForAgent must read one setting, not two')
 

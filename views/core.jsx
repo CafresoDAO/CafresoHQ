@@ -3,7 +3,7 @@ import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
 import { xpStats } from '../app/experience.jsx';
 import { officeDate } from '../app/artifacts.jsx';
-import { brainName, EFFORT_TIP, memoryLabel, memoryNotes, payrollLabel, poweredBy } from '../app/cast.jsx';
+import { brainName, CAN_USE_OFF_TIP, CAN_USE_TIP, EFFORT_TIP, grantedTools, memoryLabel, memoryNotes, payrollLabel, poweredBy } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
 import { HQ } from '../hq-runtime.jsx';
 /* One source of truth with the runtime that does the folding. */
@@ -638,13 +638,30 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                       column layout are scoped to that container, so the
                       first cut put a correctly-worded label outside the only
                       rule that styles it. */}
-                  {(a.tools||[]).length > 0 && (
-                    <div><span className="lbl">Can use</span>
-                      <span className="team-tools" title="What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.">
-                        {(a.tools||[]).map(t => <span key={t}>{t}</span>)}
-                      </span>
-                    </div>
-                  )}
+                  {/* Over `grantedTools`, not `a.tools` — the stored list is
+                      the CLAIM, and printing it made this row promise Dax
+                      "files" with elevation off and "db", which reaches
+                      nothing anywhere. See the note on grantedTools. */}
+                  {(() => {
+                    const reach = grantedTools(a.tools, HQ.capabilityFacts(a));
+                    if (!reach.granted.length && !reach.locked.length) return null;
+                    return (
+                      <div><span className="lbl">Can use</span>
+                        <span className="team-tools" title={CAN_USE_TIP + (reach.locked.length ? CAN_USE_OFF_TIP : '')}>
+                          {reach.granted.map(g => <span key={g.id} title={`Can ${g.say}`}>{g.id}</span>)}
+                          {/* Dimmed rather than dropped: the capability is
+                              real and the switch is nameable, so §7 wants the
+                              route on the card, not a row that quietly got
+                              shorter. Inline opacity because this row has no
+                              stylesheet of its own to add a class to. */}
+                          {reach.locked.map(l => (
+                            <span key={l.id} style={{opacity: 0.45}}
+                                  title={l.unlock ? `Not yet — ${l.unlock}.` : 'Switched off.'}>{l.id} · off</span>
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <button
                   className="px-btn ghost team-inbox-btn"

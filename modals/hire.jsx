@@ -122,31 +122,19 @@ const hostOf = (u) => { try { return new URL(String(u || '')).hostname; } catch 
    bars. A shelf of templates on different brains: bars. */
 /* The facts `canDoPhrase` needs and cannot look up for itself. Each one is
    read from the same place the runtime reads it when it decides whether to
-   hand the tool over, so the card and `toolsForAgent` cannot disagree:
+   hand the tool over, so the card and `toolsForAgent` cannot disagree.
 
-     canSearch      TOOL_REGISTRY.search.requires() — braveEnabled && braveKey
-     elevated       the candidate's own flag, which is what gates FILE_* / BASH
-     canMakeImages  settings.imageProvider, same check toolsForAgent makes
-     moneyOn        window.hqMoneyOn(), the Wallet ICP-Service switch
+   That sentence was written here, about this shelf, and was true of this
+   shelf only: the reader was private to this file, so the two surfaces
+   that describe a HIRED coworker — the card and the inspect panel — could
+   not have used it if they had wanted to, and they did not. It now lives
+   in hq-runtime.jsx beside `toolsForAgent`, where its comment explains the
+   four facts, and this call is one of three.
 
-   Wrapped in a try because this runs during render on the first screen of a
-   fresh install, and a settings store that is not up yet must produce a
-   quieter card, never a broken one. The catch leaves the flags ABSENT, not
-   false, and the difference is load-bearing in both directions: absent is
-   falsey, so nothing gets promised, and `canDoPhrase` can still tell "the
-   boss has not set an image provider" from "we could not find out", which
-   is what stops an unreadable settings store from telling a boss who
-   already configured one to go and configure one. */
-function capabilityFacts(t) {
-  const f = { elevated: !!(t && t.elevated) };
-  try {
-    const s = CafresoHQClient.getSettings();
-    f.canSearch = !!(s && s.braveEnabled && s.braveKey);
-    f.canMakeImages = !!(s && s.imageProvider);
-  } catch (_e) { /* leave both false */ }
-  try { f.moneyOn = !!(window.hqMoneyOn && window.hqMoneyOn()); } catch (_e) {}
-  return f;
-}
+   Still wrapped there, for the reason it was wrapped here: this runs during
+   render on the first screen of a fresh install, and a settings store that
+   is not up yet must produce a quieter card, never a broken one. */
+const capabilityFacts = (t) => HQ.capabilityFacts(t);
 
 function CastLine({ t, showBars }) {
   const bars = statBars(t);

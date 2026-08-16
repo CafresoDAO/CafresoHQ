@@ -1,7 +1,8 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
 import { xpAffinityText, xpStats } from '../app/experience.jsx';
-import { brainName, EFFORT_TIP, OFFICE_EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
+import { brainName, CAN_USE_OFF_TIP, CAN_USE_TIP, EFFORT_TIP, grantedTools, OFFICE_EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
+import { HQ } from '../hq-runtime.jsx';
 import { officeDate } from '../app/artifacts.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const _elevatedStatusCache = { at: 0, data: null };
@@ -188,12 +189,28 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
             Renamed rather than rebuilt: a real used-list is derivable from
             the activity log, but that is a different feature, and the label
             was the part that was lying. */}
-        <div>
-          <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Can use</div>
-          <div className="tools-used" title="What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.">
-            {(agent.tools||[]).map(t => <span key={t}>{t.toUpperCase()}</span>)}
-          </div>
-        </div>
+        {/* …and it was still a permission list read off the stored CLAIM.
+            Renaming fixed the tense; it could not fix the contents. This
+            panel showed a freshly hired Dax "FILES VAULT DB" while
+            `toolsForAgent` was giving him the vault and nothing else, so the
+            list now comes from grantedTools — same tables the candidate
+            shelf has used since the front-desk audit. */}
+        {(() => {
+          const reach = grantedTools(agent.tools, HQ.capabilityFacts(agent));
+          if (!reach.granted.length && !reach.locked.length) return null;
+          return (
+            <div>
+              <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Can use</div>
+              <div className="tools-used" title={CAN_USE_TIP + (reach.locked.length ? CAN_USE_OFF_TIP : '')}>
+                {reach.granted.map(g => <span key={g.id} title={`Can ${g.say}`}>{g.id.toUpperCase()}</span>)}
+                {reach.locked.map(l => (
+                  <span key={l.id} style={{opacity: 0.45}}
+                        title={l.unlock ? `Not yet — ${l.unlock}.` : 'Switched off.'}>{l.id.toUpperCase()} · OFF</span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>Live activity</div>
           {mine.length > 0 ? (

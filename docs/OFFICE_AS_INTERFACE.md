@@ -12029,3 +12029,105 @@ feeding one door is worth naming. Carried forward untouched: the boss's
 plain composer sends still mint no registry record; 'aborted by user'
 still stamps environment aborts; the stop button's busy-only gate; and
 the Inbox still has no 'cancelled' filter pill.
+
+## The hired coworker's card advertised what the shelf refused to promise
+
+The front desk has been careful since the 2026-08-13 audit: a candidate's
+one-line pitch goes through `canDoPhrase`, which drops any tool id with
+nothing behind it and degrades the conditional ones. The two surfaces that
+describe the SAME coworker after the boss says yes — the TeamView card and
+the inspect panel — printed `agent.tools` verbatim, under a tooltip calling
+it "what this coworker is allowed to reach". `agent.tools` is the claim.
+The grant is `toolsForAgent`, which reads four other facts first.
+
+Measured live on office 9261, 2026-08-16, through the product's own
+first-run door. Dax on the candidate shelf:
+
+    Dax  CANDIDATE  Data Analyst
+    Can work with your files and read your notes
+
+That sentence is this codebase being honest — `db` contributed no words
+because it has no `CAN_DO` entry, and `files` was promoted off the
+template's `elevated: true`. One click hired him. `loadCandidate` drops
+elevation by design, so what landed on the floor was `tools:
+['files','vault','db'], elevated: false`, and his card read:
+
+    CAN USE   FILES   VAULT   DB
+
+`files` needed an elevation the hire flow had just switched off. `db`
+reaches nothing anywhere and has not since the audit hid it from both
+pickers — which is also why neither chip could be unticked at Settings →
+Roster, the door that same tooltip names: `visibleToolsCatalog` filters
+them out, and the checkbox toggle preserves ids it does not render, so a
+phantom claim minted by a template is permanent. The product told the truth
+on the shelf and reverted to the sales pitch the moment the boss said yes.
+
+Vera, hired weeks earlier on this office, was the same defect without the
+never-wired half: `['web','files']`, elevation off, card promising files.
+
+Four changes, no new invariants — the ones already written down, applied
+where they were not:
+
+  - `app/cast.jsx` gains `grantedTools(tools, ctx)`, the same four tables
+    `canDoPhrase` uses, answered as a list instead of a sentence. An id
+    with no `CAN_DO` entry is dropped exactly as it contributes no words.
+    An id whose condition is unmet but which has a smaller true version —
+    'web' without a Brave key still gets BROWSER_FETCH — is kept, carrying
+    the smaller claim as its own tooltip. Everything else is LOCKED, not
+    dropped, and rendered dimmed with " · off" and the unlock sentence:
+    §5 says do not promise it, §7 says name the switch, and a row that
+    quietly got shorter does neither.
+  - `capabilityFacts` moved from modals/hire.jsx to hq-runtime.jsx, beside
+    `toolsForAgent`. Its comment in the modal claimed the card and the
+    runtime "cannot disagree" because each fact is read where the runtime
+    reads it. True of the shelf; the reader was private to that one file,
+    so the other two surfaces could not have used it. It is now one reader
+    with three callers, and `canSearch` calls `TOOL_REGISTRY.search.
+    requires()` rather than re-spelling `braveEnabled && braveKey`.
+  - Both surfaces render from it, sharing one tooltip constant. They have
+    twice been fixed one at a time — "the twin of the inspect panel's row,
+    missed when that one was renamed" is a comment on the card today.
+  - `OPENSWARM_ROSTER` stops minting 'email'/'cal' (Vera) and 'db' (Dax),
+    and the comment above it stops listing all three as "currently wired
+    in CafresoHQ", which they have not been since the audit. Existing
+    rosters are NOT rewritten — Dax kept his stored `db` through the whole
+    verification and the display filter is what protected him. Silent data
+    migrations are their own kind of dishonesty.
+
+Verified live after the fix, on the same office. Kip: `web`, `vault`, the
+web chip's tooltip reading "Can read a web page you name" — this office has
+no Brave key, so the smaller true version, and the row's legend absent
+because nothing is dimmed. Vera: `web` and a dimmed `files · off` whose
+tooltip reads "Not yet — work with your files once you switch on their file
+& shell access." Dax: `vault` + `files · off`, `db` gone. Then the route
+itself: flipping 🛡 File & shell access on his card in Settings → Roster
+(one confirm, "Grant Dax COMPUTER ACCESS?") moved `files` from dimmed to
+granted and dropped the legend from his tooltip, while `db` — still in his
+stored claim list — stayed absent. He was let go afterwards; the office is
+back to Kip and Vera.
+
+New suite scripts/test_the_card_lists_what_the_runtime_grants.py, 41
+checks: both surfaces render the grant, one fact reader, one tooltip, no
+template mints an id the tables cannot name, and a node drive of
+`grantedTools` over the shipped claim lists. Fire-tested thirteen mutation
+arms — including a full revert of both render surfaces to HEAD — all
+caught. Two sibling suites had anchored on `capabilityFacts` living in the
+hire modal; both anchors were moved to follow it, and the front desk's
+canSearch check got STRONGER on the way (it now asserts the shelf and the
+grant share one expression, where before it asserted two spellings
+matched). Full runner 147/147.
+
+Residue, named rather than fixed: 'vault' has no `CAN_DO_NEEDS` entry, so
+every card claims "read your notes" whether or not the cabinet is
+readable — `toolsForAgent` gates the vault tools on an async
+`isVaultReady()`, and the tables are synchronous, so this one needs a
+different shape rather than another row in `CAN_DO_NEEDS`. The candidate
+shelf still computes its sentence with the template's `elevated: true`
+while `loadCandidate` hires with it false, so "can work with your files"
+on the shelf is a promise the very next screen breaks — same family as
+this ticket, one surface earlier, and it wants a product decision (does
+hiring a file-handling specialist offer the elevation walk?) rather than a
+render fix. Carried forward untouched: the boss's plain composer sends
+still mint no registry record; 'aborted by user' still stamps environment
+aborts; the Inbox still has no 'cancelled' filter pill; and the two retry
+entry selectors named last round are still two.
