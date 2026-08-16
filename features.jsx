@@ -4,7 +4,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { floorEmit, snagSentence } from './app/floor.jsx';
 import { xpLastAttempt, xpLastAttemptText } from './app/experience.jsx';
 import { brainName } from './app/cast.jsx';
-import { finishedLabel, worklogLine } from './app/worklog.jsx';
+import { cardNote, finishedLabel, worklogLine } from './app/worklog.jsx';
 /* ==========================================================================
    CafresoHQ — features v2
    Tasks board, memory shelf, meeting room, focus mode, approval stamps
@@ -167,8 +167,11 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                         putting it there has to say so on the card; the
                         activity strip scrolls away, this does not. */}
                     {t.stalledNote && t.status !== 'done' && (
-                      <div className="tc-stalled" title="Why this went back to the inbox">
-                        ↩ {String(t.stalledNote).slice(0, 140)}
+                      /* The whole note on the hover, because the cut one
+                         is the one that fits, not the one that is true. */
+                      <div className="tc-stalled"
+                           title={'Why this is sitting in the inbox:\n\n' + String(t.stalledNote)}>
+                        ↩ {cardNote(t.stalledNote)}
                       </div>
                     )}
                     {/* Is anybody actually on this? A DOING card used to look
@@ -205,8 +208,9 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                         a block — a progress note, a completion, a fresh
                         START — all clear it. */}
                     {t.blockedReason && t.status !== 'done' && (
-                      <div className="tc-stalled" title="What the coworker said they were stuck on">
-                        ✋ {String(t.blockedReason).slice(0, 140)}
+                      <div className="tc-stalled"
+                           title={'What the coworker said they were stuck on:\n\n' + String(t.blockedReason)}>
+                        ✋ {cardNote(t.blockedReason)}
                       </div>
                     )}
                     {/* What the coworker has done so far. `progressLog` was

@@ -54,6 +54,12 @@ function ElevatedToolkit() {
 const INSPECT_ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
+  /* A workflow step held because the step before it did not deliver. Its
+     own glyph rather than the '✦' fallback: this is the only row in the
+     feed about a task nobody is working on, and the chain is the reason.
+     The twin of this map lives in views/core.jsx and must gain the same
+     entry — see the note there. */
+  blocked: '⛓',
 };
 function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate, onDismiss, onMessage, onFurnish, onCoffee }) {
   if (!agent) return null;

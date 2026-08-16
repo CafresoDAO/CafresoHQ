@@ -1,6 +1,7 @@
 import { CafresoHQChain } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { MSG_STATES } from '../app/windows.jsx';
+import { isParked } from '../app/worklog.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
@@ -72,10 +73,26 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
                   const stepTasks = wf.steps.map(id => tasks.find(t => t.id === id));
                   const known = stepTasks.filter(Boolean);
                   const done = known.filter(t => t.status === 'done').length;
-                  const doing = known.filter(t => t.status === 'doing').length;
+                  /* `status === 'doing'` was the whole test, and it read a
+                     stopped pipeline as a moving one: measured 2026-08-16,
+                     a two-step chain whose first step spent its tool budget
+                     and parked said `0/2 done · 1 in progress` while the
+                     second step sat unreachable in the inbox. #86's rule,
+                     on the last counter that had not learned it — and the
+                     one place a boss goes to ask how their workflow is
+                     doing, so the wrong answer here is the only answer they
+                     get. Read from worklog.jsx rather than spelled again;
+                     four copies of "is this really running" is how they
+                     start disagreeing. */
+                  const parked = known.filter(isParked).length;
+                  const doing = known.filter(t => t.status === 'doing' && !isParked(t)).length;
                   const missing = stepTasks.length - known.length;
                   const bits = [`${done}/${stepTasks.length} done`];
                   if (doing) bits.push(`${doing} in progress`);
+                  /* Named, not folded into a silence: a stopped step is the
+                     whole reason the rest of the chain is not moving, and
+                     it is the one the boss can do something about. */
+                  if (parked) bits.push(`${parked} stopped — needs you`);
                   if (missing) bits.push(`${missing} removed`);
                   return (
                     <div key={wf.id} className="row" style={{padding:'4px 6px'}}>

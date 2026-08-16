@@ -12,7 +12,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { attachVisit, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
+import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -4976,11 +4976,15 @@ ${d.text}` : d.text,
         // closure still shows as 'inbox' rather than the 'done' it just became.
         const nextTask = tasksRef.current.find(t => t.id === task.chainTo);
         if (nextTask && nextTask.status === 'inbox') {
-          // Check dependsOn — all must be done
-          const depsReady = !nextTask.dependsOn || nextTask.dependsOn.every(depId => {
-            const dep = tasksRef.current.find(t => t.id === depId);
-            return dep && dep.status === 'done';
-          });
+          /* Check dependsOn — all must be done. Kept as the list of the
+             ones that AREN'T rather than a boolean, because the boss's
+             next question after "why hasn't it started" is "waiting on
+             what", and by the time that was a boolean the answer had
+             already been thrown away. */
+          const blockedBy = (nextTask.dependsOn || []).map(depId =>
+            tasksRef.current.find(t => t.id === depId)
+          ).filter(dep => !dep || dep.status !== 'done');
+          const depsReady = blockedBy.length === 0;
           if (depsReady) {
             if (task.autoDispatch) {
               triggerChainStep(nextTask, cleanBuf, agent);
@@ -4999,6 +5003,44 @@ ${d.text}` : d.text,
                 priorResult: cleanBuf,
               });
             }
+          } else {
+            /* The chain held, and until now that was the end of it: no
+               dispatch, no approval, no row, no note. The office had
+               worked out the true thing — this step cannot run yet, and
+               here is exactly what it is waiting for — and kept it,
+               which is #127's lesson on a second surface.
+
+               Reachable the moment a step comes back without a delivery:
+               `produced` false leaves it in `doing`, and `doing` is not
+               `done`, so the successor is held. Also reachable when a
+               dependency is deleted mid-pipeline (`!dep`), which is why
+               blockedBy carries the misses too.
+
+               The note goes on the WAITING card, not this one: this card
+               already says what happened to it, and the card that looks
+               wrong is the one sitting in the inbox as though nobody had
+               got to it. `stalledNote` is that field — "why this is
+               sitting in the inbox", cleared by START — so a boss who
+               restarts the pipeline does not keep reading about a wait
+               that is over. */
+            const holdNote = chainHoldLine(
+              blockedBy.map(dep => dep && dep.title), !!task.autoDispatch);
+            setTasks(prev => prev.map(t => t.id === nextTask.id
+              ? { ...t, stalledNote: holdNote } : t));
+            /* And a row, because the card is only seen by someone already
+               looking at the board. This is the one event in a workflow
+               that happens to a task nobody is working on, so nothing
+               else in the feed would ever mention it.
+
+               No glyph in the text. Both feeds that render these rows put
+               `ACT_ICON[action]` in front of them, so a ⛓ written here
+               came out "⛓ … ⛓" on screen — measured on the live board. The
+               rows that do carry a trailing glyph carry a DIFFERENT one
+               (`picked up "…" 📁`), because it says a second thing; the
+               same glyph twice just says the first thing twice. */
+            logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
+              action: 'blocked', taskId: nextTask.id,
+              text: `"${String(nextTask.title).slice(0, 40)}" is still waiting on the step before it` });
           }
         }
       }

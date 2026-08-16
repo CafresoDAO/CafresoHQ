@@ -686,6 +686,38 @@ function doneLine(subject, missed, shortfall) {
   return ok ? `finished "${s}" ✓` : `finished "${s}" — but not all of it landed`;
 }
 
+/* Why a workflow step is still sitting in the inbox, and what frees it.
+
+   A chained step only runs when everything it depends on is `done`. That
+   check has always been made and its answer has always been discarded:
+   when it came back false the office dispatched nothing, raised nothing
+   and said nothing, and the waiting card sat in the inbox looking exactly
+   like a card nobody had got round to. Measured 2026-08-16 on office 9280
+   — step one stopped part-way, step two's card read `Beta probe one three
+   one · Assign… · MED`, and the word "workflow" appeared nowhere on the
+   board.
+
+   Split on `auto`, for the same reason #127's stop-note splits on `chat`:
+   the two halves of this sentence are promises about different machinery.
+   With auto-dispatch the office really does start the next step by
+   itself; without it the office asks first, and telling a boss it will
+   run on its own when a stamp is waiting for them is how a pipeline sits
+   still while everyone believes it is moving. */
+function chainHoldLine(blockedTitles, auto) {
+  const names = (blockedTitles || [])
+    .map(t => String(t || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map(t => `"${t.slice(0, 40)}"`);
+  const what = names.length === 0 ? 'an earlier step'
+    : names.length === 1 ? names[0]
+    : names.length === 2 ? `${names[0]} and ${names[1]}`
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const one = names.length <= 1;
+  return `waiting on ${what} — ${one ? 'that step has' : 'those steps have'} not `
+    + `delivered yet, so this one has nothing to work from. Finish ${one ? 'it' : 'them'} and `
+    + (auto ? 'this starts on its own.' : 'the office will ask you before starting this.');
+}
+
 function toolActivity(agent, ev, extra) {
   const tense = ev && ev.failed ? 'fail' : 'past';
   const line = visitLine(ev.name, ev.arg, tense, 40) || visitPlace(ev.name, tense);
@@ -697,4 +729,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };

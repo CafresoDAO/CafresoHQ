@@ -208,10 +208,18 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
    Shows the most recent ~50 events per agent. Click a row → fires
    cafresohq:openNote so the vault opens that note in the active view.
    Optionally filterable to a single agent (when selectedAgentId is set). */
-/* Action → icon for the inbox rows. */
+/* Action → icon for the inbox rows.
+
+   Kept in step with `INSPECT_ACT_ICON` in ui/panels.jsx, which is the same
+   map for the same rows in a different panel. Adding an action to one and
+   not the other was measured on 2026-08-16: a chain-hold row came out ⛓ on
+   the coworker's card and ✦ — the "no idea what this is" fallback — in the
+   inbox, for the same event. Two feeds disagreeing about what kind of thing
+   just happened is the office talking over itself. */
 const ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
+  blocked: '⛓',
 };
 
 /* AgentInbox — the two-layer activity feed. Reads the canonical `activity` log

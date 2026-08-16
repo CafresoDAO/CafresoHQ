@@ -37,6 +37,32 @@ function applyStatus(task, status, now) {
    Anything else (idle, away, stuck) means nobody is at the keyboard. */
 const WORKING = ['active', 'busy'];
 
+/* A card in `doing` whose run has already ENDED, waiting on the boss.
+
+   #86 said a parked snag is not work in flight, and every surface that
+   counts running jobs has had to know it since. They each worked it out
+   themselves — the load-time scrub, the "is this stream this card's"
+   check, the card's own worklog line above — and on 2026-08-16 the
+   workflow list turned out never to have learned it: a two-step pipeline
+   whose first step stopped part-way read `0/2 done · 1 in progress`,
+   because `status === 'doing'` was the whole test. The pipeline was not
+   in progress. It was stopped, and would stay stopped until the boss
+   restarted that step.
+
+   `blockedReason` is written by the run-end path and by a coworker's
+   `[TASK_BLOCKED]`, and cleared by every path that moves the card on — a
+   progress note, a completion, a fresh START. A mid-run `[TASK_BLOCKED]`
+   therefore reads as parked while the stream is technically still open,
+   and that is the office's settled reading, not a gap: worklogLine says
+   "hit a snag" on the same card, and a coworker who announces they are
+   stuck on this job has stopped moving it whatever the socket is doing.
+
+   Named here so the fourth surface that needs the answer reads it rather
+   than deriving a fourth copy. */
+function isParked(task) {
+  return !!(task && task.status === 'doing' && task.blockedReason);
+}
+
 /* True when a job is in progress and no one is currently working on it.
 
    Deliberately does NOT try to prove the agent is on THIS task specifically
@@ -106,6 +132,42 @@ function worklogLine(task, owner, now) {
   return age ? `nobody's on this · ${age}` : "nobody's on this";
 }
 
+/* A card line, cut where a reader can tell it was cut.
+
+   Both honesty lines on a card — the snag reason and the note explaining a
+   card sitting in the inbox — were rendered `.slice(0, 140)`, a hard cut at
+   a character count. Seen on screen 2026-08-16, both at once:
+
+     ✋ they did as much as they can in one go and stopped there. Running
+        it again starts from the brief and carries nothing over, so a
+        narrower bri
+     ↩ waiting on "Alpha probe one three one" — that step has not
+        delivered yet, so this one has nothing to work from. Finish it and
+        this starts on
+
+   §7 says every honest sentence needs a way forward, and in both of these
+   the way forward is the last clause — which is precisely the part a cap
+   eats. "Finish it and this starts on" is not a shorter version of the
+   sentence; it is a sentence that stops before saying anything.
+
+   240 because that is already the office's number for the longest thing
+   that can land in one of these fields (a coworker's `[TASK_BLOCKED]`
+   reason is cut to 240 on the way in), so every sentence the office writes
+   itself now arrives whole. Longer than that still gets cut — a card is a
+   card — but on a word, with the ellipsis that says so, and the caller
+   hands the untruncated text to the hover. */
+function cardNote(text, cap) {
+  const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  const n = cap || 240;
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n - 1);
+  const sp = cut.lastIndexOf(' ');
+  /* Only back up to a word boundary when there is one worth backing up to
+     — a 200-character URL has no spaces, and losing most of the line to
+     find one would be worse than the cut. */
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:.—-]+$/, '') + '…';
+}
+
 /* When a job finished. `completedAt` and `completedBy` were both stamped on
    the record by the done handler and read by nothing, so a finished card
    could not say who finished it or when — the DONE column was a wall of
@@ -122,4 +184,4 @@ function finishedLabel(task, now) {
   return label === 'just now' ? 'just now' : `${label} ago`;
 }
 
-export { applyStatus, durationLabel, finishedLabel, isStalled, sittingFor, worklogLine, WORKING };
+export { applyStatus, cardNote, durationLabel, finishedLabel, isParked, isStalled, sittingFor, worklogLine, WORKING };

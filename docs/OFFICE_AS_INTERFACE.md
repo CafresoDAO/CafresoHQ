@@ -14151,3 +14151,111 @@ the one audience that could not act on it. **A fact the office says to the
 boss and not to itself will be true in the transcript and absent from every
 decision.** When the office knows something out loud, ask which of its own
 surfaces is deciding without it.
+
+## A pipeline that had stopped for good reported one step in progress
+
+Two cards, chained: *Alpha probe one three one* → *Beta probe one three
+one*, under a workflow named ALPHA THEN BETA, Beta set to start on its own
+the moment Alpha delivered. Alpha was handed to a local brain, which spent
+its whole tool budget re-reading the same file and stopped part-way —
+exactly the run #127 had just taught the office to park rather than certify.
+That part worked. Alpha sat in DOING with its snag on the card and ▶ START
+an inch away, and the chain correctly refused to advance.
+
+Then the office went quiet about it. Everything the boss could look at:
+
+    Beta's card    Beta probe one three one · Assign… · MED
+    the feed       (nothing — no row was written)
+    the workflow   ALPHA THEN BETA · 0/2 done · 1 in progress
+
+Beta's card was pixel-identical to a card nobody had ever chained to
+anything. The word "workflow" appeared nowhere on the board. And the one
+surface in the product whose entire job is to report on pipelines said the
+pipeline had one step in progress — of a two-step chain that was stopped,
+and would stay stopped until the boss went and restarted Alpha by hand.
+
+The check had been made. `depsReady` was computed from `dependsOn` on every
+chain hop, used to pick between dispatching the next step and asking the
+boss to approve it, and then discarded:
+
+    if (depsReady) { … }        // and no else
+
+There was no bug in the condition. The condition was right, the answer was
+correct, and the answer was thrown away — so the third case, *held*, was
+the one case in the whole chain that produced no dispatch, no approval, no
+row and no note. #127's lesson arrives here from the other direction: there
+it was a fact the office said aloud and never told itself; here it was a
+fact the office worked out for itself and told nobody.
+
+The `0/2 done · 1 in progress` is #86 again, on the last counter that had
+never learned it. `status === 'doing'` was the whole test. #86 established
+that a parked snag is not work in flight, and every surface that counts
+running jobs has had to know it since — the load-time scrub, the "is this
+stream this card's" check, the card's own worklog line. Each worked it out
+separately, and the workflow row, written later and elsewhere, worked out
+nothing. The predicate has a name now (`isParked`) and the row reads it, so
+the fourth surface that needs the answer will not derive a fifth copy.
+Parked steps get counted and *said* — `1 stopped — needs you` — rather than
+quietly dropped out of the in-progress number, because a stopped step is
+the whole reason the rest of the chain is not moving.
+
+The sentence on the held card splits the same way #127's stop-note splits:
+on the door that actually exists for that card. A chain step set to auto
+starts by itself once its blocker delivers; a step under step-approve will
+sit there until the boss stamps it. Told the boss's next move is "finish
+the step before it", both are honest; told "and this starts on its own",
+only one is. So the note ends either *…Finish it and this starts on its
+own.* or *…Finish it and the office will ask you before starting this.*
+It names the blocking step by title, because the boss's next question after
+"why hasn't it started" is "waiting on what" — the question a boolean had
+already thrown the answer away for.
+
+Two things the fix itself got wrong, both caught by looking at the screen
+rather than at the test output. The feed row came out **⛓ "Beta probe one
+three one" is still waiting on the step before it ⛓** — a glyph in the text
+and the same glyph again from the panel's action-icon map. The rows that do
+carry a trailing glyph carry a *different* one (`picked up "…" 📁`) because
+it says a second thing; the same glyph twice just says the first thing
+twice. And there are two of those icon maps — `INSPECT_ACT_ICON` in
+ui/panels.jsx and `ACT_ICON` in views/core.jsx, the same table for the same
+rows in two panels — so the new action landed in one of them and the same
+event rendered ⛓ on the coworker's card and ✦, the "no idea what this is"
+fallback, in the inbox. Two feeds disagreeing about what kind of thing just
+happened is a smaller version of the same fault as the rest of this ticket.
+
+And then, verifying the fix on the live board, both honesty lines on a card
+turned out to be cut at 140 characters, mid-word:
+
+    ✋ …Running it again starts from the brief and carries nothing over,
+       so a narrower bri
+    ↩ …that step has not delivered yet, so this one has nothing to work
+       from. Finish it and this starts on
+
+§7 says every honest sentence needs a way forward, and in a sentence built
+to §7 the way forward is the last clause — which is precisely what a
+character cap eats. "Finish it and this starts on" is not a shorter version
+of that sentence; it is a sentence that stops just before saying anything.
+Every line here is written by the office itself and none exceeds the 240
+characters the office already uses as its longest field, so the cap moved
+there, the cut lands on a word with an ellipsis that admits it, and the
+untruncated text goes to the hover. A cap tuned to the shape of the card
+rather than the shape of the sentences it holds will always cut the
+sentences in the same place, and the last clause is where the office puts
+the part the boss can act on.
+
+What the boss sees now, on the same two cards: Beta reads *↩ waiting on
+"Alpha probe one three one" — that step has not delivered yet, so this one
+has nothing to work from. Finish it and this starts on its own.*, whole and
+on one line; the feed carries **⛓ "Beta probe one three one" is still
+waiting on the step before it**, once; and the workflow reads *ALPHA THEN
+BETA · 0/2 done · 1 stopped — needs you*. Point the same pipeline's first
+step at a real delivery and none of that is written: Alpha finishes, files
+to Deliveries, and the chain moves on without a word about waiting — which
+is the other half of the check, because a hold note that appears on a
+pipeline that is fine is the same kind of lie in the other direction.
+
+**A decision the office makes and does not record is a decision the boss
+has to make again from scratch.** When a branch chooses to do nothing, that
+is still a choice with a reason behind it — and the reason is the only
+thing standing between a stopped pipeline and a board that looks idle by
+accident.
