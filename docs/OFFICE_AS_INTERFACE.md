@@ -13341,3 +13341,119 @@ Still open: `createMessage` truncates `body` at 8000 characters with no note
 in the record. The brief that gets filed and the brief the coworker was
 handed can therefore differ, and nothing says so — the same family as the
 trimmed audit trail above, one registry over.
+
+## The registry kept 8,000 characters of a brief and called it the brief
+
+Reproduced 2026-08-16. `createMessage` capped `body` with a bare
+`.slice(0, 8000)` — no marker, no count, no flag. A 9,023-character brief:
+
+    bossTyped         9023
+    coworkerWasHanded 9023      <- dispatch streams `prompt`, never the record
+    registryFiled     8000
+    lost              1023
+    anyFieldNamingIt  []
+
+The trim costs only the REGISTRY. Everyone actually doing the work got the
+whole thing; the one surface whose entire job is to be the account of what
+was sent is the one that quietly holds less than it claims. That is the
+same shape as the trimmed history two entries up, one field over, and it
+had the same three consequences.
+
+The row rendered 8,000 characters as if they were the brief. There is no
+ellipsis in the data, so the text simply stops mid-sentence and the reader
+has no way to know whether the brief ended there or the record did.
+
+↻ RE-SEND reads the body back — `dispatchToAgent(agent, m.body, …)` — so a
+retry hands the coworker a SHORTER job than the one that failed. The
+confirm dialog quotes 200 characters either way, so no surface in the
+product could show the difference. A door that exists to let the boss see
+what they are about to send was showing them the part that hadn't changed.
+
+And the row-button's skipped door is earned by "you are looking at what you
+are re-sending". A trim makes that premise false, silently, on exactly the
+records most likely to be long enough to matter.
+
+Fixed the way the history was fixed: keep the cap and make the record carry
+the size of what it lost. The cap is `MSG_BODY_CAP` at module scope — a
+name, so the accounting and the check both read the product's number
+instead of carrying copies of `8000` — and `bodyDropped` is the arithmetic,
+not a boolean. "Some was cut" is the same silence with a flag on it.
+
+The row says it, and says which way the gap runs:
+
+> ⋯ 16,397 more characters were sent than this record kept. Kip got the
+> whole brief; the tail was cut when this was filed and can't be recovered
+> from here.
+
+The direction is load-bearing. A reader who takes it backwards concludes
+the coworker was under-briefed, which is the opposite of what happened and
+worse than saying nothing.
+
+The re-send door goes back up for both callers when the record is short,
+and names the loss instead of refusing (§7 — 8,000 characters of brief is
+usually still the brief, and only the boss knows if it is):
+
+> Re-send a SHORTENED brief to Kip?
+>
+> This record is 7,678 characters short of what was originally sent — the
+> tail was cut when it was filed and isn't recoverable. They'd get the
+> 8,000-character version:
+
+`scripts/test_the_brief_says_what_it_lost.py` — 26 checks. The behavioural
+half runs the real `createMessage` and the real `resendMessage` in node.
+The invariant worth naming is not "8000 becomes 8000" but that the
+accounting ADDS UP at every size — under the cap, exactly at it, just over,
+and triple it — because an off-by-one at the boundary puts "1 character was
+cut" on a record that is whole. One check reads the dispatch region and
+asserts that no variable assigned from `MessageRegistry.getMessage` ever
+has `.body` read: the row's sentence promises the coworker got the untrimmed
+text, so the moment a dispatch sources its prompt from a record, that
+sentence becomes a lie in the other direction.
+
+Fire test: 18 arms, 18 caught. One arm SURVIVED the first pass and was
+removed rather than caught — doubling the cap. That is a policy change, not
+a defect: `bodyDropped` is derived arithmetic and the suite lifts the cap
+from source, so the accounting stays correct at any cap, and a check that
+failed it would have been the fourth spelling-pin of the round. It was
+replaced with the dangerous shape in the same spot — a field that is
+present and always zero, which satisfies a reader testing for its existence
+while the row stays silent.
+
+Three sibling suites went red on the baseline, all three correctly, all
+three the same failure: a check that pinned the exact text of the thing it
+was guarding. `test_the_boss_ask_is_on_the_record.py` lifts `createMessage`
+into node and had stubbed its closure dependencies — the new module-scope
+cap is not a closure, so it now LIFTS the declaration instead of carrying a
+copy. `test_a_retryable_record_has_a_door.py` and
+`test_a_snag_row_retries_its_own_run.py` both pinned the literal
+`if (confirm && !(await window.hqConfirm(` — the door exactly as written the
+day it was added — so the first correct WIDENING of the condition read as
+the door going missing. Both now match the shape: there is one gated door
+in the retry path and `confirm` is part of what opens it; the rest of the
+boolean is the caller's business. That is three rounds running where the
+thing that broke was a test describing today's spelling rather than the
+claim, and it is worth saying plainly: a check that owns the exact wording
+of the code it guards will fail the next honest change to that code, every
+time. Full runner 161/161.
+
+Verified live in the shipped bundle (office 9272, canned brain). A 24,402
+character brief to Kip filed as 8,000 kept / 16,397 dropped — the five
+missing characters are the `@Kip ` mention prefix stripped before dispatch,
+so the accounting is exact against the prompt the coworker actually got.
+The gap line renders between the body and the history block, in the same
+place as the trimmed-history row. A failing 15,683-character brief filed
+`failed`, 7,678 dropped, and its ↻ RE-SEND produced the shortened door
+above. Cancel: two records before, two after. "Send the short version":
+a chained child of exactly 8,000 characters with `bodyDropped: 0` — nothing
+further lost, so the dialog's promise and the record filed agree. A short
+62-character failure got the plain "Retry message to Kip?" with none of the
+shortened language.
+
+One path was NOT verified live: the `confirm: false` caller
+(`onRetryActivity` with a named run), which is the surface whose skip the
+widening actually removes. No attention row offering it was reachable in
+that office's state. It is covered behaviourally — the node test runs the
+real `resendMessage` with `confirm: false` and gets no door on a whole
+record and a door on a trimmed one — and by two fire arms, but that is a
+weaker witness than a click, and the Inbox's own ↻ RE-SEND passes
+`confirm: true`, so the live door proves the wording rather than the gate.

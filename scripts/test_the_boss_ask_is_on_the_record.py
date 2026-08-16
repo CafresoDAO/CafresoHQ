@@ -137,19 +137,28 @@ def main():
         settle = lift(APP, 'const settleBossAsk = (id, err) =>')
         classify = lift(APP, 'const classifyStreamFailure = (s) =>')
         create = lift(APP, 'const createMessage = (input) =>')
+        capm = re.search(r'^const MSG_BODY_CAP = \d+;$', APP, re.M)
+        cap = capm.group(0) if capm else ''
         check('the ask-filing functions are liftable out of app.jsx',
-              all([record, settle, classify, create]),
+              all([record, settle, classify, create, cap]),
               f'— record={bool(record)} settle={bool(settle)} '
-              f'classify={bool(classify)} create={bool(create)}; every '
-              'behavioural check below runs these')
+              f'classify={bool(classify)} create={bool(create)} '
+              f'cap={bool(cap)}; every behavioural check below runs these')
 
-        if all([record, settle, classify, create]):
+        if all([record, settle, classify, create, cap]):
             harness = '''
 const HQ = { CHIEF_OF_STAFF: %s };
 const classifyStreamFailure = (s) => %s;
 
-/* The real registry, with its three closure dependencies stubbed. The
-   threadId inheritance below is the shipped code, not a restatement. */
+/* The real registry, with its closure dependencies stubbed. The threadId
+   inheritance below is the shipped code, not a restatement.
+
+   MSG_BODY_CAP is LIFTED rather than stubbed: it is module scope in
+   app.jsx, not a closure, so a stub here would be this suite carrying its
+   own copy of a number the product owns. Added 2026-08-16, when
+   createMessage grew the reference and this harness went red for the
+   right reason — the lift is the whole point of the pattern. */
+%s
 let STORE = [];
 const messagesRef = { get current() { return STORE; } };
 const setMessages = (fn) => { STORE = fn(STORE); };
@@ -208,7 +217,7 @@ R.authBroke = outcome(new Error('401 invalid bearer token'));
 CALLS.length = 0; settleBossAsk(null, null); R.noIdIsNoOp = CALLS.length === 0;
 
 console.log(JSON.stringify(R));
-''' % (json.dumps(chief), classify, create, record, settle)
+''' % (json.dumps(chief), classify, cap, create, record, settle)
             R = run_node(harness)
             if R is None:
                 check('the lifted functions run', False, '— see stderr')

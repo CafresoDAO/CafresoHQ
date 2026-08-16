@@ -397,6 +397,19 @@ function InboxModal({ open, onClose, onResend = null }) {
         display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
         {m.body || '(no body)'}
       </div>
+      {/* Same rule as the history count below: a record that kept part of
+          something has to say so, or the part reads as the whole. And it
+          has to say WHICH WAY the gap runs — the coworker was handed the
+          full brief and this row is the short copy, not the other way
+          round. A reader who gets that backwards thinks the work was
+          under-briefed. */}
+      {m.bodyDropped > 0 && (
+        <div style={{fontSize:9,opacity:0.7,fontStyle:'italic',marginBottom:4}}>
+          ⋯ {m.bodyDropped.toLocaleString()} more character{m.bodyDropped === 1 ? '' : 's'} were
+          sent than this record kept. {m.toAgentName || 'The recipient'} got the whole brief; the
+          tail was cut when this was filed and can't be recovered from here.
+        </div>
+      )}
       {m.failureCause && (
         <div style={{
           fontSize:10,padding:'5px 8px',marginTop:4,borderRadius:4,

@@ -43,7 +43,13 @@ FAILS = []
 
 DECL = 'const onRetryActivity = (entry) => {'
 RESEND_DECL = 'const resendMessage = async (m, { confirm = true } = {}) => {'
-DOOR = 'if (confirm && !(await window.hqConfirm('
+# Shape, not spelling — see the same note in
+# test_a_retryable_record_has_a_door.py. This pinned the door's exact
+# boolean, so widening it correctly (2026-08-16, a trimmed record forcing
+# the door open for the row button too) read as the door going missing.
+# What this check is for is the COUNT: one conditional door in the retry
+# path, and none copied into the handler.
+DOOR = re.compile(r'if \((?=[^\n]*\bconfirm\b)(.+?)&& !\(await window\.hqConfirm\(')
 NAMED = 'if (named) return resendMessage(named, { confirm: false });'
 FALLBACK = 'return resendMessage(failed[0], { confirm: true });'
 OFFICE = "That one is the office's own snag, not a coworker's message"
@@ -96,9 +102,10 @@ def main():
     # app.jsx has other confirms (letting someone go, deleting a card); the
     # claim here is narrower: the RETRY path has exactly one, and it is not
     # a second copy living in the handler.
+    doors = DOOR.findall(bare)
     check('the retry door is conditional, and there is exactly one',
-          bare.count(DOOR) == 1 and 'hqConfirm' not in fn,
-          f'{bare.count(DOOR)} conditional doors; handler has its own: '
+          len(doors) == 1 and 'hqConfirm' not in fn,
+          f'{len(doors)} conditional doors {doors}; handler has its own: '
           f'{"hqConfirm" in fn}')
 
     # ── the button obeys the same rule as its label ──────────────────────

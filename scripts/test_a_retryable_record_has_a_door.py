@@ -39,7 +39,16 @@ DECL = 'const resendMessage = async (m, { confirm = true } = {}) => {'
 GUARD = 'const already = all.find(x => x.parentId === m.id &&'
 # #103 made the door conditional (a named row that carries its own button
 # skips it) — but it is still ONE door, in this function, opt-out only.
-CONFIRM = 'if (confirm && !(await window.hqConfirm('
+# Shape, not spelling. This was the literal `if (confirm && !(await
+# window.hqConfirm(` — the door exactly as written the day it was added —
+# so the first correct WIDENING of the condition failed it (2026-08-16: a
+# record trimmed before filing forces the door open even for the row
+# button, whose skip is earned by "you are looking at what you are
+# re-sending" and which a trim makes false). The claim is "there is one
+# door here and the confirm opt is part of what opens it"; the rest of the
+# boolean is the caller's business, and a check that owns it stops the
+# next honest clause from being added.
+CONFIRM = re.compile(r'if \((.+?)&& !\(await window\.hqConfirm\(')
 CHAIN = 'parentMessageId: m.id,'
 PROP = 'onResend={resendMessage}'
 SIG = 'onResend = null'
@@ -93,7 +102,10 @@ def main():
           'the impatient second click must not file a second dispatch')
     check("…skipping only children that DIDN'T go through",
           "x.state !== 'failed' && x.state !== 'cancelled'" in rm)
-    check('resend keeps the confirm door', CONFIRM in rm)
+    door = CONFIRM.search(rm)
+    check('resend keeps the confirm door',
+          bool(door) and 'confirm' in door.group(1),
+          door.group(1) if door else 'no gated hqConfirm in resendMessage')
     check('resend chains the fresh record to the old one', CHAIN in rm)
     check("resend maps the sender: boss → null, peer → their agent",
           "(m.fromAgentId !== 'boss')" in rm)

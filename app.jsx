@@ -29,6 +29,12 @@ const { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalT
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 
+/* How much of a brief a message record keeps. Module scope so the check
+   that the trim reports itself can lift the cap instead of restating the
+   number — a test carrying its own copy of 8000 passes a fix that changes
+   the cap and forgets the accounting. */
+const MSG_BODY_CAP = 8000;
+
 /* Structured failure cause for a dead stream — Plato's "no silent
    failures" ask. Classifies the common cases so the inbox can show an
    actionable hint instead of a raw error string. This lived inline in
@@ -197,6 +203,8 @@ function App() {
         if (parent) threadId = parent.threadId;
       }
       if (!threadId) threadId = _genId('thr');
+      const full = String(input.body || '');
+      const body = full.slice(0, MSG_BODY_CAP);
       const msg = {
         id,
         threadId,
@@ -206,7 +214,21 @@ function App() {
         fromAgentName: input.fromAgentName || 'You',
         toAgentId: input.toAgentId || '',
         toAgentName: input.toAgentName || '',
-        body: String(input.body || '').slice(0, 8000),
+        body,
+        /* A brief over the cap is TRIMMED, and until 2026-08-16 the record
+           said nothing about it. The coworker gets the whole thing —
+           dispatch streams `prompt`, not the record — so the trim only
+           ever costs the REGISTRY, which is the one surface whose whole
+           job is to be the account of what was sent. Measured: a 9,023
+           character brief filed as 8,000, no field naming the missing
+           1,023, the row rendering the short copy as if it were the brief,
+           and ↻ RE-SEND reading the record back to hand the coworker a
+           different, shorter job than the one that failed.
+
+           Same shape as `historyDropped`: keep the cap — messages persist,
+           and a pasted 2MB file has no business in the state blob — and
+           make the record carry the size of what it lost. */
+        bodyDropped: full.length - body.length,
         state: 'queued',
         history: [{ at: now, state: 'queued', by: 'system', note: 'created' }],
         // Optional / Plato-schema fields:
@@ -4217,8 +4239,24 @@ ${d.text}` : d.text,
        the row names that run — pressing ↻ Retry under "Kenji hit a snag on
        X" is already an answer to a question the surface asked. Every other
        caller sends something the boss is not looking at, and pays the door. */
-    if (confirm && !(await window.hqConfirm(
-      `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`))) return;
+    /* ...except when the record is not the whole brief. A re-send reads the
+       BODY back, and a trimmed body means the coworker gets a shorter job
+       than the one that failed — a difference no surface can show, because
+       the tail was never stored. The row-button's skip is earned by "you
+       are looking at what you are re-sending"; here that premise is false,
+       so the door goes back up for both callers and says what is missing
+       rather than refusing (§7 — 8,000 characters of brief is usually
+       still the brief, and only the boss knows if it is). */
+    const cut = m.bodyDropped || 0;
+    if ((confirm || cut > 0) && !(await window.hqConfirm(
+      cut > 0
+        ? `Re-send a SHORTENED brief to ${agent.name}?\n\n`
+          + `This record is ${cut.toLocaleString()} character${cut === 1 ? '' : 's'} short of what `
+          + `was originally sent — the tail was cut when it was filed and isn't recoverable. `
+          + `They'd get the ${(m.body || '').length.toLocaleString()}-character version:\n\n`
+          + `"${(m.body || '').slice(0, 200)}…"`
+        : `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`,
+      cut > 0 ? { danger: true, okLabel: 'Send the short version' } : undefined))) return;
     // Fresh dispatch — the old record stays as history (stories are not
     // rewritten); the retry files its own record, chained via parentId.
     dispatchToAgent(agent, m.body, {
