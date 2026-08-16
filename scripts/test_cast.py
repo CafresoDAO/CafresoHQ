@@ -788,19 +788,48 @@ console.log(JSON.stringify(R));
           bool(shot),
           'hq-runtime.jsx: browser_screenshot must not be granted by claimed.has(\'web\') alone')
 
-    # ── the Obsidian bridge is parked, and nothing on the core path still
-    #    points at it (section 5) ─────────────────────────────────────────
-    modals_src = (ROOT / 'modals.jsx').read_text(encoding='utf-8')
-    check('the Obsidian settings surface is still excluded from the bundle',
-          not re.search(r"^\s*import\b[^\n]*providers\.jsx", modals_src, re.M),
-          'modals.jsx: modals/providers.jsx (VaultTab, the REST bridge UI) must stay out of the barrel')
+    # ── the Obsidian bridge: the promise and the door ship together
+    #    (section 5) ────────────────────────────────────────────────────
+    # These two checks used to read the other way round — "the Obsidian
+    # settings surface is still excluded from the bundle" and "the vault
+    # view has no dangling Open in Obsidian affordance". Between them they
+    # made #123 unfixable without editing a test, which is how a premise
+    # gets to outlive its facts.
+    #
+    # The first was ALREADY FALSE while passing, which is the interesting
+    # part. It tested that modals.jsx has no `import ... providers.jsx` —
+    # true — and concluded VaultTab is out of the bundle — not true, and
+    # not since #37/#39/#40/#60: modals/settings.jsx imports it by name and
+    # renders it under Connections. So the product shipped a switch whose
+    # own hint promises "open-in-Obsidian", and a test forbidding any
+    # control that delivers it.
+    #
+    # Section 5 does not say park the promise OR park the door. It says a
+    # wrong door is worse than a locked one. Either both ship or neither
+    # does — that is the invariant, and it is what these pin now. The
+    # detail of the gate belongs to test_the_promised_door_exists.py; what
+    # is here is the §5 rule the cast has to keep.
+    providers_src = (ROOT / 'modals' / 'providers.jsx').read_text(encoding='utf-8')
+    settings_src = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')
     vault_src = (ROOT / 'views' / 'vault.jsx').read_text(encoding='utf-8')
-    check('the vault view has no dangling "Open in Obsidian" affordance',
-          not re.search(r'onClick=\{openInObsidian\}', vault_src)
-          and not re.search(r'const openInObsidian = ', vault_src),
-          'views/vault.jsx: the wiring is parked, so the button that always 400s must not be either — '
-          'a native alert() reading raw backend cause text ("REST backend") on the single most-visited '
-          'pane in the vault (see cabinet, section 3.6)')
+    promised = ('open-in-Obsidian' in providers_src
+                and bool(re.search(r"^import \{ VaultTab \} from '\./providers\.jsx';",
+                                   settings_src, re.M)))
+    doored = bool(re.search(r'const openInObsidian = ', vault_src))
+    check('the Obsidian promise and the Obsidian door ship together',
+          promised == doored,
+          f'promised={promised} doored={doored} — Connections sells "open-in-Obsidian" from a '
+          'switch that really flips the backend, so views/vault.jsx must carry the control, or '
+          'the sentence must come off the wall')
+    btn_lines = re.findall(r'[^\n]*onClick=\{openInObsidian\}', vault_src)
+    check('...and the door is gated on the backend that can open it',
+          not doored or (
+              "const _obsidianOn = !!status && status.backend === 'rest'" in vault_src
+              and btn_lines and all('_obsidianOn &&' in l for l in btn_lines)),
+          'views/vault.jsx: POST /vault/open 400s for every backend but rest, so an ungated button '
+          'is a control whose only possible outcome is a snag — and its old alert() read the raw '
+          'cause ("REST backend") on the single most-visited pane in the vault (see cabinet, '
+          'section 3.6)')
 
     # ── the "Arcade" Easter egg must never destroy the boss's session ─────
     # Live-clicked in a real browser this session: <a href="https://ai.

@@ -680,9 +680,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
    most-actioned one — Connections). Legacy deep-link ids map via ALIAS. */
 /* Managed premium: Cafreso provisions the container, brain, keys and CLIs on
    OCI — so the self-host setup surface (CONNECTIONS / CODE AGENTS / SYSTEM /
-   MEDIA provider pickers) is gone from Settings entirely. The tab components
-   still exist below (ApiTab etc.) for a future self-host build flag, they're
-   just not reachable from the UI. ACCOUNT replaces SYSTEM as the "is my HQ
+   MEDIA provider pickers) is gone from Settings entirely. ApiTab and the two
+   CLI panels it renders still exist in modals/providers.jsx for a future
+   self-host build flag, unreachable from the UI. This note used to say that
+   of the whole file; #37/#39/#40/#60 have since mounted VaultTab, BraveTab,
+   MediaTab and BrowserKeysTab under Connections and Media, and #123 found
+   the stale version of this claim load-bearing for a deletion elsewhere.
+   ACCOUNT replaces SYSTEM as the "is my HQ
    healthy" surface, in plan-and-usage language instead of gateway jargon. */
 
 export { HireModal };

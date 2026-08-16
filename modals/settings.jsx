@@ -12,8 +12,9 @@ import { Modal, ModelPicker } from './base.jsx';
 import { cleanCause } from '../app/floor.jsx';
 /* VaultTab was written for this exact panel — Settings → Connections —
    but never actually mounted anywhere: `modals/providers.jsx`, the file
-   it lives in, has zero real `import` sites anywhere in the app (one
-   grep hit, a comment). `vaultConfigure`/`vaultDiscover` — the ONLY way
+   it lives in, had zero real `import` sites anywhere in the app (one grep
+   hit, a comment) until the line below this note.
+   `vaultConfigure`/`vaultDiscover` — the ONLY way
    to point CafresoHQ at an existing Obsidian vault, switch to the REST
    backend, or move the vault root — were consequently unreachable by
    ANY control a boss could press; the only way in was the

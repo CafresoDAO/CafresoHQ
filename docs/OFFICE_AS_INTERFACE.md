@@ -13714,3 +13714,75 @@ before the fix — the same list carrying the before and the after:
     • Vera (Chief Research Goblin): general — can read a web page you name
     • Kip (Research): general — nothing ticked on their card yet
     • Nil (Head of Inbox Wrangling): general — nothing ticked on their card yet
+
+## Settings promised open-in-Obsidian and the only door had been deleted
+
+Settings → Connections → Vault, the moment the boss picks OBSIDIAN REST,
+in the product's own words:
+
+    Obsidian REST is optional. It unlocks plugin-mediated file access and
+    open-in-Obsidian.
+
+Everything on that path was real except the last inch. The switch POSTs a
+backend change and the server really flips `_vault_backend`. `POST
+/vault/open` is fully implemented and calls the plugin. `vaultOpenInObsidian`
+is written and exported. And no control anywhere in the product called it.
+A boss could install a community plugin, paste an API key, throw the switch,
+and the one capability the switch names by name did not exist. §5: a wrong
+door is worse than a locked one — this one had been bricked up with the
+sign left on the wall.
+
+The button had existed and was deleted, on a premise that went stale. The
+reasoning, preserved in the removal note: modals.jsx says providers.jsx "is
+deliberately NOT imported", so VaultTab never ships, so the REST backend is
+unreachable, so `/vault/open` can only ever 400, so the button always fails
+— delete it. Every clause was true when written. By then #37/#39/#40/#60 had
+mounted four of that file's panels; `modals/settings.jsx` imports VaultTab
+by name and renders it under Connections.
+
+The interesting part is where else the premise had settled. `test_cast.py`
+held two checks that between them made this unfixable without editing a
+test: one forbidding any open-in-Obsidian control, and one asserting "the
+Obsidian settings surface is still excluded from the bundle" — **which was
+passing while being false**. It tested that modals.jsx has no
+`import … providers.jsx`, which is true, and concluded the file does not
+ship, which is not. A green check standing guard over a claim nobody had
+re-read. Three prose copies said the same thing (modals.jsx's barrel,
+hire.jsx's managed-premium note, settings.jsx's own note in the present
+tense, two lines above the import that refutes it). All four corrected;
+the suite now pins the §5 invariant — **promise and door ship together** —
+plus the fact underneath it, which panels are really mounted.
+
+The fix is a gate, not a restoration: the control renders only when the
+live backend is already `rest`, the exact condition the endpoint answers to.
+The 99% see what they saw yesterday. §5's "power-user 1%" is a reason to
+keep something off the core path, not a reason to sell it and withhold it.
+
+Then the live run found the second half, which no amount of reading would
+have. Verified on office 9272 against a stand-in Local REST API plugin:
+button absent on `fs`, present on `rest`, and the click reached the plugin
+(`obsidian-check.md` in its open log). Shut the plugin, clicked again:
+
+    Couldn't open that in Obsidian — the office isn't answering —
+    check it's still running
+
+The office answered fine; it returned a 502 saying **Obsidian** had refused.
+But the plugin's ECONNREFUSED reached `OFFICE_CAUSES`, whose first rule owns
+that word for the office itself, so the one sentence the boss got named the
+wrong program and sent them to check the wrong thing. That is verbatim the
+paragraph already written above `OFFICE_CAUSES` — "the patterns are right,
+it is only the NOUN that was wrong" — one subject further out. Obsidian is a
+fifth subject and now has its own table, next to `repoCause`, which exists
+for exactly this reason. Worth recording that the census that found twelve
+of these could not have found this one: **there was no call site to census
+until this ticket added it.** Live again, same click:
+
+    Couldn't open that in Obsidian — Obsidian isn't running, or its
+    Local REST API plugin is switched off
+
+One arm survived the first fire pass and is worth keeping in mind: deleting
+`obsidianCause` from floor.jsx's export list. Every check read either the
+import line or the table body, and none looked at the seam between them —
+while at runtime that mismatch is a module error that blanks the whole
+office. A suite can cover both ends of a wire and still not test that it is
+connected.

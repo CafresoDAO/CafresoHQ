@@ -1,5 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
-import { officeCause } from '../app/floor.jsx';
+import { obsidianCause, officeCause } from '../app/floor.jsx';
 import { FolderTree } from './core.jsx';
 import { GraphView, simulate } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
@@ -63,6 +63,13 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   // Falls back to the local serve.py API when opened standalone.
   const _bridge = typeof window !== 'undefined' && VaultBridge?.isAvailable()
     ? VaultBridge : null;
+  /* The one condition POST /vault/open answers to: serve.py returns 400
+     'open-in-Obsidian requires REST backend' for every other value, so a
+     control shown anywhere else is a button whose only possible outcome is
+     a snag. `status` is null while the pane loads and 'bridge' inside the
+     encrypted shell; both read false here, which is right. See the note
+     above `openInObsidian` for why this gate is the whole ticket. */
+  const _obsidianOn = !!status && status.backend === 'rest';
   // Map display path → blob id (only populated in bridge mode)
   const _pathToId = useRV({});
 
@@ -396,31 +403,78 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
   };
 
-  /* `openInObsidian` used to live here. Removed, not just unwired: the ONLY
-     backend it can ever reach is /vault/open, which 400s unconditionally
-     unless _vault_backend === 'rest' — and the one UI that could ever set
-     that (modals/providers.jsx's VaultTab, with its DETECT OBSIDIAN button
-     and REST key field) is deliberately excluded from the bundle (see
-     modals.jsx's own comment: "kept for a future self-host build flag").
+  /* `openInObsidian` lived here, was REMOVED, and is now back behind the
+     gate it always needed. The removal note used to read, in part:
 
-     So this button had a 0% success rate in every shipped build, by
-     construction, sitting on the single most-visited pane in the vault —
-     which OFFICE_AS_INTERFACE §3.6 calls "the cabinet", the story of this
-     product. Its failure path was also a native `alert()` — which this note
-     originally called "this app's only one — everything else is
-     cafresohqToast or an inline sentence". That was wrong when it was
-     written: THIS FILE still held five more, at the binary-file notice, the
-     partial-upload report, and the upload/rename/delete catch blocks, three
-     of them interpolating a raw `e.message`. They are toasts now (see `say`
-     and `snag` above). A claim about the whole app, written from one line of
-     it, and contradicted a hundred lines up in the same file — worth leaving
-     visible rather than quietly deleting. The alert read
-     "Could not open in Obsidian: open-in-Obsidian requires REST backend" —
-     raw backend cause text, "REST backend", straight at a boss with no
-     context for what that means. North-star §5: "Obsidian bridge — serves
-     a power-user 1%; vault is the story." The wiring was already correctly
-     parked; this was the one piece of it left standing on the core path.
-     Comes back trivially alongside VaultTab whenever that flag ships. */
+         the ONLY backend it can ever reach is /vault/open, which 400s
+         unconditionally unless _vault_backend === 'rest' — and the one UI
+         that could ever set that (modals/providers.jsx's VaultTab, with
+         its DETECT OBSIDIAN button and REST key field) is deliberately
+         excluded from the bundle (see modals.jsx's own comment: "kept for
+         a future self-host build flag").
+
+     Every clause of that was true when written and none of it is true now.
+     `modals/settings.jsx` imports VaultTab, MediaTab, BraveTab and
+     BrowserKeysTab from providers.jsx and renders VaultTab under
+     Connections, so providers.jsx ships; modals.jsx's barrel comment,
+     which was the whole evidence for "excluded", has been wrong for as
+     long as that import has existed and is corrected there too.
+
+     What the stale premise hid is worse than the dead button it justified.
+     VaultTab tells the boss, in as many words, that Obsidian REST "unlocks
+     plugin-mediated file access and open-in-Obsidian". The switch really
+     works — the backend flips, and POST /vault/open is fully implemented.
+     So a boss installed a community plugin, pasted an API key, threw the
+     switch, and the one capability the switch named by name did not exist
+     anywhere in the product. §5: a wrong door is worse than a locked one,
+     and this door had been bricked up while the sign stayed on the wall.
+
+     The original complaint was still right, though, and the gate is how
+     both things can be true at once: the button had a 0% success rate in
+     every shipped build, by construction, sitting on the single most-visited
+     pane in the vault — */
+  const openInObsidian = async () => {
+    const n = openNoteRef.current;
+    if (!n || !n.path) return;
+    try {
+      await CafresoHQClient.vaultOpenInObsidian(n.path);
+      say('Opened in Obsidian');
+    } catch (e) {
+      /* Never the old alert(), and never its cause text. That read "Could
+         not open in Obsidian: open-in-Obsidian requires REST backend" —
+         raw backend vocabulary at a boss who asked to open a note.
+
+         `obsidianCause`, not the `snag` every other handler here uses.
+         Driven live with the plugin shut, snag said "Couldn't open that in
+         Obsidian — the office isn't answering — check it's still running":
+         the office answered fine, it was Obsidian that refused, and the
+         one sentence the boss got named the wrong program. Obsidian is a
+         fifth subject; see the table in app/floor.jsx. */
+      say(`Couldn't open that in Obsidian — ${obsidianCause((e && e.message) || String(e))}`,
+          'error');
+    }
+  };
+
+  /* (continuing) — which OFFICE_AS_INTERFACE §3.6 calls "the cabinet", the
+     story of this product. That is the part the gate answers: the control
+     is rendered only when the live backend is already 'rest', so the 99%
+     who never touched Obsidian see exactly what they saw yesterday, and
+     the boss who did the setup gets the thing the setup promised. §5's
+     "power-user 1%" is a reason to keep something off the core path, not a
+     reason to sell it and then withhold it.
+
+     One more piece of the original note is worth keeping, because it is
+     about how these notes go wrong. It called the alert() "this app's only
+     one — everything else is cafresohqToast or an inline sentence". That
+     was false as written: THIS FILE still held five more, at the
+     binary-file notice, the partial-upload report, and the
+     upload/rename/delete catch blocks, three of them interpolating a raw
+     `e.message`. They are toasts now (see `say` and `snag` above). A claim
+     about the whole app, written from one line of it, and contradicted a
+     hundred lines up in the same file. The premise this ticket just
+     replaced failed the same way — a true observation about one file,
+     generalised into a claim about the build, left to rot until it was
+     load-bearing for a deletion. Both are left visible on purpose. */
 
   if (!status) {
     return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Loading…</div></div></div>;
@@ -574,6 +628,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 </label>
                 {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
                 {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
+                {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
+                  title="Open in Obsidian">⧉</button>}
                 <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
                   onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
                   {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
@@ -639,6 +695,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             </label>
             {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
             {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
+            {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
+              title="Open in Obsidian">⧉</button>}
             <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
               onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
               {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}

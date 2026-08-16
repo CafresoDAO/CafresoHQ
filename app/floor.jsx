@@ -456,6 +456,50 @@ function repoCause(raw) {
   return officeCause(text);
 }
 
+/* A fifth subject: OBSIDIAN, a separate app on the boss's machine reached
+   through its Local REST API plugin. Same lesson as repoCause, found the
+   same way — by running it. #123 restored open-in-Obsidian, then shut the
+   plugin and clicked it, and the office said:
+
+       Couldn't open that in Obsidian — the office isn't answering —
+       check it's still running
+
+   The office answered perfectly well; it returned a 502 saying Obsidian
+   had refused the connection. But the plugin's ECONNREFUSED reached the
+   OFFICE_CAUSES table, whose first rule owns that word for the office
+   itself, so the one sentence the boss got named the wrong program and
+   sent them to check the wrong thing. The patterns are right; the noun is
+   wrong. That is verbatim the paragraph above OFFICE_CAUSES, one subject
+   further out — and it is worth writing down that the census that found
+   twelve of these could not have found this one: there was no call site
+   to census until this ticket added it.
+
+   Every sentence names the fix, because for this subject there always is
+   one and it is never in this app — Obsidian is a window the boss can go
+   and open. Falls through to officeCause, which stays the fallback. */
+const OBSIDIAN_CAUSES = [
+  [/econnrefused|connection refused|failed to fetch|network ?error|load failed/i,
+   "Obsidian isn't running, or its Local REST API plugin is switched off"],
+  [/\b401\b|\b403\b|unauthori[sz]ed|invalid.{0,12}(api )?key/i,
+   'Obsidian turned down the API key — copy it again from its Local REST API settings'],
+  [/timed? ?out|etimedout/i,
+   "Obsidian didn't answer in time — it may still be starting up"],
+  /* Gated out of reach by the vault pane, but a backend can change under a
+     pane that is already open. The boss must not meet the raw sentence. */
+  [/requires rest backend/i,
+   'the vault is not pointed at Obsidian right now — switch it back in Connections'],
+  [/\b404\b|not found/i,
+   "Obsidian doesn't have a note at that path — its vault may be a different folder"],
+];
+
+function obsidianCause(raw) {
+  const text = String(raw || '');
+  for (const [re, sentence] of OBSIDIAN_CAUSES) {
+    if (re.test(text)) return sentence;
+  }
+  return officeCause(text);
+}
+
 function cleanCause(raw) {
   const first = String(raw || '').split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
@@ -620,4 +664,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
