@@ -403,9 +403,19 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                     {/* Retry acts on the NEWEST occurrence (g.entry) and
                         clears the whole group — retrying "Kenji is stuck"
                         deals with that problem, not with one of its three
-                        reports. */}
+                        reports.
+
+                        A row that names neither a run nor a coworker — the
+                        runner dropping, a publish falling over — has no
+                        message behind it, and the button used to grab the
+                        newest failure anywhere in the office and send it.
+                        Same rule as the Inbox's ↻ RE-SEND: the door only
+                        appears where it can do what its label says. The
+                        row keeps "What happened?" either way. */}
+                    {(e.messageId || e.agentId) && (
                     <button className="px-btn primary" style={{fontSize:8}}
                       onClick={() => { onRetry(e); if (onMarkRead) (g.ids || [e.id]).forEach(id => onMarkRead(id)); }}>↻ Retry</button>
+                    )}
                     <button className="px-btn ghost" style={{fontSize:8}} onClick={() => toggle(g)}>
                       {open ? 'Hide what happened' : 'What happened?'}
                     </button>

@@ -11950,3 +11950,82 @@ forward untouched: the boss's plain composer sends still mint no
 registry record; 'aborted by user' still stamps environment aborts;
 the stop button's busy-only gate vs the worked-map handler from
 #101's residue.
+
+## A snag row's Retry sent a stranger's message, twice, with no door
+
+Found while consolidating the retry surfaces in the previous round —
+the residue note said the attention tab "keeps its own selection
+semantics and no confirm door" and left it there. Reading the code
+again, the asymmetry was not the interesting part. The fallback under
+it was.
+
+`onRetryActivity` resolved a row's own `messageId` when it had one, and
+otherwise reached for "the newest failed message for this agent — or
+anywhere in the office if the row names no agent" and dispatched it. No
+one-live-child guard on that branch, no confirm door. And it is not a
+rare branch: FOUR of the five writers of a `failed` attention row carry
+no messageId at all — the runner error, a failed delegation, a failed
+task run, and a publish that fell over after approval. Only the chat
+dispatch failure names its run.
+
+Measured live on office 9261, 2026-08-16, before touching anything. A
+row reading "⚠ HQ — That didn't work — the pty bridge dropped" — the
+office's own machinery, no coworker on it — was rendered with a ↻ Retry
+button. Pressing it re-sent an unrelated coworker's chat message
+("trace the citations fifty-eight") to Vera. Zero confirm prompts.
+Pressed a second time, it filed a SECOND completed child of the same
+parent: two real dispatches the boss never asked for, which is word for
+word the outcome that function's own comment claimed to prevent. The
+comment was true only of the branch it was written about.
+
+The fix keeps one dispatch site and gives it an opt-out door.
+`resendMessage(m, { confirm = true })` still owns the guard, the
+recipient-gone toast and the chained dispatch; `onRetryActivity` now
+only decides WHICH message and whether the boss is looking at it:
+
+  - a row that NAMES its run → `{ confirm: false }`. The button is on
+    the row, the row names the work, one press is the whole answer —
+    and it gains the shared guard.
+  - a row that names a coworker but no run → that coworker's newest
+    failure, WITH the door, which quotes the body. The boss sees what
+    they are about to send before it goes, because the row never showed
+    it to them.
+  - an office-level row → nothing to re-send, and it says so. The
+    office-wide grab is gone; the palette keeps that semantic where it
+    is actually labelled "the most recent failed message".
+  - and the button no longer renders at all on a row that names
+    neither (views/core.jsx) — the same gate==label rule as the Inbox's
+    ↻ RE-SEND from last round. "What happened?" stays: the detail is
+    not the door.
+
+Verified live, all five behaviours, after the fix. The office-level row
+came back with no ↻ Retry and its "What happened?" intact. The named
+row: one press, no dialog, one dispatch, child completed with the
+canned brain's reply; pressed again, "Already retried, and that one
+went through — nothing left to do here." and zero new records — the
+guard now reaching a path that had it, through the shared function. The
+unnamed row with a coworker on it: the door opened quoting "docket
+seventy-three please", nothing dispatched while it stood open, and
+Cancel sent nothing. Fresh failures for that arm were made honestly —
+the canned brain was stopped, three notes were sent to Vera and failed
+for real, and the brain was brought back before any retry.
+
+One thing was NOT measured live and should be read as suite-verified
+only: a second press on the UNNAMED row hitting the guard. The retry
+that would have proved it landed on the named row instead (both
+resolve to the same newest failure once one has been retried), so the
+fallback's guard is covered by the drive in
+scripts/test_a_snag_row_retries_its_own_run.py — seven scenarios over
+the lifted handler, plus the row gate — and not by the office.
+Fire-tested seven mutation arms, all caught. 146/146.
+
+Residue: the three surfaces are now two implementations and one
+selector, which is the shape it should have had two rounds ago, but the
+TeamView coworker card and the inbox row still choose their entry by
+different rules (the card's `lastFailed`, the row's own group entry) —
+during this verification that difference is what made a second press
+land on a different row than the first. Not wrong, but two selectors
+feeding one door is worth naming. Carried forward untouched: the boss's
+plain composer sends still mint no registry record; 'aborted by user'
+still stamps environment aborts; the stop button's busy-only gate; and
+the Inbox still has no 'cancelled' filter pill.

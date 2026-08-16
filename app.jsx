@@ -4000,57 +4000,49 @@ ${d.text}` : d.text,
   /* Retry a failed item straight from the inbox attention tab.
 
      The row names a specific run, so retry that run: rows written since the
-     inbox carried `messageId` resolve to their OWN message. Rows from before
-     that (and any row whose message has aged out of the registry) fall back
-     to the newest failed message for the same agent — the old behaviour, kept
-     so historical rows still have a working button, never used to override a
-     row that knows its own message.
+     inbox carried `messageId` resolve to their OWN message and go straight
+     through — the button is on the row, the row names the work, one press is
+     the whole answer.
 
-     A retry does not revive the failed record — it mints a CHILD dispatch and
-     the parent stays `failed` forever. So "has this row already been dealt
-     with?" is a question about that child, not about the row's own state, and
-     a naive re-check would answer it wrong every time. With Retry now sitting
-     on every row, a second click (or a click on a row whose retry is still
-     streaming) would quietly send the same prompt to the same coworker twice.
-     Real work, ordered twice, that the boss never asked for. */
+     Everything else here is about rows that name NO run, which is most of
+     them: four of the five writers of a `failed` attention row (the runner
+     error, a failed delegation, a failed task run, a publish that fell over
+     after approval) carry no messageId at all. That fallback used to pick
+     "the newest failed message for this agent, or anywhere in the office if
+     the row names no agent" and dispatch it with neither the double-send
+     guard nor the confirm door.
+
+     Measured 2026-08-16 on office 9261: a row reading "HQ — That didn't work
+     — the pty bridge dropped" re-sent an unrelated coworker's chat message
+     ("trace the citations fifty-eight") to Vera, no confirm; pressed twice,
+     it filed TWO completed children. Real work, ordered twice, that the boss
+     never asked for — the exact outcome the old comment here promised was
+     handled.
+
+     So: an office-level row has nothing to re-send and says so. A row that
+     names a coworker but not a run picks that coworker's newest failure and
+     pays the confirm door, which quotes the body — the boss sees what they
+     are about to send before it goes. The guard, the recipient-gone toast
+     and the dispatch all live in resendMessage now; this function only
+     decides WHICH message and whether the boss is looking at it. */
   const onRetryActivity = (entry) => {
     const agentId = entry && entry.agentId;
     const all = messagesRef.current || [];
-    let m = entry && entry.messageId ? all.find(x => x.id === entry.messageId) : null;
-    if (m) {
-      const already = all.find(x => x.parentId === m.id &&
-        x.state !== 'failed' && x.state !== 'cancelled');
-      if (already) {
-        const running = already.state !== 'completed';
-        window.cafresohqToast && window.cafresohqToast.warn(running
-          ? `${m.toAgentName || 'They'} are on the retry right now — give it a moment.`
-          : 'Already retried, and that one went through — nothing left to do here.');
-        return;
-      }
-    }
-    if (!m) {
-      const pool = all.filter(x => x.state === 'failed');
-      const failed = agentId ? pool.filter(x => x.toAgentId === agentId) : pool;
-      if (!failed.length) {
-        window.cafresohqToast && window.cafresohqToast.warn(
-          agentId ? 'No failed message on record for this coworker to retry.'
-                  : 'No failed messages to retry.');
-        return;
-      }
-      failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      m = failed[0];
-    }
-    const agent = agents.find(a => a.id === m.toAgentId);
-    if (!agent) {
-      window.cafresohqToast && window.cafresohqToast.error(
-        `Recipient (${m.toAgentName}) is no longer hired — can't retry.`);
+    const named = entry && entry.messageId ? all.find(x => x.id === entry.messageId) : null;
+    if (named) return resendMessage(named, { confirm: false });
+    if (!agentId) {
+      window.cafresohqToast && window.cafresohqToast.warn(
+        "That one is the office's own snag, not a coworker's message — nothing to re-send.");
       return;
     }
-    dispatchToAgent(agent, m.body, {
-      parentMessageId: m.id,
-      dmFrom: (m.fromAgentId !== 'boss') ? agents.find(a => a.id === m.fromAgentId) || null : null,
-    });
-    window.cafresohqToast && window.cafresohqToast.success(`Retrying → ${agent.name}…`);
+    const failed = all.filter(x => x.state === 'failed' && x.toAgentId === agentId);
+    if (!failed.length) {
+      window.cafresohqToast && window.cafresohqToast.warn(
+        'No failed message on record for this coworker to retry.');
+      return;
+    }
+    failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return resendMessage(failed[0], { confirm: true });
   };
 
   /* The registry's own promise, made pressable. A retryable failure —
@@ -4069,7 +4061,7 @@ ${d.text}` : d.text,
      confirm door stays: unlike the attention tab's Retry (a button that
      already says what it does, on the row it does it to), the palette
      fires on the MOST RECENT failure the boss may not be looking at. */
-  const resendMessage = async (m) => {
+  const resendMessage = async (m, { confirm = true } = {}) => {
     if (!m) return;
     const all = messagesRef.current || [];
     const already = all.find(x => x.parentId === m.id &&
@@ -4087,7 +4079,11 @@ ${d.text}` : d.text,
         `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
       return;
     }
-    if (!(await window.hqConfirm(
+    /* The door is skipped only where the button is ON the row it acts on and
+       the row names that run — pressing ↻ Retry under "Kenji hit a snag on
+       X" is already an answer to a question the surface asked. Every other
+       caller sends something the boss is not looking at, and pays the door. */
+    if (confirm && !(await window.hqConfirm(
       `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`))) return;
     // Fresh dispatch — the old record stays as history (stories are not
     // rewritten); the retry files its own record, chained via parentId.

@@ -33,9 +33,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FAILS = []
 
-DECL = 'const resendMessage = async (m) => {'
+# The signature gained an options bag when the attention tab's retry was
+# folded in (#103): the door is conditional, everything else is shared.
+DECL = 'const resendMessage = async (m, { confirm = true } = {}) => {'
 GUARD = 'const already = all.find(x => x.parentId === m.id &&'
-CONFIRM = 'if (!(await window.hqConfirm('
+# #103 made the door conditional (a named row that carries its own button
+# skips it) — but it is still ONE door, in this function, opt-out only.
+CONFIRM = 'if (confirm && !(await window.hqConfirm('
 CHAIN = 'parentMessageId: m.id,'
 PROP = 'onResend={resendMessage}'
 SIG = 'onResend = null'
@@ -68,9 +72,12 @@ def main():
     # ── one implementation, both surfaces ───────────────────────────────
     check('resendMessage exists once', bare.count(DECL) == 1,
           f'{bare.count(DECL)} sites')
-    check('exactly two dispatch sites chain a retry (resend + attention tab)',
-          bare.count(CHAIN) == 2,
-          f'{bare.count(CHAIN)} — the palette used to keep a third, private copy')
+    # Was two — the attention tab kept its own dispatch until #103 folded it
+    # in. One retry, one dispatch site: that is the whole point of the shared
+    # function, and a second site reappearing is how the guard drifts again.
+    check('exactly one dispatch site chains a retry (resendMessage)',
+          bare.count(CHAIN) == 1,
+          f'{bare.count(CHAIN)} — the palette and the attention tab both kept private copies once')
     rf_at = bare.find('onRetryFailed={async () => {')
     rf_end = bare.find('}}', rf_at)
     rf = bare[rf_at:rf_end] if rf_at != -1 and rf_end > rf_at else ''
