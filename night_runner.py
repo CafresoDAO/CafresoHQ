@@ -144,6 +144,46 @@ def night_cannot_sentence(tool):
     return ('reached for %s — do it in the office' % what) if what else ''
 
 
+# The one string run_tool writes when the vault turns a write away, and the
+# one reader that takes it apart again. Two callers need the status back out
+# of a message written for the model to read: the write ledger, which must
+# not count a refused write as a note, and the morning report, which has to
+# say which door is shut.
+#
+# Anchored in ONE place — `.match` below, no `^` in the pattern. Both at
+# once reads as caution and is the opposite: with the anchor written twice,
+# neither copy can be removed without the other still holding, so a test
+# that deletes one sees no change and reports the reader as covered when
+# half of it is not.
+_VAULT_FAIL_PREFIX = 'Vault write failed'
+_VAULT_FAIL_RE = re.compile(r'%s \((\d+)\)' % re.escape(_VAULT_FAIL_PREFIX))
+
+
+def vault_write_status(result):
+    """HTTP status behind a refused vault write, or None if it went through.
+
+    Anchored: run_tool writes this as the WHOLE message, so the phrase
+    turning up inside a longer string is prose, not a second failure.
+    """
+    m = _VAULT_FAIL_RE.match(str(result or ''))
+    return int(m.group(1)) if m else None
+
+
+def vault_refused_sentence(status):
+    """§7 shape, inside NIGHT_ERROR_MAX: what happened, plus the way forward.
+
+    Two sentences because there are two doors. 502/503 is the vault itself —
+    Obsidian shut, the OCI bucket unreachable, no backend configured at all —
+    and the boss fixes that in Connections. Anything else came back from a
+    vault that answered, so the path is the suspect, not the wiring; sending
+    the boss to Connections for a rejected filename would be the wrong door
+    twice over.
+    """
+    if status in (502, 503):
+        return 'vault is not reachable — check Connections'
+    return 'vault refused the write — check the note path'
+
+
 def find_unsupported_tool(text):
     """First out-of-subset tool NAME reached for in `text`, or None.
 
@@ -455,7 +495,8 @@ def run_tool(ctx, name, arg, body):
                 urllib.parse.quote(arg), mode), body=(body or ''),
                 headers={'Content-Type': 'text/markdown'})
             if s != 200:
-                return 'Vault write failed (%d): %s' % (s, raw[:200].decode('utf-8', 'replace'))
+                return '%s (%d): %s' % (_VAULT_FAIL_PREFIX, s,
+                                        raw[:200].decode('utf-8', 'replace'))
             verb = 'Appended' if mode == 'append' else 'Wrote'
             return '%s %d chars → %s' % (verb, len(body or ''), arg)
         if name in ('FILE_READ', 'DIR_LIST'):
@@ -678,6 +719,11 @@ def run_iteration(ctx, sched, iteration, total_iters):
     messages = [{'role': 'system', 'content': persona},
                 {'role': 'user', 'content': prompt}]
     writes, tokens_used, reply = [], 0, ''
+    # The status of a write the vault turned away. Kept because throwing it
+    # away is what let a dead vault look like a quiet night: the note never
+    # landed, nothing counted it, and the only surface that noticed was a
+    # claim check that blamed the coworker for the office's own shut door.
+    refused = None
     # Every reply, not just the last. A hop can pick up a supported tool and
     # leave an out-of-subset marker behind it in the same message —
     # find_first_tool takes the earliest match — and that reach would
@@ -693,8 +739,13 @@ def run_iteration(ctx, sched, iteration, total_iters):
                 break
             name, arg, body, _span = hit
             result = run_tool(ctx, name, arg, body)
-            if name in ('VAULT_NEW', 'VAULT_APPEND') and not str(result).startswith('Vault write failed'):
-                writes.append({'name': name, 'path': arg.strip(), 'at': int(time.time() * 1000)})
+            if name in ('VAULT_NEW', 'VAULT_APPEND'):
+                status = vault_write_status(result)
+                if status is None:
+                    writes.append({'name': name, 'path': arg.strip(),
+                                   'at': int(time.time() * 1000)})
+                else:
+                    refused = status
             messages.append({'role': 'assistant', 'content': reply})
             messages.append({'role': 'user', 'content':
                              'TOOL RESULT [%s]:\n%s\n\nContinue. Use at most one more tool, '
@@ -705,7 +756,19 @@ def run_iteration(ctx, sched, iteration, total_iters):
     error = None
     all_replies = '\n'.join(replies)
     reached = find_unsupported_tool(all_replies)
-    if reached:
+    if refused is not None:
+        # First, and ahead of the reach check that used to hold this spot,
+        # because this is the only branch here resting on an observed HTTP
+        # status rather than on reading the reply's prose — and because the
+        # two claim checks below describe its consequences rather than its
+        # cause. A coworker ordered to file, who filed, and was refused has
+        # said nothing untrue; 'said it saved a note' would be the office
+        # blaming them for its own shut door. Reproduced 2026-08-16 with the
+        # vault pointed at a closed Obsidian REST: writes [], error 'said it
+        # saved a note, nothing reached the vault', and a real [VAULT_NEW]
+        # in the transcript that the vault answered 502 to.
+        error = vault_refused_sentence(refused)
+    elif reached:
         # Ahead of the claim checks below on purpose. All three can describe
         # one bad night, but this one names the actual cause and a door the
         # boss can walk through; "said it published" would be true and

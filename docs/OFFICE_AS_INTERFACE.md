@@ -12470,3 +12470,79 @@ still guarded per-caller rather than behind one `hireFromTemplate`
 chokepoint; the boss's plain composer sends mint no registry record;
 'aborted by user' still stamps environment aborts; and the Inbox still has
 no 'cancelled' filter pill.
+
+## The vault turned the note away, and the office called it a lie
+
+Last round's carried-forward item, taken as the ticket, and it turned out
+to be a sharper defect than the one I had written down. The night shift's
+whole deliverable is notes. `run_tool` already knew when one failed to
+land — it returns "Vault write failed (502): …" — and `run_iteration`
+threw that away, keeping only the fact that the write ledger stayed empty.
+
+Reproduced 2026-08-16 on office 9261, vault pointed at a closed Obsidian
+REST, canned brain on 9236 doing exactly as instructed. The coworker
+emitted a real `[VAULT_NEW: Research/night/…]`, the office's own vault
+answered 502, and the run recorded:
+
+    writes: [], error: 'said it saved a note, nothing reached the vault'
+
+That sentence was written for a coworker who skips the tool call and
+claims one anyway. Here it is the office blaming a coworker for the
+office's own shut door — the boss reads it and goes looking at the model.
+Nothing in that reply was untrue: they were ordered to file, and they
+filed.
+
+The same night with a status line that made no claim recorded `writes: []`
+and `error: None`. A clean night with an empty vault. Worse than the
+report being wrong: only an error breaks the streak, so a vault that goes
+down at 1am is not noticed until the duration runs out, every iteration
+paying for a deliverable discarded on arrival.
+
+The fix reads the status back out and puts it FIRST in the error chain.
+That position is the argument: it is the only branch there resting on an
+observed HTTP status rather than on reading the reply's prose, and the two
+claim checks below it describe its consequences rather than its cause.
+`ERROR_STREAK_AUTO_PAUSE` now does what it was written to do — three
+refused iterations and the night stops, instead of running till dawn.
+
+Two sentences, because there are two doors. 502/503 is the vault itself —
+Obsidian shut, bucket unreachable, nothing configured — and the boss fixes
+that in Connections: "vault is not reachable — check Connections". Anything
+else came back from a vault that answered, so the path is the suspect:
+"vault refused the write — check the note path". Sending the boss to
+Connections over a rejected filename would be §5 twice in one sentence.
+Both fit `NIGHT_ERROR_MAX`, which the sibling suite ties to the narrowest
+of the four surfaces that slice a night error.
+
+One writer and one reader for the failure string: `_VAULT_FAIL_PREFIX`
+builds it, `vault_write_status` takes it apart, and the suite fails if the
+literal is spelled by hand anywhere else — a second `startswith` is how the
+two drift until a refused write counts as a note again.
+
+Fourteen fire arms. Thirteen caught first cut; the fourteenth taught
+something about the code rather than the test. Swapping `.match` for
+`.search` in the reader changed nothing, because the anchor was written
+twice — `^` in the pattern AND `.match` on the call. Belt-and-braces reads
+as caution and is the opposite: with the anchor in two places, neither copy
+can be removed while the other still holds, so a test that deletes one sees
+no change and reports the reader as covered when half of it is not. The
+redundancy is gone; the anchor lives in one place and the arm is caught.
+Full runner 152/152.
+
+Verified live three ways with the shipped code: dead vault and a claiming
+coworker, dead vault and a silent one — both now "vault is not reachable —
+check Connections" — and a healthy vault, where the note lands, is counted
+once, and the run stays clean.
+
+Carried forward, and it is the next layer down: nothing in the night path
+checks whether the vault can accept a note BEFORE the mission starts. The
+prompt still opens by calling the write MANDATORY and telling the coworker
+that not doing it is a lie, which is the same brief-versus-grant mismatch
+the previous round closed for the chat path — except here the honest fix is
+probably not a softer prompt but a pre-flight: a night shift whose
+deliverable has nowhere to land should say so at the door, not three
+iterations in. Also still open: `spawnOpenswarmRoster` is guarded
+per-caller rather than behind one `hireFromTemplate` chokepoint; the boss's
+plain composer sends mint no registry record; 'aborted by user' still
+stamps environment aborts; and the Inbox still has no 'cancelled' filter
+pill.
