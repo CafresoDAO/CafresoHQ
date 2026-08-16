@@ -13234,3 +13234,110 @@ Still open: `app/agents.jsx` builds a SEPARATE namespace for `/who-can` —
 That one is deliberate and correct, and it is also exactly what this bug
 looked like, one file over. Nothing in the code says which namespace a
 reader is in.
+
+## The boss's own sentence was the one thing the Inbox never held
+
+Reproduced 2026-08-16 on a scratch office (9271, canned brain). The boss
+asked the chief of staff a plain question in chat:
+
+> registry probe one one six — who is covering vendor spend?
+
+CafresoHQ read the room, wrote two briefs and handed them to Kip and Otto.
+Both ran. Both answered. The floor looked exactly like the product it is
+meant to be. The registry held five records, and this is what they said:
+
+    msg_wfely57   You → Kip     thr_f83ukxy   parent: null
+    msg_fofabw2   You → Otto    thr_l6gpl48   parent: null
+    msg_vju822f   Kip → Otto    thr_f83ukxy   parent: msg_wfely57
+    …
+
+Three things are wrong there and they are the same thing.
+
+The boss's sentence is not in the file. Not as a record, not as a body, not
+as a note. The one input the whole turn descends from — the only text in it
+a human actually typed — left no trace, so the Inbox could answer "what did
+Kip get told?" and could not answer "why".
+
+The two briefs are filed `from: You`. The boss did not write them; the chief
+of staff did, from a system prompt, in its own words. Attributing them to the
+boss is the office putting sentences in the boss's mouth in the one place
+that is supposed to be the record of who said what (§6). Kip's own onward DM
+to Otto — same turn, same fan-out — is correctly filed `Kip → Otto`, because
+that path passes `dmFrom`. Only the chief of staff had no id to be filed as.
+
+And one ask became two roots. `thr_f83ukxy` and `thr_l6gpl48` are siblings
+with nothing joining them, so a boss reading the Inbox for that question
+finds two unrelated errands and no question. The trail was not broken one hop
+in — it was never tied at hop zero.
+
+Why it was built this way is visible in the code. `createMessage` inherits
+`threadId` from `parentId`'s record and mints a fresh `thr_*` when there is
+no parent, which is right; both fan-out dispatches simply had no parent to
+offer. And `dispatchToAgent` already had a "who is speaking" field —
+`dmFrom` — that the fan-out could not use, because `dmFrom` is five features
+wearing one name: it routes the bubble to the team thread, renames the
+bubble "X → Y", prints the elevation notice, sets the activity kind, and
+gates the boss-direct framing. Passing the chief of staff through it would
+have fixed the attribution and moved the boss's own conversation into the
+team thread as a side effect. So it was passed nothing, and the record took
+the default.
+
+Fixed with an identity and a seam. `HQ.CHIEF_OF_STAFF = { id: 'ceo', name:
+'CafresoHQ' }` gives the office's own voice something the registry can
+address — `'ceo'` is the `from` the chat bubbles already use for this
+speaker, so it is not a new name, just the first time that name is allowed
+into a record. `dispatchToAgent` gained `dispatchAs`, which sets the sender
+and nothing else: `const sender = dmFrom || dispatchAs;`, with `dmFrom` left
+in front so an agent-to-agent DM that carries both is still filed as the DM
+it is. Attribution-only, deliberately too narrow to grow into a second
+`dmFrom`.
+
+Around the turn, `recordBossAsk` files the boss's text as `You → CafresoHQ`
+and marks it delivered before anything is dispatched, and `settleBossAsk`
+closes it after the fan-out: `completed`, or `cancelled` / "stopped by the
+boss" on an `AbortError`, or `failed` with a cause from the shared
+`classifyStreamFailure` table — the same one the @mention and Delegate
+catches read. Both fan-out call sites pass `parentMessageId: askId` and
+`dispatchAs: HQ.CHIEF_OF_STAFF`.
+
+The settle is the part with a trap in it. The CEO catch does not rethrow —
+it puts the snag in the bubble and lets the fan-out block run — so a
+`try/finally` around the turn would settle a dead stream as if it had gone
+fine. The catch writes `askErr` and the tail reads it, after the work the
+ask caused, so a record cannot be closed before the thing it is the record
+of.
+
+`scripts/test_the_boss_ask_is_on_the_record.py` — 29 checks. The behavioural
+half lifts `recordBossAsk`, `settleBossAsk`, `classifyStreamFailure` and the
+registry's own `createMessage` and runs the four of them together in node
+against a stub store: three records, one thread, still one thread after a
+specialist DMs onward, and each of the three endings landing on its own
+terminal state. Asserting the thread count from the real `createMessage`
+rather than from a copy of its rule is the point — the inheritance is the
+mechanism, so a test that restates it tests nothing.
+
+Fire test: 20 arms, 20 caught, post-restore baseline green. The arms that
+earn their keep are the half-fixes: filing the ask but not chaining the
+fan-out, chaining but still crediting the boss, settling inside the try
+instead of after the fan-out, and `dispatchAs || dmFrom` — a one-character
+reorder that fixes this bug and silently re-labels every agent-to-agent DM.
+`test_a_handoff_leaves_a_record.py` went red on the baseline, correctly: it
+pinned `classifyStreamFailure(` at exactly two callers, and the third caller
+was `settleBossAsk` doing exactly what that check wants. A census fails the
+first person who obeys it. It now pins the shape — every call builds the
+same cause object — which is what it always meant. Full runner 160/160.
+
+Verified live in the shipped bundle on 9271, all three endings. The success
+path: six records, one thread `thr_692h7lw`, the ask first as `You →
+CafresoHQ` / `completed`, both briefs `CafresoHQ → …` with `parent:
+msg_nni06jo`, Kip's onward DM still `Kip → Otto` under the same thread. A
+brain returning 500 closed the ask `failed` with `{kind: 'unknown',
+retryable: true, actionNeeded: 'Inspect error and retry'}` and the first 240
+characters of the upstream message. Pressing `■ Stop` mid-stream closed it
+`cancelled`, note "stopped by the boss" — the distinction the Inbox needs to
+not show the boss's own decision as a fault.
+
+Still open: `createMessage` truncates `body` at 8000 characters with no note
+in the record. The brief that gets filed and the brief the coworker was
+handed can therefore differ, and nothing says so — the same family as the
+trimmed audit trail above, one registry over.

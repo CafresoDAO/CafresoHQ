@@ -73,9 +73,18 @@ def main():
     check('no catch keeps a private spelling of it',
           'const classify = (s)' not in bare,
           'two hand-written failure tables is how the reply-clean recipes drifted')
-    check('both dispatch catches read the shared table',
-          bare.count('classifyStreamFailure(raw)') == 2,
-          f"{bare.count('classifyStreamFailure(raw)')} uses")
+    # Shape, not census. This read `== 2` — the two dispatch catches that
+    # existed when it was written — so the first correct third caller
+    # failed it (2026-08-16: settleBossAsk, filing the chief of staff's own
+    # stream through the same table, exactly what this check wants). A
+    # count says "these two"; what the check means is "nobody builds a
+    # cause any other way", and that survives a new caller doing it right.
+    uses = bare.count('classifyStreamFailure(')
+    shaped = bare.count('{ ...classifyStreamFailure(raw), message: raw.slice(0, 240) }')
+    check('every catch that classifies a dead stream reads the shared table',
+          uses >= 2 and shaped == uses,
+          f'{uses} call(s), {shaped} of them built the same way — a caller '
+          'assembling its own cause object is the drift this guards')
 
     # ── the delegate region files the lifecycle ─────────────────────────
     d_at = bare.find('const onDelegate = async (a, typed)')

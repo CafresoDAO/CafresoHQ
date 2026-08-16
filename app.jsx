@@ -1728,6 +1728,58 @@ ${d.text}` : d.text,
     }));
   };
 
+  /* The boss's own question to the chief of staff, filed like every other
+     dispatch. Returns the record id so the fan-out it causes can chain
+     onto it.
+
+     Reproduced 2026-08-16 on a scratch office: one question in the
+     composer, which CafresoHQ split between two specialists. The registry
+     came out holding five records and the boss's question was not one of
+     them — and the two fan-out records were stamped `You → Kip` and
+     `You → Otto` over briefs the chief of staff had composed, each with
+     `parentId: null` and its own threadId. One ask, two unrelated threads,
+     neither traceable to it, and the words attributed to the person who
+     did not write them.
+
+     Every other dispatch path already mints: @mentions, the meeting room,
+     /brainstorm, drag-to-delegate, agent-to-agent DMs. The one that never
+     did is the default — the thing the composer does when the boss just
+     types — so the registry the tour calls a log of "every real action"
+     was missing the action performed most. */
+  const recordBossAsk = (text) => {
+    const id = MessageRegistry.createMessage({
+      fromAgentId: 'boss', fromAgentName: 'You',
+      toAgentId: HQ.CHIEF_OF_STAFF.id, toAgentName: HQ.CHIEF_OF_STAFF.name,
+      body: text, priority: 'med',
+    });
+    MessageRegistry.transition(id, 'delivered', { by: 'host' });
+    return id;
+  };
+
+  /* Close it out. The classification lives here rather than in the chat
+     panel for the reason classifyStreamFailure exists at all: two
+     hand-written spellings of "what killed this run" is how the reply
+     cleaners drifted apart. A boss-pressed Stop is `cancelled`, not
+     `failed` — the same distinction the @mention and delegate paths make. */
+  const settleBossAsk = (id, err) => {
+    if (!id) return;
+    if (!err) {
+      MessageRegistry.transition(id, 'completed', { by: HQ.CHIEF_OF_STAFF.name });
+      return;
+    }
+    if (err.name === 'AbortError') {
+      MessageRegistry.transition(id, 'cancelled', { by: 'host', note: 'stopped by the boss' });
+      return;
+    }
+    const raw = String((err && err.message) || err);
+    const cause = { ...classifyStreamFailure(raw), message: raw.slice(0, 240) };
+    MessageRegistry.transition(id, 'failed', {
+      by: HQ.CHIEF_OF_STAFF.name,
+      note: `${cause.kind}: ${cause.actionNeeded}`,
+      failureCause: cause,
+    });
+  };
+
   /* Run an agent in the chat thread. Used by:
      - chat @mentions (user → agent direct)
      - drag-to-delegate continuation
@@ -1737,6 +1789,18 @@ ${d.text}` : d.text,
     const {
       userText = null,
       dmFrom = null,
+      /* Who is SENDING, when it isn't the boss and isn't an agent-to-agent
+         DM. Read at exactly one place — the createMessage below — because
+         that is the only thing that was wrong.
+
+         `dmFrom` looks like the field for this and is not: it also routes
+         the thread to 'team', renames the chat bubble "X → Y", prints an
+         elevation notice, changes the activity kind, and gates the
+         boss-direct framing at the bottom of this function. The chief of
+         staff's fan-out is none of those things — it streams into the
+         boss's own thread, which is the whole point of it. So this opt
+         answers "whose words are these" and nothing else. */
+      dispatchAs = null,
       dmDepth = 0,
       /* Where this whole chain STARTED, and who the boss actually asked.
          Every agent-to-agent DM lands in 'team' (see `thread` below), which
@@ -1786,12 +1850,14 @@ ${d.text}` : d.text,
     } = opts;
     // Mint a message record for this dispatch if one wasn't supplied.
     // Boss dispatch: from='boss', to=agent. Agent-to-agent: from=dmFrom, to=agent.
+    // Chief of staff acting on the boss's ask: from=dispatchAs.
+    const sender = dmFrom || dispatchAs;
     let messageId = incomingMessageId;
     if (!messageId) {
       messageId = MessageRegistry.createMessage({
         parentId: parentMessageId,
-        fromAgentId: dmFrom ? dmFrom.id : 'boss',
-        fromAgentName: dmFrom ? dmFrom.name : 'You',
+        fromAgentId: sender ? sender.id : 'boss',
+        fromAgentName: sender ? sender.name : 'You',
         toAgentId: agent.id,
         toAgentName: agent.name,
         body: prompt,
@@ -5487,6 +5553,7 @@ ${d.text}` : d.text,
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
+      onBossAsk={recordBossAsk} onBossAskSettled={settleBossAsk}
       onPinAsTask={onPinChatAsTask} onHire={() => setHireOpen(true)}
       onOpenResearch={() => setMissionsOpen(true)}
       onInferTaskAssignment={(taskId, agentId) => {

@@ -62,7 +62,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
    the missions door lives one level down inside ROOMS. The research
    thread is read-only, so that door was the only way to start a mission
    and the office was naming it wrong. */
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, onOpenResearch = null, stopEpochRef = null }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, onOpenResearch = null, stopEpochRef = null, onBossAsk = null, onBossAskSettled = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -675,6 +675,20 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     const pendingChat = [...chatRef.current, ...(strayNote ? [strayNote] : []), userMsg];
     setChat(prev => [...prev, userMsg]);
     emitDoorNote(activeThread);
+    /* File the ask. Below every early return above, because those paths
+       (@mentions, the meeting room, /brainstorm, a live hand-off) each
+       dispatch through onDispatchToAgent and are filed there — this is the
+       one turn nothing else records. See recordBossAsk in app.jsx for what
+       the registry looked like without it.
+
+       `askId` is what everything the chief of staff does next chains onto,
+       so one question stays one thread however many people it reaches. */
+    const askId = onBossAsk ? onBossAsk(text) : null;
+    /* Written by the CEO catch below, read at the end of the turn. The
+       catch does not rethrow — it puts the snag in the bubble and lets the
+       fan-out block run — so a try/finally around the whole turn would
+       settle this record as if nothing had gone wrong. */
+    let askErr = null;
     setStreaming(true);
     const ceoId = HQ.uid('m');
     setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
@@ -711,6 +725,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
          AFTER this rewrite and overwrite the "(stopped)" marker with the
          raw truncated text. */
       flush.cancel();
+      askErr = err;
       const stopped = err.name === 'AbortError';
       // Same raw-dump bug fixed everywhere else a run can fail this session (§7).
       setChat(prev => prev.map(m => m.id === ceoId
@@ -855,6 +870,10 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           await onDispatchToAgent(target, ceoHandoff.body || text, {
             suppressUserEcho: true,
             threadOverride: activeThread,
+            /* CafresoHQ chose this hand-off and wrote the brief, so the
+               record says so and hangs off the question that caused it. */
+            parentMessageId: askId,
+            dispatchAs: HQ.CHIEF_OF_STAFF,
           });
         } catch (err) {
           /* §7: the work is now stuck and the boss did not ask for it to be
@@ -903,6 +922,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               suppressUserEcho: true,
               threadOverride: activeThread,
               coParticipants: targets.filter(o => o.agent.id !== t.agent.id).map(o => ({ name: o.agent.name, role: o.agent.role })),
+              /* Same parent for every leg, so a fan-out reads as one
+                 question answered by several people rather than several
+                 unrelated questions the boss appears to have asked. */
+              parentMessageId: askId,
+              dispatchAs: HQ.CHIEF_OF_STAFF,
             }).catch(err => {
               setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
                 text: `(${t.agent.name} bowed out — ${snagCause(err && err.message || String(err))})`,
@@ -1006,6 +1030,11 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         }
       }
     }
+    /* Settled at the END of the turn, not when ceoStream returns: the
+       hand-off and the fan-out below it are part of what the boss asked
+       for, and a record that reads `completed` while two specialists are
+       still typing is the Inbox answering a question it hasn't finished. */
+    if (onBossAskSettled) onBossAskSettled(askId, askErr);
     if (abortRef.current === controller) abortRef.current = null;
   };
 

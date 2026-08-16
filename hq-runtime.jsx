@@ -2449,6 +2449,16 @@ const ELEVATION_DOOR = 'File & shell access';
    is where this list is applied, once. */
 const ELEVATION_TOOL_IDS = ['files', 'code'];
 
+/* The chief of staff, as somebody the registry can name.
+
+   Everywhere else in the product this is a bare `'CafresoHQ'` string in a
+   chat bubble, which is fine — a bubble only has to be read. A message
+   record has to be ATTRIBUTED, and until 2026-08-16 the office had no id
+   to attribute one to, so the two dispatches the chief of staff makes on
+   the boss's behalf were filed as if the boss had typed them. `'ceo'`
+   matches the `from` the chat bubbles already use for the same speaker. */
+const CHIEF_OF_STAFF = { id: 'ceo', name: 'CafresoHQ' };
+
 const TOOL_CLAIM_GROUPS = [
   [/^(WEB_)?SEARCH|BROWSER_|FETCH|HTTP/i,        'web'],
   [/^VAULT_|^EXPORT_/i,                          'vault'],
@@ -4265,7 +4275,8 @@ function resolveModel(m) {
 }
 
 const HQ = {
-  AGENT_COLORS, ROLES, TOOLS_CATALOG, ELEVATION_TOOL_IDS, MODELS, MEMORY_PROMPT_CAP,
+  AGENT_COLORS, ROLES, TOOLS_CATALOG, ELEVATION_TOOL_IDS, CHIEF_OF_STAFF,
+  MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
