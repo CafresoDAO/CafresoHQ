@@ -12391,3 +12391,82 @@ that sent them through the wrong one is still there. Carried forward:
 `hireFromTemplate` chokepoint; the boss's plain composer sends mint no
 registry record; 'aborted by user' still stamps environment aborts; and
 the Inbox still has no 'cancelled' filter pill.
+
+## The office ordered a tool the same prompt forbade
+
+Last round's residue, taken as the ticket. One system prompt, written in
+two halves that had never been introduced. The brief — the office's own
+default rules, or the JOB DESCRIPTION the boss typed — names tools in
+prose. The grant, computed a few lines later by `toolsForAgent`, lists what
+is actually wired and says "ONLY invoke these exact tools". Nothing
+compared them. A coworker who obeys the brief gets its marker stripped and
+hands the boss a path with no file; a coworker who obeys the grant does the
+work and never says why the brief was impossible. Either way the round trip
+is spent on a contradiction the office could have resolved before sending.
+
+Reproduced 2026-08-16 on office 9261 with a HEALTHY vault, so the defect
+could not be mistaken for the last two rounds' vault problem. Kip, tools
+`['web','vault']`, no Brave key: the shipped persona says "Use [SEARCH] to
+gather sources"; SEARCH is absent from a granted list nineteen names long.
+Otto, hired live through NEW HIRE with the JOB DESCRIPTION field cleared so
+the office's own default applied, no vault box: he was handed "FILE-DELIVERY
+RULE: Any deliverable longer than ~200 words MUST be saved to the vault
+using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…", with
+neither granted. That MUST is the office's sentence, not the boss's — the
+product was writing the contradiction itself and blaming the model for it.
+
+Two fixes, because the two halves belong to different people.
+
+The office's own rule is conditional now. With no VAULT_NEW granted it asks
+for the same restraint minus the order: there is nowhere to file, keep it in
+the reply and keep it tight, and do not claim you saved anything to a path.
+The rule's actual purpose — keep a long deliverable out of the chat log —
+survives without the marker; only the instruction to do the impossible goes.
+
+The boss's half is left exactly as typed and reconciled afterwards.
+`orderedButNotGranted(text, known, granted)` reads the assembled brief for
+bracketed markers, keeps only names the registry really has, drops the ones
+granted, and the leftovers get one sentence appended AFTER the granted list:
+the brief says to use these, they are not wired up, do not emit them and do
+not describe the result as though it happened — and if the job genuinely
+needs them, say so plainly and stop. Computed from the text rather than by
+editing the four shipped personas, because JOB DESCRIPTION is a field the
+boss types into, and a fix that only knew Kip's sentence would not survive
+the first custom hire. Placement is load-bearing: before the granted list it
+is a third opinion, after it it is the office resolving its own conflict.
+It runs on `base` only, never the whole prompt — the marker-formatting rules
+further down contain a deliberate `[VAULT_NEW: notes.md]` example, and
+scanning them would manufacture a contradiction for every vault-less hire.
+§7 in the model's direction: an instruction to stop, with nothing to do
+instead, gets improvised around, and improvising is what produced the path
+with no file in the first place.
+
+The new suite is written against the reconciler as a function, not against
+the two sentences that happen to trip it today: prose brackets, wikilinks
+and a literal [TODO] are not tool orders; a closing marker is not a second
+order; duplicates collapse in first-seen order; a brief the session can
+honour says nothing at all. Fire-tested fourteen arms, all caught first cut,
+including both filters, the dedupe, the placement, and the office's rule
+going back to unconditional. One arm was deliberately left out rather than
+recorded as a survivor — "the no-vault form drops the restraint entirely" is
+`test_a_coworker_knows_their_own_name.py`'s claim, and belongs in that
+suite's fire test. Full runner 151/151, after one sibling check had to stop
+pinning `toolsNote + elevatedNote + approvalNote` as an adjacency: the claim
+there is that every coworker's prompt carries the approval marker, and a
+note inserted between two of those three is not a way for that to stop being
+true.
+
+Verified live on both paths. Kip's prompt now carries "CONTRADICTION IN YOUR
+BRIEF: the job description above tells you to use SEARCH, but that is NOT
+wired up this session" — SEARCH alone, silent about the vault he does have,
+because correcting a brief that was right is how a real correction gets
+skimmed past. Otto's prompt carries the no-vault form of the file rule and
+no contradiction line at all: there was nothing left to correct.
+
+Carried forward. `night_runner.py` assembles its own prompt with the same
+mandatory vault write and does not ride this fix — the nightly path can
+still order a file into a vault it does not have. `spawnOpenswarmRoster` is
+still guarded per-caller rather than behind one `hireFromTemplate`
+chokepoint; the boss's plain composer sends mint no registry record;
+'aborted by user' still stamps environment aborts; and the Inbox still has
+no 'cancelled' filter pill.

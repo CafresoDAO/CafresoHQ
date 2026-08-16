@@ -41,6 +41,10 @@ later:
 - The default branch keeps FILE-DELIVERY. A front-desk hire has no
   systemPrompt, and that branch is where the vault-delivery rule lives;
   losing it turns every long deliverable back into a wall of chat text.
+  It has two forms now — the MUST when VAULT_NEW was granted, and a plain
+  "keep it in your reply" when it was not, because ordering a coworker to
+  file into a vault it does not have is what
+  test_the_brief_and_the_grant_agree_before_sending.py exists for.
 
 Run: python3 scripts/test_a_coworker_knows_their_own_name.py
 """
@@ -109,10 +113,13 @@ def main():
         print('  SKIP  node not on PATH for the behavioural arm')
         return 1 if FAILS else 0
 
+    # Runs to the end of `const base`, not to `const toolsNote` — the
+    # reconciliation between the brief and the grant now sits between them
+    # and belongs to its own suite.
     body = re.search(
-        r'const identity = `You are \$\{agent\.name\}.*?'
-        r'const base = agent\.systemPrompt\s*\n?\s*\?.*?;\n(?=\s*const toolsNote)',
-        head, re.S)
+        r'const identity = `You are \$\{agent\.name\}[\s\S]*?'
+        r'const base = agent\.systemPrompt\s*\n?\s*\?[\s\S]*?;\n',
+        head)
     # A missing pair is the defect this file exists for, so it has to be a
     # named failure -- a test that dies with a traceback prints no FAILED
     # line and the fire arm reads as "not pinned".
@@ -138,8 +145,16 @@ def main():
                    'systemPrompt': 'You are Kip, the Deep Research specialist. '
                                    'Always cite at least 3 distinct sources.'},
     }
-    js = ('const AGENTS = %s;\nconst R = {};\n' % json.dumps(agents)) + \
+    # The same front-desk hire on an office with no vault. Measured live as
+    # Otto: hired through NEW HIRE with the job description cleared, no
+    # vault box, and handed a MUST for two tools he did not have.
+    granted = {k: ['VAULT_NEW', 'VAULT_APPEND'] for k in agents}
+    agents['front_desk_no_vault'] = dict(agents['front_desk'])
+    granted['front_desk_no_vault'] = []
+    js = ('const AGENTS = %s;\nconst GRANTED = %s;\nconst R = {};\n'
+          % (json.dumps(agents), json.dumps(granted))) + \
          'for (const [k, agent] of Object.entries(AGENTS)) {\n' + \
+         '  const enabledTools = GRANTED[k].map(name => ({ name }));\n' + \
          body.group(0) + '\n  R[k] = base;\n}\n' + \
          'console.log(JSON.stringify(R));'
     p = subprocess.run(['node', '--input-type=module', '-e', js], cwd=ROOT,
@@ -162,6 +177,15 @@ def main():
           'FILE-DELIVERY RULE' in r['front_desk'],
           'no systemPrompt means this branch is the only place the vault '
           'rule is taught; without it long deliverables go back to chat')
+    check('...and it orders the marker only when the marker exists',
+          'VAULT_NEW' in r['front_desk']
+          and 'VAULT_NEW' not in r['front_desk_no_vault'],
+          r['front_desk_no_vault'][-260:])
+    check('...and still asks for the restraint the rule was written for',
+          'FILE-DELIVERY RULE' in r['front_desk_no_vault']
+          and 'keep it tight' in r['front_desk_no_vault'],
+          'dropping the whole rule with the vault puts the wall of text '
+          'back; only the order to file has to go')
     check('...and a job description does not silently inherit it',
           'FILE-DELIVERY RULE' not in r['form_hire'],
           'the boss owns the job description; quietly appending office '

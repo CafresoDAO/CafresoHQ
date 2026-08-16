@@ -894,9 +894,17 @@ def main():
           and app_src.count('buf = cleaned;') == 1,
           'app.jsx: rawReply before the rewrite; scans pinned per path')
 
+    # Pinned to the sys line itself rather than to `toolsNote + elevatedNote
+    # + approvalNote` as an adjacency: the claim is that every coworker's
+    # prompt carries the marker, and a note inserted between two of those
+    # three is not a way for that to stop being true. The adjacency version
+    # went red the day the brief/grant reconciliation landed between them.
+    sysparts = re.search(r'const sys = \[base \+ ([^,]+),', rt)
     check('every coworker run is taught the marker, not just the CEO',
           'const approvalNote' in rt
-          and re.search(r'toolsNote \+ elevatedNote \+ approvalNote', rt)
+          and sysparts
+          and all(n in sysparts.group(1)
+                  for n in ('toolsNote', 'elevatedNote', 'approvalNote'))
           and 'NEEDS_APPROVAL' in rt.split('const approvalNote')[1][:600],
           'hq-runtime.jsx: approvalNote must join agentStream\'s system prompt')
 

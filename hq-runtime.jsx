@@ -2550,6 +2550,47 @@ function openedMarkers(text, known) {
   return out;
 }
 
+/* Which tools the prompt ORDERS that the session cannot run.
+
+   The office writes half a system prompt and the boss writes the other
+   half, and until this existed the two halves were never compared.
+   Measured 2026-08-16 on office 9261, both halves, both wrong:
+
+   Kip, vault healthy so VAULT_* granted, no Brave key. His shipped
+   persona: "Use [SEARCH] to gather sources, then synthesize into a
+   research note saved to Research/<topic>.md via [VAULT_NEW]." Four
+   paragraphs down, the same prompt: "ONLY invoke these exact tools",
+   list without SEARCH.
+
+   Otto, hired through NEW HIRE with the job description cleared so the
+   default base applies, no vault box: "FILE-DELIVERY RULE: Any deliverable
+   longer than ~200 words … MUST be saved to the vault using [VAULT_NEW:
+   <path>]…" — the office's own MUST, for two tools it did not grant.
+
+   A coworker that obeys gets its marker stripped and hands the boss a path
+   with no file behind it; one that obeys the other half does the work and
+   says nothing about why it could not file. Either way the round trip is
+   spent on a contradiction the office could have resolved before sending.
+
+   `known` and `granted` come in as parameters, not read off TOOL_REGISTRY
+   here, for the reason `openedMarkers` gives above: the suites lift this
+   function into node and a module-level const would be a ReferenceError.
+   `known` also does the filtering that matters — a job description full of
+   [[wikilinks]] or a literal [TODO] is not a tool order. */
+function orderedButNotGranted(text, known, granted) {
+  const have = new Set(granted || []);
+  const real = new Set(known || []);
+  const out = [];
+  const re = /\[\s*\/?\s*([A-Z][A-Z0-9_]{2,})\s*[:\]]/g;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const n = m[1];
+    if (!real.has(n) || have.has(n) || out.includes(n)) continue;
+    out.push(n);
+  }
+  return out;
+}
+
 /* One sentence, two callers — the empty-reply branch below and the branch
    that fires when a coworker wrapped the same reach in prose. It read as
    two independent notes and would have drifted the way the three honesty
@@ -3826,11 +3867,34 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
      contradicts; for the transient helper (app.jsx) and the assistant
      hire it fills in a name they never had. */
   const identity = `You are ${agent.name}, a specialist coworker at CafresoHQ. Role: ${agent.role}.`;
+  /* The office's own MUST, and the one instruction here it can check
+     before issuing. A coworker with no VAULT_NEW who is ordered to file
+     hands the boss a path with no file; the rule's actual purpose — keep a
+     long deliverable out of the chat log — survives without it, so the
+     no-vault version asks for the same restraint and drops the order.
+     `enabledNames` is already computed above from `toolsForAgent`. */
+  const canFile = enabledTools.some(t => t.name === 'VAULT_NEW');
+  const fileDelivery = canFile
+    ? `
+
+FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`
+    : `
+
+FILE-DELIVERY RULE: There is no vault wired up this session, so there is nowhere to file a long deliverable — keep it in your reply and keep it tight. Do not claim you saved anything to a path.`;
   const base = agent.systemPrompt
     ? `${identity}\n\n${agent.systemPrompt}`
-    : `${identity} Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.
-
-FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`;
+    : `${identity} Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.${fileDelivery}`;
+  /* The boss's half of the prompt, reconciled against what was granted.
+     Computed from the assembled text rather than by editing the four
+     shipped personas, because JOB DESCRIPTION is a field the boss types
+     into — a fix that only knew about Kip's sentence would not survive
+     the first custom hire. */
+  const ordered = orderedButNotGranted(
+    base, Object.values(TOOL_REGISTRY).map(t => t.name), enabledTools.map(t => t.name));
+  const plural = ordered.length > 1;
+  const orderedNote = ordered.length
+    ? `\n\nCONTRADICTION IN YOUR BRIEF: the job description above tells you to use ${ordered.join(', ')}, but ${plural ? 'those are' : 'that is'} NOT wired up this session. Ignore that instruction — do not emit the marker${plural ? 's' : ''}, and do not describe the result as though it happened. If the job genuinely needs ${plural ? 'them' : 'it'}, say so plainly in your reply and stop there.`
+    : '';
   const toolsNote = enabledTools.length
     ? `\n\nClaimed capabilities: ${claimedRaw}. Of these, the following are wired up for real execution: ${enabledNames}. ONLY invoke these exact tools using the bracketed format described in the TOOL CALLS section. Do NOT invent functions, do NOT use OpenAI/harmony \`commentary to=\` syntax, do NOT call any tool not in this list. If a request needs a tool you don't have, say so plainly in plain text and suggest the user @-mention a coworker who does.`
     : (agent.elevated
@@ -3883,7 +3947,10 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
   } catch (_e) { /* vault not configured — skip the memory note */ }
   const useJson = agent.toolFormat === 'json' || (agent.toolFormat !== 'bracket' && supportsJsonToolFormat(agent.model));
   const toolSnippet = enabledTools.length ? (useJson ? toolsPromptSnippetJson(enabledTools) : toolsPromptSnippet(enabledTools)) : '';
-  const sys = [base + toolsNote + elevatedNote + approvalNote, toolSnippet, agentMemoryNote, journalNote, mem, reg].filter(Boolean).join('\n\n');
+  /* `orderedNote` sits AFTER `toolsNote` on purpose: it is a correction to
+     the brief, and it reads as one only once the granted list has been
+     stated. Before it, it is a third opinion. */
+  const sys = [base + toolsNote + orderedNote + elevatedNote + approvalNote, toolSnippet, agentMemoryNote, journalNote, mem, reg].filter(Boolean).join('\n\n');
 
   const messages = chat
     ? chatToMessages(chat, { selfName: agent.name }).concat([{ role: 'user', content: prompt }])
