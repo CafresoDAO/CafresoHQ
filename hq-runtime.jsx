@@ -2423,6 +2423,32 @@ const TOOL_REGISTRY = {
    box would let them". Different questions, and the floor's answer —
    "searching for X" — cannot be typed into a settings search field. */
 const ELEVATION_DOOR = 'File & shell access';
+
+/* What the 🛡 switch grants, written in the vocabulary every reader of a
+   roster already speaks. These are TOOLS_CATALOG ids, and that is the
+   entire point of them existing.
+
+   Reproduced 2026-08-16 on a scratch office: a coworker asked for file and
+   shell access, the boss approved, the office announced "🛡 Dee now has
+   file and shell access" — and the approval handler wrote `'file'` and
+   `'shell'` into her tools. Neither is a catalog id (they are `files` and
+   `code`), so app/cast.jsx dropped both, and her card went on reading
+
+       CAN USE   VAULT
+
+   for a coworker who had just been given the run of the machine. The two
+   strings were not inert, though: memory/hq-agents.md — the roster the
+   office renders for coworkers to read — came out as "Tools: vault, file,
+   shell", and the same raw join reaches the chief of staff's roster line
+   and the hint channel's `claimedRaw`. Machine words nothing else in the
+   product uses, describing a real capability under a name no screen has.
+
+   The other elevation door — the switch on the coworker's card — wrote
+   nothing at all, so the same coworker's card was wrong in the same way
+   by a different route. Both go through app.jsx's `onUpdateAgent`, which
+   is where this list is applied, once. */
+const ELEVATION_TOOL_IDS = ['files', 'code'];
+
 const TOOL_CLAIM_GROUPS = [
   [/^(WEB_)?SEARCH|BROWSER_|FETCH|HTTP/i,        'web'],
   [/^VAULT_|^EXPORT_/i,                          'vault'],
@@ -4239,7 +4265,7 @@ function resolveModel(m) {
 }
 
 const HQ = {
-  AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
+  AGENT_COLORS, ROLES, TOOLS_CATALOG, ELEVATION_TOOL_IDS, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
   uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,

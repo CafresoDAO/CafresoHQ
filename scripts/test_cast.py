@@ -703,10 +703,18 @@ console.log(JSON.stringify(R));
     #   1. stream(): 'gemini:' model ids must route via the contract.
     #   2. the front desk: a detected Gemini CLI must be offerable
     #      (FRONT_DESK['gemini']), with the model riding the CLI driver.
-    #   3. app.jsx's CLI-sync DEFS: a_cli_gemini must ALSO ride 'gemini:',
-    #      not 'google:' — that prefix is the browser-key Gemini API path,
-    #      which needs an API key the "we found your sign-in" card never
-    #      mentions. A card whose first task fails is worse than no card.
+    #   3. app.jsx's CLI-sync map: a_cli_gemini needs an entry there or a
+    #      hired Gemini card never refreshes its version and login state.
+    #
+    # Door 3 used to be pinned as "and its model must be 'gemini:', not
+    # 'google:'" — the browser-key path, which needs an API key the "we
+    # found your sign-in" card never mentions. That check was correct when
+    # the effect still HIRED from this map. It is refresh-only now and reads
+    # `id` alone, so the model there was a spec nothing applied, and pinning
+    # it made a dead field look load-bearing to the next reader (2026-08-16:
+    # the same map's dead `tools` was the last live copy of a tool id that
+    # is not in TOOLS_CATALOG). The brain is pinned where it is actually
+    # read — the front desk, two checks up.
     check("stream() dispatches the 'gemini:' prefix through the contract",
           re.search(r"provider === 'gemini'\)?\s*return streamAgentContract\('gemini'", client),
           'claude-client.jsx: gemini: model ids have no route to the CLI driver')
@@ -723,10 +731,14 @@ console.log(JSON.stringify(R));
           'modals/hire.jsx: the card claims the sign-in but the model needs a key')
     app_src = (ROOT / 'app.jsx').read_text(encoding='utf-8')
     defs_gem = re.search(r"'gemini':\s*\{[^}]*a_cli_gemini[^}]*\}", app_src)
-    check("app.jsx's CLI-sync DEFS rides the CLI driver too",
-          bool(defs_gem) and "model: 'gemini:" in defs_gem.group(0)
-          and "google:" not in defs_gem.group(0),
-          "app.jsx: a_cli_gemini's model must be 'gemini:*' — 'google:' needs a browser API key")
+    check("app.jsx's CLI-sync map can still refresh a hired Gemini card",
+          bool(defs_gem),
+          "app.jsx: no 'gemini' entry — a hired a_cli_gemini never learns it "
+          'was logged in')
+    check('...and names no second brain there to get wrong',
+          bool(defs_gem) and 'model' not in defs_gem.group(0),
+          "app.jsx: the sync reads `id` alone, so a model here applies to "
+          'nothing and only offers a second place to disagree with the front desk')
 
     # ── the Roster model picker can actually select the driver-contract
     #    cloud providers, not just get them via a fresh front-desk hire ────

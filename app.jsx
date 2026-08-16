@@ -79,19 +79,21 @@ function App() {
      us). Runs twice because useFileStored's async file read REPLACES the
      roster when it lands — the second pass re-merges if clobbered. */
   React.useEffect(() => {
+    /* Driver id → the agent id it refreshes. Nothing more, because nothing
+       more was ever read: this map used to carry a full hire spec (name,
+       role, color, model, tools) left over from when the effect still ADDED
+       agents, and the loop below touches only cliVersion, cliAuthed and
+       recent. Dead fields are not free — the dead `tools` here was
+       ['files','shell'] on all four, the last surviving copy of an id that
+       is not in TOOLS_CATALOG, still sitting a screen away from the
+       FRONT_DESK entries (modals/hire.jsx) that were corrected off it. A
+       table that looks like a spec and is read for one key is a table the
+       next reader will trust for the other five. */
     const DEFS = {
-      'hermes':      { id: 'a_cli_hermes', name: 'Hermes',      role: 'Resident Agent · CLI',
-                       color: 'sky',   model: 'hermes:hermes-agent',     tools: ['web','files','shell'] },
-      'claude-code': { id: 'a_cli_claude', name: 'Claude Code', role: 'Coding Agent · CLI',
-                       color: 'leaf',  model: 'claudecode:sonnet',       tools: ['files','shell','web'] },
-      'codex':       { id: 'a_cli_codex',  name: 'Codex',       role: 'Coding Agent · CLI',
-                       color: 'mint',  model: 'codex:gpt-4.1',           tools: ['files','shell'] },
-      /* model rides the CLI driver ('gemini:'), NOT 'google:' — that prefix
-         is the browser-key Google API path, which needs a separate API key
-         the user never signed up for. The card says "we found your Google
-         sign-in"; the brain must be the thing that sign-in powers. */
-      'gemini':      { id: 'a_cli_gemini', name: 'Gemini',      role: 'Coding Agent · CLI',
-                       color: 'blush', model: 'gemini:gemini-2.5-pro', tools: ['files','shell'] },
+      'hermes':      { id: 'a_cli_hermes' },
+      'claude-code': { id: 'a_cli_claude' },
+      'codex':       { id: 'a_cli_codex' },
+      'gemini':      { id: 'a_cli_gemini' },
     };
     let cancelled = false;
     const sync = async () => {
@@ -1086,6 +1088,36 @@ function App() {
        which is what housekeeping should do. */
   }, []);
 
+  /* One-time repair: rosters written before 2026-08-16 carry `'file'` and
+     `'shell'` on every coworker whose elevation the boss approved, because
+     the approval handler minted its own ids instead of the catalog's. Both
+     are dropped by every card in the product and printed raw by
+     memory/hq-agents.md and the chief of staff's roster line, so without
+     this the fix only ever reaches offices that had not used the feature.
+
+     Two jobs, one pass: swap the bogus pair for the catalog ids, and give
+     the same ids to anyone already elevated by a door that wrote none —
+     the 🛡 switch, and the elevate-all migration above, which ran before
+     `onUpdateAgent` learned the rule. Silent, like the migration above:
+     housekeeping is not news. */
+  useEffectA(() => {
+    const FLAG = k('migrated_elevation_tool_ids_v1');
+    if (localStorage.getItem(FLAG)) return;
+    setAgents(prev => {
+      let touched = false;
+      const next = prev.map(a => {
+        const had = new Set(a.tools || []);
+        const want = new Set([...had].filter(t => t !== 'file' && t !== 'shell'));
+        if (a.elevated) for (const t of HQ.ELEVATION_TOOL_IDS) want.add(t);
+        if (want.size === had.size && [...want].every(t => had.has(t))) return a;
+        touched = true;
+        return { ...a, tools: [...want] };
+      });
+      return touched ? next : prev;
+    });
+    try { localStorage.setItem(FLAG, '1'); } catch (_e) {}
+  }, []);
+
   useEffectA(() => { document.body.classList.toggle('no-scanlines', !scanlines); }, [scanlines]);
   useEffectA(() => { document.body.classList.toggle('night', night); }, [night]);
 
@@ -1389,7 +1421,24 @@ ${d.text}` : d.text,
     }
     say(`${a.name} let go`, 'BYE');
   };
-  const onUpdateAgent = (id, patch) => setAgents(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+  /* Both elevation doors come through here — the approval in the tray and
+     the 🛡 switch on the coworker's card — so the roster is brought into
+     the vocabulary its readers speak in ONE place. See HQ.ELEVATION_TOOL_IDS
+     for what was on screen before it was.
+
+     Added on the way up, never taken away on the way down. `files` is a
+     legitimate ungranted claim — Dax's template carries it with no
+     elevation, and the card already gates it on the flag ("…once you switch
+     on their file & shell access") — so stripping it here would delete a
+     claim the boss never made a decision about. */
+  const onUpdateAgent = (id, patch) => setAgents(prev => prev.map(a => {
+    if (a.id !== id) return a;
+    const next = { ...a, ...patch };
+    if (patch && patch.elevated && !a.elevated) {
+      next.tools = Array.from(new Set([...(a.tools || []), ...HQ.ELEVATION_TOOL_IDS]));
+    }
+    return next;
+  }));
 
   /* Per-agent AbortController registry. We allow at most one in-flight stream
      per agent; starting a new one aborts the prior. Coffee/dismiss/component
@@ -5222,12 +5271,16 @@ ${d.text}` : d.text,
         if (er.requestedBy) pendingElevationRef.current.delete(er.requestedBy);
         const target = agents.find(a => a.id === er.requestedBy);
         if (target) {
-          // Persist the elevation. Tools are gated by the elevated flag in
-          // toolsForAgent so we don't NEED to mutate tools — but adding
-          // them here makes the change visible in the inspect panel too.
-          const newTools = Array.from(new Set([...(target.tools || []), 'file', 'shell']));
+          /* Persist the elevation. `toolsForAgent` gates the file, dir and
+             shell tools on the flag, so the grant works either way — the
+             tools list is
+             what makes the change VISIBLE, on the card and in the roster
+             the office renders for coworkers. This used to add its own
+             `'file'` and `'shell'`, which are not ids anything reads;
+             `onUpdateAgent` now applies HQ.ELEVATION_TOOL_IDS for every
+             door, so there is nothing to pass here. */
           onUpdateAgent(target.id, {
-            elevated: true, tools: newTools,
+            elevated: true,
             recent: 'elevation granted — file/shell available next turn',
           });
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',

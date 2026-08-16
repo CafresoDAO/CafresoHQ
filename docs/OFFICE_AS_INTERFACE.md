@@ -13135,3 +13135,102 @@ what is about to be. And a boss who needs a dropped event has nowhere to
 go; the sentence says the middle is gone rather than naming a door,
 because there is no door. If these records are ever worth keeping whole,
 that is a storage decision, not a wording one.
+
+## Granting elevation wrote two tool ids nothing in the product reads
+
+Reproduced 2026-08-16 on a scratch office (9270, canned brain). Dee, a
+non-elevated coworker, asked for file and shell access. The tray showed the
+request, the boss pressed APPROVE, and the office said:
+
+> 🛡 Dee now has file and shell access. It applies from their next job.
+
+The grant was real — `toolsForAgent` gates the file, dir and shell tools on
+`agent.elevated`, and the flag was set. What the handler ALSO did was write
+`'file'` and `'shell'` into her tools. Neither is a `TOOLS_CATALOG` id; the
+catalog calls them `files` and `code`. `app/cast.jsx` drops any id it has no
+`CAN_DO` entry for — silently, by design, so a stale claim can't invent a
+capability — so both vanished, and her card went on reading
+
+    CAN USE   VAULT
+
+for a coworker who had just been handed the machine. One approval, three
+surfaces, and the only one that changed was the sentence.
+
+The two strings were not inert. Where the office describes a roster to
+something that is not a card, they were printed raw:
+
+    memory/hq-agents.md   "- Tools: vault, file, shell"
+    hq-runtime.jsx:3604    the chief of staff's roster line
+    hq-runtime.jsx:3840    `claimedRaw` in the hint channel
+
+so the office told its own coworkers about a real capability using two words
+no screen in the product has ever printed (§6).
+
+The other door was wrong the other way. The 🛡 switch on the coworker's card
+(`modals/settings.jsx`) sets `elevated` and writes no tools at all — same
+card, same silence, different route. Two doors, two different wrong answers,
+because each one decided for itself what a grant means.
+
+Fixed at the one place both doors pass through. `HQ.ELEVATION_TOOL_IDS =
+['files', 'code']` is exported from `hq-runtime.jsx` beside `ELEVATION_DOOR`
+— the sentence the product already uses for this — and `app.jsx`'s
+`onUpdateAgent` applies it on the false→true transition, once, for every
+caller. The grant handler now passes the flag and nothing else.
+
+Added on the way up, never taken away on the way down. `files` is a
+legitimate ungranted claim — Dax's template carries it with no elevation,
+and the card already says "…once you switch on their file & shell access" —
+so stripping on revoke would delete a claim the boss never decided about.
+
+A one-time migration repairs rosters already written: swap the minted pair
+for the catalog ids, and give the same ids to anyone already elevated
+through a door that wrote none (the 🛡 switch, and the elevate-all migration
+that predates the rule). Without it the fix would only ever reach offices
+that had never used the feature — the bad pair is persisted in
+`memory/agents.json`. It does not invent elevation for a coworker who merely
+had the bad strings; those get stripped and nothing granted.
+
+One more copy, a screen away. `app.jsx`'s CLI-sync `DEFS` carried a full
+hire spec — name, role, color, model, tools — left from when that effect
+still ADDED agents. It is refresh-only now and reads `id` alone. Its dead
+`tools` was `['files','shell']` on all four entries, the last live copy of
+the id `modals/hire.jsx`'s FRONT_DESK had already been corrected off. Its
+dead `model` was pinned by a check in `test_cast.py` that had been written
+when the field still mattered — a test guarding a field nothing applies,
+which is how a table read for one key teaches the next reader to trust the
+other five. `DEFS` is now `{driver: {id}}` and that check was rewritten to
+say what is actually true: the brain is pinned at the front desk, where it
+is read, and `DEFS` names no second one to disagree with it.
+
+`scripts/test_the_roster_speaks_one_vocabulary.py` — 26 checks. The
+product-wide one is the invariant that would have caught every instance at
+once: every literal `tools: [...]` in the tree uses catalog ids (skipping
+`.claude/`, which is another session's checkout, and any list containing a
+runtime expression). The rest run rather than read — the chokepoint's mapper
+and the whole repair effect, including its early return, are lifted and
+executed in node, and `app/cast.jsx` is asked directly whether the granted
+ids produce words. That last one is the assertion the shipped bug failed:
+not "the list contains files" but "granting changes what the card says".
+
+Fire test: 18 arms, 18 caught, post-restore baseline green. Three arms are
+half-fixes that look right from a distance — a list naming `files` and not
+`code`, a chokepoint that adds on grant and strips on revoke, a repair that
+swaps the ids but tops nobody up. The one that survived the first pass was
+`if (true) return;` on the migration's flag line: every line of the body
+stayed where a static check could find it. That check now runs the effect
+instead, which is the fourth round in a row where reading the source proved
+weaker than executing it. Full runner 159/159.
+
+Verified live in the shipped bundle on 9270, all three paths. The migration
+repaired Dee in place — `["vault","files","code"]` in `st70/memory/agents.json`,
+`Tools: vault, files, code` in the rendered `hq-agents.md`, and a card
+reading "Can use vault files code". A fresh approval on Otto produced
+`web|files|code` with `elevated:true`. The 🛡 switch on Nia, which had
+written nothing at all, produced `web,files,code`.
+
+Still open: `app/agents.jsx` builds a SEPARATE namespace for `/who-can` —
+`if (agent.elevated) for (const c of ['shell','file','deployment','review'])`
+— which uses the same two words for skill capabilities rather than tool ids.
+That one is deliberate and correct, and it is also exactly what this bug
+looked like, one file over. Nothing in the code says which namespace a
+reader is in.
