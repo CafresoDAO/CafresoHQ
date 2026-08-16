@@ -270,7 +270,7 @@ function MeetingRoomModal({ open, onClose, agents, meetings, setMeetings, onOpen
    counted in the topbar badge, so anything else gets a way to clear it. */
 const TERMINAL_STATES = new Set(['completed', 'cancelled', 'failed']);
 
-function InboxModal({ open, onClose }) {
+function InboxModal({ open, onClose, onResend = null }) {
   // Pick up an initial filter from sessionStorage when the modal is
   // opened via the palette commands `Show blockers` / `Show failed` etc.
   // Cleared after read so a manual nav-button open defaults back to 'active'.
@@ -407,6 +407,26 @@ function InboxModal({ open, onClose }) {
           {m.failureCause.message && (
             <div style={{opacity:0.6,fontFamily:'monospace',fontSize:9,marginTop:3}}>{m.failureCause.message}</div>
           )}
+        </div>
+      )}
+      {/* The door the box above keeps naming. A retryable cause files
+          actionNeeded "Re-send it…" — and this row rendered that sentence
+          with no way to do it: the palette's retry only saw 'failed' (and
+          only the most recent), so a 'stopped-all' cancellation was told
+          to re-send with nowhere to press. Gated exactly as the label is:
+          terminal (an in-flight row has nothing to re-send yet) and
+          retryable (the box honestly says 'not retryable' otherwise). */}
+      {onResend && TERMINAL_STATES.has(m.state) && m.failureCause && m.failureCause.retryable && (
+        <div style={{marginTop:6}}>
+          <button
+            className="px-btn secondary"
+            style={{fontSize:8, padding:'3px 6px'}}
+            title="Send this message to the same coworker again. This record stays as history — the retry files its own record, chained to this one."
+            onClick={(e) => {
+              e.stopPropagation();
+              onResend(m);
+            }}
+          >↻ RE-SEND</button>
         </div>
       )}
       {/* The boss's own lever. The registry counts non-terminal messages

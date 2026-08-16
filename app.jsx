@@ -4053,6 +4053,53 @@ ${d.text}` : d.text,
     window.cafresohqToast && window.cafresohqToast.success(`Retrying → ${agent.name}…`);
   };
 
+  /* The registry's own promise, made pressable. A retryable failure —
+     and since the STOP ALL work, a 'stopped-all' cancellation — files
+     actionNeeded "Re-send it if the question still needs an answer" on
+     its record, and the Inbox renders that sentence on the row. Measured
+     2026-08-15: the row said it, and NO surface could do it — the
+     palette's retry only saw state === 'failed' and only the most
+     recent, the Inbox modal had no retry control at all, and a stopped
+     run logs 'progress', so the attention tab never got a row either.
+     The record named a door the product didn't have.
+
+     Shared by the palette command and the Inbox row's ↻ RE-SEND. Same
+     one-live-child guard as the attention tab's retry — the second
+     click of an impatient boss must not file a second dispatch. The
+     confirm door stays: unlike the attention tab's Retry (a button that
+     already says what it does, on the row it does it to), the palette
+     fires on the MOST RECENT failure the boss may not be looking at. */
+  const resendMessage = async (m) => {
+    if (!m) return;
+    const all = messagesRef.current || [];
+    const already = all.find(x => x.parentId === m.id &&
+      x.state !== 'failed' && x.state !== 'cancelled');
+    if (already) {
+      const running = already.state !== 'completed';
+      window.cafresohqToast && window.cafresohqToast.warn(running
+        ? `${m.toAgentName || 'They'} are on the retry right now — give it a moment.`
+        : 'Already retried, and that one went through — nothing left to do here.');
+      return;
+    }
+    const agent = agents.find(a => a.id === m.toAgentId);
+    if (!agent) {
+      window.cafresohqToast && window.cafresohqToast.error(
+        `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
+      return;
+    }
+    if (!(await window.hqConfirm(
+      `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`))) return;
+    // Fresh dispatch — the old record stays as history (stories are not
+    // rewritten); the retry files its own record, chained via parentId.
+    dispatchToAgent(agent, m.body, {
+      parentMessageId: m.id,
+      dmFrom: (m.fromAgentId !== 'boss')
+        ? agents.find(a => a.id === m.fromAgentId) || null
+        : null,
+    });
+    window.cafresohqToast && window.cafresohqToast.success(`Retrying → ${agent.name}…`);
+  };
+
   // Tasks
   const onAddTask = (t) => { setTasks(prev => [t, ...prev]); say('Task added', 'TASK'); };
   /* Moving a task also stamps WHEN it started, because the board could not
@@ -5798,26 +5845,11 @@ ${d.text}` : d.text,
           window.cafresohqToast && window.cafresohqToast.warn('No failed messages to retry.');
           return;
         }
-        // Most recent failure first.
+        // Most recent failure first; resendMessage owns the confirm door,
+        // the one-live-child guard and the dispatch — this used to be its
+        // own copy of all three minus the guard.
         failed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-        const m = failed[0];
-        const agent = agents.find(a => a.id === m.toAgentId);
-        if (!agent) {
-          window.cafresohqToast && window.cafresohqToast.error(
-            `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
-          return;
-        }
-        if (!(await window.hqConfirm(
-          `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`))) return;
-        // Spawn a fresh dispatch — old message stays in the registry as
-        // historical, the retry creates its own record (with parentId set
-        // so the thread chain remains intact).
-        dispatchToAgent(agent, m.body, {
-          parentMessageId: m.id,
-          dmFrom: (m.fromAgentId !== 'boss')
-            ? agents.find(a => a.id === m.fromAgentId) || null
-            : null,
-        });
+        await resendMessage(failed[0]);
       }}
     />
     <div className={`app${railCollapsed ? ' rail-collapsed' : ''}`}>
@@ -6329,7 +6361,7 @@ ${d.text}` : d.text,
       <MorningReportModal report={gazette} onClose={()=>setGazette(null)} onGoToOffice={()=>navTo('visual')} />
       <ReceiptsModal open={receiptsOpen} onClose={()=>setReceiptsOpen(false)} receipts={receipts} onClear={onClearReceipts}
         onPin={(r) => onPin({ kind:'receipt', text:`${r.decision === 'approved' ? '✓' : '✕'} ${r.title}`, sourceId: r.id })}/>
-      <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)}/>
+      <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)} onResend={resendMessage}/>
       <NotificationCenter
         open={notifOpen}
         onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}

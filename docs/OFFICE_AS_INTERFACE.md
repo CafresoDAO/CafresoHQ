@@ -11884,3 +11884,69 @@ MAP — during the ~5s 'active' ("reporting back") fade the N WORKING
 chip still counts a coworker the stop button can no longer see. No
 stream exists in that gap so nothing burns, but the two gates reading
 two truths is the kind of drift this ledger exists to name early.
+
+## The record says "retryable — Re-send it" and no door in the product can
+
+Measured 2026-08-15 on office 9261, on the very record the STOP ALL
+round filed. Kip's waiting note to Vera ("shuttle the docket seventy
+before we break") sat in the Inbox exactly as #101 promised:
+`stopped-all · retryable`, and beneath it the sentence the office
+chose — "Action: Re-send it if the question still needs an answer."
+Driven live, that row rendered zero buttons. The sentence names an
+action; the product had no door that performs it.
+
+Three surfaces were audited before touching anything. The palette's
+"Retry the most recent failed message" counts `state === 'failed'`
+only — a cancelled record is invisible to it, and even for failures
+it retries the newest, not the one the boss is reading. The Inbox
+row's only lever, ✓ CLEAR THIS, renders on NON-terminal rows —
+cancelled is terminal, so the one row carrying the instruction is the
+one row with nothing to press. And the attention tab builds its Retry
+rows from `action: 'progress'` log lines, which a stopped run never
+writes. Same class as the publish path that said "impossible" and
+named no door: the office told the boss what to do and kept every way
+of doing it to itself.
+
+The fix makes the label pressable and keeps ONE implementation.
+`resendMessage(m)` in app.jsx owns the whole promise: the
+one-live-child guard (an impatient second press must not file a
+second dispatch — but a retry that FAILED doesn't block trying
+again), the recipient-gone toast for a dismissed coworker, the
+confirm door quoting the body, and the fresh dispatch chained to the
+old record via `parentMessageId` — with the sender mapped honestly
+(boss origin rides as the boss, a peer origin rides as that peer's
+DM). The palette's retry now delegates to it instead of keeping a
+private copy of the confirm and the dispatch minus the guard. The
+Inbox row gets ↻ RE-SEND gated EXACTLY as the label is: terminal
+state, failureCause present, retryable true. A row that says
+"Re-send it" shows the button; a row that doesn't, doesn't.
+
+Live, after the fix: the page held exactly one RE-SEND button — on
+the stopped-all row, not on the completed head above it. Pressing it
+raised "Retry message to Vera?" with the body quoted; accepting filed
+a NEW record chained to the old one, riding as Kip's DM, which ran
+queued → delivered → in_progress → completed and brought Vera's
+answer back. The old record stayed `cancelled` untouched — stories
+are not rewritten; the retry files its own. A second and a third
+press each produced one warn — "Already retried, and that one went
+through — nothing left to do here." — and zero new dispatches (the
+third press was measured at the toast API itself, since the visible
+toast fades faster than a round-trip). The suite
+(scripts/test_a_retryable_record_has_a_door.py) pins the single
+implementation, the delegation, the guard's exact skip-set, the
+chain, the sender mapping, and drives the lifted function through
+seven scenarios and the lifted gate through six; fire-tested six
+mutation arms, all caught; 145/145.
+
+Residue: three retry surfaces existed and only two now share the
+core — the attention tab's onRetryActivity keeps its own selection
+semantics and, notably, no confirm door, so a retry from there is
+one press while a retry from the Inbox is two; that asymmetry is
+named here so its eventual consolidation is a decision, not a
+discovery. The Inbox filter pills offer active / blocked / failed /
+completed / all — there is no 'cancelled' pill, so the only rows
+that carry this new door are reachable only through ALL. Carried
+forward untouched: the boss's plain composer sends still mint no
+registry record; 'aborted by user' still stamps environment aborts;
+the stop button's busy-only gate vs the worked-map handler from
+#101's residue.
