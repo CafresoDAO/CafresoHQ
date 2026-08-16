@@ -4535,10 +4535,41 @@ ${d.text}` : d.text,
                        stop to ask a question the boss did not initiate,
                        and it must not bin a running job to make room.
      `opts.priorResult` — the previous step's output, carried into the
-                       brief. See triggerChainStep for why this exists. */
+                       brief. See triggerChainStep for why this exists.
+     `opts.fromRun`  — the AbortController of the run HANDING THIS OVER,
+                       when a chain step is dispatched from inside the tail
+                       of the step before it. See `handingOver` below. */
   const onTaskDropOnAgent = async (taskId, agent, taskFresh, opts = {}) => {
     const task = taskFresh || tasks.find(t => t.id === taskId);
     if (!task) return;
+
+    /* Is there a run on this desk that starting this card would cut into?
+
+       `agentAbortersRef` holds one entry per coworker, and until now the
+       mere presence of one was the answer. That made a workflow's own
+       hand-off look like an interruption: the chain fires from the tail of
+       the finishing step's `try`, and that step's `endAgentRun` is in the
+       `finally` below it, so the step that had just delivered was still in
+       the registry when it dispatched the next one. Measured 2026-08-16 on
+       office 9280 — a two-step pipeline set to auto-dispatch, both steps on
+       the same coworker. Alpha finished with a real answer and filed to
+       Deliveries; Beta stayed in the inbox reading
+
+         ↩ Local Brain was mid-conversation when this step came up —
+           start it when they're free
+
+       There was no conversation. Started by hand a minute later, the same
+       card on the same desk ran first time — which is the proof: the only
+       thing that had changed was who dispatched it.
+
+       Identity, not presence. The registry entry either IS the run handing
+       over, or it belongs to something else — and only the second case is
+       what the two guards below are for. A chat opened DURING the card run
+       would have replaced the entry (`beginAgentRun` evicts), so a live
+       conversation cannot ride through here on a stale controller. */
+    const priorRun = agentAbortersRef.current.get(agent.id);
+    const handingOver = !!(opts.fromRun && priorRun === opts.fromRun);
+    const running = !!priorRun && !handingOver;
 
     /* Dropping a second folder on a busy desk. `beginAgentRun` aborts any
        run already in flight for this coworker — one coworker, one run — so
@@ -4563,9 +4594,10 @@ ${d.text}` : d.text,
        back empty. Gated now on the aborter registry (the abort is what
        the dialog warns about, so the abort's own registry says whether
        anything can be lost) and on the card's ended-run stamp — see
-       displacedTask's comment in hq-runtime.jsx. */
-    const displaced = HQ.displacedTask(tasks, agent.id, taskId,
-      agentAbortersRef.current.has(agent.id));
+       displacedTask's comment in hq-runtime.jsx. `running` and not the
+       raw registry lookup: a pipeline's own hand-off is not a run this
+       card would displace — see `handingOver` above. */
+    const displaced = HQ.displacedTask(tasks, agent.id, taskId, running);
     if (displaced && opts.auto) {
       /* A chain step landing on someone mid-run. Don't ask, don't displace
          — leave it in the inbox saying so, and let the boss start it. */
@@ -4601,8 +4633,15 @@ ${d.text}` : d.text,
        park the step and say why. The wording only claims what the
        registry establishes — a run in flight with no card on this desk —
        and every cardless registrant is a chat surface (the @mention and
-       delegate paths are beginAgentRun's only other call sites). */
-    const chatCut = !displaced && agentAbortersRef.current.has(agent.id);
+       delegate paths are beginAgentRun's only other call sites).
+
+       That last claim had a third case it did not cover, and the sentence
+       went out wrong for it: a chain step dispatched from the tail of the
+       step before it, whose card has just gone `done` and so is no longer
+       a card on this desk. `running` excludes it now — the wording can go
+       on claiming a conversation because the only registrant that reaches
+       here is one. */
+    const chatCut = !displaced && running;
     if (chatCut && opts.auto) {
       setTasks(prev => prev.map(t => t.id === taskId
         ? { ...t, assignedTo: agent.id,
@@ -4987,7 +5026,9 @@ ${d.text}` : d.text,
           const depsReady = blockedBy.length === 0;
           if (depsReady) {
             if (task.autoDispatch) {
-              triggerChainStep(nextTask, cleanBuf, agent);
+              /* `controller` — this run's own registry entry, so the desk
+                 guards can tell the hand-off from an interruption. */
+              triggerChainStep(nextTask, cleanBuf, agent, controller);
             } else {
               onApprovalRequest({
                 id: HQ.uid('wf'),
@@ -5119,7 +5160,13 @@ ${d.text}` : d.text,
     }
   };
 
-  const triggerChainStep = React.useCallback((nextTask, priorResult, fromAgent) => {
+  /* `fromRun` — the finishing step's own AbortController, when the chain is
+     dispatched from inside that step's tail. It is how onTaskDropOnAgent
+     tells a hand-off from an interruption; without it the pipeline's own
+     last breath reads as a conversation somebody would be cutting into.
+     The approval path passes nothing, correctly: by the time the boss
+     stamps a step, the run that asked has long since left the registry. */
+  const triggerChainStep = React.useCallback((nextTask, priorResult, fromAgent, fromRun) => {
     // Find a suitable agent: prefer the same agent that did the prior step, else first idle
     const agent = fromAgent ||
       agents.find(a => a.id === nextTask.assignedTo) ||
@@ -5136,7 +5183,7 @@ ${d.text}` : d.text,
        the others dropped a label or a counter, this one dropped the entire
        reason the feature exists. Now handed over explicitly, and built
        inside onTaskDropOnAgent so the brief has one author. */
-    onTaskDropOnAgent(nextTask.id, agent, null, { auto: true, priorResult });
+    onTaskDropOnAgent(nextTask.id, agent, null, { auto: true, priorResult, fromRun });
   }, [agents, onTaskDropOnAgent]);
 
   // Memory

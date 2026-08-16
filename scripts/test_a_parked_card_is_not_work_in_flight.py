@@ -30,6 +30,12 @@ This suite lifts displacedTask out of hq-runtime.jsx and drives both
 directions, then pins the app.jsx call site to the registry so the pure
 function cannot be fed a guess.
 
+Since #129 the caller reads that registry into a named `running` a line
+earlier, because one registrant — a pipeline handing over from the tail of
+its own finishing step — is not a run this card would displace. The
+call-site check follows it there: `running` still has to trace back to the
+registry, it is just no longer spelled inline.
+
 Run: python3 scripts/test_a_parked_card_is_not_work_in_flight.py
 """
 import json
@@ -174,9 +180,12 @@ console.log(JSON.stringify(out));
     app = strip_comments(APP.read_text(encoding='utf-8'))
     m = re.search(
         r'const displaced = HQ\.displacedTask\(tasks,\s*agent\.id,\s*taskId,'
-        r'\s*agentAbortersRef\.current\.has\(agent\.id\)\)', app)
-    check('START asks the aborter registry whether a run is in flight', m
-          is not None)
+        r'\s*running\)', app)
+    check('START asks whether a run is in flight', m is not None)
+    check('...and that answer is the aborter registry\'s, not a guess',
+          re.search(r'const priorRun = agentAbortersRef\.current\.get\(agent\.id\);'
+                    r'.{0,400}?const running = !!priorRun', app, re.S) is not None,
+          '`running` must trace to the registry the abort itself rides')
     check('the old status-only find is gone',
           "t.assignedTo === agent.id && t.status === 'doing');" not in app)
     if m:

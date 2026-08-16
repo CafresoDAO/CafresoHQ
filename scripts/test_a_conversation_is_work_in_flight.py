@@ -75,11 +75,19 @@ def main():
     # ── the guard, pinned at the source ─────────────────────────────────
     bare = strip_comments(app)
     check('the cardless run is read off the same registry the abort rides',
-          re.search(r'const chatCut = !displaced &&'
-                    r' agentAbortersRef\.current\.has\(agent\.id\);', bare)
+          re.search(r'const priorRun = agentAbortersRef\.current\.get\(agent\.id\);',
+                    bare) is not None,
+          'app.jsx onTaskDropOnAgent: the run this guard speaks for must be '
+          'the aborter registry entry, the one the abort itself rides')
+    check('...minus the card the #86 guard already speaks for',
+          re.search(r'const chatCut = !displaced && running;', bare) is not None,
+          'app.jsx onTaskDropOnAgent: chatCut is the run in flight minus the '
+          'card #86 already speaks for')
+    check('...and minus the pipeline handing this very card over (#129)',
+          re.search(r'const running = !!priorRun && !handingOver;', bare)
           is not None,
-          'app.jsx onTaskDropOnAgent: chatCut must be the aborter registry '
-          'minus the card the #86 guard already speaks for')
+          'app.jsx onTaskDropOnAgent: a chain step dispatched from the tail of '
+          'the step before it is not a conversation — see #129')
     check('automation parks instead of asking or binning',
           'if (chatCut && opts.auto)' in bare)
     check('the boss-driven start asks first',
@@ -91,7 +99,10 @@ def main():
           'was mid-conversation when this step came up' in app)
 
     # ── behavior through the real lifted segment ────────────────────────
-    seg_start = app.index('const displaced = HQ.displacedTask(')
+    # From the registry read, not from `displaced`: since #129 the answer both
+    # guards run on is derived up here, and lifting below it would leave the
+    # harness scoring a `running` this suite made up.
+    seg_start = app.index('const priorRun = agentAbortersRef.current.get(agent.id);')
     seg_end = app.index('/* Starting clears the note:')
     segment = app[seg_start:seg_end]
     displaced_fn = brace_lift(runtime, 'function displacedTask(')

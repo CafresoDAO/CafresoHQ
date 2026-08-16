@@ -14259,3 +14259,76 @@ has to make again from scratch.** When a branch chooses to do nothing, that
 is still a choice with a reason behind it — and the reason is the only
 thing standing between a stopped pipeline and a board that looks idle by
 accident.
+
+## The pipeline's own last breath was read as somebody else's conversation
+
+Same two cards as the entry above, and this time the first one delivered.
+*Alpha probe one three one* came back with a real answer, filed to
+Deliveries, ✓ finished. The workflow was set to start the next step on its
+own. What the board showed a second later:
+
+    DONE · 2   Alpha probe one three one · ✓ finished
+    INBOX · 1  Beta probe one three one
+               ↩ Local Brain was mid-conversation when this step came up —
+                 start it when they're free
+
+There was no conversation. Nobody had chatted with Local Brain all session.
+
+The sentence comes from #90's guard, which exists for a good reason: the
+run registry holds one entry per coworker, `beginAgentRun` evicts whatever
+is there, and before #90 starting a card on a desk mid-reply killed the
+reply silently. That guard reads the registry — and the registry is exactly
+where the finishing step still was. The chain fires from the tail of the
+step's own `try`; its `endAgentRun` is in the `finally` underneath. So the
+step that had just delivered was still registered when it handed over, its
+card had already gone `done` (so `displacedTask`, which only speaks for
+cards, found nothing), and the run fell through to the branch whose words
+are about a chat.
+
+The measurement that settles it: started by hand a minute later, the same
+card, same desk, same brief ran first time and delivered. Nothing about the
+coworker had changed. The only difference was who dispatched it.
+
+Two things were wrong at once, and they are worth separating. The workflow
+did not advance — a pipeline set to auto-dispatch with one coworker on it,
+which is the ordinary case, could never take its own second step. And the
+office explained the failure with a fact it had not established. #90's
+comment even says where the line is: *"the wording only claims what the
+registry establishes — a run in flight with no card on this desk — and
+every cardless registrant is a chat surface (the @mention and delegate
+paths are beginAgentRun's only other call sites)."* That was true when it
+was written. The chain hand-off is a third cardless registrant, and it
+arrived without the comment being revisited.
+
+The fix is one word narrower than "check for chains". The desk asks the
+wrong question when it asks *is there a run here* — the registry entry
+either **is** the run handing this over, or it belongs to something else,
+and only the second case is what either guard is for. So the finishing run
+passes its own `AbortController` down with the hand-off, and the desk
+compares identities rather than counting entries. Both guards read the one
+answer. A chat opened during the card run cannot ride through on it,
+because `beginAgentRun` would have replaced the entry — the thing being
+compared against is gone by construction.
+
+What that leaves untouched is the point. The boss starting a card on a desk
+mid-conversation is still asked first, and a no still leaves the card where
+it was. A chain step landing on someone genuinely mid-card still parks,
+still names the card, and still never asks — because automation must not
+put a question the boss did not initiate in front of them. A card sitting
+in DOING with no run behind it — parked on a snag, or left there by a
+reload — is still not a run to work around.
+
+What the boss sees now, on a fresh pair of the same shape: Alpha delivers
+*"The alpha figure is 52…"*, files to Deliveries, ✓ finished — and Beta is
+picked up in the same breath, its brief carrying Alpha's answer, and comes
+back *"The beta figure is 60, which is the alpha figure plus eight."* The
+inbox column reads **0**. The workflow reads *ALPHA THEN BETA 132 · 2/2
+done*. Nowhere in the feed is there a line about a conversation, because
+there was no conversation to have a line about.
+
+**A guard that names a cause is making a claim, and its claim has to be
+re-earned every time a new caller reaches it.** #90's sentence was true
+about the two callers that existed when it was written. It became a false
+statement about a live pipeline the day a third one arrived, and nothing in
+the office noticed, because the guard was right about *what to do* and only
+wrong about *why* — and "why" is the half the boss reads.

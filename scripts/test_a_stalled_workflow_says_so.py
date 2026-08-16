@@ -386,7 +386,12 @@ const RUN = (tasksNow, task, nextId) => {
   const taskId = task.id;
   const cleanBuf = 'the stall text';
   const HQ = { uid: () => 'wf_x' };
-  const triggerChainStep = (t) => { log.dispatched = t.id; };
+  // This run's own registry entry. In scope at the real call site because
+  // the chain fires from the tail of the step's `try`, and handed down so
+  // the receiving desk can tell a hand-off from an interruption (#129).
+  const controller = { tag: 'the finishing run' };
+  const triggerChainStep = (t, _prior, _from, fromRun) => {
+    log.dispatched = t.id; log.handedOver = fromRun && fromRun.tag; };
   const onApprovalRequest = (a) => { log.asked = a.title; };
   const setTasks = (fn) => fn(tasksNow).forEach(t => {
     if (t.stalledNote) log.notes.push([t.id, t.stalledNote]); });
@@ -429,6 +434,8 @@ console.log(JSON.stringify(out));
               deliv['dispatched'] == 't2', deliv)
         check('...and says nothing about waiting',
               not deliv['notes'] and not deliv['rows'], deliv)
+        check('...and hands its own run down with the step (#129)',
+              deliv.get('handedOver') == 'the finishing run', deliv)
         check('a held step under step-approve gets the asking sentence',
               H['manual']['notes'] and 'ask you' in H['manual']['notes'][0][1],
               H['manual']['notes'])
