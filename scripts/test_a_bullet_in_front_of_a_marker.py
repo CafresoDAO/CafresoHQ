@@ -94,7 +94,7 @@ def main():
     if not orphan:
         raise SystemExit('could not find any ORPHAN_TAG_* const')
     js += '\n'.join(orphan) + '\n'
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
+    for fn in ('reasoningPatterns', 'stripReasoning', 'maskReasoning', 'extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'extractApproval',
                'isHandoffPlaceholder', 'placeholderRefusal', 'unsentBlocks',
                'shownBody', 'visibleReply'):

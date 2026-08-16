@@ -137,7 +137,7 @@ def main():
     # when the strip leaves nothing, and that is the line the measured bug
     # actually rode in on. A test that stops at the stripper is a test of the
     # stripper.
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
+    for fn in ('reasoningPatterns', 'stripReasoning', 'maskReasoning', 'extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'extractApproval',
                'isHandoffPlaceholder', 'placeholderRefusal', 'unsentBlocks',
                'shownBody', 'visibleReply'):

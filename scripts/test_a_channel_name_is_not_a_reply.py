@@ -119,7 +119,12 @@ def main():
         print('  SKIP  node not on PATH — the frame sweep needs it')
         return 1 if FAILS else 0
 
-    js = body + r'''
+    # cleanHarmony's dependency chain, lifted by name — see the note on
+    # reasoningPatterns in hq-runtime.jsx for why these are functions.
+    js = (brace_lift(code, 'function reasoningPatterns(') + '\n'
+          + brace_lift(code, 'function stripReasoning(') + '\n'
+          + brace_lift(code, 'function maskReasoning(') + '\n'
+          + body) + r'''
 // Emissions in the shape gpt-oss actually produces. `throttleTokens` cleans
 // the accumulated buffer once per frame, so EVERY prefix of each of these
 // is rendered in the coworker's bubble on the way past.

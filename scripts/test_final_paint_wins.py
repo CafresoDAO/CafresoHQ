@@ -71,7 +71,7 @@ def check(name, cond, detail=''):
 def run_js(cases_js):
     text = SRC.read_text(encoding='utf-8')
     wanted = []
-    for fn in ('cleanHarmony', 'throttleTokens'):
+    for fn in ('reasoningPatterns', 'stripReasoning', 'maskReasoning', 'cleanHarmony', 'throttleTokens'):
         m = re.search(r'^function ' + fn + r'\(.*?^\}', text, re.M | re.S)
         if not m:
             raise SystemExit(f'could not find {fn} in {SRC}')

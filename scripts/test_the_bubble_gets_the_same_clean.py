@@ -113,7 +113,7 @@ def main():
     # cleans down to nothing — which is exactly the case a bad strip
     # produces, so leaving them out made the harness crash instead of
     # report on the one input that matters most. Found by fire-testing.
-    for fn in ('extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
+    for fn in ('reasoningPatterns', 'stripReasoning', 'maskReasoning', 'extractAcks', 'stripAcks', 'stripOrphanTags', 'stripBlocks',
                'stripSelfLabel', 'extractAllDMs', 'isHandoffPlaceholder',
                'placeholderRefusal', 'unsentBlocks', 'extractApproval',
                'shownBody', 'visibleReply', 'cleanHarmony'):

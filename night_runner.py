@@ -137,6 +137,52 @@ NIGHT_IGNORES = {'ACK'}
 # tripping it.
 _UNSUPPORTED_RE = re.compile(r'\[\s*([A-Za-z_]{3,})\s*[:\]]')
 
+# ── Reasoning blocks (parity with REASONING_TAGS in hq-runtime.jsx) ──────────
+# The night shift runs local brains by design — the free, tireless ones — and
+# those are exactly the models that inline their chain of thought as
+# `<think>…</think>` in `content`. Three things go wrong at 3am without this,
+# all of them the browser-side defect measured on 2026-08-16 (office 9280):
+# the monologue lands in the morning report; a marker the model was only
+# WEIGHING gets executed; and find_unsupported_tool reports "reached for
+# publishing" about a tool the coworker explicitly talked itself out of —
+# an accusation, in the morning report, for something that never happened.
+#
+# The tag list is pinned on both sides by
+# scripts/test_reasoning_is_not_the_bosss.py, the same way _TOOL_RE_SRC is
+# pinned by scripts/test_night_grammar.py: a comment claiming parity is not
+# parity, it is a promise nothing verifies.
+REASONING_TAGS = 'think|thinking|reasoning|reflection'
+_REASONING_RES = (
+    re.compile(r'<(%s)\b[^>]*>[\s\S]*?</\1\s*>' % REASONING_TAGS, re.I),
+    re.compile(r'^[\s\S]*?</(?:%s)\s*>' % REASONING_TAGS, re.I),
+    re.compile(r'<(?:%s)\b[^>]*>[\s\S]*$' % REASONING_TAGS, re.I),
+)
+
+
+def mask_reasoning(text):
+    """Blank reasoning blocks in place — what a coworker only THOUGHT.
+
+    Equal-length blanking, like the browser's maskReasoning: find_first_tool
+    returns the match SPAN and the hop loop slices the reply by it, so
+    removing bytes here would cut the reply in the wrong place.
+    """
+    s = text or ''
+    if '<' not in s:
+        return s
+    for rx in _REASONING_RES:
+        s = rx.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), s)
+    return s
+
+
+def strip_reasoning(text):
+    """Remove reasoning blocks outright — for text headed at the boss."""
+    s = text or ''
+    if '<' not in s:
+        return s
+    for rx in _REASONING_RES:
+        s = rx.sub('', s)
+    return s.strip()
+
 
 def night_cannot_sentence(tool):
     """§7 shape, inside NIGHT_ERROR_MAX: what happened, plus the way forward."""
@@ -228,6 +274,7 @@ def find_unsupported_tool(text):
     for unavailable tools in harmony as well — find_first_tool already
     returns None for both, so both were silent.
     """
+    text = mask_reasoning(text)   # weighing a tool is not reaching for one
     for m in _UNSUPPORTED_RE.finditer(text or ''):
         name = m.group(1).upper()
         if name in NIGHT_CANNOT:
@@ -249,7 +296,7 @@ def strip_unsupported_markers(text):
     """
     def _drop(m):
         return '' if m.group(1).upper() in NIGHT_CANNOT else m.group(0)
-    out = re.sub(r'\[\s*([A-Za-z_]{3,})\s*:[^\]\n]*\]', _drop, text or '')
+    out = re.sub(r'\[\s*([A-Za-z_]{3,})\s*:[^\]\n]*\]', _drop, strip_reasoning(text))
     return ' '.join(out.split())
 
 
@@ -665,6 +712,7 @@ def find_first_tool(text):
     and other OSS models" -- both of which this machine's own LM Studio
     catalog actually offers, so this is not a hypothetical, it is the
     other half of a fix that only shipped to chat."""
+    text = mask_reasoning(text)   # see mask_reasoning: thinking is not calling
     best = None
     for name, rx in TOOL_RES.items():
         m = rx.search(text or '')

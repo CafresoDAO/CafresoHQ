@@ -419,7 +419,12 @@ function throttleTokens(setChat, msgId) {
    bracket/case/whitespace variations. */
 function extractApproval(text) {
   if (!text) return null;
-  const m = String(text).match(/\[\s*NEEDS[_ ]APPROVAL\s*:\s*([^\]\n]+)\]/i);
+  /* Masked, like every other "did they actually do this" reader: a stamp a
+     coworker CONSIDERED asking for, inside its own reasoning, must not put
+     a card on the boss's desk. Applied at the four extractors rather than
+     at their ten call sites — the rule belongs to the question, not to
+     each place that asks it. See maskReasoning. */
+  const m = maskReasoning(text).match(/\[\s*NEEDS[_ ]APPROVAL\s*:\s*([^\]\n]+)\]/i);
   if (!m) return null;
   const desc = m[1].trim();
   /* A stamp is a DECISION, and a decision has to say what is being decided.
@@ -485,6 +490,7 @@ function approvalBody(text, limit = 1200) {
    — those are system-set transitions and an agent shouldn't be able to
    spoof them. */
 function extractAcks(text) {
+  text = maskReasoning(text);   // see extractApproval
   const re = /\[\s*ACK\s*:\s*([a-z_]+)\s*(?::\s*([^\]]*))?\]/gi;
   const out = [];
   let m;
@@ -1366,6 +1372,15 @@ function unfiledPath(text, visits, unwrittenFn) {
    a marker addressed to itself is not reported as a person left waiting.
    `skipKinds` is the task path's exception, documented on unsentBlocks. */
 function honestyNotes(raw, opts) {
+  /* Every guard below reads this buffer to accuse the coworker of leaving
+     something unsent, unclosed or unfiled. A marker written inside a
+     reasoning block was never sent, so there is nothing to accuse: an
+     unclosed `[VAULT_NEW:` that the model was only sketching out would
+     otherwise print "no file reached the cabinet" about a file nobody was
+     promised. `shownBody` below inherits the mask too, and should — its
+     two guards assert about what the boss can READ, and the boss does not
+     read the reasoning (cleanHarmony removes it). */
+  raw = maskReasoning(raw);
   const o = opts || {};
   const delivered = o.delivered || 0;
   const out = [];
@@ -1550,6 +1565,7 @@ function extractDM(text) {
    see the note in detectToolCall for what happens when they do. */
 function extractAllDMs(text) {
   if (!text) return [];
+  text = maskReasoning(text);   // see extractApproval
   const out = [];
   const re = /\[\s*DM_TO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*DM_TO\s*\]/gi;
   let m, lastEnd = 0;
@@ -1592,7 +1608,7 @@ function extractAllDMs(text) {
    that specialist with CafresoHQ out of the loop. */
 function extractHandoff(text) {
   if (!text) return null;
-  const m = String(text).match(/\[\s*HANDOFF_TO\s*:\s*([^\]\n]+)\]\s*\n?([\s\S]*?)\n?\[\s*\/\s*HANDOFF_TO\s*\]/i);
+  const m = maskReasoning(text).match(/\[\s*HANDOFF_TO\s*:\s*([^\]\n]+)\]\s*\n?([\s\S]*?)\n?\[\s*\/\s*HANDOFF_TO\s*\]/i);   // see extractApproval
   return m ? { to: m[1].trim(), body: (m[2] || '').trim() } : null;
 }
 
@@ -3242,10 +3258,19 @@ function upToToolCall(text, raw) {
 }
 
 function detectToolCall(text, tools) {
-  const jsonCall = detectJsonToolCall(text, tools);
+  /* A marker a coworker wrote while THINKING is not a call. Measured
+     2026-08-16 (office 9280): a brain reasoned "I could run [VAULT_READ:
+     Reports/q3-summary.md] to look — but that file almost certainly does
+     not exist yet … better to simply ask the boss", and the office ran the
+     read it had just talked itself out of, then showed the boss the snag.
+     Deliberating about a tool is the opposite of calling it, and every
+     detector below has to agree about that, so the mask goes here rather
+     than in each of them. See maskReasoning for why it blanks in place. */
+  const scan = maskReasoning(text);
+  const jsonCall = detectJsonToolCall(scan, tools);
   if (jsonCall) return jsonCall;
   for (const t of tools) {
-    const m = String(text).match(t.re);
+    const m = String(scan).match(t.re);
     if (m) return { tool: t, arg: m[1], body: m[2] || '', raw: m[0] };
   }
   /* A [DM_TO: name] opener whose [/DM_TO] simply never got emitted.
@@ -3273,7 +3298,7 @@ function detectToolCall(text, tools) {
      offline fallback, the approval scan reading stripped text). Safe to
      call post-stream, which every caller of detectToolCall already is --
      both `await` the full response before reaching this line. */
-  const recovered = extractAllDMs(text);
+  const recovered = extractAllDMs(scan);
   if (recovered.length) {
     const dmTool = tools.find(t => t.name === 'DM_TO');
     if (dmTool) {
@@ -3285,7 +3310,7 @@ function detectToolCall(text, tools) {
   // emit tool calls as <|channel|>commentary to=NAME<|message|>{…json…}
   // We map the harmony name to one of our registered tools and extract
   // the arg from common JSON keys.
-  const h = extractHarmonyToolCalls(text);
+  const h = extractHarmonyToolCalls(scan);
   if (h.length) {
     for (const call of h) {
       const tool = tools.find(t => t.name === call.tool);
@@ -3308,12 +3333,130 @@ function supportsJsonToolFormat(model) {
   return capableLocal.some(n => (model || '').toLowerCase().includes(n));
 }
 
+/* ── The third wire format for "this is not for the boss" ─────────────────
+   A reasoning model's chain of thought reaches this office three ways, and
+   until this change only two of them were handled:
+
+     1. `delta.reasoning_content`, its own SSE field. Routed to the
+        onReasoning channel in claude-client.jsx and dropped when nobody
+        claims it — and nobody does, so the office's shipped answer for a
+        brain's private reasoning is "drop it". Fixed when LM Studio's
+        gemma-4 opened a FILED message with "💭 Thinking Process: 1.
+        **Analyze the Request:** The user is asking me to...".
+     2. `<|channel|>analysis<|message|>…`, harmony. Removed whole by
+        cleanHarmony below, whose own comment states the rule outright:
+        "chain of thought and tool calls are not for the boss".
+     3. `<think>…</think>`, inline in `delta.content` — deepseek-r1, qwen3,
+        and everything Ollama's OpenAI-compatible endpoint serves. Matched
+        by nothing, anywhere in the tree.
+
+   The note that fixed (1) ends "One concept, two wire formats, and only one
+   of them was handled." It was three. Which one a boss meets is not a
+   property of the model they hired: the SAME deepseek-r1 splits its
+   thinking into `reasoning_content` through one local runtime and inlines
+   `<think>` through another, so the identical thought was silently dropped
+   or pasted into the bubble depending on which daemon happened to be
+   running. Same brain, same thought, opposite treatment — which is the
+   whole of it, on a product whose point is that the brain is swappable.
+
+   Measured 2026-08-16, office 9280, canned brain on the LM Studio door: the
+   boss's bubble carried the tags and the full deliberation, and because the
+   tool parser had already eaten the marker inside the reasoning, the
+   sentence arrived mutilated — "I could run  to look". The office deleted
+   the evidence of what it was about to do, and then did it.
+
+   The tag list IS a list, and #73's lesson is that a list silently stops
+   being complete. It stays narrow on purpose: these four delimiters only
+   ever appear as reasoning scaffolding, and a wrong strip costs the boss
+   real words — worse than a leaked tag. An unknown fifth convention leaks
+   visibly, as text, which is the failure direction to prefer. */
+/* Built inside a function, cached on first call, rather than as five
+   module-level consts. Eight suites lift `cleanHarmony` out of this file by
+   name and run it under node; a lifted function whose dependency is a bare
+   const needs the const lifted too, at every one of those call sites, and
+   the failure is a ReferenceError deep in a harness rather than anything
+   legible. One liftable name is one line in a tuple those suites already
+   keep. The regexes are stateless apart from REASONING_CLOSED's /g lastIndex,
+   which every use resets via String.replace. */
+function reasoningPatterns() {
+  if (reasoningPatterns._cache) return reasoningPatterns._cache;
+  /* Declared HERE, not at module scope, for the same reason the patterns
+     are: the suites that lift this function lift functions only, and a
+     free const in the body is a ReferenceError they cannot see coming.
+     scripts/test_reasoning_is_not_the_bosss.py compares this string to
+     night_runner.REASONING_TAGS, so the two cannot drift. */
+  const REASONING_TAGS = 'think|thinking|reasoning|reflection';
+  const T = REASONING_TAGS;
+  /* An opening tag that has not finished ARRIVING. #75's lesson one level
+     down: that fix was "the word `final` alone in the bubble", a frame where
+     the stream had emitted `<|channel|>final` but not yet `<|message|>`, and
+     the pattern required the token that was missing. Same shape here — the
+     frame whose buffer ends `…<think` has no `>` yet, so the opener pattern
+     cannot match and the boss reads a stray `<think` for one frame. Found by
+     sweeping every prefix of the measured reply rather than by reasoning
+     about it: it was 1 frame in 442.
+
+     Derived from REASONING_TAGS rather than written out, so the partial can
+     never disagree with the whole. At least one letter is required — a lone
+     trailing `<` is ordinary prose far more often than it is a tag
+     starting. */
+  const partial = T.split('|')
+    .flatMap(t => Array.from({ length: t.length }, (_, i) => t.slice(0, i + 1)))
+    .sort((a, b) => b.length - a.length).join('|');
+  return (reasoningPatterns._cache = [
+    // closed: opener, thought, closer
+    new RegExp('<(' + T + ')\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>', 'gi'),
+    // a closer with no opener — some deepseek-r1 builds send the thought
+    // first and mark only where it ends
+    new RegExp('^[\\s\\S]*?<\\/(?:' + T + ')\\s*>', 'i'),
+    // an opener with no closer — EVERY mid-stream frame, plus any reply cut
+    // off inside the thought
+    new RegExp('<(?:' + T + ')\\b[^>]*>[\\s\\S]*$', 'i'),
+    new RegExp('<(?:' + partial + ')$', 'i'),
+  ]);
+}
+
+function stripReasoning(text) {
+  const s = String(text || '');
+  if (s.indexOf('<') < 0) return s;
+  let out = s;
+  for (const re of reasoningPatterns()) out = out.replace(re, '');
+  return out === s ? s : out.trim();
+}
+
+/* Blank reasoning blocks to EQUAL LENGTH — the "did they actually do this"
+   half, for every function that reads a raw buffer to decide whether a
+   coworker called a tool, asked for a stamp, or handed work over.
+
+   Equal-length blanking rather than deletion because `detectToolCall`
+   returns the matched text as `raw` and `upToToolCall` then finds it by
+   index in the ORIGINAL buffer; removing bytes here would cut the reply at
+   the wrong place. Newlines are preserved so line-anchored patterns outside
+   the block still see the same line structure. */
+function maskReasoning(text) {
+  const s = String(text || '');
+  if (s.indexOf('<') < 0) return s;
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  let out = s;
+  for (const re of reasoningPatterns()) out = out.replace(re, blank);
+  return out;
+}
+
 /* Strip harmony channel/message/end tags from a block of text, keeping only
    the "final" channel content (what the user is meant to see). Non-harmony
-   text passes through unchanged. */
+   text passes through unchanged.
+
+   Reasoning blocks go first, and this function is where they go because it
+   is the one chokepoint every reply passes: throttleTokens.flush() runs it
+   per animation frame for the live bubble, and all ten final-text recipes
+   wrap it around visibleReply. A separate seam would be a second place to
+   keep in sync, which is the split this file has already been bitten by
+   three times. The name stays `cleanHarmony` — it is exported and read in
+   six suites — so the docstring carries what it actually does. */
 function cleanHarmony(text) {
-  if (!text || text.indexOf('<|') < 0) return text;
-  let out = String(text);
+  const t = stripReasoning(text);
+  if (!t || t.indexOf('<|') < 0) return t;
+  let out = String(t);
   /* Remove every channel block that is not `final`, content and all —
      chain of thought and tool calls are not for the boss. Match up to the
      next channel/end/call/return marker.
@@ -4278,7 +4421,7 @@ const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, ELEVATION_TOOL_IDS, CHIEF_OF_STAFF,
   MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, displacedTask,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, reasoningPatterns, stripReasoning, maskReasoning, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
   /* Exported for the three surfaces that describe a coworker's reach — the
      candidate shelf, the coworker card, the inspect panel. They must all ask

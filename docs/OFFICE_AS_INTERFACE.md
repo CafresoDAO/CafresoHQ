@@ -13786,3 +13786,94 @@ import line or the table body, and none looked at the seam between them —
 while at runtime that mismatch is a module error that blanks the whole
 office. A suite can cover both ends of a wire and still not test that it is
 connected.
+
+## The same brain's thinking was private on one daemon and public on the next
+
+Asked to summarise last quarter, a coworker on a local brain thought first,
+out loud, in `<think>` tags. The boss got the monologue verbatim. Then the
+office ran a vault read the model had **explicitly talked itself out of** —
+`Reports/q3-summary.md`, which the reply's own reasoning said "almost
+certainly does not exist yet" — and put the resulting snag on the desk:
+
+    ⚠ Couldn't open Reports/q3-summary.md
+      That didn't work — not found
+
+And the sentence the boss read had a hole in it, because the marker had been
+stripped out of the middle of the thought on its way past:
+
+    I could run  to look — but that file almost certainly does not exist yet
+
+Three failures, one cause. The office had two of the three wire formats
+chain of thought arrives in and no idea there was a third. `claude-client`
+routes the OpenAI `delta.reasoning_content` field to `onReasoning`, which
+has no consumer anywhere and drops it; `cleanHarmony` removes
+`<|channel|>analysis`. Nothing matched `<think>` inline in `delta.content` —
+which is how deepseek-r1 and qwen3 arrive through Ollama's OpenAI-compatible
+endpoint.
+
+What makes that a product defect rather than a missing feature is the
+asymmetry it produces. **The same model, on the same machine, was private
+through one local daemon and public through the next** — LM Studio splits
+the thought into `reasoning_content` and the office silently drops it;
+Ollama inlines it and the office pasted it into the boss's bubble and acted
+on it. On a product whose whole premise is that the brain is swappable, the
+brain you swap to changes whether your coworker has an inner voice.
+
+The fix has two halves because the question has two forms. `stripReasoning`
+removes the block — the display half, and it goes inside `cleanHarmony`
+because that is the one chokepoint every reply passes: `throttleTokens.flush()`
+runs it per animation frame for the live bubble and ten final-text recipes
+wrap it around `visibleReply`. `maskReasoning` blanks the block **to equal
+length** — the "did they actually do this" half — and it goes inside the
+four extractors rather than at their ten call sites, because the rule
+belongs to the question, not to each place that asks it. Equal length
+because `detectToolCall` returns the matched text as `raw` and
+`upToToolCall` then finds it by index in the *original* buffer; deleting
+bytes there would cut the reply somewhere else, silently. `night_runner.py`
+gets the same pair, with the tag list pinned on both sides by the suite —
+the night shift runs local brains by design, so it is the surface most
+exposed to this, and a comment claiming parity is a promise nothing checks.
+
+Two things were found by running the thing rather than reading it.
+
+The first is #75's lesson one level down. The frame sweep — clean every
+prefix of the measured reply, one character longer each time, and ask
+whether the boss saw a fragment — found **one leaking frame in 442**: the
+frame whose buffer ends `…<think`, with no `>` yet, so the opener pattern
+could not match. That is exactly #75's shape ("the word `final` alone in
+the bubble", a frame where the pattern required the token that had not
+arrived), and it took a sweep to see because no amount of staring at a
+finished reply contains a half-arrived tag. The partial pattern is derived
+from the tag list rather than written out, so it cannot disagree with the
+whole.
+
+The second only appeared under fire, and it is a content-loss bug rather
+than a leak, which is why every check pointed the other way. The
+closer-with-no-opener pattern is greedy from the start of the buffer, so it
+is only safe while the closed-block pattern has already eaten every block
+that *has* a closer. Delete the closed pattern and `Sure — one moment.
+<think>…</think> The answer is 4.` loses its first line — the thought
+removed correctly, the boss's answer quietly shortened. Two patterns whose
+correctness is a property of their **order**, with nothing saying so until
+an arm removed one.
+
+A third arm was uncaught for a subtler reason: a mask that pads with spaces
+instead of blanking per character keeps the byte count and still collapses
+a multi-line thought into one very long line. `maskReasoning`'s docstring
+promised "newlines are preserved so line-anchored patterns outside the block
+still see the same line structure", five readers in that file are built with
+the `m` flag, and nothing verified the promise. Per-line lengths pin it now.
+§6's habit generalises past error text: **a property stated in a comment is
+a promise, and a promise nothing checks is decoration.**
+
+One structural note, because it cost a full red suite. Eight sibling suites
+lift `cleanHarmony` out of `hq-runtime.jsx` **by name** and run it under
+node. The first draft put the patterns in five module-level `const`s; every
+one of those eight harnesses died with `ReferenceError: stripReasoning is
+not defined`, a failure that names nothing about what is actually wrong.
+All of it is now one self-contained `reasoningPatterns()` with the tag list
+declared inside it, and the suite pins the shape — `^function <name>(` for
+each — because the constraint is invisible from the file that has to obey
+it. **The lift lists are a list of names, and #73's lesson applies: a list
+of names is a list that silently stops being complete.**
+

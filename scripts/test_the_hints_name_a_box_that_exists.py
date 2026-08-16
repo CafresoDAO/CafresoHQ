@@ -369,7 +369,10 @@ console.log(JSON.stringify(R));
     #
     # Run it the way app.jsx runs it, in that order, so the test would have
     # caught the original.
-    js2 = brace_lift(src, 'function cleanHarmony(') + '\n'
+    js2 = brace_lift(src, 'function reasoningPatterns(') + '\n'
+    js2 += brace_lift(src, 'function stripReasoning(') + '\n'
+    js2 += brace_lift(src, 'function maskReasoning(') + '\n'
+    js2 += brace_lift(src, 'function cleanHarmony(') + '\n'
     js2 += brace_lift(src, 'function throttleTokens(') + '\n'
     js2 += r'''
 const NOTE = '_(they reached for Code Exec, which they don’t have.)_';
