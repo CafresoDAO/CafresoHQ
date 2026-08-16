@@ -159,6 +159,15 @@ const classifyStreamFailure = (s) => %s;
    createMessage grew the reference and this harness went red for the
    right reason — the lift is the whole point of the pattern. */
 %s
+/* The two refs that bracket a boss turn, added 2026-08-16 by #120: the ask
+   opens the turn and settling it closes the turn again, so that the
+   composer's ■ Stop can reach the runs this ask started and no others.
+   Stubbed rather than asserted on — the scoping has its own suite
+   (test_stop_takes_back_only_your_turn). What matters here is that they
+   are the SAME two refs the shipped functions read, so this harness goes
+   red if the bracket is renamed out from under it. */
+const bossTurnRef = { current: null };
+const turnRunsRef = { current: new Set() };
 let STORE = [];
 const messagesRef = { get current() { return STORE; } };
 const setMessages = (fn) => { STORE = fn(STORE); };

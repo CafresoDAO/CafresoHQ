@@ -13525,3 +13525,73 @@ record doorless, or the suite is proving nothing. Sixteen fire arms, all
 caught, including the two that hurt: a set that is hand-written and
 happens to be right today, and a derivation that reads the table's
 predicate backwards.
+
+## The little Stop was the big red brake with a quieter tooltip
+
+Kip was four minutes into a job the boss had delegated from the
+composer's own hand-off menu. The boss then asked the chief of staff an
+unrelated question — different subject, different coworker — and pressed
+the ■ Stop beside the composer to take that question back. Both records
+went to `cancelled`. Kip's delegated job, which the question had nothing
+to do with, died with it. No dialog. No ticker line. The topbar's ■ STOP
+ALL, performing the identical sweep, first asks *"This will stop 2
+coworkers mid-reply and pause 0 running missions"* and then writes what
+it did.
+
+The reach was right; the scope was borrowed. ■ Stop was once a no-op for
+multi-agent phases — the panel held its own controller for the CEO
+stream, and the room, @mention, brainstorm and hand-off sends run
+through per-agent controllers the panel never saw, so the longest
+replies in the product were the ones the button could not touch. The fix
+for that pointed it at `abortAllAgentRuns`, and `agentAbortersRef` is
+keyed by agent across every dispatch path — a task card dropped on a
+desk exactly as much as a specialist the boss's turn pulled in. So the
+small button acquired the brake's reach without the brake's confirm, its
+count, or its line in the ticker: §5 in reverse, an unlocked door where
+the boss expected a narrow one.
+
+A boss turn is now a bracket. `recordBossAsk` opens it, `settleBossAsk`
+closes it on every ending, and a run is filed under the turn if the turn
+was open when the run STARTED — anything already under way when the boss
+began typing is somebody else's job. ■ Stop sweeps that set;
+■ STOP ALL still sweeps the office. The office sweep bumps both epochs,
+because stopping everything stops the turn too.
+
+Three things worth saying plainly rather than leaving to be found:
+
+The meeting loop moved to the turn epoch. A meeting IS the boss's turn,
+so it now adjourns when they stop it from the composer, which the office
+epoch alone could never have done — and it still adjourns on STOP ALL,
+by way of that double bump. Its line changed from "meeting adjourned —
+STOP ALL" to "you stopped it", because the loop cannot tell which button
+was pressed and both are the boss.
+
+A note held in the #98 outbox is the one place the two stops genuinely
+differ, and the record now says which. An office sweep drops any waiting
+note. A turn stop drops only a note this turn put there — a coworker's
+DM that was already queued when the boss started typing is not theirs to
+withdraw. Whether the dispatch belongs to the turn is read at entry, not
+at the wait, because the turn can close while the note holds.
+
+And `test_a_stop_stops_the_outbox_too.py` had asserted, as a passing
+check, that the composer's ■ Stop rides the office-wide sweep. It did.
+The suite was a witness FOR this bug, in a file whose subject is a
+different one — the fifth sibling suite in this run of tickets to pin
+today's arrangement rather than its own claim. It now pins the claim:
+STOP ALL's reach is undiminished, and the little button can no longer
+borrow it.
+
+The new suite (26 checks) lifts `beginAgentRun`, both sweeps, and the
+real open/close statements out of the two ask functions, and drives them
+in node against real `AbortController`s. Two of eighteen fire arms
+survived the first pass, both of them the turn's bookkeeping going stale
+— an open that does not clear the last turn's runs, and a sweep that
+leaves its own on the books. Neither changes anything today, because the
+other end tidies up; both are how the next unsettled ask hands its
+coworkers to the next ■ Stop. They are now driven, not eyeballed.
+
+Verified live on office 9272 against a canned brain: with Kip
+`in_progress` on a 240-second delegated job, an unrelated ask to the
+chief of staff was stopped from the composer — the ask went `cancelled`,
+Kip stayed `in_progress`, and the tooltip the boss reads first now says
+which of the two buttons they are pressing.

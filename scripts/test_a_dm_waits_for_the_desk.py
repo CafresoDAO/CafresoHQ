@@ -119,11 +119,15 @@ def main():
         'const HQ = { uid: () => "m_x" };\n'
         'let calls;\n'
         'const agentAbortersRef = { current: new Map() };\n'
-        # The #101 stop epoch is a free variable of the lifted block now.
-        # Never bumped here: these drives are about WAITING, and the
-        # swept-mid-wait ending has its own suite
-        # (test_a_stop_stops_the_outbox_too).
+        # The #101 stop epoch is a free variable of the lifted block now,
+        # and since #120 so are the turn epoch and the turn-membership flag
+        # the dispatch reads at entry. Never bumped here: these drives are
+        # about WAITING, and the two swept-mid-wait endings have their own
+        # suites (test_a_stop_stops_the_outbox_too for the office sweep,
+        # test_stop_takes_back_only_your_turn for the scoped one).
         'const stopEpochRef = { current: 0 };\n'
+        'const turnEpochRef = { current: 0 };\n'
+        'const inBossTurn = false;\n'
         'const agentsRef = { current: [] };\n'
         'let dmFrom = null;\n'
         'let onTick = null;\n'

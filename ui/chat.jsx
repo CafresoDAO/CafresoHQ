@@ -62,7 +62,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
    the missions door lives one level down inside ROOMS. The research
    thread is read-only, so that door was the only way to start a mission
    and the office was naming it wrong. */
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, onOpenResearch = null, stopEpochRef = null, onBossAsk = null, onBossAskSettled = null }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopTurn = null, onHire = null, onOpenResearch = null, turnEpochRef = null, onBossAsk = null, onBossAskSettled = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -409,17 +409,21 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                room fill in turn instead of three bubbles racing. */
             const heardSoFar = [];
             /* Turn-taking is exactly what makes this loop leak past a
-               STOP ALL: aborting attendee two's stream does nothing to
-               stop the loop from DISPATCHING attendee three — a brand-new
-               run, launched after the boss said stop. The epoch is read
-               at the top of every turn; a bump means the sweep ran and
-               the meeting adjourns with the truth about who never spoke. */
-            const stopEpochAtStart = stopEpochRef ? stopEpochRef.current : null;
+               stop: aborting attendee two's stream does nothing to stop
+               the loop from DISPATCHING attendee three — a brand-new run,
+               launched after the boss said stop. The epoch is read at the
+               top of every turn; a bump means the sweep ran and the
+               meeting adjourns with the truth about who never spoke.
+
+               The TURN epoch, which the office sweep bumps as well, so
+               both buttons still adjourn: a meeting is the boss's turn,
+               and ■ Stop is now scoped to exactly that. */
+            const turnEpochAtStart = turnEpochRef ? turnEpochRef.current : null;
             for (const [turnIdx, a] of recipients.entries()) {
-              if (stopEpochRef && stopEpochRef.current !== stopEpochAtStart) {
+              if (turnEpochRef && turnEpochRef.current !== turnEpochAtStart) {
                 const left = recipients.length - turnIdx;
                 setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-                  text: `(meeting adjourned — STOP ALL. ${left} attendee${left === 1 ? '' : 's'} never got their turn.)`,
+                  text: `(meeting adjourned — you stopped it. ${left} attendee${left === 1 ? '' : 's'} never got their turn.)`,
                   thread: activeThread }]);
                 break;
               }
@@ -1040,10 +1044,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
 
   /* Stop reaches BOTH abort surfaces: the panel's own CEO controller and the
      per-agent controllers that dispatchToAgent registers in the host (room /
-     @-mention / brainstorm / handoff sends run through those). */
+     @-mention / brainstorm / handoff sends run through those) — but only the
+     ones THIS TURN started. `onStopAll` used to be wired here, which made the
+     little button the office-wide emergency brake without the brake's confirm
+     or its accounting: see abortTurnAgentRuns in app.jsx for the run where it
+     killed a delegated job the boss had not asked it to touch. */
   const stop = () => {
     if (abortRef.current) abortRef.current.abort();
-    if (onStopAll) onStopAll();
+    if (onStopTurn) onStopTurn();
   };
 
   /* When the user types @, scan backwards from the caret to see if we're
@@ -1420,7 +1428,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             </span>
           )}
           {streaming
-            ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Stop streaming">■ Stop</button>
+            ? <button className="composer-mini composer-mini--danger" onClick={stop} title="Take back this turn — the reply being written and anyone it pulled in. Coworkers on other jobs keep going; ■ STOP ALL up top stops everything.">■ Stop</button>
             : <button className="composer-mini composer-mini--primary" onClick={send} disabled={backendDown}
                 title={backendDown ? 'Your office is offline' : 'Send (Enter)'}>Send ↵</button>}
         </div>

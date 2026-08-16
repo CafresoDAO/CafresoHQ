@@ -20,14 +20,26 @@ kills work in FLIGHT:
   - the meeting loop takes turns sequentially, so aborting attendee
     two's stream never stops attendee three from being DISPATCHED.
 
-The fix is one epoch: `stopEpochRef` bumps ONLY inside the shared sweep
-(abortAllAgentRuns — which onStopAll, the composer's ■ Stop, and the
-unmount cleanup all ride; a per-desk stop does NOT bump, freeing one
-desk is not "stop everything"). The wait loop captures the epoch before
-waiting and, on a bump, files 'cancelled' (kind 'stopped-all') and says
-what was NOT delivered; the fanout gates drop queued DMs on an aborted
-run and say what the stop ate; the meeting adjourns with the truth
-about who never spoke.
+The fix is one epoch: `stopEpochRef` bumps ONLY inside the office-wide
+sweep (abortAllAgentRuns — which onStopAll and the unmount cleanup ride;
+a per-desk stop does NOT bump, freeing one desk is not "stop
+everything"). The wait loop captures the epoch before waiting and, on a
+bump, files 'cancelled' (kind 'stopped-all') and says what was NOT
+delivered; the fanout gates drop queued DMs on an aborted run and say
+what the stop ate; the meeting adjourns with the truth about who never
+spoke.
+
+Amended 2026-08-16 by #120. The composer's ■ Stop used to ride that same
+office-wide sweep, and this suite asserted it did — which made this file
+a witness FOR a bug: the little button was stopping coworkers on jobs
+the boss's turn had never touched. It now rides `abortTurnAgentRuns`,
+which reaches only the runs the open turn started and bumps a separate
+TURN epoch. The office sweep bumps BOTH, so everything below still holds
+for STOP ALL, which is all this suite ever claimed. Two consequences are
+pinned here rather than left to be rediscovered: a note held in the
+outbox is dropped by an office sweep whether or not it belongs to a
+turn, and the meeting loop — which IS a boss turn — now watches the turn
+epoch, so it still adjourns on STOP ALL by way of that double bump.
 
 Run: python3 scripts/test_a_stop_stops_the_outbox_too.py
 """
@@ -48,7 +60,8 @@ WAIT_OPEN = 'if (agentAbortersRef.current.has(agent.id)) {'
 WAIT_NOTE = 'waits its turn'
 CAPTURE = 'const stopEpochAtWait = stopEpochRef.current;'
 WAIT_LOOP = 'while (agentAbortersRef.current.has(agent.id)) {'
-EPOCH_CHECK = 'if (stopEpochRef.current !== stopEpochAtWait) {'
+OFFICE_SWEPT = 'const sweptOffice = stopEpochRef.current !== stopEpochAtWait;'
+EPOCH_CHECK = 'if (sweptOffice || sweptTurn) {'
 STOPPED_ALL = "kind: 'stopped-all'"
 GONE_CHECK = 'if (!(agentsRef.current || []).some(x => x.id === agent.id)) {'
 DISPATCH_MARK = "const agentMsgId = HQ.uid('m');"
@@ -56,12 +69,16 @@ GATE = 'if (aborted && dmQueue.length) {'
 GATE_DROP = 'dmQueue.length = 0;'
 HOIST = 'let aborted = false;'
 FANOUT = 'for (const dm of dmQueue) {'
-PROP_PASS = 'stopEpochRef={stopEpochRef}'
-PROP_SIG = 'stopEpochRef = null'
-MEET_CAPTURE = 'const stopEpochAtStart = stopEpochRef ? stopEpochRef.current : null;'
+# Since #120 the panel is handed the TURN epoch, not the office one. The
+# office sweep bumps both, so STOP ALL still adjourns a meeting -- and a
+# meeting the boss stops from the composer now adjourns too, which the
+# office epoch alone could not have done.
+PROP_PASS = 'turnEpochRef={turnEpochRef}'
+PROP_SIG = 'turnEpochRef = null'
+MEET_CAPTURE = 'const turnEpochAtStart = turnEpochRef ? turnEpochRef.current : null;'
 MEET_LOOP = 'for (const [turnIdx, a] of recipients.entries()) {'
-MEET_CHECK = 'if (stopEpochRef && stopEpochRef.current !== stopEpochAtStart) {'
-ADJOURN = 'meeting adjourned — STOP ALL.'
+MEET_CHECK = 'if (turnEpochRef && turnEpochRef.current !== turnEpochAtStart) {'
+ADJOURN = 'meeting adjourned — you stopped it.'
 
 
 def check(name, cond, detail=''):
@@ -103,9 +120,16 @@ def main():
     check('STOP ALL rides the shared sweep', 'abortAllAgentRuns();' in stopall)
     check('the unmount cleanup rides the same sweep', UNMOUNT in bare,
           'a note waiting in the outbox must not fire a fetch after teardown')
-    check("the composer's ■ Stop rides it too",
-          'if (onStopAll) onStopAll();' in cbare,
-          'app.jsx wires that prop straight to abortAllAgentRuns')
+    # This check used to read: the composer's ■ Stop rides it too. It did,
+    # and that was #120 — the small button holding the office-wide brake.
+    # What this suite actually needs is that the brake's OWN reach is
+    # undiminished, and that the little button can no longer borrow it.
+    check("the composer's ■ Stop no longer borrows the office sweep",
+          'onStopAll' not in cbare and 'if (onStopTurn) onStopTurn();' in cbare,
+          'see test_stop_takes_back_only_your_turn.py')
+    check('…and the office sweep still bumps the turn epoch as well',
+          'stopEpochRef.current++;' in sweep and 'turnEpochRef.current++;' in sweep,
+          'without the second bump STOP ALL stops streams but not the meeting loop')
 
     # ── the wait loop reads the epoch, in the right order ───────────────
     check('the deferral block is where it was', bare.count(WAIT_OPEN) == 1,
@@ -114,7 +138,8 @@ def main():
     wait_end = bare.find(DISPATCH_MARK, wait_at)
     region = bare[wait_at:wait_end] if wait_at != -1 and wait_end > wait_at else ''
     order = [region.find(WAIT_NOTE), region.find(CAPTURE), region.find(WAIT_LOOP),
-             region.find(EPOCH_CHECK), region.find(GONE_CHECK)]
+             region.find(OFFICE_SWEPT), region.find(EPOCH_CHECK),
+             region.find(GONE_CHECK)]
     check('note → capture → wait → epoch check → recipient-gone, in that order',
           all(i != -1 for i in order) and order == sorted(order),
           order)
@@ -179,12 +204,16 @@ const mkSetChat = (chat) => (fn) => {
   const next = fn(chat.slice()); chat.length = 0; chat.push(...next);
 };
 
-async function runWait(scenario) {
+/* `inBossTurn` defaults false: a coworker's DM waiting out a busy desk is
+   nobody's turn, which is the whole point of the leak this suite is about
+   — the note the boss never sees is the one the sweep must still reach. */
+async function runWait(scenario, inBossTurn = false) {
   const chat = [], transitions = [];
   const agent = { id: 'a_1', name: 'Vera', role: 'Docs' };
   const dmFrom = { name: 'Kip' };
   const agentAbortersRef = { current: new Map([['a_1', { abort() {} }]]) };
   const stopEpochRef = { current: 3 };
+  const turnEpochRef = { current: 5 };
   const agentsRef = { current: [agent] };
   const HQ = { uid: (p) => p + (++uidN) };
   const setChat = mkSetChat(chat);
@@ -192,15 +221,17 @@ async function runWait(scenario) {
     transition: (id, state, meta) => transitions.push({ id, state, meta }) };
   const messageId = 'msg_1';
   setTimeout(() => {          // the sweep (or the desk simply finishing)
-    if (scenario === 'stopall') stopEpochRef.current++;
+    if (scenario === 'stopall') { stopEpochRef.current++; turnEpochRef.current++; }
+    if (scenario === 'turnstop') turnEpochRef.current++;
     if (scenario === 'dismissed') agentsRef.current = [];
     agentAbortersRef.current.delete('a_1');
   }, 100);
   const fn = new Function('agentAbortersRef', 'agent', 'setChat', 'HQ',
-    'dmFrom', 'stopEpochRef', 'MessageRegistry', 'messageId', 'agentsRef',
+    'dmFrom', 'stopEpochRef', 'turnEpochRef', 'inBossTurn',
+    'MessageRegistry', 'messageId', 'agentsRef',
     'return (async () => {' + WAIT + "return 'DISPATCHED'; })();");
   const out = await fn(agentAbortersRef, agent, setChat, HQ, dmFrom,
-    stopEpochRef, MessageRegistry, messageId, agentsRef);
+    stopEpochRef, turnEpochRef, inBossTurn, MessageRegistry, messageId, agentsRef);
   return { out, notes: chat.map(c => c.text),
            trans: transitions.map(t => [t.state, t.meta.by,
              t.meta.failureCause && t.meta.failureCause.kind || null]) };
@@ -219,7 +250,7 @@ function runGateDrive(aborted, n) {
 
 async function runMeeting(bumpAfterTurn, withRef) {
   const chat = [], dispatched = [];
-  const stopEpochRef = withRef ? { current: 7 } : null;
+  const turnEpochRef = withRef ? { current: 7 } : null;
   const recipients = [
     { id: 'a1', name: 'Kip', role: 'R' },
     { id: 'a2', name: 'Vera', role: 'D' },
@@ -232,13 +263,13 @@ async function runMeeting(bumpAfterTurn, withRef) {
   const bowOut = () => {};
   const onDispatchToAgent = async (a) => {
     dispatched.push(a.name);
-    if (stopEpochRef && dispatched.length === bumpAfterTurn) stopEpochRef.current++;
+    if (turnEpochRef && dispatched.length === bumpAfterTurn) turnEpochRef.current++;
     return a.name + ' spoke';
   };
-  const fn = new Function('recipients', 'stopEpochRef', 'setChat', 'HQ',
+  const fn = new Function('recipients', 'turnEpochRef', 'setChat', 'HQ',
     'activeThread', 'onDispatchToAgent', 'body', 'bowOut',
     'return (async () => {' + MEET + 'return heardSoFar.length; })();');
-  const heard = await fn(recipients, stopEpochRef, setChat, HQ,
+  const heard = await fn(recipients, turnEpochRef, setChat, HQ,
     activeThread, onDispatchToAgent, body, bowOut);
   return { dispatched, heard, notes: chat.map(c => c.text) };
 }
@@ -246,6 +277,8 @@ async function runMeeting(bumpAfterTurn, withRef) {
 const R = {
   clean: await runWait('clean'),
   stopall: await runWait('stopall'),
+  stopallInTurn: await runWait('stopall', true),
+  turnstopNotMine: await runWait('turnstop'),
   dismissed: await runWait('dismissed'),
   gateHit: runGateDrive(true, 2),
   gateOne: runGateDrive(true, 1),
@@ -273,8 +306,19 @@ console.log(JSON.stringify(R));
     check("a sweep mid-wait cancels: by host, kind stopped-all, nothing dispatched",
           r['stopall']['out'] == ''
           and r['stopall']['trans'] == [['cancelled', 'host', 'stopped-all']]
-          and any('was not delivered' in n for n in r['stopall']['notes']),
+          and any('was not delivered' in n for n in r['stopall']['notes'])
+          and any('STOP ALL' in n for n in r['stopall']['notes']),
           r['stopall'])
+    check('…and reaches a note that IS the boss\'s turn just the same',
+          r['stopallInTurn']['out'] == ''
+          and r['stopallInTurn']['trans'] == [['cancelled', 'host', 'stopped-all']],
+          r['stopallInTurn'])
+    # The other half of the same seam, kept here so the office sweep's reach
+    # is stated next to its limit: a TURN stop is not a sweep of the office.
+    check("a turn stop leaves somebody else's waiting note alone",
+          r['turnstopNotMine']['out'] == 'DISPATCHED'
+          and r['turnstopNotMine']['trans'] == [],
+          r['turnstopNotMine'])
     check('…and the recipient-gone ending still works after it',
           r['dismissed']['out'] == ''
           and r['dismissed']['trans'] == [['failed', 'host', 'recipient-gone']],

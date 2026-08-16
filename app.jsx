@@ -1479,16 +1479,34 @@ ${d.text}` : d.text,
      this: freeing one desk is not "stop everything", and a note waiting
      for that desk may fairly proceed. */
   const stopEpochRef = useRefA(0);
+  /* The same question, asked of the boss's CURRENT TURN rather than the
+     office. Bumped by the office sweep too — stopping everything stops the
+     turn as well — so work that belongs to a turn watches this one and
+     work that does not watches `stopEpochRef`. */
+  const turnEpochRef = useRefA(0);
+  /* Is a boss turn open, and which runs belong to it.
+
+     `agentAbortersRef` is keyed by agent and office-wide: all three
+     dispatch paths register there, a task card dropped on a desk exactly
+     as much as a specialist the boss's own turn pulled in. The composer's
+     ■ Stop aborted the whole map, which made it the emergency brake with
+     a smaller label — see the note on `abortTurnAgentRuns`. A run belongs
+     to the turn if it STARTED while the turn was open; anything already
+     under way when the boss began typing is somebody else's job. */
+  const bossTurnRef = useRefA(null);
+  const turnRunsRef = useRefA(new Set());
   const beginAgentRun = (agentId) => {
     const prior = agentAbortersRef.current.get(agentId);
     if (prior) { try { prior.abort(); } catch (_e) {} }
     const c = new AbortController();
     agentAbortersRef.current.set(agentId, c);
+    if (bossTurnRef.current) turnRunsRef.current.add(agentId);
     return c;
   };
   const endAgentRun = (agentId, controller) => {
     if (agentAbortersRef.current.get(agentId) === controller) {
       agentAbortersRef.current.delete(agentId);
+      turnRunsRef.current.delete(agentId);
     }
   };
   /* Sit back down after a run that ended still-`active`.
@@ -1556,17 +1574,57 @@ ${d.text}` : d.text,
     agentAbortersRef.current.delete(agentId);
     return true;
   };
-  /* The chat Stop button's reach. Room / @-mention / brainstorm / handoff
-     sends run through dispatchToAgent's per-agent controllers, which the
-     panel's own abortRef never saw — so "■ Stop" was a no-op for exactly
-     the multi-agent phases most likely to run long. */
+  /* Everything, everywhere: STOP ALL and unmount. */
   const abortAllAgentRuns = () => {
     for (const c of agentAbortersRef.current.values()) { try { c.abort(); } catch (_e) {} }
     agentAbortersRef.current.clear();
+    turnRunsRef.current.clear();
     /* The sweep must also stop the OUTBOX, not just the streams — clearing
        the map is the very condition the #98 wait polls, so without this a
-       waiting note reads the sweep as "desk free, go". See stopEpochRef. */
+       waiting note reads the sweep as "desk free, go". See stopEpochRef.
+       Both epochs: stopping the office stops the boss's turn with it. */
     stopEpochRef.current++;
+    turnEpochRef.current++;
+  };
+  /* The composer's ■ Stop, and ONLY as far as the boss's own turn reaches.
+
+     The reach used to be right for the wrong scope. Room / @-mention /
+     brainstorm / handoff sends run through dispatchToAgent's per-agent
+     controllers, which the panel's own abortRef never saw, so "■ Stop"
+     was a no-op for exactly the multi-agent phases most likely to run
+     long — and the fix for that pointed the little button at
+     `abortAllAgentRuns`, the same office-wide sweep the big red brake
+     performs, minus the confirm, minus the count, minus the ticker line,
+     under a tooltip reading "Stop streaming".
+
+     Measured 2026-08-16 on office 9272. Kip was four minutes into a job
+     delegated from the composer's own hand-off menu. The boss then asked
+     the chief of staff an unrelated question and pressed ■ Stop to take
+     the question back. Both records went to `cancelled`. No dialog was
+     shown, and no "■ STOP ALL — aborted 2 streams" line was written; the
+     office quietly killed a job the boss had not asked it to touch, and
+     told them nothing. Pressing the emergency brake would have said
+     "This will stop 2 coworkers mid-reply" and asked first.
+
+     So the sweep is scoped to what the turn started. Everything else —
+     a card on a desk, a hand-off from before the boss started typing, a
+     mission's own iteration — keeps working, and stays visible in
+     N WORKING where the boss can see it and stop it deliberately. */
+  const abortTurnAgentRuns = () => {
+    let stopped = 0;
+    for (const agentId of turnRunsRef.current) {
+      const c = agentAbortersRef.current.get(agentId);
+      if (!c) continue;
+      try { c.abort(); } catch (_e) {}
+      agentAbortersRef.current.delete(agentId);
+      stopped++;
+    }
+    turnRunsRef.current.clear();
+    /* Same reason the office sweep bumps an epoch: aborting a stream does
+       nothing to a loop that is about to DISPATCH the next one, or to a
+       note holding for a busy desk. This one only speaks for the turn. */
+    turnEpochRef.current++;
+    return stopped;
   };
   // Abort everything in flight when the App unmounts (e.g. tab nav, HMR).
   // Same sweep as STOP ALL — including the epoch bump, so a note waiting
@@ -1775,6 +1833,11 @@ ${d.text}` : d.text,
       body: text, priority: 'med',
     });
     MessageRegistry.transition(id, 'delivered', { by: 'host' });
+    /* The turn opens here and closes in settleBossAsk. Everything a
+       dispatch path starts in between belongs to it, and is what the
+       composer's ■ Stop is allowed to reach. */
+    bossTurnRef.current = id;
+    turnRunsRef.current.clear();
     return id;
   };
 
@@ -1784,6 +1847,13 @@ ${d.text}` : d.text,
      cleaners drifted apart. A boss-pressed Stop is `cancelled`, not
      `failed` — the same distinction the @mention and delegate paths make. */
   const settleBossAsk = (id, err) => {
+    /* The turn is over however it ended — see recordBossAsk. Guarded on
+       identity so a late settle for an older ask cannot close a turn the
+       boss has already started. */
+    if (bossTurnRef.current && bossTurnRef.current === id) {
+      bossTurnRef.current = null;
+      turnRunsRef.current.clear();
+    }
     if (!id) return;
     if (!err) {
       MessageRegistry.transition(id, 'completed', { by: HQ.CHIEF_OF_STAFF.name });
@@ -1808,6 +1878,10 @@ ${d.text}` : d.text,
      - inter-agent DMs (agent → agent), which chain via tool-detection
      Caps depth so DM ping-pongs can't loop. */
   const dispatchToAgent = async (agent, prompt, opts = {}) => {
+    /* Read at entry, not at the wait below: whether this dispatch belongs
+       to the boss's open turn is a fact about when it STARTED, and the
+       turn can close while a note holds for a busy desk. */
+    const inBossTurn = !!bossTurnRef.current;
     const {
       userText = null,
       dmFrom = null,
@@ -1999,6 +2073,7 @@ ${d.text}` : d.text,
         text: `(${dmFrom ? `${dmFrom.name}'s note` : `the office's note`} for ${agent.name} waits its turn — they're still finishing another reply.)`,
         thread: 'team' }]);
       const stopEpochAtWait = stopEpochRef.current;
+      const turnEpochAtWait = turnEpochRef.current;
       while (agentAbortersRef.current.has(agent.id)) {
         await new Promise(res => setTimeout(res, 750));
       }
@@ -2009,17 +2084,25 @@ ${d.text}` : d.text,
          "■ STOP ALL — aborted 1 stream", on the desk of the very coworker
          the boss had just stopped. The record says what happened and the
          team room says what was NOT delivered; re-sending is the boss's
-         call, not the office's. */
-      if (stopEpochRef.current !== stopEpochAtWait) {
+         call, not the office's.
+
+         WHICH sweep matters. STOP ALL speaks for the office, so it cancels
+         any waiting note. The composer's ■ Stop speaks only for the boss's
+         turn — a note this turn put in the outbox is theirs to withdraw, a
+         note that was already waiting when they started typing is not. */
+      const sweptOffice = stopEpochRef.current !== stopEpochAtWait;
+      const sweptTurn = inBossTurn && turnEpochRef.current !== turnEpochAtWait;
+      if (sweptOffice || sweptTurn) {
+        const what = sweptOffice ? 'STOP ALL' : 'You stopped the turn';
         MessageRegistry.transition(messageId, 'cancelled', {
           by: 'host',
-          note: 'STOP ALL — this note was still in the outbox and was not delivered',
+          note: `${what} — this note was still in the outbox and was not delivered`,
           failureCause: { kind: 'stopped-all', retryable: true,
-            message: 'STOP ALL was pressed while this note waited for a busy desk.',
+            message: `${what} while this note waited for a busy desk.`,
             actionNeeded: 'Re-send it if the question still needs an answer.' },
         });
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(STOP ALL — ${dmFrom ? `${dmFrom.name}'s` : `the office's`} waiting note for ${agent.name} was not delivered.)`,
+          text: `(${what} — ${dmFrom ? `${dmFrom.name}'s` : `the office's`} waiting note for ${agent.name} was not delivered.)`,
           thread: 'team' }]);
         return '';
       }
@@ -5587,7 +5670,7 @@ ${d.text}` : d.text,
   // same props without duplication.
   const sharedChatPanel = (
     <ChatPanel agents={agents} chat={chat} setChat={setChat}
-      backendDown={backendDown} onStopAll={abortAllAgentRuns} stopEpochRef={stopEpochRef}
+      backendDown={backendDown} onStopTurn={abortTurnAgentRuns} turnEpochRef={turnEpochRef}
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
