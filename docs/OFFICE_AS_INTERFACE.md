@@ -12546,3 +12546,69 @@ per-caller rather than behind one `hireFromTemplate` chokepoint; the boss's
 plain composer sends mint no registry record; 'aborted by user' still
 stamps environment aborts; and the Inbox still has no 'cancelled' filter
 pill.
+
+## A night shift started with nowhere to file
+
+The layer under last round's fix. Every mission type `build_prompt` writes
+for ends with a mandatory vault write — the notes ARE the deliverable — and
+`run_mission` never asked whether one could land.
+
+Measured 2026-08-16 on office 9261, vault pointed at a closed Obsidian
+REST. The office already knew: /vault/status answered `configured: false`
+BEFORE the mission started, because it probes a REST backend for real and
+stats an fs one. What the boss got anyway:
+
+    t+  0s  iterations=1 writes=0 errors=1  'vault is not reachable — …'
+    t+ 60s  iterations=2 writes=0 errors=2  'vault is not reachable — …'
+    final:  iterations=3, writes=[], errors=3, 120s
+
+Two minutes and three brain calls — real money on any paid brain — to
+learn what one GET would have said before the first one. Last round's fix
+is what caps it at three instead of running till dawn; it does not stop it
+from starting.
+
+`vault_can_take_a_note(ctx)` now runs before the loop, and a refusal is a
+finished run record — `iterations: 0`, `errors: 1`, `lastError` naming the
+door — not an exception. That distinction is the whole surface: a raise
+comes back through `_night_run_one` as `lastError: str(e)`, and a stack
+message is exactly what §6 bans from a place the boss reads. The sentence
+is `vault_refused_sentence(503)`, the same one a mid-run refusal produces,
+because 503 is literally what this office's own PUT /vault/note answers
+with nothing configured — one fact, one wording, whether the vault was
+missing at the door or died at 1am.
+
+Unknown counts as ready, deliberately. The probe is an optimisation over a
+path that is already honest: since last round a dead vault is caught on the
+first iteration and the streak stops the run. A probe that cannot answer —
+a 500, a refused connection, a body shaped differently than expected —
+must never be the thing that cancels a night the office could have run.
+
+The suite found a hole in the fix while I was writing it, which is the
+second time this week the honest version of a guard was one type-check
+away. `data.get('configured')` sat OUTSIDE the try, so an office answering
+with a list instead of an object raised AttributeError, and the morning
+report would have read `lastError: "'list' object has no attribute 'get'"`
+— the stack message the check three lines above it warns about, arriving
+through the exact path it names. The read is inside the try now.
+
+Twelve fire arms. Eleven caught first cut. The twelfth was a bad arm rather
+than a gap: moving the guard one line down, past `deadline = started +
+duration_ms`, changes nothing, and a byte-compare cannot see a no-op. The
+ordering claim is about the LOOP, so the arm now moves the guard inside it
+— and the first literal rewrite of that arm was caught as a SyntaxError,
+which is a pass for the wrong reason. Written out by hand, it fails on the
+ordering check, which is the one being tested. Full runner 153/153.
+
+Verified live both ways with the shipped code: dead vault → 0 iterations,
+0 tokens, 0 seconds, one sentence with a door; healthy vault → three
+iterations, three notes, no error, unchanged.
+
+Carried forward. The check is at the run door, not the schedule door: a
+boss saving a night shift while the vault is down still gets a confirmed
+schedule and finds out at 1am. That is a UI question (missions.jsx), and
+an advisory one — a vault that is up at save time can be down at run time,
+so the run-door check stays authoritative either way. Also still open:
+`spawnOpenswarmRoster` is guarded per-caller rather than behind one
+`hireFromTemplate` chokepoint; the boss's plain composer sends mint no
+registry record; 'aborted by user' still stamps environment aborts; and
+the Inbox still has no 'cancelled' filter pill.

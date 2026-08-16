@@ -184,6 +184,43 @@ def vault_refused_sentence(status):
     return 'vault refused the write — check the note path'
 
 
+def vault_can_take_a_note(ctx):
+    """Can anything land tonight? (ready, sentence).
+
+    Every mission type this file writes a prompt for ends with a mandatory
+    vault write; the notes ARE the deliverable. The office already knows the
+    answer — /vault/status probes an Obsidian REST backend for real and
+    stats an fs one — and nothing asked it, so a night with nowhere to file
+    spent three iterations and three brain calls learning what one GET
+    would have said before the first one.
+
+    Unknown counts as ready, deliberately. This is an optimisation over a
+    path that is already honest: since the refused-write branch in
+    run_iteration, a dead vault is caught on the first iteration and the
+    error streak stops the run. A probe that cannot answer must not be the
+    thing that cancels a night the office could have run.
+    """
+    try:
+        s, raw = _self_call(ctx, 'GET', '/vault/status', timeout=20)
+        if s != 200:
+            return True, ''
+        # The read is inside the try with the request. An office that
+        # answered in a shape this function did not expect is not a vault
+        # that is down, and letting the AttributeError out would surface in
+        # the morning report as lastError: "'list' object has no attribute
+        # 'get'" — a stack message where the door should be, via
+        # _night_run_one's str(e). Found by the suite for this fix.
+        if json.loads(raw.decode('utf-8', 'replace')).get('configured'):
+            return True, ''
+    except Exception:
+        return True, ''
+    # 503 is not a guess: it is what this office's own PUT /vault/note
+    # answers when no backend is configured, so the boss reads the same
+    # sentence whether the vault was missing at the door or went down at
+    # 1am. One fact, one wording, one door.
+    return False, vault_refused_sentence(503)
+
+
 def find_unsupported_tool(text):
     """First out-of-subset tool NAME reached for in `text`, or None.
 
@@ -833,6 +870,17 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
         'summary': '',
         'grammarVersion': NIGHT_GRAMMAR_VERSION,
     }
+    # Before the first brain call, not after the third. A night whose
+    # deliverable has nowhere to land is not a night that went badly — it is
+    # one that should not have started, and saying so at the door costs one
+    # GET instead of ERROR_STREAK_AUTO_PAUSE iterations of paid tokens
+    # against a vault that will refuse every one of them.
+    ready, why = vault_can_take_a_note(ctx)
+    if not ready:
+        run['errors'] = 1
+        run['lastError'] = why
+        run['finishedAt'] = int(time.time() * 1000)
+        return run
     deadline = started + duration_ms
     error_streak = 0
     while int(time.time() * 1000) < deadline:
