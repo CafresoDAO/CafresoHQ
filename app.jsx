@@ -5435,6 +5435,7 @@ ${d.text}` : d.text,
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}
       onPinAsTask={onPinChatAsTask} onHire={() => setHireOpen(true)}
+      onOpenResearch={() => setMissionsOpen(true)}
       onInferTaskAssignment={(taskId, agentId) => {
         const task = tasks.find(x => x.id === taskId);
         if (!task) return;
@@ -6538,9 +6539,25 @@ ${d.text}` : d.text,
             },
             {
               id: 'hire',
+              /* The label was right and the address was wrong. "+ HIRE" is
+                 real — it is printed inside every vacant desk on the floor
+                 (.px-room.vacant) — but it has never been in the topbar,
+                 which carries LIVE / WORKING / HIRED / 📬 INBOX / ⌗ ROOMS /
+                 🔔 and nothing else. The old target `.topbar .px-btn.primary`
+                 matched nothing, and a target that never resolves does not
+                 clear the last step's spotlight (see ui/onboarding.jsx), so
+                 the final step of first-run put the ring on the command
+                 palette while the words pointed at the top of the screen.
+                 This step's own action already walks the boss to the floor,
+                 where the thing it names is sitting. */
               title: 'Hire your first coworker',
-              body: 'Tap + HIRE in the topbar to bring on your first coworker. Each hire gets a desk, a role, and their own brain. You\'re ready — go build your team.',
-              target: '.topbar .px-btn.primary',
+              body: 'Tap the + at the end of your coworker strip — or + HIRE on any empty desk — to bring on your first coworker. Each hire gets a desk, a role, and their own brain. You\'re ready — go build your team.',
+              /* Two real controls, in DOM order. `.mas-plus` is the mobile
+                 agent strip's + and is always rendered; the vacant desks
+                 only exist while there are free slots, so a boss replaying
+                 the tour on a full floor still gets pointed at something
+                 that is there. */
+              target: '.mas-plus, .px-room.vacant',
               action: () => goTo('visual'),
             },
           ];

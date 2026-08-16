@@ -12942,3 +12942,111 @@ rather than behind one `hireFromTemplate` chokepoint; a plain send from
 the boss's composer still mints no registry record; 'aborted by user'
 still stamps environment aborts; and the Inbox still has no 'cancelled'
 filter pill.
+## The office pointed at three buttons the topbar does not have
+
+A read-only thread with one instruction on it, and the instruction named
+a control that has never existed. Read off a live office
+(127.0.0.1:9265) with three coworkers hired:
+
+```
+chat · RESEARCH tab, empty  : "No research yet. Click 🔬 RESEARCH in the
+                               topbar to start a long-running research
+                               mission."
+chat · RESEARCH tab, banner : "🔬 research feed — start or manage missions
+                               from the topbar"
+topbar, same page, same second:
+    LIVE · 0 WORKING · 3 HIRED · 📬 INBOX · ⌗ ROOMS ▾ · 🔔12
+```
+
+The missions door is one level down, inside the ROOMS menu, as
+`🔬 Research missions`. And the research thread has no composer — the
+banner *replaces* it — so the sentence naming that door was the only
+thing standing between the boss and the feature. §5: a wrong door is
+worse than a locked one, because a locked door tells you to stop looking.
+
+### The tour did it on the last step of first-run
+
+`app.jsx`'s mobile tour ended with *"Tap + HIRE in the topbar"*, and
+`target: '.topbar .px-btn.primary'`. Both halves are interesting. **+
+HIRE is real** — it is printed inside every vacant desk on the floor —
+so this was not an invented control, it was a real control with the
+wrong address. And the selector matched nothing, which is not a no-op:
+the tour only ever *sets* the spotlight when a step declares a target, so
+a target that never resolves leaves the ring exactly where the previous
+step put it. Timed on the shipped bundle:
+
+```
+step 8  "Tools & command palette"     ring at 315,632 56×56  (.palette-fab)
+step 9  "Hire your first coworker"    ring at 315,632 56×56  ← unchanged
+```
+
+The final step of a first-run walkthrough highlighted the command
+palette while telling the boss to look at the top of the screen.
+
+### The fix is the door, not better directions
+
+`ChatPanel` now takes `onOpenResearch` the same way it already took
+`onHire`, and the empty state and the banner each render the control
+itself — `🔬 START A RESEARCH MISSION`, `MANAGE MISSIONS`. The
+descriptive fallback stayed, because a component that can be mounted
+without the prop should still name somewhere real (`⌗ ROOMS ▾ → 🔬
+Research missions`), but it is the fallback now, not the product.
+
+The tour step points at `.mas-plus, .px-room.vacant` — the mobile agent
+strip's `+`, which is always rendered, then the vacant desks, which are
+not — and says so in words that match: *"Tap the + at the end of your
+coworker strip — or + HIRE on any empty desk"*.
+
+### Two more things fell out of the spotlight
+
+Fixing the address was not enough, because the ring is drawn by a
+different mechanism than the words. Two changes to `ui/onboarding.jsx`:
+
+**It gives up pointing rather than keep pointing.** Falling out of the
+retry loop now clears the spotlight. An unfindable target is a bug in the
+step, and the honest render of a bug in the step is no highlight — not
+the last step's highlight.
+
+**It drops the old ring on entry.** With the address fixed, the trace
+showed the ring still sitting on the palette for ~1s while the floor
+mounted, because the spotlight was only ever replaced. React batches the
+clear with the synchronous first attempt, so a target that resolves
+immediately does not flicker; one that has to wait no longer leaves the
+old ring under the new card. Retry budget went from 6×80ms to 25×100ms in
+the same breath — the floor took ~1.4s to put `.mas-plus` on screen, so
+the old budget would have given up on a control that was about to
+appear, and *with the ring now cleared up front, giving up early means no
+ring at all*.
+
+### Results
+
+Fifteen fire arms across the three files. Three survived the first pass,
+all three for the same reason — a check that could be satisfied by
+something other than the thing it was about:
+
+  · `.mas-plus` was found in the step's own **comment**, so an arm that
+    restored the dead selector passed. Comments stripped before slicing.
+  · `setSpotlight(null)` was found sitting behind an unconditional
+    `return` — present, unreachable, reported healthy. Pinned to the
+    guard's shape instead.
+  · then, deleted entirely, it was found again in the no-target `else`
+    branch below. Bounded to `compute()`.
+
+A fourth was caught before it could survive: the suite's own JSX-comment
+stripper matched `{` + comment + `*/}` across twenty-three lines and
+deleted the markup a check was looking for, which reported the banner
+missing while it was on screen. Same family as the two slicing bugs in
+the rounds above — the tooling that reads the source is code too.
+
+Second pass: 15/15 caught, post-restore baseline green, full runner
+157/157. Verified live in the shipped bundle: the research empty state
+renders `🔬 START A RESEARCH MISSION` and clicking it opens the missions
+modal; the banner renders `MANAGE MISSIONS`; and on the mobile tour the
+ring goes `315,632` → **NONE** → `288,342` (`.mas-plus` + 6px) as step 9
+opens.
+
+Still open: the tour's step 9 spends ~2s with no ring while the floor
+comes up, which is honest but blank — a step that navigates could show
+the card only once its target exists. The research feed's empty state is
+also the only place in chat that offers a door; the DIRECT and TEAM
+threads say what they are and stop.

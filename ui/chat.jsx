@@ -54,7 +54,15 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
   );
 }
 
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, stopEpochRef = null }) {
+/* `onOpenResearch` is the missions door, handed in the same way `onHire`
+   hands in the front desk. Without it this panel could only ever DESCRIBE
+   the way to start a mission, and what it described was a button called
+   "🔬 RESEARCH in the topbar" that no viewport has ever rendered: the
+   topbar carries LIVE / WORKING / HIRED / 📬 INBOX / ⌗ ROOMS ▾ / 🔔, and
+   the missions door lives one level down inside ROOMS. The research
+   thread is read-only, so that door was the only way to start a mission
+   and the office was naming it wrong. */
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, onOpenResearch = null, stopEpochRef = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -1226,7 +1234,16 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           <div className="thread-empty">
             {activeThread === 'direct'   && <>No messages yet — type below to message CafresoHQ.</>}
             {activeThread === 'team'     && <>No team chatter yet. When coworkers DM each other (via <code>[DM_TO: name]</code> blocks), the conversations land here so the main thread stays clean.</>}
-            {activeThread === 'research' && <>No research yet. Click 🔬 RESEARCH in the topbar to start a long-running research mission. Each round's output lands here.</>}
+            {activeThread === 'research' && <>
+              No research yet. A research mission runs in rounds on its own and drops each round's output here.
+              {onOpenResearch
+                /* The door itself, not directions to it. This thread has no
+                   composer, so a boss who reads this and cannot find the
+                   control has no second way to try. */
+                ? <> <button className="px-btn secondary" style={{fontSize:10, marginTop:8, display:'block'}}
+                        onClick={onOpenResearch}>🔬 START A RESEARCH MISSION</button></>
+                : <> Open one from <strong>⌗ ROOMS ▾ → 🔬 Research missions</strong> in the topbar.</>}
+            </>}
             {activeRoom && activeRoom.kind === 'project' && <>No messages in this project room yet. Type below to message everyone assigned at once, or @-mention just some of them.</>}
             {activeRoom && activeRoom.kind === 'meeting' && <>No messages in this meeting yet. Type below to send to all attendees, or @-mention specific people.</>}
           </div>
@@ -1483,7 +1500,13 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       ) : (
         <div className="thread-readonly">
           {activeThread === 'team'     && '👀 watching team chatter — switch to DIRECT to send a message'}
-          {activeThread === 'research' && '🔬 research feed — start or manage missions from the topbar'}
+          {/* This banner replaces the composer, so it is the only thing in
+              the boss's way when they want to act on what they are reading.
+              "from the topbar" was true of a button that is not there. */}
+          {activeThread === 'research' && (onOpenResearch
+            ? <>🔬 research feed — <button className="px-btn ghost" style={{fontSize:10, padding:'2px 8px'}}
+                  onClick={onOpenResearch}>MANAGE MISSIONS</button></>
+            : <>🔬 research feed — start or manage missions from <strong>⌗ ROOMS ▾ → 🔬 Research missions</strong></>)}
         </div>
       )}
       <div className="thread-tabs">

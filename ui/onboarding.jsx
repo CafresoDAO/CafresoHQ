@@ -49,6 +49,16 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
     if (!open || !step) { setSpotlight(null); return; }
     if (step.action) try { step.action(); } catch (_e) {}
     if (step.target) {
+      /* Drop the previous step's ring first. React batches this with the
+         synchronous compute() below, so a target that resolves on the
+         first try never flickers — but one that has to wait for a view to
+         mount no longer leaves the old ring sitting under the new words.
+         Timed on the mobile first-run: the step before this one rings the
+         command palette, and the ring stayed there for ~1s after the card
+         had already changed to "Hire your first coworker" while the floor
+         came up. A second of pointing at the wrong control is still
+         pointing at the wrong control. */
+      setSpotlight(null);
       /* Compute spotlight rect; retry briefly because target may need a
          frame after the action fires. */
       let attempts = 0;
@@ -66,7 +76,23 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
             return;
           }
         }
-        if (++attempts < 6) setTimeout(compute, 80);
+        /* 2.5s of retries, not 0.5s. A step whose action navigates has to
+           wait for the whole view to mount: the floor took ~1.4s to put
+           .mas-plus on screen, well past six 80ms attempts, so the old
+           budget would have given up on a control that was about to
+           appear — and with the ring now cleared up front, giving up early
+           means no ring at all. */
+        if (++attempts < 25) { setTimeout(compute, 100); return; }
+        /* Give up pointing rather than keep pointing at the last thing.
+           A step whose target never resolves used to fall out of this
+           retry loop leaving `spotlight` exactly where the PREVIOUS step
+           put it — so the ring stayed on the control the boss had already
+           been shown while the card described a different one. Seen on the
+           last step of the mobile first-run: the spotlight sat on the
+           command-palette button (56×56 at 315,632) while the card said to
+           tap a button in the topbar. An unfindable target is a bug in the
+           step, and the honest render of it is no highlight at all. */
+        setSpotlight(null);
       };
       compute();
     } else {
