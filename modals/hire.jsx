@@ -6,6 +6,29 @@ import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 
+/* The grid is the whole vocabulary of this form: an id it cannot SHOW is an
+   id it must never WRITE.
+
+   Measured 2026-08-16 — a hire with every box unticked landed on the roster
+   holding `files`. The form seeded its tool state with ['web','files'], and
+   `files` is deliberately absent from the grid because its real door is the
+   elevation switch, not a box here (settings.jsx, GRANTED_ELSEWHERE_TOOL_IDS
+   — the decoy removal of #57/#117). So the claim was written, was invisible
+   on the hire form AND on the Roster card, and no control in the product
+   could take it back. It grants nothing on its own — `toolsForAgent` still
+   demands elevation — but every surface that reads the claim repeats it, so
+   the new coworker advertised file access their boss never asked for. That
+   is #104 again: a card promising what the shelf refused to promise.
+
+   The seed is not the only way in. A saved template, or an OPENSWARM
+   candidate whose elevation is deliberately dropped on load, carries its own
+   `tools` array straight into the same state — so the rule belongs at every
+   writer, not at the one that happened to be caught. */
+const formToolIds = (ids) => {
+  const shown = new Set(visibleToolsCatalog().map(t => t.id));
+  return (ids || []).filter(id => shown.has(id));
+};
+
 /* ── The front desk (DRIVER_CONTRACT §3 · OFFICE_AS_INTERFACE §3) ─────────
    What /agent/drivers detected on THIS machine, offered as one-click hires.
    The default is whatever the user already pays for or runs — no driver is
@@ -173,7 +196,22 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [name, setName] = useStateM('');
   const [role, setRole] = useStateM(HQ.ROLES[0]);
   const [prompt, setPrompt] = useStateM('You are a helpful sub-agent. Be concise and warm.');
-  const [tools, setTools] = useStateM(['web','files']);
+  const [toolsPicked, setTools] = useStateM(['web']);
+  /* ONE choke point, on the read. Every consumer — the grid's ticks, the
+     saved template, and the array handed to onHire — goes through `tools`,
+     so filtering here is filtering everywhere, and there is no second place
+     to forget. Filtering the writes as well was the first shape of this fix
+     and it bought nothing: with the read filtered, a write that skipped the
+     grid had no observable effect, which a fire arm duly proved by
+     surviving. Two guards where one suffices is just two things to keep in
+     step.
+
+     Reading rather than writing also behaves better when the catalog itself
+     moves: the wallet box comes and goes with the money module, and a tick
+     taken while it was on is suppressed while it is off and honoured again
+     if it comes back, instead of being silently destroyed by whichever
+     unrelated write happened next. */
+  const tools = formToolIds(toolsPicked);
   const [avatar, setAvatar] = useStateM('rose');
   const [model, setModel] = useStateM('anthropic:claude-haiku-4-5-20251001');
   const [temp, setTemp] = useStateM(0.4);
@@ -206,7 +244,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     if (!open) return;
     setName(''); setRole(HQ.ROLES[0]);
     setPrompt('You are a helpful coworker. Be concise and warm.');
-    setTools(['web','files']); setAvatar('rose');
+    setTools(['web']); setAvatar('rose');
     setModel('anthropic:claude-haiku-4-5-20251001'); setTemp(0.4);
     setElevated(false); setShowBoard(true);
   }, [open]);

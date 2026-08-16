@@ -13660,3 +13660,57 @@ absent from the form's grid because its real door is the elevation
 switch — so the boss cannot see it, cannot untick it, and gets it anyway.
 `/who-can` reported that claim faithfully; the card is what lies. Logged
 separately rather than folded in here.
+
+## A hire with every box unticked still landed holding `files`
+
+Found while verifying the ticket above, which is the only reason it was
+found at all: `/who-can` had just started reporting each coworker's real
+reach, and the first coworker hired after that change announced file
+access nobody had granted her.
+
+Front desk → NEW HIRE → untick all three boxes → HIRE. The roster entry
+read `tools: ['files']`. The form seeded its tool state with
+`['web','files']`, and `files` is deliberately absent from that form's
+grid because its real door is the elevation switch, not a box here — the
+decoy removal of §5's own worked example, #57 and #117. So the claim was
+written, was invisible on the hire form AND on the Roster card, and no
+control anywhere in the product could take it back.
+
+Nothing executed: `toolsForAgent` still demands elevation, so the claim
+granted no file access. But a claim is not inert. Every surface that
+describes a coworker's reach reads it, and the office duly told the boss
+their brand-new hire "could work with your files once you switch on their
+file & shell access" — an offer to unlock a capability they had just
+declined to ask for. #104 again, arriving through a different door.
+
+The seed was not the only way in, which is the part worth keeping. A
+saved template and an OPENSWARM candidate both pour their own `tools`
+array into the same state, and the candidate path deliberately drops
+`elevated` on load while keeping the array intact. Fixing the seed alone
+would have left two more.
+
+So the rule is stated once, as a sentence about the form rather than a
+patch to one writer: the grid is the whole vocabulary of this form, so an
+id it cannot SHOW is an id it must never WRITE. It is enforced at a single
+choke point on the READ — every consumer, the grid's own ticks, the saved
+template, and the array handed to `onHire`, goes through the same filtered
+value, so filtering there is filtering everywhere and there is no second
+place to forget.
+
+The first shape of the fix filtered the writes as well. A fire arm that
+bypassed the setter survived, and it deserved to: with the read filtered,
+a write that skipped the grid had no observable effect. Two guards where
+one suffices are not twice as safe, they are two things to keep in step —
+and the surviving arm was the suite saying so. Filtering the read also
+behaves better when the catalog itself moves: the wallet box comes and
+goes with the money module, and a tick taken while it was on is suppressed
+while it is off and honoured again if it returns, rather than being
+destroyed by whichever unrelated write happened next.
+
+Verified live on office 9272. A coworker hired with every box unticked
+landed with `tools: []`, and `/who-can` printed her beside one hired
+before the fix — the same list carrying the before and the after:
+
+    • Vera (Chief Research Goblin): general — can read a web page you name
+    • Kip (Research): general — nothing ticked on their card yet
+    • Nil (Head of Inbox Wrangling): general — nothing ticked on their card yet
