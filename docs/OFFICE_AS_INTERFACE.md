@@ -13595,3 +13595,68 @@ Verified live on office 9272 against a canned brain: with Kip
 chief of staff was stopped from the composer — the ask went `cancelled`,
 Kip stayed `in_progress`, and the tooltip the boss reads first now says
 which of the two buttons they are pressing.
+
+## `/who-can` rated a coworker who couldn't exactly like one who could
+
+Two coworkers, both titled Research. Kip had Web Search ticked; Vera had
+nothing ticked at all. `/who-can research` answered
+
+    • Vera (Research): research
+    • Kip (Research): research
+
+— identical bullets, and the one who could do nothing listed first. The
+skill words come from `agentCapabilities`, which reads the job title and
+the elevation flag and never once asks what the coworker has actually
+been granted. The office's answer to "who can do this" was a guess
+wearing the clothes of a roster.
+
+The comment that exports `capabilityFacts` says the surfaces describing a
+coworker's reach "must all ask the same question of the same file that
+answers it for real". Three do — the coworker card, the inspect panel,
+the candidate shelf. `/who-can` was a fourth surface that never asked,
+and it is the one surface whose entire job is comparison, where a wrong
+answer does not just mislead, it picks. So a hit now carries
+`grantedTools(tools, capabilityFacts(agent))` beside the guess, and the
+list says what each coworker can really reach: "can search the web",
+"nothing switched on yet; could make images once you pick an image
+provider", or plainly "nothing ticked on their card yet".
+
+Ordering was the harder half. Skill-word count still leads, because that
+is the question the boss asked; ties now break toward the coworker who
+can actually do it. Ordering is the only part of a generous list that
+reads as a recommendation, so it is the part that has to be earned — and
+a capability switched *off* does not earn it, or the false equivalence
+comes back one notch quieter.
+
+The dead end was the second wrong door. With no match the toast read *No
+agent claims "q". (Hire one or set capabilities on an existing agent.)*
+`agent.capabilities` was read in exactly one branch and written nowhere —
+not the hire form, not the Roster card, not the backend, not a template.
+Of the two ways out it offered, one was a control that does not exist,
+and §5 holds that a wrong door is worse than a locked one. The branch and
+the advice were removed together. What replaced it names the real input:
+job titles are set at hire and cannot be changed after, so the honest
+routes are a new hire or @-mentioning whoever is nearest. §7 — an honest
+dead end still needs a way forward, and now both of its ways are real.
+
+`reachOf` is injected rather than imported: `app/agents.jsx` and
+`app/cast.jsx` are import-free by design and run verbatim under node in
+the suite. A reader that throws leaves `reach` ABSENT, not empty. That is
+cast.jsx's own rule and it matters most here — "we did not look" must
+never render as "they have nothing", which is the very sentence this
+ticket exists to stop the office from saying.
+
+Verified live on office 9272. Vera was hired through the front desk with
+every tool box unticked; `/who-can research` distinguished the pair and
+named the grant-holder first. Then the grants were reversed through the
+Roster's own checkboxes — Kip's Web Search off, Vera's on — and the list
+flipped to put Vera first, ahead of the coworker declared before her. The
+ranking is read off the office, not off the array.
+
+One thing the live run exposed that this ticket did not fix: Vera, hired
+with nothing ticked, still landed holding a `files` claim. The hire form
+seeds its tool state with `['web','files']`, and `files` is deliberately
+absent from the form's grid because its real door is the elevation
+switch — so the boss cannot see it, cannot untick it, and gets it anyway.
+`/who-can` reported that claim faithfully; the card is what lies. Logged
+separately rather than folded in here.

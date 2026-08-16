@@ -25,12 +25,26 @@ function downgradeElevatedModel(model, settings) {
 /* ─────────────────────────────────────────────────────────────────────
    Agent capability inference (Phase 2 of comms refactor)
 
-   Agents can declare an explicit `capabilities: [...]` array. When they
-   don't, we infer a reasonable starting set from the role name so the
-   `/who-can <skill>` palette command works for everyone out of the box,
-   not just newly-onboarded agents. Map is intentionally generous — we'd
-   rather over-suggest than under-suggest, since the boss makes the final
-   call about who to actually hand off to.
+   Skills are inferred from the job title so `/who-can <skill>` works for
+   everyone out of the box. The map is intentionally generous — we'd rather
+   over-suggest than under-suggest, since the boss makes the final call
+   about who to hand off to.
+
+   That generosity is only defensible if the boss can SEE what they are
+   choosing between, which until 2026-08-16 they could not: `whoCan`
+   returned a coworker with nothing ticked on their card in the same shape,
+   and the same ordering, as one holding the tool. Two coworkers both
+   titled Research, one with Web Search and one with no grants at all, came
+   back as an identical pair of bullets. So a hit now carries the
+   coworker's REAL reach beside the guess — see `reachOf`.
+
+   There used to be a first branch here reading an explicit
+   `capabilities: [...]` array off the agent. Nothing in the product has
+   ever written that field — not the hire form, not the Roster card (which
+   patches model, temperature, tools, toolFormat and elevated), not the
+   backend, not a template — so the branch was dead and its only living
+   effect was to make the dead-end toast's advice, "set capabilities on an
+   existing agent", sound like it named something. Removed with the advice.
    ───────────────────────────────────────────────────────────────────── */
 const ROLE_CAPABILITY_MAP = [
   // [keyword in role (lowercase), capabilities[]]
@@ -57,24 +71,39 @@ const ROLE_CAPABILITY_MAP = [
 ];
 function agentCapabilities(agent) {
   if (!agent) return [];
-  if (Array.isArray(agent.capabilities) && agent.capabilities.length) {
-    return agent.capabilities.map(c => String(c).toLowerCase());
-  }
   const role = String(agent.role || '').toLowerCase();
   const caps = new Set(['general']);
   for (const [kw, list] of ROLE_CAPABILITY_MAP) {
     if (role.includes(kw)) for (const c of list) caps.add(c);
   }
-  // Elevated agents get computer-access capabilities by default.
+  /* Elevated coworkers get computer-access skill words. Unlike the two
+     TOOL ids of the same spelling that #117 removed, these are the boss's
+     own search terms and they match a door that really is printed on the
+     card — "File & shell access". A boss typing "shell" should find the
+     coworker who has it. */
   if (agent.elevated) {
     for (const c of ['shell','file','deployment','review']) caps.add(c);
   }
   return [...caps];
 }
+
 /* `/who-can <skill>` resolver — returns agents matching ANY token in the
    query (so "code review" matches both 'code-review' and split tokens).
-   Used by the palette command + future routing helpers. */
-function whoCan(agents, queryRaw) {
+
+   `reachOf` answers "what can this coworker actually reach", and is
+   INJECTED rather than imported for the same reason app/cast.jsx states
+   about its own facts: this file is import-free and runs verbatim under
+   node in the suite, so it asserts what it was told rather than going to
+   look. The caller passes the product's one answer to that question —
+   `grantedTools(a.tools, HQ.capabilityFacts(a))`, the same pair the
+   coworker card, the inspect panel and the candidate shelf all use — and
+   `/who-can` stops being a fourth surface describing a coworker's reach in
+   its own words.
+
+   Omit it and `reach` is ABSENT on every hit, not empty. That is cast.jsx's
+   rule and it matters here too: "we did not look" must never render as
+   "they have nothing". */
+function whoCan(agents, queryRaw, reachOf) {
   const q = String(queryRaw || '').toLowerCase().trim();
   if (!q) return [];
   const tokens = q.split(/[\s,]+/).filter(Boolean);
@@ -86,9 +115,38 @@ function whoCan(agents, queryRaw) {
   return (agents || []).map(a => {
     const caps = agentCapabilities(a);
     const hits = caps.filter(match);
-    return { agent: a, capabilities: caps, matches: hits };
+    const r = { agent: a, capabilities: caps, matches: hits };
+    if (typeof reachOf === 'function') {
+      /* A reader that throws leaves the fact absent rather than empty —
+         the boss gets the guess with no claim about reach, which is what
+         we actually know at that point. */
+      try { r.reach = reachOf(a); } catch (_e) {}
+    }
+    return r;
   }).filter(r => r.matches.length > 0)
-    .sort((a, b) => b.matches.length - a.matches.length);
+    /* Ties on skill-word count break toward the coworker who can actually
+       do it. Ordering is the only part of a "generous" list the boss reads
+       as a recommendation, so it is the part that has to be earned. Left
+       untouched when reach is absent. */
+    .sort((a, b) => (b.matches.length - a.matches.length)
+                 || (reachCount(b) - reachCount(a)));
+}
+function reachCount(hit) {
+  return (hit && hit.reach && hit.reach.granted) ? hit.reach.granted.length : 0;
+}
+
+/* The bullet the palette prints, so the sentence the boss reads is testable
+   without a toast. Reach absent → no suffix at all; reach present and empty
+   → say so, because "nothing ticked" is the fact that makes the whole list
+   worth showing. */
+function whoCanLine(hit) {
+  const head = `• ${hit.agent.name} (${hit.agent.role}): ${hit.matches.join(', ')}`;
+  if (!hit.reach) return head;
+  const can = (hit.reach.granted || []).map(g => g.say);
+  if (can.length) return `${head} — can ${can.join(', ')}`;
+  const locked = (hit.reach.locked || []).map(l => l.unlock).filter(Boolean);
+  if (locked.length) return `${head} — nothing switched on yet; could ${locked.join(', ')}`;
+  return `${head} — nothing ticked on their card yet`;
 }
 
 /* The HQ topbar's ecosystem switcher is now the shared <cafreso-ecobar> web
@@ -103,4 +161,4 @@ function whoCan(agents, queryRaw) {
    anything visible; it's purely a registration component.
    ───────────────────────────────────────────────────────────────────── */
 
-export { downgradeElevatedModel, whoCan };
+export { downgradeElevatedModel, whoCan, whoCanLine };

@@ -1,5 +1,7 @@
 import { MSG_STATES } from './windows.jsx';
-import { whoCan } from './agents.jsx';
+import { whoCan, whoCanLine } from './agents.jsx';
+import { grantedTools } from './cast.jsx';
+import { HQ } from '../hq-runtime.jsx';
 import { CafresoHQUI } from '../ui.jsx';
 const { useCommands } = CafresoHQUI;
 function AppGlobalCommands({
@@ -182,20 +184,35 @@ function AppGlobalCommands({
 
     /* /who-can — quick agent capability lookup. The label gets a sub-prompt
        when the user has typed something past 'who can'; otherwise it just
-       opens a toast with the full capability roster. */
+       opens a toast with the full capability roster.
+
+       The skill words are a guess off the job title; the reach beside them
+       is not. `grantedTools(tools, capabilityFacts(agent))` is the product's
+       single answer to "what can this coworker actually reach" — the same
+       pair the coworker card, the inspect panel and the candidate shelf
+       ask — and passing it in is what stops this list from rating a
+       coworker with nothing ticked exactly like one holding the tool. */
     { id: 'comms.who-can', label: '/who-can — find the right coworker for a job',
       section: 'Comms', icon: '🔎',
       run: async () => {
         const q = await window.hqPrompt('Find coworkers who can do…\n(e.g. "code review", "docs", "deployment")', { value: '' });
         if (!q || !q.trim()) return;
-        const hits = whoCan(agents, q);
+        const hits = whoCan(agents, q, a => grantedTools(a.tools, HQ.capabilityFacts(a)));
         const toast = window.cafresohqToast;
         if (!hits.length) {
-          toast && toast.warn(`No agent claims "${q}". (Hire one or set capabilities on an existing agent.)`);
+          /* This used to end "(Hire one or set capabilities on an existing
+             agent.)" — and `capabilities` is a field nothing in the product
+             writes. Of the two ways out it offered, one was a control that
+             does not exist. Job titles are the real input here and they are
+             a select at hire with no later edit, so the honest routes are a
+             new hire or asking whoever is nearest. */
+          toast && toast.warn(
+            `No coworker's job title covers "${q}". Titles are set when you hire and can't be changed after — `
+            + `hire someone from the front desk, or @-mention whoever is closest and say what you need.`,
+            { duration: 12000 });
           return;
         }
-        const lines = hits.slice(0, 6).map(h =>
-          `• ${h.agent.name} (${h.agent.role}): ${h.matches.join(', ')}`).join('\n');
+        const lines = hits.slice(0, 6).map(whoCanLine).join('\n');
         toast && toast.info(`Agents who can ${q}:\n${lines}`, { duration: 12000 });
       }
     },
