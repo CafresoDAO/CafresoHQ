@@ -11797,3 +11797,90 @@ still also stamps environment aborts (the unmount sweep) — now at
 three filing sites, all consistent, all still parked as one defect.
 And STOP ALL still doesn't empty the office's outbox of deferred
 notes from two entries ago.
+
+## STOP ALL pulled the plug and the office kept dispatching
+
+Measured 2026-08-15 on office 9261 against the canned brain (the
+registry's UTC stamps read 2026-08-16). A fan-out put Kip and Vera on
+the same slow ask; Kip finished first and his DM for Vera entered the
+outbox — "(Kip's note for Vera waits its turn)". The boss pressed
+■ STOP ALL and confirmed at 00:36:42.543Z. The chat announced
+"■ STOP ALL — aborted 1 stream, paused 0 missions." And at
+00:36:48.357Z — six seconds later — Vera delivered the waited note's
+answer, its registry record running queued → delivered → in_progress
+→ completed as though nothing had happened. The office said
+everything stopped, then started new work on the desk of the very
+coworker the boss had just stopped.
+
+The mechanism is the residue flagged two entries ago, and it is worse
+than a race: the sweep IS the go signal. The #98 wait loop polls
+`agentAbortersRef.current.has(agent.id)` — "is the desk busy" — and a
+global sweep's whole job is to empty that map. To the waiting note,
+STOP ALL and "Vera finished normally" are indistinguishable. Auditing
+the same shape elsewhere found two siblings, one class — work HELD
+for later survives a sweep that only kills work in FLIGHT: a stopped
+run's dmQueue still fanned out (the DMs a killed reply had queued are
+NEW dispatches, launched after "stop" — all three dispatch paths,
+@mention, Delegate and task drop, shared this), and the meeting room
+takes turns sequentially, so aborting attendee two's stream never
+stopped attendee three from being dispatched.
+
+The fix is one integer: `stopEpochRef`, bumped ONLY inside the shared
+sweep. Finding out where the sweep actually lives was the fix's real
+work: onStopAll kept its own private copy of the abort loop — which
+cleared the map WITHOUT any way to say "this was a stop, not a
+finish" — and the composer's ■ Stop button bypasses onStopAll
+entirely, wired straight to `abortAllAgentRuns`. So the epoch bump
+lives in `abortAllAgentRuns`, onStopAll's private loop is collapsed
+onto it, and the unmount cleanup rides the same sweep (a note waiting
+in the outbox must not fire a token-burning fetch after teardown). A
+per-desk stop — coffee, a dismissal, a doored delete — does NOT bump:
+freeing one desk is not "stop everything", and a note waiting for
+that desk may fairly proceed.
+
+Readers of the epoch: the wait loop captures it before sleeping and
+re-checks it when the desk goes quiet — a bump files the message
+'cancelled' (by the host, kind 'stopped-all', retryable) and tells
+the team room "(STOP ALL — Kip's waiting note for Vera was not
+delivered.)"; all three dmQueue fanouts drop their queue on an
+aborted run and say what the stop ate ("had 2 notes queued for
+teammates — not sent: the run was stopped."); the meeting loop checks
+at the top of every turn and adjourns with the truth about who never
+spoke. The DM-delivers-nothing gates are suite-verified, not
+live-measured — the canned brain returns a whole body at once, so a
+mid-body abort window doesn't exist on this rig; said honestly here.
+
+Verified live post-fix on the same staging: stop confirmed at
+01:03:28.848Z, and the waiting note's record closed queued →
+delivered → cancelled ('stopped-all', by 'host') at 01:03:28.851Z —
+three milliseconds of honest bookkeeping where there used to be six
+seconds of unasked-for work. No reply text ever appeared, and Vera's
+desk stayed idle. The no-stop arm also ran live by accident (a missed
+click window): the desk freed normally and the note delivered — the
+epoch check does not eat fair deliveries.
+
+Suite: scripts/test_a_stop_stops_the_outbox_too.py — pins the single
+epoch and its single bump site, the one shared abort loop, all three
+surfaces riding it, the wait→epoch-check→recipient-gone order, the
+three hoists and three gates, the meeting's turn-top check and the
+@all fan-out staying parallel; then node-drives the lifted wait block
+(clean finish dispatches; swept wait cancels 'stopped-all' and
+dispatches nothing; a recipient dismissed mid-wait still files
+'recipient-gone'), the lifted gate (drops and says so, singular and
+plural, clean runs keep their queue) and the lifted meeting loop
+(adjourns counting who never spoke, no-epoch panels still meet). Two
+sibling suites needed their anchors moved, not their teeth pulled:
+the #98 wait suite's harness now declares the epoch its lifted block
+reads, and the meeting suite's loop regex follows the
+`recipients.entries()` rewrite with a wider window for the adjourn
+check that now lives inside the branch.
+
+Residue: the boss's plain composer sends still mint no registry
+record — the standing design question, untouched. 'aborted by user'
+still stamps environment aborts at three consistent filing sites —
+parked. New this round: the topbar's ■ STOP ALL renders only while
+some coworker's STATUS is 'busy', but the handler counts the aborter
+MAP — during the ~5s 'active' ("reporting back") fade the N WORKING
+chip still counts a coworker the stop button can no longer see. No
+stream exists in that gap so nothing burns, but the two gates reading
+two truths is the kind of drift this ledger exists to name early.

@@ -79,13 +79,15 @@ body = room.group(0) if room else ''
 
 check('a meeting is dispatched one attendee at a time',
       re.search(r"activeRoom\.kind === 'meeting'", body)
-      and re.search(r'for \(const a of recipients\) \{[\s\S]{0,900}?await onDispatchToAgent', body),
+      and re.search(r'for \(const \[turnIdx, a\] of recipients\.entries\(\)\) \{[\s\S]{0,900}?await onDispatchToAgent', body),
       'ui/chat.jsx: a meeting must await each attendee in turn — Promise.all '
       'assembles every prompt before anyone has spoken, which is the bug')
 
 # The barrier matters, not just the loop: an unawaited call inside a for-of
 # is still parallel, and would pass a naive "is there a loop" check.
-meeting_branch = re.search(r"activeRoom\.kind === 'meeting'\)[\s\S]{0,2400}?\n          \} else \{", body)
+# 4800, was 2400: the #101 adjourn check (epoch capture, the turn-top gate,
+# and its comment) lives inside this branch now and just about doubled it.
+meeting_branch = re.search(r"activeRoom\.kind === 'meeting'\)[\s\S]{0,4800}?\n          \} else \{", body)
 mb = meeting_branch.group(0) if meeting_branch else ''
 check('...and the turn is actually awaited, not merely looped',
       'await onDispatchToAgent' in mb and 'Promise.all' not in mb,

@@ -119,6 +119,11 @@ def main():
         'const HQ = { uid: () => "m_x" };\n'
         'let calls;\n'
         'const agentAbortersRef = { current: new Map() };\n'
+        # The #101 stop epoch is a free variable of the lifted block now.
+        # Never bumped here: these drives are about WAITING, and the
+        # swept-mid-wait ending has its own suite
+        # (test_a_stop_stops_the_outbox_too).
+        'const stopEpochRef = { current: 0 };\n'
         'const agentsRef = { current: [] };\n'
         'let dmFrom = null;\n'
         'let onTick = null;\n'

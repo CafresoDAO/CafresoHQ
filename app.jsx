@@ -1015,10 +1015,13 @@ function App() {
     const running = missions.filter(m => m.status === 'running').length;
     if (inflight === 0 && running === 0) { say('Nothing to stop', 'STOP'); return; }
     if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`, { danger: true, okLabel: 'Stop all' }))) return;
-    for (const c of agentAbortersRef.current.values()) {
-      try { c.abort(); } catch (_e) {}
-    }
-    agentAbortersRef.current.clear();
+    /* One sweep, shared with the composer's ■ Stop and the unmount cleanup.
+       This used to be its own copy of the abort loop — which meant it
+       cleared the aborter map WITHOUT bumping the stop epoch, and the #98
+       outbox read the emptied map as "desk free": measured 2026-08-16, a
+       waiting note dispatched and completed six seconds after this very
+       handler announced "aborted 1 stream". */
+    abortAllAgentRuns();
     /* 'active' as well as 'busy'. Missions leave a coworker at `active ·
        on mission` between iterations, so filtering on 'busy' alone meant
        STOP ALL paused the missions but left their coworkers lit on the
@@ -1374,6 +1377,18 @@ ${d.text}` : d.text,
      unmount also call abortAgentRun so the fetch (and any token bills it
      would rack up) actually stops. */
   const agentAbortersRef = useRefA(new Map());
+  /* Which sweep are we on. Bumped by every stop-the-world sweep (STOP ALL,
+     the composer's ■ Stop, unmount) and read by work that was HOLDING
+     something for later — the #98 outbox wait, a meeting's turn order.
+     Measured 2026-08-16: the boss pressed STOP ALL while Kip's note for
+     Vera waited out her busy desk; the sweep emptied the aborter map,
+     which is the exact condition the wait was polling, so the note
+     dispatched and completed six seconds AFTER "■ STOP ALL — aborted 1
+     stream" — the office said everything stopped, then started new work.
+     A per-desk stop (coffee, dismissal, a doored delete) does NOT bump
+     this: freeing one desk is not "stop everything", and a note waiting
+     for that desk may fairly proceed. */
+  const stopEpochRef = useRefA(0);
   const beginAgentRun = (agentId) => {
     const prior = agentAbortersRef.current.get(agentId);
     if (prior) { try { prior.abort(); } catch (_e) {} }
@@ -1458,14 +1473,15 @@ ${d.text}` : d.text,
   const abortAllAgentRuns = () => {
     for (const c of agentAbortersRef.current.values()) { try { c.abort(); } catch (_e) {} }
     agentAbortersRef.current.clear();
+    /* The sweep must also stop the OUTBOX, not just the streams — clearing
+       the map is the very condition the #98 wait polls, so without this a
+       waiting note reads the sweep as "desk free, go". See stopEpochRef. */
+    stopEpochRef.current++;
   };
   // Abort everything in flight when the App unmounts (e.g. tab nav, HMR).
-  useEffectA(() => () => {
-    for (const c of agentAbortersRef.current.values()) {
-      try { c.abort(); } catch (_e) {}
-    }
-    agentAbortersRef.current.clear();
-  }, []);
+  // Same sweep as STOP ALL — including the epoch bump, so a note waiting
+  // in the outbox can't fire a token-burning fetch after teardown.
+  useEffectA(() => () => { abortAllAgentRuns(); }, []);
 
   /* Global DM-chain rate limit. The per-chain depth cap (4) bounds a single
      ping-pong but doesn't catch BREADTH: an agent emitting 5 DMs in one
@@ -1826,8 +1842,30 @@ ${d.text}` : d.text,
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
         text: `(${dmFrom ? `${dmFrom.name}'s note` : `the office's note`} for ${agent.name} waits its turn — they're still finishing another reply.)`,
         thread: 'team' }]);
+      const stopEpochAtWait = stopEpochRef.current;
       while (agentAbortersRef.current.has(agent.id)) {
         await new Promise(res => setTimeout(res, 750));
+      }
+      /* Why did the desk go quiet? If a stop-the-world sweep ran while
+         this note waited, the emptied map is NOT "desk free, go" — it is
+         the boss saying nothing else starts. Measured 2026-08-16: without
+         this check the note dispatched and completed six seconds after
+         "■ STOP ALL — aborted 1 stream", on the desk of the very coworker
+         the boss had just stopped. The record says what happened and the
+         team room says what was NOT delivered; re-sending is the boss's
+         call, not the office's. */
+      if (stopEpochRef.current !== stopEpochAtWait) {
+        MessageRegistry.transition(messageId, 'cancelled', {
+          by: 'host',
+          note: 'STOP ALL — this note was still in the outbox and was not delivered',
+          failureCause: { kind: 'stopped-all', retryable: true,
+            message: 'STOP ALL was pressed while this note waited for a busy desk.',
+            actionNeeded: 'Re-send it if the question still needs an answer.' },
+        });
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+          text: `(STOP ALL — ${dmFrom ? `${dmFrom.name}'s` : `the office's`} waiting note for ${agent.name} was not delivered.)`,
+          thread: 'team' }]);
+        return '';
       }
       /* The desk can empty while we wait — LET GO mid-defer deletes the
          aborter AND the coworker. Dispatching anyway would resurrect a
@@ -2077,6 +2115,12 @@ ${d.text}` : d.text,
     let rawReply = '';
     let usedTokens = 0;
     const dmQueue = [];                      // collect every DM the agent emits
+    /* Was THIS run stopped? Written by the catch, read by the DM fanout
+       after the try/finally — same scope split as `rawReply` above. A
+       stopped run must not deliver the notes it queued: those DMs rode on
+       a reply the boss killed, and delivering them dispatches NEW work
+       right after "stop". */
+    let aborted = false;
     /* The honesty guards, and the answer to "did any of them fire".
        Declared out here for the same reason `rawReply` is: they are READ
        after the try/finally, and they are WRITTEN inside it, one line above
@@ -2678,7 +2722,7 @@ ${d.text}` : d.text,
          re-wrapped on the way up (the retry layer used to do exactly
          that), and a user-stop must never be recorded as the
          coworker's failure — §5's ledger rule depends on this. */
-      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+      aborted = (controller && controller.signal && controller.signal.aborted) ||
         !!(err && err.name === 'AbortError');
       flush.cancel();
       rawReply = buf;      // the error path never reaches the finalize capture
@@ -2761,6 +2805,17 @@ ${d.text}` : d.text,
          the ERROR path, which reaches here without passing that line. */
       if (!honesty) honesty = honestyFor(rawReply);
       for (const n of honesty) if (flush && flush.note) flush.note(n);
+    }
+    /* A stopped run delivers nothing. The DMs below would be NEW
+       dispatches — new streams, new records, new tokens — launched by a
+       run the boss just killed. Saying what was dropped beats silence:
+       the coworker DID queue those notes, and the boss should know the
+       stop ate them. */
+    if (aborted && dmQueue.length) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${agent.name} had ${dmQueue.length} note${dmQueue.length === 1 ? '' : 's'} queued for teammates — not sent: the run was stopped.)`,
+        thread: 'team' }]);
+      dmQueue.length = 0;
     }
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
@@ -3684,6 +3739,10 @@ ${d.text}` : d.text,
     let usedTokens = 0;
     let buf = '';
     const dmQueue = [];
+    /* Written by the catch, read by the DM fanout after it — a stopped
+       hand-off must not deliver the notes it queued. Same rule, same
+       reason as the @mention path's `aborted`. */
+    let aborted = false;
     /* The third path never kept this list. It did not need one — nothing
        here files a delivery, so there was no Working footer to build — but
        that is also why the sources guard could not run on the one path
@@ -3809,7 +3868,7 @@ ${d.text}` : d.text,
          re-wrapped on the way up (the retry layer used to do exactly
          that), and a user-stop must never be recorded as the
          coworker's failure — §5's ledger rule depends on this. */
-      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+      aborted = (controller && controller.signal && controller.signal.aborted) ||
         !!(err && err.name === 'AbortError');
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
@@ -3850,6 +3909,13 @@ ${d.text}` : d.text,
          which is why they are one table now. */
       if (!honesty) honesty = honestyFor(buf);
       for (const n of honesty) if (flush && flush.note) flush.note(n);
+    }
+    /* Same rule as the @mention path: a stopped hand-off delivers
+       nothing, and the boss hears what the stop ate. */
+    if (aborted && dmQueue.length) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${a.name} had ${dmQueue.length} note${dmQueue.length === 1 ? '' : 's'} queued for teammates — not sent: the run was stopped.)` }]);
+      dmQueue.length = 0;
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
@@ -4298,6 +4364,10 @@ ${d.text}` : d.text,
     let buf = '';
     let usedTokens = 0;
     const dmQueue = [];
+    /* Written by the catch, read by the DM fanout after it — a stopped
+       task run must not deliver the notes it queued. Same rule as the
+       @mention and Delegate paths. */
+    let aborted = false;
     const toolVisits = [];      // what they consulted, for the delivery footer
     /* Whether the deliverable actually reached the cabinet this run — set
        inside the try below, read by the unsentBlocks guard after it, which
@@ -4586,7 +4656,7 @@ ${d.text}` : d.text,
          re-wrapped on the way up (the retry layer used to do exactly
          that), and a user-stop must never be recorded as the
          coworker's failure — §5's ledger rule depends on this. */
-      const aborted = (controller && controller.signal && controller.signal.aborted) ||
+      aborted = (controller && controller.signal && controller.signal.aborted) ||
         !!(err && err.name === 'AbortError');
       flush.cancel();
       screen.error(buf);   // close the desk monitor — no "working" glow on a dead run (§4)
@@ -4635,6 +4705,13 @@ ${d.text}` : d.text,
          `honestyFor` above, where `deliveryFiled` is already settled. */
       if (!honesty) honesty = honestyFor(buf);
       for (const n of honesty) if (flush && flush.note) flush.note(n);
+    }
+    /* Same rule as the @mention and Delegate paths: a stopped run
+       delivers nothing, and the boss hears what the stop ate. */
+    if (aborted && dmQueue.length) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${agent.name} had ${dmQueue.length} note${dmQueue.length === 1 ? '' : 's'} queued for teammates — not sent: the run was stopped.)` }]);
+      dmQueue.length = 0;
     }
     for (const dm of dmQueue) {
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
@@ -5291,7 +5368,7 @@ ${d.text}` : d.text,
   // same props without duplication.
   const sharedChatPanel = (
     <ChatPanel agents={agents} chat={chat} setChat={setChat}
-      backendDown={backendDown} onStopAll={abortAllAgentRuns}
+      backendDown={backendDown} onStopAll={abortAllAgentRuns} stopEpochRef={stopEpochRef}
       projects={projects} meetings={meetings} setMeetings={setMeetings}
       onDelegate={onDelegate} onCeoUsage={onCeoUsage}
       onApprovalRequest={onApprovalRequest} onDispatchToAgent={dispatchToAgent}

@@ -54,7 +54,7 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
   );
 }
 
-function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null }) {
+function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopAll = null, onHire = null, stopEpochRef = null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
@@ -400,7 +400,21 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                disagree with attendee one BY NAME, and the boss watches the
                room fill in turn instead of three bubbles racing. */
             const heardSoFar = [];
-            for (const a of recipients) {
+            /* Turn-taking is exactly what makes this loop leak past a
+               STOP ALL: aborting attendee two's stream does nothing to
+               stop the loop from DISPATCHING attendee three — a brand-new
+               run, launched after the boss said stop. The epoch is read
+               at the top of every turn; a bump means the sweep ran and
+               the meeting adjourns with the truth about who never spoke. */
+            const stopEpochAtStart = stopEpochRef ? stopEpochRef.current : null;
+            for (const [turnIdx, a] of recipients.entries()) {
+              if (stopEpochRef && stopEpochRef.current !== stopEpochAtStart) {
+                const left = recipients.length - turnIdx;
+                setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+                  text: `(meeting adjourned — STOP ALL. ${left} attendee${left === 1 ? '' : 's'} never got their turn.)`,
+                  thread: activeThread }]);
+                break;
+              }
               try {
                 const said = await onDispatchToAgent(a, body, {
                   userText: body,
