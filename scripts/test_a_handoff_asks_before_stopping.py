@@ -91,9 +91,14 @@ def main():
     # ── behavior: the lifted door over three desks ──────────────────────
     body = None
     if door_at != -1:
-        user_msg = bare.find('const userMsg = { id: HQ.uid(', door_at)
-        if user_msg > door_at:
-            body = bare[door_at:user_msg]
+        # The door's OWN closing brace, not the next landmark: the registry
+        # mint (#100) now sits between the door and the bubble, and the
+        # drive here is about the ask alone — the mint has its own suite.
+        decline_at = bare.find(DECLINE, door_at)
+        if decline_at > door_at:
+            body_end = bare.find('}', decline_at)
+            if body_end > decline_at:
+                body = bare[door_at:body_end + 1]
     check('the door block lifts', body is not None)
     if body is None or not shutil.which('node'):
         if not shutil.which('node'):

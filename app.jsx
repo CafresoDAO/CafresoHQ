@@ -29,6 +29,26 @@ const { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalT
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 
+/* Structured failure cause for a dead stream — Plato's "no silent
+   failures" ask. Classifies the common cases so the inbox can show an
+   actionable hint instead of a raw error string. This lived inline in
+   the @mention catch until the Delegate path needed the same table:
+   two hand-written spellings of "what killed this run" is how the four
+   reply-cleaning recipes drifted apart, so it is one function now. */
+const classifyStreamFailure = (s) => {
+  if (/401|invalid bearer|unauthor/i.test(s))
+    return { kind: 'auth', retryable: true, actionNeeded: 'Sign that brain in again — Settings → Connections' };
+  if (/quota|rate limit|429/i.test(s))
+    return { kind: 'rate-limit', retryable: true, actionNeeded: 'Wait or upgrade plan' };
+  if (/credit balance/i.test(s))
+    return { kind: 'billing', retryable: false, actionNeeded: 'Check billing — plan may not be provisioned' };
+  if (/timeout|timed out|ETIMEDOUT/i.test(s))
+    return { kind: 'timeout', retryable: true, actionNeeded: 'Model may be overloaded; retry or switch' };
+  if (/model.*not.*found|unknown model/i.test(s))
+    return { kind: 'config', retryable: false, actionNeeded: 'Model id not registered with this provider' };
+  return { kind: 'unknown', retryable: true, actionNeeded: 'Inspect error and retry' };
+};
+
 function App() {
   /* Empty by design — HQ.INITIAL_AGENTS is []. Fresh offices start with the
      CEO alone; the fake-stats mapping that used to live here (invented tokens
@@ -2684,23 +2704,10 @@ ${d.text}` : d.text,
       onUpdateAgent(agent.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }
         : { status: 'idle', mood: 'stuck', task: snagSentence(raw) });
-      // Structured failure cause — Plato's "no silent failures" ask.
-      // Classify common cases so the inbox can show actionable hints
-      // instead of raw error strings.
-      const classify = (s) => {
-        if (/401|invalid bearer|unauthor/i.test(s))
-          return { kind: 'auth', retryable: true, actionNeeded: 'Sign that brain in again — Settings → Connections' };
-        if (/quota|rate limit|429/i.test(s))
-          return { kind: 'rate-limit', retryable: true, actionNeeded: 'Wait or upgrade plan' };
-        if (/credit balance/i.test(s))
-          return { kind: 'billing', retryable: false, actionNeeded: 'Check billing — plan may not be provisioned' };
-        if (/timeout|timed out|ETIMEDOUT/i.test(s))
-          return { kind: 'timeout', retryable: true, actionNeeded: 'Model may be overloaded; retry or switch' };
-        if (/model.*not.*found|unknown model/i.test(s))
-          return { kind: 'config', retryable: false, actionNeeded: 'Model id not registered with this provider' };
-        return { kind: 'unknown', retryable: true, actionNeeded: 'Inspect error and retry' };
-      };
-      const cause = aborted ? null : { ...classify(raw), message: raw.slice(0, 240) };
+      // Structured failure cause — classifyStreamFailure is the one table
+      // both dispatch catches share (hoisted to module scope when the
+      // Delegate path started filing records too).
+      const cause = aborted ? null : { ...classifyStreamFailure(raw), message: raw.slice(0, 240) };
       MessageRegistry.transition(messageId, aborted ? 'cancelled' : 'failed', {
         by: agent.name,
         note: aborted ? 'aborted by user' : (cause && cause.kind ? `${cause.kind}: ${cause.actionNeeded}` : raw.slice(0, 120)),
@@ -3654,6 +3661,21 @@ ${d.text}` : d.text,
         { danger: true, okLabel: 'Stop & hand off', cancelLabel: 'Let them finish' });
       if (!ok) return false;
     }
+    /* File the hand-off. This was the one dispatch path that never touched
+       the registry — measured 2026-08-15: a delegated brief ran to
+       completion on the floor while the registry held nothing for it
+       (77 records, none this run's), so the Inbox could not answer "what
+       happened to that hand-off?", a failed delegation had no row to file
+       its cause against, and a dismissal's outcome read never saw the
+       work. Minted AFTER the busy-desk door above: a declined gesture was
+       cancelled before anything was dispatched, and a record for it would
+       file work that never started. */
+    const messageId = MessageRegistry.createMessage({
+      fromAgentId: 'boss', fromAgentName: 'You',
+      toAgentId: a.id, toAgentName: a.name,
+      body: brief, priority: 'med',
+    });
+    MessageRegistry.transition(messageId, 'delivered', { by: 'host' });
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})` };
     const agentId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);
@@ -3683,6 +3705,7 @@ ${d.text}` : d.text,
        fact about the caller, and the caller is a prop. */
     const recentChat = chatRef.current.slice(-6);
     const screen = makeScreenEmitter(a.id);
+    MessageRegistry.transition(messageId, 'in_progress', { by: a.name });
     try {
       await HQ.agentStream(a, brief, tok => {
         buf += tok;
@@ -3719,6 +3742,14 @@ ${d.text}` : d.text,
             onUpdateAgent(a.id, { task: 'reading results…' });
             pulseGraph(ev, a);
             recordToolReceipt(a, ev);
+            /* Same rule as the @mention path: an artifact is a claim about
+               a file on disk, and the inbox shows it as the DELIVERABLE —
+               only a write that happened files one. */
+            if (!ev.failed && (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND')) {
+              MessageRegistry.attachArtifact(messageId, {
+                path: String(ev.arg || ''), kind: ev.name === 'VAULT_NEW' ? 'wrote' : 'appended',
+              });
+            }
           }
         },
         peers: agents.filter(x => x.id !== a.id),
@@ -3747,6 +3778,10 @@ ${d.text}` : d.text,
       // only the bubble carries the office's note about what never happened.
       setChat(prev => prev.map(m => m.id === agentId ? { ...m, text: flush.withNotes(cleanBuf) } : m));
       screen.done(cleanBuf);
+      // Same terminal note as the @mention path files: the reply itself,
+      // not a stock phrase. No mid-stream ACK scanner runs on this path,
+      // so there is no skipFinal dance — one plain transition.
+      MessageRegistry.transition(messageId, 'completed', { by: a.name, note: cleanBuf.slice(0, 120) || 'no body' });
       onUpdateAgent(a.id, {
         status: 'active', mood: 'done',
         recent: brief.slice(0, 80),
@@ -3781,12 +3816,23 @@ ${d.text}` : d.text,
       setChat(prev => prev.map(m => m.id === agentId
         ? { ...m, text: aborted ? ((m.text || '') + ' …(stopped)') : chatErrorText(err, agents, a && a.id), error: !aborted }
         : m));
+      const raw = err && err.message || String(err);
       onUpdateAgent(a.id, aborted
         ? { status: 'idle', mood: 'idle', task: '' }
-        : { status: 'idle', mood: 'stuck', task: snagSentence(err && err.message || String(err)) });
+        : { status: 'idle', mood: 'stuck', task: snagSentence(raw) });
+      /* The record gets the same terminal truth the @mention path files:
+         a boss-made stop is 'cancelled', a dead run is 'failed' with the
+         shared cause table — a failed hand-off finally has a row to file
+         its cause against. */
+      const cause = aborted ? null : { ...classifyStreamFailure(raw), message: raw.slice(0, 240) };
+      MessageRegistry.transition(messageId, aborted ? 'cancelled' : 'failed', {
+        by: a.name,
+        note: aborted ? 'aborted by user' : `${cause.kind}: ${cause.actionNeeded}`,
+        failureCause: cause,
+      });
       logActivity(aborted
         ? { agentId: a.id, agentName: a.name, color: a.color, action: 'progress', text: 'run stopped' }
-        : { agentId: a.id, agentName: a.name, color: a.color, action: 'failed', priority: 'attention', text: 'delegation failed', detail: (err && err.message || String(err)).slice(0, 240) });
+        : { agentId: a.id, agentName: a.name, color: a.color, action: 'failed', priority: 'attention', text: 'delegation failed', detail: raw.slice(0, 240) });
     } finally {
       endAgentRun(a.id, controller);
     }
@@ -3810,8 +3856,12 @@ ${d.text}` : d.text,
       const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== a.id) {
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
+        /* parentMessageId chains the child record to the hand-off's own —
+           without it every DM a delegated coworker sent started a fresh,
+           unlinked thread and "what happened to that hand-off?" lost the
+           trail one hop in. */
         await dispatchToAgent(target, dm.body, { dmFrom: a, dmDepth: 1,
-          originThread: 'direct', originAgentId: a.id });
+          originThread: 'direct', originAgentId: a.id, parentMessageId: messageId });
       } else if (!target) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${a.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);

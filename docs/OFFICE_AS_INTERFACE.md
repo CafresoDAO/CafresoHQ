@@ -11725,3 +11725,75 @@ registry row to file the failure against — worth its own look. Line
 (the unmount sweep), still parked. And STOP ALL still doesn't empty
 the office's outbox of notes waiting out the previous entry's
 deferral — also still parked.
+
+## A hand-off leaves no record the registry can see
+
+Found 2026-08-15, working the previous entry's residue. The Delegate
+path was the one dispatch surface that never touched the message
+registry. Measured on the live rig: a brief delegated to Vera ran to
+completion on the floor — the chat shows the delegation bubble and
+her finished answer — while the registry held nothing for it: 77
+records, none this run's. The @mention path and every DM chain file
+created → delivered → in_progress → completed/cancelled/failed for
+each dispatch; the hand-off filed nothing at any point in its life.
+
+What that silence cost, concretely: the Inbox could not answer "what
+happened to that hand-off?"; a delegation that DIED filed no failed
+row and no cause — the chat error bubble was the only witness, and
+it scrolls away; a dismissal's outcome read never saw delegated
+work; and every DM the delegated coworker went on to send started a
+fresh, unlinked thread, so the trail went cold one hop in.
+
+The fix files the same lifecycle the @mention path files, with one
+placement rule doing real work: the record is minted AFTER the
+previous entry's busy-desk door. A declined hand-off was cancelled
+before anything was dispatched — a record for it would file work
+that never started, which is the same lie #76 caught in the other
+direction (a request filed as the act). Then 'delivered' at
+dispatch, 'in_progress' before the stream, and the reply itself as
+the 'completed' note — the same terminal truth, not a stock phrase.
+
+The catch splits a boss-made stop from a dead run exactly as the
+@mention catch does: 'cancelled' / 'aborted by user' for a stop,
+'failed' with a structured cause for a death. The cause table itself
+(classifyStreamFailure — auth, rate-limit, billing, timeout, config,
+unknown) lived inline in the @mention catch; rather than write the
+delegate path a second spelling of it, it is hoisted to module scope
+and both catches read the one table. Four dispatch paths each grew
+their own hand-written reply-cleaning recipe once, and each gap was
+found separately — the cause table does not get to repeat that
+history. Vault writes attach as artifacts under the same
+only-if-it-happened rule, and the DM continuation loop now passes
+parentMessageId so a delegated coworker's own hand-offs chain to the
+record instead of starting cold threads.
+
+Verified live, both directions. Success: the delegated brief filed
+queued:created → delivered → in_progress → completed with the
+answer's own text as the note, You → Vera, body = the brief, and the
+record persisted to messages.json on disk. Death: with the brain
+down, the same gesture filed 'failed' with the raw upstream error
+("LM Studio 502: Connection refused") preserved in the cause and
+retryable: true — a run that before this fix would have left no
+trace anywhere but a scrolled-away bubble.
+
+The regression suite (test_a_handoff_leaves_a_record.py, 18 checks)
+pins the one hoisted cause table and both catches reading it, the
+mint's shape and its place in the order (door → mint → delivered →
+bubble → in_progress → stream), the completed/cancelled/failed
+filings, the artifact rule, the chain link, then node-drives the
+lifted table, gate and filing: a quiet desk mints without asking, a
+busy desk asks first, a declined gesture files NOTHING, a boss stop
+files 'cancelled', a dead run files 'failed' with the shared cause.
+The previous entry's suite had its lift anchor tightened to the
+door's own closing brace — the mint now sits where that lift used to
+end, and the door drive is about the ask alone.
+
+Residue, recorded honestly: the boss's own composer sends still mint
+no record (dispatchToAgent mints for @mention sends; the plain-send
+path that answers without a dispatch does not ride it) — whether a
+plain chat turn IS registry work is a design question, not an
+oversight to patch silently. Line ~2666's 'aborted by user' note
+still also stamps environment aborts (the unmount sweep) — now at
+three filing sites, all consistent, all still parked as one defect.
+And STOP ALL still doesn't empty the office's outbox of deferred
+notes from two entries ago.
