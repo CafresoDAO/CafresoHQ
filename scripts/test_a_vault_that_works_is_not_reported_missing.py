@@ -157,8 +157,11 @@ def main():
           [sorted(dispatched), '— if PUT stops dispatching on _vault_backend '
            'this suite is checking nothing; re-read it'])
 
-    stat = section("if path == '/vault/status' and method == 'GET':",
-                   '# ---------- Discover local vaults ----------')
+    # The readiness computation moved out of the handler and up to module
+    # scope when a second door needed the same answer. The claim is unchanged
+    # — it is about the table, not about which function holds it — so the
+    # slice follows it rather than the check being softened.
+    stat = section('def _vault_readiness(', '# ---- Obsidian REST: vault adapter')
     table = re.search(r'backend_ready = \{([^}]*)\}', stat)
     check('the status door answers from a table, not a chain of ands',
           table is not None,
@@ -174,8 +177,12 @@ def main():
 
     # The default matters as much as the rows: a table lookup that raised, or
     # one that guessed True, would trade this defect for a louder one.
+    # Pinned to the lookup, not to an assignment: `configured = …` and
+    # `'configured': …` inside the returned dict are the same claim, and a
+    # regex that only knows one of them goes red on a refactor that changed
+    # nothing. What must not change is `.get` and the False.
     check('a backend with no row is not configured, and does not raise',
-          re.search(r'configured = backend_ready\.get\(_vault_backend,\s*False\)',
+          re.search(r'backend_ready\.get\(_vault_backend,\s*False\)',
                     stat) is not None,
           '— .get(…, False): an unknown backend is honestly "no vault", not '
           'a 500 and not an optimistic yes')

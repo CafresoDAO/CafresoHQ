@@ -12693,3 +12693,111 @@ the run-door check is still authoritative. Also still open:
 `hireFromTemplate` chokepoint; the boss's plain composer sends mint no
 registry record; 'aborted by user' still stamps environment aborts; and
 the Inbox still has no 'cancelled' filter pill.
+
+## Scheduling a night shift confirmed it while the vault was down
+
+The two doors before this one asked the same question at the same
+moment. `night_runner` asks "can a note land?" the instant a run
+starts (§ *Night shift orders a vault write it may not have*), and the
+pre-flight asks again before the first round (§ *A night shift starts
+with nowhere to file*). Both of those are the 2am door. Nobody was
+asking at 9pm, when the boss is actually standing there.
+
+Reproduced against a rig whose vault backend was pointed at a closed
+REST port:
+
+```
+GET  /vault/status   → {"configured": false, "backend": "rest", …}
+POST /missions/schedule → {"ok": true, "schedule": {…}}
+```
+
+Two keys, and one of them is `vaultFolder` — a folder nothing can be
+written to, echoed back as though it were a place. The screen turned
+that into `Scheduled 🌙 — runs even with this tab closed.` Every word
+of that is true. It is also the office promising a night of filed
+notes while holding, in the same process, the fact that there is
+nowhere to file them. The boss finds out at 6am, from a run report,
+about a thing the office knew at 9pm.
+
+### One computation, two doors
+
+The obvious fix is a second readiness check inside
+`_missions_schedule`. That is how you get two answers: the save door
+and `/vault/status` would each own a copy of the backend table, and
+the day someone adds a fourth backend, one of them is right and the
+boss reads whichever door they happened to open. So the table came
+out of the `/vault/status` handler and up to module scope as
+`_vault_readiness()`, and both doors now read it. The structural
+sweep in `test_a_vault_that_works_is_not_reported_missing.py` followed
+the computation rather than being softened — its claim was always
+about the table, not about which function holds it.
+
+### The probe is capped at 3s, and the default stays 30
+
+`_obsidian_request` grew a `timeout` parameter, defaulting to the 30s
+every pre-existing caller already used. The save door passes 3.
+
+The asymmetry is the point. A vault read or write IS the job, and
+shortening its patience would fail real work to save a few seconds.
+This probe is not the job — it decorates a confirmation for a save
+that has already been decided. A reachability check must never take
+longer than the thing it advises. It is also asked *before*
+`_night_lock` is taken: three seconds of network inside that lock
+stalls the scan thread that starts tonight's runs, which would make
+an honesty improvement into a scheduling bug.
+
+### Advisory, never a gate
+
+The schedule is saved either way. A vault that is down at 9pm can be
+up by 1am, and the run door asks again and stays authoritative.
+Refusing the save would be a worse wrong answer than the one being
+fixed: it would lose work over a condition that routinely resolves
+itself before the work runs.
+
+And a probe that ran out of time adds no caveat at all. This is the
+same reasoning as the run door: an unanswered question must not be
+the thing that puts a warning on the boss's screen. A refused
+connection comes back instantly and *is* an answer — that is the
+reproduced case, and it warns. A blackholed host is a shrug, and the
+office shrugs back. Measured: refused → caveat in 13ms; blackholed →
+no caveat, 3.1s.
+
+### The sentence
+
+`NO_VAULT_AT_SAVE = 'no vault to file into yet — check Connections'`
+
+It names the same screen `night_runner.vault_refused_sentence` names,
+because it is the same door — but it is deliberately not a copy of
+that string. Nothing has been refused at 9pm, and the schedule *is*
+saved; borrowing a sentence about a failed write would be a different
+kind of lie. Same door, different moment (§6, §7). It rides the
+confirmation rather than replacing it — `Scheduled 🌙 · no vault to
+file into yet — check Connections` — because both halves are true and
+dropping either one is the dishonest edit.
+
+### Results
+
+Seventeen fire arms across `serve.py` and `missions.jsx`, all caught
+first cut. One of them caught for the wrong reason on the first pass:
+the full-revert arm made the suite's `func()` helper raise on a
+`_vault_readiness` that does not exist yet, so one FAIL printed and
+every check below it went unrun — "caught" by a crash proves nothing
+about the checks that were supposed to catch it. Same lesson as the
+prior round's arm #8, and the fix was in the suite, not the product:
+`func()` now returns `''` when the function is absent, and the
+before-the-lock check compares `.find()` offsets. Both revert arms
+then reported 14 and 3 clean FAILs. Full runner: 155/155.
+
+Verified live in the shipped bundle against the canned brain: with the
+rig's vault reporting `configured: false`, pressing 🌙 SCHEDULE
+rendered `Scheduled 🌙 · no vault to file into yet — check
+Connections` and the schedule still appeared on the board.
+
+Still open, and still true: the save-time answer is advisory, so a
+vault that goes down between 9pm and 2am is caught only by the run
+door. `spawnOpenswarmRoster` is still guarded per-caller rather than
+behind one `hireFromTemplate` chokepoint; a plain send from the boss's
+composer still mints no registry record; 'aborted by user' still stamps
+environment aborts; the Inbox still has no 'cancelled' filter pill;
+and the OCI `configured` sentence still sends a fleet boss to a
+Connections screen with no bucket field.

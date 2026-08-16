@@ -976,10 +976,15 @@ def _vault_resolve(rel: str) -> pathlib.Path:
 # ---- Obsidian Local REST API client -----------------------------------------
 def _obsidian_request(method: str, upstream_path: str,
                       body: bytes = None, extra_headers: dict = None,
-                      content_type: str = 'application/json'):
+                      content_type: str = 'application/json',
+                      timeout: float = 30):
     """Forward a request to the Obsidian Local REST API plugin. Returns
     (status, headers_list, body_bytes). Raises ValueError if not configured.
-    Tolerates self-signed HTTPS certs (the plugin's default)."""
+    Tolerates self-signed HTTPS certs (the plugin's default).
+
+    `timeout` defaults to the 30s every caller used before it existed. Doors
+    where the answer is advisory rather than the work pass something short —
+    a reachability probe must never take longer than the thing it advises."""
     if not _vault_rest_url:
         raise ValueError('Obsidian REST URL not configured')
     if not _vault_rest_key:
@@ -998,15 +1003,88 @@ def _obsidian_request(method: str, upstream_path: str,
         headers.update(extra_headers)
     if is_https:
         ctx = ssl._create_unverified_context()  # plugin uses self-signed cert
-        conn = http.client.HTTPSConnection(host, port, timeout=30, context=ctx)
+        conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ctx)
     else:
-        conn = http.client.HTTPConnection(host, port, timeout=30)
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
     try:
         conn.request(method, upstream_path, body=body, headers=headers)
         resp = conn.getresponse()
         return resp.status, resp.getheaders(), resp.read()
     finally:
         conn.close()
+
+
+# ---- Can a note land? -------------------------------------------------------
+# The office's one answer to that, at module scope because more than one door
+# needs it and a second copy is how the first one goes stale. GET /vault/status
+# publishes it; the night-shift schedule door reads it to decide whether a
+# confirmation is the whole truth.
+#
+# What a boss set up at 9pm can be down at 1am, so this is never the last word
+# — night_runner asks again at the run door, and the write itself owns the
+# failures no probe can see. It is the earliest honest word, not the final one.
+
+# One sentence for the save door, and it names the screen the run door names.
+# Not the same words as night_runner.vault_refused_sentence: nothing has been
+# refused here and the schedule IS saved, so a sentence about a failed write
+# would be a different kind of lie. Same door, different moment.
+NO_VAULT_AT_SAVE = 'no vault to file into yet — check Connections'
+
+
+def _vault_readiness(probe_timeout: float = 30):
+    """What the office knows right now about whether a note can land.
+
+    `probe_timeout` is for doors where this answer is advisory rather than
+    the work: the Obsidian probe is a network call, and a save must not wait
+    30s to decorate its own confirmation. `unanswered` reports that the probe
+    ran out of time rather than came back negative — a caller adding a
+    warning must not add one on the strength of a question nobody answered.
+    """
+    if _vault_backend == 'fs' and _vault_root:
+        try:
+            pathlib.Path(_vault_root).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+    fs_ok = bool(_vault_root) and pathlib.Path(_vault_root).is_dir()
+    rest_ok = False
+    rest_detail = ''
+    unanswered = False
+    if _vault_rest_url and _vault_rest_key:
+        try:
+            s, _h, _b = _obsidian_request('GET', '/', timeout=probe_timeout)
+            rest_ok = (s == 200)
+            rest_detail = '' if rest_ok else 'http %d' % s
+        except (socket.timeout, TimeoutError) as e:
+            # Ran out of time, which is not the same fact as "shut". A
+            # refused connection comes back instantly and lands below.
+            rest_detail, unanswered = str(e)[:120] or 'timed out', True
+        except Exception as e:
+            rest_detail = str(e)[:120]
+    # Presence, not a probe: naming a bucket is this backend's equivalent of
+    # the fs arm's is_dir(), and it is what tells a provisioned fleet
+    # container apart from one nobody set up. The honest reasons a named
+    # bucket still refuses — no SDK, IAM not ready, wrong prefix — come back
+    # from the write itself as a 502 that says so. A real reachability probe
+    # here would build the OCI client on a polled endpoint and can hang on
+    # IMDS (see _oci_object_client), which is a worse answer than an
+    # optimistic one.
+    oci_ok = bool(_oci_vault_namespace and _oci_vault_bucket)
+    # One row per backend PUT /vault/note can dispatch to. Written as a table
+    # because the two-arm boolean this replaces silently answered False for
+    # 'oci' — a fleet container's vault worked at the write door and read as
+    # "no vault" at every door that asks first: the coworker cards, the tool
+    # grant, and (since the night-shift pre-flight) every night shift,
+    # cancelled before it started. A missing row is still False, so the suite
+    # walks the write handler's arms and requires each one to appear here.
+    backend_ready = {'fs': fs_ok, 'rest': rest_ok, 'oci': oci_ok}
+    return {
+        'configured': backend_ready.get(_vault_backend, False),
+        'fsExists': fs_ok,
+        'restReachable': rest_ok,
+        'restDetail': rest_detail,
+        'ociBucket': _oci_vault_bucket if oci_ok else '',
+        'unanswered': unanswered,
+    }
 
 
 # ---- Obsidian REST: vault adapter -------------------------------------------
@@ -2181,6 +2259,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'nextRunAt': start_at if start_at > now_ms else now_ms,
             'createdAt': now_ms,
         }
+        # Asked before the lock: this is a network probe on the rest backend,
+        # and holding _night_lock across it would stall the scan thread that
+        # starts tonight's runs. 3s, not the default 30 — the save is the job
+        # and this only decorates its confirmation.
+        #
+        # Advisory on purpose. The schedule is SAVED either way: a vault down
+        # now can be up by 1am, and night_runner asks again at the run door,
+        # which stays the authoritative one. What is not optional is saying
+        # so — every mission this schedules ends in a mandatory vault write,
+        # so "Scheduled 🌙" on its own is a promise the office already knows
+        # it may not keep, and the boss finds out at 1am.
+        v = _vault_readiness(probe_timeout=3)
+        warning = '' if (v['configured'] or v['unanswered']) else NO_VAULT_AT_SAVE
         with _night_lock:
             scheds = [s for s in _night_load('scheduled-missions.json', [])
                       if s.get('id') != sched['id']]
@@ -2188,7 +2279,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(400, {'error': 'too many schedules (max %d)' % MAX_NIGHT_SCHEDULES})
             scheds.append(sched)
             _night_save('scheduled-missions.json', scheds)
-        return self._send_json(200, {'ok': True, 'schedule': sched})
+        return self._send_json(200, {'ok': True, 'schedule': sched,
+                                     'vaultWarning': warning})
 
     def _missions_delete(self):
         """DELETE /missions/scheduled/<id> — the boss's "✕ CANCEL".
@@ -3217,54 +3309,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # ---------- Status ----------
         if path == '/vault/status' and method == 'GET':
-            if _vault_backend == 'fs' and _vault_root:
-                try:
-                    pathlib.Path(_vault_root).mkdir(parents=True, exist_ok=True)
-                except OSError:
-                    pass
-            fs_ok = bool(_vault_root) and pathlib.Path(_vault_root).is_dir()
-            rest_ok = False
-            rest_detail = ''
-            if _vault_rest_url and _vault_rest_key:
-                try:
-                    s, _h, _b = _obsidian_request('GET', '/')
-                    rest_ok = (s == 200)
-                    rest_detail = '' if rest_ok else f'http {s}'
-                except Exception as e:
-                    rest_detail = str(e)[:120]
-            # Presence, not a probe: naming a bucket is this backend's
-            # equivalent of the fs arm's is_dir(), and it is what tells a
-            # provisioned fleet container apart from one nobody set up. The
-            # honest reasons a named bucket still refuses — no SDK, IAM not
-            # ready, wrong prefix — come back from the write itself as a 502
-            # that says so. A real reachability probe here would build the
-            # OCI client on a polled endpoint and can hang on IMDS (see
-            # _oci_object_client), which is a worse answer than an
-            # optimistic one.
-            oci_ok = bool(_oci_vault_namespace and _oci_vault_bucket)
-            # One row per backend PUT /vault/note can dispatch to. Written as
-            # a table because the two-arm boolean this replaces silently
-            # answered False for 'oci' — a fleet container's vault worked at
-            # the write door and read as "no vault" at every door that asks
-            # first: the coworker cards, the tool grant, and (since the
-            # night-shift pre-flight) every night shift, cancelled before it
-            # started. A missing row is still False, so the suite walks the
-            # write handler's arms and requires each one to appear here.
-            backend_ready = {'fs': fs_ok, 'rest': rest_ok, 'oci': oci_ok}
-            configured = backend_ready.get(_vault_backend, False)
+            v = _vault_readiness()
             return self._send_json(200, {
-                'configured': configured,
+                'configured': v['configured'],
                 'backend': _vault_backend,
                 'root': _vault_root,
                 'defaultRoot': str(_default_vault_root),
                 'restUrl': _vault_rest_url,
                 'restKey': '••••' if _vault_rest_key else '',
-                'fsExists': fs_ok,
-                'restReachable': rest_ok,
-                'restDetail': rest_detail,
-                'ociBucket': _oci_vault_bucket if oci_ok else '',
+                'fsExists': v['fsExists'],
+                'restReachable': v['restReachable'],
+                'restDetail': v['restDetail'],
+                'ociBucket': v['ociBucket'],
                 # Legacy field for older clients.
-                'exists': configured,
+                'exists': v['configured'],
             })
 
         # ---------- Discover local vaults ----------

@@ -770,7 +770,16 @@ function NightShiftSection({ agents }) {
       // Mirror future/recurring schedules only — a RUN NOW (startAt 0) proves
       // the container is already awake, so a chain wake would be wasted.
       if (recurrence === 'daily' || startAtMs > Date.now() + 60000) mirrorPut(res.schedule);
-      setTopic(''); setMsg('Scheduled 🌙 — runs even with this tab closed.');
+      setTopic('');
+      /* The office checked whether tonight's notes have anywhere to land and
+         said they don't. Still scheduled — a vault down now can be up by 1am,
+         and night_runner asks again at the run door — but "Scheduled 🌙" on
+         its own is a promise the office already knows it may not keep. The
+         caveat rides the confirmation rather than replacing it, because both
+         halves are true. */
+      setMsg(res.vaultWarning
+        ? `Scheduled 🌙 · ${res.vaultWarning}`
+        : 'Scheduled 🌙 — runs even with this tab closed.');
       load();
       /* Same as above. Deliberately does not say "nothing was saved" — the
          request may have reached the server before this threw; the list
