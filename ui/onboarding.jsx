@@ -39,6 +39,105 @@ function fmtRelative(ts) {
      onClose    fn (called on Skip / Finish)
      onComplete fn — called when finishing successfully (vs skipping)
    ───────────────────────────────────────────────────────────────────── */
+/* Find a step's target and hand back the rect to ring, as soon as the
+   target exists — not at the next tick of a timer that happens to be
+   running. Calls onRect(rect) once, or onRect(null) if the budget runs out.
+   Returns a cancel fn; the caller must call it (see the effect below).
+
+   Lives out here as a plain function, and not inside the effect where it
+   grew up, because all three of its exits — found, gave up, cancelled —
+   were untestable while it was a closure over React state.
+   scripts/test_the_ring_lands_when_the_thing_lands.py lifts it by name and
+   drives it against a stand-in document, so the environment it touches is
+   injectable rather than global. */
+function resolveSpotlight(target, onRect, env) {
+  const e = env || {};
+  const doc = e.doc || (typeof document !== 'undefined' ? document : null);
+  const Obs = e.MutationObserver
+    || (typeof MutationObserver !== 'undefined' ? MutationObserver : null);
+  const setT = e.setTimeout || ((f, ms) => setTimeout(f, ms));
+  const clearT = e.clearTimeout || ((t) => clearTimeout(t));
+  const every = e.every || 100;
+  /* 2.5s, not 0.5s. A step whose action navigates has to wait for the whole
+     view to mount: the floor took ~1.4s to put .mas-plus on screen, well
+     past six 80ms attempts, so the old budget gave up on a control that was
+     about to appear — and with the ring cleared up front, giving up early
+     means no ring at all. */
+  const budget = e.budget || 2500;
+
+  let done = false, timer = null, mo = null, waited = 0;
+
+  const stop = () => {
+    if (timer) { clearT(timer); timer = null; }
+    if (mo) { mo.disconnect(); mo = null; }
+  };
+  const finish = (rect) => {
+    if (done) return;
+    done = true; stop(); onRect(rect);
+  };
+  const look = () => {
+    if (done) return true;
+    const el = typeof target === 'string'
+      ? (doc && doc.querySelector(target))
+      : (typeof target === 'function' ? target() : null);
+    if (el && el.getBoundingClientRect) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        finish({
+          left: r.left - 6, top: r.top - 6,
+          width: r.width + 12, height: r.height + 12,
+        });
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (look()) return () => {};
+
+  /* Watch, don't only wait. Measured on the mobile first-run (office 9280,
+     2026-08-16): the card turned over to "Hire your first coworker", the
+     .mas-plus it names was in the DOM at a real 36×36 **55ms later** — and
+     the ring did not appear until the next retry tick, long after the thing
+     it points at was sitting on screen. The boss reads an instruction that
+     highlights nothing while the control is right there. The first attempt
+     runs in the same tick as step.action(), before React has rendered the
+     view that action opened, so on any navigating step it cannot succeed —
+     which made the ring's arrival a property of the poll interval rather
+     than of the target. A mutation is the actual event we are waiting for;
+     wait for that instead. */
+  if (Obs && doc && doc.body) {
+    mo = new Obs(() => { look(); });
+    mo.observe(doc.body, { childList: true, subtree: true });
+  }
+  /* The poll stays, as a backstop rather than the mechanism: a target
+     already in the DOM at zero size that grows through layout alone — a
+     transition settling, an image finally measuring — mutates nothing, and
+     the observer would never fire for it. It also owns the deadline. */
+  const tick = () => {
+    if (done) return;
+    waited += every;
+    if (look()) return;
+    if (waited >= budget) {
+      /* Give up pointing rather than keep pointing at the last thing.
+         A step whose target never resolves used to fall out of this retry
+         loop leaving `spotlight` exactly where the PREVIOUS step put it —
+         so the ring stayed on the control the boss had already been shown
+         while the card described a different one. Seen on the last step of
+         the mobile first-run: the spotlight sat on the command-palette
+         button (56×56 at 315,632) while the card said to tap a button in
+         the topbar. An unfindable target is a bug in the step, and the
+         honest render of it is no highlight at all. */
+      finish(null);
+      return;
+    }
+    timer = setT(tick, every);
+  };
+  timer = setT(tick, every);
+
+  return () => { if (!done) { done = true; stop(); } };
+}
+
 function OnboardingTour({ open, steps = [], onClose, onComplete }) {
   const [idx, setIdx] = useState(0);
   const [spotlight, setSpotlight] = useState(null);
@@ -48,56 +147,24 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
   React.useEffect(() => {
     if (!open || !step) { setSpotlight(null); return; }
     if (step.action) try { step.action(); } catch (_e) {}
-    if (step.target) {
-      /* Drop the previous step's ring first. React batches this with the
-         synchronous compute() below, so a target that resolves on the
-         first try never flickers — but one that has to wait for a view to
-         mount no longer leaves the old ring sitting under the new words.
-         Timed on the mobile first-run: the step before this one rings the
-         command palette, and the ring stayed there for ~1s after the card
-         had already changed to "Hire your first coworker" while the floor
-         came up. A second of pointing at the wrong control is still
-         pointing at the wrong control. */
-      setSpotlight(null);
-      /* Compute spotlight rect; retry briefly because target may need a
-         frame after the action fires. */
-      let attempts = 0;
-      const compute = () => {
-        const el = typeof step.target === 'string'
-          ? document.querySelector(step.target)
-          : (typeof step.target === 'function' ? step.target() : null);
-        if (el && el.getBoundingClientRect) {
-          const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) {
-            setSpotlight({
-              left: r.left - 6, top: r.top - 6,
-              width: r.width + 12, height: r.height + 12,
-            });
-            return;
-          }
-        }
-        /* 2.5s of retries, not 0.5s. A step whose action navigates has to
-           wait for the whole view to mount: the floor took ~1.4s to put
-           .mas-plus on screen, well past six 80ms attempts, so the old
-           budget would have given up on a control that was about to
-           appear — and with the ring now cleared up front, giving up early
-           means no ring at all. */
-        if (++attempts < 25) { setTimeout(compute, 100); return; }
-        /* Give up pointing rather than keep pointing at the last thing.
-           A step whose target never resolves used to fall out of this
-           retry loop leaving `spotlight` exactly where the PREVIOUS step
-           put it — so the ring stayed on the control the boss had already
-           been shown while the card described a different one. Seen on the
-           last step of the mobile first-run: the spotlight sat on the
-           command-palette button (56×56 at 315,632) while the card said to
-           tap a button in the topbar. An unfindable target is a bug in the
-           step, and the honest render of it is no highlight at all. */
-        setSpotlight(null);
-      };
-      compute();
-    } else {
-      setSpotlight(null);
-    }
+    if (!step.target) { setSpotlight(null); return; }
+    /* Drop the previous step's ring first. React batches this with the
+       synchronous first look inside resolveSpotlight, so a target that
+       resolves immediately never flickers — but one that has to wait for a
+       view to mount no longer leaves the old ring sitting under the new
+       words. Timed on the mobile first-run: the step before this one rings
+       the command palette, and the ring stayed there for ~1s after the card
+       had already changed to "Hire your first coworker" while the floor
+       came up. A second of pointing at the wrong control is still pointing
+       at the wrong control. */
+    setSpotlight(null);
+    /* Returned as the cleanup, which this effect did not have. Without it
+       the retry chain outlives the step that started it: press Next twice
+       and step 8's search for `.palette-fab` is still running under step
+       9's card, free to call setSpotlight with the PREVIOUS step's rect
+       after the new one has already landed. Two chains racing, and the one
+       that wins is whichever target mounts last. */
+    return resolveSpotlight(step.target, setSpotlight);
   }, [open, idx]);
 
   React.useEffect(() => {

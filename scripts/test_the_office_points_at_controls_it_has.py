@@ -157,31 +157,40 @@ check('the read-only banner offers the door too',
 # `setSpotlight(null)` in the no-target `else` branch below this function,
 # and an arm that deleted the give-up call reached forward and matched
 # THAT one — a check satisfied by a line in a different code path.
-compute_body = section(ONB, 'const compute = () => {', '\n      };')
-give_up = re.search(
-    r'if \(\+\+attempts < \d+\) \{ setTimeout\(compute, \d+\); return; \}(.*?)setSpotlight\(null\);',
-    compute_body, re.S)
+# The retry loop these three checks were written against used to live
+# inline in the tour's effect as `const compute = () => {…}`. It is now
+# `resolveSpotlight`, a plain function outside the component, because the
+# ring was landing on the poll tick AFTER its target mounted rather than on
+# the mutation that brought it in — see
+# scripts/test_the_ring_lands_when_the_thing_lands.py, which owns the
+# behaviour. These three keep owning the three PROMISES, re-pointed at
+# where the code moved to; what they assert has not changed.
+resolve = section(ONB, 'function resolveSpotlight(', '\nfunction OnboardingTour')
+give_up = re.search(r'if \(waited >= budget\) \{(.*?)finish\(null\);',
+                    resolve, re.S)
 between = strip_jsx_comments(give_up.group(1)) if give_up else 'return'
 check('a tour target that never resolves clears the spotlight',
-      give_up is not None and 'return' not in between,
+      give_up is not None and 'return' not in between
+      and 'onRect(rect)' in resolve,
       '— falling out of the retry loop used to leave the ring where the '
       'PREVIOUS step put it: measured at 315,632 on the palette FAB while '
       'the card described a button in the topbar')
 
-# Sliced from the `if (step.target)` arm, not from the whole effect: the
-# no-target `else` two lines up also clears the spotlight, and a check
+# Sliced from the effect, and bounded to the line before the search starts:
+# the no-target branch above it also clears the spotlight, and a check
 # reading the wider slice passed with the entry clear deleted.
-entry = section(ONB, 'if (step.target) {', 'const compute')
+entry = section(ONB, 'if (step.action) try', 'return resolveSpotlight')
 check('...and a step with a target drops the old ring before resolving',
-      'setSpotlight(null);' in entry,
+      'setSpotlight(null);' in strip_jsx_comments(entry).rsplit(
+          'if (!step.target)', 1)[-1],
       '— timed on the mobile first-run: the palette ring stayed put for '
       '~1s after the card had already changed to the hire step, because '
       'the spotlight was only ever replaced, never cleared on entry')
+budget = re.search(r'const budget = e\.budget \|\| (\d+);', resolve)
+every = re.search(r'const every = e\.every \|\| (\d+);', resolve)
 check('...with a retry budget long enough for a view to mount',
-      re.search(r'\+\+attempts < (\d+)\) \{ setTimeout\(compute, (\d+)\)', ONB)
-      is not None
-      and (lambda m: int(m.group(1)) * int(m.group(2)) >= 2000)(
-          re.search(r'\+\+attempts < (\d+)\) \{ setTimeout\(compute, (\d+)\)', ONB)),
+      budget is not None and every is not None
+      and int(budget.group(1)) >= 2000 and int(every.group(1)) <= 250,
       '— the floor took ~1.4s to render .mas-plus; six 80ms tries gave up '
       'at 0.5s, and now that the ring is cleared on entry, giving up early '
       'means no ring at all')

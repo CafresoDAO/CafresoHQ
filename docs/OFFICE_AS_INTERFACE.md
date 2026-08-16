@@ -13877,3 +13877,81 @@ each — because the constraint is invisible from the file that has to obey
 it. **The lift lists are a list of names, and #73's lesson applies: a list
 of names is a list that silently stops being complete.**
 
+
+## The ring was waiting on a clock, not on the thing it points at
+
+Last step of the mobile first run. The card turns over to "Hire your first
+coworker — tap the + at the end of your coworker strip", and nothing is
+highlighted. Instrumented with a MutationObserver on office 9280 at
+375×812, timestamps relative to the card changing:
+
+       0ms  CARD step 9 — "Hire your first coworker"
+      55ms  TARGET .mas-plus in DOM, 36×36
+      55ms  ring CLEARED
+     987ms  RING 152,220
+
+The control the card names was on screen at 55ms. The ring did not follow
+until the next tick of the retry loop. (The 987 is inflated — the measuring
+tab was backgrounded and Chrome clamps background `setTimeout` to ~1s, so
+one 100ms retry read as one ~1000ms retry. The clamp cannot touch the
+*ordering*, which is the finding: target first, ring second, a timer in
+between. On the originally recorded foreground first run, cold floor, it
+was ~2s.)
+
+This is not a tuning problem. The first attempt runs in the same effect
+tick as `step.action()` — before React has rendered the view that action
+just opened — so on any navigating step it *cannot* succeed. Which made the
+ring's arrival a property of the poll interval rather than of the target.
+The two previous passes over this code both tuned the interval (80ms→100ms,
+6 attempts→25, 0.5s→2.5s) and both were treating the symptom: every one of
+those numbers is about how long to wait, and the answer was that waiting is
+the wrong verb. **A mutation is the event actually being waited for.** The
+observer now does the finding; the poll stays as a backstop, because a
+target already in the DOM at 0×0 that grows through layout alone — a
+transition settling, an image finally measuring — mutates nothing, and it
+still owns the 2.5s deadline.
+
+After: target at 37ms, ring at **41ms**.
+
+Reading the effect to write that turned up a second defect with no repro
+needed. It had no cleanup. `useEffect(…, [open, idx])` started a
+`setTimeout` chain and never cancelled it, so pressing Next twice leaves
+step 8's search for `.palette-fab` running underneath step 9's card, free
+to call `setSpotlight` with the *previous* step's rect after the new one
+has already landed. Two chains racing, and the winner is whichever target
+mounts last. That is the same defect the comments in this very file already
+describe twice — "a second of pointing at the wrong control is still
+pointing at the wrong control" — arriving through a third door, which is
+worth saying plainly: **the same bug keeps coming back because each fix
+addressed the path it arrived by rather than the thing that made the ring
+mutable from more than one place at a time.** It is now one function with
+one owner and a cancel.
+
+The refactor is what made the behaviour testable at all. `resolveSpotlight`
+is a plain function with an injectable environment (`doc`,
+`MutationObserver`, `setTimeout`), so the suite drives it against a
+stand-in document with the clock in its own hands. All three exits — found,
+gave up, cancelled — were unreachable from a test while it was a closure
+over React state, which is why two rounds of fixes here were verified by
+eye.
+
+Two notes from writing that harness, both about the harness rather than the
+code. The first fake clock advanced `now` to the target and *then* fired
+due timers, so a callback that reschedules landed 100ms past wherever the
+clock had already been dragged: 25 retries became two, and the give-up
+branch looked broken when it wasn't. A discrete-event clock — fire each
+timer with `now` set to its own due time — measures the code instead of the
+harness. And one fire arm was dropped rather than fixed: removing `finish`'s
+`if (done) return;` survives, and should. `look()` and `tick()` both refuse
+once `done` is set, so that guard is unreachable defence-in-depth; **an arm
+has to be a defect to be worth catching**, and a check written to fail on
+it would be asserting the implementation, not the behaviour. The line stays
+in the source, because it is what makes a future edit to `look()` safe
+rather than silently load-bearing.
+
+Three checks in `test_the_office_points_at_controls_it_has.py` were pinned
+to the inline `compute()` and had to be re-pointed. They still own the same
+three promises — an unfindable target stops pointing, the old ring is
+dropped on entry, the budget outlasts a mount — at the address the code
+moved to.
+
