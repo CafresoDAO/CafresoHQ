@@ -88,9 +88,17 @@ def main():
     # #80 corrects the derivation in one place and leaves the other two
     # deriving it themselves, the office is back to two honest surfaces out
     # of three — the exact shape of #78 and #79, one layer up.
+    # #127 folded a second fact into the same one question — a run can also
+    # come back without a delivery by spending its whole tool budget before
+    # it writes one, and that is not something the buffer can be asked. The
+    # answer is which shortfall it was, '' when there was none, and
+    # `produced` is that answer as a boolean. hasSubstance is still where
+    # the content half is decided, and still decided once.
     check('the run asks whether anything has substance, not whether the '
           'string is long',
-          re.search(r'const produced = hasSubstance\(cleanBuf\);', app),
+          re.search(r"const shortfall = ending && ending\.ranOutOfHops \? 'ranout'\s*\n"
+                    r"\s*: hasSubstance\(cleanBuf\) \? '' : 'empty';", app)
+          and re.search(r'const produced = !shortfall;', app),
           '— !!cleanBuf.trim() is true for "Here is what I did:"')
     check('...and nothing in the run re-derives that fact',
           not re.search(r'if \(cleanBuf\.trim\(\)\)', app),

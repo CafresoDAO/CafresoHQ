@@ -239,7 +239,26 @@ function twoNotes() {
   st.process();
   return st.text();
 }
+// #127: one fact reaching two containers. agentStream says the sentence
+// live through the hint channel, and the same string comes round again in
+// the honesty list the run-end block emits — the office's one account of a
+// run that stopped part-way, handed in twice.
+function sameNoteTwice() {
+  const st = makeStore();
+  const flush = throttleTokens(st.setChat, 'm1');
+  flush('body');
+  flush.note(NOTE);          // the hint, mid-run, before the stream ends
+  flush.flushNow();
+  st.process();
+  flush.cancel();
+  st.setChat(prev => prev.map(m => m.id === 'm1' ? { ...m, text: flush.withNotes('body') } : m));
+  flush.note(NOTE);          // the honesty list, at the end
+  st.process();
+  return st.text();
+}
 const R = {
+  sameTwice: count(sameNoteTwice()),
+  sameTwiceHas: sameNoteTwice().indexOf(NOTE) >= 0,
   repro: count(reproduced()),
   reproHas: reproduced().indexOf(NOTE) >= 0,
   reversed: count(reversed()),
@@ -274,6 +293,16 @@ console.log(JSON.stringify(R));
                   [R['none'], '— the abort route writes its own text and '
                    'never calls withNotes; the direct branch is the only '
                    'thing carrying the note there'])
+            check('one sentence handed in twice is still said once',
+                  R['sameTwice'] == 1,
+                  [R['sameTwice'], '— the guard on the append path never '
+                   'saw this one: `suffix` accumulated both copies and '
+                   'withNotes painted them together, so the message the '
+                   'guard inspected already had the sentence twice'])
+            check('...and is not suppressed to none',
+                  R['sameTwiceHas'],
+                  'deduping down to nothing would lose the only sentence '
+                  'that tells the boss the run did not finish')
             check('two different notes both land, once each',
                   R['twoA'] == 1 and R['twoB'] == 1, R)
 

@@ -656,9 +656,31 @@ function floorOn(kind, handler) {
    mostly-successful turn with a rough edge. None of it landed. The office
    already knew: two lines away it declines to file and declines to journal
    on exactly this test. */
-function doneLine(subject, missed, empty) {
+/* The two ways a run comes back without a delivery, in one place.
+
+   They are different facts and the office had one word for both. "With
+   nothing" is true of the run above; it is false of a coworker who spent
+   the whole tool budget mid-chain, because that one comes back with real
+   paragraphs — they are simply not the answer, since the office stopped
+   handing out turns before the answer got written.
+
+   One function, because three surfaces say this about one run: the desk
+   line, the feed row and the spoken announcement. Three copies of a
+   sentence is how they start giving three accounts of one afternoon. */
+function shortfallLine(kind, subject) {
   const s = String(subject || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-  if (empty) return s ? `came back from "${s}" with nothing` : 'came back with nothing';
+  if (kind === 'ranout') {
+    return s ? `stopped part-way through "${s}"` : 'stopped part-way through';
+  }
+  return s ? `came back from "${s}" with nothing` : 'came back with nothing';
+}
+
+function doneLine(subject, missed, shortfall) {
+  const s = String(subject || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  /* `shortfall` was a boolean meaning empty, and the row it chose said
+     "with nothing". `true` still means empty, so a caller that has only
+     ever had one kind of shortfall reads exactly as it did. */
+  if (shortfall) return shortfallLine(shortfall === true ? 'empty' : shortfall, subject);
   const ok = !missed;
   if (!s) return ok ? 'finished and reported back ✓' : 'finished, but not all of it landed';
   return ok ? `finished "${s}" ✓` : `finished "${s}" — but not all of it landed`;
@@ -675,4 +697,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };

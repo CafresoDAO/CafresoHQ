@@ -122,11 +122,18 @@ def main():
     # If a future round decides the office should stop offering a resume,
     # the first half of each pair goes false and this stops objecting —
     # but nobody gets to keep the sentence and drop the machinery.
-    hints = re.findall(r"onHint\('_\(they did as much as they can[^']*'\)", code)
-    check('both hop-budget hints are still findable',
-          len(hints) == 2,
-          [hints, '— one in ceoStream, one in agentStream; a third caller '
-           'with its own wording would be unowned by this suite'])
+    # Matched on the sentence rather than the call: #127 split agentStream's
+    # into two, one for a caller that passes history and one for a caller
+    # that does not, so the hint is no longer a bare string argument. Which
+    # caller gets which is that ticket's business (see
+    # scripts/test_a_run_that_stopped_is_not_a_finished_run.py). What is
+    # this suite's business is the pairing below, and it reads every
+    # sentence the office might say, however it is selected.
+    hints = re.findall(r"'_\(they did as much as they can[^']*'", code)
+    check('the hop-budget hints are still findable',
+          len(hints) >= 2,
+          [hints, '— at least ceoStream and agentStream; a caller with its '
+           'own wording somewhere else would be unowned by this suite'])
     promises = [h for h in hints if 'ask again' in h.lower()]
     replays = bool(re.search(r"\[TOOL_RESULT: \$\{v\.name\}\]", fn))
     check('a hint that says "ask again" is backed by a real resume',

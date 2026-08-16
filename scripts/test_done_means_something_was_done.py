@@ -109,8 +109,22 @@ def main():
     # there is exactly ONE such question in the run — so it now also requires
     # the filing and journal gates to read the answer rather than re-derive
     # it, which is the drift the original wording warned about.
+    # #127: the answer grew a third value. `hasSubstance` asks whether
+    # anything is THERE, which cannot see a run that ran out of tool hops
+    # mid-chain — that fact arrives as agentStream's return, and the buffer
+    # of a coworker who stopped looks exactly like one who finished. So the
+    # question is asked once and answered with which of the two shortfalls
+    # it was, and `produced` is now that answer read as a boolean. What this
+    # check pins is unchanged: one place decides, everything else reads it.
+    # Comment-blind for the count, same lesson as the negative half below:
+    # the comment above the gate names `hasSubstance(cleanBuf)` to explain
+    # what it cannot see, and a bare count found the documentation and
+    # reported a second gate that is not there.
     check('the run decides once whether anything was produced',
-          re.search(r'const produced = hasSubstance\(cleanBuf\);', block),
+          re.search(r"const shortfall = ending && ending\.ranOutOfHops \? 'ranout'", block)
+          and re.search(r'const produced = !shortfall;', block)
+          and len(re.findall(r'hasSubstance\(',
+                             re.sub(r'/\*[\s\S]*?\*/', '', block))) == 1,
           'the filing and the journal already read this exact fact; '
           'a second, differently-worded test is how the three drift apart')
     # Comment-blind for the negative half: the block carries a comment that
@@ -137,8 +151,12 @@ def main():
           re.search(r"const emptyReason = honestyText\.trim\(\)\s*\|\|", block),
           'a model can return whitespace, or nothing but scaffolding the '
           'cleaner removes, and no honesty note fires on either')
+    # The third argument was `!produced` — one bit, so one sentence, and
+    # #127 needed two. It is the shortfall itself now: '' reads falsy on the
+    # produced path exactly as `!produced` did, and the row picks its words
+    # from which kind it was.
     check('the feed row says nothing landed',
-          re.search(r'doneLine\(task\.title, honesty\.length, !produced\)', block),
+          re.search(r'doneLine\(task\.title, honesty\.length, shortfall\)', block),
           '"finished — but not all of it landed" reads as a mostly-good '
           'turn; none of it landed')
     check('the experience ledger books a snag',
@@ -174,13 +192,23 @@ def main():
         return 1 if FAILS else 0
 
     # ── the feed's third state ───────────────────────────────────────────
-    js = (brace_lift(floor, 'function doneLine(subject, missed, empty) {')
+    # doneLine delegates its shortfall branch to shortfallLine, which owns
+    # the words for both kinds; the harness needs both. `true` is still
+    # passed on one arm on purpose — the two older callers pass a bool, and
+    # a caller that has only ever had one kind of shortfall must keep
+    # reading the sentence it always read.
+    js = (brace_lift(floor, 'function shortfallLine(kind, subject) {') + '\n'
+          + brace_lift(floor, 'function doneLine(subject, missed, shortfall) {')
           + '\nconst R = {};\n'
           "R.clean = doneLine('Save a note', 0);\n"
           "R.missed = doneLine('Save a note', 2);\n"
-          "R.empty = doneLine('Save a note', 2, true);\n"
-          "R.emptyNoGuard = doneLine('Save a note', 0, true);\n"
-          "R.emptyNoSubject = doneLine('', 0, true);\n"
+          "R.empty = doneLine('Save a note', 2, 'empty');\n"
+          "R.emptyNoGuard = doneLine('Save a note', 0, 'empty');\n"
+          "R.emptyNoSubject = doneLine('', 0, 'empty');\n"
+          "R.emptyLegacyBool = doneLine('Save a note', 2, true);\n"
+          "R.ranout = doneLine('Save a note', 0, 'ranout');\n"
+          "R.ranoutNoSubject = doneLine('', 0, 'ranout');\n"
+          "R.produced = doneLine('Save a note', 0, '');\n"
           'console.log(JSON.stringify(R));')
     r = run_js(js)
 
@@ -196,6 +224,26 @@ def main():
           and '""' not in r['emptyNoSubject'],
           f"{r['emptyNoSubject']} — an empty pair of quotes is the shape "
           'the two older branches were careful to avoid')
+    check('...and a bool still means empty for the callers that pass one',
+          r['emptyLegacyBool'] == r['empty'],
+          f"{r['emptyLegacyBool']} vs {r['empty']} — two callers pass no "
+          'third argument at all and a third used to pass !produced')
+    # #127. The row for a run that stopped part-way is the one that used to
+    # read `finished "…" ✓` — four hops of stalling prose, filed and
+    # certified. It must not say finished, and it must not say nothing
+    # either: four paragraphs came back, they just were not the answer.
+    check('a run that stopped part-way says so',
+          'finished' not in r['ranout'] and 'nothing' not in r['ranout']
+          and 'part-way' in r['ranout'] and 'Save a note' in r['ranout'],
+          f"{r['ranout']} — \"with nothing\" is the other shortfall's "
+          'sentence and it is false about this one')
+    check('...and still works with no subject',
+          r['ranoutNoSubject'] and 'nothing' not in r['ranoutNoSubject']
+          and '""' not in r['ranoutNoSubject'], r['ranoutNoSubject'])
+    check('an empty shortfall is a finished run',
+          r['produced'] == 'finished "Save a note" ✓',
+          f"{r['produced']} — '' is what the produced path passes, and it "
+          'has to read exactly as `!produced` did')
     check('a real finish is untouched', r['clean'] == 'finished "Save a note" ✓',
           f"{r['clean']} — the common path must not change")
     check('...and so is a partial one',

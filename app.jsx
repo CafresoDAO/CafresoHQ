@@ -12,7 +12,7 @@ import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
-import { attachVisit, doneLine, floorEmit, officeCause, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
+import { attachVisit, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
@@ -4702,7 +4702,12 @@ ${d.text}` : d.text,
        lines ARE the job. */
     const screen = makeScreenEmitter(agent.id);
     try {
-      await HQ.agentStream(agent, /* No "say what you'll do first". That clause is why EVERY filed memo
+      /* The return, not just the callbacks. agentStream hands back an
+         ending when the run was cut short by the tool budget — see the tail
+         of that function. Nothing else on this path can tell: the buffer of
+         a coworker who stopped mid-chain looks exactly like the buffer of
+         one who finished. */
+      const ending = await HQ.agentStream(agent, /* No "say what you'll do first". That clause is why EVERY filed memo
          opened on the coworker's plan rather than their answer — "I will
          look up a reliable source for colors…" above the one line the boss
          came for. It also duplicated a signal the office already gives
@@ -4769,7 +4774,30 @@ ${d.text}` : d.text,
          is a non-empty string and was certifying the run. hasSubstance is
          the same question asked about content instead of length; see
          app/artifacts.jsx for the sheet it filed. */
-      const produced = hasSubstance(cleanBuf);
+      /* And not `hasSubstance(cleanBuf)` alone either. That asks whether
+         anything is THERE. It cannot ask whether the run reached anything,
+         because a run ending early is not a property of its text — it is a
+         property of the run, and it arrives as agentStream's return.
+
+         Measured 2026-08-16 on office 9280: a coworker spent all four tool
+         hops re-reading one vault file, and every hop's prose was "Let me
+         check the vendor notes on file before I answer." Four ordinary
+         sentences, no markers, nothing for the cleaner to take — so the
+         card went green in DONE, the stalling prose was filed to the
+         cabinet under a "Delivered by Local Brain" byline, the feed said
+         `finished "…" ✓` and the XP ledger booked a completion. The office
+         had said the true thing out loud in the same second, through the
+         hint channel, and not one record could hear it.
+
+         Still one question answered once (#80). It has three answers now
+         instead of two, because the three surfaces that put the negative
+         into words have to say WHICH of the two ways this run came back
+         without a delivery — "with nothing" is a lie about a run that came
+         back with four paragraphs. Everything that decides rather than
+         describes still reads `produced`. */
+      const shortfall = ending && ending.ranOutOfHops ? 'ranout'
+        : hasSubstance(cleanBuf) ? '' : 'empty';
+      const produced = !shortfall;
       /* `recent` fell back to the task TITLE on an empty run, so the
          coworker's card on the floor quoted the boss's own brief back as
          though it were the work. The desk read "Write a 400-word briefing
@@ -4780,7 +4808,7 @@ ${d.text}` : d.text,
            back empty would have sat at their desk with a blank badge —
            the one state on the floor that looks like no state at all. */
         status: 'active', mood: produced ? 'done' : 'stuck',
-        recent: produced ? cleanBuf.slice(0, 140) : 'came back with nothing',
+        recent: produced ? cleanBuf.slice(0, 140) : shortfallLine(shortfall),
         task: 'reporting back',
         tokens: (agent.tokens || 0) + usedTokens,
       });
@@ -4839,6 +4867,26 @@ ${d.text}` : d.text,
         const doorNote = HQ.publishDoorNote(brief, HQ.icpPublishEnabled && HQ.icpPublishEnabled());
         if (doorNote) honesty = honesty.concat([doorNote]);
       }
+      /* Why a card that ran out of turns is parked. The bubble already has
+         this sentence — agentStream said it through the hint channel while
+         the run was live — but the bubble scrolls away and the card is
+         what the boss opens days later, which is the whole argument for
+         putting the honesty notes on the card in the first place.
+
+         The office's own words, not a second set. Written fresh here they
+         came out saying the same thing differently, and the boss read both
+         in one bubble, one under the other — #64 with two authors. The
+         runtime hands back the sentence it said; `honesty` is the list
+         every container reads (blockedReason, the card body, the feed
+         detail), and `flush.note` skips a note the bubble already holds,
+         so it reaches the boss once and the card keeps it.
+
+         Which sentence it is was decided where the promise lives: the
+         board passes no chat, so it gets the version that names ▶ START
+         instead of offering a resume this path cannot perform. */
+      if (shortfall === 'ranout' && ending.note) {
+        honesty = honesty.concat([ending.note]);
+      }
       const honestyText = honesty.length ? honesty.join(' ').replace(/_\(|\)_/g, '') + '\n\n' : '';
       /* The card in DONE is the fourth surface, and the one the boss opens
          on purpose days later when the chat has scrolled away and the
@@ -4859,7 +4907,12 @@ ${d.text}` : d.text,
          empty with no guard firing at all — the model returned whitespace,
          or everything it said was scaffolding the cleaner removed — and a
          card parked in `doing` with no reason is worse than the false DONE
-         it replaces, because at least DONE said something. */
+         it replaces, because at least DONE said something.
+
+         Still named for the empty run: a ran-out one always has its own
+         sentence in `honesty` a few lines up, so `honestyText` is never
+         blank on that branch and this wording is only ever read by the run
+         it describes. */
       const emptyReason = honestyText.trim()
         || 'Nothing came back from this run — no answer and no file. Start '
            + 'it again, or hand it to a different coworker.';
@@ -4869,7 +4922,7 @@ ${d.text}` : d.text,
               ...(produced ? {} : { blockedReason: emptyReason, blockedAt: Date.now() }) } : t));
       }
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, action: 'done', taskId,
-        text: doneLine(task.title, honesty.length, !produced),
+        text: doneLine(task.title, honesty.length, shortfall),
         detail: honestyText + cleanBuf.slice(0, 600) });
       /* `snag`, not `done`. The experience ledger is the office's record of
          what a coworker is good at, and paying out a completion for a turn
@@ -4879,7 +4932,7 @@ ${d.text}` : d.text,
       recordXp({ agentId: agent.id, kind: taskKind(task), outcome: produced ? 'done' : 'snag',
                  taskId, title: task.title });
       say(produced ? `${agent.name} completed "${task.title}"`
-                   : `${agent.name} came back from "${task.title}" with nothing`,
+                   : `${agent.name} ${shortfallLine(shortfall, task.title)}`,
           produced ? 'DONE' : 'SNAG');
       if (produced) appendJournal(agent.id, cleanBuf, task.title);
       /* The artifact lands (OFFICE_AS_INTERFACE §3.6): the deliverable goes

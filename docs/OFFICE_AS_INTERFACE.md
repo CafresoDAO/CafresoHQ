@@ -14057,3 +14057,97 @@ not in the sentence at all; it was one function away, in what a second run
 turns out to know. §7 asks for a way forward, and a way forward that the
 boss can follow to the letter and arrive back where they started is the
 locked door with a handle painted on.
+
+## A run that stopped part-way was filed as the finished job
+
+One card on the board: *Summarise the vendor notes*, handed to a local
+brain with cabinet access. The brain answered every turn the same way —
+
+    Let me check the vendor notes on file before I answer.
+
+    [VAULT_READ: Research/vendor-notes.md]
+
+— four times, four identical trips to the same file, and the tool budget
+ran out before it ever wrote a summary. `asked.jsonl` grew by exactly four.
+Then every record the office keeps agreed the job was done:
+
+    tasks.json    status: "done",  blockedReason: "",  blockedAt: null
+    the card      the stalling sentence, four times over, as the result
+    the cabinet   Deliveries/summarise-the-vendor-notes-….md, headed
+                  "*Delivered by Local Brain · 2026-08-16*"
+    the feed      finished "Summarise the vendor notes …" ✓
+                  filed to Deliveries 🗄
+    the ledger    {"kind": "task", "outcome": "done"}
+
+Five surfaces, one wrong claim each, and the boss's copy of the work is a
+file in the cabinet whose entire contents are a coworker clearing their
+throat.
+
+Nothing any of the five read was wrong. They all read `produced`, and
+`produced` asked `hasSubstance(cleanBuf)` — is anything THERE. Four
+ordinary sentences are there: no markers, no headings, nothing for the
+cleaner to take. #51 taught this run to stop certifying an empty reply and
+#80 taught it that a lead-in is not work; both are about what came back,
+and both were satisfied.
+
+The question neither could ask is whether the run **reached** anything,
+because that is not a property of the text. It is a property of the run.
+And the office already knew it: `agentStream` had said so in the same
+second, through `onHint` —
+
+> _(they did as much as they can in one go and stopped there…)_
+
+— a sentence that went into the chat bubble and nowhere else. The fact
+existed, in the right words, one channel away from the only code that
+needed it. Prose aimed at the boss is not a fact the caller can act on,
+and the caller is the one holding the card. So the ending is returned as
+well as spoken, and the gate answers with **which** of the two ways a run
+came back without a delivery instead of just whether it did.
+
+Three things this had to avoid inventing on the way past.
+
+**"With nothing" is the other shortfall's sentence.** A run that stopped
+part-way comes back with real paragraphs; a run that came back empty is a
+different fact, and the desk line, the feed row and the spoken
+announcement all had the empty one's words hardcoded three times over.
+They read one function now. Fire-testing found this the hard way: reverting
+the desk line alone survived every check, because the suite that owns
+`produced` pins the shape of that line up to the colon and the new suite
+tested the shared function on its own. A shared function nobody is
+required to call is a suggestion.
+
+**The chat hint's second half is a promise about history.** "Ask again and
+they will pick it up" is true for the conversational callers — they pass
+the last few turns, and #126 taught that transcript to carry the tool
+results back with it. It is false for the board, which passes no chat at
+all on purpose: a card run is its brief. Same run, same limit, and the
+door is a different door, so the sentence splits on `chat` — the thing the
+promise is actually about — and the board's version names ▶ START and says
+plainly that START goes back to the brief and carries nothing over.
+
+**One fact, one sentence.** Written fresh for the card, the reason came out
+saying the same thing in different words, and the boss read both, one under
+the other, in a single bubble. That is §6's cousin: not the machine's
+language, but the office's language twice, which reads as an office unsure
+of its own account. The runtime hands back the sentence it said; the card
+carries that one. Making that safe turned up the other half of #64's own
+fix — the containment guard stopped a note being *appended* twice, and
+`suffix` had no guard at all, so a sentence handed in twice was accumulated
+twice and painted together, with the guard then inspecting a message that
+already contained both. The guard was watching the door somebody had
+already come through the window of.
+
+What the boss sees now: the card sits in DOING under "⚠ Local Brain hit a
+snag on this", with the reason, everything the coworker did manage to say
+kept underneath it, and ▶ START an inch away. Nothing was filed in the
+cabinet, the feed row reads `stopped part-way through "…"`, and the ledger
+books a snag — because a ledger that pays out completions for jobs that
+never finished is the office learning the opposite of what happened.
+
+The lesson worth keeping is narrower than "check for exhaustion". Every
+one of these five records was reading the best fact available to it, and
+the better fact was in the building — spoken aloud, in the right words, to
+the one audience that could not act on it. **A fact the office says to the
+boss and not to itself will be true in the transcript and absent from every
+decision.** When the office knows something out loud, ask which of its own
+surfaces is deciding without it.

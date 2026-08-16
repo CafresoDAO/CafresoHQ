@@ -333,6 +333,20 @@ function throttleTokens(setChat, msgId) {
      tell the boss the office did not do the thing it was asked to do, and
      a correction that stutters reads like the office is unsure of it. */
   ontok.note = (text) => {
+    /* The same guard as below, on the other half. The one underneath stops
+       a sentence being APPENDED twice; `suffix` had none, so a sentence
+       handed in twice was accumulated twice and `withNotes` painted both
+       copies in one go — the guard then looked at a message that already
+       contained it and correctly declined to add a third.
+
+       Measured 2026-08-16 on office 9280, once #127 gave the office one
+       sentence for a run that stopped part-way: agentStream says it live
+       through the hint, and the same string comes round again in the
+       honesty list at the end, which is exactly what one fact reaching two
+       containers looks like. Deduping on the text is what makes that safe
+       — and a note is a sentence about something that did not happen, so
+       there is no reading on which the boss wants it twice. */
+    if (suffix.indexOf(text) >= 0) return;
     suffix += '\n\n' + text;
     if (cancelled) {
       setChat(prev => prev.map(m => {
@@ -4419,9 +4433,39 @@ FILE-DELIVERY RULE: There is no vault wired up this session, so there is nowhere
     messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
     messages.push({ role: 'user', content: `[TOOL_RESULT: ${call.tool.name}]\n${result}\n\nContinue from where you stopped. Now write a concise answer for the user using these results. Do NOT repeat the tool call. Do NOT emit any more bracketed markers or harmony commentary unless you genuinely need another search/lookup.` });
   }
-  /* Hop budget exhausted. Out-of-band hint so it doesn't end up in the
-     agent's journal or in user-visible chat as if it were the model speaking. */
-  if (onHint) onHint('_(they did as much as they can in one go and stopped there. If this is part of a running project it will carry on by itself; otherwise ask again and they will pick it up.)_');
+  /* Hop budget exhausted. Two things leave here now.
+
+     The hint stays out-of-band, so it doesn't end up in the agent's journal
+     or in user-visible chat as if it were the model speaking. But prose
+     aimed at the boss is not a fact the CALLER can act on, and the caller
+     is the one holding the task card. The board read the buffer, found four
+     paragraphs of ordinary sentences, and filed a run that never reached
+     its answer as DONE — cabinet file, ✓ in the feed, a completion in the
+     XP ledger. Nothing it read was wrong; the one thing that would have
+     told it was only ever said out loud. So the ending is also returned.
+
+     Every other exit from this function is the model stopping on its own or
+     the host taking the turn over, which is why they stay `return;`:
+     nothing back means "not cut short", and that is the right default for a
+     caller that never looks.
+
+     The sentence splits on `chat` because its second half is a promise
+     about history. Ask-again holds for the conversational callers — they
+     pass the last few turns, and #126 taught that transcript to carry the
+     tool results back with them. It is empty for the board, which passes
+     none on purpose: a card run is its brief and nothing else.
+
+     It rides back on the return as well as going out through the hint, so
+     the caller can put it on a card without writing a second sentence
+     about the same fact. Two sentences saying one thing in different words
+     is #64 with two authors — and one string means `flush.note`, which
+     drops a note the bubble already contains, keeps the boss reading it
+     exactly once. */
+  const stopNote = chat
+    ? '_(they did as much as they can in one go and stopped there. If this is part of a running project it will carry on by itself; otherwise ask again and they will pick it up.)_'
+    : '_(they did as much as they can in one go and stopped there. Running it again starts from the brief and carries nothing over, so a narrower brief gets further.)_';
+  if (onHint) onHint(stopNote);
+  return { ranOutOfHops: true, note: stopNote };
 }
 
 /* Whether handing `taskId` to this coworker would displace real work.
