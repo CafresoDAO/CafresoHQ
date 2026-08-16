@@ -465,12 +465,29 @@ function InboxModal({ open, onClose, onResend = null }) {
           ))}
         </div>
       )}
+      {/* The count says how many events this record HAS, so when the record
+          has been trimmed it has to say how many it HAD — "history (30
+          events)" on a message that logged 45 is the trim reporting itself
+          as the whole story. And the gap row, because the count alone is a
+          footnote: the list reads top-down and the second line is where the
+          missing middle actually is. */}
       {m.history && m.history.length > 1 && (
         <details style={{marginTop:4}}>
-          <summary style={{fontSize:9,opacity:0.55,cursor:'pointer'}}>history ({m.history.length} events)</summary>
+          <summary style={{fontSize:9,opacity:0.55,cursor:'pointer'}}>history ({m.historyDropped
+            ? `${m.history.length} of ${m.history.length + m.historyDropped} events`
+            : `${m.history.length} events`})</summary>
           <div style={{fontSize:9,opacity:0.7,marginTop:4,fontFamily:'monospace'}}>
             {m.history.map((h, i) => (
-              <div key={i}>{new Date(h.at).toLocaleTimeString()} · <b>{h.state}</b> · {h.by} {h.note ? `— ${h.note}` : ''}</div>
+              <React.Fragment key={i}>
+                {i === 1 && m.historyDropped > 0 && (
+                  <div style={{opacity:0.6,fontStyle:'italic'}}>
+                    ⋯ {m.historyDropped} event{m.historyDropped === 1 ? '' : 's'} dropped here. This
+                    record keeps how it opened and its {m.history.length - 1} most recent
+                    events; the middle is gone and can't be recovered.
+                  </div>
+                )}
+                <div>{new Date(h.at).toLocaleTimeString()} · <b>{h.state}</b> · {h.by} {h.note ? `— ${h.note}` : ''}</div>
+              </React.Fragment>
             ))}
           </div>
         </details>
@@ -489,10 +506,20 @@ function InboxModal({ open, onClose, onResend = null }) {
     return c;
   })();
 
+  /* The registry rolls at a cap, and the record that survived the roll
+     carries how many went before it (see persistableMessages). Read here
+     because `all` is in append order, so all[0] is that record. */
+  const droppedRecords = (all[0] && all[0].droppedBefore) || 0;
+
   return (
     <Modal open={open} onClose={onClose}
            title="📬 INBOX"
-           subtitle={`${visibleThreads.length} thread${visibleThreads.length === 1 ? '' : 's'} · ${all.length} message${all.length === 1 ? '' : 's'} total`}
+           subtitle={`${visibleThreads.length} thread${visibleThreads.length === 1 ? '' : 's'} · ${all.length} message${all.length === 1 ? '' : 's'}`
+                     + (droppedRecords
+                        /* "500 messages total" was the sentence on screen with
+                           505 on disk. The word doing the damage is "total". */
+                        ? ` kept · ${droppedRecords} older dropped`
+                        : ' total')}
            size="xl">
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
         {['active','blocked','failed','completed','all'].map(s => (
@@ -513,6 +540,18 @@ function InboxModal({ open, onClose, onResend = null }) {
         </div>
       ) : (
         <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {/* Above the list, not below it, because the dropped ones are the
+              OLDEST and the list runs newest-first — the top is where the
+              boss stops scrolling and concludes they have seen everything.
+              The "… N more threads" note at the bottom is the same courtesy
+              for the other cap; this one had none. */}
+          {droppedRecords > 0 && (
+            <div style={{fontSize:9,opacity:0.65,fontStyle:'italic',borderBottom:'1px dashed var(--ink)',paddingBottom:6}}>
+              ⋯ {droppedRecords} older message{droppedRecords === 1 ? '' : 's'} rolled out of this
+              registry to keep it small. The office keeps the most recent {all.length};
+              anything older is gone from here for good.
+            </div>
+          )}
           {visibleThreads.slice(0, 100).map(({ tid, msgs }) => {
             const head = msgs[0];
             const tail = msgs[msgs.length - 1];

@@ -400,13 +400,63 @@ const chatErrorText = (err, agents, selfId) => {
 // handoffs — they outlive the chat scrollback so the boss can always answer
 // "what happened to the task I sent Selvin?" without scrolling. Keep state
 // machine history bounded too — 30 entries per message is plenty.
-const persistableMessages = (xs) => (Array.isArray(xs) ? xs.slice(-500) : []).map(m => ({
-  ...m,
-  history: Array.isArray(m.history) ? m.history.slice(-30) : [],
-}));
+const MESSAGES_CAP = 500;
+const HISTORY_CAP = 30;
 
-// Message states form a directed lifecycle. All transitions append to
-// history so we never lose the audit trail. `terminal` states can't be
-// transitioned out of (except via explicit reopen).
+/* Trim one record's history, keeping the OPENING entry and counting what
+   went.
+
+   `slice(-30)` kept the newest thirty, which is the wrong thirty. The entry
+   a handoff gets read FOR — `created`, who asked, and the note saying what
+   for — is the first thing out the door. Reproduced 2026-08-16 on a seeded
+   office: a 45-event record rendered "history (30 events)" and opened with
+   "created · Kip — event 16 of 45". Not "resumed at 16" — `created`, as
+   though that were the beginning. Nothing in the list and nothing in the
+   count distinguished it from a complete trail.
+
+   `historyDropped` accumulates instead of being recomputed. This runs on
+   every read of an already-trimmed record and h[0] survives each pass, so
+   what an earlier trim took is no longer countable from h alone. */
+const trimHistory = (m) => {
+  const h = Array.isArray(m.history) ? m.history : [];
+  if (h.length <= HISTORY_CAP) return { ...m, history: h };
+  const kept = [h[0], ...h.slice(-(HISTORY_CAP - 1))];
+  return {
+    ...m,
+    history: kept,
+    historyDropped: (m.historyDropped || 0) + (h.length - kept.length),
+  };
+};
+
+const persistableMessages = (xs) => {
+  const arr = Array.isArray(xs) ? xs : [];
+  let dropped = 0;
+  let kept = arr;
+  if (arr.length > MESSAGES_CAP) {
+    const gone = arr.slice(0, arr.length - MESSAGES_CAP);
+    /* Carry whatever marker the departing records were themselves holding,
+       so this is everything the registry has ever shed and not the size of
+       the most recent trim. */
+    dropped = gone.reduce((n, m) => n + 1 + (m.droppedBefore || 0), 0);
+    kept = arr.slice(-MESSAGES_CAP);
+  }
+  const out = kept.map(trimHistory);
+  /* The registry is a bare array with nowhere to hang a total, so the count
+     rides on the oldest record that survived — which is exactly the row the
+     boss is looking at when they wonder whether the list starts where the
+     office did. */
+  if (dropped && out.length) {
+    out[0] = { ...out[0], droppedBefore: (out[0].droppedBefore || 0) + dropped };
+  }
+  return out;
+};
+
+// Message states form a directed lifecycle. Every transition appends to
+// history, and history is capped (see trimHistory) — so the trail is the
+// opening entry plus the most recent HISTORY_CAP-1, with the count of what
+// was dropped carried on the record. Bounded and said out loud, rather than
+// complete: this comment used to promise the trail was never lost, which
+// the cap two functions up had been quietly disproving. `terminal` states
+// can't be transitioned out of (except via explicit reopen).
 
 export { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };

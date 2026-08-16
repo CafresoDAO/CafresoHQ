@@ -13050,3 +13050,88 @@ comes up, which is honest but blank — a step that navigates could show
 the card only once its target exists. The research feed's empty state is
 also the only place in chat that offers a door; the DIRECT and TEAM
 threads say what they are and stop.
+
+## The audit trail was trimmed silently, and the count said otherwise
+
+The message registry is where the office keeps its handoffs — who asked
+whom for what, and every state it passed through since. It is capped: 500
+records, 30 history events each. A cap is the right call for something a
+browser persists, and this round did not remove it.
+
+What was wrong is what the cap took and what the office said about it.
+
+`persistableMessages` was `xs.slice(-500)` with `m.history.slice(-30)`.
+The newest thirty. So the first thing out of a long-running handoff is the
+`created` entry — the row the record gets opened FOR, carrying who asked
+and the note saying what for. Four lines under that slice sat the comment:
+"All transitions append to history so we never lose the audit trail."
+
+Reproduced on a scratch office (9269) seeded with 505 records, the last of
+them 45 transitions deep:
+
+    subtitle   : "1 thread · 500 messages total"      (505 on disk)
+    disclosure : "history (30 events)"                (45 logged)
+    first row  : "5:30 AM · created · Kip — event 16 of 45"
+
+Read that third line as a boss would. It is not marked as a resumption —
+it says `created`, so the record appears to begin there. Nothing in the
+list, nothing in the count, and nothing in the subtitle distinguished a
+trimmed trail from a complete one. Three numbers on one screen, all of
+them the size of what survived, all of them presented as the whole.
+
+Deferred and then permanent. The cap is `useFileStored`'s READ transform,
+not its write transform, so the truncated copy is what lands in state, and
+the next mutation writes it back. Measured with one press of ✓ CLEAR
+THIS: `hq-state/messages.json` went 505 → 500 records and 45 → 30 events.
+The boss cancelled one stale wait and the office quietly overwrote its own
+memory.
+
+The fix keeps the bound and stops it being invisible. `trimHistory` keeps
+`h[0]` plus the most recent 29 and records `historyDropped`; the record
+cap carries `droppedBefore` on the oldest survivor, because a bare array
+has nowhere else to hang a total. Both counts **accumulate** rather than
+being recomputed — `h[0]` survives every pass, so after the first trim
+what was lost is no longer countable from the array itself. Then the three
+sentences: `history (30 of 45 events)`, a gap row on the second line of
+the list saying what went and what can still be relied on, and a subtitle
+that stops using the word "total" the moment the word stops being true.
+
+The gap row is on the second line and the registry notice is above the
+thread list, both deliberately. The count in a disclosure summary is a
+footnote; the place a missing middle actually IS is between two rows. And
+the dropped records are the OLDEST while the list runs newest-first, so
+the top of the list is exactly where a boss stops scrolling and concludes
+they have seen everything.
+
+The suite runs the real functions. `persistableMessages` and its helper
+are pure and import nothing, so they are lifted out of `app/storage.jsx`
+and executed in node against a seeded registry, twice. Twice matters: half
+the plausible wrong implementations are correct on a single pass and only
+diverge on the second, which is the same shape as the bug being fixed. The
+invariants are arithmetic — 500 kept + 15 dropped = 515 = everything ever
+in it; 30 + 25 = 55 = the 45 seeded plus 10 more — and no amount of
+reading the source proves them.
+
+Fourteen fire arms, one survived the first pass. Putting " total" back
+into the base template left the honest suffix dangling off the end
+("500 messages total kept · 5 older dropped") and satisfied a check that
+only asked whether the honest branch still existed. Presence again, not
+shape: the check now counts the word and requires exactly one, on the
+branch taken when nothing was dropped. Second pass 14/14, post-restore
+baseline green, full runner 158/158.
+
+Verified live in the shipped bundle on 9269, both passes. First:
+`history (30 of 45 events)` opening on `event 1 of 45`, the gap row
+reading "⋯ 15 events dropped here", subtitle "500 messages kept · 5 older
+dropped". Then the office's own output fed back as input with ten more
+records and ten more events: 500 kept · 15 older dropped, `historyDropped`
+25, still opening on `event 1 of 45`. 500 + 15 = 515 and 30 + 25 = 55, on
+screen, after two trims.
+
+Still open: the trim runs only on read, so within one long session both
+arrays grow past their caps and the file on disk holds everything until
+the next load — the counts are honest about what was dropped, not about
+what is about to be. And a boss who needs a dropped event has nowhere to
+go; the sentence says the middle is gone rather than naming a door,
+because there is no door. If these records are ever worth keeping whole,
+that is a storage decision, not a wording one.
