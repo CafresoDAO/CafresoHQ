@@ -3232,7 +3232,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     rest_detail = '' if rest_ok else f'http {s}'
                 except Exception as e:
                     rest_detail = str(e)[:120]
-            configured = (_vault_backend == 'rest' and rest_ok) or (_vault_backend == 'fs' and fs_ok)
+            # Presence, not a probe: naming a bucket is this backend's
+            # equivalent of the fs arm's is_dir(), and it is what tells a
+            # provisioned fleet container apart from one nobody set up. The
+            # honest reasons a named bucket still refuses — no SDK, IAM not
+            # ready, wrong prefix — come back from the write itself as a 502
+            # that says so. A real reachability probe here would build the
+            # OCI client on a polled endpoint and can hang on IMDS (see
+            # _oci_object_client), which is a worse answer than an
+            # optimistic one.
+            oci_ok = bool(_oci_vault_namespace and _oci_vault_bucket)
+            # One row per backend PUT /vault/note can dispatch to. Written as
+            # a table because the two-arm boolean this replaces silently
+            # answered False for 'oci' — a fleet container's vault worked at
+            # the write door and read as "no vault" at every door that asks
+            # first: the coworker cards, the tool grant, and (since the
+            # night-shift pre-flight) every night shift, cancelled before it
+            # started. A missing row is still False, so the suite walks the
+            # write handler's arms and requires each one to appear here.
+            backend_ready = {'fs': fs_ok, 'rest': rest_ok, 'oci': oci_ok}
+            configured = backend_ready.get(_vault_backend, False)
             return self._send_json(200, {
                 'configured': configured,
                 'backend': _vault_backend,
@@ -3243,6 +3262,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'fsExists': fs_ok,
                 'restReachable': rest_ok,
                 'restDetail': rest_detail,
+                'ociBucket': _oci_vault_bucket if oci_ok else '',
                 # Legacy field for older clients.
                 'exists': configured,
             })

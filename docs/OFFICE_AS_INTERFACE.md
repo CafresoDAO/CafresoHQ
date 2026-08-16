@@ -12612,3 +12612,84 @@ so the run-door check stays authoritative either way. Also still open:
 `hireFromTemplate` chokepoint; the boss's plain composer sends mint no
 registry record; 'aborted by user' still stamps environment aborts; and
 the Inbox still has no 'cancelled' filter pill.
+
+## A fleet office called its own vault missing
+
+Yesterday's fix taught the night shift to ask `/vault/status` before
+spending a night's tokens. Today, chasing the schedule-door version of the
+same question, I read the endpoint it asks and found it could not answer
+for one of its own backends.
+
+`configured` was a two-arm boolean: rest-and-reachable, or fs-and-exists.
+`PUT /vault/note` dispatches on three. The third is `oci` — the Object
+Storage backend the OCI Fleet containers are provisioned with, with a full
+write arm forty lines down the same file — and it had no arm in that
+expression, so it fell off the end as False.
+
+Booted an office exactly as a fleet container is booted, namespace and
+bucket in the environment:
+
+    GET /vault/status   → configured: false,  exists: false,  backend: "oci"
+    PUT /vault/note     → 502 "oci: OCI SDK not installed — run: pip install oci"
+
+The write door dispatched to the right arm and told me the real reason it
+could not finish. The status door said there was no vault at all. Every
+reader that asks before writing believed the status door, and there are
+three of them: `isVaultReady()` reads `configured && exists`, so
+`toolsForAgent` handed fleet coworkers no vault tool and their cards said
+they had none; and since yesterday `vault_can_take_a_note` reads the same
+field, so a fleet night shift stopped starting. Measured against one
+office, three runners:
+
+    pre-29637e5   iterations=1   ran, wrote through the oci arm
+    29637e5       iterations=0   errors=1  'vault is not reachable — …'
+    this fix      iterations=1   writes as the bucket allows
+
+I want to be precise about whose fault that third line is, because the
+temptation is to call it a pre-flight bug and loosen the pre-flight. The
+pre-flight is doing exactly what it was written to do. It asked the office
+one question and the office gave a wrong answer about itself. §5 has
+always been about a door that isn't there; this is the same shape one turn
+inward — an office that misreports its own equipment, and every honest
+consumer of that report inherits the lie. A guard is only as truthful as
+what it reads, and adding a reader is how you find out what the source has
+been getting wrong all along. That is worth more than the fix: the night
+pre-flight's real value yesterday was not the tokens it saved, it was that
+it made a stale answer load-bearing enough to notice.
+
+The fix is a table with one row per backend and a `.get(_vault_backend,
+False)` default, so an unknown backend is honestly no vault rather than a
+500 or an optimistic yes. The oci row is presence, not a probe: a named
+bucket is this backend's version of the fs arm's `is_dir()`. A real
+reachability probe here would build the OCI client on an endpoint the UI
+polls, and `_oci_object_client`'s own comment says that can hang on IMDS
+before IAM is ready — a status door that hangs is a worse answer than an
+optimistic one. The honest reasons a named bucket still refuses come back
+from the write itself as a 502, and the refused-write branch from two
+fixes ago names them on the first iteration. Door, then truth: the probe
+buys certainty cheaply and the write owns the rest.
+
+The durable check is not "oci is in the list". The suite reads the write
+handler's dispatch arms out of the source and requires each one to have a
+row in the readiness table, so a fourth backend added next month is
+covered without anyone reading the file. That is the shape of the defect,
+not the identity of the backend that had it: `oci` was added to the write
+door and nothing required anyone to add it here.
+
+Twelve fire arms, all caught first cut, including the arm that swaps the
+presence check for a real probe and the arm that loosens the rest arm the
+same way — this fix relaxes one backend's standard and must not spread.
+Full runner 154/154. Verified live: the fleet office now reports its
+bucket by name, the browser's `configured && exists` gate evaluates true
+in the page against it, and a night shift starts and files.
+
+Not fixed here, and now with a sharper edge than it had this morning: the
+schedule door still confirms a night shift while the vault is down. That
+was the ticket I opened this round — reproduced it, `{"ok": true}` with no
+mention of the vault — and set down when this turned up underneath it. It
+is still advisory (a vault up at save time can be down at run time) and
+the run-door check is still authoritative. Also still open:
+`spawnOpenswarmRoster` is guarded per-caller rather than behind one
+`hireFromTemplate` chokepoint; the boss's plain composer sends mint no
+registry record; 'aborted by user' still stamps environment aborts; and
+the Inbox still has no 'cancelled' filter pill.
