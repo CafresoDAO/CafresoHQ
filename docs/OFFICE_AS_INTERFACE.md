@@ -12801,3 +12801,144 @@ composer still mints no registry record; 'aborted by user' still stamps
 environment aborts; the Inbox still has no 'cancelled' filter pill;
 and the OCI `configured` sentence still sends a fleet boss to a
 Connections screen with no bucket field.
+
+## Connections offered to take a fleet office's vault away
+
+The sentence shipped in the round above — `no vault to file into yet —
+check Connections` — is the office's way forward when notes have nowhere
+to land. So is the coworker card's, and the tool grant's. Every one of
+them points at Settings → Connections. This is what a fleet boss found
+when they got there.
+
+Three backends write notes. The screen knew two:
+
+```jsx
+const isRest = status.backend === 'rest';
+```
+
+`!isRest` therefore meant "local folder", and on an office running the
+`oci` backend that lit **LOCAL DIRECTORY** as the selected storage,
+printed `✓ N notes indexed` against a container-local path that was not
+the vault, and rendered USE APP VAULT / DETECT OBSIDIAN / SAVE. All three
+post `{backend:'fs'}`.
+
+Measured against a provisioned office (bucket `cafresohq-fleet-vault`):
+
+```
+GET  /vault/status                        → backend oci, configured true
+POST /vault/configure {"backend":"fs",…}  → backend fs
+GET  /vault/status                        → configured TRUE, backend fs
+POST /vault/configure {"backend":"oci"}   → 400 bad backend: oci
+```
+
+One click moved the office off its bucket. `configured` stayed `true`, so
+no surface anywhere warned — the vault was "fine", it was just somewhere
+else now. And the door refused the only value that would undo it. Short
+of restarting the container there was no way back, and in a container a
+restart also discards whatever landed in the local folder meanwhile.
+
+A door the office names as the way forward has to be one. On a fleet
+office this one was a trapdoor, and the office was the thing holding it
+open.
+
+### Provisioned, not typed
+
+The tempting fix is an OCI section with namespace, bucket and credential
+fields. That would be inventing a product: the container authenticates as
+itself (`serve.py` never reads `~/.oci/config`; instance-principal auth
+does), so there is nothing this screen could ask the boss to paste. The
+honest shape is the one the code already believed — fleet storage is
+provisioned — with the screen finally saying so.
+
+So: a third state, not a third form. `isOci` and `isFs` exist as their
+own conditions, the local body is gated on `isFs` rather than on the
+absence of rest, and the fleet panel names the bucket, says the setting
+arrives when the office is set up (`OCI_VAULT_NAMESPACE`,
+`OCI_VAULT_BUCKET`, `OCI_VAULT_PREFIX`), and says plainly what switching
+away would do. There is no field, and there is no pretending there could
+be one.
+
+That sentence took two corrections before it was true, and both came
+from the runner rather than from reading it back. The first draft said
+the settings arrive "when the container is provisioned" — accurate about
+the machine, and §6's word for the thing the boss is standing in is
+"your office", so the floor-vocabulary suite failed the build. The
+second said switching away happens "below", and the row of three storage
+buttons is *above* the paragraph. Both server sentences and the panel
+copy now say _set when the office is set up_, and the paragraph names
+the control — **LOCAL DIRECTORY** — instead of pointing a direction. A
+panel that exists because of a wrong door should not ship with a small
+one inside it.
+
+### The chip keys off the bucket, not the backend
+
+The first draft rendered the FLEET STORAGE chip on `isOci`. That closes
+the way back behind the boss: press LOCAL DIRECTORY and the one control
+that would return them is the one control the new state stops drawing.
+`/vault/status` has reported `ociBucket` on any backend since the
+readiness table landed, so the chip keys off `hasFleetStorage = isOci ||
+!!status.ociBucket` — has fleet storage, which is a different question
+from is using it.
+
+### One list of backends
+
+`/vault/configure` kept its own copy of the set — `('fs', 'rest')` — and
+that copy is what answered `bad backend: oci`. It is the same shape as
+the readiness table two rounds ago: the office knew about three backends
+in one place and two in another, and the boss met whichever one their
+door happened to read. `_VAULT_BACKENDS` is now the single tuple, and the
+suite walks the write handler's dispatch arms and requires each to be on
+it.
+
+The post-configure route gate had the same split, in a form that had not
+bitten yet: `if rest … else: if not _vault_root`. On `oci` that asks a
+fully provisioned fleet office for a local folder it never writes to. It
+only ever passed because `CAFRESOHQ_VAULT` defaults to a path — an office
+started with it blank was one env var away from a 503 telling a fleet
+boss to `POST /vault/configure {"root": …}` about a good bucket. It has
+its own arm now, and its own sentence.
+
+### Results
+
+Nineteen fire arms across `serve.py` and `modals/providers.jsx`. One
+survived the first pass: `the fleet panel will not name the bucket`
+deleted the rendered `${status.ociBucket}` and left the condition that
+reads it, and the check — which looked for the field name anywhere in
+the panel — passed. A screen that reads the bucket and does not show it
+is exactly the failure being guarded against, so the check moved to the
+interpolation.
+
+The harness itself moved too. Two of this round's claims are not the
+vault suite's to make: "the sentence is in office words" belongs to
+`test_floor_vocabulary.py`. An arm that puts *container* back into the
+panel would have scored SURVIVED against one suite and blamed the wrong
+file, so the fire runner now runs both and counts either failing as
+caught — which is what catches the `the panel calls the office a
+container again` arm. Final pass: 19/19 caught, post-restore baseline
+green. Full runner: 156/156.
+
+Verified live in the shipped bundle against a provisioned office:
+FLEET STORAGE renders `primary` with `✓ object storage · bucket
+cafresohq-fleet-vault`, the three fs controls are absent, and clicking
+LOCAL DIRECTORY and then FLEET STORAGE returns the office to
+`{"backend": "oci", "configured": true}`. Both server sentences were read
+back off live offices too — a laptop office asked for `oci` answers
+_this office has no fleet storage — OCI_VAULT_NAMESPACE and
+OCI_VAULT_BUCKET are set when the office is set up, not from this
+screen_ and leaves its own vault on `fs`; a fleet office with no bucket
+answers _fleet storage not configured …_ rather than sending the boss to
+configure a folder.
+
+Still open: the fleet panel's note count reads `…` on a host without the
+OCI SDK, because the listing 502s — honest, but it is an ellipsis where
+a sentence would do. Found while reading around this fix and not touched
+here: `views/vault.jsx`'s note on the removed `openInObsidian` argues
+from "the one UI that could ever set [rest] … is deliberately excluded
+from the bundle", and VaultTab is in the shipped bundle — that is where
+this round's live verification happened. The removal may still be right;
+the reason given for it is out of date, and a stale premise is how a
+decision gets re-made wrong. `spawnOpenswarmRoster` is still guarded per-caller
+rather than behind one `hireFromTemplate` chokepoint; a plain send from
+the boss's composer still mints no registry record; 'aborted by user'
+still stamps environment aborts; and the Inbox still has no 'cancelled'
+filter pill.

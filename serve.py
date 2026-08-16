@@ -783,6 +783,12 @@ def _gc_approvals():
 # optional instead of required for notes to work.
 _default_vault_root = _hq_state_dir / 'vault'
 _vault_root     = os.environ.get('CAFRESOHQ_VAULT', str(_default_vault_root)).strip()
+# Every backend PUT /vault/note can dispatch to. One tuple, because
+# /vault/configure used to keep its own shorter copy — it accepted 'fs' and
+# 'rest' and answered `bad backend: oci` to the one backend a fleet office
+# actually runs on, which made Connections a door a fleet boss could leave
+# through but not come back in by.
+_VAULT_BACKENDS = ('fs', 'rest', 'oci')
 _vault_backend  = os.environ.get('CAFRESOHQ_VAULT_BACKEND', 'fs').strip() or 'fs'
 _vault_rest_url = os.environ.get('CAFRESOHQ_OBSIDIAN_URL', 'https://127.0.0.1:27124').strip()
 _vault_rest_key = os.environ.get('CAFRESOHQ_OBSIDIAN_KEY', '').strip()
@@ -3473,8 +3479,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _vault_root = root
             if 'backend' in body:
                 bk = (body.get('backend') or 'fs').strip()
-                if bk not in ('fs', 'rest'):
+                if bk not in _VAULT_BACKENDS:
                     return self._send_json(400, {'error': f'bad backend: {bk}'})
+                # 'oci' is provisioned, not typed: the bucket and namespace
+                # arrive as env on a fleet container and there is no field
+                # here that could invent them. Accepting it anyway would let
+                # a laptop office select a backend it can never write to —
+                # so the door only opens for an office that has the config,
+                # and says where the config lives when it doesn't. Without
+                # this arm a fleet boss who pressed LOCAL DIRECTORY once had
+                # no way back short of restarting the container.
+                if bk == 'oci' and not (_oci_vault_namespace and _oci_vault_bucket):
+                    return self._send_json(400, {'error':
+                        'this office has no fleet storage — OCI_VAULT_NAMESPACE '
+                        'and OCI_VAULT_BUCKET are set when the office is '
+                        'set up, not from this screen'})
                 _vault_backend = bk
             if 'restUrl' in body:
                 _vault_rest_url = (body.get('restUrl') or '').strip()
@@ -3488,10 +3507,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'restKey': '••••' if _vault_rest_key else '',
             })
 
-        # Routes from here require a configured backend.
+        # Routes from here require a configured backend. One arm per backend
+        # PUT /vault/note can dispatch to — the `else` this replaces asked
+        # every non-rest backend for a `_vault_root`, which is the wrong
+        # question on oci: a fully provisioned fleet office would have been
+        # turned away over a local folder it never writes to. It only ever
+        # passed because CAFRESOHQ_VAULT defaults to a path; an office
+        # started with it blank was one env var from a 503 on a good bucket.
         if _vault_backend == 'rest':
             if not (_vault_rest_url and _vault_rest_key):
                 return self._send_json(503, {'error': 'Obsidian REST not configured (URL + API key)'})
+        elif _vault_backend == 'oci':
+            if not (_oci_vault_namespace and _oci_vault_bucket):
+                return self._send_json(503, {'error':
+                    'fleet storage not configured — OCI_VAULT_NAMESPACE and '
+                    'OCI_VAULT_BUCKET are set when the office is set up'})
         else:
             if not _vault_root:
                 return self._send_json(503, {'error': 'vault not configured — POST /vault/configure {"root": "..."}'})

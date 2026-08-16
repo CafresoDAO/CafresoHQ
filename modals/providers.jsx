@@ -663,20 +663,83 @@ export function VaultTab() {
     setBusy(false);
   };
 
+  /* Three backends write notes, and this screen used to know two. `isRest`
+     was the whole model, so `!isRest` meant "local folder" — and on a fleet
+     office running the oci backend that lit LOCAL DIRECTORY as the SELECTED
+     storage, showed a local path with a green "✓ N notes indexed" tick
+     beside it, and rendered USE APP VAULT / DETECT OBSIDIAN / SAVE. Each of
+     those three posts {backend:'fs'}. Measured against a provisioned office
+     (bucket cafresohq-fleet-vault): one click moved the vault to a
+     container-local folder, /vault/status still answered configured:true, so
+     nothing anywhere warned — and POST /vault/configure {"backend":"oci"}
+     answered `bad backend: oci`, so there was no way back short of
+     restarting the container. Every honesty sentence the office says about
+     an unreachable vault ("check Connections") points here. */
   const isRest = status.backend === 'rest';
+  const isOci = status.backend === 'oci';
+  const isFs = !isRest && !isOci;
+  /* Whether this office HAS fleet storage, which is not the same question as
+     whether it is using it — `ociBucket` comes back from /vault/status
+     whenever the container was provisioned with one, on any active backend.
+     The chip has to key off this and not off isOci, or the way back closes
+     behind the boss the moment they press LOCAL DIRECTORY: the control that
+     returns them would be the one control the new state stops rendering. */
+  const hasFleetStorage = isOci || !!status.ociBucket;
 
   return (
     <div className="cb-panel">
       <h4>MARKDOWN VAULT</h4>
       <div className="row-knob">
         <div><div className="lbl">Storage</div><div className="sub">CafresoHQ works with a plain Markdown folder; Obsidian is optional</div></div>
-        <div style={{display:'flex',gap:6}}>
-          <button className={`px-btn ${!isRest?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setBackend('fs')} disabled={busy}>LOCAL DIRECTORY</button>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {/* Shown only on an office that HAS fleet storage: this is not a
+              backend a boss can pick into existence, and a chip offering it
+              on a laptop would be the same wrong door in the other
+              direction. The server refuses it there too. */}
+          {hasFleetStorage && (
+            <button className={`px-btn ${isOci?'primary':'secondary'}`} style={{fontSize:9}}
+              onClick={()=>setBackend('oci')} disabled={busy}>FLEET STORAGE</button>
+          )}
+          <button className={`px-btn ${isFs?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setBackend('fs')} disabled={busy}>LOCAL DIRECTORY</button>
           <button className={`px-btn ${isRest?'primary':'secondary'}`} style={{fontSize:9}} onClick={()=>setBackend('rest')} disabled={busy}>OBSIDIAN REST</button>
         </div>
       </div>
 
-      {!isRest && (<>
+      {isOci && (<>
+        <div className="row-knob" style={{marginTop:6}}>
+          <div>
+            <div className="lbl">Status</div>
+            <div className="sub">
+              {status.ociBucket
+                ? `✓ object storage · bucket ${status.ociBucket} · ${files?.length ?? '…'} note${files?.length === 1 ? '' : 's'} indexed`
+                : '✕ no bucket named — this office was provisioned without one'}
+              {msg && <span style={{marginLeft:8, color: msg.ok ? '#4a8c4a' : 'var(--error)'}}>{msg.text}</span>}
+            </div>
+          </div>
+        </div>
+        {/* §7: the honest sentence is "you cannot set this here", and it is
+            only honest if it also says where it IS set. No field, because
+            there is nothing on this screen that could supply credentials —
+            the container authenticates as itself. The two buttons above
+            still work: leaving fleet storage for a local folder is a real
+            choice, it just has to be one the boss makes on purpose. */}
+        <div className="hint" style={{marginTop:8}}>
+          This office files its notes into its fleet's object storage, set when the
+          office was set up (<code>OCI_VAULT_NAMESPACE</code>, <code>OCI_VAULT_BUCKET</code>,
+          optional <code>OCI_VAULT_PREFIX</code>) — not from this screen, and not by
+          pasting a key: this office signs its own requests.
+          {/* Names the control, not a direction. The first draft said
+              "switching to a local directory below" and the row of three
+              buttons is above this paragraph — a sentence that sends the
+              boss looking the wrong way is a small wrong door, and this
+              panel exists because of a large one. */}
+          {' '}{status.ociBucket
+            ? 'Pressing LOCAL DIRECTORY above moves future notes off the bucket; the notes already in it stay where they are.'
+            : 'Until a bucket is named, notes have nowhere to land — whoever sets this fleet up names it.'}
+        </div>
+      </>)}
+
+      {isFs && (<>
         <div className="form-row" style={{marginBottom:8,marginTop:6}}>
           <label>VAULT DIRECTORY</label>
           <input placeholder={status.defaultRoot || 'C:/Users/you/Documents/cafresohq/hq-state/vault'}
@@ -733,8 +796,14 @@ export function VaultTab() {
       </>)}
 
       <div className="hint" style={{marginTop:8,fontSize:11}}>
-        Agents whose role includes the <strong>Vault Notes</strong> tool can search/read/append/create Markdown notes from the local directory.
-        Tip: pass <code>CAFRESOHQ_VAULT</code> to override the app vault, or <code>CAFRESOHQ_OBSIDIAN_URL</code> / <code>CAFRESOHQ_OBSIDIAN_KEY</code> for optional Obsidian REST.
+        Agents whose role includes the <strong>Vault Notes</strong> tool can search/read/append/create Markdown notes
+        {isOci ? ' from this office’s fleet storage' : ' from the local directory'}.
+        {/* The tip named two backends' env vars and the office runs on
+            three; on a fleet container it was a list of settings that do
+            nothing here. */}
+        {isOci
+          ? <> Tip: <code>CAFRESOHQ_VAULT_BACKEND=oci</code> with <code>OCI_VAULT_NAMESPACE</code> / <code>OCI_VAULT_BUCKET</code> selects fleet storage when the office starts.</>
+          : <> Tip: pass <code>CAFRESOHQ_VAULT</code> to override the app vault, or <code>CAFRESOHQ_OBSIDIAN_URL</code> / <code>CAFRESOHQ_OBSIDIAN_KEY</code> for optional Obsidian REST.</>}
       </div>
     </div>
   );
