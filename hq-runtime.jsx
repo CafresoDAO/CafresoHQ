@@ -100,7 +100,14 @@ const OPENSWARM_ROSTER = [
     tools: ['files','vault'],
     model: 'cafresohq:sonnet',
     temperature: 0.2,
-    elevated: true,
+    /* No `elevated` on any template. It was never honoured by either
+       single-hire path (hire.jsx forces the switch off, deliberately), it
+       WAS honoured by the shelf's bulk tile, and it is read on this screen
+       one more time: `capabilityFacts` hands it to the candidate card, so
+       the flag made the card promise "can work with your files" for a hire
+       that would arrive without them. Dropping it makes the pitch read
+       "…once you switch on their file & shell access", which is the same
+       sentence the hired card shows and points at the same switch. */
     systemPrompt:
       "You are Dax, the Data Analyst. You analyze structured data, compute KPIs, run statistical checks, and produce charts/tables. For analyses longer than ~200 words, save the full report (with table excerpts and any chart specs) to Reports/<topic>.md via [VAULT_NEW]. In chat, return the headline numbers + the vault path. Be precise about uncertainty; never round away meaningful precision without flagging it.",
   },
@@ -111,7 +118,8 @@ const OPENSWARM_ROSTER = [
     tools: ['vault','files'],
     model: 'cafresohq:sonnet',
     temperature: 0.5,
-    elevated: true,
+    /* Sloan and Quill lose nothing: EXPORT_PPTX/DOCX/PDF are granted off
+       the vault claim, never off elevation. See the note on Dax. */
     systemPrompt:
       "You are Sloan, the Slides specialist. You produce REAL .pptx PowerPoint decks via [EXPORT_PPTX: Slides/<topic>.pptx]…[/EXPORT_PPTX]. The body is a markdown outline: `# Deck Title` for the title slide, then `## Slide N: Title` for each slide, then `- bullet` lines for points. The server renders the actual PowerPoint file via python-pptx and saves it to the vault. In chat, return: slide count + main theme + the .pptx vault path. Never paste the deck content into chat — the boss opens it directly from the vault. Visual design notes (layout, image suggestions) go as italicised bullets the user can ignore or have Pixel render.",
   },
@@ -122,7 +130,7 @@ const OPENSWARM_ROSTER = [
     tools: ['vault','files'],
     model: 'cafresohq:sonnet',
     temperature: 0.4,
-    elevated: true,
+    /* Same as Sloan — the exports ride the vault. See the note on Dax. */
     systemPrompt:
       "You are Quill, the Documents specialist. You produce REAL deliverables: .docx via [EXPORT_DOCX: Docs/<topic>.docx]…[/EXPORT_DOCX] for editable Word documents, or .pdf via [EXPORT_PDF: Docs/<topic>.pdf]…[/EXPORT_PDF] for finalised PDFs. The body is markdown (headings, bullets, tables, numbered lists). Pick the right format: .docx if the boss will edit it, .pdf if they'll just read/send it. The server renders the actual file and saves it to the vault. In chat, return: file type + word count + the vault path. Never paste the full content into chat.",
   },
@@ -204,6 +212,26 @@ function spawnOpenswarmRoster(existingAgents, addAgent, model) {
     const agent = {
       ...tpl,
       ...(model ? { model } : {}),
+      /* "elevated never flows from a template — operator must re-opt-in
+         deliberately" is the rule modals/hire.jsx states at `loadTpl`, and
+         both single-hire paths obey it by forcing the switch off. This one
+         spread `...tpl` and carried it.
+
+         Measured live on office 9261, 2026-08-16: the ⚡SEED SWARM tile
+         asked "Hire 5 openswarm-style specialists: Dax, Sloan, Quill,
+         Pixel, Atlas?" — the coworkers by name, nothing else — and Dax,
+         Sloan and Quill arrived with `elevated: true`. That is file and
+         shell access on the boss's machine, granted three times by a
+         confirm that never said the words, on the same screen where hiring
+         those same three one at a time grants it zero times and routes the
+         boss through a danger-styled "Grant X COMPUTER ACCESS?" walk.
+
+         Belt and braces: the templates no longer set the flag either, but a
+         future one that does must not silently re-open this. The three
+         roles lose nothing they can do — pptx/docx/pdf ride the vault
+         claim, not elevation — and their cards now read "files · off" with
+         the switch named, which is the route the walk exists to be. */
+      elevated: false,
       id: uid('a'),
       status: 'idle',
       task: 'standing by',

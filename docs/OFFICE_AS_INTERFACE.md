@@ -12131,3 +12131,101 @@ render fix. Carried forward untouched: the boss's plain composer sends
 still mint no registry record; 'aborted by user' still stamps environment
 aborts; the Inbox still has no 'cancelled' filter pill; and the two retry
 entry selectors named last round are still two.
+
+## One button on the hire shelf granted computer access, silently
+
+modals/hire.jsx writes the rule down at `loadTpl`, in a comment, next to
+the line that enforces it:
+
+    // elevated never flows from a template — operator must re-opt-in
+    // deliberately.
+    setElevated(false);
+
+Both single-hire paths obey it. The ⚡SEED SWARM tile, on the same screen,
+a card away, called `spawnOpenswarmRoster`, which built each new coworker
+as `{ ...tpl, ... }` and carried the templates' `elevated: true` straight
+onto the roster.
+
+Measured live on office 9261, 2026-08-16. One confirm was shown, and this
+is all of it:
+
+    Hire 5 openswarm-style specialists: Dax, Sloan, Quill, Pixel, Atlas?
+                                                        [Cancel] [Hire 5]
+
+Three of the five — Dax, Sloan, Quill — arrived with `elevated: true`.
+That is an elevated CafresoHQ session that can read and write files and run
+shell commands on the boss's machine, granted three times over by a dialog
+that never used any of those words. Hiring those same three one at a time
+grants it zero times, and the only control in the product that does grant
+it is a danger-styled walk on the coworker's own card:
+
+    Grant Dax COMPUTER ACCESS?
+    They will be backed by an elevated CafresoHQ session that can
+    read/write files and run shell commands on this machine. DMs from
+    other agents will be blocked, missions require explicit
+    authorization, and every tool call is logged.
+
+Yesterday's ticket is what made this visible. The coworker card had been
+printing the stored claim list, so all three would have read "FILES VAULT"
+whether or not the grant existed; since it prints the GRANT, the two
+populations diverged on screen — Vera, hired one at a time, showing a
+dimmed `files · off`, and the three bulk hires showing a solid `files`.
+The honest card is a smoke detector, and this is the first thing it found.
+
+The fix is the rule, applied where it was not:
+
+  - `spawnOpenswarmRoster` pins `elevated: false` on every agent it
+    builds, AFTER the spread. Order is the whole guard — the same line
+    above `...tpl` reads identically and does nothing.
+  - No template carries the flag any more. It was never honoured by
+    either single-hire path, and it was read one more time on this
+    screen: `capabilityFacts` hands it to the candidate card, so the
+    flag was also what made the shelf promise files for a hire that
+    would arrive without them. The three roles lose nothing they can
+    do — EXPORT_PPTX/DOCX/PDF are granted off the vault claim, never off
+    elevation.
+
+That second half closes the residue this ledger recorded yesterday, and
+not the way it was framed. It was filed as needing a product decision
+("does hiring a file-handling specialist offer the elevation walk?").
+It did not. The shelf was reading a flag that no hire path honoured; once
+the flag is gone the sentence fixes itself. Measured after, on the same
+shelf:
+
+    Dax → Can read your notes and work with your files once you switch
+          on their file & shell access
+
+which is word for word what the hired card now says, pointing at the same
+switch. The shelf, the hire, and the card finally agree.
+
+Verified live after the fix, same button, same office: the confirm is
+unchanged, and all five arrive `elevated: false` with their tool claims
+intact — Dax, Sloan and Quill still claim `files`, and all three cards
+show it dimmed and marked off. They were let go afterwards; the office is
+back to Kip and Vera.
+
+New suite scripts/test_no_hire_path_grants_computer_access.py, 17 checks:
+the flag pinned off after the spread, no template carrying it, both
+single-hire paths still forcing it off without reading it from what they
+load, the operator's own checkbox still there (the rule is "re-opt-in
+deliberately", not "never"), and the grant walk still gating the flip.
+The node arm drives the lifted `spawnOpenswarmRoster` over a HOSTILE
+roster — a template that does set the flag — because the real one, now
+flagless, cannot exercise the belt-and-braces.
+
+Fire-tested twelve arms. Two escaped the first cut and both were the same
+mistake: checking for `'COMPUTER ACCESS?'` and `'danger: true'` anywhere
+in a 1500-line settings file, which stayed true when the walk was made
+unreachable (`if (false)`) and when `danger: true` was deleted from this
+particular confirm. Both checks are now scoped to the switch's own
+handler, and the suite asserts the confirm GATES the flip rather than
+merely existing near it. 12/12 after. Full runner 148/148.
+
+Residue: `spawnOpenswarmRoster` is the office's only bulk-hire path today,
+but nothing structurally stops a future one from spreading a template the
+same way — the guard is per-caller, not a chokepoint, and a single
+`hireFromTemplate(tpl)` that every path went through would make it one.
+Carried forward untouched: 'vault' still has no condition entry while the
+runtime gates it on an async `isVaultReady()`; the boss's plain composer
+sends still mint no registry record; 'aborted by user' still stamps
+environment aborts; and the Inbox still has no 'cancelled' filter pill.
