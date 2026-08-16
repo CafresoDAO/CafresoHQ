@@ -181,9 +181,16 @@ def main():
         print('  SKIP  node not on PATH for the live-roster arm')
     else:
         src = strip_comments(cast)
+        # CAN_DO_UNLOCK was missing from this scope until 2026-08-16 and the
+        # harness only survived by luck: no case reached the unmet-need-with-
+        # no-smaller-claim branch, so the lookup never ran. The moment 'vault'
+        # gained a condition every case did, and node threw a ReferenceError
+        # on source the suite claims to be exercising. Lift what canDoPhrase
+        # closes over, not what today's cases happen to touch.
         scope = (brace_lift(src, 'const CAN_DO = {') + '\n'
                  + brace_lift(src, 'const CAN_DO_NEEDS = {') + '\n'
                  + brace_lift(src, 'const CAN_DO_INSTEAD = {') + '\n'
+                 + brace_lift(src, 'const CAN_DO_UNLOCK = {') + '\n'
                  + brace_lift(src, 'function canDoPhrase(tools, ctx) {') + '\n')
         # Verbatim from hq-runtime's INITIAL_AGENTS / the hire shelf.
         roster = [
@@ -191,8 +198,12 @@ def main():
             {'name': 'Dax', 'tools': ['files', 'vault', 'db'], 'elevated': True},
             {'name': 'Kip', 'tools': ['web', 'vault'], 'elevated': False},
         ]
+        # A working office: the vault answered, and it answered yes. The three
+        # assertions below are about the PHANTOMS, and they need a fact-set
+        # where the real capabilities survive so that what is missing from
+        # each phrase is missing for the reason under test.
         out = run_js(scope + 'const R = %s.map(a => canDoPhrase(a.tools, '
-                     '{ elevated: a.elevated }));\n'
+                     '{ elevated: a.elevated, vaultOn: true }));\n'
                      'console.log(JSON.stringify(R));' % json.dumps(roster))
         vera, dax, kip = out
         for name, phrase in zip(('Vera', 'Dax', 'Kip'), out):
@@ -205,6 +216,21 @@ def main():
               'work with your files' in dax, dax)
         check('Kip, not elevated and with no key, is not left blank',
               kip == 'read a web page you name and read your notes', kip)
+
+        # …and the same Kip in an office whose vault does not answer. 'vault'
+        # is the only claim on the shelf whose door is a round trip, so it is
+        # the only one whose truth can change while the boss reads the card.
+        off = run_js(scope + "console.log(JSON.stringify({"
+                     "off: canDoPhrase(['web','vault'], { canSearch: true, vaultOn: false }),"
+                     "unknown: canDoPhrase(['web','vault'], { canSearch: true }),"
+                     "}));")
+        check('a vault that does not answer is not sold as notes he can read',
+              'read your notes once' in off['off']
+              and not off['off'].endswith('read your notes'), off['off'])
+        check('...and the sentence names the door, which is not Roster',
+              'Settings → Connections' in off['off'], off['off'])
+        check('...while an office that has not asked yet says nothing either way',
+              off['unknown'] == 'search the web', off['unknown'])
 
     print()
     if FAILS:

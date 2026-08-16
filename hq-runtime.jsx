@@ -1682,17 +1682,64 @@ const MAX_TOOL_HOPS = 4;
 /* Each tool: name, regex (single-line or multi-line block), executor, prompt
    doc lines for the system prompt. The first capture group is the argument;
    the second (optional) is the body for block-style tools. */
+/* `at: 0` is not "stale", it is NEVER ASKED, and the two have to stay
+   distinguishable — see `vaultReadySync` below. */
 let _vaultConfiguredCache = { at: 0, ok: false };
+const _vaultWatchers = new Set();
+function _noteVaultReady(ok, now) {
+  const first = !_vaultConfiguredCache.at;
+  const changed = first || _vaultConfiguredCache.ok !== ok;
+  _vaultConfiguredCache = { at: now, ok };
+  if (changed) for (const fn of [..._vaultWatchers]) { try { fn(ok); } catch (_e) { /* a watcher must not break the probe */ } }
+}
 async function isVaultReady() {
   const now = Date.now();
-  if (now - _vaultConfiguredCache.at < 5000) return _vaultConfiguredCache.ok;
+  /* `at &&` first: a never-asked cache is not a fresh one. Real clocks make
+     `now - 0` enormous so this never bit in the browser, but the whole point
+     of the `at` field is that zero means "no answer yet", and a freshness
+     test that reads it as an answer from 1970 is one stubbed clock away from
+     handing back `ok: false` for a vault nobody has looked at. */
+  if (_vaultConfiguredCache.at && now - _vaultConfiguredCache.at < 5000) return _vaultConfiguredCache.ok;
   try {
     const s = await CafresoHQClient.vaultStatus();
-    _vaultConfiguredCache = { at: now, ok: !!(s.configured && s.exists) };
-  } catch (_e) { _vaultConfiguredCache = { at: now, ok: false }; }
+    _noteVaultReady(!!(s.configured && s.exists), now);
+  } catch (_e) {
+    /* The office is unreachable, so whether a vault is CONFIGURED is
+       genuinely unknown — but what the coworker gets is not: `toolsForAgent`
+       awaits this same function and hands over nothing. Recording it as an
+       observation of "not ready" is what keeps the card and the grant
+       saying the same thing, which is the only invariant here worth
+       protecting. */
+    _noteVaultReady(false, now);
+  }
   return _vaultConfiguredCache.ok;
 }
-function clearVaultReadyCache() { _vaultConfiguredCache = { at: 0, ok: false }; }
+function clearVaultReadyCache() {
+  _vaultConfiguredCache = { at: 0, ok: false };
+  /* Back to "never asked", and the watchers are told so they can ask again.
+     Without this, Settings → Connections → MARKDOWN VAULT would clear the
+     cache after a backend swap and every coworker card would sit on the
+     unknown branch — no chip at all — until the next dispatch happened to
+     probe. */
+  for (const fn of [..._vaultWatchers]) { try { fn(undefined); } catch (_e) { /* as above */ } }
+}
+/* The synchronous half of `isVaultReady`, for the surfaces that describe a
+   coworker while React renders.
+
+   `undefined` means the office has never had an answer. That is NOT false:
+   app/cast.jsx drops a capability whose condition is unestablished rather
+   than printing it as switched off, on the same "do not sell on unknown"
+   rule that governs canSearch and canMakeImages. A card that has not yet
+   heard from the vault says nothing about the vault. */
+function vaultReadySync() {
+  return _vaultConfiguredCache.at ? _vaultConfiguredCache.ok : undefined;
+}
+/* Subscribe to that answer arriving or changing. The office kicks one probe
+   at start-up (app.jsx) so the shrug is measured in milliseconds. */
+function onVaultReadyChange(fn) {
+  _vaultWatchers.add(fn);
+  return () => _vaultWatchers.delete(fn);
+}
 
 /* Whether the agent-wallet ICP-Service is installed AND the on-chain bridge is
    reachable (i.e. we're inside the ai.cafreso.com shell that holds the II key).
@@ -2566,6 +2613,7 @@ function ceoReachedForNote(missing) {
      elevated       the subject's own flag, which gates FILE_* / BASH
      canMakeImages  settings.imageProvider, the second door for 'img'
      moneyOn        icpWalletEnabled() — money module, install AND bridge
+     vaultOn        the last answer `isVaultReady` got, which gates VAULT_*
 
    It lived in modals/hire.jsx, where exactly one surface used it and the
    comment above it promised the card and the runtime "cannot disagree".
@@ -2586,6 +2634,14 @@ function capabilityFacts(subject) {
     if (s) f.canMakeImages = !!s.imageProvider;
   } catch (_e) { /* settings unreadable */ }
   try { f.moneyOn = icpWalletEnabled(); } catch (_e) { /* never throws, but the rule is the rule */ }
+  /* The only fact here the office cannot read on demand: `isVaultReady` is a
+     round trip to /vault/status and a card renders synchronously. So this
+     reads the last answer, and leaves the key OFF the object entirely when
+     there has never been one — the difference between "the vault is not
+     there" and "nobody has asked yet", which `grantedTools` treats as the
+     difference between saying "off" and saying nothing. */
+  const vaultOn = vaultReadySync();
+  if (vaultOn !== undefined) f.vaultOn = vaultOn;
   return f;
 }
 
@@ -4074,7 +4130,7 @@ function resolveModel(m) {
 const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, throttleTokens, cleanHarmony, displacedTask,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
   /* Exported for the three surfaces that describe a coworker's reach — the
      candidate shelf, the coworker card, the inspect panel. They must all ask

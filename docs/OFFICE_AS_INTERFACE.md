@@ -12229,3 +12229,85 @@ Carried forward untouched: 'vault' still has no condition entry while the
 runtime gates it on an async `isVaultReady()`; the boss's plain composer
 sends still mint no registry record; 'aborted by user' still stamps
 environment aborts; and the Inbox still has no 'cancelled' filter pill.
+
+## A card promised the vault while the vault was unreachable
+
+Kip's card, under CAN USE, next to WEB: a solid `VAULT` chip, tooltip
+"Can read your notes". Correct on a good day. On 2026-08-16 I opened
+Settings → Connections → MARKDOWN VAULT on the live office and clicked
+OBSIDIAN REST with Obsidian not running — one click, the product's own
+button — and `/vault/status` went to `configured: false`. The chip did not
+move. Not dimmed, not marked off, same tooltip. Meanwhile eleven tools
+left his system prompt:
+
+    VAULT_SEARCH  VAULT_READ  VAULT_APPEND
+    EXPORT_PPTX   EXPORT_DOCX  EXPORT_PDF
+    MEMORY_LIST   MEMORY_READ  MEMORY_WRITE  MEMORY_APPEND
+    FILE_WRITE
+
+The chip beside it had it right — Vera's `FILES · OFF`, dimmed, "Not yet —
+work with your files once you switch on their file & shell access." The
+difference was not care. `CAN_DO_NEEDS` in app/cast.jsx lists the
+condition each capability rides on, and 'vault' was the one id with no
+entry, so `grantedTools` and `canDoPhrase` handed it over on the claim
+alone while `toolsForAgent` went on awaiting `isVaultReady()`. The table
+that exists to stop exactly this had a hole in it, and no suite could see
+the hole because no suite compared the two tables.
+
+Three surfaces were saying it. The coworker card and the inspect panel via
+`grantedTools`; the candidate shelf via `canDoPhrase`; and the starter
+brief, where `canFileToVault` read the same claim and went on writing
+"Save it to Research/<slug>.md" into tasks for a coworker holding no tool
+that could write it.
+
+The awkward part of the fix is that the card renders synchronously and the
+answer is a round trip. The codebase already had this shape — `canSearch`
+and `canMakeImages` are both mirrors of something asynchronous — so the
+vault got the same treatment: `vaultReadySync()` beside `isVaultReady()`,
+reading one in-memory cache, with a watcher set so the answer arriving
+repaints. app.jsx kicks one probe at start-up.
+
+What took the longest was `undefined`. There are three states here, not
+two: configured, not configured, and never asked. `established()` in
+cast.jsx reads presence of a key, not truthiness, on the standing rule
+that the office does not sell on unknown — so `f.vaultOn = vaultReadySync()`
+would have written `undefined` onto the facts object and printed "off" for
+a vault nobody had looked at yet. The key is set only once there is an
+answer, `vaultReadySync` returns `undefined` until `at` is stamped, and
+`clearVaultReadyCache` — which Settings calls after a backend swap — now
+tells the watchers it dropped the answer so app.jsx can go get another
+one. A card that has not heard from the vault says nothing about it, for
+the few hundred milliseconds that lasts.
+
+Two things the probe now does that it did not: it records the failure
+branch. An office that cannot be reached is a genuine unknown about
+whether a vault is configured, but it is not an unknown about what the
+coworker gets — `toolsForAgent` awaits the same function and hands over
+nothing — so leaving the last answer standing would have put the card back
+out of step with the grant. And it stopped treating `at: 0` as a fresh
+reading five seconds old, which real clocks hid and a stubbed one did not.
+
+The new suite pins the shape rather than the instance. Every id in `CAN_DO`
+has to name both the expression `toolsForAgent` gates it on and the fact
+`CAN_DO_NEEDS` records — a card cannot promise unconditionally, because
+there is now a row to fill in. Its node arm lifts the cache, the notifier
+and both readers out of hq-runtime.jsx and drives them against a stubbed
+clock and a stubbed transport: the 5-second window, the flip, the throwing
+probe, the swap, a watcher that raises. Fire-tested ten arms, all caught;
+the tenth is a full revert of the runtime half. Full runner 149/149.
+
+Verified live on the office, both directions. Vault down: `VAULT · OFF` at
+0.45 opacity, "Not yet — read your notes once you connect a Markdown vault
+in Settings → Connections" — which names Connections, not Roster, because
+unlike the other four this door is nowhere near the coworker and the row's
+own tooltip sends the boss to the wrong screen. Vault restored through the
+same button: the chip went solid without a reload, and the next dispatch
+carried all eleven tools back into the prompt.
+
+Residue: `VAULT_NEW` reaches the prompt even with the vault down, because
+Kip's job description names `[VAULT_NEW]` in its prose — the tool list is
+honest and the template around it is not. Carried forward untouched:
+`spawnOpenswarmRoster` is guarded per-caller rather than behind a single
+`hireFromTemplate` chokepoint; the boss's plain composer sends still mint
+no registry record; 'aborted by user' still stamps environment aborts; and
+the Inbox still has no 'cancelled' filter pill.

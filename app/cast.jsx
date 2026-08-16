@@ -179,6 +179,7 @@ const CAN_DO = {
    anyway — the card asserts what it was told, not what it assumed. */
 const CAN_DO_NEEDS = {
   web:    'canSearch',        // TOOL_REGISTRY.search.requires() — a Brave key
+  vault:  'vaultOn',          // isVaultReady() — /vault/status says configured
   files:  'elevated',         // toolsForAgent gates FILE_* and BASH on this
   code:   'elevated',         // …the tools claim grants neither on its own
   img:    'canMakeImages',    // settings.imageProvider
@@ -189,8 +190,11 @@ const CAN_DO_NEEDS = {
    than nothing. A 'web' coworker always gets BROWSER_FETCH, key or no key —
    that is a real capability and worth naming, and naming it is also what
    stops "search the web" from being the only way to describe this
-   coworker. The other four have no smaller version: without elevation
-   there is no file access at all, not a lesser one. */
+   coworker. The other five have no smaller version: without elevation
+   there is no file access at all, not a lesser one, and an unreachable
+   vault is not a read-only vault — `toolsForAgent` hands over none of
+   VAULT_SEARCH/READ/APPEND/NEW, nor EXPORT_PPTX/DOCX/PDF, which ride the
+   same claim. */
 const CAN_DO_INSTEAD = {
   web: 'read a web page you name',
 };
@@ -230,6 +234,11 @@ const CAN_DO_UNLOCK = {
   wallet: 'spend from your wallet once you switch the Wallet service on',
   files:  'work with your files once you switch on their file & shell access',
   code:   'run code once you switch on their file & shell access',
+  /* Named for the panel as it is printed — Settings → Connections →
+     MARKDOWN VAULT — because unlike the other four this door is nowhere
+     near the coworker, and the tooltip these chips already carry sends the
+     boss to Settings → Roster, where there is nothing to fix. */
+  vault:  'read your notes once you connect a Markdown vault in Settings → Connections',
 };
 
 /* `ctx` absent means the caller does not know, and unknowable → do not

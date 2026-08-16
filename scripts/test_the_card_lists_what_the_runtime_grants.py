@@ -167,8 +167,10 @@ def main():
         out = run_js(r'''
 const R = {};
 const ids = (xs) => xs.map(x => x.id);
-// A boss with a Brave key, no image provider, money off, no elevation.
-const PLAIN = { canSearch: true, canMakeImages: false, moneyOn: false, elevated: false };
+// A boss with a Brave key, a vault that answers, no image provider, money
+// off, no elevation. `vaultOn` joined this set on 2026-08-16 — see the
+// vaultOff/vaultUnknown cases at the end, which are the ones about it.
+const PLAIN = { canSearch: true, vaultOn: true, canMakeImages: false, moneyOn: false, elevated: false };
 
 // The shipped defect, exactly: Vera's minted claim list.
 let r = grantedTools(['web','email','cal','vault'], PLAIN);
@@ -201,6 +203,17 @@ R.imgUnknownGranted = ids(r.granted); R.imgUnknownLocked = ids(r.locked);
 r = grantedTools(['wallet'], PLAIN);
 R.walletLocked = ids(r.locked);
 
+// The vault is a round trip, so it is the one fact the card can watch move
+// under it. Same coworker, three states of the same office.
+r = grantedTools(['web','vault'], { ...PLAIN, vaultOn: false });
+R.vaultOffGranted = ids(r.granted); R.vaultOffLocked = ids(r.locked);
+R.vaultOffUnlock = (r.locked[0] || {}).unlock || '';
+// Never asked — the probe has not answered yet. Absent is not false: no
+// chip at all, not a chip reading "off", because the office has no basis
+// for telling the boss their vault is disconnected.
+r = grantedTools(['web','vault'], { canSearch: true, elevated: false });
+R.vaultUnknownGranted = ids(r.granted); R.vaultUnknownLocked = ids(r.locked);
+
 R.dupes = ids(grantedTools(['vault','vault','web','vault'], PLAIN).granted);
 R.emptyG = ids(grantedTools(undefined, PLAIN).granted);
 R.emptyL = ids(grantedTools(undefined, PLAIN).locked);
@@ -228,6 +241,22 @@ console.log(JSON.stringify(R));
               out['imgUnknownGranted'] == [] and out['imgUnknownLocked'] == [],
               'absent is "we could not find out", never "you have not set it up"')
         check('wallet with money off is locked', out['walletLocked'] == ['wallet'])
+        check('a vault that does not answer is dimmed, not printed as reach',
+              out['vaultOffGranted'] == ['web'] and out['vaultOffLocked'] == ['vault'],
+              f"{out['vaultOffGranted']} / {out['vaultOffLocked']} — measured "
+              'live on office 9261, 2026-08-16: with Settings → Connections → '
+              'MARKDOWN VAULT on OBSIDIAN REST and Obsidian closed, the system '
+              'prompt lost VAULT_SEARCH/READ/APPEND and EXPORT_PPTX/DOCX/PDF '
+              'while this chip stayed solid, tooltip "Can read your notes"')
+        check('...and the dimmed chip names the door it needs',
+              'Settings → Connections' in out['vaultOffUnlock'],
+              out['vaultOffUnlock'] + ' — the row tooltip sends the boss to '
+              'Settings → Roster, which has no vault control on it')
+        check('...while a vault nobody has asked about is left off the card',
+              out['vaultUnknownGranted'] == ['web'] and out['vaultUnknownLocked'] == [],
+              f"{out['vaultUnknownGranted']} / {out['vaultUnknownLocked']} — "
+              'before the first probe answers there is no basis for either '
+              'promising the vault or telling the boss it is disconnected')
         check('a repeated claim is listed once', out['dupes'] == ['vault', 'web'], str(out['dupes']))
         check('no tools at all is not an error', out['emptyG'] == [] and out['emptyL'] == [])
         check('ids with nothing behind them are dropped from both lists',

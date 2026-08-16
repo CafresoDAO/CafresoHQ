@@ -596,6 +596,25 @@ function App() {
     try { if (C.probeManagedBrain) C.probeManagedBrain().then(recompute); } catch (_e) {}
     return C.onSettingsChange ? C.onSettingsChange(recompute) : undefined;
   }, []);
+  /* Whether the vault answers is the one capability fact a coworker card
+     cannot look up while it renders — /vault/status is a round trip. So the
+     office asks once at start-up and again whenever the answer moves, and
+     `HQ.vaultReadySync` serves the stored answer to every surface that
+     describes a coworker. Until the first probe lands those surfaces say
+     nothing about the vault at all, which is the intended shrug: absent is
+     not false. `clearVaultReadyCache` (Settings → Connections, after a
+     backend swap) reports `undefined` here, and that is what re-arms the
+     probe. */
+  const [, setVaultTick] = useStateA(0);
+  React.useEffect(() => {
+    const ask = () => { try { HQ.isVaultReady().catch(() => {}); } catch (_e) {} };
+    const off = HQ.onVaultReadyChange((ok) => {
+      setVaultTick(t => t + 1);
+      if (ok === undefined) ask();
+    });
+    ask();
+    return off;
+  }, []);
   const openSettings = React.useCallback((tab) => { setSettingsTab(tab || null); setSettingsOpen(true); }, []);
   /* Let any component (e.g. the onboarding key step's "bring your own key"
      link) deep-link into Settings without prop-drilling openSettings. */

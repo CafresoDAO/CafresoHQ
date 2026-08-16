@@ -1,4 +1,5 @@
 import { CafresoHQClient } from '../claude-client.jsx';
+import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
@@ -91,9 +92,24 @@ function filePath(folder, subject, ext) {
 
 /* Whether this coworker can actually file into the boss's cabinet. Front-desk
    hires claim ['web'] or ['files','shell','web'] — none claim 'vault' — so the
-   honest default is "deliver it in the reply". */
+   honest default is "deliver it in the reply".
+
+   The claim is necessary and not sufficient. `toolsForAgent` also awaits
+   `isVaultReady()`, so a coworker who ticked Vault Notes gets none of
+   VAULT_NEW/APPEND/READ when the vault is unreachable — and this function
+   is what puts "Save it to Research/<slug>.md" into the brief. Measured
+   2026-08-16: switching Settings → Connections → MARKDOWN VAULT to
+   OBSIDIAN REST with Obsidian closed takes every VAULT_* marker out of the
+   system prompt, and the starter card went on giving the assignment
+   anyway. A brief that asks for a file the coworker has no tool to write
+   is a snag the office manufactured itself.
+
+   `vaultReadySync()` is `undefined` before the first probe answers. Unknown
+   is not yes: the reply-inline branch is the one that cannot fail, so that
+   is where an unestablished fact lands. */
 function canFileToVault(agent) {
-  return !!(agent && (agent.tools || []).includes('vault'));
+  if (!(agent && (agent.tools || []).includes('vault'))) return false;
+  return HQ.vaultReadySync() === true;
 }
 
 /* Same honesty rule as canFileToVault, applied to the OUTCOME LINE rather

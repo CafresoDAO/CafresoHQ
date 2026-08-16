@@ -128,6 +128,12 @@ def main():
         # PROVIDER now, so the card's words and the label match.
         'img':    ('image provider',      MEDIA),
         'wallet': ('wallet',              SETTINGS),
+        # The odd one out, and the reason it needs saying: every other door
+        # here is on or beside the coworker's own card, and this one is not
+        # anywhere near it. The chips carry a tooltip reading "Change these
+        # in Settings → Roster", which for 'vault' is the wrong door — so
+        # the line names its own, spelled as the panel heading prints it.
+        'vault':  ('markdown vault',      MEDIA),
     }
     unlock_tbl = brace_lift(bare, 'const CAN_DO_UNLOCK = {')
     unlock_keys = re.findall(r'^\s{2}(\w+):', unlock_tbl, re.M)
@@ -251,20 +257,30 @@ def main():
         brace_lift(bare, 'const CAN_DO_UNLOCK = {'),
         brace_lift(bare, 'function canDoPhrase(tools, ctx) {'),
     ])
+    # Every case carrying 'vault' also carries `vaultOn`, because from
+    # 2026-08-16 the vault is conditional too — /vault/status has to have said
+    # yes. These cases are about the IMAGE switch, so the vault is held open
+    # in them; the vault's own on/off/unknown behaviour is exercised by
+    # test_the_front_desk_sells_what_exists.py and by `vault_off` below.
     # Pixel verbatim from the shelf, plus the cases that define the edges.
     cases = {
         # The measurement: a fresh office, provider unset, fact known.
-        'pixel_fresh': (['img', 'vault'], {'elevated': False, 'canMakeImages': False}),
+        'pixel_fresh': (['img', 'vault'], {'elevated': False, 'canMakeImages': False, 'vaultOn': True}),
         # Provider on — the future tense must disappear entirely.
-        'pixel_ready': (['img', 'vault'], {'elevated': False, 'canMakeImages': True}),
+        'pixel_ready': (['img', 'vault'], {'elevated': False, 'canMakeImages': True, 'vaultOn': True}),
         # Settings store unreadable: the flag never arrives.
-        'pixel_unknown': (['img', 'vault'], {'elevated': False}),
+        'pixel_unknown': (['img', 'vault'], {'elevated': False, 'vaultOn': True}),
         # Three real capabilities plus an unavailable one. The unavailable
         # one is listed FIRST, which is the only ordering that can catch a
         # merged list — with `img` last, a merged and a separated list
         # produce the same three words and the arm sails through.
         'crowded': (['img', 'files', 'vault', 'code'],
-                    {'elevated': True, 'canMakeImages': False}),
+                    {'elevated': True, 'canMakeImages': False, 'vaultOn': True}),
+        # TWO unlock lines and one real capability. Before 'vault' became
+        # conditional no shipped card could produce this, so "the pending
+        # list waits its turn" was only ever tested with a single waiter.
+        'vault_off': (['vault', 'img', 'web'],
+                      {'canSearch': True, 'canMakeImages': False, 'vaultOn': False}),
         # A coworker with nothing but an off switch still gets a route.
         'only_img': (['img'], {'canMakeImages': False}),
         # Elevation IS a switch — one per coworker, on their own card in
@@ -311,6 +327,17 @@ def main():
           r['crowded'].endswith('+1 more'),
           f"{r['crowded']} — the overflow count covers the unlock line too; "
           'silently dropping it would make the card look complete')
+    check('two off switches both queue behind the one real capability',
+          r['vault_off'].startswith('search the web')
+          and 'read your notes once you connect a Markdown vault' in r['vault_off']
+          and 'make images once you pick an image provider' in r['vault_off'],
+          f"{r['vault_off']} — with two waiters, a merged list would put an "
+          'errand for the boss ahead of the thing the coworker can do now')
+    check('...and the vault route names Connections, not Roster',
+          'Settings → Connections' in r['vault_off']
+          and 'vault in Settings → Roster' not in r['vault_off'],
+          f"{r['vault_off']} — the chips' own tooltip already sends the boss "
+          'to Roster, where there is no vault control at all')
     check('a coworker with only an off switch still gets a route out',
           r['only_img'] == 'make images once you pick an image provider',
           f"{r['only_img']} — the alternative is \"talk things through\", "

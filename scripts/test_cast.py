@@ -187,7 +187,7 @@ R.rungMute   = withRouteOut(DIAG, DEAD, { parseModelId: fakeC.parseModelId,
 // ── what a coworker can DO, in the boss's words ─────────────────────────
 // Grammar is tested with every condition satisfied, so the joining rules
 // are exercised on their own. The gating gets its own fixtures below.
-const ALL_ON = { canSearch: true, elevated: true, canMakeImages: true, moneyOn: true };
+const ALL_ON = { canSearch: true, elevated: true, canMakeImages: true, moneyOn: true, vaultOn: true };
 R.cdOne    = canDoPhrase(['web'], ALL_ON);
 R.cdTwo    = canDoPhrase(['web','vault'], ALL_ON);
 R.cdThree  = canDoPhrase(['files','vault','code'], ALL_ON);
@@ -200,7 +200,11 @@ R.cdAllJunk= canDoPhrase(['nope','zzz'], ALL_ON);
 // The four with no tool behind them anywhere, even with every flag on.
 R.cdPhantom  = canDoPhrase(['email','cal','db','slack'], ALL_ON);
 // Vera as the front desk actually ships her.
-R.cdVera     = canDoPhrase(['web','email','cal','vault'], { canSearch: true });
+R.cdVera     = canDoPhrase(['web','email','cal','vault'], { canSearch: true, vaultOn: true });
+// …and the same Vera on a machine whose vault does not answer. 'vault' has
+// been conditional since 2026-08-16: the claim alone never bought the
+// VAULT_* tools, `toolsForAgent` also awaits isVaultReady().
+R.cdVaultOff = canDoPhrase(['web','email','cal','vault'], { canSearch: true, vaultOn: false });
 // No key: 'web' still buys a real fetch, so say the smaller true thing.
 R.cdWebNoKey = canDoPhrase(['web'], {});
 // No elevation: there is no lesser form of file access to fall back to.
@@ -478,14 +482,30 @@ console.log(JSON.stringify(R));
           out['cdVera'] == 'search the web and read your notes', out['cdVera'])
     check('...and does not count the phantoms in "+N more"',
           'more' not in out['cdVera'], out['cdVera'])
+    # The notes half of that sentence is only true while the vault answers.
+    # Switch Settings → Connections → MARKDOWN VAULT to OBSIDIAN REST with
+    # Obsidian closed and toolsForAgent hands over none of VAULT_SEARCH /
+    # READ / APPEND / NEW, nor the three EXPORT_* that ride the same claim.
+    check('...and stops advertising the notes when the vault stops answering',
+          out['cdVaultOff'] == 'search the web and read your notes once you '
+          'connect a Markdown vault in Settings → Connections',
+          out['cdVaultOff'] + ' — pinned whole, because "read your notes" is '
+          'a substring of its own unlock line: a containment check here '
+          'passes on the exact sentence it is meant to forbid')
     # The conditional ones. 'web' always buys BROWSER_FETCH, so there is a
     # smaller true thing to say; file access has no lesser form.
     check('without a search key, the card names the fetch it does have',
           out['cdWebNoKey'] == 'read a web page you name', out['cdWebNoKey'])
     check('without elevation, files and code promise nothing',
           out['cdFilesFlat'] == 'talk things through', out['cdFilesFlat'])
+    # Was 'read a web page you name and read your notes' until 2026-08-16,
+    # when 'vault' gained a condition of its own. With no ctx there is no
+    # unconditional capability left in the table at all — the one phrase that
+    # survives is web's smaller-true claim, which holds with or without a key.
+    # Nothing is promised on unknown, and nothing is denied on unknown either:
+    # no unlock line appears for vault or files here.
     check('with no context at all, it promises only the unconditional',
-          out['cdNoCtx'] == 'read a web page you name and read your notes',
+          out['cdNoCtx'] == 'read a web page you name',
           out['cdNoCtx'] + ' — unknowable → do not promise, the mirror of '
           'officeHasBrain\'s unknowable → do not alarm')
 
