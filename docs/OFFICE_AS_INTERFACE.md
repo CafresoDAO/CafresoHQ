@@ -13955,3 +13955,105 @@ three promises — an unfindable target stops pointing, the old ring is
 dropped on entry, the budget outlasts a mount — at the address the code
 moved to.
 
+
+## The office promised the job would be picked up, and nothing was carried
+
+Reproduced 2026-08-16 on office 9280 against the canned brain (9236). A
+coworker with a vault was asked a question whose every hop answered with
+the same tool call, so all four fired and the run hit the hop budget. The
+office said, in the chat, unprompted:
+
+> Let me check the vendor notes on file before I answer.
+> Let me check the vendor notes on file before I answer.
+> Let me check the vendor notes on file before I answer.
+> Let me check the vendor notes on file before I answer.
+> _(they did as much as they can in one go and stopped there. If this is
+> part of a running project it will carry on by itself; otherwise ask
+> again and they will pick it up.)_
+
+That last line is the office naming a door. So the boss went through it,
+and this is the request that went on the wire, read off the brain's own
+log rather than off the screen:
+
+    system     You are Local Brain, a specialist coworker at CafresoHQ…
+    user       @Local Brain hop budget probe one two six — what do the …
+    assistant  Let me check the vendor notes on file before I answer.…
+    user       [Direct request from the boss]: carry on one two six
+
+Four reads of a file whose contents included the string
+`ZEPHYR-QUOTA-8841`, and the resumed turn carried no `TOOL_RESULT` turn,
+no file content, and no sentinel. What the coworker was handed of its own
+stopped run was its four "let me go and look" lines with everything
+looking had found taken out — a context that invites it to either read the
+same file a fifth time or fill the gap from nowhere. It cannot pick
+anything up. There is nothing there to pick up.
+
+The results had not been lost. `toVisit` puts every tool result on the
+message as `body`, and all four were sitting on the very bubble the hint
+was attached to — the office had them, showed them to the boss, and never
+showed them to the brain. `chatToMessages` is the single place stored chat
+becomes prompt, and it reads `m.text`. A visit is not in the text.
+
+So this is §5 in its purest form. Not a door that leads somewhere wrong —
+a door the office built, described accurately, and left with no room
+behind it. The sentence is the only instruction the boss gets at the one
+moment a run stops without finishing, and following it exactly produced
+the same stopped run again.
+
+**Fixed by replaying what the office already held.** `chatToMessages` now
+walks `m.visits` and puts each result back as the pair a live hop
+produces: the call as an `assistant` turn, the result as
+`[TOOL_RESULT: <name>]` under it. A resumed turn is now byte-for-byte the
+shape of the turn it resumes, which is the whole point — the brain should
+not be able to tell that it stopped.
+
+Three lines were drawn while doing it, and each one is the reason this
+change is safe:
+
+**`head` and `icon` stay behind.** That is the office narrating its own
+trip — "Opened Research/vendor-notes.md in the cabinet" — and it is the
+exact template a local model once learned to forge, complete with an
+invented result and an invented vault path (the note above `toVisit` in
+`app/floor.jsx`). This function already enforced the rule for `m.text`:
+result bodies survive, the office's voice does not. The replay obeys the
+same rule, so the fix does not reopen the hole it is walking past.
+`[TOOL_RESULT: …]` is not the office's voice — it is the protocol frame
+the brain is shown on every hop of a run that does not stop.
+
+**Only the reader's own trips.** Replaying a peer's tool result as this
+coworker's own work would be the office attributing a visit to somebody
+who never made it. Their turns are already quoted as `[Name]: …` under
+`user`, which is hearsay, and hearsay is where somebody else's results
+belong. The branch that decides roles now answers "is this turn mine"
+once, and the replay reads that same answer rather than computing a second
+one — two answers to that question is how they start to disagree.
+
+**A visit records `name` and `arg`.** Not for the screen: `head` already
+says the same thing in the office's words. They are there because a result
+needs the frame it arrived in, and `visibleReply` strips the marker out of
+the stored text, so without the arg the replayed result names no file.
+Stored whole, unlike `body` — a body is capped at 600 because a page fetch
+is long, and a path cut short is a different path.
+
+Verified live on the same office after rebuilding: four hops, then the
+re-ask, and the request on the wire carried four `[TOOL_RESULT: VAULT_READ]`
+turns each under its `[VAULT_READ: Research/vendor-notes.md]` call, the
+sentinel present, and no "in the cabinet" anywhere.
+
+Two siblings had to be re-pointed rather than rewritten.
+`test_whose_words_are_whose.py` had two checks reading the role branch
+line by line; the chain folded into one ternary when it learned to answer
+the ownership question once, so they now match the folded shape and assert
+the same two promises. `test_floor.py` pins the visit shape exactly, on
+purpose, so that no field arrives unexamined — it now pins seven keys
+instead of five, and a new check holds `name` and `arg` to their real
+values so a later edit cannot leave the keys and empty them.
+
+The lesson worth keeping is narrower than "resume was broken". It is that
+**an honest sentence about a limit still has to be checked against the
+door it offers**. Every word of that hint was true — they did stop, the
+budget was spent, asking again does start another run. The false part was
+not in the sentence at all; it was one function away, in what a second run
+turns out to know. §7 asks for a way forward, and a way forward that the
+boss can follow to the letter and arrive back where they started is the
+locked door with a handle painted on.

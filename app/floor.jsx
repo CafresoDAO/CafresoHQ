@@ -199,9 +199,20 @@ function toVisit(ev) {
   const body = raw.length > VISIT_RESULT_CAP
     ? raw.slice(0, VISIT_RESULT_CAP).trimEnd() + '\n…'
     : raw;
+  /* `name` and `arg` are not for the screen — `head` is what the boss
+     reads, and it says the same thing in the office's words. They are here
+     because a visit is also the office's only record of what a tool came
+     back with, and `chatToMessages` replays that record to the brain when
+     a coworker is asked to carry on from where they left off. Replaying a
+     result needs the frame it arrived in: `[TOOL_RESULT: <name>]`, and the
+     call above it, or the coworker is handed a page of text with nothing
+     to say which of its own questions the text answers. Stored whole and
+     uncapped, unlike `body` — an arg is a path or a query, short by
+     nature, and a path cut short is a different path. */
   return {
     icon: ev.failed ? VISIT_FAIL_ICON : visitWords(ev.name).icon,
     head, body: body.trim(), at: ev.at || null, failed: !!ev.failed,
+    name: ev.name, arg: ev.arg === undefined || ev.arg === null ? '' : String(ev.arg).trim(),
   };
 }
 

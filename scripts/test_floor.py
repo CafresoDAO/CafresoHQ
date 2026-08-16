@@ -221,6 +221,11 @@ R.tvCapped = toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5
 R.tvCappedEllipsis = /\u2026$/.test(toVisit({ name: 'BROWSER_FETCH', arg: 'a.com', result: 'z'.repeat(5000) }).body);
 // A visit object must expose no field a model could have authored as prose.
 R.tvKeys = Object.keys(toVisit({ name: 'MEMORY_READ', arg: 'x', result: 'y' })).sort().join(',');
+// `name`/`arg` are the record, not the caption — they exist so a stopped
+// run can be replayed to the brain in the frame a live hop uses. Pinned to
+// their real values so a future edit cannot leave the keys and empty them.
+R.tvRecord = (v => v.name + '|' + v.arg)(
+  toVisit({ name: 'MEMORY_READ', arg: '  facts/france.md  ', result: 'y' }));
 /* A tool can fail WITHOUT raising — a missing file, a path that isn't a
    directory, a non-zero exit all answer normally with the explanation as the
    result. Watched live 2026-08-13: a failed DIR_LIST rendered "Opened ./site"
@@ -456,8 +461,20 @@ console.log(JSON.stringify(R));
           out['tvEmptyResult'] == '' and out['tvNullResult'] == '')
     check('a huge result is capped so it cannot bury the answer',
           out['tvCapped'] <= 620 and out['tvCappedEllipsis'] is True, str(out['tvCapped']))
-    check('the visit shape is exactly {at, body, failed, head, icon}',
-          out['tvKeys'] == 'at,body,failed,head,icon', out['tvKeys'])
+    # `name` and `arg` joined the shape when chatToMessages learned to
+    # replay a stopped run's results to the brain: a result needs the frame
+    # it arrived in, and `head` — the office's own words for the trip — is
+    # the one thing that must never go back into a prompt. The pin stays
+    # exact so a third field cannot arrive unexamined; see
+    # scripts/test_the_coworker_can_pick_it_up.py, which owns the replay
+    # and checks that only these two ever leave the message.
+    check('the visit shape is exactly {arg, at, body, failed, head, icon, name}',
+          out['tvKeys'] == 'arg,at,body,failed,head,icon,name', out['tvKeys'])
+    check('…and the two the transcript replays hold the real call',
+          out['tvRecord'] == 'MEMORY_READ|facts/france.md',
+          [out['tvRecord'], '— trimmed but never truncated: `body` is capped '
+           'because a page fetch is long, and a path cut short is a '
+           'different path'])
 
     # A trip that did not work must not be captioned as one that did.
     check('a failed visit says it could not, and wears the warning icon',

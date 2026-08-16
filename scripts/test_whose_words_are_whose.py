@@ -119,14 +119,25 @@ def main():
           'ceoStream — when the reader IS the CEO, ceo turns are its own')
 
     # ── 2. the two branches that were wrong ─────────────────────────────
+    # These two used to read the if/else chain line by line. The chain was
+    # folded into one ternary when `chatToMessages` learned to replay tool
+    # visits — the replay has to ask the same "is this turn mine" question
+    # the roles are decided by, and asking it twice is how two answers
+    # start to disagree (see scripts/test_the_coworker_can_pick_it_up.py,
+    # which owns the replay). Same two promises, new address; what they
+    # assert has not changed. Whitespace-normalised because the shape they
+    # now match wraps across lines.
+    flat = re.sub(r'\s+', ' ', fn)
     check("a CEO turn is a third party's when someone else is reading",
-          re.search(r"if \(selfName\) out\.push\(\{ role: 'user', "
-                    r"content: `\[\$\{m\.name\}\]: \$\{text\}` \}\)", fn),
-          [fn, '— the peer form on the last line was always the right '
-           'shape for a third party; the CEO simply is one'])
+          re.search(r"\{ role: 'user', content: `\[\$\{m\.name\}\]: \$\{text\}` \}",
+                    flat),
+          [fn, '— the peer form was always the right shape for a third '
+           'party; the CEO simply is one'])
     check('...and stays the assistant only when the CEO is reading',
-          re.search(r"else out\.push\(\{ role: 'assistant', content: text \}\);", fn),
-          fn)
+          re.search(r"m\.from === 'ceo' \? !selfName", flat)
+          and re.search(r"\{ role: 'assistant', content: text \}", flat),
+          [fn, '— a ceo bubble is the reader\'s own turn exactly when there '
+           'is no other reader; that is what `!selfName` says'])
     check("a coworker's own turn is finally marked as theirs",
           re.search(r"selfName && speaker\(m\) === selfName", fn),
           [fn, '— these arrived as `[Vera · Role]: …` under `user`'])

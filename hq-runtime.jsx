@@ -3758,17 +3758,63 @@ function chatToMessages(chat, { omitLastCeo = false, selfName = '' } = {}) {
        choke point where stored chat becomes prompt, so it is the place to
        stop it. Result bodies survive; only the template goes. */
     const text = stripOfficeVoice(m.text);
-    if (!text) continue;
-    if (m.from === 'user') out.push({ role: 'user', content: text });
+    /* Whether this bubble is the READER's own past turn, decided once
+       here because the tool-visit replay below has to ask the same
+       question and must not answer it differently. */
+    let mine;
+    if (m.from === 'user') { mine = false; if (text) out.push({ role: 'user', content: text }); }
     /* `m.from !== 'ceo'` guards the self branch as well as the CEO branch:
        a coworker who happened to be named CafresoHQ must not inherit the
        chief of staff's turns as their own. */
-    else if (m.from === 'ceo') {
-      if (selfName) out.push({ role: 'user', content: `[${m.name}]: ${text}` });
-      else out.push({ role: 'assistant', content: text });
+    else {
+      mine = m.from === 'ceo' ? !selfName : (!!selfName && speaker(m) === selfName);
+      if (text) {
+        out.push(mine ? { role: 'assistant', content: text }
+                      : { role: 'user', content: `[${m.name}]: ${text}` });
+      }
     }
-    else if (selfName && speaker(m) === selfName) out.push({ role: 'assistant', content: text });
-    else out.push({ role: 'user', content: `[${m.name}]: ${text}` });
+    /* What the tools actually came back with.
+
+       The office has held this all along — `toVisit` puts each result on
+       the message as `body` — and it never went back to the brain, because
+       everything above reads `m.text` and a visit is not in the text. So a
+       run that spent its hop budget was told by the office that asking
+       again would pick it up, and the re-ask arrived carrying the
+       coworker's own "let me go and look" with not one byte of what
+       looking had found. Measured 2026-08-16 on office 9280: four
+       VAULT_READs of a file containing ZEPHYR-QUOTA-8841, the boss re-asks
+       exactly as instructed, and the request on the wire held no
+       TOOL_RESULT turn, no file content and no sentinel — only "Let me
+       check the vendor notes on file before I answer." four times over.
+
+       `head` and `icon` stay behind. That is the office's REPORT of the
+       trip — the template a model once learned to forge — and leaving it
+       out is the rule this function already enforced one line up: result
+       bodies survive, the office's voice does not. What does go back is
+       the protocol frame the brain is shown on every hop of a LIVE run,
+       so a resumed turn reads exactly like the turn it resumes.
+
+       Only on `mine`. Replaying another coworker's trip as this one's own
+       work would be the office attributing a visit to somebody who never
+       made it — and for a reader who is not the CEO, that includes the
+       chief of staff's. Their turns are already quoted as `[Name]: …`,
+       which is hearsay, and hearsay is where somebody else's results
+       belong. */
+    if (!mine) continue;
+    for (const v of (m.visits || [])) {
+      const body = v && typeof v.body === 'string' ? v.body.trim() : '';
+      if (!body) continue;
+      /* Visits stored before this change carry no tool name. A frame with
+         no name is still honest — a result came back — and it beats both
+         dropping a body the coworker earned and naming a tool that might
+         not be the one that ran. */
+      if (v.name) {
+        out.push({ role: 'assistant',
+                   content: v.arg ? `[${v.name}: ${v.arg}]` : `[${v.name}]` });
+      }
+      out.push({ role: 'user',
+                 content: `${v.name ? `[TOOL_RESULT: ${v.name}]` : '[TOOL_RESULT]'}\n${body}` });
+    }
   }
   return out;
 }
