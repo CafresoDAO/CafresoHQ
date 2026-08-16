@@ -11657,3 +11657,71 @@ waiting out a stream the boss just killed will dispatch the moment
 the floor goes quiet — same as it would have before the wait existed,
 but worth a look if STOP ALL should also empty the office's own
 outbox.
+
+## Delegate at a busy desk kills the answer being written, unasked
+
+Found 2026-08-15, working the previous entry's residue. The Delegate
+button in the chat composer (the hand-off picker) was the last
+boss-facing dispatch surface with no door at a busy desk. The Send
+button swaps to ■ Stop while a coworker is streaming, but Delegate
+stays rendered, enabled, and clickable the whole time — and its
+handler in app.jsx called beginAgentRun directly, which evicts
+whatever run that desk already has.
+
+Measured before the fix, on the live rig against the canned brain:
+Vera was mid-answer to the boss's own question when a follow-up brief
+was delegated to her. No dialog appeared. Her in-progress answer cut
+to " …(stopped)" mid-sentence, and the registry filed the run
+'aborted by user' — for a stop the boss never chose. The click said
+"hand this off"; the office heard "stop her." Same shape as the
+timer cut and the DM cut from the two entries above, but on a
+surface the boss operates directly.
+
+The fix is a door, not a wait. The taxonomy the last three entries
+built now covers every dispatch surface: office-initiated dispatches
+(a coworker's DM, a workflow step, an approval walk-back) WAIT for
+the desk to go quiet, because nobody is standing there to answer a
+question — that's the previous entry. Boss-initiated dispatches ASK
+first, because a boss at the composer can answer, and waiting
+silently on a direct gesture reads as the office ignoring it — that's
+the task-start door, the delete door, and now this one. onDelegate
+checks the aborter map after the empty-brief guard and, if the desk
+is busy, raises the same confirm dialog the other boss doors use:
+"<name> is mid-reply right now. Hand this off anyway? Their current
+answer will be stopped." — okLabel 'Stop & hand off', cancelLabel
+'Let them finish', danger styling because one of the buttons kills
+work in flight. Declining returns false.
+
+The decline path had its own honesty detail: the picker spends the
+boss's typed text the moment an item is clicked (it clears the
+composer and closes the picker before dispatching). A declined
+hand-off must put that text back — the gesture was cancelled, not
+spent. The picker's item click is now async: it saves the typed
+brief, closes, awaits onDelegate, and restores the composer verbatim
+when the answer is an explicit false.
+
+Verified live, both directions, same rig. Decline: the dialog came
+up mid-stream with both labels, 'Let them finish' left Vera's answer
+to complete intact, the registry filed it 'completed', and the typed
+brief came back to the composer character-for-character. Accept:
+'Stop & hand off' cut the reply to " …(stopped)" and the registry
+filed 'aborted by user' — which is now TRUE, because the boss was
+shown exactly what the click would do and chose it — and the
+delegated brief then ran to completion on the freed desk.
+
+The regression suite (test_a_handoff_asks_before_stopping.py) pins
+the door's placement — after the empty-brief guard, before the
+boss-bubble paint and beginAgentRun — the exact dialog labels and
+danger flag, the decline early-return, and the picker's
+save/await/restore choreography, then node-drives the lifted door
+over quiet, busy-accepted, and busy-declined desks.
+
+Residue, recorded honestly: the delegated run itself left no trace
+in the message registry — dispatchToAgent files a record for every
+DM and meeting turn, but the delegate path (and the boss's own chat
+sends) never mint one, so a hand-off that dies mid-run has no
+registry row to file the failure against — worth its own look. Line
+~2666's 'aborted by user' note still also stamps environment aborts
+(the unmount sweep), still parked. And STOP ALL still doesn't empty
+the office's outbox of notes waiting out the previous entry's
+deferral — also still parked.

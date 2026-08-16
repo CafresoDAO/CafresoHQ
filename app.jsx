@@ -3635,6 +3635,25 @@ ${d.text}` : d.text,
         text: `(nothing to hand ${a.name} yet — type what you'd like them to do, then pick them again.)` }]);
       return;
     }
+    /* A hand-off aimed at a desk that is mid-reply. beginAgentRun below
+       evicts the live run, and this was the one boss-facing dispatch
+       surface left with no ask — measured 2026-08-15: delegating a
+       follow-up to Vera while she was answering the boss's previous
+       question cut that answer to " …(stopped)" with no warning, and the
+       registry filed 'aborted by user' for a stop the boss never chose —
+       the click said "hand this off", not "stop her". #90's rule holds at
+       this door too: when starting new work would kill a conversation in
+       flight, ask first. Office-initiated dispatches WAIT instead (#98);
+       a boss standing at the composer gets the choice, because waiting
+       silently on a direct gesture reads as the office ignoring it.
+       Declining returns false so the picker puts the boss's typed text
+       back in the composer instead of losing it. */
+    if (agentAbortersRef.current.has(a.id)) {
+      const ok = await window.hqConfirm(
+        `${a.name} is mid-reply right now.\n\nHand this off anyway? Their current answer will be stopped.`,
+        { danger: true, okLabel: 'Stop & hand off', cancelLabel: 'Let them finish' });
+      if (!ok) return false;
+    }
     const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})` };
     const agentId = HQ.uid('m');
     setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);

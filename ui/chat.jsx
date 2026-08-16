@@ -1448,7 +1448,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               </div>
             )}
             {agents.map(a => (
-              <div key={a.id} className="item" onClick={()=>{ onDelegate(a, input); setInput(''); setShowDelegate(false); }}>
+              <div key={a.id} className="item" onClick={async ()=>{
+                /* A declined hand-off (onDelegate → false: the coworker was
+                   mid-reply and the boss chose "Let them finish") puts the
+                   typed text back — the gesture was cancelled, not spent. */
+                const typed = input; setShowDelegate(false); setInput('');
+                const ok = await onDelegate(a, typed);
+                if (ok === false) setInput(typed);
+              }}>
                 <Sprite data={a.color} scale={1}/>
                 <div style={{display:'flex',flexDirection:'column',lineHeight:1.1}}>
                   <span>{a.name}</span>
