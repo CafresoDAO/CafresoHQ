@@ -132,6 +132,11 @@ def main():
     # here only so this harness still runs; every call below passes one
     # argument, which is the unchanged path.
     js += brace_lift(src, 'function claimNeedsMediaDoor(') + '\n'
+    # ...and a third door for 'vault' — same reason, same shape. The lifted
+    # scope has to mirror what claimLabels CALLS, not what today's cases
+    # happen to reach; both times this list fell behind, the whole harness
+    # died at node time rather than failing a check.
+    js += brace_lift(src, 'function claimNeedsVaultDoor(') + '\n'
     js += brace_lift(src, 'function claimLabels(') + '\n'
     js += r'''
 const R = { one: {}, lists: {} };

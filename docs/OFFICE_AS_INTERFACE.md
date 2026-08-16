@@ -12311,3 +12311,83 @@ honest and the template around it is not. Carried forward untouched:
 `hireFromTemplate` chokepoint; the boss's plain composer sends still mint
 no registry record; 'aborted by user' still stamps environment aborts; and
 the Inbox still has no 'cancelled' filter pill.
+
+## The office ordered a note filed, then blamed a box that was already on
+
+Kip's job description, shipped in OPENSWARM_ROSTER: "synthesize into a
+research note saved to Research/<topic>.md **via [VAULT_NEW]**". The tools
+note, four paragraphs down the same system prompt, on the same office, in
+the same request:
+
+    Claimed capabilities: web, vault. Of these, the following are wired up
+    for real execution: BROWSER_FETCH, ACK, SPAWN_SUBAGENT, HIRE_AGENT,
+    HIRE_ASSISTANT, REQUEST_ELEVATION, DM_TO, PEER_JOURNAL. ONLY invoke
+    these exact tools … do NOT call any tool not in this list.
+
+His Markdown Vault box was ticked; the vault backend was Obsidian REST
+with Obsidian closed, so `toolsForAgent` granted no VAULT_*. He obeyed the
+order, as instructed, and the boss read this:
+
+    _(Kip reached for Vault Notes, which they don't have — turn it on from
+      their card in Settings → Roster, or @-mention a coworker who already
+      has it.)_
+
+The box was on. That trip is wasted, the toggle changes nothing, and
+Settings → Connections → MARKDOWN VAULT — the door that was actually shut
+— is never named.
+
+The shape of this was already understood. `claimNeedsMediaDoor` exists
+because 'img' has two doors on two screens, and its comment says the
+already-ticked box "sends the boss to a control that is on, they turn it
+off and on again, nothing changes". 'vault' has the identical shape and
+had no such predicate. Worse, the office knew the right answer on the
+other path: `CEO_DOORS` sends the chief of staff to Settings → Connections
+for this exact family. So the product named the correct screen when the
+speaker had no card, and the wrong one when they did.
+
+The fix is the img fix, applied: `claimNeedsVaultDoor` / `claimHitsVaultDoor`,
+`claimLabels` dropping vault names when the box is ticked, and a sentence
+of the vault's own. Its box label is read off TOOLS_CATALOG rather than
+typed out, so rewording the checkbox carries. Two new branches, not one —
+a coworker can hold both img and vault with both connections missing, and
+one sentence naming both screens beats an arbitrary winner.
+
+Two things nearly slipped through. `claimLabels` DROPS the names whose
+second door is shut, so the emit guard had to learn about the vault too or
+the sentence would never be reached — silence, not a wrong door, which is
+the harder failure to notice. And three sibling suites lift `claimLabels`
+into node; a lifted function calling an unlifted one is a ReferenceError,
+so all three died at load rather than failing a check. Same trap as the
+CAN_DO_UNLOCK lift in the previous entry: the lifted scope has to mirror
+what the function CALLS, not what today's cases happen to touch.
+
+The new suite is written per DOOR, not per sentence: every entry in its
+table must have a predicate, a place in the emit guard, and a standalone
+sentence that names its own screen and no other. Fire-tested ten arms.
+One escaped the first cut — deleting `claimHitsVaultDoor` from the guard —
+because the check looked for that call anywhere in the file and the call
+inside `reachedForNote` kept it true. Now scoped to the condition itself.
+A second was weak for the same reason: the "standalone sentence exists"
+check was satisfied by the both-doors sentence, so deleting the vault-only
+one left it green (the node arm caught it; the static one should not have
+needed the help). 10/10 after. Full runner 150/150.
+
+Verified live on office 9261, both coworkers, one reach, same moment. Kip
+(box on, connection down): "Their Vault Notes box is already on — what's
+missing is the vault connection, which you set up in Settings →
+Connections." Vera (no vault box): "reached for Vault Notes, which they
+don't have — turn it on from their card in Settings → Roster" — the
+unchanged path, still right.
+
+Residue, and it is the cause rather than the symptom: the office ORDERED
+the reach. Four cast job descriptions name [VAULT_NEW] in prose and the
+default base prompt carries a MANDATORY file-delivery rule naming
+[VAULT_NEW]/[VAULT_APPEND], none of which consult what was granted. Kip's
+line also orders [SEARCH], which was not granted either. A coworker is
+told to do something, told not to do it, does it, and the boss pays for
+the round trip. The hint now points at the right door; the instruction
+that sent them through the wrong one is still there. Carried forward:
+`spawnOpenswarmRoster` is guarded per-caller rather than behind a single
+`hireFromTemplate` chokepoint; the boss's plain composer sends mint no
+registry record; 'aborted by user' still stamps environment aborts; and
+the Inbox still has no 'cancelled' filter pill.

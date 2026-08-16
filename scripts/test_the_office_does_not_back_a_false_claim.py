@@ -182,10 +182,13 @@ def main():
     # fire arms stripped the way forward from the branch the boss actually
     # reads and the suite stayed green, because a sibling branch had it.
     templates = re.findall(r'`_\(([^`]*)\)_`', note)
-    check('the note has one sentence per door, and only three',
-          len(templates) == 3,
-          [len(templates), '— the door they lack, the image door already '
-           'open, and the one with no nameable door'])
+    check('the note has one sentence per door, and only five',
+          len(templates) == 5,
+          [len(templates), '— the door they lack, both already-open doors '
+           'together, the image one alone, the vault one alone, and the one '
+           'with no nameable door. Was three until the vault turned out to '
+           'have the same two-door shape as the image box; a sixth means a '
+           'case was added without asking whether the boss can act on it'])
     check('every one of them leaves a way forward (§7)',
           templates and all('Settings → ' in t for t in templates),
           [templates, '— one honest sentence PLUS a way forward; the honest '
@@ -196,9 +199,14 @@ def main():
            'told a file was written that was not'])
 
     # ── 5. silence where another note already speaks ────────────────────
+    # Every door reachedForNote can name has to appear in this guard, or the
+    # sentence for it never gets emitted: claimLabels DROPS the names whose
+    # second door is the shut one, so a door missing here is silent rather
+    # than wrong, which is harder to notice.
     check('nothing is said when no door can be named',
           re.search(r'if \(claimLabels\(missing, agent\) \|\| '
-                    r'claimHitsMediaDoor\(missing, agent\)\) \{', code),
+                    r'claimHitsMediaDoor\(missing, agent\)\s*\n?\s*'
+                    r'\|\| claimHitsVaultDoor\(missing, agent\)\) \{', code),
           '— DM_TO/HANDOFF_TO/HIRE_AGENT/memory markers belong to '
           'unsentHandoff and unsentBlocks, which run on the same buffer; a '
           'note here would be a second sentence about one event')

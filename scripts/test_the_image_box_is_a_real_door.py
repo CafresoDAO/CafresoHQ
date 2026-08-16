@@ -186,6 +186,11 @@ def main():
         js += brace_lift(RUNTIME, 'function toolClaimLabel(') + '\n'
         js += brace_lift(RUNTIME, 'function claimNeedsMediaDoor(') + '\n'
         js += brace_lift(RUNTIME, 'function claimHitsMediaDoor(') + '\n'
+        # claimLabels grew a vault door too (see
+        # test_the_hint_names_the_door_that_is_shut.py). Lifted only so this
+        # harness still runs — TICKED holds 'vault', so an unlifted callee
+        # would take every case here down with it.
+        js += brace_lift(RUNTIME, 'function claimNeedsVaultDoor(') + '\n'
         js += brace_lift(RUNTIME, 'function claimLabels(') + '\n'
         js += r'''
 const TICKED   = { name: 'Pixel', tools: ['img', 'vault'] };

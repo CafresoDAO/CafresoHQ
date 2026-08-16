@@ -272,7 +272,8 @@ def main():
         js += re.search(r'const TOOL_CLAIM_GROUPS = \[[\s\S]*?\];', code).group(0) + '\n'
         js += re.search(r'const CEO_DOORS = \{[\s\S]*?\};', code).group(0) + '\n'
         for fn in ('function toolClaimGroup(', 'function toolClaimLabel(',
-                   'function claimNeedsMediaDoor(', 'function claimLabels(',
+                   'function claimNeedsMediaDoor(',
+                   'function claimNeedsVaultDoor(', 'function claimLabels(',
                    'function ceoReachedForNote('):
             js += brace_lift(code, fn) + '\n'
         js += r'''

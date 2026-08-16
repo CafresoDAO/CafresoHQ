@@ -2463,6 +2463,7 @@ function claimLabels(names, agent) {
   const seen = [];
   for (const n of names || []) {
     if (claimNeedsMediaDoor(n, agent)) continue;
+    if (claimNeedsVaultDoor(n, agent)) continue;
     const label = toolClaimLabel(n);
     if (label && !seen.includes(label)) seen.push(label);
   }
@@ -2495,6 +2496,38 @@ function claimHitsMediaDoor(names, agent) {
   return (names || []).some(n => claimNeedsMediaDoor(n, agent));
 }
 
+/* 'vault' has the same two-door shape, and the office already knew it —
+   CEO_DOORS below sends the chief of staff to Settings → Connections for
+   exactly this tool family. The coworker path did not, so the boss whose
+   coworker reached for the vault got the Roster sentence instead.
+
+   Measured 2026-08-16 on office 9261. Kip, Markdown Vault box TICKED, the
+   vault backend switched to Obsidian REST with Obsidian closed. His job
+   description orders "synthesize into a research note saved to
+   Research/<topic>.md via [VAULT_NEW]" and the same system prompt lists
+   what is actually wired up — BROWSER_FETCH, ACK, SPAWN_SUBAGENT,
+   HIRE_AGENT, HIRE_ASSISTANT, REQUEST_ELEVATION, DM_TO, PEER_JOURNAL —
+   under "ONLY invoke these exact tools". He obeyed the order, and the
+   boss read:
+
+     _(Kip reached for Vault Notes, which they don't have — turn it on
+       from their card in Settings → Roster, or @-mention a coworker who
+       already has it.)_
+
+   The box was on. The trip is wasted, the toggle changes nothing, and the
+   shut door — Settings → Connections → MARKDOWN VAULT — goes unnamed.
+
+   Same `agent`-absent rule as the media door: unknown boxes are not
+   ticked boxes, so the CEO's one-argument call still gets the label. */
+function claimNeedsVaultDoor(name, agent) {
+  if (!/^(VAULT_|EXPORT_)/i.test(String(name || '').trim())) return false;
+  return ((agent && agent.tools) || []).indexOf('vault') >= 0;
+}
+
+function claimHitsVaultDoor(names, agent) {
+  return (names || []).some(n => claimNeedsVaultDoor(n, agent));
+}
+
 /* Which of `known` marker names this reply OPENED, whatever else it says.
 
    `known` and the granted list come in as parameters rather than being read
@@ -2524,10 +2557,20 @@ function openedMarkers(text, known) {
 function reachedForNote(missing, agent) {
   const want = claimLabels(missing, agent);
   const media = claimHitsMediaDoor(missing, agent);
+  const vault = claimHitsVaultDoor(missing, agent);
+  /* Read off the catalog the checkboxes are rendered from, so a reworded
+     box follows the sentence. The Image Gen line below still spells its
+     label out; left alone deliberately — rewriting a shipped sentence is
+     not this ticket, and the two suites that lift these functions pin it. */
+  const vaultBox = toolClaimLabel('VAULT_NEW');
   return want
-    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}, or @-mention a coworker who already has it.)_`
+    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}${vault ? ', and connect a vault in Settings → Connections' : ''}, or @-mention a coworker who already has it.)_`
+    : media && vault
+    ? `_(${agent.name} reached for image work and for the vault. Both boxes are already on — what's missing is an image provider, which you pick in Settings → Media, and a vault connection, which you set up in Settings → Connections.)_`
     : media
     ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
+    : vault
+    ? `_(${agent.name} reached for the vault. Their ${vaultBox} box is already on — what's missing is the vault connection, which you set up in Settings → Connections.)_`
     : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`;
 }
 
@@ -3957,7 +4000,8 @@ FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, repor
            would be a caveat the boss cannot act on. Silence is right when
            there is no door to point at. */
         const missing = [...reachedFor];
-        if (claimLabels(missing, agent) || claimHitsMediaDoor(missing, agent)) {
+        if (claimLabels(missing, agent) || claimHitsMediaDoor(missing, agent)
+            || claimHitsVaultDoor(missing, agent)) {
           emit(reachedForNote(missing, agent));
         }
       }
