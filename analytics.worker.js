@@ -104,10 +104,40 @@ function analyze({ nodes, edges }) {
     };
   }
 
-  // Communities (Louvain / Blondel) + modularity.
+  /* Communities (Louvain / Blondel) + modularity.
+
+     `rng` is passed on purpose. graphology-communities-louvain defaults to
+     `rng: Math.random` with `randomWalk: true`, so the partition depends on
+     an unseeded draw and the same library does not get the same answer
+     twice. Measured on the real office — 23 items, 22 links, nothing
+     touched between runs — two hundred passes of this function returned:
+
+         171 ×   39% · 9 items   35% · 8 items
+          29 ×   43% · 10 items  30% · 7 items
+
+     About one open in seven, the boss's Library shows a different breakdown
+     of a library that did not change, and the members named under each
+     topic move with it. Nothing on that panel is labelled an estimate; the
+     percentages are printed to the point and the item counts are exact.
+
+     This does not make Louvain right — it is a heuristic and both partitions
+     above are defensible readings of the same graph. It makes the office
+     say the same thing about the same shelf every time it is asked, which
+     is the part the boss was promised. A fixed seed rather than one derived
+     from the graph, so that adding one note changes the answer because the
+     note changed it. */
   let communities = {}, modularity = 0, communityCount = 0;
+  const seededRng = () => {
+    let s = 0x9e3779b9;
+    return () => {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
   try {
-    const det = louvain.detailed(g, { getEdgeWeight: 'weight', resolution: 1 });
+    const det = louvain.detailed(g, { getEdgeWeight: 'weight', resolution: 1, rng: seededRng() });
     communities = det.communities; modularity = det.modularity; communityCount = det.count;
   } catch (_) {
     g.forEachNode((nd) => { communities[nd] = 0; });

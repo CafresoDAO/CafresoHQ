@@ -14576,3 +14576,61 @@ Topics blur into each other — plenty of links cross between them**, above
 number in scope that means it — and if the number is right there and the
 sentence still guessed, that is the defect, whatever the sentence happened
 to say on the day.
+
+## Asked twice about the same shelf, answered differently
+
+Two hundred passes of the shipped `analyze()` over the live office — 23
+items, 22 links, nothing touched between runs:
+
+    171 ×   39% · 9 items    35% · 8 items
+     29 ×   43% · 10 items   30% · 7 items
+
+About one open in seven, the boss's Library showed a different breakdown of
+a shelf that had not changed, with different members named under each topic.
+
+`graphology-communities-louvain` defaults to `rng: Math.random` with
+`randomWalk: true`. The worker called it without an `rng`, so the partition
+came out of an unseeded draw. That is not a bug in the library — Louvain is
+a heuristic and it says so — it is what the office did with the result:
+printed it as a fact. Nothing on that panel is hedged. The item counts are
+exact, the percentages go to the point, the topic members are listed by
+name, and there is no "about" anywhere on it.
+
+The interesting part is that both answers are *defensible*. Nine-and-eight
+and ten-and-seven are both honest readings of that graph; the algorithm is
+not wrong either time. What the office promised, and broke, was something
+narrower and much more basic: **ask the same question about the same thing
+and get the same answer.** A number that moves on its own teaches the boss
+that none of the numbers mean anything, and it does that damage whether or
+not any individual reading was correct.
+
+Seeded now. Same shelf, same answer, every time — and a fixed seed rather
+than one derived from the graph, so that adding one note changes the answer
+because the note changed it.
+
+The other thing this was quietly doing: every graph suite in the repo picks
+its fixtures by running the real `analyze()` and pinning what comes back.
+Those fixtures were being drawn from a distribution. A test that passes six
+times out of seven is not a test that passed.
+
+**Tests.** `scripts/test_the_same_library_gets_the_same_answer.py` runs the
+real `analyze()` sixty times over each of three shapes and fingerprints
+everything the panel prints — verdict, topic count, modularity, entropy,
+components, every cluster's size, share and named members, the influential
+list, the gap, and each item's community — asserting exactly one distinct
+answer per shape. Then the other half: change the library by one link and
+the answer has to change. Either check alone is satisfiable by something
+useless — an `analyze()` that ignored its input would be perfectly stable,
+one that guessed afresh each time would be perfectly sensitive.
+
+Fire-tested with five arms on this half: the `rng` option dropped, `rng`
+set back to `Math.random`, the seed drawn from `Math.random`, one generator
+shared across calls so the answer drifts after the first (stable once,
+wrong twice), and the communities cut loose from the library entirely. All
+five caught.
+
+**Lesson.** When a heuristic's output is printed as a fact, stability is
+part of the fact. "Both answers were reasonable" does not survive being said
+to someone who watched the screen change on its own — the promise a readout
+makes is not only that it is right, but that it is the same tomorrow if
+nothing moved.
