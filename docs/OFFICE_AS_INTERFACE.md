@@ -14925,3 +14925,102 @@ edited out. And a receipt is a claim about what the *other side* did:
 `res.count || files.length` compiles, reads reasonably, and turns the one
 case where the server did nothing into the one case where the office is
 most sure it did something.
+
+## The invitation and the retraction, one click apart
+
+Driven on the live office, Workspace, one project, one hired coworker — the
+free local hire, `elevated: false`, which is what a first-run machine has. The
+Coworkers pane read:
+
+    Nobody is on this project yet — add a coworker above to give them
+    this folder.
+
+One click on the only chip in the row, and the same slot read:
+
+    Local Brain is on this project, but doesn't have file or shell access
+    yet — so nothing they do will land in this folder. Settings → Roster
+    turns it on, one coworker at a time.
+
+The office did not learn anything in that click. `agents` was in scope the
+whole time, `elevated` is on every one of them, and the branch immediately
+below was already reading that flag — #122 fixed the "share this folder &
+shell" claim and left the invitation above it still making the original
+promise. The sentence was most confident on exactly the machine where it was
+false: one hire, not elevated, nothing else to click.
+
+**Two wrong actors in one sentence, not one.** Assignment does not grant the
+folder — `FILE_*`, `DIR_*` and `BASH` are gated on `agent.elevated` alone
+(hq-runtime, "File/shell tools for elevated agents"), granted by the 🛡 switch
+on the Roster card. And assignment does not decide what lands in this ledger
+either: the `cafresohq:agentTool` handler files on where the work happened —
+`cwd` under this project's path, or a path named inside it — and never asks
+who is assigned. "Add a coworker above to give them this folder" named the
+wrong actor for the grant *and* for the record.
+
+What assignment genuinely does is open the project's room: TALK ↗ in this
+pane's own header is disabled until `agentIds` is non-empty, and ui/chat.jsx
+lists a project thread on the same condition. So the empty state keeps its
+invitation and offers the thing it can actually deliver, and says the rest
+before the click instead of after it:
+
+    Nobody is on this project yet. Adding a coworker above opens this
+    project's room, but Local Brain doesn't have file or shell access yet
+    — so nothing they do will land in this folder. Settings → Roster turns
+    it on, one coworker at a time.
+
+Three states, because the roster has three shapes. Nobody hired at all goes to
+Team rather than to a chip row with no chips in it — the line directly above
+it already reads "No coworkers hired yet". A roster where somebody *can* is
+the one case where the office may still promise, and it names them:
+
+    Nobody is on this project yet — add a coworker above to open this
+    project's room. Local Brain has file & shell access, so their work in
+    this folder shows up here.
+
+Only the elevated ones are named. Holding up a coworker who is about to be
+refused is the same defect one screen earlier, and the chip's own tooltip two
+elements up already says "(has file and shell access)" for exactly that set.
+
+Verified through the real doors, on the rig where it was found: the chip
+toggled off gives the first sentence; the 🛡 switch in Settings → Roster —
+which asks "Grant Local Brain COMPUTER ACCESS?" and, on Grant access, sets
+`elevated` — gives the second. The switch was put back afterwards.
+
+**Tests.** `scripts/test_the_empty_project_offers_what_it_can_hand_over.py`
+lifts `crew`/`ready`/`ledgerEmpty` straight out of the shipped file and renders
+the pane's sentence for seven roster shapes, twice each: once empty, and once
+per candidate one click later. What it pins is not a wording but the relation
+between the two — the office may not hold up a coworker it is about to refuse,
+and when *nobody* on the roster can, it must say so before the click, with the
+door that changes it. The banned promise is checked in four rewordings, so a
+fix that only edits the literal it was caught on does not pass; the ban strips
+block comments first, because the comment above the fix quotes the old
+sentence on purpose and a check that cannot tell those apart makes the next
+person delete the record of why the sentence changed. Three checks assert the
+claims it makes about *other* screens are still true: the room really is gated
+on `agentIds`, so is TALK ↗, and the ledger still files on location.
+
+Fire-tested with fourteen arms: the old promise restored, the same promise
+reworded, `ready` read off the crew instead of the roster, the warning branch
+disabled, the warning stripped of its door, the warning stripped of what is
+missing, a non-elevated coworker named as one whose work will land here, every
+non-elevated hire listed instead of counted, one who can read as several, the
+empty office sent to add somebody from an empty row, the warning printed over
+a roster that does have access, and the three door-claims broken one at a time.
+All fourteen caught, post-restore baseline green. 180/180 suites.
+
+One sibling check needed amending, not silencing: #122's suite asserted the
+empty state contains no `shell`, which was a proxy for "does not promise a
+shared shell". The new sentence says out loud that the shell is *missing* —
+the opposite of a promise — so the check now tests `share`, the actual claim.
+A check that reads the noun instead of the claim calls a fix a regression.
+
+**Lesson.** An empty state is a promise made before anything has happened,
+which is exactly when it is cheapest to write and least likely to be re-read.
+This one survived a fix to the sentence directly below it, in the same
+function, reading the same flag — because the fix was filed against the
+sentence that was wrong on screen, and the empty state was wrong on a screen
+nobody was looking at yet. When one branch of a conditional learns something
+about the world, the other branches did not. And an invitation is a claim
+about the future: the test of it is not whether it is well-meant but whether
+the next click agrees with it.

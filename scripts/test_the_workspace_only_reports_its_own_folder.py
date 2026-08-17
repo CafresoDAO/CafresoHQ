@@ -263,8 +263,13 @@ const openPath = (p) => rec.opened.push(p);
     CLAUDE = {'id': 'a_cli_claude', 'name': 'Claude', 'elevated': True}
 
     nobody = copy_for([], [LLAMA])
+    # Tested on `share`, not on the word `shell`. The empty state now says
+    # OUT LOUD that a non-elevated roster has no file or shell access (#138) —
+    # the opposite of promising one — and a check that reads the noun rather
+    # than the claim calls that a regression. What may not appear here is the
+    # promise: "shares this folder & shell", with nobody on the project.
     check('with nobody on it, the pane does not promise a shared shell',
-          'shell' not in nobody and 'Nobody is on this project' in nobody,
+          'share' not in nobody and 'Nobody is on this project' in nobody,
           nobody)
 
     one = copy_for(['a_llama'], [LLAMA])

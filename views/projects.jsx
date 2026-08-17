@@ -352,10 +352,49 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   const crew = ((project && project.agentIds) || [])
     .map(id => agents.find(a => a.id === id)).filter(Boolean);
   const handed = crew.filter(a => a.elevated);
+  /* The same flag, one branch earlier. The empty state was left holding the
+     original promise — "add a coworker above to give them this folder" —
+     directly above the branch that retracts it, and the retraction is one
+     click away: put the only hire on the project and the pane answers
+     "…but doesn't have file or shell access yet — so nothing they do will
+     land in this folder." The office had `agents` in hand the whole time and
+     could see that nobody on the roster was elevated. It invited the boss to
+     do a thing in order to get something it already knew it could not hand
+     over, and the invitation was most confident on exactly the machine where
+     it was false: one free local hire, `elevated: false`.
+
+     Two claims in that sentence were wrong, not one. Adding somebody to a
+     project does not grant the folder — `elevated` does, from the 🛡 switch
+     on their Roster card — and it does not decide what lands in this ledger
+     either: the tool handler above files on WHERE the work happened (`cwd`
+     under this path, or a path named inside it) and never asks who is
+     assigned. So "give them this folder" named the wrong actor twice.
+
+     What assignment genuinely does is open this project's room: TALK ↗ in
+     this pane's own header is disabled until `agentIds` is non-empty, and
+     ui/chat.jsx lists a project thread on the same condition. The invitation
+     stays — it just offers the thing it can actually deliver. */
+  const ready = agents.filter(a => a.elevated);
   const nameList = (list) => list.map(a => a.name).join(', ')
     .replace(/, ([^,]*)$/, list.length > 2 ? ', and $1' : ' and $1');
   const ledgerEmpty = () => {
-    if (!crew.length) return 'Nobody is on this project yet — add a coworker above to give them this folder.';
+    if (!crew.length) {
+      if (!agents.length) {
+        return 'Nobody is on this project yet, and nobody is hired yet — '
+          + 'the Team room is where you hire your first coworker.';
+      }
+      if (!ready.length) {
+        return "Nobody is on this project yet. Adding a coworker above opens this project's room, but "
+          + (agents.length === 1
+            ? `${agents[0].name} doesn't have file or shell access yet`
+            : 'none of your coworkers have file or shell access yet')
+          + ' — so nothing they do will land in this folder. '
+          + 'Settings → Roster turns it on, one coworker at a time.';
+      }
+      return "Nobody is on this project yet — add a coworker above to open this project's room. "
+        + `${nameList(ready)} ${ready.length === 1 ? 'has' : 'have'} file & shell access, `
+        + 'so their work in this folder shows up here.';
+    }
     if (!handed.length) {
       return `${nameList(crew)} ${crew.length === 1 ? 'is' : 'are'} on this project, but `
         + `${crew.length === 1 ? "doesn't" : "don't"} have file or shell access yet — so nothing `
