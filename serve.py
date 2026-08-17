@@ -3912,7 +3912,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(413, {'error': 'upload too large (50 MB max)'})
             raw = self.rfile.read(length)
             import email.parser as _ep
-            import re as _re
             msg = _ep.BytesParser().parsebytes(
                 b'Content-Type: ' + ctype.encode('latin-1', 'replace') + b'\r\n\r\n' + raw)
             if not msg.is_multipart():
@@ -3920,13 +3919,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             folder = qs.get('dir', [''])[0].strip().strip('/')
             saved, errors = [], []
             for part in msg.get_payload():
-                fname = part.get_filename()
-                if not fname:
+                raw_name = part.get_filename()
+                if raw_name is None:
+                    continue                   # a form field, not a picked file
+                # Same decision as the Projects door, from the same function —
+                # a file the boss picks has to come back either filed or
+                # refused out loud, and two doors keeping their own copy of
+                # that rule is how one of them came to keep it silently.
+                decided = fs_routes.upload_name(raw_name)
+                if not decided['name']:
+                    errors.append({'path': (folder + '/' if folder else '') + decided['shown'],
+                                   'error': decided['refusal']})
                     continue
-                fname = fname.replace('\\', '/').split('/')[-1]
-                fname = _re.sub(r'[^\w .()\[\]\-]+', '_', fname).strip()
-                if not fname or fname.startswith('.'):
-                    continue
+                fname = decided['name']
                 data = part.get_payload(decode=True) or b''
                 rel = (folder + '/' if folder else '') + fname
                 try:
@@ -3944,11 +3949,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         target = _vault_resolve(rel)
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_bytes(data)
-                    saved.append({'path': rel, 'size': len(data)})
+                    entry = {'path': rel, 'size': len(data)}
+                    if decided['renamedFrom']:
+                        entry['renamedFrom'] = decided['renamedFrom']
+                    saved.append(entry)
                 except Exception as e:
                     errors.append({'path': rel, 'error': str(e)})
-            if not saved and errors:
-                return self._send_json(500, {'error': errors[0]['error'], 'failed': errors})
+            # 200 even when nothing was filed — see _fs_upload's note. The
+            # body says what happened to every part; the status line only
+            # said whether anything happened to survive, which made a refusal
+            # arrive as a thrown error at one count and a quiet field at
+            # another.
             return self._send_json(200, {'uploaded': saved, 'count': len(saved),
                                          **({'failed': errors} if errors else {})})
 

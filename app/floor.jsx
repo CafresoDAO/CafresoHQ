@@ -718,6 +718,85 @@ function chainHoldLine(blockedTitles, auto) {
     + (auto ? 'this starts on its own.' : 'the office will ask you before starting this.');
 }
 
+/* The receipt for a handful of files, composed from what the server said.
+
+   Three surfaces report an upload — the Library's 📤, Projects' drop zone
+   and the Projects tree's per-folder upload — and all three wrote their own
+   sentence. Two of them read `res.count || files.length`, which is the boss's
+   own count wearing the server's clothes: hand Projects three dotfiles, get
+   back `{"uploaded": [], "count": 0}`, and read "Shared 3 files with
+   acme-site" over an empty folder. The third said "Filed 1 file in the
+   Library" for a pick of three and never mentioned the two that didn't make
+   it. Same lesson as #136 — one question, one reader.
+
+   `verb` is the room's word for what happened ('Filed', 'Shared') and
+   `tried` is the same verb bare ('file', 'share'), because "Couldn't filed
+   2" is what one lowercased word gets you; `where` finishes the clause ('in
+   the Library', 'with acme-site'). Returns {tone, text}, or null when there
+   is genuinely nothing to report — an empty pick is not news.
+
+   A toast is not a log, so the failure clause names at most three and lets
+   the count carry the rest, and it gives the reason only when one reason
+   covers everything it is reporting. Anything more precise than that belongs
+   on a surface that can hold it. */
+function uploadReceipt(res, opts) {
+  const verb = (opts && opts.verb) || 'Filed';
+  const where = (opts && opts.where) || '';
+  const saved = (res && res.uploaded) || [];
+  const failed = (res && res.failed) || [];
+  const count = (res && typeof res.count === 'number') ? res.count : saved.length;
+  if (!count && !failed.length) return null;
+  /* No default conjugation: guessing the bare verb off the past one works
+     for these two rooms and quietly mangles the third. A caller that gives
+     no verb gets a phrasing that needs none. */
+  const tried = (opts && opts.tried) || '';
+  const plural = n => (n === 1 ? '' : 's');
+  const parts = [];
+  if (count) parts.push(`${verb} ${count} file${plural(count)}${where ? ' ' + where : ''}.`);
+  if (failed.length) {
+    /* Grouped by reason, not listed by file. Three refused names with no
+       reason attached is a complete account of what happened and no way
+       forward (§7); one reason stamped across all three is worse than none,
+       because "hidden files are not accepted" over a file that failed on a
+       full disk sends the boss to rename something that was never wrong. */
+    const groups = [];
+    failed.forEach(f => {
+      const why = (f && f.error) || '';
+      let g = groups.find(x => x.why === why);
+      if (!g) groups.push(g = { why, names: [] });
+      g.names.push((f && f.path) || '(unnamed)');
+    });
+    const list = (g) => g.names.slice(0, 3).join(', ')
+      + (g.names.length > 3 ? ` and ${g.names.length - 3} more` : '');
+    if (failed.length === 1) {
+      const only = groups[0];
+      const because = only.why ? ' — ' + only.why : '';
+      parts.push(tried ? `Couldn't ${tried} "${only.names[0]}"${because}.`
+        : `"${only.names[0]}" didn't make it${because}.`);
+    } else {
+      const head = tried ? `Couldn't ${tried} ${failed.length}`
+        : `${failed.length} didn't make it`;
+      const shown = groups.slice(0, 2)
+        .map(g => (g.why ? g.why + ': ' : '') + list(g)).join('; ');
+      const spare = groups.slice(2).reduce((n, g) => n + g.names.length, 0);
+      parts.push(`${head} — ${shown}${spare ? '; and ' + spare + ' more' : ''}.`);
+    }
+  }
+  /* A rename is not a failure — the file is filed, and it is filed under a
+     name the boss did not type. Saying nothing means they go looking for
+     "Ana's notes.md" in a Library that holds "Ana_s notes.md". */
+  const renamed = saved.filter(f => f && f.renamedFrom);
+  if (renamed.length === 1) {
+    const r = renamed[0];
+    const as = String(r.name || r.path || '').split(/[\/\\]/).pop();
+    parts.push(`"${r.renamedFrom}" was filed as "${as}".`);
+  } else if (renamed.length > 1) {
+    parts.push(`${renamed.length} were filed under changed names — `
+      + `the office can't use every character in a filename.`);
+  }
+  return { tone: failed.length ? 'warn' : 'success', text: parts.join(' ') };
+}
+
 function toolActivity(agent, ev, extra) {
   const tense = ev && ev.failed ? 'fail' : 'past';
   const line = visitLine(ev.name, ev.arg, tense, 40) || visitPlace(ev.name, tense);
@@ -729,4 +808,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitWhere, visitWords };

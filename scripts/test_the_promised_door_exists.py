@@ -156,8 +156,14 @@ def main():
               'if (!n || !n.path) return;' in body, body[:200])
     check('the vault pane still has no native alert()',
           'alert(' not in v_bare, '#37 — five of them lived in this file')
+    # Which names come from floor.jsx, not the exact line: the vault pane
+    # also takes uploadReceipt from there now, and a check pinned to the
+    # literal import goes red when a second surface joins the same module —
+    # which is the direction this rule wants traffic to go.
+    _imported = re.search(r"import \{([^}]*)\} from '\.\./app/floor\.jsx';", vault)
     check('the classifier is imported, not re-implemented here',
-          "import { obsidianCause, officeCause } from '../app/floor.jsx';" in vault,
+          bool(_imported) and {'obsidianCause', 'officeCause'}
+          <= set(re.findall(r'[\w$]+', _imported.group(1))),
           'one classifier family, one file — see the paragraph above OFFICE_CAUSES')
     # An import of a name the module does not export is not a soft failure:
     # the whole bundle refuses to load, so the office is a blank page. This

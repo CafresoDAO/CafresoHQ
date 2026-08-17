@@ -15,6 +15,7 @@ import json
 import mimetypes
 import os
 import pathlib
+import re
 import shutil
 import time
 import urllib.parse
@@ -364,6 +365,45 @@ def _fs_site(self):
     except Exception:
         pass
 
+# Anything outside this set becomes '_'. Deliberately narrow: these names
+# are written into a boss's real working tree and into the Library, and a
+# quoted or glob-bearing filename reaching a shell one day is not a risk
+# worth a nicer filename.
+_UPLOAD_UNSAFE = re.compile(r'[^\w .()\[\]\-]+')
+
+
+def upload_name(raw):
+    """What one picked file gets filed as — or why it doesn't.
+
+    Both upload doors (/fs/upload here, /vault/upload in serve.py) ask this
+    one function, and its whole contract is that every part gets an answer.
+    They each used to `continue` past a name that sanitized to nothing or
+    started with a dot, which put the file in neither the saved list nor the
+    failed one: three files picked, one filed, and a green "Filed 1 file"
+    with no mention of the other two. Silence is the one thing a receipt
+    can't afford, so a refusal now comes back as a sentence.
+
+    Hidden files stay refused rather than filed — /vault/list skips any path
+    with a dotted part, so accepting one would only move the disappearance
+    one room further in — but refused out loud, which is the difference.
+
+    Returns {'name', 'shown', 'renamedFrom', 'refusal'}: exactly one of
+    `name` and `refusal` is set, and `shown` is always something printable
+    to call the file by in the report.
+    """
+    original = str(raw or '').replace('\\', '/').split('/')[-1]
+    name = _UPLOAD_UNSAFE.sub('_', original).strip()
+    shown = original.strip() or '(unnamed)'
+    if not name:
+        return {'name': None, 'shown': shown, 'renamedFrom': None,
+                'refusal': 'that name has no usable characters'}
+    if name.startswith('.'):
+        return {'name': None, 'shown': shown, 'renamedFrom': None,
+                'refusal': 'hidden files are not accepted'}
+    return {'name': name, 'shown': name, 'refusal': None,
+            'renamedFrom': original if name != original else None}
+
+
 def _fs_upload(self):
     """POST /fs/upload?path=<dir>   (multipart/form-data)
     Drop files into a project's working tree so the agents (FILE_READ /
@@ -371,7 +411,8 @@ def _fs_upload(self):
     user-facing half of the "share files with agents" loop. Writes into
     the REAL filesystem, guarded by the same CAFRESOHQ_ALLOWED_DIRS
     whitelist as FILE_WRITE (via _validate_path), so it can't escape the
-    sandbox. Filenames are flattened + sanitized; the target dir is created
+    sandbox. Filenames are flattened + sanitized by upload_name(), which
+    also decides what is refused and says why; the target dir is created
     if missing; 50 MiB cap per request. ?path= defaults to the first
     allowed dir.
     """
@@ -421,14 +462,14 @@ def _fs_upload(self):
 
     saved, errors = [], []
     for part in msg.get_payload():
-        fname = part.get_filename()
-        if not fname:
+        raw_name = part.get_filename()
+        if raw_name is None:
+            continue                       # a form field, not a picked file
+        decided = upload_name(raw_name)
+        if not decided['name']:
+            errors.append({'path': decided['shown'], 'error': decided['refusal']})
             continue
-        # Flatten any path components, then strip anything but a safe set.
-        fname = fname.replace('\\', '/').split('/')[-1]
-        fname = _re.sub(r'[^\w .()\[\]\-]+', '_', fname).strip()
-        if not fname or fname.startswith('.'):
-            continue
+        fname = decided['name']
         dest = (target_dir / fname).resolve()
         # Defense-in-depth: re-assert the whitelist on the final path even
         # though a sanitized basename can't traverse.
@@ -440,11 +481,18 @@ def _fs_upload(self):
         data = part.get_payload(decode=True) or b''
         try:
             dest.write_bytes(data)
-            saved.append({'path': str(dest), 'name': fname, 'size': len(data)})
+            entry = {'path': str(dest), 'name': fname, 'size': len(data)}
+            if decided['renamedFrom']:
+                entry['renamedFrom'] = decided['renamedFrom']
+            saved.append(entry)
         except Exception as e:
             errors.append({'path': fname, 'error': str(e)})
-    if not saved and errors:
-        return self._send_json(500, {'error': errors[0]['error'], 'failed': errors})
+    # A refusal is not a server fault, and the all-refused case used to 500
+    # while the mixed case returned 200 — the same outcome reported two ways
+    # depending on how many other files happened to be in the pick. One
+    # answer now: the request was understood and every part is accounted for
+    # in `uploaded` or `failed`, so the caller composes one receipt from the
+    # whole body instead of a thrown error from the status line.
     return self._send_json(200, {'uploaded': saved, 'count': len(saved),
                                  'dir': str(target_dir),
                                  **({'failed': errors} if errors else {})})

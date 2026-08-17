@@ -1,5 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
-import { obsidianCause, officeCause } from '../app/floor.jsx';
+import { obsidianCause, officeCause, uploadReceipt } from '../app/floor.jsx';
 import { FolderTree } from './core.jsx';
 import { GraphView, simulate } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
@@ -435,17 +435,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     try {
       const r = await CafresoHQClient.vaultUpload(list);
       await refresh();
-      /* A partial upload is a real, mixed outcome, so it says both halves and
-         names the files that didn't make it — but only the first few, since
-         a toast is not a log and forty filenames in one is its own kind of
-         dishonesty. The count carries the rest. */
-      if (r && r.failed && r.failed.length) {
-        const named = r.failed.slice(0, 3).map(f => f.path).join(', ');
-        const more = r.failed.length > 3 ? ` and ${r.failed.length - 3} more` : '';
-        say(`Filed ${r.count}. Couldn't file ${r.failed.length}: ${named}${more}.`, 'warn');
-      } else if (r && r.count) {
-        say(`Filed ${r.count} file${r.count === 1 ? '' : 's'} in the Library.`, 'success');
-      }
+      /* A partial upload is a real, mixed outcome, and this sentence is
+         composed in app/floor.jsx from the server's own answer — shared with
+         the two Projects doors, which were reporting the boss's pick count
+         back at them when the server had filed none of it. */
+      const receipt = uploadReceipt(r, { verb: 'Filed', tried: 'file', where: 'in the Library' });
+      if (receipt) say(receipt.text, receipt.tone);
     } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
   };

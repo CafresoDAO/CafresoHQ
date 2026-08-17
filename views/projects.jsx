@@ -1,7 +1,7 @@
 import { ProjectTerminal } from './terminal.jsx';
 import { ideLangFromPath } from './ide.jsx';
 import { CafresoHQClient, CafresoHQChain } from '../claude-client.jsx';
-import { officeCause, repoCause } from '../app/floor.jsx';
+import { officeCause, repoCause, uploadReceipt } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
@@ -294,7 +294,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     setFileDrag(false);
     if (!project) return; const files = Array.from(fileList || []).filter(Boolean); if (!files.length) return;
     if (!C || !C.fsUpload) { toast('error', 'Uploading needs a newer HQ — update and restart.'); return; }
-    try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); toast('success', `Shared ${res.count || files.length} file${(res.count || files.length) === 1 ? '' : 's'}`); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { snag("Couldn't share those files", e); }
+    try { const res = await C.fsUpload(dir || project.path, files); setTreeNonce(n => n + 1); const receipt = uploadReceipt(res, { verb: 'Shared', tried: 'share' }); if (receipt) toast(receipt.tone, receipt.text); const f0 = res.uploaded && res.uploaded[0]; if (f0 && f0.path) openPath(f0.path); } catch (e) { snag("Couldn't share those files", e); }
   };
   const uploadTo = (entry, files) => { if (files && files.length) { doUpload(files, entry.path); return; } uploadDirRef.current = entry.path; if (uploadRef.current) uploadRef.current.click(); };
   const triggerUpload = () => { uploadDirRef.current = null; if (uploadRef.current) uploadRef.current.click(); };
@@ -831,9 +831,9 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     try {
       const res = await CafresoHQClient.fsUpload(dir, files);
       setTreeNonce(n => n + 1);
-      const n = (res && res.count) || files.length;
       const where = dir === project.path ? project.name : ('…/' + dir.split(/[\/\\]/).pop());
-      toast('success', `Shared ${n} file${n === 1 ? '' : 's'} with ${where}`);
+      const receipt = uploadReceipt(res, { verb: 'Shared', tried: 'share', where: 'with ' + where });
+      if (receipt) toast(receipt.tone, receipt.text);
       const first = res && res.uploaded && res.uploaded[0];
       if (first && first.path) readFile(first.path);
     } catch (e) {

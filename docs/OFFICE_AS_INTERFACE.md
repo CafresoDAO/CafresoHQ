@@ -14808,3 +14808,120 @@ worse than the whole defect, because now two rooms disagree in front of
 the boss instead of one room being quietly incomplete. Before shipping a
 widened filter, find every other reader of the same question and make them
 one reader.
+
+## Two of three files vanished, and the receipt was a green tick
+
+Driven on the live office through the Library's own 📤 button — the same
+hidden `<input type="file">` a boss clicks — three files picked at once:
+
+    picked  quarterly-plan.txt   .env.production   "   "
+    toast   ✓  "Filed 1 file in the Library."
+    tree    quarterly-plan.txt
+    disk    quarterly-plan.txt
+
+Two files went into the office and were never mentioned again, under a
+green tick. Both upload doors decided a filename and then walked past the
+ones they didn't like:
+
+    fname = _re.sub(r'[^\w .()\[\]\-]+', '_', fname).strip()
+    if not fname or fname.startswith('.'):
+        continue
+
+A part that hits that `continue` reaches neither `saved` nor `errors`. The
+client already had a partial-upload warning — it is reached from
+`res.failed`, and `res.failed` was empty, so in the whole life of that code
+it could never once have fired. The office was not failing to report a
+loss; it had arranged not to know about one.
+
+The same sanitizer renames without saying so. `Ana's brief.md` is filed as
+`Ana_s brief.md` — apostrophes, `@`, `&`, `#` and every accented character
+go the same way — and the receipt names only the new file. A boss who goes
+looking for the name they typed does not find it, in the room whose entire
+job is finding things again.
+
+**The Projects door made it worse.** `fs_routes._fs_upload` is the same
+code shape, and `views/projects.jsx` reported it with the boss's own count:
+
+    toast('success', `Shared ${res.count || files.length} file…`)
+
+Zero is falsy. POST three dotfiles to `/fs/upload` and the server answers
+`HTTP 200 {"uploaded": [], "count": 0}` with nothing written — and the room
+says **"Shared 3 files with acme-site"**. The receipt was at its most
+confident exactly when the server had done nothing at all. Both Projects
+call sites carried that `|| files.length`.
+
+There was a third disagreement underneath. `if not saved and errors:
+return 500` meant one refused dotfile beside a good file was a quiet field
+in a 200 body, and the same refusal on its own was a thrown exception —
+the client's `snag` path, a different sentence, and `officeCause` rewriting
+it on the way. The same event reported two ways depending on how many
+*other* files happened to be in the pick.
+
+**The fix.** One decision, `fs_routes.upload_name()`, asked by both doors:
+it returns the name to file under, or a refusal a boss can read, and always
+something printable to call the file by (`(unnamed)` for the whitespace
+one — a toast cannot say `""`). Hidden files stay refused, because
+`/vault/list` skips any path with a dotted part and accepting one would
+only move the disappearance one room further in — but refused *out loud*,
+which is the whole difference. A rename comes back as `renamedFrom`. Both
+doors now always answer 200 with every part accounted for in `uploaded` or
+`failed`; the status line stopped being a function of the rest of the pick.
+
+One receipt, `uploadReceipt()` in `app/floor.jsx`, read by all three upload
+surfaces, and composed only from what the server returned — it has no way
+to see the caller's file list, which is the structural half of the fix.
+Refusals are grouped by reason rather than listed by file: three names with
+no reason is a complete account of what happened and no way forward (§7),
+and one reason stamped across all three is worse than none, because
+"hidden files are not accepted" over a file that failed on a full disk
+sends the boss to rename something that was never wrong.
+
+Driven live afterwards, four files into the Library:
+
+    ⚠  Filed 2 files in the Library. Couldn't file 2: .env.staging,
+       (unnamed). "board notes@final.txt" was filed as
+       "board notes_final.txt".
+
+and four into a real project through the Workspace file panel:
+
+    ⚠  Shared 1 file. Couldn't share 3 — hidden files are not accepted:
+       .env.production, .gitignore; that name has no usable characters:
+       (unnamed). "Ana's brief.md" was filed as "Ana_s brief.md".
+
+Disk agrees with both receipts exactly, the tree shows the two new Library
+files without a refresh, and neither refused name is anywhere on disk.
+
+**Tests.** `scripts/test_every_picked_file_is_accounted_for.py` boots a
+real serve.py over a temp Library *and* a temp working tree, and puts the
+same four-file pick through both doors: count + failed equals what was
+picked, every refusal carries a reason and a printable name, the rename is
+reported at both ends, an all-refused upload is a 200 with a body, and the
+folder afterwards holds exactly what was reported. It then runs the shipped
+`uploadReceipt` in node, sliced straight out of floor.jsx, over nine cases
+— including the one this ticket is named for: a `count: 0` body must never
+produce the word "Shared 3".
+
+Fire-tested with eighteen arms: both doors skipping a refusal in silence,
+a hidden file quietly filed, a nameless file with nothing to call it by,
+the rename dropped in the decision and at each door, the 500 restored at
+each door, both Projects receipts back on `files.length`, the Library
+receipt hardcoded to success, the failure clause removed, every receipt
+made a success, a zero count announced as work done, renames unmentioned,
+one file's reason pinned to all of them, and the per-reason name cap
+removed. All eighteen caught, post-restore baseline green. 179/179 suites.
+
+One sibling suite needed amending, not silencing:
+`test_the_promised_door_exists.py` pinned the vault pane's floor.jsx import
+line byte-for-byte, and the vault pane now takes `uploadReceipt` from that
+same module. Its promise is which classifier the pane uses, so it now reads
+the import list rather than the literal string — a check that goes red when
+a second surface joins the shared module is pointing the wrong way.
+
+**Lesson.** A loop that decides per item must give every item an outcome.
+`continue` inside one is not a decision, it is a decision plus an
+instruction to forget, and everything downstream — the count, the warning,
+the tick — is then honest about a story it was handed with the loss already
+edited out. And a receipt is a claim about what the *other side* did:
+`res.count || files.length` compiles, reads reasonably, and turns the one
+case where the server did nothing into the one case where the office is
+most sure it did something.
