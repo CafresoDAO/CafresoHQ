@@ -14634,3 +14634,70 @@ part of the fact. "Both answers were reasonable" does not survive being said
 to someone who watched the screen change on its own — the promise a readout
 makes is not only that it is right, but that it is the same tomorrow if
 nothing moved.
+
+## Plenty of links cross between them, and they are weakly connected
+
+One render of the Library panel, on the live office, top to bottom:
+
+    Overlapping
+    Topics blur into each other — plenty of links cross between them.
+    ...
+    Structural gap
+    Weakly connected: Local Brain · Generalist ⟷ You (boss)
+
+The same pair of topics, described twice, oppositely, four lines apart.
+
+The numbers behind it: those two topics hold 8 and 7 links inside
+themselves and are joined by 7 — seven of the map's twenty-two links,
+nearly a third of everything the office knows, running between exactly the
+pair being called weakly connected.
+
+The gate was
+
+    if (between >= Math.min(sizeA, sizeB)) continue;   // not a gap
+
+which compares a count of LINKS against a count of ITEMS. The units do not
+match, and the consequence is not subtle: the bar rises with the size of
+the smaller group while the crossing count does not, so the bigger the two
+topics get, the more heavily they can be joined while still qualifying as a
+gap. Two triangles are protected. Two nine-item topics are not.
+
+This is the third pass over this one alert box, and the first two are why
+the shape is worth naming. The original emitted a gap for any graph with
+two clusters, because `score` only ranks pairs and there is always a worst
+one. The fix made the claim absolute — a real threshold, not a ranking —
+and wrote down the reason: *"Weakly connected" is an ABSOLUTE claim, so it
+may only be emitted when the pair really is weakly connected.* Correct, and
+the threshold chosen to enforce it was still measured in the wrong unit. A
+claim can be made absolute and still be made in a currency that does not
+convert.
+
+A pair now also has to carry fewer links across it than either side holds
+inside itself. Links against links, and it says out loud without flinching:
+*these two topics have less holding them together than either of them has
+holding itself together.* The single-bridge case everyone pictures when
+they hear "structural gap" still fires; so does a pair of ten-link cliques
+joined by three.
+
+**Tests.** `scripts/test_a_gap_is_measured_in_links_not_items.py` runs the
+real `analyze()` over six named shapes and a seeded sweep of 120 random
+graphs, and recomputes the crossing and internal counts here — from the
+input edges and the communities `analyze()` returns — rather than reading
+back the worker's own tallies, which would agree with themselves whatever
+they did. Whenever a gap is named, both readings must hold. The reverse is
+pinned too, on four shapes, because the cheapest way to pass a test about
+false claims is to stop making any.
+
+Fire-tested with six arms on this half: the new gate deleted, made
+non-strict, pointed at the busier side instead of the quieter one, internal
+links never tallied, internal links counted as crossings, and the original
+links-vs-items gate dropped. All six caught.
+
+Verified live on the office that reported it: the pink alert box is gone
+from a panel whose own verdict sentence says plenty of links cross between
+those two topics.
+
+**Lesson.** Before trusting a threshold, read both sides of the comparison
+out loud with their units attached. "Fewer links than items" passes the eye
+and fails the sentence — and a threshold that fails the sentence will be
+wrong at exactly the scale nobody tested it at.

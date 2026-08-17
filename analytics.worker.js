@@ -281,23 +281,44 @@ function analyze({ nodes, edges }) {
          contradicting itself — the same fault as the NaN fall-through above,
          one section further down.
 
-     Three gates now. `structure === 'unformed'` kills it outright: a graph
-     with no shape cannot have a gap in its shape. A pair qualifies only when
-     the links across it number fewer than the items in the SMALLER group —
-     a threshold that survives being said out loud, which the old one could
-     not. And both sides must hold at least two items, because a gap is a
-     missing bridge between two bodies of work and one orphan item is not a
-     body of work: measured on the real office (6 items, 2 links) the pick
-     was "Weakly connected: Llama ⟷ Hermes", where Hermes is simply an
-     unused coworker sitting alone. True, and useless — everything is
-     weakly connected to an orphan. Ranking among qualifying pairs is
+     Four gates now. `structure === 'unformed'` kills it outright: a graph
+     with no shape cannot have a gap in its shape. Both sides must hold at
+     least two items, because a gap is a missing bridge between two bodies of
+     work and one orphan item is not a body of work: measured on the real
+     office (6 items, 2 links) the pick was "Weakly connected: Llama ⟷
+     Hermes", where Hermes is simply an unused coworker sitting alone. True,
+     and useless — everything is weakly connected to an orphan.
+
+     And the pair must be sparsely joined by BOTH readings of the word,
+     because the first one alone compares a count of links against a count of
+     items and the units do not match. The bar rises with the size of the
+     smaller group while the crossing count does not, so two big topics stay
+     under it however heavily they are joined. Measured on the real office,
+     23 items, one render:
+
+         Overlapping
+         Topics blur into each other — plenty of links cross between them.
+         ...
+         Structural gap
+         Weakly connected: Local Brain · Generalist ⟷ You (boss)
+
+     Those two topics hold 8 and 7 links inside themselves and are joined by
+     7 — seven of the map's twenty-two links, nearly a third of everything
+     the office knows, running between exactly the pair being called weakly
+     connected. The panel said "plenty of links cross between them" and then
+     said the opposite four lines down.
+
+     So a pair also has to carry fewer links across it than either side holds
+     inside itself. Links against links — and it says out loud without
+     flinching: these two topics have less holding them together than either
+     of them has holding itself together. Ranking among qualifying pairs is
      unchanged. */
   let gap = null;
   if (clusters.length >= 2 && structure !== 'unformed') {
-    const inter = {};
+    const inter = {}, intra = {};
     g.forEachEdge((e, attr, s, t) => {
       const cs = communities[s], ct = communities[t];
-      if (cs === ct) return;
+      if (cs === ct) { intra[cs] = (intra[cs] || 0) + 1; return; }
       const key = cs < ct ? cs + '|' + ct : ct + '|' + cs;
       inter[key] = (inter[key] || 0) + 1;
     });
@@ -310,6 +331,8 @@ function analyze({ nodes, edges }) {
         const between = inter[key] || 0;
         if (big[i].size < 2 || big[j].size < 2) continue;              // an orphan is not a topic
         if (between >= Math.min(big[i].size, big[j].size)) continue;   // genuinely joined — not a gap
+        // …and joined by fewer links than either side holds inside itself.
+        if (between >= Math.min(intra[a] || 0, intra[b] || 0)) continue;
         const score = (big[i].size + big[j].size) / (between + 1);     // big & disconnected → high
         if (!best || score > best.score) best = { a, b, between, score, aTop: big[i].topNodes[0], bTop: big[j].topNodes[0] };
       }
