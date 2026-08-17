@@ -129,7 +129,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
 }
 
 /* Bottom tab bar — visible only on narrow viewports (CSS @media).
-   Chat is the primary mobile entry point; Office, Team, Vault, Projects
+   Chat is the primary mobile entry point; Office, Team, Library, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
   const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','projects'];
@@ -137,7 +137,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],
     ['team',     '👥', 'Team'],
-    ['vault',    '📓', 'Vault'],
+    ['vault',    '📓', 'Library'],
     ['projects', '🗂', 'Projects'],
   ];
   const BOOKMARK_IDS = TAB_BOOKMARKS.map(t => t[0]);
@@ -1241,7 +1241,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                  genuinely in the cabinet — and the wall would have gone on
                  calling it finished while the board showed it in progress.
                  The count is correct either way; only the word was wrong. */
-              <div className="sw-row" title={`${filedCount} task card${filedCount === 1 ? '' : 's'} produced a delivery · the Vault holds the files themselves`}>
+              <div className="sw-row" title={`${filedCount} task card${filedCount === 1 ? '' : 's'} produced a delivery · the Library holds the files themselves`}>
                 📦 {filedCount}
               </div>
             )}

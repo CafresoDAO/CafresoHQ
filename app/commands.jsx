@@ -32,7 +32,7 @@ function AppGlobalCommands({
     { id: 'nav.tasks',      label: 'Switch view: Tasks',     section: 'Navigation', icon: '📋', run: () => navigate('tasks') },
     { id: 'nav.calendar',   label: 'Switch view: Calendar',  section: 'Navigation', icon: '🗓', run: () => navigate('calendar') },
     { id: 'nav.memory',     label: 'Switch view: Memory',    section: 'Navigation', icon: '📁', run: () => navigate('memory') },
-    { id: 'nav.vault',      label: 'Switch view: Vault',     section: 'Navigation', icon: '📓', run: () => navigate('vault') },
+    { id: 'nav.vault',      label: 'Switch view: Library',     section: 'Navigation', icon: '📓', run: () => navigate('vault') },
     { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => navigate('team') },
     { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => navigate('terminal') },
     { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => navigate('projects') },
@@ -68,7 +68,7 @@ function AppGlobalCommands({
       /* 'Projects', matching nav.projects thirty lines above — this file
          had both names for the same id. See NAV_ITEMS for why Projects
          won. */
-      ['vault','Vault'],['projects','Projects'],['terminal','Terminal'],
+      ['vault','Library'],['projects','Projects'],['terminal','Terminal'],
     ].map(([v, lbl]) => ({
       id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
       run: () => onOpenWindow(v),

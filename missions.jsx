@@ -104,7 +104,7 @@ function buildProjectStudyPrompt(mission, agent, notesIndex, fileTree) {
     `PATH: ${mission.projectPath}`,
     `ROUND: ${mission.iterations + 1} of ~${totalIters} planned`,
     `TIME: ${elapsedMin}m elapsed · ${remainingMin}m remaining`,
-    `VAULT FOLDER: ${folder}/`,
+    `LIBRARY FOLDER: ${folder}/`,
     ``,
     `Project file tree (top-level):`,
     treeList,
@@ -176,7 +176,7 @@ function buildResearchPrompt(mission, agent, notesIndex) {
     `TOPIC: ${mission.topic}`,
     `ROUND: ${mission.iterations + 1} of ~${totalIters} planned`,
     `TIME: ${elapsedMin}m elapsed · ${remainingMin}m remaining`,
-    `VAULT FOLDER: ${folder}/`,
+    `LIBRARY FOLDER: ${folder}/`,
     ``,
     `Notes already written under ${folder}/:`,
     notesList,
@@ -868,7 +868,7 @@ function NightShiftSection({ agents }) {
           <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Roster doesn't apply here)</span>
         </div>
         <div className="form-row">
-          <label>VAULT FOLDER</label>
+          <label>LIBRARY FOLDER</label>
           <input value={folder} onChange={e => setFolder(e.target.value)} placeholder={`Research/${topicSlug(topic) || '<topic>'}`} />
         </div>
         <div className="form-row">
@@ -1047,7 +1047,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
      below needs to name them and hand them over, and two predicates that
      each half-knew the answer could not. `canDoMode` is unchanged in
      behaviour: research needed web+vault, a project study needs vault. */
-  const TOOL_LABEL = { web: 'Web Search', vault: 'Vault Notes' };
+  const TOOL_LABEL = { web: 'Web Search', vault: 'Library' };
   const neededTools = () => (mode === 'project-study' ? ['vault'] : ['web', 'vault']);
   const missingTools = (a) => {
     const t = new Set((a && a.tools) || []);
@@ -1060,7 +1060,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
       open={open}
       onClose={onClose}
       title="🔬 RESEARCH"
-      subtitle="long-running research or project study → vault notes"
+      subtitle="long-running research or project study → filed to the Library"
       size="lg"
     >
 
@@ -1270,14 +1270,14 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                       </button>
                     )}
                     {miss.includes('vault') && (
-                      <span style={{flexBasis:'100%'}}>Vault Notes lets them write notes into your cabinet.</span>
+                      <span style={{flexBasis:'100%'}}>Library lets them file their work into your cabinet.</span>
                     )}
                   </span>
                 );
               })()}
             </div>
             <div className="form-row">
-              <label>VAULT FOLDER</label>
+              <label>LIBRARY FOLDER</label>
               <input value={folder} onChange={e=>setFolder(e.target.value)}
                 placeholder={mode === 'project-study'
                   ? `Projects/${selectedProject ? topicSlug(selectedProject.name) : '<project>'}`
@@ -1347,7 +1347,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
           }}>
             <div className="hint" style={{marginRight:'auto'}}>{
               mode === 'project-study'
-                ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + vault writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
+                ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + Library writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
                 : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 file & shell access' : ''}` : 'enter a topic to start')
             }</div>
             {/* canDoMode is in here because the dropdown alone does not hold

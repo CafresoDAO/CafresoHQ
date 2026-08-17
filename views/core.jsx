@@ -65,8 +65,15 @@ const VIEW_LABELS = {
   visual:    'AGENT OFFICE',
   tasks:     'TASKS',
   memory:    'MEMORY SHELF',
-  vault:     'MARKDOWN VAULT',
-  graph:     'VAULT GRAPH',
+  /* The Library, not the Vault, and not "Markdown" anything: this room
+     holds decks, documents, images, video and research alongside the .md
+     notes, and a boss who reads MARKDOWN VAULT over a folder of .pptx has
+     been told the wrong thing about where their work lives. The view id
+     stays `vault` — it is a route, a state key and a bridge message name
+     shared with offices already on disk. See the Library/vault split in
+     scripts/test_the_library_has_one_name.py. */
+  vault:     'LIBRARY',
+  graph:     'LIBRARY GRAPH',
   team:      'STAFF ROSTER',
   calendar:  'CALENDAR',
   projects:  'WORKSPACE',

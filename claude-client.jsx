@@ -1805,7 +1805,7 @@ async function vaultSearch(query, { limit = 10 } = {}) {
 async function vaultProbe() {
   try {
     const s = await vaultStatus();
-    if (!s.configured) return { ok: false, detail: 'no vault directory configured' };
+    if (!s.configured) return { ok: false, detail: 'no Library folder configured' };
     if (!s.exists) return { ok: false, detail: `path not found: ${s.root}` };
     const files = await vaultList();
     return { ok: true, detail: `${files.length} note${files.length===1?'':'s'} · ${s.root}` };
@@ -2500,11 +2500,11 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     return new Promise((resolve, reject) => {
       // Vault payloads are PLAINTEXT (that is the point of the bridge — the
       // shell decrypts). Never broadcast them to a wildcard target.
-      if (!_SHELL_ORIGIN) { reject(new Error('vault bridge: shell origin unknown')); return; }
+      if (!_SHELL_ORIGIN) { reject(new Error('the Library bridge has no shell to talk to')); return; }
       const reqId = Math.random().toString(36).slice(2, 10);
       const timer = setTimeout(() => {
         _pending.delete(reqId);
-        reject(new Error('VaultBridge timeout: ' + type));
+        reject(new Error('the Library bridge stopped answering: ' + type));
       }, 20000);
       _pending.set(reqId, { resolve, reject, timer });
       window.parent.postMessage({ type, reqId, ...data }, _SHELL_ORIGIN);
@@ -2520,7 +2520,7 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
     clearTimeout(timer);
     _pending.delete(reqId);
     if (type === 'vault:error') {
-      const err = new Error(e.data.message || 'vault error');
+      const err = new Error(e.data.message || 'the Library could not do that');
       err.code = e.data.code;
       reject(err);
     } else {

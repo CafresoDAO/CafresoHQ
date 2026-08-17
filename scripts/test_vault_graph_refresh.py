@@ -61,7 +61,7 @@ def main():
     refresh_fn = src[src.find('const refresh = async () => {'):]
     refresh_fn = refresh_fn[:refresh_fn.find('\n  React.useEffect(() => { refresh(); }, []);')]
     check("refresh()'s bridge-mode success path calls refreshGraph()",
-          bool(re.search(r"setStatus\(\{ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' \}\);\s*\n\s*refreshGraph\(\);", refresh_fn)),
+          bool(re.search(r"setStatus\(\{ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' \}\);\s*\n\s*refreshGraph\(\);", refresh_fn)),
           'views/vault.jsx: the bridge (encrypted shell) success branch must '
           'refresh the graph too, not just the local-backend branch')
     check("refresh()'s local-backend success path calls refreshGraph()",

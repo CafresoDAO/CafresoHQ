@@ -498,7 +498,7 @@ const OBSIDIAN_CAUSES = [
   /* Gated out of reach by the vault pane, but a backend can change under a
      pane that is already open. The boss must not meet the raw sentence. */
   [/requires rest backend/i,
-   'the vault is not pointed at Obsidian right now — switch it back in Connections'],
+   'the Library is not pointed at Obsidian right now — switch it back in Connections'],
   [/\b404\b|not found/i,
    "Obsidian doesn't have a note at that path — its vault may be a different folder"],
 ];

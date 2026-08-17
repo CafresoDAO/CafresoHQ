@@ -458,11 +458,11 @@ console.log(JSON.stringify(R));
     # Section 6: "tool call -> shown as the action itself". The card used to
     # say "4 tools", which is a number about a machine concept.
     check('one tool reads as one action', out['cdOne'] == 'search the web')
-    check('two are joined with "and"', out['cdTwo'] == 'search the web and read your notes')
+    check('two are joined with "and"', out['cdTwo'] == 'search the web and read your Library')
     check('three are joined with a comma then "and"',
-          out['cdThree'] == 'work with your files, read your notes and run code')
+          out['cdThree'] == 'work with your files, read your Library and run code')
     check('a card is a glance, so it stops at three and counts the rest',
-          out['cdFour'] == 'search the web, read your notes and work with your files +1 more')
+          out['cdFour'] == 'search the web, read your Library and work with your files +1 more')
     # A coworker with no tools still DOES something -- the card must not
     # imply they are useless, and must never render an empty clause.
     check('no tools still reads as a capability', out['cdNone'] == 'talk things through')
@@ -479,7 +479,7 @@ console.log(JSON.stringify(R));
     check('a capability with nothing behind it is not spoken at all',
           out['cdPhantom'] == 'talk things through', out['cdPhantom'])
     check('...so Vera advertises the two she really has',
-          out['cdVera'] == 'search the web and read your notes', out['cdVera'])
+          out['cdVera'] == 'search the web and read your Library', out['cdVera'])
     check('...and does not count the phantoms in "+N more"',
           'more' not in out['cdVera'], out['cdVera'])
     # The notes half of that sentence is only true while the vault answers.
@@ -487,9 +487,9 @@ console.log(JSON.stringify(R));
     # Obsidian closed and toolsForAgent hands over none of VAULT_SEARCH /
     # READ / APPEND / NEW, nor the three EXPORT_* that ride the same claim.
     check('...and stops advertising the notes when the vault stops answering',
-          out['cdVaultOff'] == 'search the web and read your notes once you '
-          'connect a Markdown vault in Settings → Connections',
-          out['cdVaultOff'] + ' — pinned whole, because "read your notes" is '
+          out['cdVaultOff'] == 'search the web and read your Library once you '
+          'connect one in Settings → Connections',
+          out['cdVaultOff'] + ' — pinned whole, because "read your Library" is '
           'a substring of its own unlock line: a containment check here '
           'passes on the exact sentence it is meant to forbid')
     # The conditional ones. 'web' always buys BROWSER_FETCH, so there is a

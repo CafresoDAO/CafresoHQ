@@ -623,7 +623,7 @@ export function VaultTab() {
       await CafresoHQClient.vaultConfigure({ backend: 'fs', root });
       HQ.clearVaultReadyCache();
       await refresh();
-      setMsg({ ok: true, text: 'using CafresoHQ vault' });
+      setMsg({ ok: true, text: 'using the CafresoHQ Library' });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy(false);
   };
@@ -688,7 +688,7 @@ export function VaultTab() {
 
   return (
     <div className="cb-panel">
-      <h4>MARKDOWN VAULT</h4>
+      <h4>LIBRARY</h4>
       <div className="row-knob">
         <div><div className="lbl">Storage</div><div className="sub">CafresoHQ works with a plain Markdown folder; Obsidian is optional</div></div>
         <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -741,7 +741,7 @@ export function VaultTab() {
 
       {isFs && (<>
         <div className="form-row" style={{marginBottom:8,marginTop:6}}>
-          <label>VAULT DIRECTORY</label>
+          <label>LIBRARY FOLDER</label>
           <input placeholder={status.defaultRoot || 'C:/Users/you/Documents/cafresohq/hq-state/vault'}
             value={draftRoot} onChange={e=>setDraftRoot(e.target.value)}/>
           <span className="hint">absolute path to a Markdown folder; the default lives inside CafresoHQ under <code>hq-state/vault</code></span>
@@ -757,7 +757,7 @@ export function VaultTab() {
             </div>
           </div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
-            <button className="px-btn secondary" style={{fontSize:9}} onClick={useCafresoHQVault} disabled={busy}>{busy ? '...' : 'USE APP VAULT'}</button>
+            <button className="px-btn secondary" style={{fontSize:9}} onClick={useCafresoHQVault} disabled={busy}>{busy ? '...' : 'USE APP LIBRARY'}</button>
             <button className="px-btn secondary" style={{fontSize:9}} onClick={detectObsidianVault} disabled={busy}>{busy ? '...' : 'DETECT OBSIDIAN'}</button>
             <button className="px-btn secondary" style={{fontSize:9}} onClick={saveFs} disabled={busy}>{busy ? '...' : 'SAVE'}</button>
           </div>
@@ -796,14 +796,14 @@ export function VaultTab() {
       </>)}
 
       <div className="hint" style={{marginTop:8,fontSize:11}}>
-        Agents whose role includes the <strong>Vault Notes</strong> tool can search/read/append/create Markdown notes
+        Agents whose role includes the <strong>Library</strong> tool can search/read/append/create Markdown notes
         {isOci ? ' from this office’s fleet storage' : ' from the local directory'}.
         {/* The tip named two backends' env vars and the office runs on
             three; on a fleet container it was a list of settings that do
             nothing here. */}
         {isOci
           ? <> Tip: <code>CAFRESOHQ_VAULT_BACKEND=oci</code> with <code>OCI_VAULT_NAMESPACE</code> / <code>OCI_VAULT_BUCKET</code> selects fleet storage when the office starts.</>
-          : <> Tip: pass <code>CAFRESOHQ_VAULT</code> to override the app vault, or <code>CAFRESOHQ_OBSIDIAN_URL</code> / <code>CAFRESOHQ_OBSIDIAN_KEY</code> for optional Obsidian REST.</>}
+          : <> Tip: pass <code>CAFRESOHQ_VAULT</code> to override the app Library, or <code>CAFRESOHQ_OBSIDIAN_URL</code> / <code>CAFRESOHQ_OBSIDIAN_KEY</code> for optional Obsidian REST.</>}
       </div>
     </div>
   );

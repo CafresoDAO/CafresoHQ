@@ -171,8 +171,8 @@ console.log(JSON.stringify(R));
           one['BROWSER_FETCH'] == 'Web Search',
           repr(one['BROWSER_FETCH']) + ' — toolsForAgent grants fetch on '
           "claimed.has('web'), so that is the box to send the boss to")
-    check('every cabinet tool names the Vault Notes box',
-          all(one[n] == 'Vault Notes' for n in
+    check('every cabinet tool names the Library box',
+          all(one[n] == 'Library' for n in
               ('VAULT_NEW', 'VAULT_APPEND', 'VAULT_SEARCH', 'EXPORT_PDF')),
           repr({n: one[n] for n in ('VAULT_NEW', 'VAULT_APPEND',
                                     'VAULT_SEARCH', 'EXPORT_PDF')})
@@ -274,15 +274,15 @@ console.log(JSON.stringify(R));
           lists['mixed'] == 'Web Search', repr(lists['mixed']))
 
     # ── 3. it reads as a sentence, not as a dump ────────────────────────
-    check('one box reads as one name', lists['one'] == 'Vault Notes',
+    check('one box reads as one name', lists['one'] == 'Library',
           repr(lists['one']))
-    check('two boxes get an "and"', lists['two'] == 'Web Search and Vault Notes',
+    check('two boxes get an "and"', lists['two'] == 'Web Search and Library',
           repr(lists['two']))
     check('three get commas and a final "and"',
-          lists['three'] == 'Web Search, Vault Notes and Image Gen',
+          lists['three'] == 'Web Search, Library and Image Gen',
           repr(lists['three']))
     check('three tools behind one box are named once',
-          lists['dupes'] == 'Vault Notes', repr(lists['dupes'])
+          lists['dupes'] == 'Library', repr(lists['dupes'])
           + ' — a coworker that opened, appended and exported has still '
             'only missed one checkbox, and saying it three times reads as '
             'three separate things to go and fix')

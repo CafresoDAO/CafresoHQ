@@ -161,7 +161,7 @@ console.log(JSON.stringify(R));
 
     # ── Copy: office words, not tool ids ────────────────────────────────
     check('the tools are named in the boss\'s words',
-          out['labels'].get('web') == 'Web Search' and out['labels'].get('vault') == 'Vault Notes',
+          out['labels'].get('web') == 'Web Search' and out['labels'].get('vault') == 'Library',
           f"got {out['labels']!r} — §6: no raw tool ids in UI copy")
 
     # ── Render-level: the hint is conditional and hands the tool over ───
@@ -182,7 +182,7 @@ console.log(JSON.stringify(R));
           'app.jsx: the button renders only when the prop is passed, so an '
           'unwired prop silently removes the way forward')
     check('granting says what it costs the boss',
-          'write notes into your cabinet' in text,
+          'file their work into your cabinet' in text,
           'missions.jsx: this is write access to the vault — a permission asked '
           'for without stating it is not consent')
     check('coworkers are people, not "it"',

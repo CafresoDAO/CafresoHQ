@@ -25,7 +25,7 @@ looked at it twice.
 
 Turning the feature on brought its own risk, so the guards came with it:
 the synthesis prompt is the ONLY prompt in the office that asks for a
-file path ("cite vault paths if any were saved"), and `unfiledPath` is
+file path ("cite Library paths if any were saved"), and `unfiledPath` is
 the guard for a named path nothing wrote. Shipping the feature without it
 would have shipped, on the first working run, precisely the defect the
 guard exists to catch.
@@ -144,8 +144,8 @@ def main():
 
     # ── 3. what the feature must not do once it is finally running ──────
     # This prompt is the only one in the office that asks for a file path.
-    check('the synthesis prompt still asks for vault paths',
-          'cite vault paths if any were saved' in synth,
+    check('the synthesis prompt still asks for Library paths',
+          'cite Library paths if any were saved' in synth,
           '— which is exactly why the guard below is not optional')
     check('...so the synthesis reply runs the honesty guards',
           re.search(r'if \(HQ\.honestyNotes && synthFlush\.note\) \{', synth)

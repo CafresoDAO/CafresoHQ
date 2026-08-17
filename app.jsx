@@ -2198,7 +2198,7 @@ ${d.text}` : d.text,
         (teammates.length ? `   Other coworkers on this project: ${teammates.join(', ')}\n` : '') +
         `You are working ON this project. Scope your file/shell tools to this directory unless the task explicitly requires reaching outside. ` +
         `When you reference files in your reply, use paths relative to the project root (or fully qualified with the working directory above). ` +
-        `Vault writes, however, still go to the boss's notes vault — use the project as the SOURCE OF CODE, the vault as the DESTINATION FOR FINDINGS.`;
+        `Library writes, however, still go to the boss's Library — use the project as the SOURCE OF CODE, the Library as the DESTINATION FOR FINDINGS.`;
     })();
 
     /* Tasks-as-north-star: surface every open task assigned to this
@@ -6463,7 +6463,7 @@ ${d.text}` : d.text,
                 background:'rgba(232,169,169,0.14)', border:'1px solid rgba(232,169,169,0.5)',
                 color:'#E8A9A9', font:'13px Inter, system-ui, sans-serif' }}>
                 <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
-                  <b>⚠ Your office is offline.</b> Chat, the Vault and your projects all need it
+                  <b>⚠ Your office is offline.</b> Chat, the Library and your projects all need it
                   running.{' '}
                   {/* The advice has to match how this boss actually runs HQ. This banner
                       sent EVERYONE to ai.cafreso.com, including someone whose office is
@@ -6898,8 +6898,8 @@ ${d.text}` : d.text,
             },
             {
               id: 'vault',
-              title: 'The Vault — shared memory',
-              body: 'The Vault is your team\'s shared knowledge base — notes, docs, and memory your coworkers can read and write. Everything they learn lives here.',
+              title: 'The Library — where the work lands',
+              body: 'The Library is where everything your team produces is kept — decks, documents, research, images and notes. Coworkers file here as they work, and read each other\'s filings back.',
               action: () => goTo('vault'),
             },
             {
@@ -6994,8 +6994,8 @@ ${d.text}` : d.text,
             },
             {
               id: 'vault',
-              title: 'The Vault — shared memory',
-              body: 'The Vault is your team\'s shared knowledge base: notes, docs, and long-term memory your coworkers read from and write to. Everything they learn lives here.',
+              title: 'The Library — where the work lands',
+              body: 'The Library is where everything your team produces is kept: decks, documents, research, images and notes. Coworkers file here as they work, and read each other\'s filings back.',
               action: () => goTo('vault'),
             },
             {
@@ -7106,7 +7106,7 @@ function GraphPopout() {
   const [activePath, setActivePath] = React.useState(null);
 
   React.useEffect(() => {
-    document.title = 'Vault Graph (popout)';
+    document.title = 'Library Graph (popout)';
     if (typeof BroadcastChannel === 'undefined') return;
     const ch = new BroadcastChannel('cafresohq-graph');
     ch.onmessage = (e) => {
@@ -7141,7 +7141,7 @@ function GraphPopout() {
           flexShrink: 0,
         }}>
           <span style={{fontSize: 'var(--text-13)', fontWeight: 700, letterSpacing: '0.06em'}}>
-            🧠 VAULT GRAPH · POPOUT
+            🧠 LIBRARY GRAPH · POPOUT
           </span>
           <span style={{flex:1, fontSize: 'var(--text-10)', color: 'var(--ink-3)'}}>
             {activePath ? activePath : 'Click a node to open it in the main window.'}

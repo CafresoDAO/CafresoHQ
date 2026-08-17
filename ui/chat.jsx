@@ -970,7 +970,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             if (replies.length >= 2) {
               const synthPrompt = `The boss asked: "${text}"\n\nYou delegated to ${targets.map(t => t.agent.name).join(', ')} in parallel. Here are their replies:\n\n` +
                 replies.map(r => `[${r.from}]:\n${r.text}`).join('\n\n---\n\n') +
-                `\n\nNow synthesize ONE tight combined response for the boss (2-4 sentences). Don't paste the raw outputs — extract what matters, note any disagreement, and cite vault paths if any were saved. Do NOT emit DM_TO or HANDOFF_TO markers in this turn.`;
+                `\n\nNow synthesize ONE tight combined response for the boss (2-4 sentences). Don't paste the raw outputs — extract what matters, note any disagreement, and cite Library paths if any were saved. Do NOT emit DM_TO or HANDOFF_TO markers in this turn.`;
               const synthId = HQ.uid('m');
               setChat(prev => [...prev, { id: synthId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
               const synthFlush = HQ.throttleTokens(setChat, synthId);

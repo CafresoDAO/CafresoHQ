@@ -14332,3 +14332,91 @@ about the two callers that existed when it was written. It became a false
 statement about a live pipeline the day a third one arrived, and nothing in
 the office noticed, because the guard was right about *what to do* and only
 wrong about *why* — and "why" is the half the boss reads.
+
+## The room was named for the safe it isn't
+
+The breadcrumb over the room where every deliverable lands read **MARKDOWN
+VAULT**. Underneath it, on a real office, sat `.pptx` decks Sloan had
+rendered, `.docx` files from Quill, generated `.png`s from Pixel, `.mp4`s
+from Reel, research write-ups, and — among all of that — some markdown.
+
+Two lies in three words. The room is not markdown, and it is not a vault.
+A vault is where you put things to stop people getting at them; this room
+exists so coworkers can put work *in* and the boss and their teammates can
+take it *out*. The one line in the product whose whole job is to say what
+the room is for was wrong about both halves.
+
+It is now the **Library**, everywhere a person reads: the nav rail, the
+mobile tab bar, the command palette, the view header, the graph over it,
+the tool checkbox on every coworker card, the Night Shift briefing, the
+Connections panel, the tour, and — this is the part that matters most —
+every specialist's system prompt. Sloan is told to file the deck in the
+Library and to hand back the .pptx Library path. If the chrome had been
+renamed and the prompts left alone, the boss would read *Library* on the
+tab and *"saved it to the vault"* in the reply, and would have two rooms to
+look for one file in. A half rename is worse than either name.
+
+**The wire never moved.** `[VAULT_NEW:]` and its three siblings are marker
+names a model emits and a regex matches. `vault` is a tool id sitting in
+every hired coworker's record on disk. `/vault/*` are serve.py routes,
+`vault:list` and friends are postMessage types the shell answers, `vault-*`
+are class names styles.css matches on, `hq-state/vault/` is a directory
+with the boss's files in it, and `CAFRESOHQ_VAULT` is an environment
+variable somebody's office is already started with. Every one of those is a
+contract with installs that already exist. Renaming them buys the boss a
+word they never see and costs them their files.
+
+Three vaults keep the word honestly: **Obsidian's** — another product's
+noun for its own thing, and sending a boss to a "Library" setting Obsidian
+does not have is §5's wrong door; the **encrypted key vault**, which is a
+different store and the only thing here that really is a safe; and **VAULT
+· TREASURY** on the pixel floor, which holds money.
+
+Two things fell out of doing it properly rather than with a find-and-
+replace.
+
+*The card had stopped naming its own door.* `CAN_DO_UNLOCK.vault` used to
+read "read your notes once you connect a **Markdown vault** in Settings →
+Connections", and #104's rule is that an unlock line may only name a
+control whose printed label actually appears in the settings source. The
+first pass at the rename left it saying "connect **one**", which names
+nothing and would have quietly retired that guard. It now reads "read your
+**Library** once you connect one", against a panel headed LIBRARY — the two
+words are the same word, which is the whole point of the rename. The
+granted half moved with it: "read your notes" described a notes folder, and
+this is not one.
+
+*The Library had no entry in the settings search at all.* Every other
+Connections panel has one; the door the coworker cards send the boss to by
+name did not, so typing "vault" — or now "library" — into settings search
+answered nothing. Added, with `vault`, `obsidian`, `markdown` and `notes`
+kept in its keywords on purpose: a boss who learned the old word has to
+still be able to find the door under the new one.
+
+**Tests.** `scripts/test_the_library_has_one_name.py` is new. It sweeps
+every string literal and run of JSX text in the twenty-two files the boss's
+and coworkers' words come out of, and fails on any that still calls our
+room a vault — with the wire, the three honest vaults, class lists, module
+specifiers, filesystem paths, env vars and search-keyword blobs each
+excused for a stated reason rather than by a blanket pattern.
+
+A sweep like that has one failure mode worth more than all the others: it
+can go quiet, and a suite that sees nothing passes for exactly the same
+reason a clean codebase does. So the sweep is measured before it is
+trusted — eleven sentences it must still catch, sat beside thirteen pieces
+of wire it must keep ignoring, several pairs differing only in the thing
+the heuristic keys on. That check earned itself immediately. The first
+spelling of the gate was `[Vv]ault`, which is case-sensitive, and therefore
+excused every heading in the product: `MARKDOWN VAULT`, `📓 VAULT`, `🧠
+VAULT GRAPH · POPOUT`, `VAULT FOLDER:` in the night-shift brief. Five live
+strings, in the places a room's name is printed largest, invisible to the
+test written to find them.
+
+Nine sibling suites pinned the old words on lines this moves and were
+retargeted rather than loosened, including #104's control-label pin, which
+is the one that caught the card no longer naming its door.
+
+**Lesson.** A test that searches for something has two ways to be green,
+and only one of them is worth having. Any check whose passing condition is
+*"I found nothing"* has to be shown, in the same run, that it can still
+find something.

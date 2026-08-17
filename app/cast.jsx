@@ -164,7 +164,11 @@ function statBars(agent) {
    is a sales pitch. An id with no entry here contributes no words at all. */
 const CAN_DO = {
   web:    'search the web',
-  vault:  'read your notes',
+  /* Was "read your notes" until the room was renamed. The old words were
+     wrong twice over: they named a room the boss can no longer find in the
+     chrome, and they described it as notes when the Library is where decks,
+     documents, images and research land too. */
+  vault:  'read your Library',
   files:  'work with your files',
   code:   'run code',
   img:    'make images',
@@ -235,10 +239,10 @@ const CAN_DO_UNLOCK = {
   files:  'work with your files once you switch on their file & shell access',
   code:   'run code once you switch on their file & shell access',
   /* Named for the panel as it is printed — Settings → Connections →
-     MARKDOWN VAULT — because unlike the other four this door is nowhere
-     near the coworker, and the tooltip these chips already carry sends the
-     boss to Settings → Roster, where there is nothing to fix. */
-  vault:  'read your notes once you connect a Markdown vault in Settings → Connections',
+     LIBRARY — because unlike the other four this door is nowhere near the
+     coworker, and the tooltip these chips already carry sends the boss to
+     Settings → Roster, where there is nothing to fix. */
+  vault:  'read your Library once you connect one in Settings → Connections',
 };
 
 /* `ctx` absent means the caller does not know, and unknowable → do not

@@ -270,7 +270,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       const snap = e.exportSnapshot();
       snap.title = sourceRef.current === 'concepts'
         ? ('Concept map' + (scopeRef.current && scopeRef.current !== '__all__' ? ' · ' + scopeRef.current : ''))
-        : (activePath ? titleFor(activePath) : 'Vault graph');
+        : (activePath ? titleFor(activePath) : 'Library graph');
       const base = (typeof window !== 'undefined' && window._API_BASE != null) ? window._API_BASE : '';
       const res = await fetch(base + '/graph/publish', {
         method: 'POST', credentials: 'include',

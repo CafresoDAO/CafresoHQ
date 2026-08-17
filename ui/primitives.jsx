@@ -46,7 +46,7 @@ const NAV_ITEMS = [
   ['tasks', 'Tasks'],
   ['calendar', 'Calendar'],
   ['memory', 'Memory'],
-  ['vault', 'Vault'],
+  ['vault', 'Library'],
   ['team', 'Team'],
   ['terminal', 'Terminal'],
   /* One destination had two names. The mobile tab bar, the command

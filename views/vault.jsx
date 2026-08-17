@@ -142,10 +142,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       try {
         const bridgeFiles = await _bridge.list();
         setFiles(_adaptBridgeFiles(bridgeFiles));
-        setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });
+        setStatus({ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' });
         refreshGraph();
       } catch (e) {
-        setErr(e.message || 'Could not load vault from shell.');
+        setErr(e.message || 'Could not load the Library from shell.');
         setStatus({ configured: false, unavailable: true, error: e.message });
       }
       return;
@@ -159,7 +159,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         refreshGraph();
       } catch (e) {
         setFiles([]);
-        setErr(e.message || 'Could not list vault notes.');
+        setErr(e.message || 'Could not list the Library.');
       }
     } catch (e) {
       const message = e.message || 'CafresoHQ bridge is not reachable.';
@@ -180,7 +180,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       if (e.origin !== window.__hqShellOrigin) return;
       if (e.data?.type === 'vault:files:update') {
         setFiles(_adaptBridgeFiles(e.data.files || []));
-        if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Vault', backend: 'bridge' });
+        if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' });
       }
     };
     window.addEventListener('message', handler);
@@ -249,7 +249,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // Binary files (images, video, audio) can't open in the text editor
     const fileMeta = files.find(f => f.path === path);
     if (fileMeta?.isBinary) {
-      say(`"${fileMeta.title}" is an image or media file — open it from the vault at ai.cafreso.com to view it.`, 'info');
+      say(`"${fileMeta.title}" is an image or media file — open it from the Library at ai.cafreso.com to view it.`, 'info');
       return;
     }
     // Flush any dirty buffer before swapping files — no silent edit loss.
@@ -261,7 +261,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       let text;
       if (_bridge) {
         const id = _pathToId.current[path];
-        if (!id) throw new Error('File not found in vault index: ' + path);
+        if (!id) throw new Error('File not found in the Library index: ' + path);
         text = await _bridge.read(id);
       } else {
         text = await CafresoHQClient.vaultRead(path);
@@ -361,9 +361,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         const more = r.failed.length > 3 ? ` and ${r.failed.length - 3} more` : '';
         say(`Filed ${r.count}. Couldn't file ${r.failed.length}: ${named}${more}.`, 'warn');
       } else if (r && r.count) {
-        say(`Filed ${r.count} file${r.count === 1 ? '' : 's'} in the vault.`, 'success');
+        say(`Filed ${r.count} file${r.count === 1 ? '' : 's'} in the Library.`, 'success');
       }
-    } catch (er) { snag("Couldn't add those to the vault", er); }
+    } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
   };
   const renameNote = async () => {
@@ -374,7 +374,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // some hosts (iframe sandboxes). views/projects.jsx already made this
     // switch for its identical rename flow; the vault, the single most
     // important data surface in the app, had not.
-    const to = await window.hqPrompt('Rename / move to (path inside the vault):', { value: n.path });
+    const to = await window.hqPrompt('Rename / move to (path inside the Library):', { value: n.path });
     if (!to || to.trim() === n.path) return;
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
@@ -477,7 +477,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      load-bearing for a deletion. Both are left visible on purpose. */
 
   if (!status) {
-    return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Loading…</div></div></div>;
+    return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 LIBRARY</div><div className="empty-state"><div className="empty-title">Loading…</div></div></div>;
   }
   /* The whole-cabinet failure screen. It used to read, in full:
 
@@ -501,7 +501,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     const cause = officeCause(err);
     return (
       <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}>
-        <div className="section-title">📓 VAULT</div>
+        <div className="section-title">📓 LIBRARY</div>
         <div className="empty-state">
           <div className="empty-title">The cabinet won't open</div>
           {/* The reassurance used to end "...this is the office not answering,
@@ -521,7 +521,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     );
   }
   if (!status.configured) {
-    return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 VAULT</div><div className="empty-state"><div className="empty-title">Vault not configured.</div><div className="empty-sub">Choose a Markdown vault directory in Connections settings.</div>{onOpenSettings && <button className="px-btn primary" style={{marginTop:16,fontSize:12,padding:'10px 20px'}} onClick={onOpenSettings}>⚙️ Open Settings</button>}</div></div>;
+    return <div className={_isMobileV ? "vault-mobile" : "view-soon"} style={_isMobileV ? {display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'} : undefined}><div className="section-title">📓 LIBRARY</div><div className="empty-state"><div className="empty-title">No Library yet.</div><div className="empty-sub">Pick the folder your team should file into — decks, documents, research and notes all land there.</div>{onOpenSettings && <button className="px-btn primary" style={{marginTop:16,fontSize:12,padding:'10px 20px'}} onClick={onOpenSettings}>⚙️ Open Settings</button>}</div></div>;
   }
 
   const hasNote = !!openNote;
@@ -581,17 +581,17 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           {vaultTab === 'tree' && (
             <div className="vault-tree-pane" style={{flex:1,display:'flex',flexDirection:'column',overflow:'auto',borderRight:'none',maxHeight:'none'}}>
               <div className="vault-toolbar">
-                <span style={{fontWeight:600,fontSize:11,flex:1}}>{status ? status.name : 'Vault'}</span>
+                <span style={{fontWeight:600,fontSize:11,flex:1}}>{status ? status.name : 'Library'}</span>
                 <button className="px-btn ghost" onClick={newNote} title="New note">{'➕'}</button>
                 {!_bridge && (
                   <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                    title="Upload files into the vault">📤</button>
+                    title="Upload files into the Library">📤</button>
                 )}
                 <button className="px-btn ghost" onClick={refresh} title="Refresh">{'↻'}</button>
                 <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
               </div>
               <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
-                <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search vault…" onKeyDown={e=>e.key==='Enter'&&search()} />
+                <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
                 <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>{'🔎'} SEARCH</button>
               </div>
               {hits ? (
@@ -659,13 +659,13 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           <button className="px-btn ghost" onClick={newNote} title="New note">➕</button>
           {!_bridge && (
             <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
-              title="Upload files into the vault">📤</button>
+              title="Upload files into the Library">📤</button>
           )}
           <button className="px-btn ghost" onClick={refresh} title="Refresh">↻</button>
           <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
         </div>
         <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
-          <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search vault…" onKeyDown={e=>e.key==='Enter'&&search()} />
+          <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
           <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>🔎 SEARCH</button>
         </div>
         {hits ? (
@@ -729,7 +729,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
       {graphMinimized && !hasNote && (
         <div className="vault-graph-pane fullspan" style={{display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}} onClick={() => setGraphMinimized(false)}>
-          <span style={{fontSize:11,opacity:0.5}}>🧠 VAULT GRAPH (click to show)</span>
+          <span style={{fontSize:11,opacity:0.5}}>🧠 LIBRARY GRAPH (click to show)</span>
         </div>
       )}
     </div>

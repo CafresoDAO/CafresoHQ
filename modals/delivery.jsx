@@ -96,7 +96,7 @@ function DeliverySheet({ open, delivery, onClose, onOpenNote }) {
       <p className="delivery-trust">
         {encrypted
           ? 'The cabinet is encrypted — only you can open it. Nothing in here leaves your control, including from us.'
-          : 'The cabinet is your own vault folder on this machine. Nothing was uploaded anywhere; everything your team files stays where you can see it.'}
+          : 'The cabinet is your own Library folder on this machine. Nothing was uploaded anywhere; everything your team files stays where you can see it.'}
       </p>
     </Modal>
   );

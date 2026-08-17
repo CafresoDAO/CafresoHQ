@@ -215,7 +215,7 @@ def main():
         check('Dax keeps the file access she genuinely has',
               'work with your files' in dax, dax)
         check('Kip, not elevated and with no key, is not left blank',
-              kip == 'read a web page you name and read your notes', kip)
+              kip == 'read a web page you name and read your Library', kip)
 
         # …and the same Kip in an office whose vault does not answer. 'vault'
         # is the only claim on the shelf whose door is a round trip, so it is
@@ -225,8 +225,8 @@ def main():
                      "unknown: canDoPhrase(['web','vault'], { canSearch: true }),"
                      "}));")
         check('a vault that does not answer is not sold as notes he can read',
-              'read your notes once' in off['off']
-              and not off['off'].endswith('read your notes'), off['off'])
+              'read your Library once' in off['off']
+              and not off['off'].endswith('read your Library'), off['off'])
         check('...and the sentence names the door, which is not Roster',
               'Settings → Connections' in off['off'], off['off'])
         check('...while an office that has not asked yet says nothing either way',

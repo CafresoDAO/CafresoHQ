@@ -165,7 +165,7 @@ def main():
                                cwd=ROOT, capture_output=True, text=True, timeout=60)
             out = json.loads(p.stdout.strip().split('\n')[-1]) if p.returncode == 0 else None
             check('the captured reply draws a contradiction',
-                  bool(out) and 'the Vault does not have it' in out,
+                  bool(out) and 'the Library does not have it' in out,
                   f'{out!r} — this is the exact reply that shipped three '
                   'success claims to a boss with an empty vault')
 

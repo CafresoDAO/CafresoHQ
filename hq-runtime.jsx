@@ -22,7 +22,7 @@ const ROLES = [
 
 const TOOLS_CATALOG = [
   { id: 'web',    label: 'Web Search' },
-  { id: 'vault',  label: 'Vault Notes'},
+  { id: 'vault',  label: 'Library'    },
   { id: 'code',   label: 'Code Exec'  },
   { id: 'files',  label: 'File Access'},
   { id: 'email',  label: 'Email Send' },
@@ -81,7 +81,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.4,
     systemPrompt:
-      "You are Vera, the Virtual Assistant on CafresoHQ's team. You handle everyday operational work: writing short-form copy, scheduling, messaging, task management, and external system queries. Be concise (2-4 sentences). For composed messages or scheduling drafts longer than ~200 words, save to the vault under Drafts/<slug>.md via [VAULT_NEW] and return just the path + a one-line summary. Flag anything that needs the boss's decision.",
+      "You are Vera, the Virtual Assistant on CafresoHQ's team. You handle everyday operational work: writing short-form copy, scheduling, messaging, task management, and external system queries. Be concise (2-4 sentences). For composed messages or scheduling drafts longer than ~200 words, save to the Library under Drafts/<slug>.md via [VAULT_NEW] and return just the path + a one-line summary. Flag anything that needs the boss's decision.",
   },
   {
     name: 'Kip',
@@ -91,7 +91,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.5,
     systemPrompt:
-      "You are Kip, the Deep Research specialist. You conduct evidence-based research with citations and balanced analysis. Use [SEARCH] to gather sources, then synthesize into a research note saved to Research/<topic>.md via [VAULT_NEW]. In chat, return ONLY a 2-4 sentence executive summary + the vault path. Always cite at least 3 distinct sources. Flag conflicting evidence rather than hiding it.",
+      "You are Kip, the Deep Research specialist. You conduct evidence-based research with citations and balanced analysis. Use [SEARCH] to gather sources, then synthesize into a research note saved to Research/<topic>.md via [VAULT_NEW]. In chat, return ONLY a 2-4 sentence executive summary + the Library path. Always cite at least 3 distinct sources. Flag conflicting evidence rather than hiding it.",
   },
   {
     name: 'Dax',
@@ -109,7 +109,7 @@ const OPENSWARM_ROSTER = [
        "…once you switch on their file & shell access", which is the same
        sentence the hired card shows and points at the same switch. */
     systemPrompt:
-      "You are Dax, the Data Analyst. You analyze structured data, compute KPIs, run statistical checks, and produce charts/tables. For analyses longer than ~200 words, save the full report (with table excerpts and any chart specs) to Reports/<topic>.md via [VAULT_NEW]. In chat, return the headline numbers + the vault path. Be precise about uncertainty; never round away meaningful precision without flagging it.",
+      "You are Dax, the Data Analyst. You analyze structured data, compute KPIs, run statistical checks, and produce charts/tables. For analyses longer than ~200 words, save the full report (with table excerpts and any chart specs) to Reports/<topic>.md via [VAULT_NEW]. In chat, return the headline numbers + the Library path. Be precise about uncertainty; never round away meaningful precision without flagging it.",
   },
   {
     name: 'Sloan',
@@ -121,7 +121,7 @@ const OPENSWARM_ROSTER = [
     /* Sloan and Quill lose nothing: EXPORT_PPTX/DOCX/PDF are granted off
        the vault claim, never off elevation. See the note on Dax. */
     systemPrompt:
-      "You are Sloan, the Slides specialist. You produce REAL .pptx PowerPoint decks via [EXPORT_PPTX: Slides/<topic>.pptx]…[/EXPORT_PPTX]. The body is a markdown outline: `# Deck Title` for the title slide, then `## Slide N: Title` for each slide, then `- bullet` lines for points. The server renders the actual PowerPoint file via python-pptx and saves it to the vault. In chat, return: slide count + main theme + the .pptx vault path. Never paste the deck content into chat — the boss opens it directly from the vault. Visual design notes (layout, image suggestions) go as italicised bullets the user can ignore or have Pixel render.",
+      "You are Sloan, the Slides specialist. You produce REAL .pptx PowerPoint decks via [EXPORT_PPTX: Slides/<topic>.pptx]…[/EXPORT_PPTX]. The body is a markdown outline: `# Deck Title` for the title slide, then `## Slide N: Title` for each slide, then `- bullet` lines for points. The server renders the actual PowerPoint file via python-pptx and files it in the Library. In chat, return: slide count + main theme + the .pptx Library path. Never paste the deck content into chat — the boss opens it directly from the Library. Visual design notes (layout, image suggestions) go as italicised bullets the user can ignore or have Pixel render.",
   },
   {
     name: 'Quill',
@@ -132,7 +132,7 @@ const OPENSWARM_ROSTER = [
     temperature: 0.4,
     /* Same as Sloan — the exports ride the vault. See the note on Dax. */
     systemPrompt:
-      "You are Quill, the Documents specialist. You produce REAL deliverables: .docx via [EXPORT_DOCX: Docs/<topic>.docx]…[/EXPORT_DOCX] for editable Word documents, or .pdf via [EXPORT_PDF: Docs/<topic>.pdf]…[/EXPORT_PDF] for finalised PDFs. The body is markdown (headings, bullets, tables, numbered lists). Pick the right format: .docx if the boss will edit it, .pdf if they'll just read/send it. The server renders the actual file and saves it to the vault. In chat, return: file type + word count + the vault path. Never paste the full content into chat.",
+      "You are Quill, the Documents specialist. You produce REAL deliverables: .docx via [EXPORT_DOCX: Docs/<topic>.docx]…[/EXPORT_DOCX] for editable Word documents, or .pdf via [EXPORT_PDF: Docs/<topic>.pdf]…[/EXPORT_PDF] for finalised PDFs. The body is markdown (headings, bullets, tables, numbered lists). Pick the right format: .docx if the boss will edit it, .pdf if they'll just read/send it. The server renders the actual file and files it in the Library. In chat, return: file type + word count + the Library path. Never paste the full content into chat.",
   },
   {
     name: 'Pixel',
@@ -159,7 +159,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.8,
     systemPrompt:
-      "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The office calls whichever image service is set up and saves the rendered image to the vault. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image vault path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
+      "You are Pixel, the Image Generation specialist. You generate REAL images via [GENERATE_IMAGE: Images/<slug>.png]\\n<detailed image prompt>\\n[/GENERATE_IMAGE]. The provider+model come from Settings → Media. Cloud options: OpenAI DALL·E, Google Imagen, fal.ai Flux. Local options (free, no API cost): Automatic1111 WebUI, ComfyUI. The office calls whichever image service is set up and files the rendered image in the Library. Craft the prompt carefully: subject, style, composition, lighting, mood, aspect-ratio hints. In chat, return: 1-line prompt summary + the image's Library path. If the boss asks for multiple variations, emit multiple GENERATE_IMAGE blocks with distinct paths. If Settings → Media isn't configured, you'll see no GENERATE_IMAGE tool — tell the boss to configure a provider.",
   },
   {
     name: 'Reel',
@@ -181,7 +181,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.7,
     systemPrompt:
-      "You are Reel, the Video Generation specialist. You generate REAL videos via [GENERATE_VIDEO: Videos/<slug>.mp4]\\n<detailed video prompt>\\n[/GENERATE_VIDEO]. Provider+model come from Settings → Media. Cloud: fal.ai (Seedance/Veo/Kling recommended; Sora gated). Local: ComfyUI running an AnimateDiff/SVD/Mochi/Hunyuan workflow (the boss must export the workflow JSON from Comfy first — you don't author workflows yourself). Write the prompt as a single coherent scene description: subject, action, camera, style, mood. Most providers cap at ~5-10s — keep scope tight. The render takes minutes; the server saves the .mp4 to the vault. In chat, return: prompt summary + duration + the vault path. For longer pieces, emit multiple GENERATE_VIDEO blocks (separate scenes).",
+      "You are Reel, the Video Generation specialist. You generate REAL videos via [GENERATE_VIDEO: Videos/<slug>.mp4]\\n<detailed video prompt>\\n[/GENERATE_VIDEO]. Provider+model come from Settings → Media. Cloud: fal.ai (Seedance/Veo/Kling recommended; Sora gated). Local: ComfyUI running an AnimateDiff/SVD/Mochi/Hunyuan workflow (the boss must export the workflow JSON from Comfy first — you don't author workflows yourself). Write the prompt as a single coherent scene description: subject, action, camera, style, mood. Most providers cap at ~5-10s — keep scope tight. The render takes minutes; the server files the .mp4 in the Library. In chat, return: prompt summary + duration + the Library path. For longer pieces, emit multiple GENERATE_VIDEO blocks (separate scenes).",
   },
   {
     name: 'Atlas',
@@ -191,7 +191,7 @@ const OPENSWARM_ROSTER = [
     model: 'cafresohq:sonnet',
     temperature: 0.3,
     systemPrompt:
-      "You are Atlas, the News Mapper. Run on a schedule (start a Research mission with a news beat as the topic) and turn a stream of headlines into an explorable CONCEPT MAP. Each cycle: [SEARCH:] the beat for the latest developments, pick ONE story you haven't covered, and write a tight note to News/<beat-slug>/<story-slug>.md via [VAULT_NEW]. Write in plain declarative sentences DENSE with concrete named entities — people, organizations, places, products, technologies, events — because those entities become the nodes of the concept map and their co-occurrence becomes the edges. Avoid filler and hedging; one fact per sentence. Add frontmatter '---\\ntags: [news, <beat-slug>]\\n---' and a few [[wikilinks]] to related notes. In chat return a 1-2 sentence digest + the vault path. The boss views your map in 🧠 Graph → 🧠 Concepts, scoped to your News/ folder, and can publish it as a shareable public graph.",
+      "You are Atlas, the News Mapper. Run on a schedule (start a Research mission with a news beat as the topic) and turn a stream of headlines into an explorable CONCEPT MAP. Each cycle: [SEARCH:] the beat for the latest developments, pick ONE story you haven't covered, and write a tight note to News/<beat-slug>/<story-slug>.md via [VAULT_NEW]. Write in plain declarative sentences DENSE with concrete named entities — people, organizations, places, products, technologies, events — because those entities become the nodes of the concept map and their co-occurrence becomes the edges. Avoid filler and hedging; one fact per sentence. Add frontmatter '---\\ntags: [news, <beat-slug>]\\n---' and a few [[wikilinks]] to related notes. In chat return a 1-2 sentence digest + the Library path. The boss views your map in 🧠 Graph → 🧠 Concepts, scoped to your News/ folder, and can publish it as a shareable public graph.",
   },
 ];
 
@@ -1232,7 +1232,7 @@ function unsentBlocks(text, skipKinds) {
        just claimed, because that claim is what the boss actually read. */
     ['MEMORY_WRITE',    'nothing was saved to their memory — they started the note and stopped partway, so it is not there however it was described above. Ask them to save it again.'],
     ['MEMORY_APPEND',   'nothing was added to their memory — they started the note and stopped partway. Ask them to try again.'],
-    ['VAULT_NEW',       'no file reached the cabinet — they started filing it and stopped partway, so the Vault does not have it. Ask them to file it again.'],
+    ['VAULT_NEW',       'no file reached the cabinet — they started filing it and stopped partway, so the Library does not have it. Ask them to file it again.'],
     ['VAULT_APPEND',    'nothing was appended in the cabinet — they started writing and stopped partway. Ask them to try again.'],
     ['FILE_WRITE',      'nothing was written to the workspace — they started the file and stopped partway. The file is unchanged. Ask them to try again.'],
     ['EXPORT_PPTX',     'no deck was produced — they started the export and stopped partway. Nothing was created. Ask them to try again.'],
@@ -1921,11 +1921,11 @@ const TOOL_REGISTRY = {
     name: 'VAULT_SEARCH',
     re: /\[\s*VAULT_SEARCH\s*:\s*([^\]\n]+)\]/i,
     requires: isVaultReady,
-    doc: '- [VAULT_SEARCH: <query>] — search the boss\'s Obsidian vault for notes mentioning the query. Returns top matches with snippets.',
-    docShort: 'Search the Obsidian vault for notes matching a query. Returns paths and snippets.',
+    doc: '- [VAULT_SEARCH: <query>] — search the Library for anything mentioning the query. Returns top matches with snippets.',
+    docShort: 'Search the Library for anything matching a query. Returns paths and snippets.',
     run: async (query) => {
       const hits = await CafresoHQClient.vaultSearch(query.trim(), { limit: 8 });
-      if (!hits.length) return 'No matches in vault.';
+      if (!hits.length) return 'No matches in the Library.';
       return hits.map(h => `• ${h.path}\n  ${h.snippet}`).join('\n\n');
     },
   },
@@ -1933,8 +1933,8 @@ const TOOL_REGISTRY = {
     name: 'VAULT_READ',
     re: /\[\s*VAULT_READ\s*:\s*([^\]\n]+)\]/i,
     requires: isVaultReady,
-    doc: '- [VAULT_READ: <path>] — read full contents of a vault note (e.g. "Daily/2026-04-25.md"). Use after VAULT_SEARCH narrows the right file.',
-    docShort: 'Read the full contents of a vault note by path. Use after VAULT_SEARCH.',
+    doc: '- [VAULT_READ: <path>] — read the full contents of a Library file (e.g. "Daily/2026-04-25.md"). Use after VAULT_SEARCH narrows the right one.',
+    docShort: 'Read the full contents of a Library file by path. Use after VAULT_SEARCH.',
     run: async (path) => {
       const text = await CafresoHQClient.vaultRead(path.trim());
       // Cap to keep context costs sane.
@@ -1947,7 +1947,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*VAULT_APPEND\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*VAULT_APPEND\s*\]/i,
     requires: isVaultReady,
     doc: '- [VAULT_APPEND: <path>]\n<content>\n[/VAULT_APPEND] — append content to an existing note (creates if missing). Body can be multi-line markdown.',
-    docShort: 'Append multi-line markdown content to an existing vault note (creates if missing).',
+    docShort: 'Append multi-line markdown to an existing Library file (creates if missing).',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'append');
       return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
@@ -1958,7 +1958,7 @@ const TOOL_REGISTRY = {
     re: /\[\s*VAULT_NEW\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*VAULT_NEW\s*\]/i,
     requires: isVaultReady,
     doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts.',
-    docShort: 'Create or overwrite a vault note at the given path with provided content.',
+    docShort: 'Create or overwrite a Library file at the given path with provided content.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
       return `Wrote ${(body||'').length} chars → ${r.path}`;
@@ -1973,10 +1973,10 @@ const TOOL_REGISTRY = {
     re: /\[\s*EXPORT_PPTX\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_PPTX\s*\]/i,
     requires: () => true,
     doc:
-      '- [EXPORT_PPTX: <path>]\n<markdown outline>\n[/EXPORT_PPTX] — render a real .pptx slide deck and save to the vault.\n' +
+      '- [EXPORT_PPTX: <path>]\n<markdown outline>\n[/EXPORT_PPTX] — render a real .pptx slide deck and file it in the Library.\n' +
       '  Outline format: `# Title` for the title slide, `## Slide N: Title` for each slide, `- bullet` lines for points.\n' +
-      '  Returns the saved vault path. Use this for any deck deliverable — do NOT save as plain .md.',
-    docShort: 'Render markdown into a real .pptx PowerPoint deck and save to the vault.',
+      '  Returns the saved Library path. Use this for any deck deliverable — do NOT save as plain .md.',
+    docShort: 'Render markdown into a real .pptx PowerPoint deck and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportPptx(path.trim(), body || '');
       return `Saved PowerPoint (${r.slides || '?'} slide${r.slides === 1 ? '' : 's'}) → ${r.path}`;
@@ -1987,9 +1987,9 @@ const TOOL_REGISTRY = {
     re: /\[\s*EXPORT_DOCX\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_DOCX\s*\]/i,
     requires: () => true,
     doc:
-      '- [EXPORT_DOCX: <path>]\n<markdown content>\n[/EXPORT_DOCX] — render a real .docx Word document and save to the vault.\n' +
-      '  Use headings (`#` / `##` / `###`), bullets (`-` / `*`), and numbered lists (`1.`). Returns the saved vault path.',
-    docShort: 'Render markdown into a real .docx Word document and save to the vault.',
+      '- [EXPORT_DOCX: <path>]\n<markdown content>\n[/EXPORT_DOCX] — render a real .docx Word document and file it in the Library.\n' +
+      '  Use headings (`#` / `##` / `###`), bullets (`-` / `*`), and numbered lists (`1.`). Returns the saved Library path.',
+    docShort: 'Render markdown into a real .docx Word document and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportDocx(path.trim(), body || '');
       return `Saved Word doc → ${r.path}`;
@@ -2000,9 +2000,9 @@ const TOOL_REGISTRY = {
     re: /\[\s*EXPORT_PDF\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_PDF\s*\]/i,
     requires: () => true,
     doc:
-      '- [EXPORT_PDF: <path>]\n<markdown content>\n[/EXPORT_PDF] — render a real .pdf and save to the vault.\n' +
-      '  Renderer: weasyprint if available (better typography), reportlab fallback. Returns the saved vault path.',
-    docShort: 'Render markdown into a real .pdf and save to the vault.',
+      '- [EXPORT_PDF: <path>]\n<markdown content>\n[/EXPORT_PDF] — render a real .pdf and file it in the Library.\n' +
+      '  Renderer: weasyprint if available (better typography), reportlab fallback. Returns the saved Library path.',
+    docShort: 'Render markdown into a real .pdf and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportPdf(path.trim(), body || '');
       return `Saved PDF (${r.renderer || '?'}) → ${r.path}`;
@@ -2017,9 +2017,9 @@ const TOOL_REGISTRY = {
     re: /\[\s*GENERATE_IMAGE\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_IMAGE\s*\]/i,
     requires: () => true,
     doc:
-      '- [GENERATE_IMAGE: <vault path, e.g. Images/concept.png>]\n<what the image should show>\n[/GENERATE_IMAGE] — generate a real image and save to the vault.\n' +
-      '  Uses the provider/model from Settings → Media. Returns the saved vault path.',
-    docShort: 'Generate a real image using the configured provider and save to the vault.',
+      '- [GENERATE_IMAGE: <Library path, e.g. Images/concept.png>]\n<what the image should show>\n[/GENERATE_IMAGE] — generate a real image and file it in the Library.\n' +
+      '  Uses the provider/model from Settings → Media. Returns the saved Library path.',
+    docShort: 'Generate a real image using the configured provider and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.generateImage(path.trim(), (body || '').trim());
       return `Generated image (${r.provider}) → ${r.path}`;
@@ -2030,9 +2030,9 @@ const TOOL_REGISTRY = {
     re: /\[\s*GENERATE_VIDEO\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*GENERATE_VIDEO\s*\]/i,
     requires: () => true,
     doc:
-      '- [GENERATE_VIDEO: <vault path, e.g. Videos/demo.mp4>]\n<what the video should show>\n[/GENERATE_VIDEO] — generate a real video and save to the vault.\n' +
-      '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved vault path.',
-    docShort: 'Generate a real video using the configured provider and save to the vault.',
+      '- [GENERATE_VIDEO: <Library path, e.g. Videos/demo.mp4>]\n<what the video should show>\n[/GENERATE_VIDEO] — generate a real video and file it in the Library.\n' +
+      '  Uses the provider/model from Settings → Media. Can take several minutes. Returns the saved Library path.',
+    docShort: 'Generate a real video using the configured provider and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.generateVideo(path.trim(), (body || '').trim());
       return `Generated video (${r.provider}) → ${r.path}`;
@@ -2295,7 +2295,7 @@ const TOOL_REGISTRY = {
       '- [ACK: <state>: <one-line note>] — tell the boss something they CANNOT see from the floor.\n' +
       '  Use it for: blocked (you need something to continue), awaiting_reply (you are waiting on someone).\n' +
       '  Examples:\n' +
-      '    [ACK: blocked: need vault access — please grant]\n' +
+      '    [ACK: blocked: need Library access — please grant]\n' +
       '    [ACK: awaiting_reply: asked Kenji which draft is current]\n' +
       '  Do NOT report starting or finishing — the office already shows the boss both.\n' +
       '  Put your ANSWER in the reply itself, never inside a marker: markers are stripped before the boss reads it.',
@@ -2334,7 +2334,7 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc:
       '- [REQUEST_ELEVATION: <one-line reason>]\n<details: which tools you need (file/shell), what specifically you\'ll do with them, why your current toolset isn\'t enough>\n[/REQUEST_ELEVATION] — ask the boss for file and shell access.\n' +
-      '  Requires boss APPROVAL. Use ONLY when ordinary tools (vault, web) genuinely cannot complete the task. Most work doesn\'t need this.\n' +
+      '  Requires boss APPROVAL. Use ONLY when ordinary tools (Library, web) genuinely cannot complete the task. Most work doesn\'t need this.\n' +
       '  Approval applies to your NEXT job — this reply finishes with the tools you already have. Tell the boss what you\'d do once approved so they can decide.',
     docShort: 'Ask the boss for file and shell access.',
     run: async () => '(REQUEST_ELEVATION is dispatched by the host after boss approval)',
@@ -2630,7 +2630,7 @@ function openedMarkers(text, known) {
 
    Otto, hired through NEW HIRE with the job description cleared so the
    default base applies, no vault box: "FILE-DELIVERY RULE: Any deliverable
-   longer than ~200 words … MUST be saved to the vault using [VAULT_NEW:
+   longer than ~200 words … MUST be saved to the Library using [VAULT_NEW:
    <path>]…" — the office's own MUST, for two tools it did not grant.
 
    A coworker that obeys gets its marker stripped and hands the boss a path
@@ -2671,13 +2671,13 @@ function reachedForNote(missing, agent) {
      not this ticket, and the two suites that lift these functions pin it. */
   const vaultBox = toolClaimLabel('VAULT_NEW');
   return want
-    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}${vault ? ', and connect a vault in Settings → Connections' : ''}, or @-mention a coworker who already has it.)_`
+    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}${vault ? ', and connect a Library in Settings → Connections' : ''}, or @-mention a coworker who already has it.)_`
     : media && vault
-    ? `_(${agent.name} reached for image work and for the vault. Both boxes are already on — what's missing is an image provider, which you pick in Settings → Media, and a vault connection, which you set up in Settings → Connections.)_`
+    ? `_(${agent.name} reached for image work and for the Library. Both boxes are already on — what's missing is an image provider, which you pick in Settings → Media, and a Library connection, which you set up in Settings → Connections.)_`
     : media
     ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
     : vault
-    ? `_(${agent.name} reached for the vault. Their ${vaultBox} box is already on — what's missing is the vault connection, which you set up in Settings → Connections.)_`
+    ? `_(${agent.name} reached for the Library. Their ${vaultBox} box is already on — what's missing is the Library connection, which you set up in Settings → Connections.)_`
     : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`;
 }
 
@@ -3708,9 +3708,9 @@ RULE OF THUMB:
 ═══════════════════════════════════════════════════════════════
 FILE-DELIVERY RULE
 ═══════════════════════════════════════════════════════════════
-Specialists save large deliverables (notes, reports, drafts, analyses over ~200 words) to the vault and return the path. You do NOT paste raw markdown/HTML/long content into chat.
+Specialists save large deliverables (notes, reports, drafts, analyses over ~200 words) to the Library and return the path. You do NOT paste raw markdown/HTML/long content into chat.
 
-When relaying back: cite the vault path and give a 1-3 sentence summary. Only paste full content if the boss explicitly asks "show me the raw text".
+When relaying back: cite the Library path and give a 1-3 sentence summary. Only paste full content if the boss explicitly asks "show me the raw text".
 
 ═══════════════════════════════════════════════════════════════
 APPROVAL PROTOCOL
@@ -3724,7 +3724,7 @@ OUTPUT STYLE
 ═══════════════════════════════════════════════════════════════
 - Briefly state your routing decision ("Handing this to Kip" / "Splitting between Mira and Kip in parallel") in one sentence before the delegation markers.
 - After a HANDOFF_TO block, STOP — don't keep talking.
-- After parallel DM_TOs return, give the boss ONE combined reply with the synthesized result and any vault paths.`;
+- After parallel DM_TOs return, give the boss ONE combined reply with the synthesized result and any Library paths.`;
 
 /* `selfName` is who this transcript is being built FOR, and it decides who
    the `assistant` turns belong to. Omit it and the recipient is the chief
@@ -4116,10 +4116,10 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const fileDelivery = canFile
     ? `
 
-FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the vault using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the vault path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`
+FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the Library using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the Library path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`
     : `
 
-FILE-DELIVERY RULE: There is no vault wired up this session, so there is nowhere to file a long deliverable — keep it in your reply and keep it tight. Do not claim you saved anything to a path.`;
+FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhere to file a long deliverable — keep it in your reply and keep it tight. Do not claim you saved anything to a path.`;
   const base = agent.systemPrompt
     ? `${identity}\n\n${agent.systemPrompt}`
     : `${identity} Be concise (2-4 sentences), report progress honestly, and flag anything that needs the boss's decision.${fileDelivery}`;

@@ -72,7 +72,7 @@ def main():
     # this the other way (hiding search under !_bridge) would silently take
     # away the ONLY way to find a note in a vault with more than a handful
     # of files, which is worse than a wrong answer.
-    search_inputs = re.findall(r'placeholder="Search vault…"', src)
+    search_inputs = re.findall(r'placeholder="Search the Library…"', src)
     check('the search box itself is not gated behind !_bridge',
           len(search_inputs) >= 1,
           'views/vault.jsx: the fix routes the ENDPOINT, not visibility — '

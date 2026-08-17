@@ -157,7 +157,7 @@ console.log(JSON.stringify(R));
         blk = re.search(r"name: '" + tool + r"'[\s\S]{0,900}?\n    \},", rt)
         body = blk.group(0) if blk else ''
         check(f'{tool} really does write to the cabinet',
-              'vault' in body.lower(),
+              'library' in body.lower(),
               f'hq-runtime.jsx: {tool} is filed under "in the cabinet" in '
               'app/floor.jsx — if it stopped saving to the vault, that line '
               'now tells the boss the wrong place')

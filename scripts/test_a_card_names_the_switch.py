@@ -133,7 +133,10 @@ def main():
         # anywhere near it. The chips carry a tooltip reading "Change these
         # in Settings → Roster", which for 'vault' is the wrong door — so
         # the line names its own, spelled as the panel heading prints it.
-        'vault':  ('markdown vault',      MEDIA),
+        # Was 'markdown vault' until the room was renamed; the heading in
+        # Settings → Connections now prints LIBRARY, and the card's own
+        # word for the room is the same one, which is the point of #130.
+        'vault':  ('library',             MEDIA),
     }
     unlock_tbl = brace_lift(bare, 'const CAN_DO_UNLOCK = {')
     unlock_keys = re.findall(r'^\s{2}(\w+):', unlock_tbl, re.M)
@@ -307,19 +310,19 @@ def main():
     r = run_js(scope + '\n' + js)
 
     check('Pixel offers images, in the future tense, with the switch named',
-          r['pixel_fresh'] == 'read your notes and make images once you pick an image provider',
+          r['pixel_fresh'] == 'read your Library and make images once you pick an image provider',
           f"{r['pixel_fresh']} — measured before this fix as just "
-          '"read your notes"')
+          '"read your Library"')
     check('...and drops the tense entirely once a provider is picked',
-          r['pixel_ready'] == 'make images and read your notes',
+          r['pixel_ready'] == 'make images and read your Library',
           f"{r['pixel_ready']} — a card still saying \"once you pick\" "
           'after the boss picked one is the same failure inverted')
     check('...and says nothing about the switch when it could not check',
-          r['pixel_unknown'] == 'read your notes',
+          r['pixel_unknown'] == 'read your Library',
           f"{r['pixel_unknown']} — absent is not false; do not tell a boss "
           'to set something you never managed to read')
     check('a real capability is never displaced by a future one',
-          r['crowded'].startswith('work with your files, read your notes and run code')
+          r['crowded'].startswith('work with your files, read your Library and run code')
           and 'once you pick' not in r['crowded'],
           f"{r['crowded']} — three things it can do today fill the card, "
           'and the unlock line waits its turn')
@@ -329,7 +332,7 @@ def main():
           'silently dropping it would make the card look complete')
     check('two off switches both queue behind the one real capability',
           r['vault_off'].startswith('search the web')
-          and 'read your notes once you connect a Markdown vault' in r['vault_off']
+          and 'read your Library once you connect one' in r['vault_off']
           and 'make images once you pick an image provider' in r['vault_off'],
           f"{r['vault_off']} — with two waiters, a merged list would put an "
           'errand for the boss ahead of the thing the coworker can do now')

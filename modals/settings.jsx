@@ -107,6 +107,13 @@ const SETTINGS_INDEX = [
   /* A boss looking for this types "search", and until now the settings
      search answered nothing because the panel was mounted nowhere. Both
      halves of `search.requires()` live behind this one entry. */
+  /* The door the coworker cards send the boss to by name — "read your
+     Library once you connect one in Settings → Connections" — and until
+     #130 it was the one Connections panel with no entry here at all, so
+     the settings search answered nothing for it. `vault` and `obsidian`
+     stay in the keywords on purpose: a boss who learned the old word,
+     or who came looking for the Obsidian folder, still lands on it. */
+  { tab:'connections', label:'Library', hint:'the folder your coworkers file decks, documents, research and notes into', kw:'connections library vault markdown obsidian notes folder directory cabinet documents decks research artifacts rest oci bucket' },
   { tab:'connections', label:'Web search', hint:'give coworkers a real [SEARCH:] tool — without it they can only fetch a URL you name', kw:'connections brave search web internet google lookup research news key api tool' },
   { tab:'agents', label:'Coworker brain & creativity', hint:'per-coworker brain settings', kw:'roster model temperature creativity brain coworker' },
   { tab:'agents', label:'Agent tools', hint:'which tools each agent may use', kw:'tools catalog permissions' },
