@@ -15024,3 +15024,74 @@ nobody was looking at yet. When one branch of a conditional learns something
 about the world, the other branches did not. And an invitation is a claim
 about the future: the test of it is not whether it is well-meant but whether
 the next click agrees with it.
+
+## The dialog took the name, closed, and said nothing
+
+Driven live on the Workspace — the DEFAULT project mode. Files pane, ＋,
+type `docs/notes`, OK:
+
+    dialog   closes
+    toast    —
+    tree     unchanged
+    disk     unchanged
+
+The same keystrokes in the classic Projects view answer out loud:
+
+    ✕ Folder name can't contain slashes.
+
+Both Workspace prompts ended in one silent return:
+
+    if (!name || /[\/\\]/.test(name)) return;
+
+which files three different events under the same nothing: an empty name
+(the boss cancelling — silence is right), an unchanged rename (same), and a
+name the office REFUSED. Those are not the same event. A dialog that accepts
+input is itself a claim — "this is a name I can use" — so the silence after
+OK reads as success, and the boss goes to the tree to look for a folder that
+was never made.
+
+The office had three doors onto the same folder and three answers to a bad
+name. Classic explains. The upload door renames the bad characters and says
+so on the receipt (#137). The default mode — the one a new boss is actually
+standing in — was the only door that declined without speaking. A product
+whose modes answer the same input differently teaches the boss that the
+rules change with the furniture.
+
+**The fix** is the smallest one that makes the refusal audible: the
+Workspace prompts split the cancel from the refusal and borrow classic's
+exact sentences — "Folder name can't contain slashes." / "Name can't contain
+slashes." — on purpose, so the two modes speak with one voice. An empty or
+unchanged name stays a silent no-op: that is the boss declining, not the
+office refusing, and a toast there would scold a cancel.
+
+Verified live on the rebuilt bundle, same drive: `docs/notes` now draws the
+error toast and nothing lands on disk; `docs` creates the folder, says
+"Created \"docs\"", and the tree shows it without a refresh.
+
+**Tests.** `scripts/test_a_refusal_is_audible_in_both_modes.py` lifts all
+four handlers — both modes' newFolder and renameEntry, first hit Workspace,
+second classic — and runs them under node against stubbed prompt, client and
+toast. It pins: a slashed name is refused out loud with the reason, and
+nothing is created or renamed behind the refusal; a cancel stays silent; the
+good path still lands at the right path with a success toast; and the two
+modes refuse the same input in THE SAME WORDS — parity checked by comparing
+the rendered sentences, not by reading either literal.
+
+Fire-tested with eleven arms: both silent swallows restored, the refusal
+with no reason in it, the refusal claiming success, the refusal speaking and
+then making the folder anyway, a cancel drawing the refusal meant for a bad
+name (both prompts), the two modes drifting into different words, classic
+going silent instead — the same gap re-opening from the other side — and the
+good path breaking under the fix at either door. All eleven caught,
+post-restore baseline green. 181/181 suites.
+
+**Lesson.** `if (!name || /[\/\\]/.test(name)) return;` is one line that
+merges two decisions — "the boss cancelled" and "the office refused" — and
+silence is only the right answer to the first. Guards accrete conditions
+because `||` is cheap, and every condition folded into a silent return
+inherits a silence that was chosen for a different event. The classic view
+had already split them; the mode that replaced it as the default rewrote the
+guard from memory and folded them back together. When one surface learns to
+say no out loud, the surfaces that share its verbs have to learn the same
+sentence — or the product's honesty depends on which room the boss is
+standing in.

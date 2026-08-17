@@ -274,14 +274,28 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
 
   /* ── file-manager actions (same backbone as the classic Projects view) ── */
   const fsOK = () => (C && C.fsMkdir) ? C : null;
+  /* A refusal must be audible. These two prompts took a name, closed, and —
+     when the name held a slash — did nothing at all: no folder, no toast, no
+     word. The dialog accepting the input is itself a claim ("this is a name
+     I can use"), so the silence afterwards reads as success, and the boss
+     goes looking for a folder that was never made. The classic view refuses
+     the same keystrokes out loud (ProjectsView below, "Folder name can't
+     contain slashes.") and the upload door renames bad characters and says
+     so — this, the DEFAULT mode, was the only door on the folder that
+     declined without speaking. Same words as classic, on purpose: the two
+     modes must not answer the same input differently. An empty or unchanged
+     name stays a silent no-op — that is the boss cancelling, not the office
+     refusing. */
   const newFolder = async () => {
     if (!project || !fsOK()) { toast('error', 'Working with files needs a newer HQ — update and restart.'); return; }
-    const name = ((await window.hqPrompt('New folder name:')) || '').trim(); if (!name || /[\/\\]/.test(name)) return;
+    const name = ((await window.hqPrompt('New folder name:')) || '').trim(); if (!name) return;
+    if (/[\/\\]/.test(name)) { toast('error', 'Folder name can\'t contain slashes.'); return; }
     try { await C.fsMkdir(joinPath(project.path, name)); setTreeNonce(n => n + 1); toast('success', `Created "${name}"`); } catch (e) { snag("Couldn't make that folder", e); }
   };
   const renameEntry = async (entry) => {
     if (!fsOK()) return;
-    const next = ((await window.hqPrompt('Rename to:', { value: entry.name, okLabel: 'Rename' })) || '').trim(); if (!next || next === entry.name || /[\/\\]/.test(next)) return;
+    const next = ((await window.hqPrompt('Rename to:', { value: entry.name, okLabel: 'Rename' })) || '').trim(); if (!next || next === entry.name) return;
+    if (/[\/\\]/.test(next)) { toast('error', 'Name can\'t contain slashes.'); return; }
     const to = entry.path.slice(0, Math.max(0, entry.path.length - entry.name.length)) + next;
     try { await C.fsRename(entry.path, to); setTreeNonce(n => n + 1); if (openFileRef.current && isUnder(openFileRef.current.path, entry.path)) setOpenFile(o => ({ ...o, path: to + o.path.slice(entry.path.length) })); toast('success', `Renamed to "${next}"`); } catch (e) { snag("Couldn't rename that", e); }
   };
