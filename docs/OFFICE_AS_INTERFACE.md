@@ -14701,3 +14701,110 @@ those two topics.
 out loud with their units attached. "Fewer links than items" passes the eye
 and fails the sentence — and a threshold that fails the sentence will be
 wrong at exactly the scale nobody tested it at.
+
+## Filed 3 files in the Library, and the Library showed two folders
+
+Driven on the live office through the 📤 button's own hidden file input —
+the same door a boss uses — four files at once:
+
+    toast   "Filed 1 file in the Library."
+    disk     board-pack.pdf  chart.png  q3-board-deck.pptx  vendor-summary.html
+    tree     ▸ 📁 Deliveries
+             ▸ 📁 Research
+    list     6 files, every one a .md, none of them the four
+
+The office accepted the files, wrote them exactly where it said it would,
+told the boss it had, and then the room they were filed into showed two
+folders and nothing else. §3.6 calls this surface the cabinet — the story
+of the whole product. A cabinet that hides what you put in it is not one.
+
+Three doors answer the question "what is in the Library", and all three
+answered differently:
+
+    /vault/list      root.rglob('*.md')
+    /vault/search    root.rglob('*.md') + root.rglob('*.html')
+    /vault/note      read_text('utf-8') → 500 "'utf-8' codec can't decode
+                                           byte 0x89 in position 0"
+
+So a search for "vendor" returned `vendor-summary.html` while the file
+tree in the same pane said no such file existed — one room in the Library
+contradicting the other, four inches apart. And a boss who clicked a filed
+deck got a Python codec error, verbatim: `vaultRead` raises `j.error`
+straight out of the response body.
+
+The search glob is the interesting one, because it was widened deliberately
+and correctly. Its comment says pages filed by the "Simple page" starter
+task are real files on disk and a `*.md` search would never find them —
+true, and it left search reading a WIDER set than the listing beside it.
+A fix that makes one door tell the truth can leave two doors disagreeing.
+
+There was also nowhere for a deck to go. The view has had an `isBinary`
+branch since the encrypted bridge vault started sending that flag, and the
+whole branch is a notice telling the boss to go and look at another
+website — the entire truth in bridge mode, false on every server backend,
+where the file is on the boss's own disk. No server backend ever set
+`isBinary`, so the branch had never once run; the moment the listing
+widened, it would have started lying. §5.
+
+**The fix.** One set of extensions the editor can actually open,
+`_VAULT_TEXT_EXT`, read by every door that answers the question — the
+listing decides `isBinary` from it, search decides what it can read from
+it. `.html` is on the list because the Library previews pages in a
+sandboxed `srcDoc` iframe with no `allow-same-origin`; `.svg` is not,
+because it is markup that can carry script and its only reader would be an
+`<img>` tag.
+
+Then `GET /vault/file`, the raw door, because "the editor can't open this"
+is only an honest sentence with a button next to it (§7). Same
+`_vault_resolve` traversal guard as every other path. Images, audio, video
+and PDFs come back inline; everything else — including any page or SVG a
+coworker wrote — comes back as an attachment with `nosniff` and a sandbox
+policy, so markup this office did not author can never execute at this
+office's own origin.
+
+The view routes on the flag it always had: server-backend files the editor
+can't open get a panel naming the kind, the size and a Download button,
+with an inline preview for images; the ai.cafreso.com notice stays, gated
+on actually being in the bridge. No Preview checkbox and no Save button
+over a file the textarea never held — "Saved" on a deck would be a claim
+nothing in that pane can make. The tree moves the extension into the chip
+the BASE tag already uses, so `slides.pptx` and a note called `slides` are
+no longer one glyph apart. And the editor's door, asked for a deck, now
+refuses with 415 and the path to the raw door instead of a codec string.
+
+Deliberately unchanged: the graph. It is a map of wikilinks between notes,
+a `.pptx` has none, and an isolated node per attachment would only make
+every "structural gap" reading worse. Verified after the change — same 23
+items, 22 links, Topics 8, same 39%/35% split as #135 pinned.
+
+**Tests.** `scripts/test_the_library_shows_what_it_filed.py` boots a real
+serve.py over a temp Library, uploads five files through `/vault/upload`,
+and asks every door where they went: everything filed is listed, the flag
+is set and set correctly, titles keep the extension for anything the
+editor can't open, `/vault/file` returns the bytes byte-for-byte with the
+right disposition, refuses to leave the folder, and the editor's door
+refuses a binary with no codec vocabulary in the sentence. Plus the pairing
+check that is the second half of this defect: **no search hit for a file
+the listing denies exists.**
+
+Fire-tested with fourteen arms: the listing glob put back, the oci branch
+put back to its own hand-built rows, `isBinary` forced false, titles
+stripped, the raw door made unreachable, made inline for everything, made
+sniffable, made to resolve its own paths, the decode catch narrowed so the
+codec error dumps again, search drifted back to its own wider glob, the
+bridge notice ungated, Save and Preview restored over a deck, both panes
+unbranched from the panel, and the flag dropped in `buildTree`. All
+fourteen caught, post-restore baseline green.
+
+Verified live on the office that reported it: a `.docx` filed through the
+📤 input appears in the tree tagged DOCX without a refresh, opens to a
+panel reading "Presentation · 8 B" / "⬇ DOWNLOAD" with a working
+`/vault/file` link, and a filed PNG renders in place at its real
+dimensions.
+
+**Lesson.** When one surface answers a question the product asks in three
+places, widening one of them is half a fix — and the half that is left is
+worse than the whole defect, because now two rooms disagree in front of
+the boss instead of one room being quietly incomplete. Before shipping a
+widened filter, find every other reader of the same question and make them
+one reader.

@@ -711,7 +711,7 @@ export function VaultTab() {
             <div className="lbl">Status</div>
             <div className="sub">
               {status.ociBucket
-                ? `✓ object storage · bucket ${status.ociBucket} · ${files?.length ?? '…'} note${files?.length === 1 ? '' : 's'} indexed`
+                ? `✓ object storage · bucket ${status.ociBucket} · ${files?.length ?? '…'} file${files?.length === 1 ? '' : 's'} indexed`
                 : '✕ no bucket named — this office was provisioned without one'}
               {msg && <span style={{marginLeft:8, color: msg.ok ? '#4a8c4a' : 'var(--error)'}}>{msg.text}</span>}
             </div>
@@ -751,7 +751,7 @@ export function VaultTab() {
             <div className="lbl">Status</div>
             <div className="sub">
               {status.fsExists
-                ? `✓ ${files?.length ?? '…'} note${files?.length === 1 ? '' : 's'} indexed`
+                ? `✓ ${files?.length ?? '…'} file${files?.length === 1 ? '' : 's'} indexed`
                 : (draftRoot ? `path not yet saved` : 'not configured')}
               {msg && <span style={{marginLeft:8, color: msg.ok ? '#4a8c4a' : 'var(--error)'}}>{msg.text}</span>}
             </div>
@@ -782,7 +782,7 @@ export function VaultTab() {
             <div className="lbl">Status</div>
             <div className="sub">
               {status.restReachable
-                ? `✓ plugin reachable · ${files?.length ?? '…'} note${files?.length === 1 ? '' : 's'} indexed`
+                ? `✓ plugin reachable · ${files?.length ?? '…'} file${files?.length === 1 ? '' : 's'} indexed`
                 : (status.restDetail ? `✕ ${status.restDetail}` : 'not yet tested')}
               {msg && <span style={{marginLeft:8, color: msg.ok ? '#4a8c4a' : 'var(--error)'}}>{msg.text}</span>}
             </div>

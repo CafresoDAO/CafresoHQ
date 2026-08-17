@@ -892,7 +892,7 @@ function buildTree(files) {
       const isLast = i === parts.length - 1;
       const seg = parts[i];
       if (isLast) {
-        node.children.set(seg, { name: seg, path: f.path, title: f.title || seg.replace(/\.md$/, ''), mtime: f.mtime, size: f.size, isFolder: false });
+        node.children.set(seg, { name: seg, path: f.path, title: f.title || seg.replace(/\.md$/, ''), mtime: f.mtime, size: f.size, isBinary: !!f.isBinary, isFolder: false });
       } else {
         if (!node.children.has(seg)) {
           const folderPath = parts.slice(0, i + 1).join('/');
@@ -937,7 +937,16 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
       );
     }
     const isBase = /\.base$/i.test(n.name);
-    const display = n.name.replace(/\.md$/i, '');
+    /* A deck sitting between two notes should look like a deck. Every row
+       used to render as bare text with only `.md` stripped, so `slides.pptx`
+       and `slides` — a real note of that name — were one glyph apart in a
+       tree the boss scans by shape. The extension moves into the tag the
+       BASE chip already uses, so the name stays readable and the KIND is the
+       thing that stands out. Only for files the editor can't open: a `.md`
+       carries no tag, because the tree is mostly notes and a chip on every
+       row is a chip on none. */
+    const binExt = n.isBinary ? (n.name.match(/\.([A-Za-z0-9]+)$/) || [])[1] : null;
+    const display = binExt ? n.name.slice(0, -(binExt.length + 1)) : n.name.replace(/\.md$/i, '');
     return (
       <div key={n.path}
         className={`tree-row tree-file ${openPath === n.path ? 'active' : ''}`}
@@ -945,6 +954,7 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
         onClick={()=>onOpen(n.path)}>
         <span className="tree-name">{display}</span>
         {isBase && <span className="tree-tag">BASE</span>}
+        {binExt && !isBase && <span className="tree-tag">{binExt.toUpperCase()}</span>}
       </div>
     );
   };

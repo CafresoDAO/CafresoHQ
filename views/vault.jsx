@@ -30,6 +30,70 @@ function HtmlFramePreview({ html }) {
   );
 }
 
+/* A deck is not a note, and the Library holds both. Everything below exists
+   because the 📤 button files anything the boss picks and says so — "Filed 3
+   files in the Library" — while the pane beside it could only ever render
+   markdown, so the honest half of the product ended at the toast.
+
+   What a boss is owed here is small and specific: see it in the tree, click
+   it, be told what it is, and be able to get it back out. Not an editor
+   pretending a PowerPoint is text. */
+const _BIN_KINDS = [
+  [/\.(pptx?|key|odp)$/i,                'Presentation',  '📊'],
+  [/\.(docx?|odt|rtf|pages)$/i,          'Document',      '📄'],
+  [/\.(xlsx?|ods|numbers)$/i,            'Spreadsheet',   '📈'],
+  [/\.pdf$/i,                            'PDF',           '📕'],
+  [/\.(png|jpe?g|gif|webp|bmp|avif|ico|tiff?)$/i, 'Image', '🖼'],
+  [/\.svg$/i,                            'Vector image',  '🖼'],
+  [/\.(mp3|wav|m4a|aac|flac|ogg)$/i,     'Audio',         '🎧'],
+  [/\.(mp4|mov|webm|mkv|avi)$/i,         'Video',         '🎬'],
+  [/\.(zip|tar|gz|tgz|7z|rar)$/i,        'Archive',       '🗜'],
+];
+const _binKind = (name) => {
+  for (const [re, word, glyph] of _BIN_KINDS) if (re.test(name)) return [word, glyph];
+  const ext = (name.match(/\.([A-Za-z0-9]+)$/) || [])[1];
+  return [ext ? ext.toUpperCase() + ' file' : 'File', '📎'];
+};
+const _fileSize = (n) => {
+  if (!(n > 0)) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+  return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+};
+
+function FiledFilePanel({ path, size }) {
+  const name = (path || '').split('/').pop();
+  const url = '/vault/file?path=' + encodeURIComponent(path);
+  const [kind, glyph] = _binKind(name);
+  /* Images render here rather than only downloading — a chart a coworker
+     filed is a thing to look at, and /vault/file serves image types inline.
+     Everything else gets its glyph, its kind and its size: enough for the
+     boss to know what they're holding before they spend a click on it. */
+  const isImage = kind === 'Image';
+  return (
+    <div className="vault-preview vault-preview-file" style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', gap: 10, textAlign: 'center', padding: 20,
+      overflow: 'auto',
+    }}>
+      {isImage
+        ? <img src={url} alt={name} style={{maxWidth:'100%',maxHeight:'60%',objectFit:'contain'}} />
+        : <div style={{fontSize:44,lineHeight:1}}>{glyph}</div>}
+      <div style={{fontSize:12,fontWeight:600,wordBreak:'break-all'}}>{name}</div>
+      <div style={{fontSize:10,opacity:0.65}}>
+        {kind}{_fileSize(size) ? ' · ' + _fileSize(size) : ''}
+      </div>
+      <div style={{fontSize:10,opacity:0.65,maxWidth:340}}>
+        {isImage
+          ? 'Filed in the Library. The editor only opens text, so this is the file itself.'
+          : "Filed in the Library. The editor can't open this format — download it to work on it."}
+      </div>
+      <a className="px-btn primary" href={url} download={name}
+         style={{fontSize:10,textDecoration:'none',marginTop:4}}>⬇ DOWNLOAD</a>
+    </div>
+  );
+}
+
 function VaultView({ agents = null, onOpenSettings } = {}) {
   const [status, setStatus] = useSV(null);
   const [files, setFiles] = useSV([]);
@@ -246,10 +310,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openByPath = async (path) => {
     if (!path) return;
-    // Binary files (images, video, audio) can't open in the text editor
+    // Files the text editor can't open — decks, PDFs, images, archives.
     const fileMeta = files.find(f => f.path === path);
     if (fileMeta?.isBinary) {
-      say(`"${fileMeta.title}" is an image or media file — open it from the Library at ai.cafreso.com to view it.`, 'info');
+      /* Bridge mode has no local file to hand back: the bytes live encrypted
+         in the parent shell and VaultBridge exposes read/write for text only,
+         so the notice below is still the whole truth there.
+
+         On a server backend it was never true. Until now `isBinary` was set
+         by exactly one producer — the encrypted bridge index — so this notice
+         was the ONLY thing that could happen to a non-text file, and every
+         server-backed office got it: a boss with a deck in a folder on their
+         own disk, sent to another website to look at it. §5. */
+      if (_bridge) {
+        say(`"${fileMeta.title}" is an image or media file — open it from the Library at ai.cafreso.com to view it.`, 'info');
+        return;
+      }
+      if (openNoteRef.current && openNoteRef.current.dirty) {
+        await saveNoteRef.current({ quiet: true });
+      }
+      setErr(null); setSaveState('');
+      setOpenNote({ path, id: null, content: '', dirty: false,
+                    binary: true, size: fileMeta.size || 0 });
+      if (_isMobileV) setVaultTab('editor');
       return;
     }
     // Flush any dirty buffer before swapping files — no silent edit loss.
@@ -623,20 +706,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             <div className="vault-edit-pane" style={{flex:1,display:'flex',flexDirection:'column',borderRight:'none'}}>
               <div className="vault-edit-head">
                 <div style={{fontSize:10,opacity:0.7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{openNote.path}</div>
-                <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
-                  <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
-                </label>
+                {/* Preview and Save belong to the editor, and the editor is
+                    not open. A "Saved" chip over a deck the textarea never
+                    held is a claim about a file nothing here can make. */}
+                {!openNote.binary && (
+                  <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
+                    <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
+                  </label>
+                )}
                 {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
                 {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
                 {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
                   title="Open in Obsidian">⧉</button>}
-                <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
-                  onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
-                  {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
-                </button>
+                {!openNote.binary && (
+                  <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+                    onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
+                    {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+                  </button>
+                )}
                 <button className="px-btn ghost" onClick={() => { closeNote(); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
-              {preview ? (
+              {openNote.binary ? (
+                <FiledFilePanel path={openNote.path} size={openNote.size} />
+              ) : preview ? (
                 _isHtmlPath(openNote.path)
                   ? <HtmlFramePreview html={openNote.content} />
                   : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
@@ -690,17 +782,21 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         <div className={`vault-edit-pane${!showGraph ? ' fullspan' : ''}`}>
           <div className="vault-edit-head">
             <div style={{fontSize:10,opacity:0.7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{openNote.path}</div>
-            <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
-              <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
-            </label>
+            {!openNote.binary && (
+              <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
+                <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
+              </label>
+            )}
             {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
             {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
             {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
               title="Open in Obsidian">⧉</button>}
-            <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
-              onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
-              {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
-            </button>
+            {!openNote.binary && (
+              <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+                onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
+                {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+              </button>
+            )}
             {!showGraph && (
               <button className="px-btn ghost" onClick={() => setGraphMinimized(false)} title="Show graph">🧠</button>
             )}
@@ -711,7 +807,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               style={{fontSize:11}}
             >✕</button>
           </div>
-          {preview ? (
+          {openNote.binary ? (
+            <FiledFilePanel path={openNote.path} size={openNote.size} />
+          ) : preview ? (
             _isHtmlPath(openNote.path)
               ? <HtmlFramePreview html={openNote.content} />
               : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />

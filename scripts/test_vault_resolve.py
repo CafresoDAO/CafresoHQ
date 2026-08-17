@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -81,11 +82,22 @@ def main() -> int:
     src = (ROOT / 'serve.py').read_text(encoding='utf-8')
     search_block = src[src.find("if path == '/vault/search'"):]
     search_block = search_block[:search_block.find('\n\n\n')]
-    check("search globs *.html alongside *.md",
-          "root.rglob('*.html')" in search_block,
-          "serve.py: /vault/search only globbed *.md — a page deliverable "
-          "(the one non-.md format the vault ever stores) was invisible to "
-          "search even after _vault_resolve stopped mangling its name")
+    # This used to grep for `root.rglob('*.html')`, which was the mechanism
+    # of the day rather than the promise. Search now reads the one set of
+    # openable extensions shared with /vault/list — the Library holds decks
+    # and PDFs too, and three doors each carrying their own glob is what let
+    # search return a hit for a file the file tree denied existed. The
+    # promise is unchanged and is checked in two halves: search asks the
+    # shared set, and a page is in it.
+    check("search reads the shared list of openable types",
+          '_VAULT_TEXT_EXT' in search_block,
+          "serve.py: /vault/search carries its own glob again — the listing "
+          "beside it reads _VAULT_TEXT_EXT, and two readers of one question "
+          "is how they came to disagree in front of the boss")
+    check(".html is on that list, so a page deliverable is findable",
+          re.search(r"_VAULT_TEXT_EXT\s*=\s*frozenset\(\{[^}]*'\.html'", src) is not None,
+          "serve.py: a page deliverable (the one non-.md format the front "
+          "door's third starter card produces) is invisible to search again")
 
     print()
     if FAILS:

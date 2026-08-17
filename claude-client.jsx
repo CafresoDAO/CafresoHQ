@@ -1808,7 +1808,9 @@ async function vaultProbe() {
     if (!s.configured) return { ok: false, detail: 'no Library folder configured' };
     if (!s.exists) return { ok: false, detail: `path not found: ${s.root}` };
     const files = await vaultList();
-    return { ok: true, detail: `${files.length} note${files.length===1?'':'s'} · ${s.root}` };
+    // "files", not "notes" — the listing carries decks, PDFs and images now,
+    // and this string is the office's own answer to "is the Library working".
+    return { ok: true, detail: `${files.length} file${files.length===1?'':'s'} · ${s.root}` };
   } catch (e) { return { ok: false, detail: e.message }; }
 }
 

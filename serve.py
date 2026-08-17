@@ -15,8 +15,8 @@ import base64
 import hashlib
 import http.client
 import http.server
-import itertools
 import json
+import mimetypes
 import os
 # ── env compat shim: mirror legacy OPENCLAW_* vars to CAFRESOHQ_* ───────────────
 # Deployed container/entrypoint still export OPENCLAW_* names; mirror them so the
@@ -946,6 +946,59 @@ def _discover_obsidian_vaults() -> list:
     return vaults
 
 
+# Every extension the Library's editor can actually open. One set, read by
+# all three doors that answer "what is in the Library" — /vault/list decides
+# `isBinary` from it, /vault/search decides what it can read, /vault/file
+# decides what it will hand back raw. They disagreed before: the list globbed
+# '*.md', search globbed '*.md' plus '*.html', and a boss who uploaded a page
+# got a search hit for a file the list said did not exist.
+#
+# `.html` is on this list because the Library previews it in a sandboxed
+# srcDoc iframe with no allow-same-origin (views/vault.jsx HtmlFramePreview),
+# never at the office's own origin. `.svg` is deliberately NOT — it is markup
+# that can carry script, and its only reader would be an <img> tag.
+_VAULT_TEXT_EXT = frozenset({
+    '.md', '.markdown', '.txt', '.html', '.htm', '.csv', '.json',
+    '.yml', '.yaml', '.xml', '.log', '.base',
+})
+
+
+def _vault_entry(rel: str, mtime: int, size: int) -> dict:
+    """One row of /vault/list, for any backend.
+
+    `isBinary` is the flag the Library view reads to decide whether a file
+    goes to the editor or to the download door — the view has handled it
+    since the encrypted-bridge vault started sending it, and no server
+    backend ever did, because no server backend listed anything but '*.md'.
+
+    The extension stays in the title for everything the editor cannot open:
+    "q3-board-deck" and "q3-board-deck.pptx" are different promises, and
+    only one of them is a deck.
+    """
+    name = rel.rsplit('/', 1)[-1]
+    ext = pathlib.PurePosixPath(name).suffix.lower()
+    return {
+        'path': rel,
+        'title': name[:-3] if ext == '.md' else name,
+        'mtime': mtime,
+        'size': size,
+        'isBinary': ext not in _VAULT_TEXT_EXT,
+    }
+
+
+# Types a browser can safely render in place. Everything else — decks,
+# documents, archives, and anything unrecognised — is handed back as an
+# attachment, so a filed .html or .svg can never execute at the office's
+# own origin with the office's own cookies.
+_VAULT_INLINE_PREFIXES = ('image/', 'audio/', 'video/')
+
+
+def _vault_inline_ok(mime: str) -> bool:
+    if mime == 'image/svg+xml':
+        return False
+    return mime == 'application/pdf' or mime.startswith(_VAULT_INLINE_PREFIXES)
+
+
 def _vault_resolve(rel: str) -> pathlib.Path:
     """Resolve `rel` (e.g. "Daily/2026-04-25.md") under the vault directory with
     traversal protection. Raises ValueError if escape is attempted or unset."""
@@ -1113,12 +1166,16 @@ def _rest_list_all() -> list:
                 if entry.lstrip('/').startswith('.'):
                     continue
                 walk(full)
-            elif entry.endswith('.md'):
+            elif not entry.startswith('.'):
                 # Plugin's listing doesn't include mtime/size in the simple list;
                 # fetch a stat-like via the file endpoint headers if needed. For
                 # speed we just stub them. The graph + browse views still work.
-                title = pathlib.PurePosixPath(full).stem
-                out.append({'path': full, 'title': title, 'mtime': 0, 'size': 0})
+                #
+                # Attachments included. An Obsidian vault holds its images and
+                # PDFs alongside the notes that embed them, and this walk used
+                # to drop every one of them — so a boss on the REST backend saw
+                # a Library missing exactly the files Obsidian itself shows.
+                out.append(_vault_entry(full, 0, 0))
     walk('')
     out.sort(key=lambda f: f['path'])
     return out
@@ -3543,37 +3600,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     files = []
                     for obj in resp.data.objects:
                         rel = obj.name[len(prefix):]  # strip user prefix
-                        if not rel.endswith('.md') or rel.startswith('.'):
+                        if not rel or rel.endswith('/'):
+                            continue
+                        if any(part.startswith('.') for part in rel.split('/')):
                             continue
                         mtime = 0
                         if obj.time_modified:
                             try: mtime = int(obj.time_modified.timestamp() * 1000)
                             except Exception: pass
-                        files.append({
-                            'path': rel,
-                            'title': rel.rsplit('/', 1)[-1].removesuffix('.md'),
-                            'mtime': mtime,
-                            'size': obj.size or 0,
-                        })
+                        files.append(_vault_entry(rel, mtime, obj.size or 0))
                     files.sort(key=lambda f: f['mtime'], reverse=True)
                     return self._send_json(200, {'files': files[:500]})
                 except Exception as e:
                     return self._send_json(502, {'error': f'oci: {e}'})
             root = pathlib.Path(_vault_root).resolve()
             files = []
-            for p in root.rglob('*.md'):
+            # Everything filed, not just '*.md'. The 📤 button on this very
+            # screen is titled "Upload files into the Library", takes any file
+            # a boss picks, writes it into this folder and reports "Filed N
+            # files in the Library" — and then this listing was the room those
+            # files were filed into. A deck, a PDF and a chart went in through
+            # the front door and the Library showed two folders and nothing
+            # else. §3.6 calls this surface the cabinet; a cabinet that hides
+            # what you put in it is not one.
+            for p in root.rglob('*'):
+                if not p.is_file():
+                    continue
                 try:
-                    rel = str(p.relative_to(root)).replace('\\', '/')
+                    parts = p.relative_to(root).parts
                 except ValueError:
                     continue
-                if any(part.startswith('.') for part in p.relative_to(root).parts):
+                if any(part.startswith('.') for part in parts):
                     continue
                 try:
                     st = p.stat()
-                    files.append({'path': rel, 'title': p.stem,
-                                  'mtime': int(st.st_mtime * 1000), 'size': st.st_size})
                 except OSError:
                     continue
+                files.append(_vault_entry('/'.join(parts),
+                                          int(st.st_mtime * 1000), st.st_size))
             files.sort(key=lambda f: f['mtime'], reverse=True)
             return self._send_json(200, {'files': files[:500]})
 
@@ -3621,12 +3685,80 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(404, {'error': 'not found'})
             try:
                 text = target.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                # The editor's door, asked for a deck. It used to answer with
+                # `'utf-8' codec can't decode byte 0x80 in position 132`, which
+                # the client raises verbatim — a boss who clicked a filed
+                # PowerPoint got a Python codec error. Now the Library never
+                # asks (isBinary routes it elsewhere), and if something does,
+                # the answer says what the file is and where its real door is.
+                return self._send_json(415, {
+                    'error': 'not a text file — open it from the Library, '
+                             'or download it',
+                    'download': '/vault/file?path=' + urllib.parse.quote(rel),
+                })
             except Exception as e:
                 return self._send_json(500, {'error': str(e)})
             self.send_response(200)
             self.send_header('content-type', 'text/markdown; charset=utf-8')
             self.end_headers()
             try: self.wfile.write(text.encode('utf-8'))
+            except (BrokenPipeError, ConnectionResetError): pass
+            return
+
+        # ---------- Raw file (the door for everything the editor can't open) --
+        # A deck, a PDF, a chart. Before this the Library could accept one,
+        # confirm it, and then had nowhere at all to send the boss — the
+        # closest thing to a door was a notice telling them to go and look on
+        # another website. §7: every honest sentence needs a way forward, and
+        # "we can't show this here" is only honest with a door beside it.
+        if path == '/vault/file' and method == 'GET':
+            rel = (qs.get('path', [''])[0] or '').strip()
+            if not rel:
+                return self._send_json(400, {'error': 'missing path'})
+            name = rel.rsplit('/', 1)[-1]
+            try:
+                if _vault_backend == 'rest':
+                    s, _h, data = _obsidian_request(
+                        'GET', '/vault/' + urllib.parse.quote(rel),
+                        extra_headers={'Accept': 'application/octet-stream'})
+                    if s == 404:
+                        return self._send_json(404, {'error': 'not found'})
+                    if s != 200:
+                        return self._send_json(s, {'error': data[:300].decode('utf-8', 'replace')})
+                elif _vault_backend == 'oci':
+                    cli = _oci_object_client()
+                    data = cli.get_object(_oci_vault_namespace, _oci_vault_bucket,
+                                          _oci_obj_key(rel)).data.content
+                else:
+                    try:
+                        target = _vault_resolve(rel)
+                    except ValueError as e:
+                        return self._send_json(400, {'error': str(e)})
+                    if not target.is_file():
+                        return self._send_json(404, {'error': 'not found'})
+                    data = target.read_bytes()
+            except Exception as e:
+                err = str(e)
+                if '404' in err or 'NoSuchKey' in err or 'ObjectNotFound' in err:
+                    return self._send_json(404, {'error': 'not found'})
+                return self._send_json(502, {'error': f'{_vault_backend}: {e}'})
+            mime = mimetypes.guess_type(name)[0] or 'application/octet-stream'
+            self.send_response(200)
+            self.send_header('content-type', mime)
+            self.send_header('content-length', str(len(data)))
+            # An .html or .svg a coworker wrote is markup this office did not
+            # author, and this route serves it from the office's own origin.
+            # Attachment + nosniff + a sandbox policy means the browser saves
+            # it instead of running it here; the Library's own page preview
+            # (sandboxed srcDoc, no allow-same-origin) is where pages render.
+            disp = 'inline' if _vault_inline_ok(mime) else 'attachment'
+            self.send_header('content-disposition',
+                             '%s; filename="%s"' % (disp, name.replace('"', '')))
+            self.send_header('x-content-type-options', 'nosniff')
+            self.send_header('content-security-policy', 'sandbox')
+            self.end_headers()
+            try: self.wfile.write(data)
             except (BrokenPipeError, ConnectionResetError): pass
             return
 
@@ -3834,13 +3966,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             root = pathlib.Path(_vault_root).resolve()
             ql = query.lower()
             hits = []
-            # .html joins .md now that _vault_resolve keeps a real extension
-            # instead of forcing '.md' onto it (see that function) — pages
-            # filed by the "Simple page" starter task are real files on disk
-            # again, and a search that only globbed *.md would never find
-            # the one deliverable format the front door's third starter card
-            # produces.
-            for p in itertools.chain(root.rglob('*.md'), root.rglob('*.html')):
+            # .html joined .md here first, because _vault_resolve keeps a real
+            # extension instead of forcing '.md' onto it (see that function) —
+            # pages filed by the "Simple page" starter task are real files on
+            # disk, and a search that only globbed *.md would never find the
+            # one deliverable format the front door's third starter card
+            # produces. That fix left search reading a WIDER set than the
+            # listing beside it, which is its own dishonesty: a query for
+            # "vendor" returned `vendor-summary.html`, and the file tree in the
+            # same pane said no such file existed. One set now, shared with
+            # /vault/list and /vault/file, so the two rooms agree.
+            for p in root.rglob('*'):
+                if not p.is_file() or p.suffix.lower() not in _VAULT_TEXT_EXT:
+                    continue
                 try:
                     rel = str(p.relative_to(root)).replace('\\', '/')
                 except ValueError:
