@@ -178,7 +178,8 @@ function analyze({ nodes, edges }) {
     return { community: Number(c), size: members.length, share: members.length / N, topNodes: top };
   }).sort((a, b) => b.share - a.share);
 
-  // Structure classification (biased / focused / diversified / dispersed).
+  // Structure classification
+  // (biased / overlapping / focused / diversified / dispersed).
   const largest = clusters.length ? Math.max(...clusters.map((c) => c.size)) : N;
   const C = largest / N;                         // share in largest community
   const E_entropy = -clusters.reduce((s, c) => s + (c.share > 0 ? c.share * Math.log(c.share) : 0), 0);
@@ -194,10 +195,43 @@ function analyze({ nodes, edges }) {
 
      `unformed` is a real answer rather than a guess: there genuinely is not
      enough here to read a shape yet, and saying so beats picking one of four
-     verdicts at random. */
+     verdicts at random.
+
+     The low-modularity branch is split on C for the same reason. It used to
+     be `modularity < 0.2 → 'biased'` outright, and the panel prints that as
+     "One dominant topic — add contrasting ideas." Measured on the real
+     office, 23 items:
+
+         Biased
+         One dominant topic — add contrasting ideas.
+         ...
+         Topics: 8
+         Main topics
+           39%  9 items
+           35%  8 items
+            4%  1 item   (×3)
+
+     Nothing dominates 39% of a map, and the panel says so itself four lines
+     below the sentence claiming it does. Low modularity does not mean one
+     topic owns the map — it means the topics are not cleanly SEPARATED, and
+     this office's shape is why: two hubs (the boss and the one coworker)
+     sharing seven of their leaves, so seven of twenty-two links cross the
+     boundary. Two topics of near-equal size, heavily interleaved.
+
+     C = largest / N is the number that actually measures dominance and it
+     was already sitting right here, computed and unread by this branch. The
+     half-the-map line is not a new constant — the `diversified` branch below
+     already draws dominance there — but the comparison is strict, and that
+     matters at the boundary: a map split into two topics of six is C = 0.5
+     exactly, and "one dominant topic" over two equal halves is the same lie
+     this fix is for, just smaller. Strict, the rule survives being said out
+     loud: one topic dominates when it holds more of the map than every other
+     topic put together. Above that line the advice on the chip is worth
+     taking. Below it the honest reading is the one the shape supports — the
+     topics run together. */
   let structure;
   if (!Number.isFinite(modularity) || E === 0 || N < 3) structure = 'unformed';
-  else if (modularity < 0.2) structure = 'biased';
+  else if (modularity < 0.2) structure = (C > 0.5) ? 'biased' : 'overlapping';
   else if (modularity < 0.4) structure = 'focused';
   else if (modularity <= 0.65) structure = (C < 0.5 && E_entropy >= 1.0) ? 'diversified' : 'focused';
   else structure = 'dispersed';

@@ -291,6 +291,13 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const m = analytics && analytics.metrics;
   const STRUCT_COPY = {
     biased: 'One dominant topic — add contrasting ideas.',
+    /* Split out of `biased`, which used to cover the whole low-modularity
+       band and said "One dominant topic" over a topic list whose biggest
+       row read 39%. Low modularity is a claim about SEPARATION, not about
+       dominance; this is the half of it where nothing dominates. Says what
+       the number means and offers no advice, because there is nothing wrong
+       here to act on — same as `diversified` below. */
+    overlapping: 'Topics blur into each other — plenty of links cross between them.',
     focused: 'A clear main theme with some branches.',
     diversified: 'Several well-connected topics — healthy balance.',
     dispersed: 'Many scattered topics — consider bridging them.',
@@ -376,11 +383,11 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
              Modularity is the worst of them because it is redundant AND
              unreadable: analytics.worker.js decides the verdict chip from
-             it (`modularity < 0.2 → 'biased'`), so the sentence directly
-             above this row — "One dominant topic — add contrasting ideas" —
-             IS the modularity, said in words. Showing 0.25 as well adds a
-             number with no visible scale, which is the same shape as the
-             FUEL gauge that filled toward a budget nobody set.
+             it (a low modularity picks between 'biased' and 'overlapping'),
+             so the sentence directly above this row IS the modularity, said
+             in words. Showing 0.25 as well adds a number with no visible
+             scale, which is the same shape as the FUEL gauge that filled
+             toward a budget nobody set.
 
              Components and avg degree are real and worth keeping; they just
              needed the names a boss would use. */

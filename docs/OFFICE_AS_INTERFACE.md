@@ -14497,3 +14497,82 @@ baseline green.
 screen, that sentence is the specification — not the case that happened to
 be on screen when it was written. If the reasoning covers more than the
 repro does, fix what the reasoning covers.
+
+## The word that was never measured
+
+The Library graph's analytics panel, one render on the live office:
+
+    Graph analysis
+    Biased
+    One dominant topic — add contrasting ideas.
+    On the map: 23 · Links: 22 · Topics: 8 · Separate clusters: 7
+    ...
+    Main topics
+      39%  9 items
+      35%  8 items
+       4%  1 item   (×3)
+
+Nothing dominates 39% of a map. The office said one topic did, and then
+printed the list refuting it four lines below, in the same panel, in the
+same render.
+
+The chip was decided by modularity alone — `modularity < 0.2 → 'biased'` —
+and modularity is not a measure of dominance. It measures *separation*: how
+cleanly the graph divides into communities at all. This office is two hubs,
+the boss and the one coworker, sharing seven of their leaves; seven of
+twenty-two links cross the boundary, so the two topics are poorly divided.
+Poorly divided is the opposite claim to *one of them owns the place*, and
+the panel published the second one.
+
+What makes this worth writing down is where the missing number was. `C =
+largest / N` — the share held by the biggest topic — is computed two lines
+above the branch that needed it, and read by the branch below. It was
+sitting there, correct, unread, while the verdict directly above it guessed.
+This is not a case of the data being unavailable, or expensive, or arriving
+late. The word "dominant" had a measurement in scope and did not use it.
+
+So the low-modularity band splits on the number that means what the sentence
+says. Above half the map, "one dominant topic" is true and its advice is
+worth taking. Below it, the shape gets the reading the shape supports:
+`overlapping` — *"Topics blur into each other — plenty of links cross
+between them."* True of this office, and checkable from the same panel: 7
+of 22.
+
+The comparison is strict, and that is not fussiness. Two topics of six in a
+map of twelve is `C = 0.5` exactly, and calling one of them dominant is this
+same defect at its smallest. Strict, the rule survives being said out loud:
+one topic dominates when it holds more of the map than every other topic put
+together.
+
+**Tests.** `scripts/test_a_dominant_topic_is_actually_dominant.py` runs the
+real `analyze()` — bundled with the project's own esbuild — and lifts the
+real copy map out of the panel. The invariant it pins is the chip's promise
+rather than the split that implements it: *whenever the verdict says one
+topic dominates, the topic list underneath has to agree*. It checks that on
+five named shapes (the live office anonymised and exact; a clique that
+really is one topic; a dominant-but-not-only shape at 69%; a star; a
+cleanly-separated control that never enters the band) and on a seeded sweep
+of 120 random graphs, with a check that the sweep actually reached both
+sides of the branch — a green sweep that never entered the code under test
+is not evidence. Two more guard the copy: every verdict the classifier can
+emit has a sentence (the panel does `STRUCT_COPY[m.structure] || ''`, so a
+sixth class with no entry ships as a chip with nothing under it), and
+exactly one verdict is allowed to contain the word "dominant" — the one that
+measures it.
+
+Fire-tested with nine arms: the verdict back on modularity alone, the
+dominance line loosened to a tie, moved below the live map, moved up until
+dominance became unsayable, judged by entropy instead of size, the two
+verdicts swapped, the new class shipped with no sentence, the new class
+given the dominance sentence, and the word "dominant" quietly removed from
+the chip that earns it. All nine caught, post-restore baseline green.
+
+Verified live on the same office and the same 23-item map: **Overlapping —
+Topics blur into each other — plenty of links cross between them**, above
+39% · 9 items and 35% · 8 items.
+
+**Lesson.** A word like "dominant", "stalled", "weakly connected" or
+"complete" is a measurement, not a mood. Before shipping one, find the
+number in scope that means it — and if the number is right there and the
+sentence still guessed, that is the defect, whatever the sentence happened
+to say on the day.
