@@ -431,8 +431,14 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
               React.createElement('b', null, Math.round(c.share * 100) + '%'),
               /* Same correction as the stat row above: a cluster mixes
                  conversations, coworkers, decisions and tasks, so "notes"
-                 was wrong here too. "items" is true whatever it holds. */
-              React.createElement('span', { style: { color: '#8f8676' } }, c.size + (source === 'concepts' ? ' concepts' : ' items'))),
+                 was wrong here too. "items" is true whatever it holds.
+                 Singular when there is one of it: a lone note read "1 items",
+                 and the counts here sit beside a percentage the boss is
+                 already having to squint at. */
+              React.createElement('span', { style: { color: '#8f8676' } },
+                c.size + ' ' + (source === 'concepts'
+                  ? (c.size === 1 ? 'concept' : 'concepts')
+                  : (c.size === 1 ? 'item' : 'items')))),
             React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, paddingLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
               /* Distinct NODES can share a display title — several messages
                  all render as "You → Sora" — so slicing to 3 before resolving

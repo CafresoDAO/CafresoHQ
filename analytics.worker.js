@@ -138,32 +138,44 @@ function analyze({ nodes, edges }) {
     .slice(0, 12)
     .map(([id, v]) => ({ id, bc: v }));
 
-  // Cluster summaries: top nodes (by BC) per community + influence share.
+  // Cluster summaries: top nodes (by BC) per community + size share.
   const byCommunity = {};
-  let totalBc = 0;
   g.forEachNode((nd) => {
     const c = communities[nd] ?? 0;
     (byCommunity[c] = byCommunity[c] || []).push(nd);
-    totalBc += bc[nd] || 0;
   });
-  /* `share` is an INFLUENCE share — how much of the graph's brokering this
-     cluster does. On a graph where nobody brokers anything (disjoint
-     clusters: every betweenness is 0, so totalBc is 0) that made every
-     share 0, and "Main topics" rendered two equal halves of the map as
-     "0% · 3 items" and "0% · 3 items". Nobody reads that percentage as
-     "share of brokering" — they read it as "how much of my work is this",
-     and by that reading 0% is simply false for half the map.
+  /* `share` is a SIZE share: this cluster's items over everything on the map.
+     It used to be an INFLUENCE share — this cluster's betweenness over the
+     graph's total — and the panel prints it immediately beside the cluster's
+     own item count:
 
-     So when influence is undefined for EVERYONE, fall back to size share,
-     which is what the label implies anyway. On any graph with real
-     brokering nothing changes. Note this also feeds E_entropy below, and
-     improves it for the same reason: all-zero shares gave entropy 0, the
-     signal for "one dominant topic", about a graph with several equal
-     ones. */
+         84%  9 items
+         16%  8 items
+          0%  1 items
+          0%  1 items
+          0%  1 items
+
+     Two numbers touching, so they get read as one quantity said twice. They
+     were not. 9 items out of 23 is 39% of that map, not 84%; the reader is
+     told the first topic is five times the second when they are the same
+     size, and told three topics holding real work are 0% of it — on the same
+     line as the count proving they are not.
+
+     A previous pass fixed only the all-zero case (total betweenness 0, disjoint
+     clusters, every share 0) and left this note in place: "Nobody reads that
+     percentage as 'share of brokering' — they read it as 'how much of my
+     work is this', and by that reading 0% is simply false." That reading is
+     just as true when SOME clusters broker, and the mixed case is the common
+     one: any office with a busy thread and a few unlinked notes.
+
+     Nothing lost. Brokering was never named in the UI as brokering, and the
+     nodes that do it are already the "Most influential" list right above.
+     E_entropy below now measures spread of SIZE, which is what its verdict
+     already talks about ("one dominant topic", "many scattered topics") and
+     what its sibling term `C = largest / N` already measures. */
   const clusters = Object.entries(byCommunity).map(([c, members]) => {
-    const cBc = members.reduce((s, m) => s + (bc[m] || 0), 0);
     const top = members.slice().sort((a, b) => (bc[b] || 0) - (bc[a] || 0)).slice(0, 5);
-    return { community: Number(c), size: members.length, share: totalBc > 0 ? cBc / totalBc : members.length / N, topNodes: top };
+    return { community: Number(c), size: members.length, share: members.length / N, topNodes: top };
   }).sort((a, b) => b.share - a.share);
 
   // Structure classification (biased / focused / diversified / dispersed).

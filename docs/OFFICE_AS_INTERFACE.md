@@ -14420,3 +14420,80 @@ is the one that caught the card no longer naming its door.
 and only one of them is worth having. Any check whose passing condition is
 *"I found nothing"* has to be shown, in the same run, that it can still
 find something.
+
+## Two numbers on one line, disagreeing
+
+The Library graph's analytics panel, on a real office holding 23 items:
+
+    Main topics
+      84%   9 items
+      16%   8 items
+       0%   1 items
+       0%   1 items
+       0%   1 items
+
+Three things wrong, and only one of them is the 0%.
+
+Nine items out of twenty-three is 39% of that map, not 84%. The two biggest
+topics were within one item of each other and the panel said the first was
+five times the second. And three topics holding real work — a note, a task,
+a probe — were labelled 0% of the map on the same line as the count proving
+they were not.
+
+The percentage was an INFLUENCE share: that cluster's betweenness over the
+graph's total. The count beside it was a headcount. Two numbers touching get
+read as one quantity said twice, and a cluster whose nodes broker nothing
+scores zero however much work is in it.
+
+The all-zero half of this had already been fixed once. When *nobody* brokers
+— disjoint clusters, every betweenness zero — the division produced 0 for
+everyone, and two equal halves of a map both read "0% · 3 items". The note
+left behind at that fix says exactly why it was wrong: *"Nobody reads that
+percentage as 'share of brokering' — they read it as 'how much of my work is
+this', and by that reading 0% is simply false."* Correct. And just as true
+when some clusters broker and others don't, which is not an edge case: it is
+what every office looks like once it has one busy thread and a few notes
+nothing links to yet.
+
+That is the shape worth naming. The reading that condemns the degenerate
+case condemns the general one in the same sentence, and the fix stopped at
+the case that had been observed. Guarding `totalBc === 0` treated a symptom
+that happened to be visible; it left the reason intact and standing.
+
+`share` is `members.length / N` now, always. Nothing is lost by it:
+brokering was never named in the UI as brokering, and the nodes that do it
+already have their own section immediately above — "Most influential". The
+verdict changes too, and for the better. `E_entropy` feeds the
+diversified/focused classification, and its own words are about size ("one
+dominant topic", "many scattered topics"); its sibling term, `largest / N`,
+was already a size share. Entropy over influence was the odd one out.
+
+Also `1 items` → `1 item`, on a row where the boss is already having to
+squint at the number next to it.
+
+**Tests.** `scripts/test_a_topic_percentage_is_a_share_of_the_map.py` runs
+the real `analyze()` — bundled with the project's own esbuild, since the
+worker uses subpath imports bare node ESM cannot follow — over three graphs:
+the mixed shape that reproduced it, the disjoint shape the earlier pass
+fixed (kept so this fix cannot be written in a way that un-fixes it), and a
+lopsided one, because the percentages still have to be able to say that one
+topic dominates. Per graph it pins that no topic holding an item reads 0%,
+that each share is that topic's own count over the map, that the shares
+account for all of it, and that the biggest is listed first. It recomputes
+the entropy from the sizes, so the verdict and the topic list can never be
+talking about two different graphs. And it lifts the panel's own count
+expression and runs it at one and at two.
+
+The lopsided fixture was wrong on the first draft — a ring of eight nodes is
+not one topic to Louvain, it is four pairs — and said 30/30/20/20 while
+claiming to demonstrate dominance. A clique, not a ring. Fire-tested with
+eight arms: the influence share whole, the influence share in the exact
+half-fixed spelling the last pass shipped, two plausible-but-wrong
+normalisations, reversed ordering, an entropy quietly fed a different
+number, and the plural label broken each way. All eight caught, post-restore
+baseline green.
+
+**Lesson.** When a fix is justified by a sentence about how people read the
+screen, that sentence is the specification — not the case that happened to
+be on screen when it was written. If the reasoning covers more than the
+repro does, fix what the reasoning covers.
