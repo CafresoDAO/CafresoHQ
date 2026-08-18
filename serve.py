@@ -999,6 +999,33 @@ def _vault_inline_ok(mime: str) -> bool:
     return mime == 'application/pdf' or mime.startswith(_VAULT_INLINE_PREFIXES)
 
 
+def _vault_hidden_part(rel: str):
+    """The first path segment that would make this file invisible, or None.
+
+    Every backend's listing skips dotted parts — the fs and oci branches
+    filter `part.startswith('.')` outright, and the REST walk skips
+    dot-entries at every level — so a WRITE to such a path files a note the
+    Library can never show. The office would say "Saved" about a file that
+    has just left every list it keeps (#136 was this disappearance at the
+    upload door; #137 made that door refuse hidden files out loud for
+    exactly this reason). The write doors ask this before touching any
+    backend; read, delete and rename-FROM stay open, because a file that is
+    ALREADY invisible needs a way back out — rescuing `.lost/plan.md` to
+    `plan.md` is the one move that fixes the situation instead of filing
+    another copy of it.
+
+    '..' is deliberately not treated as hidden: it is a traversal attempt,
+    `_vault_resolve` already refuses it as one, and calling it "hidden"
+    would send the boss to rename a file that was never the problem."""
+    for part in str(rel or '').replace('\\', '/').split('/'):
+        part = part.strip()
+        if part in ('', '.', '..'):
+            continue
+        if part.startswith('.'):
+            return part
+    return None
+
+
 def _vault_resolve(rel: str) -> pathlib.Path:
     """Resolve `rel` (e.g. "Daily/2026-04-25.md") under the vault directory with
     traversal protection. Raises ValueError if escape is attempted or unset."""
@@ -3768,6 +3795,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             mode = qs.get('mode', ['write'])[0]
             length = int(self.headers.get('content-length', 0) or 0)
             body = self.rfile.read(length).decode('utf-8') if length else ''
+            # Before any backend: a dotted path would be filed and then
+            # never listed again, on every backend this door has. Refused
+            # here so the boss, a coworker's VAULT_* tool and the night
+            # shift all hear the same sentence instead of a green "Saved"
+            # over a file that just left every list (#140).
+            hidden = _vault_hidden_part(rel)
+            if hidden:
+                return self._send_json(400, {
+                    'error': 'hidden files are not accepted — the Library '
+                             f'never lists anything under "{hidden}". Drop '
+                             'the leading dot to file this where it can be '
+                             'seen.'})
             if _vault_backend == 'rest':
                 # PUT replaces, POST appends.
                 http_method = 'POST' if mode == 'append' else 'PUT'
@@ -3856,6 +3895,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             dst = str(req.get('to', '')).strip()
             if not src or not dst:
                 return self._send_json(400, {'error': 'need from + to'})
+            # Destination only. A dotted SOURCE stays movable — that is the
+            # rescue path for a file already filed in the dark; refusing it
+            # would trap the file there forever. A dotted destination is a
+            # visible note about to vanish from every list this room keeps —
+            # this door used to answer that with a 200 (#140).
+            hidden = _vault_hidden_part(dst)
+            if hidden:
+                return self._send_json(400, {
+                    'error': 'hidden destinations are not accepted — the '
+                             f'Library never lists anything under "{hidden}", '
+                             'so the note would vanish from every list. Drop '
+                             'the leading dot.'})
             if _vault_backend == 'rest':
                 # Obsidian REST has no native move: copy then delete.
                 try:

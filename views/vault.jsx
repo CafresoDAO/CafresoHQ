@@ -7,6 +7,35 @@ const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 
 const _isHtmlPath = (path) => /\.html?$/i.test(path || '');
 
+/* The first path segment that would make a note invisible, or null.
+
+   Every listing this room has skips dotted parts — serve.py's fs and oci
+   branches filter `part.startswith('.')` outright, and the REST walk skips
+   dot-entries at every level — so filing a note at `.drafts/plan.md` files
+   it where no list in the product will ever show it. The server refuses
+   such writes now (#140, `_vault_hidden_part`), but the client must refuse
+   FIRST: newNote opens a dirty buffer and the 2.5s autosave files it
+   without the boss pressing anything, so by the time the server's 400
+   lands, the boss has typed into a buffer that was never going to be kept.
+   Refuse at the prompt, before there is a buffer to lose.
+
+   '..' is deliberately not treated as hidden — it is a traversal attempt,
+   the server refuses it as one, and calling it "hidden" would send the
+   boss to rename a file that was never the problem. And only DESTINATIONS
+   are checked: a dotted SOURCE stays movable, because rescuing
+   `.lost/plan.md` back to `plan.md` is the one move that fixes an
+   already-invisible file instead of trapping it. */
+const _hiddenPart = (path) => {
+  for (let part of String(path || '').replace(/\\/g, '/').split('/')) {
+    part = part.trim();
+    if (part === '' || part === '.' || part === '..') continue;
+    if (part.startsWith('.')) return part;
+  }
+  return null;
+};
+const _hiddenMsg = (part) =>
+  `Hidden files can't be filed here — the Library never lists anything under "${part}". Drop the leading dot so the note stays visible.`;
+
 /* "Simple page" is one of exactly THREE starter tasks on the whole app's
    front door (§3.6) — a boss's first delivery is very often an .html file.
    renderMarkdown() escapes every `<`/`>` before it ever looks for markdown
@@ -454,6 +483,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // important data surface in the app, had not.
     const to = await window.hqPrompt('Rename / move to (path inside the Library):', { value: n.path });
     if (!to || to.trim() === n.path) return;
+    /* Destination only — a dotted SOURCE stays movable (that's the rescue
+       path out of an already-invisible folder). A dotted destination is a
+       visible note about to leave every list this room keeps (#140). */
+    const hidden = _hiddenPart(to);
+    if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
       await CafresoHQClient.vaultRename(n.path, to.trim());
@@ -476,6 +510,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const newNote = async () => {
     const path = await window.hqPrompt('New note path (e.g. "Inbox/idea.md"):');
     if (!path) return;
+    /* Before the buffer exists. A dotted path would be autosaved 2.5s after
+       the first keystroke and then absent from every list this room keeps —
+       "Saved" over a note that just vanished (#140). */
+    const hidden = _hiddenPart(path);
+    if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
     const norm = path.endsWith('.md') ? path : path + '.md';
     // id is null for new notes — saveNote() will call bridge.create()
     setOpenNote({ path: norm, id: null, content: '', dirty: true });

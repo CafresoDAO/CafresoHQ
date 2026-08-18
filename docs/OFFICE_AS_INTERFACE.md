@@ -15095,3 +15095,82 @@ guard from memory and folded them back together. When one surface learns to
 say no out loud, the surfaces that share its verbs have to learn the same
 sentence — or the product's honesty depends on which room the boss is
 standing in.
+
+## The Library filed a note at a path it can never show, and said "Saved"
+
+Driven live: Library, New note, path `.drafts/q3-plan`, type a line, wait
+2.5 seconds:
+
+    editor   "Saved"
+    disk     .drafts/q3-plan.md — real, readable, full of the boss's text
+    list     15 files, none of them this one
+
+Every backend's listing skips dotted parts — the fs and oci branches filter
+`part.startswith('.')` outright, and the REST walk skips dot-entries at
+every level — and every write door trusted the boss's path without asking
+the one question the listings would ask later. `POST /vault/rename` ran the
+same trap in reverse: a VISIBLE note moved to `.archive/` got a 200, and
+the list went from 15 to 14 with nothing said. #136 was this disappearance
+at the upload door, and #137 taught that door to refuse hidden files out
+loud; the editor's own doors — the ones a boss actually types into — kept
+filing them in silence.
+
+"Saved" is a two-part claim: the note exists, and the Library holds it. The
+second half is the one a filing room is FOR — a cabinet that hides what you
+put in it is not one (§3.6) — and it was false the moment the write landed.
+Worse than a lost file: a lost file the office vouched for.
+
+**The fix** puts one question — `_vault_hidden_part` — in front of every
+write, at both ends. The server refuses a dotted path on PUT and on a
+rename DESTINATION, with the folder named and the way forward in the
+sentence, so the boss, a coworker's VAULT_* tool and the night shift all
+hear the same refusal. The client refuses at the prompt, BEFORE a buffer
+opens — the 2.5s autosave files an open buffer without the boss pressing
+anything, so a refusal any later than the dialog is a refusal after the
+filing.
+
+Two doors stay open on purpose, and the tests pin them open:
+
+  · the RESCUE direction — a file already invisible can still be read,
+    renamed out into the light, and deleted. `.lost/plan.md → plan.md` is
+    the one move that fixes an invisible file; refusing it traps the file
+    forever. Destination checked, source never.
+  · `..` is not "hidden" — it is a traversal, refused as one by
+    `_vault_resolve`. "Drop the leading dot" over a traversal attempt
+    sends the boss to rename a file that was never the problem.
+
+Verified live on the rebuilt bundle and restarted office: `.drafts/q3-plan`
+now draws the refusal toast at the prompt and opens nothing; a dotted
+rename destination is refused with the note unmoved; the repro's own
+stranded `.drafts/q3-plan.md` was rescued out through the real rename door
+(200, visible, then cleaned up) — the fix's rescue path, used in anger on
+the file the defect stranded.
+
+**Tests.** `scripts/test_the_library_never_files_what_it_cannot_show.py`
+boots a real serve.py over a temp fs vault and lifts `newNote`/`renameNote`
+into node: dotted PUT/append/rename-destination are 400s that name the
+folder and the way forward, with nothing on disk behind them; a visible
+write still lands and is LISTED; the client refuses before any buffer
+exists and lets a dotted SOURCE through; the rescue direction stays open
+end to end; and the premise itself is pinned — the /vault/list handler
+still skips dotted parts (counted inside that handler, not file-wide:
+/vault/search carries the same guard line, and a file-wide count would let
+the listing lose its skip while the tally stayed green).
+
+Fire-tested with eleven arms: each half of the fix removed (server PUT,
+server rename, client newNote, client renameNote), the refusal losing its
+reason, the refusal answering 200, the client message losing the folder
+and the way forward, the check spreading to the rename SOURCE — the rescue
+door swinging shut, which the suite must also catch — `..` misdiagnosed as
+hidden, the fs listing dropping its skip, and the autosave premise
+drifting. All eleven caught, post-restore baseline green. 182/182 suites.
+
+**Lesson.** The write door and the list disagreed about what a path means,
+and the office sided with whichever the boss was looking at. A rule
+enforced only where data leaves the system ("don't show dotted files")
+silently becomes a trap at every door where data enters it — each entry
+door inherits an obligation to ask the exit's question, or the exit's
+filter becomes the entry's shredder. And the refusal has to know its own
+edges: the same dot that hides a destination marks the rescue route out,
+so the guard that closes the way in must hold the way back open, or the
+fix for "files vanish" is "files stay vanished."
