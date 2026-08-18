@@ -200,7 +200,11 @@ def main():
            "— `status === 'doing'` was the whole test, and it read a stopped "
            'pipeline as a moving one'])
     check('...reading the one predicate, not a fourth copy of it',
-          re.search(r"^import \{ isParked \} from '\.\./app/worklog\.jsx';", COLLAB, re.M),
+          # Any import list is fine alongside it (#144 added cardNote to
+          # this same statement) — the property under test is that
+          # isParked itself still comes from worklog.jsx, not that it
+          # travels alone.
+          re.search(r"^import \{[^}]*\bisParked\b[^}]*\} from '\.\./app/worklog\.jsx';", COLLAB, re.M),
           'modals/collab.jsx: #86 has been re-derived at three sites already')
     check('...and a parked step is named on the row',
           re.search(r"bits\.push\(`\$\{parked\} stopped — needs you`\)", collab),

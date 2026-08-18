@@ -1,7 +1,7 @@
 import { CafresoHQChain } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { MSG_STATES } from '../app/windows.jsx';
-import { isParked } from '../app/worklog.jsx';
+import { isParked, cardNote } from '../app/worklog.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
@@ -130,7 +130,17 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
                   return (
                     <div key={id} className="row" style={{padding:'4px 6px',gap:4}}>
                       <span className="sub" style={{minWidth:16}}>{i+1}.</span>
-                      <span className="grow" style={{fontFamily:'Press Start 2P',fontSize:8}}>{t.title.slice(0,40)}</span>
+                      {/* Two of this office's own fixture tasks share a 40-char
+                          prefix ("Summarise the vendor notes — probe one t…") —
+                          a raw `.slice(0,40)` cut both to the same bytes, so
+                          the row over the ↑/✕ buttons could not tell the boss
+                          which step they were about to move or remove. This
+                          is the same shape worklog.jsx already fixed for card
+                          notes: cut on a word with the `…` that says so, and
+                          give the hover the untruncated title so a collision
+                          in the visible label is never a collision in what's
+                          reachable (#144). */}
+                      <span className="grow" title={t.title} style={{fontFamily:'Press Start 2P',fontSize:8}}>{cardNote(t.title, 40)}</span>
                       <button className="px-btn secondary" style={{fontSize:7,padding:'3px 5px'}} onClick={()=>moveUp(i)}>↑</button>
                       <button className="px-btn danger" style={{fontSize:7,padding:'3px 5px'}} onClick={()=>removeStep(id)}>✕</button>
                     </div>
@@ -142,7 +152,7 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
                 {inboxTasks.length === 0 && <div className="muted">No inbox tasks available.</div>}
                 {inboxTasks.map(t => (
                   <div key={t.id} className="row" style={{padding:'4px 6px',cursor:'pointer'}} onClick={()=>addStep(t.id)}>
-                    <span className="grow tiny">{t.title.slice(0,50)}</span>
+                    <span className="grow tiny" title={t.title}>{cardNote(t.title, 50)}</span>
                     <button className="px-btn secondary" style={{fontSize:7,padding:'3px 5px'}}>+ ADD</button>
                   </div>
                 ))}

@@ -15402,3 +15402,77 @@ forward the knowing, not just the text. And when it does, every surface
 downstream gets to stop guessing: one recorded reason fixed a heading, a
 card subtitle, a modal title and a footer at once, because all four had been
 inferring from a string that never meant to carry that weight.
+
+## A workflow's own steps stopped telling each other apart
+
+Opened the Workflow builder on the live office and added two of the three
+real fixture tasks as steps. Both titles begin `Summarise the vendor notes
+— probe one ...`, and the STEPS list rendered each with a raw
+`t.title.slice(0,40)` — no ellipsis, no hover. On screen, step 1 and step 2
+were the same bytes:
+
+    1.  Summarise the vendor notes — probe one t
+    2.  Summarise the vendor notes — probe one t
+
+The ↑ (reorder) and ✕ (remove) buttons sit on that exact row. A boss who
+wanted to move or delete "the second step" had no way to confirm which
+task those buttons were about to act on — a workflow's order is what makes
+it a chain, and a step moved or removed by mistake breaks that chain
+silently. The AVAILABLE TASKS panel one section down carried the same
+defect at `.slice(0,50)`, on the list a boss reads to decide what to add
+next.
+
+This is not a contrived pairing. The office's own probe-task naming
+(`... — probe one <word>`) produces this shape by construction whenever
+two probes are in flight together, and this office's fixture already had
+three.
+
+`app/worklog.jsx` had already solved this exact class of bug for card
+notes (`cardNote`): cut on a word boundary, append the `…` that says a cut
+happened, and hand the untruncated text to the hover so a collision in the
+printed label is never a collision in what's reachable. WorkflowModal
+predates that fix and never learned it.
+
+**The fix** routes both lists through `cardNote` and gives each row a
+`title={t.title}` hover carrying the whole string. The printed label can
+still look the same at a glance — cutting on a word boundary does not
+guarantee uniqueness — but it is now honestly marked as cut, and the truth
+of which task a button is about to act on is always one hover away, same
+as every other card in the office.
+
+Verified live on the rebuilt bundle: two colliding steps now both read
+"Summarise the vendor notes — probe one…", and hovering each shows
+"...probe one three zero" and "...probe one two nine" respectively.
+
+**Tests.** `scripts/test_workflow_steps_do_not_collide.py` pins the
+premise first — the two live fixture titles are distinct strings that a
+raw 40-char slice makes identical — then lifts modals/collab.jsx's own
+STEPS and AVAILABLE TASKS rows and confirms each calls `cardNote`, not a
+raw slice, and carries a hover with the untruncated title. It runs the
+real `cardNote` (lifted from app/worklog.jsx) over the colliding pair to
+confirm the visible label is honestly marked with `…`, and that the hover
+values for the two tasks differ even when the printed labels do not.
+
+Fixing this also surfaced a collateral brittleness: `#86`'s existing
+predicate-reuse pin in `test_a_stalled_workflow_says_so.py` matched
+collab.jsx's `isParked` import by its exact byte string
+(`import { isParked } from '../app/worklog.jsx';`), so adding `cardNote`
+to that same import broke a check whose actual property — isParked is
+read from the canonical source, not re-derived — was never violated. The
+regex was loosened to match isParked among any import list from that
+path, keeping the property pinned without re-anchoring it to one exact
+import statement's contents.
+
+Fire-tested with six arms: each list reverted to a raw slice, each row's
+hover removed, the hover truncated too (a second collision, just later),
+and the `cardNote` import dropped entirely. All six caught, post-restore
+baseline green. 186/186 suites.
+
+**Lesson.** A fix that lives in one file protects only the callers that
+already knew to ask for it. `cardNote` closed this exact gap for card
+notes months ago, and a second component reinvented the bug it was written
+to prevent because nothing pointed the newer surface at the older fix. The
+convention was right; it just had one caller. Grepping for a raw
+`.title.slice(0,` next to a rendered list — not just for this ticket, but
+generally — is a cheap way to find the next surface that has not been
+told the office already has an answer for this.
