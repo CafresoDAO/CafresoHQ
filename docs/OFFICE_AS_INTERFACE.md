@@ -15323,3 +15323,82 @@ surroundings are where the promises live: check what the ORIGINAL was
 standing next to, not just what it did. And when a fix mirrors an existing
 behaviour, mirror it under test — run the original over the same input and
 demand equality — or the copy starts as a likeness and ends as a variant.
+
+## The stand-up filed a synthesis that never happened, and called the day done
+
+Ran a real stand-up on the live office. One coworker, one report, and then
+`HQ.ceoStream` could not reach the CEO brain. What the office did next:
+
+    modal      DONE — ARCHIVE OR COPY
+    footer     tap ARCHIVE to keep this on your task board
+    card       "Stand-up — Aug 18" · status done · "End-of-day team stand-up."
+    filed      ## Synthesis (CafresoHQ)
+               ⚠ hit a snag — couldn't reach that brain — it looks offline
+
+A heading naming an act, over a sentence saying the act never happened. The
+warning was on screen and honestly worded — the failure was never hidden —
+but the heading above it was written by code that never asked whether there
+was anything to head. Every surface downstream agreed with the heading and
+not with the sentence: "done", "archive or copy", a flat card subtitle, a
+DONE card on the board.
+
+This is #89's shape — a note swearing to more than its witness saw — one
+surface over, and it matters more here. The synthesis is what a boss opens
+a stand-up FOR: the reports are raw material, and "the single most important
+next action" is the deliverable. The filed report is also the part that
+outlives the modal. A week later the heading is what gets remembered and the
+small print is what gets skimmed, so a wrong heading over right small print
+is a lie with a delay on it.
+
+**The fix** makes the failure a fact of the run rather than a shape of a
+string. The catch that sees it records WHY — `'stopped'` when the boss hit
+STOP, the snag sentence when the brain was unreachable — and every surface
+downstream reads that:
+
+  · the filed section is headed `## Synthesis — not written` (or
+    `— stopped part-way`), carries the reason, and says what the record IS:
+    the reports, whole and unsummarised, nobody having read them together.
+    "Not written" alone leaves a boss wondering whether the rest is
+    trustworthy either;
+  · the card's own detail line — all a boss sees on the board a week later —
+    counts who actually reported and names what is missing;
+  · the modal stops saying "done" over a run that did not produce the thing
+    it was opened for, and the footer names RE-RUN, which is a button really
+    in that footer, not an invented door (§7).
+
+A synthesis that LANDS still gets the plain heading. A fix that makes every
+stand-up hedge is a different lie with better manners.
+
+The failure is carried as state and never sniffed back out of the summary
+text. A `startsWith('⚠')` test would call a real summary that quotes a snag
+a failure, and a future failure worded differently a success — and the point
+of this ticket is that a record must be built from what happened, not from
+what the display happens to look like.
+
+**Tests.** `scripts/test_the_standup_files_only_what_happened.py` lifts the
+modal's own `fullText`, `reported` and `detail` builders into node and runs
+them over real report shapes: failed, stopped, stopped-before-it-started,
+landed, all-errored, mixed. It pins that an errored row is never counted as
+a report but is still FILED — who was asked is part of the record — and that
+the footer's RE-RUN is a real button.
+
+Fire-tested with fourteen arms: the failed synthesis headed as one again,
+the heading losing its reason, the record dropping what-it-is, the reason
+running into the next sentence, "stopped" reported as a failure, a partial
+summary discarded, a landed synthesis hedging, the failure sniffed from the
+string, `start()` no longer clearing it (yesterday's snag haunting today),
+the card detail going flat, an errored row counted as a report, the subtitle
+saying "done", the footer dropping its door, and RE-RUN renamed out from
+under the sentence that points at it. All fourteen caught, post-restore
+baseline green. 185/185 suites.
+
+**Lesson.** A heading is a claim, and headings are written by the code that
+lays out a document, not by the code that knows what happened. That is the
+gap: the layout ran on a variable that was truthfully populated with a
+failure, and printed a title over it that only made sense for a success. A
+surface that renders whatever it is handed will eventually be handed a
+failure and dress it as a result — so the thing that KNOWS has to hand
+forward the knowing, not just the text. And when it does, every surface
+downstream gets to stop guessing: one recorded reason fixed a heading, a
+card subtitle, a modal title and a footer at once, because all four had been
+inferring from a string that never meant to carry that weight.

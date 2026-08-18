@@ -781,6 +781,14 @@ const STANDUP_TIMEOUT_MS = 90_000;
 function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   const [reports, setReports] = useSF([]);   // [{agentId, name, color, text, streaming, error}]
   const [summary, setSummary] = useSF('');
+  /* Why the closing summary is missing, or '' when it landed. Set where the
+     failure HAPPENS, not inferred later from the summary string: the record
+     built at archive time has to know whether CafresoHQ actually read the
+     day, and sniffing for a '⚠' prefix would call a real summary that
+     quotes one a failure, and a future failure worded differently a
+     success. Two values, both a reason the boss can read: 'stopped' when
+     they hit STOP, the snag sentence when the brain could not be reached. */
+  const [summaryFail, setSummaryFail] = useSF('');
   const [phase, setPhase] = useSF('idle');   // idle | running | summarizing | done
   const [archived, setArchived] = useSF(false);
   const [excluded, setExcluded] = useSF(new Set());
@@ -797,6 +805,7 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
     if (participating.length === 0) return;
     setArchived(false);
     setSummary('');
+    setSummaryFail('');
     setReports(participating.map(a => ({ agentId: a.id, name: a.name, color: a.color, role: a.role, text: '', streaming: true, error: false })));
     setPhase('running');
     const controller = new AbortController();
@@ -903,7 +912,14 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
     } catch (err) {
       const stopped = controller.signal.aborted;
       // Same raw-dump bug as the per-agent reports above, one function down.
-      setSummary(stopped ? (buf + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`);
+      const snag = snagSentence(err && err.message || String(err));
+      setSummary(stopped ? (buf + ' …(stopped)') : `⚠ ${snag}`);
+      /* The screen shows the ⚠ and the boss sees it; the ARCHIVE does not
+         get to forget it. Everything downstream of here — the heading in
+         the filed report, the card's own detail line, the footer offering
+         to file — reads this, so the failure survives the trip from the
+         modal to the board. */
+      setSummaryFail(stopped ? 'stopped' : snag);
     } finally {
       clearTimeout(sumTimeout);
     }
@@ -913,6 +929,11 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
 
   const stop = () => { if (abortRef.current) abortRef.current.abort(); };
 
+  /* How many of the people who were asked actually said something. An error
+     row and a silent row are both "did not report" — the reports array keeps
+     them so the record shows WHO was asked, and this counts who answered. */
+  const reported = () => reports.filter(r => r.text && !r.error).length;
+
   const fullText = () => {
     const date = new Date().toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
     const lines = [`# Stand-up — ${date}`, ''];
@@ -921,7 +942,39 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       lines.push(r.text || '(no report)');
       lines.push('');
     });
-    if (summary) {
+    /* The heading names an ACT, so it may only be written over an act that
+       happened. This read `## Synthesis (CafresoHQ)` over whatever `summary`
+       held — and when the CEO brain was unreachable, `summary` held the snag
+       sentence. Filed on a real stand-up, 2026-08-18:
+
+         ## Synthesis (CafresoHQ)
+         ⚠ hit a snag — couldn't reach that brain — it looks offline from here
+
+       A heading swearing CafresoHQ read the day, over a sentence saying it
+       never did (§5 — and #89, the cabinet note that swore to more than its
+       witness saw, is this same shape one surface over). The report is the
+       part of a stand-up that outlives the modal: read a week later, the
+       heading is what a boss remembers and the small print is what they
+       skim.
+
+       So the section says which of the three things happened, and when the
+       synthesis is missing it also says what the record IS — the reports,
+       whole and unsummarised — because "not written" alone leaves a boss
+       wondering whether the rest is trustworthy either. */
+    if (summaryFail === 'stopped') {
+      lines.push('## Synthesis — stopped part-way');
+      lines.push(summary
+        ? `${summary}\n\nYou stopped the stand-up before CafresoHQ finished the closing summary. What is above is the whole of it.`
+        : 'You stopped the stand-up before CafresoHQ started the closing summary. The reports above are the whole record.');
+    } else if (summaryFail) {
+      lines.push('## Synthesis — not written');
+      /* snagSentence() returns a clause, not a sentence — it is written to
+         sit after a "⚠ " on screen, where nothing follows it. Filed, it has
+         a sentence on the other side of it, and without this the record read
+         "…offline from here The reports above are…". */
+      const why = /[.!?]$/.test(summaryFail) ? summaryFail : summaryFail + '.';
+      lines.push(`CafresoHQ could not write the closing summary: ${why} The reports above are the whole record — nobody has read them together yet.`);
+    } else if (summary) {
       lines.push('## Synthesis (CafresoHQ)');
       lines.push(summary);
     }
@@ -938,7 +991,14 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
     onArchive({
       id: 'stu_'+Math.random().toString(36).slice(2,8),
       title: `Stand-up — ${new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'})}`,
-      detail: 'End-of-day team stand-up.',
+      /* The card face, which is all a boss sees on the board a week later.
+         A flat 'End-of-day team stand-up.' over a stand-up where nobody
+         reported, or where the closing summary never got written, is the
+         same claim as the heading this fix just stopped writing — one line
+         further out, where it is read more often and opened less. */
+      detail: `End-of-day team stand-up — ${reported()} of ${reports.length} reported`
+        + (summaryFail === 'stopped' ? '; you stopped it before the summary.'
+           : summaryFail ? '; no closing summary.' : '.'),
       result: fullText(),
       status: 'done',
       priority: 'med',
@@ -956,6 +1016,10 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       subtitle={phase === 'idle' ? 'click START to gather reports'
         : phase === 'running' ? 'your team is reporting…'
         : phase === 'summarizing' ? 'CafresoHQ is synthesizing…'
+        /* Same rule as the footer hint below: the word "done" over a run
+           that did not produce its closing summary is the modal agreeing
+           with itself and not with what happened. */
+        : summaryFail ? 'reports in — no closing summary'
         : 'done — archive or copy'}
       size="lg"
       footer={
@@ -971,7 +1035,22 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
               Whether an end-of-day report *should* live in the cabinet
               rather than the task board is a product decision, noted in the
               doc rather than made silently here. */}
-          <div className="hint" style={{marginRight: 'auto'}}>{archived ? '✓ saved to your task board' : phase==='done' ? 'tap ARCHIVE to keep this on your task board' : ''}</div>
+          {/* The one line under a finished stand-up. It used to offer the
+              archive and nothing else, whatever had happened upstairs — so
+              a run whose closing summary never got written invited the boss
+              to file it with no hint that the thing they opened the modal
+              FOR was missing. §7: state it, and name the door. RE-RUN is
+              that door and it is already in this footer, so the sentence
+              points at it rather than inventing a second one. */}
+          <div className="hint" style={{marginRight: 'auto'}}>{
+            archived ? '✓ saved to your task board'
+            : phase !== 'done' ? ''
+            : summaryFail === 'stopped'
+              ? 'you stopped this before the summary — RE-RUN for a full one, or ARCHIVE the reports as they are'
+            : summaryFail
+              ? 'the reports are here; no closing summary — RE-RUN to try again, or ARCHIVE the reports as they are'
+            : 'tap ARCHIVE to keep this on your task board'
+          }</div>
           {phase === 'idle' && agents.length > 0 && <button className="px-btn primary" onClick={start} disabled={participating.length === 0}>▶ START ({participating.length})</button>}
           {(phase === 'running' || phase === 'summarizing') && <button className="px-btn danger" onClick={stop}>■ STOP</button>}
           {phase === 'done' && (<>
