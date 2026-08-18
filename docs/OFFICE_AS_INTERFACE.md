@@ -15241,3 +15241,85 @@ mirrors; #140's ledger entry said "every write door" and meant the two it
 knew about. The tripwire for next time is in the suite: the count of doors
 riding the shared resolver, so a sixth door — or a door quietly leaving —
 is a red test, not a rediscovery.
+
+## The Memory panel promised every job, and the night shift went out cold
+
+The panel over the boss's long-term memory says it plainly, three ways:
+
+    header (capped)    the newest 24 go out with every job CafresoHQ and
+                       the team pick up
+    header (uncapped)  carried into every job CafresoHQ and the team pick up
+    empty state        goes out with every job your CEO and crew pick up
+
+`memorySummary` had exactly two consumers, both in the browser:
+`buildCeoSystem` and the system prompt `agentStream` builds — which is
+genuinely "every job", for every job the browser dispatches. Night-shift
+jobs are not dispatched by the browser. `night_runner.py` runs them
+server-side, inside serve.py, with the laptop closed — it is a Python port
+of the mission loop that copied the iterations and not the context around
+them. Reproduced with a real serve.py, thirty entries PUT through the real
+`/hq/memory/context` door and the LLM call captured: the store held all
+thirty, and neither message the model received contained one of them, or
+the header, or anything at all about the boss.
+
+So the office's own rules, preferences and people were carried by every job
+the boss could watch, and by none of the jobs that run while they sleep —
+the ones where the coworker has no one to ask.
+
+The panel was not lying about a feature that does not exist. Everything it
+needs was already on the server: the memory is a FILE (`memory/context.json`,
+written by the browser through `/hq/memory/context`), and the night runner
+already self-calls that same server for every tool it runs. The promise was
+deliverable in one read; nobody had made it.
+
+**The fix** gives night_runner the night half of `memorySummary` —
+`memory_summary(ctx)`, folded into the persona at the same place the browser
+folds `mem` into its system prompt — and pins the two to byte parity. The
+suite runs the BROWSER function in node over the same thirty entries and
+demands the Python output equal it exactly: same header, same `  [TAG] text`
+rows, same newest-24 slice. Not "similar" — equal, because the panel quotes
+one number and describes one behaviour, and two implementations of one
+sentence drift the moment they are allowed to.
+
+Best-effort, deliberately: a store that will not load costs the run its
+memory, never the night. A missing file (200 + null), a corrupt file, a
+corrupt row inside a good file — each degrades to the run the office had
+before this fix existed, which is a worse night, not a lost one. One
+exception: a NON-200 whose body is a list is refused rather than read. Every
+error body serve.py writes today is a dict that the per-row guard rejects
+anyway, so that check only earns its place against a body that is a list —
+a proxy error page, a captive portal, a future error shape. Nothing about a
+500 says those rows are the boss's memory, and a coworker told they are
+would act on them all night.
+
+**Tests.** `scripts/test_the_night_shift_carries_the_bosss_memory.py` boots a
+real serve.py, PUTs the entries through the real door, and runs a real
+`run_iteration` with the LLM captured: the block rides the system message
+exactly once, carries the newest entry, never appears in the user prompt,
+and vanishes when the store is empty. It pins both caps to one number, pins
+the panel's three claims verbatim, and pins the browser's own half — because
+"every job" is a claim about two dispatchers, and a fix to one of them is
+worth nothing if the other quietly stops.
+
+Fire-tested with fourteen arms: the fold removed, fetched-but-not-folded,
+folded twice, the header drifting, the row format dropping the tag, the cap
+drifting, the slice taking the OLDEST 24, the block moved to the user
+prompt, a corrupt file raising instead of degrading, a corrupt row rendered
+instead of skipped, a non-200 list body parsed as memory, the browser
+dropping `mem` from agentStream, the panel dropping its "every job" wording,
+and the panel growing a second cap constant of its own. All fourteen caught;
+the non-200 arm was MISSED on the first run — the suite could not tell,
+because every error shape it had seen was a dict the row guard already
+refused — and the honest fix was to add the case that makes that check
+load-bearing, not to delete the check. Post-restore baseline green.
+183/183 suites.
+
+**Lesson.** "Every" is a claim about dispatchers, not about a function. The
+browser's promise was true where the browser could see, and the office has a
+second dispatcher that runs precisely where the boss cannot — which is the
+half where being carried matters more, not less. When a port copies a loop,
+it inherits the loop's obligations and none of its surroundings, and the
+surroundings are where the promises live: check what the ORIGINAL was
+standing next to, not just what it did. And when a fix mirrors an existing
+behaviour, mirror it under test — run the original over the same input and
+demand equality — or the copy starts as a likeness and ends as a variant.

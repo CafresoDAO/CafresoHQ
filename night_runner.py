@@ -740,6 +740,54 @@ def find_first_tool(text):
     return (name, arg, body, hm.span())
 
 
+# ── Long-term memory (night edition of hq-runtime memorySummary) ───────────
+# Parity with hq-runtime.jsx MEMORY_PROMPT_CAP: the Memory panel's header
+# quotes that constant ("the newest N go out with every job"), so the night
+# edition must cap at the same N — a different number here makes the panel
+# true about the browser and false about the night.
+# scripts/test_the_night_shift_carries_the_bosss_memory.py pins both sides.
+MEMORY_PROMPT_CAP = 24
+
+
+def memory_summary(ctx):
+    """The boss's long-term memory, byte-identical to what hq-runtime's
+    memorySummary folds into every browser job's system prompt — same
+    header, same `  [TAG] text` rows, same newest-MEMORY_PROMPT_CAP slice,
+    read from the same file the browser persists (/hq/memory/context,
+    newest-first).
+
+    The Memory panel promises entries are "carried into every job CafresoHQ
+    and the team pick up". The browser keeps that promise in agentStream for
+    every job it dispatches; this is the night half — until it existed,
+    every night-shift job went out cold and the panel's "every" was false
+    from dusk to dawn (#142).
+
+    Best-effort by design: the read is a localhost call to our own serve.py
+    (a missing file comes back 200 + null), and memory is context for the
+    work, not the work — a run that cannot load it should still research
+    and file notes, not die at the door."""
+    try:
+        s, raw = _self_call(ctx, 'GET', '/hq/memory/context', timeout=20)
+        if s != 200:
+            return ''
+        entries = json.loads(raw.decode('utf-8', 'replace'))
+    except Exception:
+        return ''
+    if not isinstance(entries, list):
+        return ''
+    lines = []
+    for m in entries[:MEMORY_PROMPT_CAP]:
+        # Well-formed entries render exactly as the browser renders them;
+        # a corrupt row (non-dict, or no text) is skipped rather than
+        # rendered as "[None] None" noise the browser would never show.
+        if isinstance(m, dict) and str(m.get('text') or '').strip():
+            lines.append('  [%s] %s' % (m.get('tag'), m.get('text')))
+    if not lines:
+        return ''
+    return ('Long-term memory (notes CafresoHQ has saved about the boss & '
+            'ongoing work):\n' + '\n'.join(lines))
+
+
 # ── Prompt (night edition of missions.jsx buildResearchPrompt/ProjectStudy) ──
 def build_prompt(sched, iteration, total_iters, notes_list, allow_search):
     folder = sched.get('vaultFolder', 'Research/night')
@@ -801,6 +849,12 @@ def run_iteration(ctx, sched, iteration, total_iters):
     persona = ('You are %s, an autonomous research agent in CafresoHQ. '
                'You work in disciplined, small steps and produce well-structured '
                'markdown notes.') % (sched.get('agentName') or 'a night-shift agent')
+    # Same placement as the browser: agentStream folds this block into the
+    # system prompt of every job it dispatches, and the Memory panel's
+    # "every job" includes the ones dispatched while the boss sleeps (#142).
+    mem = memory_summary(ctx)
+    if mem:
+        persona += '\n\n' + mem
     messages = [{'role': 'system', 'content': persona},
                 {'role': 'user', 'content': prompt}]
     writes, tokens_used, reply = [], 0, ''

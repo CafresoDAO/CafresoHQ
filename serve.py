@@ -3324,9 +3324,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # The client already treats a missing body as "use the
                 # default" (`r.ok ? r.json() : null` then `if (data == null)
                 # return` in useFileStored), so 200 + null is byte-for-byte the
-                # same behaviour with no false alarm. The one server-side
-                # consumer, the night runner's activity append, already guards
-                # with `if not isinstance(cur, list)`.
+                # same behaviour with no false alarm. The server-side
+                # consumers — the night runner's activity append and its
+                # memory read (#142) — likewise guard against a non-list body.
                 return self._send_json(200, None)
             try:
                 data = filepath.read_text(encoding='utf-8')
