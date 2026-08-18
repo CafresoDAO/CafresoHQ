@@ -15560,3 +15560,75 @@ share a character budget. Porting the PATTERN across a language
 boundary is not the same as porting the STRING; the second copy has to
 be measured against its own surface, not assumed identical to the one
 it was copied from.
+
+## A notification row that looked like a button and did nothing
+
+Drove the live office (port 9280): opened the 🔔 bell with 51 entries —
+49 "Coworkers", 2 "System" (two ⚠ night-shift failures). Every row
+renders in `ui/onboarding.jsx`'s `NotificationCenter` as
+
+    <div className="oc-notif-row" onClick={() => n.onClick && n.onClick(n)}
+         role="button" tabIndex={0} onKeyDown={...}>
+
+with `.oc-notif-row:hover` changing background in CSS — every row,
+approvals or not, is dressed as something you can act on, keyboard and
+all. Clicked a ⚠ row (`Local Brain night shift: 0 note(s) on fix
+verification probe`). Nothing happened: no navigation, no panel, no
+state change, `n.onClick` was simply `undefined` and the guard silently
+swallowed the click.
+
+Root cause was in `mergedNotifications` (app.jsx), the `useMemo` that
+builds the bell's list from three sources. Only the `approvals` loop set
+`onClick` (`() => { setNotifOpen(false); goTo('visual'); }`). The
+`receipts` loop and the `activity` loop — which is where every ⚠
+attention item comes from, the exact ones a boss opens the bell FOR —
+pushed rows with no `onClick` at all. On a live floor `activity` is
+almost the whole list, so almost the entire bell was inert: styled,
+hoverable, keyboard-focusable, and dead on activation. A control that
+grants nothing.
+
+**The fix** gives both of the other two sources a real destination,
+reusing doors the office already had rather than inventing new ones:
+
+    // receipts
+    onClick: () => { setNotifOpen(false); setReceiptsOpen(true); },
+    // activity (includes every ⚠ attention row)
+    onClick: () => { setNotifOpen(false); openAttention(); },
+
+Receipts open `ReceiptsModal` — the same event already renders in the
+`ReceiptTray`, so this is just its second reader. Activity rows call
+`openAttention()`, the exact function the "N need you" office pill
+already uses (`navTo('team')` + `cafresohq:openAgentInbox`), which lands
+on the Team inbox (`views/core.jsx`) — the surface that already owns
+this same activity feed with expand and Retry. Reusing it means a bell
+click can only be as broken as the pill already proven to work, not a
+second, independently-driftable path.
+
+**Tests.** `scripts/test_a_notification_row_is_not_a_dead_button.py`
+pins the render-side contract (`NotificationCenter` really does gate on
+`n.onClick`, and every row really does carry `role="button"` +
+`tabIndex`, so a row missing `onClick` really is silently inert — not a
+hypothetical), lifts each of the three `out.push` blocks in
+`mergedNotifications` by name and confirms all three now set `onClick`
+(with a regression guard that approvals still do), confirms the receipt
+and activity handlers each open the door they claim to, and confirms
+`openAttention` and the Team-inbox listener it targets are both real —
+closing the loop from bell click to a live panel, not just "app.jsx
+believes it did."
+
+Fire-tested with five arms: receipts' `onClick` removed, activity's
+`onClick` removed, activity's handler stopped calling `openAttention`,
+receipts' handler stopped opening the tray, and `openAttention` stopped
+dispatching the event the Team inbox listens for. All five caught, post-
+restore baseline green. Live-verified after: reloaded the running
+office, clicked the same ⚠ row that was inert before the fix, and
+landed on Team → Coworker Inbox → "Needs attention · 2", showing exactly
+the two clicked-through failures.
+
+**Lesson.** Interactive styling is a promise by itself — `role="button"`,
+a hover state, and keyboard activation tell a boss "this does something"
+independent of whether any code backs it. Two of the bell's three
+sources were added without anyone re-checking that the shared row
+component still had something to call; the row didn't complain, it just
+did nothing. A component that accepts an optional handler and no-ops
+without one will hide exactly this gap until someone clicks it live.

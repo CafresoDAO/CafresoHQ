@@ -6154,6 +6154,14 @@ ${d.text}` : d.text,
         ts: r.decidedAt,
         unread: (r.decidedAt || 0) > notifSeenAt,
         source: r.by,
+        /* Every row in this list renders with a hover state and
+           role="button" (ui/onboarding.jsx) — approvals already jumped
+           somewhere on click, this one and the activity rows below did
+           not, so most of the bell was a button that did nothing when
+           pressed. The receipt's own detail lives in the tray this same
+           event feeds (ReceiptTray/ReceiptsModal below), so that is
+           where a click on it goes. */
+        onClick: () => { setNotifOpen(false); setReceiptsOpen(true); },
       });
     }
     /* Live event feed — sourced from the canonical activity log, minus
@@ -6170,6 +6178,14 @@ ${d.text}` : d.text,
         unread: e.unread && (e.ts || 0) > notifSeenAt,
         source: e.agentName || 'a coworker',
         icon: e.priority === 'attention' ? '⚠' : undefined,
+        /* Same gap as the receipt row above: this is the ⚠ "night shift
+           failed" / "hit a snag" line, styled exactly like the Approve
+           row above it, and clicking it did nothing — the one control a
+           boss reaches for after reading a failure. The Team inbox
+           (views/core.jsx) already owns this exact activity feed with
+           expand + Retry; open the same door the "N need you" pill
+           opens (openAttention, below) instead of a second, dead one. */
+        onClick: () => { setNotifOpen(false); openAttention(); },
       });
     }
     return out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
