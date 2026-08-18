@@ -322,6 +322,9 @@ import fs_routes
 import pty_server
 pty_server._client_path = _client_path
 exporters._vault_root = lambda: _vault_root
+# Deferred like _vault_root above: _vault_hidden_part is defined further down
+# this file, and the lambda resolves it at request time, not import time.
+exporters._vault_hidden_part = lambda rel: _vault_hidden_part(rel)
 fs_routes._client_path = _client_path
 fs_routes._workspace_path = _workspace_path
 fs_routes._RUNTIME_ENV = _RUNTIME_ENV

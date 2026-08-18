@@ -21,6 +21,12 @@ import urllib.request
 
 # Injected by serve.py right after import.
 _vault_root = None
+# Also injected by serve.py, and called WITHOUT a None-guard on purpose: if
+# the injection is ever lost, every export door should fail loudly rather
+# than quietly go back to filing deliverables the Library can never list
+# (#141 — the write doors learned this question in #140; these five doors
+# ride a different resolver and had never been asked it).
+_vault_hidden_part = None
 
 
 
@@ -39,6 +45,19 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
     rel = (rel or '').lstrip('/').replace('\\', '/').strip()
     if not rel:
         raise ValueError('path required')
+    # Before the extension check and before any mkdir: a dotted segment is a
+    # deliverable about to be rendered into a folder no listing will ever
+    # show — a success receipt over a file that just left every list the
+    # Library keeps. Same sentence as the write doors (#140), so a coworker's
+    # EXPORT_* tool and the boss's own save hear the same refusal. `..` is
+    # NOT hidden — it falls through to the escape check below, which refuses
+    # it as the traversal it is.
+    hidden = _vault_hidden_part(rel)
+    if hidden:
+        raise ValueError(
+            'hidden files are not accepted — the Library never lists '
+            f'anything under "{hidden}". Drop the leading dot to file '
+            'this where it can be seen.')
     ext = pathlib.Path(rel).suffix.lower()
     if ext not in allowed_ext:
         # If no extension was given, append the first allowed one.

@@ -15174,3 +15174,70 @@ filter becomes the entry's shredder. And the refusal has to know its own
 edges: the same dot that hides a destination marks the rescue route out,
 so the guard that closes the way in must hold the way back open, or the
 fix for "files vanish" is "files stay vanished."
+
+## Five doors rendered deliverables straight into the dark
+
+#140 closed the trap at the write doors: a dotted path files a note no
+listing will ever show, so PUT /vault/note and the rename destination now
+refuse it out loud. One ticket later, the same question, asked one module
+over: the EXPORT_PPTX / EXPORT_DOCX / EXPORT_PDF tools and the image and
+video generators do not use those doors. They resolve their target with
+`exporters._vault_binary_path` — a deliberate mirror of `_vault_resolve`
+that copied the traversal guard and not the hidden-part question, because
+when it was written there was no hidden-part question to copy.
+
+So `[EXPORT_PPTX: .decks/board.pptx]` rendered a real PowerPoint, filed it
+where the Library can never list it, and reported "Saved PowerPoint →
+.decks/board.pptx" — the coworker believes it, the boss reads it, and the
+cabinet has never heard of the file. These are the office's flagship
+deliverable doors: the tool doc says, in as many words, "file it in the
+Library."
+
+Reproduced live before the fix, and the box's own bareness made the record
+sharper: python-pptx isn't installed here, so the render step 503'd — but
+the resolver had already accepted the dotted path and created `.decks/` on
+disk before anyone checked whether a render could happen. The answer to
+"file this into the dark" was "install python-pptx": the office asking the
+boss to install software so it could complete the lie.
+
+**The fix** is one question in the one resolver all five doors ride:
+serve.py injects `_vault_hidden_part` into exporters the same deferred way
+it injects `_vault_root`, and `_vault_binary_path` asks it before the
+extension check and before any mkdir, raising the same sentence the write
+doors use — one vocabulary at every door, whether the boss types the path
+or a coworker's tool does. The injection is called WITHOUT a None-guard on
+purpose: if the wiring is ever lost, every export door fails loudly
+instead of quietly going back to filing in the dark — this module already
+lost five doors once to an injection that was never made (the AttributeError
+note above the class wiring), and a silent fallback here would be that
+defect wearing a safety feature's name. `..` stays a traversal: the
+hidden-part question skips it and the escape check refuses it by name.
+
+**Tests.** `scripts/test_a_deliverable_is_never_filed_in_the_dark.py`
+drives the resolver standalone and all five doors on a booted serve.py:
+each door refuses a dotted destination with the folder named and the way
+forward, nothing is created behind any refusal, a dotted path with a wrong
+extension hears the HIDDEN refusal (not an invitation to fix the extension
+and file into the dark on the second try), a visible path is answered
+about the render — 200-and-listed with a renderer, "install …" without —
+never about dots, `..` is refused as a traversal at the export door, the
+five-door count is pinned to the one resolver, and the five client
+functions throw the server's sentence rather than returning it as a
+result.
+
+Fire-tested with seven arms: the resolver question removed, the reason
+stripped, the serve.py injection lost (must fail loudly — the None-guard
+arm), `..` misdiagnosed as hidden, the pdf door growing its own resolver,
+the refusal answering 200 at every door, and the client swallowing the
+refusal. All seven caught, post-restore baseline green. 183/183 suites.
+
+**Lesson.** A guard added at "the" door only guards the doors you were
+looking at. `_vault_binary_path` was written as a mirror of
+`_vault_resolve`, and a mirror copies the rules that exist at copying
+time — every rule the original learns afterwards is a rule the mirror
+silently lacks, while looking exactly like the thing it mirrors. When a
+door learns a new refusal, the fix isn't done until someone greps for the
+mirrors; #140's ledger entry said "every write door" and meant the two it
+knew about. The tripwire for next time is in the suite: the count of doors
+riding the shared resolver, so a sixth door — or a door quietly leaving —
+is a red test, not a rediscovery.
