@@ -15476,3 +15476,87 @@ convention was right; it just had one caller. Grepping for a raw
 `.title.slice(0,` next to a rendered list — not just for this ticket, but
 generally — is a cheap way to find the next surface that has not been
 told the office already has an answer for this.
+
+## A brain failure reached the boss as a stack trace
+
+Drove the Research/Night Shift modal for the first time this session:
+scheduled a "RUN NOW" night shift for the "Local Brain" coworker, topic
+"memory verification probe". The first round failed —
+`night_runner.py`'s `resolve_backend()` (a per-agent lookup, reading
+`hermes_home/config.yaml`, deliberately isolated from the browser's own
+shared driver registry so a night-shift key never leaks into `/agent/
+stream`) resolved to an address this machine cannot reach. `llm_call`
+raised, and `run_iteration`'s outer `except Exception as e: return
+{..., 'error': str(e)}` stored the raw Python exception text verbatim:
+
+    cannot reach http://10.0.0.100:1234/v1: <urlopen error [Errno 60]
+    Operation timed out>
+
+RECENT NIGHT RUNS then rendered it unchanged. Captured live via
+`innerText`:
+
+    ⚠ Aug 18, 1:13 PM · Local Brain · memory verification probe ·
+    1 round · 0 notes · cannot reach http://10.0.0.100:1234/v1: <urlopen
+    error [Errn
+
+— truncated mid-word by `views/terminal.jsx`'s own 50-char slice, a URL
+and a bracketed Python exception repr sitting exactly where every OTHER
+error path in this same function puts one hand-written, honest sentence
+(`vault_refused_sentence`, `night_cannot_sentence`, two "said it…"
+lines). §7 bans a raw dump outright; this was one, on a live surface,
+verbatim.
+
+Every other path in `run_iteration` is reachable from a specific, named
+cause. This one was not, by construction: `run_tool` catches its own
+exceptions ("tools never kill an iteration") and always returns a
+string, and `find_first_tool` / `vault_write_status` only pattern-match
+strings `llm_call` already guarantees are non-empty. `run_iteration`'s
+outer except is therefore populated exclusively by `llm_call` — safe to
+classify as a BRAIN failure without the misattribution app/floor.jsx's
+own `SNAG_CAUSES` commentary warns against (a failure whose subject is
+something else, answered confidently and wrongly).
+
+**The fix** ports that exact lesson to Python: `_BRAIN_CAUSES` /
+`brain_cause()` in `night_runner.py` mirror `app/floor.jsx`'s
+`SNAG_CAUSES` / `snagCause` — same patterns (auth, rate-limit, quota,
+network, cold-start, timeout, 5xx, model-not-installed), same order, one
+honest sentence each. The wording is tightened rather than copied
+byte-for-byte: the browser's snag bubble isn't sliced at 50 characters,
+and this surface is — `NIGHT_ERROR_MAX` (the same constant
+`vault_refused_sentence` and `night_cannot_sentence` already respect,
+after the earlier "…reached the vaul" truncation taught this office that
+lesson once). The fallback for anything unrecognised (`_clean_cause`,
+`cleanCause`'s port) strips URLs and JSON shrapnel and caps to the same
+budget, rather than fabricating a diagnosis it can't back up.
+
+`run_iteration`'s outer except now reads:
+
+    except Exception as e:
+        return {..., 'error': brain_cause(e)}
+
+**Tests.** `scripts/test_a_brain_failure_is_not_a_stack_trace.py`
+confirms the safe-attribution premise (`run_tool`'s own body has no
+`raise` — a tool failure can never surface here misclassified as a
+brain failure), confirms the wiring at the real call site, classifies
+the live-captured string plus one representative per pattern (each
+checked for correct sentence, `NIGHT_ERROR_MAX` budget, §6 office words,
+§7 shape), confirms the fallback's URL-stripping and cap, and drives the
+real `run_iteration` end-to-end with `llm_call` faked to raise the exact
+live `DriverError` — proving the RECORD, not just the classifier in
+isolation, carries the honest sentence.
+
+Fire-tested with six arms: the outer except reverted to raw `str(e)`,
+a sentence's door removed, a sentence pushed over budget, the fallback's
+URL-stripping removed, the fallback's cap removed, and `run_tool` made
+to re-raise. All six caught, post-restore baseline green. 187/187
+suites.
+
+**Lesson.** A classifier written for one surface is not portable by
+default — `snagCause`'s own sentences would have reproduced the exact
+truncation bug this office already fixed once (`night_cannot_sentence`'s
+51-character message clipped to "…reached the vaul") if copied
+verbatim, because the browser bubble and the night-shift report don't
+share a character budget. Porting the PATTERN across a language
+boundary is not the same as porting the STRING; the second copy has to
+be measured against its own surface, not assumed identical to the one
+it was copied from.

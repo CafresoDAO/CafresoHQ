@@ -501,6 +501,68 @@ def _driver_for_backend(b):
     }[b.provider](api_key=b.key)
 
 
+# Same patterns as app/floor.jsx's SNAG_CAUSES (same classifier, same
+# order), the wording tightened to fit NIGHT_ERROR_MAX rather than copied
+# byte-for-byte — the browser's snag bubble is not sliced at 50 chars and
+# this surface is. Ported because run_iteration below caught every
+# llm_call failure and returned str(e) verbatim as `lastError`, which
+# missions.jsx/features.jsx/terminal.jsx then render raw on the RECENT
+# NIGHT RUNS / Gazette / CLI surfaces with no cleaning — reproduced live
+# 2026-08-18 as "cannot reach http://10.0.0.100:1234/v1: <urlopen error
+# [Errno 60] Operation timed out>" on the boss's own screen.
+#
+# Safe to treat every exception here as a BRAIN failure, not a
+# misattributed one (the mistake app/floor.jsx's own comments warn
+# against): run_tool catches its own exceptions ("tools never kill an
+# iteration") and always returns a string, and find_first_tool /
+# vault_write_status only ever pattern-match strings llm_call already
+# guarantees are non-empty. The only raises reaching run_iteration's outer
+# except come from llm_call itself.
+_BRAIN_CAUSES = [
+    (re.compile(r"no api key|api[- ]?key (?:not|isn'?t) |missing api key|unauthor|invalid bearer|\b401\b", re.I),
+     "that brain isn't signed in — check Settings"),
+    (re.compile(r"\b429\b|rate.?limit|too many requests", re.I),
+     'that brain is rate-limited — try again soon'),
+    (re.compile(r"insufficient|quota|billing|payment required|\b402\b", re.I),
+     'that brain is out of credit — try another'),
+    (re.compile(r"econnrefused|connection refused|enotfound|failed to fetch|network ?error|load failed|dns", re.I),
+     "couldn't reach that brain — try again"),
+    (re.compile(r"did ?n[o']?t start responding|did ?n[o']?t respond|not responding", re.I),
+     'that brain is still warming up — try again'),
+    (re.compile(r"timed? ?out|etimedout|\b504\b", re.I),
+     'that took too long — try again'),
+    (re.compile(r"\b5\d\d\b|internal server error|service unavailable", re.I),
+     "that brain's having trouble — not you"),
+    (re.compile(r"(?:\b404\b[^\n]{0,40})?(?:model[^\n]{0,60}(?:not found|does ?n[o']?t exist)|no such model|unknown model|pull the model)", re.I),
+     "that brain isn't installed — pick another"),
+]
+
+
+def _clean_cause(raw):
+    """cleanCause, ported: strip URLs/JSON shrapnel, cap to NIGHT_ERROR_MAX
+    (not the JS side's 90 — that bubble isn't sliced at 50, this surface
+    is). The fallback for a failure this table can't identify with
+    confidence — a vague honest line beats a wrong-but-confident
+    diagnosis."""
+    first = str(raw or '').split('\n', 1)[0]
+    first = re.sub(r'https?://\S+', '', first)
+    first = re.sub(r'[{}\[\]"\\]', ' ', first)
+    first = re.sub(r'\s+', ' ', first).strip()
+    line = first or 'something went wrong on the last run'
+    return (line[:NIGHT_ERROR_MAX - 1].rstrip() + '…'
+            if len(line) > NIGHT_ERROR_MAX else line)
+
+
+def brain_cause(raw):
+    """One honest §7-shaped sentence for a night-shift brain-call failure.
+    See _BRAIN_CAUSES above — this is snagCause's Python mirror."""
+    text = str(raw or '')
+    for rx, sentence in _BRAIN_CAUSES:
+        if rx.search(text):
+            return sentence
+    return _clean_cause(text)
+
+
 def llm_call(ctx, messages, max_tokens=MAX_ITER_TOKENS):
     """Non-streaming OpenAI-compatible chat completion via the driver family
     (drivers/local_http.py). Returns (text, tokens).
@@ -890,7 +952,11 @@ def run_iteration(ctx, sched, iteration, total_iters):
                              'TOOL RESULT [%s]:\n%s\n\nContinue. Use at most one more tool, '
                              'or finish with your plain status line.' % (name, result)})
     except Exception as e:
-        return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': str(e)}
+        # Every raise reaching here is a brain-call failure (see
+        # brain_cause's docstring above) — never the raw str(e), which
+        # used to put a bare URL and a Python exception repr in front of
+        # the boss on RECENT NIGHT RUNS / the Gazette / the CLI report.
+        return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': brain_cause(e)}
     summary = strip_unsupported_markers(reply)[-300:]
     error = None
     all_replies = '\n'.join(replies)
