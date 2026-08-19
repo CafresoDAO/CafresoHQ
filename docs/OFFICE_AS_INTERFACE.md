@@ -15686,3 +15686,47 @@ came back to update. A duplicate-detection button that lists everything
 it *actually cleared*, or a shared constant both the writers and the
 resetter import from, would have made this the kind of bug that can't
 compile rather than one that has to be clicked to find.
+
+### The performance review didn't mention the coworker's failures — 2026-08-18
+
+`xpStats()` (app/experience.jsx) computes `{ jobs, snags, streak, byKind,
+affinity, lastAt }` from the append-only experience ledger, once, for
+whoever asks. Two surfaces ask for the same agent's stats: the Team
+roster card (views/core.jsx) and `InspectPanel` (ui/panels.jsx) — the
+panel whose own subtitle reads "Performance review".
+
+The roster card shows Snags deliberately, gated on `xp.snags > 0`, with
+a comment explaining the gate: a standing "Snags 0" on every card is
+noise, not reassurance, so the row only appears when there's something
+to say. `InspectPanel` showed "Jobs completed" and "Current streak" and
+stopped — the same number was sitting in the same `xp` object one line
+above, computed, correct, and never rendered. A boss opening a
+coworker's performance review could see a streak had reset without any
+way to see why, while the roster card two clicks away told the truth
+about the same coworker.
+
+**The fix** adds the same conditional row to `InspectPanel`, matching
+the roster card's gate and its exact honesty note ("Runs you stopped
+yourself are not counted" — §5's rule that a run the user stopped is
+never recorded as a snag) rather than writing a second, driftable copy
+of the same idea.
+
+**Tests.**
+`scripts/test_the_inspect_panel_showed_half_a_coworkers_record.py`
+confirms `xpStats()` really does compute snags (this is a rendering
+gap, not a missing-data one), lifts the roster card's Snags block as
+the reference pattern, then lifts `InspectPanel` and confirms it now
+has the same block, bound to the same `xp.snags` field, carrying the
+same self-stopped-runs note.
+
+Fire-tested with three arms: the row removed again, the honesty note
+dropped while the row stays, and the row re-gated on the wrong field
+(`xp.jobs` instead of `xp.snags`, which would make it show on every
+successful coworker and never on a failing one). All three caught,
+post-restore baseline green. Full suite: 190/190.
+
+**Lesson.** A stat computed once and consumed by two hand-built cards
+is only as consistent as whoever last touched card #2 remembered to
+check card #1. The roster card's Snags row already carried its own
+"why the gate" comment — everything needed to copy it correctly was
+sitting right next to the thing that was missing it.

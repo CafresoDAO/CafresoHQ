@@ -165,6 +165,16 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
         </div>
         <div className="stat"><span className="lbl">Specialty</span><span>{tagLine}</span></div>
         <div className="stat"><span className="lbl">Jobs completed</span><span>{xp.jobs}</span></div>
+        {/* Twin of the roster card's Snags row (views/core.jsx) — same
+            xpStats() field, same "only when there is one" rule so a clean
+            record doesn't get a standing "Snags 0" nobody asked for. This
+            panel showed Jobs and streak but never the number that explains
+            why a streak reset — the one place a boss reads a coworker's
+            whole record was missing the half of it that isn't good news. */}
+        {xp.snags > 0 && (
+          <div className="stat"><span className="lbl">Snags</span>
+            <span title={`${xp.snags} run${xp.snags === 1 ? '' : 's'} came back empty or failed. Runs you stopped yourself are not counted.`}>{xp.snags}</span></div>
+        )}
         <div className="stat"><span className="lbl">Current streak</span><span>{xp.streak >= 2 ? `${xp.streak} 🔥` : xp.streak}</span></div>
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>
