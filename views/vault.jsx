@@ -99,6 +99,32 @@ function FiledFilePanel({ path, size }) {
      Everything else gets its glyph, its kind and its size: enough for the
      boss to know what they're holding before they spend a click on it. */
   const isImage = kind === 'Image';
+  /* A PDF is a document to READ, not a glyph to acknowledge — the same gap
+     an image would have if it only ever showed a 🖼 and a download link.
+     serve.py already answers with content-disposition: inline for
+     application/pdf (_vault_inline_ok) — the browser's own PDF viewer does
+     the rest inside a plain iframe, same as views/ide.jsx's FilePreview
+     already does for the Projects/IDE surface. This surface never had it:
+     the Library's binary-file panel only ever special-cased images. */
+  const isPdf = kind === 'PDF';
+  if (isPdf) {
+    return (
+      <div className="vault-preview vault-preview-file vault-preview-pdf" style={{
+        display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', padding: 0,
+      }}>
+        <iframe title={name} src={url} style={{flex:1, width:'100%', border:0, background:'#fff'}} />
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px',
+          fontSize: 11, borderTop: '1px solid rgba(124,107,255,0.15)',
+        }}>
+          <span style={{fontWeight:600, wordBreak:'break-all'}}>{name}</span>
+          <span style={{opacity:0.65}}>{_fileSize(size)}</span>
+          <a className="px-btn primary" href={url} download={name}
+             style={{marginLeft:'auto', fontSize:10, textDecoration:'none', flexShrink:0}}>⬇ DOWNLOAD</a>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="vault-preview vault-preview-file" style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',

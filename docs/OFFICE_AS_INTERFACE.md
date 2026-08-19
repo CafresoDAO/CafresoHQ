@@ -16506,3 +16506,80 @@ the first fix wasn't broken, it was narrower than the complaint. And a
 read) means changing the default in source is invisible to every browser
 that already loaded the old code; the migration has to force the write,
 not just change what a fresh read would return.
+
+## The Library could file a PDF but never let a boss open one
+
+Reported directly: "Allow for the Library Editor to allow PDF view."
+
+The Library's file panel (`views/vault.jsx`'s `FiledFilePanel` — the pane
+that opens for anything the text editor can't, decks, PDFs, images,
+archives) had exactly one special case: images render as an `<img>`.
+Every other binary kind, PDF included, fell through to a generic card: a
+glyph, the kind, the size, and "the editor can't open this format —
+download it to work on it." A boss files a research PDF a coworker
+delivered and the only way to read it is to leave the app.
+
+The backend was already ready for better than that. `serve.py`'s
+`/vault/file` computes `content-disposition` from `_vault_inline_ok(mime)`,
+which has allowlisted `application/pdf` (alongside image/audio/video)
+since before this session started — confirmed live with `curl -sD -`
+against a freshly-filed PDF: `content-type: application/pdf`,
+`content-disposition: inline`. Nothing on the server needed to change; the
+frontend simply never used what was already being offered.
+
+**The fix.** `FiledFilePanel` gained an `isPdf` branch, using the exact
+technique `views/ide.jsx`'s `FilePreview` already uses for the same
+problem on the Projects/IDE surface: an `<iframe src={fileUrl}>`. Unlike
+the centered glyph card, the PDF branch fills the pane — `flex:1` iframe
+on top, a slim name/size/download footer pinned below — because a PDF is
+something to read, not a thumbnail to acknowledge. The download link
+stays for whatever can't render it inline.
+
+**Test coverage.** `scripts/test_library_pdf_view.py`, 9 checks: the
+`isPdf` detection, the dedicated early-return branch, the iframe pointed
+at the right URL, the download link surviving inside it, the name/size
+footer, the generic glyph/download card staying intact for the kinds that
+genuinely have no preview (presentations, documents, spreadsheets,
+archives), images unaffected, and two backend checks guarding the
+`content-disposition: inline` behavior this fix depends on — a regression
+there would silently turn the new iframe back into an empty download-only
+frame with no frontend signal that anything broke. Fire-tested with 6
+reversion arms — detection removed, branch disabled, iframe pointed at a
+dead URL, the generic fallback's copy changed, the backend's PDF allowlist
+removed, disposition hardcoded to attachment — 6/6 caught, post-restore
+baseline green. Full suite: 205/205 (up from 204/204).
+
+**Verification, and its limit.** Confirmed via `curl -sD -` that
+`/vault/file` serves a real filed PDF with the right MIME and `inline`
+disposition. Filed a hand-built, byte-valid PDF into the Library (in a
+throwaway probe folder, deleted afterward — the local backend here is the
+boss's own Obsidian vault, real data, not a fixture) and opened it in the
+app: the file tree showed it with a PDF badge, the panel rendered the new
+footer (name, size, download button) and an iframe at the correct size
+(402×629) pointed at the correct, cache-busted `/vault/file` URL, with
+`contentDocument.readyState === 'complete'` and no console errors. What I
+could *not* confirm from inside this session's own browser-automation
+tool: the PDF's actual rendered pixels. A direct top-level navigation to
+the same URL was intercepted by the tool itself and turned into a save
+dialog rather than a page load ("responded with a file download instead
+of a page") — this tool's browser appears to have no PDF viewer plugin
+enabled, or deliberately intercepts binary/PDF responses as downloads
+regardless of `content-disposition`, and the iframe embed inherits the
+same limitation (loaded to completion, empty body). This reads as a
+property of the test tool, not the product: it's the identical technique
+`views/ide.jsx` already ships for the Projects surface, and standard
+browsers render `content-disposition: inline` PDFs framed with a
+same-origin `Content-Security-Policy: sandbox` header fine — that header
+restricts what the framed *document's own script* can do, not the
+browser's native (non-script) PDF renderer. Recorded here rather than
+glossed over: I can vouch for the wiring, not for what it looks like on
+screen.
+
+**Lesson.** A backend can be fully ready — MIME right, disposition right,
+already shipped — while the one frontend surface a boss actually uses
+never adopted it; a repo-wide search for how the *other* surface already
+solved the same problem (`views/ide.jsx`'s `FilePreview`) found the
+answer in minutes instead of reinventing an iframe-vs-embed decision from
+scratch. And when a test environment can't produce the pixels a fix is
+meant to change, say exactly what was and wasn't confirmed rather than
+letting "the DOM wiring is right" read as "I watched it work."
