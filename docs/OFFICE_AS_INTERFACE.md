@@ -16877,3 +16877,87 @@ yet, and adding a value to an enum doesn't retroactively visit every
 place that already assumed there were only two. The tell was the same
 shape as task #17's: an `else` (or an unnamed default) standing in for a
 backend that has its own real arm everywhere else on the same resource.
+
+## Night Shift's scheduling error could read as a JS parser's opinion
+
+`missions.jsx`'s `NightShiftSection` talks to serve.py through one shared
+helper, unconditional about what comes back:
+
+    const nsFetch = (path, opts) =>
+      fetch(nsBase() + path, { credentials: 'include', ...(opts || {}) }).then(r => r.json());
+
+No `r.ok` check, no guard around a body that isn't valid JSON. Anything in
+front of serve.py that can answer with something other than a clean JSON
+body — a proxy's HTML error page, an empty 502, a stray 404 — makes
+`.json()` reject with V8's own words for "this wasn't JSON":
+
+    Unexpected token '<', "<html><bo"... is not valid JSON
+    Unexpected end of JSON input
+
+`schedule()`'s catch, a few lines below, put that straight on screen:
+
+    catch (e) { setMsg(`Couldn't schedule that — ${String(e.message || e)}`); }
+
+"Couldn't schedule that — Unexpected token '<', \"<html><bo\"... is not
+valid JSON" is a parser's opinion of a response body, not an office
+sentence — the exact raw-dump §7 forbids. Reproduced live with a Node
+harness (no browser needed — this is plain JS, not JSX markup): faked a
+502 with an HTML body, called the real extracted `nsFetch`, and watched
+the rejection carry that literal parser text.
+
+This is the client half of a mistake this same feature already had fixed
+on the server half: task #2 ("A brain failure reached the boss as a stack
+trace") caught `night_runner.py`'s `run_iteration` doing the identical
+thing — a raw Python exception `str(e)` landing in RECENT NIGHT RUNS
+verbatim — and fixed it with a hand-written classifier. That fix was
+explicitly scoped to BRAIN failures (`_BRAIN_CAUSES`/`brain_cause()`); the
+comment directly above `schedule()`'s catch already says, in as many
+words, not to run a scheduler error through the browser's equivalent
+classifier (`snagCause`) because that one only knows brain failures too —
+correctly avoided misattribution, but left the raw-dump half of the same
+bug in place for this specific failure mode.
+
+**The fix.** `nsFetch` still rejects on a bad body — `load()` (the schedule
+list poller) depends on that rejection to flip `reachable` false, and nothing
+here should change that — but the rejection now carries one honest,
+hand-written sentence naming the actual HTTP status instead of the
+parser's own message:
+
+    .then(r => r.json().catch(() => {
+      throw new Error(`the server's answer couldn't be read (HTTP ${r.status}${r.statusText ? ' ' + r.statusText : ''})`);
+    }))
+
+`schedule()`'s catch is untouched — it already does the right thing with
+whatever `e.message` holds; the fix is entirely in what `nsFetch` hands it.
+A real `{error: "..."}` JSON body (the shape every actual backend failure
+already uses) still resolves normally and flows through the existing
+`if (res.error)` branch, unaffected.
+
+**Test coverage.** New:
+`scripts/test_night_shift_bad_response_is_not_a_parser_error.py`, 11
+checks. Static: `nsFetch` still guards the parse, still throws (doesn't
+silently become a resolved value, which would make `load()` treat a
+broken response as reachable-but-empty), and the thrown template literal —
+checked in isolation from the surrounding comment, which necessarily
+quotes "SyntaxError" and "Unexpected token" to describe the bug it fixed —
+names the real HTTP status and doesn't quote the parser's own vocabulary.
+Mechanism, via a Node harness running the real extracted `nsBase`/
+`nsFetch` source (no browser, no JSDOM): an HTML 502 and an empty 200 both
+still reject, both messages are hand-written rather than parser text, a
+real JSON success body still resolves normally, and a real `{error}` JSON
+body still resolves (not rethrown) so `schedule()`'s existing handling
+keeps owning it.
+
+Fire-tested 3 arms — reverted the catch entirely back to unconditional
+`.json()`, put parser vocabulary back into the thrown message, and dropped
+the HTTP status from it — 3/3 caught, post-restore baseline green. Full
+suite: 210/210 (up from 209/209; one new file).
+
+**Lesson.** `String(e.message || e)` at the point something is displayed
+is not itself the bug — `schedule()`'s catch here does exactly what §7
+wants, forwarding whatever message it's given. The bug was upstream, in
+what got to be a message in the first place: a shared fetch helper that
+lets the JS engine's own parser write the boss-facing sentence whenever
+the network hands back something unexpected. The fix for a raw-dump ticket
+isn't always at the screen that shows it; sometimes it's at the one place
+upstream that manufactures the raw text to begin with.

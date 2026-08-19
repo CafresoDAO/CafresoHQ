@@ -671,7 +671,16 @@ const nsBase = () => {
   try { return CafresoHQClient.backendBase() || ''; } catch (_e) { return ''; }
 };
 const nsFetch = (path, opts) =>
-  fetch(nsBase() + path, { credentials: 'include', ...(opts || {}) }).then(r => r.json());
+  fetch(nsBase() + path, { credentials: 'include', ...(opts || {}) }).then(r => r.json().catch(() => {
+    /* A non-JSON body (an HTML error page from a proxy in front of serve.py,
+       an empty 502, a stray 404) used to reach every caller as a raw
+       SyntaxError — "Unexpected token '<' ... is not valid JSON" — which
+       schedule()'s catch then put on screen verbatim, exactly the raw dump
+       §7 forbids. Still rejects, so load()'s "office offline" handling is
+       unchanged; only the MESSAGE is cleaned, to one honest sentence naming
+       the actual HTTP status instead of a parser's opinion of the body. */
+    throw new Error(`the server's answer couldn't be read (HTTP ${r.status}${r.statusText ? ' ' + r.statusText : ''})`);
+  }));
 
 /* Next occurrence of 2:00 AM local — the canonical "tonight". */
 function nextTwoAm() {
