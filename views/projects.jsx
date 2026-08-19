@@ -64,6 +64,20 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     }
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
+    // This changes selectedId the same way switchProject() does (see its
+    // comment above), but was calling setSelectedId directly — a second,
+    // independent path around the same leak: the freshly created project
+    // would open showing whichever file/ledger/status the PREVIOUS project
+    // had left behind.
+    Object.values(pulseTimers.current).forEach(clearTimeout);
+    pulseTimers.current = {};
+    clearTimeout(idleTimer.current);
+    setOpenFile(null);
+    setLedger([]);
+    setAgentStatus('idle');
+    setPulse(new Set());
+    setErr(null);
+    setConflict(false);
     setSelectedId(id);
     setShowAdd(false);
     toast('success', `Added project "${name}"`);
@@ -813,7 +827,12 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     }
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
+    // Same setSelected+setOpenFile pairing every other selection change in
+    // this component uses (deleteProject, mobile-back, both list rows) —
+    // this was the one path that skipped it, so the new project's pane
+    // kept showing whatever file was open in the PREVIOUSLY selected one.
     setSelected(id);
+    setOpenFile(null);
     setShowAdd(false);
     if (window.cafresohqToast) window.cafresohqToast.success(`Added project "${name}"`);
   };

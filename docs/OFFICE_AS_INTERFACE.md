@@ -18591,3 +18591,91 @@ happens to state that already exists at the moment the selection itself
 changes. Filtering new writes into state and clearing old state on a
 context switch are two different disciplines — a view can get the first
 right and still leak through the second.
+
+### Creating a project reopened the exact same leak switchProject() had just closed — 2026-08-19
+
+The previous entry's fix only covered one of the two places `selectedId`
+changes in `views/projects.jsx`. That file has *two* functions named
+`commitProject` — one on each of its sibling top-level components — and
+while checking whether the "context-switch state leak" pattern recurs
+elsewhere, both turned out to still have it, through a second door the
+prior fix never touched.
+
+`WorkspaceView.commitProject` (the "+ ADD" flow for Workspace/Unified
+mode) built the new project and then called `setSelectedId(id)`
+directly — completely bypassing `switchProject()`, the very function
+written for the previous entry to close this exact leak. Creating a
+project while a *different* project's file was open reopened the full
+leak: stale `openFile`, `ledger`, `agentStatus`, `pulse`, `err` and
+`conflict` all kept showing the old project's state under the new
+project's now-active selector, and — same as before — `save()` still
+writes `openFileRef.current.path`, the old project's absolute path,
+with no re-check against the project actually selected.
+
+The sibling "Classic" `ProjectsView`'s own `commitProject` (the "+ ADD"
+handler behind `AddProjectModal`) had the narrower half of the same gap:
+it called `setSelected(id)` for the freshly created project but never
+`setOpenFile(null)`, unlike every other `setSelected` call site in that
+component (`deleteProject`, the mobile back button, and both mobile and
+desktop list rows all pair the two). The editor pane there is gated only
+on `rightTab === 'files' && openFile`, not on which project that file
+belongs to, so it kept rendering the OLD project's file, tab and any
+stale `err` banner right under the NEW project's now-active row. Unlike
+`WorkspaceView`, `ProjectsView`'s `saveFile` writes via an absolute
+`openFile.path` independent of `selected`, so no cross-project data
+corruption happens here — this half is UI-honesty-only: a boss who just
+created a project and sees a file sitting in the editor would reasonably
+believe that file lives in the project they just created.
+
+**Repro (WorkspaceView).** Open Project A, open a file, let it go dirty.
+Click "+ ADD", create Project B. The selector jumps to B, but the editor
+tab, ledger and status pip still show A's file and A's activity. Hit
+Save: it writes into A's file, not B's, even though every visible cue
+says B is now selected.
+
+**Repro (Classic ProjectsView).** Open a file in Project A. Click "+
+ADD", create Project B. Project B is now the active row in the list, but
+the editor pane on the right still shows A's file open (and A's error
+banner, if one was showing).
+
+**The fix.** `WorkspaceView.commitProject` now performs the identical
+reset `switchProject()` does — clear `openFile`, `ledger`, `agentStatus`,
+`pulse`, `err`, `conflict`, and cancel the pending pulse/idle timers —
+before calling `setSelectedId(id)`. It skips `switchProject()`'s own
+dirty-confirm guard and `id === selectedId` check, since both are
+meaningless for a project id that was just generated fresh.
+`ProjectsView.commitProject` gets `setOpenFile(null)` added alongside its
+existing `setSelected(id)`, matching that component's own convention
+exactly — `err` and `previewMode` are left alone there, since no sibling
+`setSelected` site resets those either.
+
+**Test coverage.** New:
+`scripts/test_add_project_left_the_old_projects_file_on_screen.py`, 24
+checks covering both components. Extracts each real `commitProject` body
+(disambiguated from its sibling by a unique marker — one checks for
+`C.fsMkdir`, the other for `CafresoHQClient.fsMkdir`) and drives it with
+fully mocked setters/toast/timers, confirming: `WorkspaceView` resets all
+six pieces of state and cancels the 3 mock-seeded timers while still
+selecting the new project, closing the Add-Project modal and toasting
+success; `ProjectsView` now resets `openFile` while still doing
+everything it already did correctly (select, add to the list, close the
+modal, toast); the sibling `setSelected`/`setOpenFile` pairs elsewhere in
+`ProjectsView` are locked in as unchanged; a missing
+`window.cafresohqToast` doesn't crash `ProjectsView.commitProject`.
+
+Fire-tested 4 arms — reverting `WorkspaceView.commitProject` to a bare
+`setSelectedId(id)` call, dropping just its `openFile` reset, dropping
+just its timer cleanup, and reverting `ProjectsView.commitProject` to
+drop `setOpenFile(null)` — 4/4 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 228/228 (up from
+227/227; one new file).
+
+**Lesson.** The previous entry's fix was correct but incomplete because
+it treated "the dropdown's `onChange`" as the only place `selectedId`
+changes in that view. It wasn't — `commitProject` is a second, less
+obvious entry point to the same state, in the *same* component, and it
+had the exact same hole. When a fix closes a leak by wrapping one call
+site, grep every other place that touches the same setter before
+declaring the leak closed — exactly the discipline task #38's ledger
+entry already named for `clipboard.writeText`, now confirmed to apply to
+`setSelectedId`/`setSelected` just as much.
