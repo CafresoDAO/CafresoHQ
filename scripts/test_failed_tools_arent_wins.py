@@ -197,11 +197,20 @@ check(
     "the floor event must forward `failed` — the Workspace ledger and the "
     "office floor both listen on it.",
 )
+# A later ticket (see scripts/test_receipts_logs_every_tool_call.py) gave
+# elevated agents an honest tool-execution audit row for a FAILED call too
+# — the banner in ui/panels.jsx promises "every tool call is logged to
+# Receipts", and silently dropping failures broke that promise the same way
+# this file's own incident did. That row is never a *deliverable* though:
+# `deliverableNow` requires `!ev.failed`, so the corkboard pin, the
+# deliverable verb in the title, and the on-chain anchor all still skip a
+# failed call exactly as before — only the audit row's existence changed.
 check(
-    re.search(r'if \(ev\.failed\) return;', app),
-    "recordToolReceipt must skip failed tools — otherwise the receipts tray "
-    "files \"Wrote index.html\" for a file that was never written, and the "
-    "corkboard pins a deliverable that cannot be opened.",
+    re.search(r'deliverableNow\s*=\s*isDeliverable\s*&&\s*!ev\.failed', app),
+    "recordToolReceipt must never let a failed tool masquerade as a "
+    "deliverable — otherwise the receipts tray files \"Wrote index.html\" "
+    "for a file that was never written, and the corkboard pins a "
+    "deliverable that cannot be opened.",
 )
 proj = read('views/projects.jsx')
 check(

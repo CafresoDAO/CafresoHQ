@@ -83,8 +83,11 @@ if m:
     )
 
 # Both consumers must read the helper, not re-derive a verb inline.
+# The gating variable is `deliverableNow` (isDeliverable && !ev.failed) as
+# of scripts/test_receipts_logs_every_tool_call.py — a failed call is never
+# a deliverable — but the title still has to reach for the same helper.
 check(
-    re.search(r'rcTitle\s*=\s*isDeliverable\s*\n?\s*\?\s*`\$\{deliverableVerb\(ev\.name\)\}', src),
+    re.search(r'rcTitle\s*=\s*deliverableNow\s*\n?\s*\?\s*`\$\{deliverableVerb\(ev\.name\)\}', src),
     "the receipt title must call deliverableVerb(ev.name) — this is the "
     "surface that was wrong, and an inline ternary here is how it got wrong.",
 )

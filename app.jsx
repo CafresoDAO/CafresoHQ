@@ -1767,13 +1767,6 @@ ${d.text}` : d.text,
   const recordToolReceipt = (agent, ev) => {
     if (!agent) return;
     if (ev.phase !== 'done') return;
-    /* A failed tool produced nothing to file a receipt FOR. The receipts
-       tray answers "what did my coworkers make?" and the corkboard shows
-       finished work on the wall — pinning a write that never landed puts a
-       deliverable on the wall that cannot be opened, and files a receipt
-       whose verb ("Wrote index.html") is simply untrue. The failure is
-       already reported honestly in the coworker's own bubble as a ⚠ card. */
-    if (ev.failed) return;
     /* Deliverables = tools that produce a real artifact the boss can open —
        vault notes, exported decks/docs/PDFs, generated media, published sites,
        workspace files. These also auto-pin to the office corkboard (quiet, no
@@ -1781,23 +1774,31 @@ ${d.text}` : d.text,
     const DELIVERABLE_TOOLS = ['VAULT_NEW', 'VAULT_APPEND', 'EXPORT_PPTX', 'EXPORT_DOCX',
       'EXPORT_PDF', 'GENERATE_IMAGE', 'GENERATE_VIDEO', 'PUBLISH_SITE', 'FILE_WRITE'];
     const isDeliverable = DELIVERABLE_TOOLS.indexOf(ev.name) >= 0;
-    /* Elevated agents get a full tool audit log. EVERY agent's deliverables
-       (e.g. a researcher's "wrote Research/x.md") are recorded too — otherwise the
-       real work non-elevated agents do is invisible in the receipts tray. */
-    if (!agent.elevated && !isDeliverable) return;
+    /* Elevated agents get a full tool audit log — every call, success or
+       failure, per the elevated-access banner's own promise ("Every tool
+       call is logged to Receipts"). A failed tool never counts as a
+       deliverable — nothing landed to pin on the corkboard, title with a
+       deliverable verb, or anchor on-chain, since "Wrote index.html" would
+       simply be untrue — but if the agent is elevated it still gets an
+       audit row below; "full" means every call, not just the ones that
+       worked. EVERY agent's SUCCESSFUL deliverables (e.g. a researcher's
+       "wrote Research/x.md") are recorded too — otherwise the real work
+       non-elevated agents do is invisible in the receipts tray. */
+    if (ev.failed ? !agent.elevated : (!agent.elevated && !isDeliverable)) return;
     const arg = String(ev.arg || '').trim();
-    if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
+    const deliverableNow = isDeliverable && !ev.failed;
+    if (deliverableNow && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
       // Pin the headline deliverables (skip the high-volume append/file-write churn).
       const verb = deliverableVerb(ev.name);
       onPin({ kind: 'receipt', text: `${agent.name}: ${verb} ${arg.slice(0, 60)}`,
               sourceId: `tool-${ev.name}-${arg.slice(0, 60)}` }, { quiet: true });
     }
     const rcId = HQ.uid('rc');
-    const rcTitle = isDeliverable
+    const rcTitle = deliverableNow
       ? `${deliverableVerb(ev.name)} ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`
-      : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}`;
+      : `${ev.name}: ${arg.slice(0, 80)}${arg.length > 80 ? '…' : ''}${ev.failed ? ' — failed' : ''}`;
     // Headline deliverables (the corkboard set) also anchor on-chain.
-    if (isDeliverable && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
+    if (deliverableNow && ev.name !== 'VAULT_APPEND' && ev.name !== 'FILE_WRITE') {
       anchorWorkReceipt(agent, ev, rcId, rcTitle);
     }
     setReceipts(prev => {
@@ -1805,8 +1806,8 @@ ${d.text}` : d.text,
         id: rcId,
         title: rcTitle,
         by: agent.name,
-        kind: isDeliverable ? 'deliverable' : 'tool-execution',
-        decision: 'executed',
+        kind: deliverableNow ? 'deliverable' : 'tool-execution',
+        decision: ev.failed ? 'failed' : 'executed',
         decidedAt: Date.now(),
         elevated: !!agent.elevated,
       }, ...prev];

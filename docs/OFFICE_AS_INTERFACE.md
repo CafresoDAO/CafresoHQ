@@ -17212,3 +17212,101 @@ every other site either already folds in `nightShiftBoard` (`anyBusy`,
 both copies) or is `onStopAll`'s `localRunning`, which is deliberately
 local-only because it's combined with `nightRunning` two lines later.
 Nothing left uncounted.
+
+## The elevated-access banner promised a "full tool audit log." The code disagreed with its own comment.
+
+`ui/panels.jsx`'s InspectPanel, shown only when a coworker is elevated:
+
+    🛡 FILE & SHELL ACCESS — backed by a CafresoHQ / Codex session with
+    computer access. Every tool call is logged to Receipts.
+
+`recordToolReceipt` in app.jsx — the only function that ever writes a
+Receipts row, called from all three tool-dispatch paths in the file
+(normal chat/DM, the sub-agent delegate path, the task path) — opened
+with:
+
+    if (ev.failed) return;
+
+before the branch that actually handles elevated agents even ran. That
+branch's own comment, a few lines below the early return, said:
+
+    /* Elevated agents get a full tool audit log. ... */
+
+So a failed shell command, a failed file write, any tool call that
+errored — by an elevated coworker, mid ordinary chat, a DM handoff, or a
+scheduled task — produced zero Receipts row. Not a red row, not a
+"failed" stamp: nothing. The only place the failure surfaced was the
+coworker's own chat bubble as a transient ⚠ card (`attachVisit`), which
+isn't Receipts and isn't searchable, filterable, or persisted the way the
+audit trail is. A boss who trusted the banner and later opened Receipts,
+filtered to TOOL-EXECUTION, to see what an elevated coworker actually did
+on the machine would see every command that worked and nothing about the
+ones that didn't — the exact half of the record a security-conscious
+audit trail exists for.
+
+This wasn't a copy bug like the DM-elevation ticket a few entries up —
+the code's own "full tool audit log" comment was already making the same
+promise the banner made, one function scope apart, and the code beneath
+it broke both promises at once.
+
+**The fix** narrows the failure exclusion to what it was actually
+protecting: the DELIVERABLE side of a receipt — the corkboard pin, the
+deliverable verb in the title ("Wrote index.html"), the on-chain anchor —
+where crediting a write that never landed really would be untrue. Those
+three stay gated on `!ev.failed`, unchanged. What's no longer gated on it
+is the tool-execution audit row itself, for elevated agents: a failed
+call now produces one, titled `TOOL_NAME: arg — failed`, `kind:
+'tool-execution'`, `decision: 'failed'` (was always `'executed'` before,
+since a failed row never used to exist to disagree with it). Non-elevated
+agents' failed calls are still excluded — unchanged; that half of the
+original comment ("EVERY agent's deliverables are recorded too") was
+never about failures and stays exactly as written.
+
+**Test coverage.** New:
+`scripts/test_receipts_logs_every_tool_call.py`, 12 checks. Static:
+the banner's claim is still present (this ticket fixes the code to match
+it, not the other way around); the unconditional `if (ev.failed) return;`
+is gone; the remaining guard conditions the failure case on elevation
+specifically; a failed row's title carries an honest " — failed" suffix;
+`decision` reads `'failed'`, not `'executed'`. Mechanism: `recordToolReceipt`
+lifted out of app.jsx by brace-depth (the same `extract_arrow_fn`
+technique used for `onStopAll`) and driven for real in `node -e` with
+`HQ.uid`/`onPin`/`anchorWorkReceipt`/`setReceipts`/`deliverableVerb`
+stubbed — confirms an elevated coworker's failed non-deliverable call now
+gets exactly one tool-execution/failed row and nothing pinned or
+anchored; confirms a non-elevated coworker's failed call still gets
+nothing at all; confirms an elevated coworker's failed DELIVERABLE-shaped
+call (a `VAULT_NEW` that errored) is logged as tool-execution/failed, not
+as a deliverable, and still isn't pinned or anchored; confirms an
+elevated success and a non-elevated deliverable success are both
+byte-for-byte unchanged from before the fix.
+
+Two pre-existing tests hard-coded the exact literal shape this ticket
+replaced and went red on the first full-suite run:
+`scripts/test_failed_tools_arent_wins.py` (from the ticket that first
+taught the office to tell a failed tool from a successful one) checked
+for the literal string `if (ev.failed) return;`; `scripts/test_receipt_verbs.py`
+(the ticket that fixed the receipt-title verb ladder) checked for the
+literal `rcTitle = isDeliverable ? ...`. Both were checking implementation
+shape rather than the invariant they actually cared about — neither
+protection was weakened: the first now asserts `deliverableNow =
+isDeliverable && !ev.failed` (a failed call still can't masquerade as a
+deliverable — no pin, no verb, no anchor), the second now asserts the
+title reads `deliverableNow ? ...` instead of `isDeliverable ? ...` (the
+title still calls the shared `deliverableVerb` helper). Both re-verified
+green.
+
+Fire-tested 2 arms — reverted the guard back to the unconditional
+failure exclusion, and separately hardcoded `decision: 'executed'` back
+in — 2/2 caught, post-restore baseline green. Full suite: 214/214 (up
+from 213/213; one new file, two updated).
+
+**Lesson.** The code's own inline comment ("Elevated agents get a full
+tool audit log") was the tell — when a comment states a guarantee and the
+guard three lines above it silently narrows that guarantee, the comment
+is either stale or the guard is wrong, and here it was the guard. Worth
+remembering for the next honesty sweep: a claim doesn't have to live in
+JSX copy to be false — it can be a code comment disagreeing with the
+code directly beneath it, which is arguably a sharper defect than a UI
+string, since it means the person who wrote the exclusion didn't notice
+it contradicted what they'd just written above it.
