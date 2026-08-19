@@ -750,7 +750,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
    belong here as well, but they live behind the container bridge; they are
    not local state this view can read honestly, so they are left out rather
    than faked.) */
-function CalendarView({ tasks, agents, missions = [] }) {
+function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [] }) {
   const groups = useMV(() => {
     const out = new Map();
     /* officeDate, not toISOString — the office runs on the BOSS'S clock.
@@ -791,7 +791,33 @@ function CalendarView({ tasks, agents, missions = [] }) {
        mission that ended before the field existed, fall back to the
        projected wrap; that is exact for the common deadline case and an
        estimate otherwise, and it beats erasing the run. */
-    for (const m of missions) {
+
+    /* Night Shift missions ("close the laptop, work continues") never
+       reached this view at all — running or finished — even though the
+       tag above draws no line between them and an in-browser research
+       mission; both are just "missions" that "wrap." nightShiftBoard
+       (currently running, from /missions/scheduled) and nightShiftRuns
+       (recently finished, from /missions/runs) are shaped differently
+       from `missions` — normalize each into the same fields the loop
+       below already expects, then fold them into the exact same pass so
+       every rule above (projected wrap vs. real endedAt, the fallback
+       for a run that predates a field) applies identically. A run still
+       mid-flight can appear in BOTH nightShiftBoard and nightShiftRuns
+       (mission-runs.json is written progressively) — its `finishedAt`
+       is still 0 there, so `!m.durationMs` below correctly drops the
+       not-really-finished duplicate and only the running entry shows. */
+    const nightRunning = (nightShiftBoard || []).map(n => ({
+      id: n.id, agentId: n.agentId, topic: n.topic, status: 'running',
+      startedAt: n.startedAt, durationMs: n.durationMs, intervalMs: n.intervalMs,
+    }));
+    const nightFinished = (nightShiftRuns || []).map(r => ({
+      id: r.id, agentId: r.agentId, topic: r.topic,
+      status: (r.errors > 0) ? 'error' : 'done',
+      startedAt: r.startedAt,
+      durationMs: Math.max(0, (r.finishedAt || 0) - (r.startedAt || 0)),
+      endedAt: r.finishedAt, notesWritten: r.writes || [],
+    }));
+    for (const m of [...missions, ...nightRunning, ...nightFinished]) {
       if (!m || !m.startedAt || !m.durationMs) continue;
       if (m.status === 'running') {
         push(m.startedAt + m.durationMs,
@@ -804,7 +830,7 @@ function CalendarView({ tasks, agents, missions = [] }) {
     return [...out.entries()]
       .map(([day, items]) => [day, items.sort((a, b) => b.at - a.at)])
       .sort((a,b) => b[0].localeCompare(a[0]));
-  }, [tasks, missions]);
+  }, [tasks, missions, nightShiftBoard, nightShiftRuns]);
 
   const fmt = (k) => {
     const d = new Date(k + 'T12:00:00');

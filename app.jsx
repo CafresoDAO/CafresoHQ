@@ -974,20 +974,42 @@ function App() {
      This poll is the fix — same endpoint, same 15s cadence NightShiftSection
      already uses, lifted one level so the floor can see it too. */
   const [nightShiftBoard, setNightShiftBoard] = useStateA([]);
+  /* Recently finished Night Shift runs (night_runner.py's mission-runs.json,
+     ring-capped server-side at 100) — same gap as nightShiftBoard above, one
+     surface over: CalendarView's own tag line promises "missions when they
+     wrap," but a wrapped Night Shift run never reached it, because nothing
+     ever lifted /missions/runs up here either. The Gazette already fetches
+     this endpoint (on its own "away long enough" trigger) but never stores
+     it anywhere else could read it — this poll is the ambient version,
+     alongside the schedule poll below, same cadence. */
+  const [nightShiftRuns, setNightShiftRuns] = useStateA([]);
   React.useEffect(() => {
     let stop = false;
     const poll = async () => {
       if (document.hidden || stop) return;
       try {
         const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
-        const r = await fetch(base + '/missions/scheduled', { credentials: 'include' });
-        const j = await r.json();
+        const [sr, rr] = await Promise.all([
+          fetch(base + '/missions/scheduled', { credentials: 'include' }),
+          fetch(base + '/missions/runs', { credentials: 'include' }),
+        ]);
+        const j = await sr.json();
         const schedules = j.schedules || [];
         const runningIds = new Set(j.running || []);
+        // startedAt = the schedule's own lastRunAt, stamped by serve.py's
+        // _night_scan the instant it flips this id into _night_running —
+        // for a currently-running schedule that field IS the start time,
+        // not a leftover from a prior run.
         const board = schedules
           .filter(s => s && runningIds.has(s.id))
-          .map(s => ({ id: s.id, status: 'running', topic: s.topic, agentName: s.agentName }));
+          .map(s => ({
+            id: s.id, status: 'running', topic: s.topic, agentName: s.agentName,
+            agentId: s.agentId, startedAt: s.lastRunAt || 0, durationMs: s.durationMs || 0,
+            intervalMs: s.intervalMs || 0,
+          }));
         if (!stop) setNightShiftBoard(board);
+        const rj = await rr.json();
+        if (!stop) setNightShiftRuns(rj.runs || []);
       } catch (_e) { /* ambient board — a failed poll just leaves the last-known state */ }
     };
     poll();
@@ -6007,7 +6029,8 @@ ${d.text}` : d.text,
       case 'vault':
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
-        return <CalendarView tasks={tasks} agents={agents} missions={missions} />;
+        return <CalendarView tasks={tasks} agents={agents} missions={missions}
+                 nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;
       case 'projects':
         return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={goTo} />;
       case 'terminal':

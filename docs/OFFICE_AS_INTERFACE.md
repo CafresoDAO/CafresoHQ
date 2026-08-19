@@ -17456,3 +17456,86 @@ the backend had already solved the hard half of the problem — session
 identity, buffered replay, a TTL grace period — and the only thing
 missing was not throwing away the client-side view that would have let
 the boss see the result.
+
+## CalendarView's "missions when they wrap" never included Night Shift missions
+
+`CalendarView`'s own tag line and empty-state copy both promise that
+tasks and missions land on the calendar when they're due or when they
+wrap — drawing no distinction between an in-browser research mission
+and a Night Shift one ("close the laptop, work continues"). The fold
+logic backing that promise only ever read the `missions` prop. Night
+Shift's two client-visible surfaces — `nightShiftBoard` (currently
+running, polled from `/missions/scheduled`) and the recently-finished
+runs from `/missions/runs` — were never wired into it at all, running
+or finished. A Night Shift mission could start, run for hours, and
+finish, and the calendar would never once mention it.
+
+`app.jsx` was already polling `/missions/scheduled` for `nightShiftBoard`,
+but only ever kept `{id, status, topic, agentName}` off it — not enough
+to place an entry on a specific day. `missions.jsx`'s own `NightShiftSection`
+already independently polls both endpoints every 15s for its own
+display, which is the precedent this fix lifts into `app.jsx` — the
+same move already made once before for `nightShiftBoard` itself.
+
+**The fix** has two halves. In `app.jsx`: the existing `nightShiftBoard`
+poll effect now also fetches `/missions/runs` in the same `Promise.all`,
+keeps `agentId`/`startedAt`/`durationMs`/`intervalMs` on each running
+board entry (`startedAt` comes from `s.lastRunAt`, stamped by
+`serve.py`'s `_night_scan` the instant it flips a schedule into
+`_night_running` — a genuine start time, not a stale leftover), and adds
+a new `nightShiftRuns` state holding the raw `/missions/runs` records.
+Both are passed down to `CalendarView`. In `views/core.jsx`: `CalendarView`
+takes the two new props and, inside its existing `useMV` fold, normalizes
+each into the same shape the loop already expects — a running board entry
+becomes `{status:'running', startedAt, durationMs}` (files at the
+projected wrap, same as an in-browser running mission); a finished run
+becomes `{status: errors>0?'error':'done', startedAt, durationMs:
+finishedAt-startedAt, endedAt: finishedAt, notesWritten: writes}` (files
+at its real end time). Both lists are concatenated into the same `for`
+loop that already walks `missions`, so every existing rule — projected
+wrap vs. real `endedAt`, the pre-`endedAt` fallback, the past-tense `OUT`
+label map — applies to Night Shift entries identically, with no new
+rendering path. A run can appear in both `nightShiftBoard` and
+`nightShiftRuns` while still mid-flight (`mission-runs.json` is written
+progressively, so `finishedAt` can be `0` there) — the loop's existing
+`if (!m.durationMs) continue;` guard drops that not-yet-finished
+duplicate for free, since `finishedAt - startedAt` is negative/zero, so
+only the running entry shows.
+
+**Test coverage.** `scripts/test_calendar_missions.py` (pre-existing —
+not a new file) already extracts and drives the real fold loop out of
+`views/core.jsx` rather than restating its rules; extended to also
+extract the two new normalization blocks and drive them through the
+same loop, with the harness's `collect()` gaining optional
+`nightShiftBoard`/`nightShiftRuns` parameters (defaulted, so every
+prior single-argument call site still exercises the old behavior
+unchanged). Four new scenarios: a running-only board entry lands
+correctly with the right `agentId` and `done: false`; a finished-only
+run lands at its `finishedAt` with the right notes count; an errored
+run gets `status === 'error'`; and a run present in both surfaces at
+once while still mid-flight produces exactly one calendar entry, not
+two. Three new static checks close a gap the extraction tests can't
+reach on their own — since the harness drives the fold logic directly
+rather than through the real component, a regression that dropped the
+new params from `CalendarView`'s own function *signature* while leaving
+the body's references intact would raise at runtime without ever
+failing an extracted-logic check. Confirms the literal signature string,
+the `app.jsx` call site passing both props, and the poll's added
+field-mapping and `nightShiftRuns` state/poll substrings are present.
+
+Fire-tested 6 arms — reverted the `CalendarView` signature, the fold
+loop's night-shift concatenation, the errored-run status branch, the
+call site's two added props, the poll's added per-entry fields, and the
+whole `nightShiftRuns` state/poll block — 6/6 caught, post-restore
+baseline byte-identical to the pre-edit backup. Full suite: 216/216
+(up from 216/216 — `test_calendar_missions.py` is a pre-existing file
+extended in place, not a new one, so this ticket added no test file and
+the count is unchanged from task #27's).
+
+**Lesson.** The empty-state copy and tag line were the honest part —
+they already described a calendar that didn't distinguish mission
+origin. The fold logic was the part lagging behind its own UI's
+promise, and only for one of the two mission surfaces the app actually
+has. When a view's copy already generalizes across a distinction
+("missions," not "in-browser missions"), that's worth treating as a
+spec to grep the data-fetching code against, not just prose.

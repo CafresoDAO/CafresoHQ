@@ -25,6 +25,16 @@ hours earlier, so it stamps `lastIterationAt` — the last moment the run is
 known to have been alive — never `Date.now()`, which would file the run
 under whenever the boss next opened the app.
 
+Later ticket, same view: this whole file only ever exercised in-browser
+`missions`. Night Shift missions — a first-class alternative offered in the
+exact same Missions modal, "close the laptop, work continues" — never
+reached the calendar at all, running or finished, even though the tag above
+draws no line between them ("missions when they wrap", not "research
+missions"). `run_js`'s extracted loop and `collect()` below were updated to
+also extract and drive the real nightRunning/nightFinished normalization
+blocks, not to restate them — same philosophy as the rest of this file: if
+the shipped fold changes, this harness changes with it.
+
 Run: python3 scripts/test_calendar_missions.py
 """
 import json
@@ -60,14 +70,22 @@ def extract(text, start_marker, end_marker):
 
 def run_js(body):
     """Run the REAL officeDate + the REAL mission-grouping loop under node."""
+    core = CORE.read_text(encoding='utf-8')
     office = extract(ART.read_text(encoding='utf-8'),
                      'function officeDate(now) {', '\n}')
-    loop = extract(CORE.read_text(encoding='utf-8'),
-                   '    for (const m of missions) {', '\n    }')
-    if not office or not loop:
-        raise SystemExit('could not extract officeDate / the mission loop')
-    # The REAL loop, wrapped in a callable. Nothing here restates its rules:
-    # if the shipped filter changes, this harness changes with it.
+    night_running = extract(core,
+                   '    const nightRunning = (nightShiftBoard', '\n    }));')
+    night_finished = extract(core,
+                   '    const nightFinished = (nightShiftRuns', '\n    }));')
+    loop = extract(core,
+                   '    for (const m of [...missions, ...nightRunning, ...nightFinished]) {',
+                   '\n    }')
+    if not office or not loop or not night_running or not night_finished:
+        raise SystemExit('could not extract officeDate / the night-shift '
+                          'normalization blocks / the mission loop')
+    # The REAL loop AND the REAL nightRunning/nightFinished normalization,
+    # wrapped in a callable. Nothing here restates their rules: if the
+    # shipped fold changes, this harness changes with it.
     harness = office + '''
 const out = new Map();
 const push = (ts, entry) => {
@@ -75,11 +93,16 @@ const push = (ts, entry) => {
   if (!out.has(key)) out.set(key, []);
   out.get(key).push(entry);
 };
-function collect(missions) {
+function collect(missions, nightShiftBoard, nightShiftRuns) {
+  nightShiftBoard = nightShiftBoard || [];
+  nightShiftRuns = nightShiftRuns || [];
   out.clear();
-''' + loop + '''
+''' + night_running + '\n' + night_finished + '\n' + loop + '''
   return [...out.entries()].map(([day, items]) =>
-    [day, items.map(e => ({ done: e.done, at: e.at }))]);
+    [day, items.map(e => ({ done: e.done, at: e.at,
+      agentId: e.mission && e.mission.agentId,
+      status: e.mission && e.mission.status,
+      notes: e.mission && (e.mission.notesWritten || []).length }))]);
 }
 ''' + body
     proc = subprocess.run(['node', '--input-type=module', '-e', harness],
@@ -125,6 +148,30 @@ R.errored  = collect([mk({ status: 'error',  endedAt: lateMs })]);
 R.noEndedAt= collect([mk({ status: 'done' })]);
 R.lateMs   = lateMs;
 R.projected= lateMs - 2 * HOUR + 4 * HOUR;
+
+/* Night Shift missions — a separate data shape (nightShiftBoard from
+   /missions/scheduled, nightShiftRuns from /missions/runs), normalized by
+   the REAL extracted blocks above into the same fields the loop already
+   understands. `missions` is empty in each of these — the point is that
+   Night Shift alone, with nothing else scheduled, still shows up. */
+const boardEntry = { id: 'nsh_1', agentId: 'a', topic: 'night topic',
+  agentName: 'A', startedAt: lateMs - 2 * HOUR, durationMs: 4 * HOUR, intervalMs: 600000 };
+R.nightRunningOnly = collect([], [boardEntry], []);
+
+const runEntry = { id: 'run_1', agentId: 'a', topic: 'night topic',
+  startedAt: lateMs - 3 * HOUR, finishedAt: lateMs, errors: 0, writes: ['n1', 'n2'] };
+R.nightFinishedOnly = collect([], [], [runEntry]);
+
+const runEntryErrored = Object.assign({}, runEntry, { id: 'run_2', errors: 2 });
+R.nightFinishedErrored = collect([], [], [runEntryErrored]);
+
+// mission-runs.json is written progressively — the SAME id can still be
+// in nightShiftBoard (running) and already have a row in nightShiftRuns
+// with finishedAt still 0. The finished side must not show as a second,
+// premature "done" entry — only the running one should appear.
+const midFlightRun = { id: 'nsh_1', agentId: 'a', topic: 'night topic',
+  startedAt: lateMs - 2 * HOUR, finishedAt: 0, errors: 0, writes: [] };
+R.nightMidFlightDedup = collect([], [boardEntry], [midFlightRun]);
 
 /* Timezone probe, kept SEPARATE from the cases above — one of those failed
    for an unrelated reason (its projected wrap legitimately lands on the next
@@ -177,6 +224,37 @@ console.log(JSON.stringify(R));
           f"got {out['noEndedAt']!r} — missions that ended before the field existed "
           'must still appear')
 
+    # ── Night Shift: the same gap, one surface over ──────────────────────
+    check("a running Night Shift mission shows up with nothing else "
+          "scheduled — nightShiftBoard alone must reach the calendar",
+          len(out['nightRunningOnly']) == 1
+          and out['nightRunningOnly'][0][1][0]['done'] is False
+          and out['nightRunningOnly'][0][1][0]['agentId'] == 'a',
+          f"got {out['nightRunningOnly']!r} — a Night Shift run in progress "
+          'must file the same forecast row an in-browser mission does')
+    check("a finished Night Shift run shows up, filed at when it actually "
+          "finished, with its notes counted",
+          len(out['nightFinishedOnly']) == 1
+          and out['nightFinishedOnly'][0][1][0]['done'] is True
+          and out['nightFinishedOnly'][0][1][0]['at'] == out['lateMs']
+          and out['nightFinishedOnly'][0][1][0]['notes'] == 2,
+          f"got {out['nightFinishedOnly']!r} — this is the actual defect: the tag "
+          'promises "missions when they wrap" and a wrapped Night Shift run '
+          'never wrapped up here at all')
+    check("a Night Shift run that errored is filed as an error, not a "
+          "quiet success",
+          out['nightFinishedErrored'][0][1][0]['status'] == 'error',
+          f"got {out['nightFinishedErrored']!r} — errors > 0 must not read as done")
+    check("a Night Shift run still mid-flight in BOTH nightShiftBoard and "
+          "nightShiftRuns (mission-runs.json is written progressively) "
+          "shows once, not twice",
+          len(out['nightMidFlightDedup']) == 1
+          and len(out['nightMidFlightDedup'][0][1]) == 1
+          and out['nightMidFlightDedup'][0][1][0]['done'] is False,
+          f"got {out['nightMidFlightDedup']!r} — a finishedAt:0 progress "
+          'row must not double as a premature "done" entry alongside the '
+          'real running one')
+
     # ── The timezone class: this view groups by the BOSS'S day ──────────
     if not out['discriminating']:
         print('  SKIP  timezone probe is vacuous at UTC+0 — this machine cannot '
@@ -202,6 +280,30 @@ console.log(JSON.stringify(R));
     check('the early-finish path stamps it too',
           re.search(r"endedAt: completed \? Date\.now\(\)", miss) is not None,
           'missions.jsx: a mission that calls itself finished early still ended')
+
+    # ── The plumbing: app.jsx must actually hand both night-shift sources
+    #    to the view whose fold logic now expects them ────────────────────
+    check('CalendarView\'s own signature accepts both night-shift props — '
+          'the fold logic above references them, so a signature without '
+          'them would ReferenceError at runtime even if the body were '
+          'otherwise correct',
+          'function CalendarView({ tasks, agents, missions = [], '
+          'nightShiftBoard = [], nightShiftRuns = [] }) {' in core,
+          'views/core.jsx: CalendarView signature missing the new params')
+    check('CalendarView is passed both night-shift props',
+          'nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;' in app,
+          'app.jsx: CalendarView call site still only passes tasks/agents/missions')
+    check("the schedule poll now carries what a running entry needs to be "
+          "dated (agentId, startedAt from the schedule's own lastRunAt, "
+          "durationMs, intervalMs) — topic/agentName alone was not enough "
+          'to file it on the calendar',
+          'agentId: s.agentId, startedAt: s.lastRunAt || 0, durationMs: s.durationMs || 0,' in app,
+          'app.jsx: nightShiftBoard poll still only captures topic/agentName')
+    check('a second, dedicated state holds recently-finished Night Shift '
+          'runs, polled alongside the schedule board',
+          'const [nightShiftRuns, setNightShiftRuns] = useStateA([]);' in app
+          and 'if (!stop) setNightShiftRuns(rj.runs || []);' in app,
+          'app.jsx: nightShiftRuns state/poll not found')
 
     # ── ...except the load-scrub, which must NOT claim the load time ────
     scrub = extract(app, 'const missionsOnLoad', '), []);')
