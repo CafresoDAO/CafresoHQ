@@ -2,7 +2,7 @@ import { Sprite } from './sprites.jsx';
 import { HQ } from './hq-runtime.jsx';
 import { CafresoHQChain, CafresoHQClient } from './claude-client.jsx';
 import { CafresoHQModals } from './modals.jsx';
-import { snagCause, snagSentence } from './app/floor.jsx';
+import { snagCause, snagSentence, toolActivity } from './app/floor.jsx';
 /* ==========================================================================
    CafresoHQ — research missions
 
@@ -226,7 +226,8 @@ function isMissionComplete(text) {
    3 in a row triggers an auto-pause.
    ========================================================================== */
 async function runMissionIteration(ctx) {
-  const { mission, agent, setMissions, setChat, appendJournal, onUpdateAgent, pulseGraph, signal } = ctx;
+  const { mission, agent, setMissions, setChat, appendJournal, onUpdateAgent, pulseGraph,
+          logActivity, recordToolReceipt, signal } = ctx;
   const startedThisRun = Date.now();
 
   /* Read the current vault index for this folder so the agent knows
@@ -306,7 +307,19 @@ async function runMissionIteration(ctx) {
           if (!ev.failed && (ev.name === 'VAULT_NEW' || ev.name === 'VAULT_APPEND')) {
             writesThisIter.push({ name: ev.name, path: String(ev.arg || '').trim(), at: Date.now() });
           }
+          /* Missions are a fourth tool-dispatch path (chat/DM, delegate, and
+             task are the other three) and, unlike those, never told the
+             ticker, the Team inbox, or Receipts anything — the office's own
+             onboarding promises "every real action streams into the ticker
+             and the Team inbox" and elevated agents' banner promises "every
+             tool call is logged to Receipts." A coworker could run a whole
+             research mission, really search and write vault notes, desk lit
+             up the entire time, and none of it would show up anywhere but
+             the mission's own chat thread. Same two calls the other three
+             streams already make on `done`. */
+          logActivity && logActivity(toolActivity(agent, ev));
           pulseGraph && pulseGraph(ev);
+          recordToolReceipt && recordToolReceipt(agent, ev);
         } else if (ev.phase === 'start') {
           pulseGraph && pulseGraph(ev);
         }

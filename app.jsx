@@ -3762,6 +3762,7 @@ ${d.text}` : d.text,
   const missionsRef = useRefA(missions); missionsRef.current = missions;
   useMissionRunner(missions, setMissions, {
     setChat, appendJournal, onUpdateAgent, pulseGraph, recordXp,
+    logActivity, recordToolReceipt,
     agentsRef, missionsRef,
   });
 

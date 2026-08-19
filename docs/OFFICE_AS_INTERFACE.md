@@ -17712,3 +17712,82 @@ capability's whole selling point is "happens somewhere you're not
 watching," that is worth treating as a specific reason to check whether
 its result reaches every surface that claims to summarize "what this
 coworker has done" — not a reason to assume it already does.
+
+## The office's fourth tool stream — Research Missions — never told anyone
+
+The onboarding tour promises, in its own words: "A desk lights up only
+while that coworker is really working — and every real action streams
+into the ticker and the Team inbox." The Getting Started checklist's
+sixth step promises the same thing again: "Desks light up; the Team
+inbox logs every action." Both read as a claim about every coworker's
+every real action, no exceptions named.
+
+`app.jsx` documents three places a tool call's `done` event is
+handled — dispatchToAgent (chat/DM), the delegate path, and the task
+path — and a recent ticket in this document found and fixed the first
+of those silently skipping `logActivity`. That ticket checked all
+three of app.jsx's own streams and closed the gap for good in that
+file. But `missions.jsx` — the foreground "🔬 Research Missions"
+runner (`useMissionRunner` / `runMissionIteration`), a completely
+different mechanism from the Night Shift tickets just above (those
+were server-side; this one runs in-browser while the tab is open) — is
+a fourth tool-dispatch stream, in a separate file, and it never called
+`logActivity` at all. Its `ctx` (built in `app.jsx`) carried
+`pulseGraph` and `recordXp` but not `logActivity` or
+`recordToolReceipt`; its `onTool` handler's `done` branch only ever
+called `pulseGraph`.
+
+That second omission matters on its own: `recordToolReceipt` is also
+the elevated-agent audit trail ("every tool call is logged to
+Receipts") and the mechanism that pins a deliverable to the office
+corkboard for *every* agent, not just elevated ones. A mission running
+on an elevated coworker got no audit row for any of its tool calls; a
+mission's vault notes never pinned to the corkboard the way the same
+write from a chat reply or a task would have.
+
+**Repro.** Boss opens Research Missions, starts one on a coworker with
+web/vault tools. Over several rounds the coworker really searches and
+writes vault notes — the desk visibly lights up the whole time, exactly
+as promised. Following the onboarding's own advice, the boss opens the
+Team Inbox or watches the floor Ticker expecting to see the mission's
+work — neither shows a single line. The only place any of it is visible
+is the mission's own chat thread, which nothing in the onboarding ever
+points the boss toward for this purpose.
+
+**The fix** threads `logActivity` and `recordToolReceipt` through
+`app.jsx`'s `useMissionRunner` ctx, has `runMissionIteration` destructure
+both off `ctx`, and adds `logActivity(toolActivity(agent, ev))` and
+`recordToolReceipt(agent, ev)` to the `onTool` `done` branch — same
+relative order (`logActivity` → `pulseGraph` → `recordToolReceipt`) the
+three existing streams already use. `toolActivity` is imported from
+`app/floor.jsx`, which missions.jsx didn't previously need.
+
+**Test coverage.** New:
+`scripts/test_mission_tools_reach_activity_and_receipts.py`, 9 checks.
+Static: the ctx wiring in both files, `toolActivity`'s import, the
+`onTool` branch's exact shape and call order via one anchored regex,
+and that the three pre-existing app.jsx streams plus the pre-existing
+writes-that-landed guard are untouched. Mechanism: drives the real call
+shape (`logActivity && logActivity(toolActivity(...))` then
+`recordToolReceipt && recordToolReceipt(...)`) against mock
+`logActivity`/`recordToolReceipt` implementations shaped like the real
+ones, confirming a mission's successful vault write reaches both
+surfaces correctly labeled, and that a failed mission tool call still
+reaches the activity feed rather than being silently dropped.
+
+Fire-tested 5 arms — reverted the ctx wiring in app.jsx, reverted the
+destructuring in missions.jsx, removed the `logActivity` call, removed
+the `recordToolReceipt` call, and removed the `toolActivity` import —
+5/5 caught, post-restore baseline byte-identical to the pre-edit
+backups for both files. Full suite: 219/219 (up from 218/218; one new
+file).
+
+**Lesson.** "Three streams, all fixed" is only true of the streams that
+live in the file being audited. This bug and the dispatchToAgent one a
+few entries up are the same shape, found the same way — grep every
+place a tool's `done` event is handled — but the second sweep had to
+be told explicitly to leave `app.jsx` and look in `missions.jsx`, a
+different file implementing what reads, from the UI, as the exact same
+feature (a coworker doing tool-calling work). A promise phrased as
+"every real action" is a claim about the whole app, not about whichever
+file happened to get checked first.
