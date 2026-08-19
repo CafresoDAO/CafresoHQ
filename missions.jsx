@@ -916,13 +916,23 @@ function NightShiftSection({ agents }) {
       {runs.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <div className="missions-section-title">RECENT NIGHT RUNS</div>
-          {runs.map(r => (
-            <div key={r.id} className="hint" style={{ marginTop: 3 }}>
-              {r.lastError ? '⚠' : '✓'} {fmtT(r.startedAt)} · <b>{r.agentName || r.agentId}</b> · {r.topic.slice(0, 40)} ·
-              {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} note{(r.writes || []).length === 1 ? '' : 's'}
-              {r.lastError ? ` · ${String(r.lastError).slice(0, 60)}` : ''}
-            </div>
-          ))}
+          {/* finishedAt is 0 for the whole duration of a run — night_runner.py
+              only sets a real timestamp after its iteration loop exits
+              (same signal app.jsx's Gazette filter already trusts). Without
+              this check a mission an hour into a 4-hour run showed a plain
+              ✓ and its round/note count so far — identical to a finished,
+              successful run, with nothing on screen saying 5 more rounds
+              were still pending. */}
+          {runs.map(r => {
+            const inFlight = !r.finishedAt;
+            return (
+              <div key={r.id} className="hint" style={{ marginTop: 3 }}>
+                {inFlight ? '▶' : (r.lastError ? '⚠' : '✓')} {fmtT(r.startedAt)} · <b>{r.agentName || r.agentId}</b> · {r.topic.slice(0, 40)} ·
+                {' '}{r.iterations} round{r.iterations === 1 ? '' : 's'} · {(r.writes || []).length} note{(r.writes || []).length === 1 ? '' : 's'}
+                {inFlight ? ' · still running' : (r.lastError ? ` · ${String(r.lastError).slice(0, 60)}` : '')}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

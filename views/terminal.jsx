@@ -1016,9 +1016,14 @@ const HQSH_COMMANDS = {
       if (args[0] === 'runs') {
         const { runs } = await j('/missions/runs');
         if (!runs || !runs.length) return '(no night runs yet)';
-        return runs.slice(-10).reverse().map(r =>
-          `  ${r.lastError ? '⚠' : '✓'} ${fmtT(r.startedAt)}  ${r.agentName || r.agentId} · ${String(r.topic).slice(0, 40)}` +
-          `  ${r.iterations} rounds · ${(r.writes || []).length} notes${r.lastError ? ' · ' + String(r.lastError).slice(0, 50) : ''}`).join('\n');
+        // Twin of missions.jsx's RECENT NIGHT RUNS list — finishedAt is 0
+        // for the whole duration of a run, so an in-flight mission read
+        // identically to a finished one here too.
+        return runs.slice(-10).reverse().map(r => {
+          const inFlight = !r.finishedAt;
+          return `  ${inFlight ? '▶' : (r.lastError ? '⚠' : '✓')} ${fmtT(r.startedAt)}  ${r.agentName || r.agentId} · ${String(r.topic).slice(0, 40)}` +
+            `  ${r.iterations} rounds · ${(r.writes || []).length} notes${inFlight ? ' · still running' : (r.lastError ? ' · ' + String(r.lastError).slice(0, 50) : '')}`;
+        }).join('\n');
       }
       if (args[0] === 'cancel') {
         if (!args[1]) return 'usage: hq night cancel <scheduleId>';

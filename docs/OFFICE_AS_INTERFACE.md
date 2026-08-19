@@ -15730,3 +15730,53 @@ is only as consistent as whoever last touched card #2 remembered to
 check card #1. The roster card's Snags row already carried its own
 "why the gate" comment — everything needed to copy it correctly was
 sitting right next to the thing that was missing it.
+
+### A mission an hour into its run looked exactly like a finished one — 2026-08-19
+
+`night_runner.py`'s `run_mission()` creates its run record with
+`finishedAt: 0` and only assigns a real timestamp once, at the very end,
+after the whole iteration loop exits — whether that's normal completion,
+an abort, or an error-streak auto-pause. Every iteration in between calls
+`on_progress(dict(run))` with a snapshot where `finishedAt` is still 0,
+and `serve.py`'s `_night_log_run` writes that snapshot straight to
+`mission-runs.json`, unfiltered.
+
+Two surfaces read `/missions/runs` and rendered each row from
+`r.lastError` alone — `✓` if falsy, `⚠` if not — with no check on
+`r.finishedAt` at all: `missions.jsx`'s "RECENT NIGHT RUNS" list and
+`views/terminal.jsx`'s `hq night runs` command. A mission scheduled for
+six rounds over an hour that had completed only its first round — real
+progress, five more pending — showed `✓ ... 1 round · 1 note`: visually
+identical to a mission that had actually finished successfully. Nothing
+on screen said it wasn't done yet.
+
+`app.jsx`'s Gazette filter already trusts `finishedAt` as the completion
+signal for this exact field — `(x.finishedAt||0) > prevSeen` — so this
+wasn't a case where the signal didn't exist; it was two surfaces that
+never adopted a check the rest of the app already relies on.
+
+**The fix** adds `const inFlight = !r.finishedAt` to both row renderers
+and branches the icon on it first (`▶` before falling through to the
+✓/⚠ pair), plus a plain-English " · still running" suffix so the state
+doesn't depend on noticing a single glyph.
+
+**Tests.** `scripts/test_a_running_mission_looked_finished.py` first
+confirms the underlying fact from `night_runner.py` — the run record is
+created with `finishedAt: 0`, only assigned a real value after the
+iteration loop, and `on_progress` fires mid-loop with that still-0
+snapshot — establishing this is a real in-flight scenario, not a
+hypothetical one. It then confirms both `missions.jsx` and
+`views/terminal.jsx` branch their icon specifically on `inFlight` (not
+just that `r.finishedAt` and "still running" appear somewhere nearby)
+and both carry the "still running" suffix.
+
+Fire-tested with four arms: each file's icon ternary reverted to
+lastError-only, and each file's "still running" suffix dropped while the
+icon stayed split. All four caught, post-restore baseline green. Full
+suite: 191/191.
+
+**Lesson.** A completion signal that one part of the app already treats
+as authoritative (the Gazette's `finishedAt` filter) doesn't
+automatically propagate to every other place that reads the same field
+— each new consumer of `/missions/runs` has to independently remember
+the rule, and two of them didn't.
