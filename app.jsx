@@ -831,6 +831,8 @@ function App() {
      per job; nothing else writes this. */
   const [experience, setExperience] = useFileStored(k('experience'), 'state', 'experience', []);
   const recordXp = (entry) => setExperience(prev => xpRecord(prev, entry));
+  const experienceRef = useRefA([]);
+  useEffectA(() => { experienceRef.current = experience; }, [experience]);
   const [memory, setMemory] = useFileStored(k('memory'), 'memory', 'context', SEED_MEMORY);
   const [memoryOpen, setMemoryOpen] = useStateA(false);
   const [meetingOpen, setMeetingOpen] = useStateA(false);
@@ -1010,6 +1012,29 @@ function App() {
         if (!stop) setNightShiftBoard(board);
         const rj = await rr.json();
         if (!stop) setNightShiftRuns(rj.runs || []);
+        /* §5's own contract: "a MISSION that ran its schedule" is a job,
+           full stop — it draws no line between an in-browser Research
+           mission and a Night Shift one, and the Gazette calls a finished
+           Night Shift run "the Gazette's lead story." But recordXp was only
+           ever wired up on the in-browser mission's own client loop
+           (missions.jsx) — night_runner.py runs as a separate server-side
+           process and has no way to reach this ledger itself. A coworker's
+           whole overnight shift used to leave zero mark on their record:
+           no Jobs credit, no streak, no Snag on a run that failed
+           repeatedly. Recorded here, the one place both sides meet — a
+           run this poll has not seen finish before, going by `taskId` in
+           the ledger the same way the task and mission paths already key
+           on it. errors>0 keeps the streak honest even when iterations
+           also happened; the reverse (0 iterations, 0 errors — a run that
+           finished without ever really starting) records nothing, same
+           call `iterations > 0` already makes on the mission side. */
+        for (const r of (rj.runs || [])) {
+          if (!r || !r.id || !(r.finishedAt > 0)) continue;
+          if (experienceRef.current.some(e => e.taskId === r.id)) continue;
+          const outcome = (r.errors > 0) ? 'snag' : ((r.iterations > 0) ? 'done' : null);
+          if (!outcome) continue;
+          recordXp({ agentId: r.agentId, kind: 'mission', outcome, taskId: r.id, title: r.topic });
+        }
       } catch (_e) { /* ambient board — a failed poll just leaves the last-known state */ }
     };
     poll();

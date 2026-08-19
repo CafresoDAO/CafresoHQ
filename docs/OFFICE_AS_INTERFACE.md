@@ -17621,3 +17621,94 @@ files and simply unexamined for the other. When a "checked and it's
 fine" note in this ledger names its own scope that precisely, that is
 worth reading as an invitation to check the sibling path it didn't
 reach, not as the whole question closed.
+
+## A whole Night Shift never left a mark on the coworker who ran it
+
+`app/experience.jsx`'s own contract draws no line between mission
+kinds: "What counts as a job: a TASK completion... and a MISSION that
+ran its schedule." The roster card and Inspect panel both read
+`xpStats(experience, agentId)` for Jobs, streak, and Snags — nothing
+else. And `app.jsx`'s own Gazette code calls a finished Night Shift run
+"the Gazette's lead story — [it] alone justif[ies] the paper even when
+nothing else happened while away."
+
+`recordXp`/`setExperience` had exactly two callers before this ticket:
+`app.jsx`'s task-completion paths, and `missions.jsx`'s own scheduling
+loop for in-browser Research missions (the previous two tickets in
+this document both live in that second file). Night Shift missions run
+inside `night_runner.py`, a separate server-side process that writes
+finished runs straight to `mission-runs.json` — it has no way to call
+into the browser's ledger itself, and nothing on the client side ever
+closed that gap. Every consumer of `/missions/runs` (the Missions
+modal's "RECENT NIGHT RUNS" list, the office floor board, the Gazette)
+only ever *displayed* these runs. A coworker could run a clean 6-round
+overnight shift, write four vault notes, and read about it themselves
+on the morning Gazette's front page — and their own roster card would
+show the exact same Jobs count, streak, and Snags as the day before, as
+if the shift never happened. A coworker whose overnight run failed
+every round fared no better: no Snag, streak untouched either way.
+
+**The fix** folds Night Shift runs into the ledger from the poll that
+already lifts `/missions/runs` into `nightShiftRuns` (the previous
+ticket, #28). A new `experienceRef` (mirroring the existing
+`activityRef`/`receiptsRef` pattern for state read inside intervals)
+tracks the live ledger; each poll walks the finished runs and records
+one whichever way it landed — `outcome: r.errors > 0 ? 'snag' :
+(r.iterations > 0 ? 'done' : null)`, skipping entries with neither (a
+run that finished without ever really starting is not a job, mirroring
+the `iterations > 0` guard the mission path already uses for `'done'`)
+— keyed to `taskId: r.id`, the same key both other paths already use.
+Before recording, it checks `experienceRef.current.some(e => e.taskId
+=== r.id)`: `xpRecord` only dedupes `'done'` entries by `taskId`, never
+`'snag'` ones, and this poll re-fetches the same finished run every 15s
+for as long as it stays in the server's ring buffer — without this
+check, a single failed overnight run would restamp a fresh Snag, and
+reset the streak again, on every poll for as long as the tab stayed
+open.
+
+**Test coverage.** New:
+`scripts/test_night_shift_runs_reach_the_xp_ledger.py`, 9 checks.
+Extracts and drives the real per-run recording block from `app.jsx`
+together with the real `xpRecord`/`xpStats` from `app/experience.jsx`
+in one `node -e` harness. Confirms: a clean finished run records one
+`'done'` entry, and driving it through the real `xpStats()` actually
+shows `jobs: 1, streak: 1` — the roster card's own math, not an
+assertion about the call's shape; a run that never produced a good
+round still records, as a `'snag'`; a still-running run (`finishedAt:
+0`) and a run that finished with neither a good round nor an error
+both record nothing; a run already present in the ledger is never
+recorded twice, even when handed the same finished run again (the
+15s-repoll case); two different runs finishing in the same poll both
+land. A static check confirms `experienceRef` exists and its sync
+effect is present — the plumbing the dedup check depends on.
+
+One self-caught regression during this ticket: an early pass rewrote
+`if (!stop) setNightShiftRuns(rj.runs || []);` into a two-line form
+using an intermediate `const runs`, which silently broke a static
+check in the *pre-existing* `scripts/test_calendar_missions.py` (task
+#28) that greps for that exact line. Running the full suite (a step
+that would have caught it regardless) surfaced the one unrelated
+`FAIL` immediately; reverted to the original line and had the new
+loop read `rj.runs || []` directly instead, at which point every
+suite this ticket touches was green together, and this ledger entry
+notes the reason so the same regex isn't quietly loosened next time
+someone edits that poll.
+
+Fire-tested 4 arms — removed the whole record-on-finish loop, dropped
+the dedup check, inverted the `'snag'`/`'done'` outcome logic, and
+removed `experienceRef`'s sync effect (leaving the dedup check reading
+permanently empty state) — 4/4 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 218/218 (up from
+217/217; one new file).
+
+**Lesson.** The last two tickets both concerned this same ledger and
+both lived entirely inside the client's own mission-running code
+(`missions.jsx`). This one was the reminder that "the client" is not
+"the whole system" — Night Shift's defining feature, spelled out in
+its own tag line, is that it runs server-side while the boss is away,
+and the feature most worth crediting on a coworker's record is exactly
+the one running furthest from the code that writes to it. When a
+capability's whole selling point is "happens somewhere you're not
+watching," that is worth treating as a specific reason to check whether
+its result reaches every surface that claims to summarize "what this
+coworker has done" — not a reason to assume it already does.
