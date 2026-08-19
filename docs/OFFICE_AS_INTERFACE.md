@@ -15979,3 +15979,52 @@ same day, apparently without anyone borrowing the pattern from a
 neighbor. A repo-wide grep for this exact shape the next time it turns
 up once would likely have caught all three in one pass instead of three
 separate incidents.
+
+### A failed Library search closed the whole cabinet — 2026-08-19
+
+`views/vault.jsx`'s `search()` routed a failed query through the same
+`err` state that gates the entire Library view:
+
+    catch (e) { setErr(e.message); setHits([]); }
+
+`err` is the file's own documented single choke point for the
+whole-cabinet "The cabinet won't open" screen — the one that replaces
+the file tree, the open editor, everything, with a full-page failure
+and a Retry button. That screen is the right response to a genuine
+vault-load failure. It is the wrong response to one search query
+failing while the vault is open and working fine: a boss mid-edit on a
+note, with the tree fully loaded, could lose sight of both just by
+typing a query that happened to error.
+
+The file had already drawn this exact line once, for saves. `saveNote`
+carries its own comment explaining it deliberately never touches `err`:
+"a failed save used to replace the whole vault view with an error
+screen, hiding the user's unsaved text." `search()` never got the same
+treatment, even though a `snag()` toast helper — already used elsewhere
+in this same file for scoped failures — was sitting right there to
+reuse.
+
+**The fix** replaces `setErr(e.message); setHits([])` with `snag('Search
+failed', e); setHits(null)` — a toast instead of a view-nuke, and a
+`null` hits value (falls back to showing the tree) instead of an empty
+array that would have quietly claimed zero results.
+
+**Tests.**
+`scripts/test_a_failed_search_closed_the_whole_cabinet.py` confirms
+`search()`'s catch no longer calls `setErr`, that it calls `snag()`
+instead, that hits are cleared to `null` rather than `[]`, and that
+both the whole-cabinet failure screen and `saveNote`'s own precedent
+comment are untouched by the change.
+
+Fire-tested with two arms: fully reverted to the pre-fix `setErr` +
+empty-array behavior, and a hybrid where `setErr` was reintroduced
+alongside the new `snag()` call. Both caught, post-restore baseline
+green. Full suite: 196/196.
+
+**Lesson.** The same file had already fixed this exact class of bug
+once (`saveNote`, view-nuke on a scoped failure) and left a comment
+explaining why — but the fix didn't get generalized to the other
+function with the same shape of problem in the same file. Worth
+grepping a file's own `setErr`/error-state call sites whenever one of
+them turns out to be miscategorized, not just fixing the one that was
+reported.

@@ -333,8 +333,14 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const search = async () => {
     if (!q.trim()) { setHits(null); return; }
+    /* NOT setErr — that gate replaces the whole tree/editor with the
+       "cabinet won't open" screen (below), which is true for a failed
+       vault LOAD but not for one failed query against an already-open
+       Library. Same distinction saveNote already draws (see its own
+       comment) for the same reason: a scoped failure must not evict
+       everything the boss can still see and use. */
     try { setHits(_bridge ? await bridgeSearch(q.trim()) : await CafresoHQClient.vaultSearch(q.trim())); }
-    catch (e) { setErr(e.message); setHits([]); }
+    catch (e) { snag('Search failed', e); setHits(null); }
   };
 
   const openByPath = async (path) => {
