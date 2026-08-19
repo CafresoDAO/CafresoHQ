@@ -16071,3 +16071,46 @@ kind of thing worth grepping the rest of the file for — the same
 sentence explaining what "they" got wrong the first time would have
 caught this second occurrence immediately, thirty lines down, in the
 same function.
+
+### The CEO that read the vault and said nothing came back — 2026-08-19
+
+`hq-runtime.jsx`'s `agentStream` (the per-coworker chat path) tracks a
+`toolsExecuted` counter across hops. When a hop ends with no tool call
+and no text, it checks that counter first: a coworker who ran a real
+tool earlier in the same exchange gets "did the legwork but never wrote
+it up" — a materially truer message than "may be offline or busy,"
+since the brain plainly was not offline moments earlier when it read a
+file.
+
+`ceoStream` — the CEO/"CafresoHQ" chat path, a few dozen lines above in
+the same file — never got the equivalent counter. A CEO that
+successfully read the vault or ran a search on hop 1, then came back
+empty on hop 2, fell straight into the generic "nothing came back from
+me that time — the brain running this office may be offline or busy"
+line, even though it had just done real, successful work one hop
+earlier.
+
+**The fix** adds `ceoStream`'s own `toolsExecuted` counter, incremented
+once per tool call (success or failure alike, mirroring `agentStream`
+exactly), and checks it first in the empty-reply branch with a
+first-person version of the same message: "I did the legwork but never
+wrote it up. Ask me to summarise what I found."
+
+**Tests.**
+`scripts/test_the_ceo_that_read_the_vault_and_said_nothing_came_back.py`
+confirms the counter exists, is incremented on every tool call, and is
+checked ahead of the missing-door and orphan-marker branches — while
+the two pre-existing fallback messages and `agentStream`'s own separate
+counter stay untouched.
+
+Fire-tested with two arms: a full revert (no counter, no increment, no
+priority branch) and a partial one (counter kept and incremented, but
+the priority check removed so it's computed and never read). Both
+caught, post-restore baseline green. Full suite: 198/198.
+
+**Lesson.** Same file, same day, second half of the same read: a
+distinction one chat path already draws is worth checking for in every
+sibling path that shares its shape, not just the message-wording bugs.
+`agentStream` and `ceoStream` run the identical hop loop side by side —
+a feature added to one and not mirrored to the other is itself a kind
+of honesty gap once the two paths are expected to behave alike.

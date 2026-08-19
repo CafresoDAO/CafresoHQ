@@ -3949,6 +3949,11 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
   const reachedFor = new Set();
   const CEO_HAS = new Set(ceoTools.map(t => t.name));
   const KNOWN_MARKERS = Object.keys(TOOL_REGISTRY).map(k => TOOL_REGISTRY[k].name);
+  /* Same distinction agentStream draws (see its own comment): a hop that
+     ran a tool and then came back empty is not "offline or busy", it is
+     legwork with no write-up. Without this the CEO got the generic
+     brain-may-be-busy line even right after it had just read the vault. */
+  let toolsExecuted = 0;
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let buf = '';
@@ -3976,7 +3981,9 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
         const missing = [...new Set([...orphans.map(o => o.tool), ...reachedFor]
           .filter(n => !CEO_HAS.has(n)))];
         const note = missing.length ? ceoReachedForNote(missing) : '';
-        if (note) {
+        if (toolsExecuted > 0) {
+          emit('_(I did the legwork but never wrote it up. Ask me to summarise what I found.)_');
+        } else if (note) {
           emit(note);
         } else if (orphans.length) {
           emit('_(I talked myself through that one and never actually answered. Ask me again.)_');
@@ -4045,6 +4052,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
        NOT snagCause: that only classifies brain failures and would label a
        vault or shell error as a sign-in problem. */
     catch (err) { result = `That didn't work — ${err.message}`; meta.failed = true; }
+    toolsExecuted++;
     /* The visit does NOT go into the token stream any more.
 
        Everything in the text channel is forgeable, and a local model
