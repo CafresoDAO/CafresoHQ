@@ -468,8 +468,12 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     try {
       const r = await CafresoHQClient.publishSite(openFile.path);
       if (r.mode === 'canister') {
-        setPubMsg({ kind: 'public', url: r.url, text: 'Published — link copied.' });
-        try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
+        try {
+          await navigator.clipboard.writeText(r.url);
+          setPubMsg({ kind: 'public', url: r.url, text: 'Published — link copied.' });
+        } catch (_e) {
+          setPubMsg({ kind: 'public', url: r.url, text: 'Published — copy the link below, your browser blocked the automatic copy.' });
+        }
         return;
       }
       /* Deliberately NOT copied. The clipboard is what turns "I looked at a

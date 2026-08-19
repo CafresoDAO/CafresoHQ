@@ -15929,3 +15929,53 @@ each wrote `try { clipboard.writeText(...) } catch {}` independently,
 and neither file's fix touched the other. Worth a grep across the repo
 next time this exact shape turns up, not just a fix at the one site that
 prompted the search.
+
+### "Published — link copied" said so before it had tried — 2026-08-19
+
+`views/projects.jsx`'s `publishOpen()`, on a successful canister publish,
+wrote the claim into state before it had even attempted the clipboard
+write:
+
+    setPubMsg({ kind: 'public', url: r.url, text: 'Published — link copied.' });
+    try { await navigator.clipboard.writeText(r.url); } catch (_e) {}
+
+Same shape, same day, as the two clipboard bugs fixed a few hours
+earlier — `views/graph.jsx`'s Share modal and `ui/chat.jsx`'s copy
+buttons — a third, independent location that wrote the identical
+fire-and-forget pattern. A user whose write failed (permission denied,
+insecure context, lost focus) read "Published — link copied." and
+pasted nothing.
+
+What makes this one notable: the very next branch in the same function
+already understood the principle. The non-canister preview path carries
+its own comment — "Deliberately NOT copied. The clipboard is what turns
+'I looked at a local link' into 'I sent someone a dead link'" — proving
+the author cared about this exact distinction one branch over, and just
+never gated the canister-mode "copied" claim on the write's actual
+outcome.
+
+**The fix** awaits the write first and only sets the "link copied" text
+inside that try; the catch sets an equally true message — "copy the
+link below, your browser blocked the automatic copy" — still carrying
+the URL, which renders as a clickable link regardless of which text
+fired.
+
+**Tests.**
+`scripts/test_published_link_copied_before_it_was_copied.py` confirms
+the write is awaited before the claim is set (not after, not
+fire-and-forget), that the catch branch's message does not itself claim
+success, that the URL still carries through to the catch path, that the
+link always renders regardless of outcome, and that the sibling
+preview-mode branch's own honesty comment is untouched.
+
+Fire-tested with two arms: reverted to the exact pre-fix ordering, and
+the catch branch left in place but still claiming "link copied." Both
+caught, post-restore baseline green. Full suite: 195/195.
+
+**Lesson.** Three files — `views/graph.jsx`, `ui/chat.jsx`,
+`views/projects.jsx` — independently wrote `try { clipboard.writeText
+(...) } catch {}` paired with an unconditional success message, on the
+same day, apparently without anyone borrowing the pattern from a
+neighbor. A repo-wide grep for this exact shape the next time it turns
+up once would likely have caught all three in one pass instead of three
+separate incidents.
