@@ -15832,3 +15832,50 @@ fine when nothing downstream claims the side effect happened, and a lie
 the moment something does. The clipboard write and the sentence telling
 the boss about it were two different lines of code with no shared
 source of truth between them.
+
+### The wallet panel dumped raw exceptions instead of a message — 2026-08-19
+
+`modals/settings.jsx` imports `cleanCause` from app/floor.jsx specifically
+for this screen — the file's own top-of-file comment explains why:
+`snagCause` names a BRAIN in every sentence, and nothing on Settings →
+Connections is one, so `cleanCause` strips a raw error down to a short,
+readable line without inventing a cause for it. `IcpServicesPanel`, four
+call sites in this same file, already used it correctly.
+
+`AgentWalletCard` (refreshBalances, saveCap, fund, togglePause, savePay,
+payNow, stopPay) and `PayrollBudgetPanel` (approve, togglePause) — nine
+call sites across the two panels that actually move or gate real money —
+did not. Every one of them caught its error and rendered it with
+`setMsg(String(e.message || e))`: a raw IC canister reject message, or a
+raw JS error's full string form (sometimes carrying a stack, a URL, or a
+JSON blob), landing verbatim on a screen meant to say "insufficient
+funds" or "budget not signed" in words a non-engineer boss could act on.
+The tool built for exactly this job was imported into the file and used
+correctly two panels below.
+
+**The fix** is a single mechanical swap at all nine sites —
+`setMsg(String(e.message || e))` → `setMsg(cleanCause(e && e.message ?
+e.message : e))`, the exact call already made at the four `IcpServicesPanel`
+sites — touching only the error-display line. Every confirm dialog, every
+on-chain call, every real balance/transfer/payroll operation in both
+panels is untouched.
+
+**Tests.**
+`scripts/test_the_wallet_panel_dumped_raw_exceptions.py` confirms
+`cleanCause` exists and is imported, that no raw `setMsg(String(e.message
+|| e))` call remains anywhere in the file, that all seven `AgentWalletCard`
+functions and both `PayrollBudgetPanel` functions now route their catch
+through it, and — since this touches money-moving code — that `fund()`,
+`payNow()`, and `stopPay()` still carry their confirm-dialogs asking the
+exact amount and destination before doing anything irreversible.
+
+Fire-tested with three arms: all nine sites reverted at once (the
+pre-fix state), only `fund()` reverted (the one that actually sends
+money out), and only `PayrollBudgetPanel.approve()` reverted. All three
+caught, post-restore baseline green. Full suite: 193/193.
+
+**Lesson.** A cleanup helper built and correctly wired for one panel on a
+screen doesn't propagate to its neighbors by osmosis — `IcpServicesPanel`
+got it right from the start and the two money panels next to it, added
+later, just never checked what the file already imported for this exact
+purpose.

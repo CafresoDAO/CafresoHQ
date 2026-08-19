@@ -488,7 +488,7 @@ function AgentWalletCard({ agent }) {
   const refreshBalances = async () => {
     setBusy('bal'); setMsg('');
     try { setBals(await chain().wallet.balances(agentId, Object.keys(WALLET_TOKEN_DECIMALS))); }
-    catch (e) { setMsg(String(e.message || e)); }
+    catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const saveCap = async () => {
@@ -501,7 +501,7 @@ function AgentWalletCard({ agent }) {
         paused: policy?.paused || false,
       });
       setMsg('Saved.'); await load();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const fund = async () => {
@@ -521,7 +521,7 @@ function AgentWalletCard({ agent }) {
       const r = await chain().wallet.fund(agentId, fundTok, fundAmt);
       setMsg(r && r.ok != null ? `Funded (block ${r.ok}).` : (r && r.err ? `Fund failed: ${r.err}` : 'Fund sent.'));
       await refreshBalances();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const togglePause = async () => {
@@ -535,7 +535,7 @@ function AgentWalletCard({ agent }) {
         paused: !(policy?.paused),
       });
       await load();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
 
@@ -550,7 +550,7 @@ function AgentWalletCard({ agent }) {
       });
       setMsg('Payroll saved — first run in one period. Make sure a payroll budget is signed below.');
       await load();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const payNow = async () => {
@@ -562,7 +562,7 @@ function AgentWalletCard({ agent }) {
       const r = await chain().payroll.run(agentId);
       setMsg(`Payroll run: ${r}`);
       await load(); await refreshBalances();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const stopPay = async () => {
@@ -571,7 +571,7 @@ function AgentWalletCard({ agent }) {
       { okLabel: 'Stop payroll', danger: true }))) return;
     setBusy('paystop'); setMsg('');
     try { await chain().payroll.remove(agentId); setSal(null); setMsg('Payroll stopped.'); }
-    catch (e) { setMsg(String(e.message || e)); }
+    catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
 
@@ -681,12 +681,12 @@ function PayrollBudgetPanel() {
         : r.status === 'declined' ? 'Declined in the shell.'
         : `Failed: ${r.error || '?'}`);
       await load();
-    } catch (e) { setMsg(String(e.message || e)); }
+    } catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
     setBusy('');
   };
   const togglePause = async () => {
     try { await chain().payroll.pause(!paused); setPaused(!paused); }
-    catch (e) { setMsg(String(e.message || e)); }
+    catch (e) { setMsg(cleanCause(e && e.message ? e.message : e)); }
   };
 
   const dec = (t) => WALLET_TOKEN_DECIMALS[t] ?? 8;
