@@ -17310,3 +17310,69 @@ JSX copy to be false — it can be a code comment disagreeing with the
 code directly beneath it, which is arguably a sharper defect than a UI
 string, since it means the person who wrote the exclusion didn't notice
 it contradicted what they'd just written above it.
+
+## dispatchToAgent — the office's own words for it, "the most-used route" — never told the Activity feed anything
+
+`activity`/`setActivity` is app.jsx's own documented single source of
+truth for the ticker, the notification center, and the Team inbox — all
+three read from it and nothing else. Every tool call anywhere in the
+office is supposed to feed it. Two of the three streams that handle a
+tool's `done` event do: the delegate path (a boss-hired sub-agent
+working in the background) and the task path (a scheduled/assigned task
+running in the background) both call `logActivity(toolActivity(agent,
+ev))` unconditionally, success or failure. `dispatchToAgent` — normal
+chat replies and peer-to-peer DMs, the primary dispatch path, called out
+in its own comment as "the most-used route in the office" — never did.
+Found while investigating the Receipts ticket a few entries up: the
+elevated-agent audit surface (Receipts) and the live activity surface
+(the ticker/notifications/inbox) are different things, and checking
+every place a `done` event is handled for the Receipts fix surfaced that
+this one was missing a call the other two already had, with nothing
+anywhere marking the gap as deliberate.
+
+A tool call made mid ordinary chat, or in a peer DM, still left a
+transient visit card in the one chat thread it happened in
+(`attachVisit`) — but that's not persisted, not searchable, and isn't
+what the ticker, notification center, or Team inbox read from. On the
+app's single most-used dispatch path, none of those three surfaces ever
+heard about a tool call at all.
+
+**The fix** adds `logActivity(toolActivity(agent, ev));` to
+`dispatchToAgent`'s `done` branch, in the same relative position (right
+after `attachVisit`, ahead of `pulseGraph`/`recordToolReceipt`) the
+other two streams already use.
+
+**Test coverage.** New:
+`scripts/test_dispatch_tools_reach_the_activity_feed.py`, 4 checks.
+Static: exactly three call sites now file a tool's activity line through
+`toolActivity` (the two that always did, plus this one); `dispatchToAgent`'s
+`done` branch logs activity in the same relative order as the other two
+streams; both pre-existing streams' calls are byte-for-byte unchanged.
+Mechanism: `toolActivity`'s tense logic (`'fail'` vs `'past'`, derived
+from `ev.failed`) restated and driven for real in `node -e` — confirms a
+successful and a failed tool call each produce exactly one well-formed
+activity entry, not silently different shapes.
+
+One pre-existing test hard-coded the old count:
+`scripts/test_failed_tools_arent_wins.py` asserted exactly two call
+sites filed through `logActivity(toolActivity(` — accurate before this
+ticket, wrong afterward by construction, not because the invariant it
+protects (a failed tool call must never read as a win) changed. Updated
+to expect three, with a comment pointing at this ticket; the failure
+message updated from "BOTH tool streams" to "ALL THREE tool streams."
+Re-verified green.
+
+Fire-tested 1 arm — removed the added `logActivity` call — 2/2 tests
+caught it (the new test and the updated pre-existing one both went red
+on the same mutation), post-restore baseline byte-identical to the
+pre-edit backup. Full suite: 215/215 (up from 214/214; one new file).
+
+**Lesson.** "The most-used route in the office," by the code's own
+comment, was also the one route nobody had checked against the other
+two's contract. A capability that's implemented twice and asserted as a
+shared surface's whole job is worth grepping for a third, fourth, fifth
+occurrence before assuming coverage — the Receipts ticket and this one
+were found by the same sweep for a reason: once one `done`-handling
+stream turns out to skip something its siblings do, the other streams
+are exactly where to look next, not a random sample of the file.
+

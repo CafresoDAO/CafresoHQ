@@ -247,11 +247,18 @@ for i, body in enumerate(starts):
         "it records does not exist yet. The live 'what are they doing right "
         "now' signal is the agent's `task` field, which is set here already.",
     )
+# A later ticket (see scripts/test_receipts_logs_every_tool_call.py's sibling,
+# the activity-feed fix that shipped alongside it) gave dispatchToAgent's own
+# `done` branch — the primary chat/DM stream, which had never logged tool
+# activity at all — the same toolActivity call the other two streams already
+# had. Three call sites now, not two; the count still guards against a FUTURE
+# site hand-building its own object instead of sharing the helper.
 check(
-    app.count('logActivity(toolActivity(') == 2,
-    "BOTH tool streams must file their activity line through toolActivity on "
-    f"`done`; found {app.count('logActivity(toolActivity(')}. Hand-built "
-    "objects at each site are how the two drifted into the same tense bug.",
+    app.count('logActivity(toolActivity(') == 3,
+    "ALL THREE tool streams must file their activity line through "
+    f"toolActivity on `done`; found {app.count('logActivity(toolActivity(')}. "
+    "Hand-built objects at each site are how the first two drifted into the "
+    "same tense bug.",
 )
 check(
     'logActivity(toolActivity(agent, ev, { taskId }))' in app,

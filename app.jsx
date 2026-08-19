@@ -2540,6 +2540,14 @@ ${d.text}` : d.text,
                record id, and passing it here would have silently attached
                nothing. */
             attachVisit(setChat, agentMsgId, ev);
+            /* The other two tool streams (the delegate path and the task
+               path) both file this on `done` through toolActivity — this
+               one never did, so a tool call made mid ordinary chat or a
+               peer DM never reached the activity feed at all: not the
+               ticker, not the notification center, not the Team inbox,
+               which all read from it. Same move as the other two: filed
+               on `done`, tense from the outcome. */
+            logActivity(toolActivity(agent, ev));
             pulseGraph(ev, agent);
             recordToolReceipt(agent, ev);
             // Tools that wrote/touched a vault note: attach as message
