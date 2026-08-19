@@ -16213,3 +16213,45 @@ Full suite: 200/200.
 handler should be read specifically for whether it agrees. Here the two
 had quietly disagreed since whichever commit added the `!isOwned`
 carve-out to the JSX without carrying it into `buy()`.
+
+---
+
+## #11 The Situation Wall said fewer coworkers were working than the floor showed
+
+**Symptom.** A coworker whose desk was lit and animated — pose swapped to
+`back`, the rooftop live-lamp lit, their mini-avatar-strip status dot green
+— could be missing from the Situation Wall's own `⚒ N · M working` count
+for the same instant.
+
+**Root cause.** A run that just finished sits at `status: 'active', mood:
+'done'` for §4's 8-second window while it reports its result (`app.jsx`
+sets this at least three places). Every other "is this coworker working"
+check in `ui/office.jsx` — `anyLive`, the desk pose, the sub-agent pose,
+the mini-avatar-strip status dot — and the topbar's own WORKING chip in
+`app.jsx` all treat `status === 'busy' || status === 'active'` as one
+state. `busyCount`, feeding the Situation Wall's row, checked only
+`status === 'busy'`:
+
+    const busyCount = agents.filter(a => a.status === 'busy').length;
+
+So the one row whose entire job is to say how many coworkers are working
+right now was the one place in the file that didn't know 'active' meant
+working — undercounting by exactly the coworkers in their post-run report
+window, at the exact moment the floor was showing them as busiest.
+
+**The fix** adds the same `|| a.status === 'active'` the other four checks
+in this file already use.
+
+**Tests.** `scripts/test_the_situation_wall_undercounted_who_was_working.py`
+confirms `busyCount`'s filter checks both `'busy'` and `'active'`, that at
+least three other busy-or-active checks remain in the file (so this fix
+doesn't drift from them again), and that the topbar's WORKING chip — the
+number this row must now agree with — counts the same way.
+
+Fire-tested with two arms: a full revert to `'busy'` only, and a
+half-fix that swaps to `'active'` only (drops `'busy'` instead). Both
+caught, post-restore baseline green. Full suite: 201/201.
+
+**Lesson.** When four places in one file agree on what a status means and
+a fifth doesn't, the fifth is not a different design decision — it's the
+one nobody checked against the others.

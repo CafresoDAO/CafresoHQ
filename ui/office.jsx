@@ -943,7 +943,15 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
     : agents.reduce((s, a) => s + (a.tokens || 0), 0);
   /* Deliveries that really reached the cabinet — see the wall row below. */
   const filedCount = (tasks || []).filter(t => t && t.artifactPath).length;
-  const busyCount = agents.filter(a => a.status === 'busy').length;
+  /* 'active' is a real status, not a synonym left over from a rename: a run
+     that just finished sits at status:'active'/mood:'done' for the §4
+     8-second window while it reports its result, and every other "is this
+     coworker busy" check in this file (anyLive, the desk pose, the sub-agent
+     pose, the mini-avatar status dot) — plus the topbar's own WORKING chip
+     in app.jsx — treats 'busy' and 'active' as the same thing. Checking only
+     'busy' here undercounted: a coworker whose desk was lit and animated on
+     the floor was not counted as "working" in this same row's own label. */
+  const busyCount = agents.filter(a => a.status === 'busy' || a.status === 'active').length;
 
   /* ── Vault Room data — BANK prestige balance (read-only, feature-detected:
      older shells don't know chain:bank:balance and the case just stays
