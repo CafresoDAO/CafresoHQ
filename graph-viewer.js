@@ -216,6 +216,18 @@ async function main() {
   if (maxn > 0 && g.order > maxn) {
     const keep = new Set(g.nodes().sort((a, b) => (g.getNodeAttribute(b, 'size') || 0) - (g.getNodeAttribute(a, 'size') || 0)).slice(0, maxn));
     g.forEachNode((n) => { if (!keep.has(n)) g.dropNode(n); });
+    /* `snap.analytics.metrics` was computed server-side (graph-engine.js's
+       _runAnalytics) over the FULL pre-publish graph, and the analytics
+       panel below reads it verbatim — "Notes 210 · Links 340" next to a
+       canvas that just dropped down to 150 dots, a contradiction visible
+       on the same screen with nothing explaining it. The brand-bar stats
+       just above already count off the live (post-prune) `g`; this brings
+       the analytics panel's own counts into agreement with what's actually
+       drawn, the same way. */
+    if (snap.analytics && snap.analytics.metrics) {
+      snap.analytics.metrics.nodes = g.order;
+      snap.analytics.metrics.edges = g.size;
+    }
   }
 
   // Blend the snapshot's own weighting with degree: the snapshot sizes a query

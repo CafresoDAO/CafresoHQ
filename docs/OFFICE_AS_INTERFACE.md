@@ -17791,3 +17791,66 @@ different file implementing what reads, from the UI, as the exact same
 feature (a coworker doing tool-calling work). A promise phrased as
 "every real action" is a claim about the whole app, not about whichever
 file happened to get checked first.
+
+## A published graph's analytics panel didn't agree with its own canvas
+
+Every graph a boss publishes gets a fixed public viewer URL baked with
+`maxnodes=150` (`serve.py`), so a graph past that size renders a pruned
+canvas — `graph-viewer.js` keeps only the 150 most-influential nodes
+(by size) and drops the rest via graphology's `dropNode`. That pruning
+happens client-side, in the viewer, after the snapshot has already been
+computed server-side by `graph-engine.js`'s `_runAnalytics()` over the
+**full**, unpruned graph.
+
+The analytics panel (`show_analytics=1`) reads `snap.analytics.metrics`
+verbatim — "Notes 210 · Links 340" — with no idea any pruning happened.
+A boss looking at a published graph over 150 nodes would see that
+stale, larger count sitting directly above a canvas that had visibly
+just dropped to 150 dots — a contradiction on the same screen, no
+caption explaining it. The brand-bar title stats just above the canvas
+were already honest: they already counted off the live, post-prune
+graph object. Only the analytics panel's numbers lagged behind what
+was actually drawn.
+
+**Repro.** Publish a graph with more than 150 nodes, open the public
+viewer with `?show_analytics=1`. Canvas shows ≤150 dots; the analytics
+panel a few hundred pixels away reports the pre-prune node/edge counts
+computed before any pruning ran.
+
+**The fix** recomputes `snap.analytics.metrics.nodes` and `.edges` from
+the pruned graph's own `g.order`/`g.size` immediately after the
+`maxnodes` drop loop in `graph-viewer.js`, guarded on
+`snap.analytics && snap.analytics.metrics` being present (the merged
+library graph ships no analytics at all, and the panel's own fallback
+path already handles that case by synthesizing metrics client-side from
+the — already pruned by then — `g`). No second fix was needed in the
+analytics panel's own rendering code: it already reads
+`snap.analytics.metrics` verbatim, so correcting the object once, right
+after pruning, is sufficient.
+
+**Test coverage.** New:
+`scripts/test_published_graph_analytics_matches_pruned_canvas.py`, 8
+checks. Extracts the real maxnodes-pruning-plus-recompute block from
+`graph-viewer.js` by its surrounding comment markers and drives it for
+real against the actual `graphology` package (the same one the file
+imports, from `node_modules`, not a mock) — building small real graphs,
+pruning them at various `maxnodes` values, and confirming
+`metrics.nodes`/`.edges` land on the pruned graph's true `order`/`size`
+rather than the stale sentinel values seeded in beforehand. Also covers
+the no-op cases: `maxnodes=0` (no cap — the metrics stay untouched, as
+they should) and `maxnodes` larger than the graph (nothing to prune).
+
+Fire-tested 3 arms — removed the whole recompute block (the original
+bug), recomputed `.nodes` but left `.edges` stale, and recomputed
+`.edges` but left `.nodes` stale — 3/3 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 220/220 (up from
+219/219; one new file).
+
+**Lesson.** A snapshot computed once, server-side, and then mutated by
+a client-side rendering step (pruning, filtering, any transform that
+changes what's actually on screen) needs anything derived from that
+snapshot recomputed alongside it — a title-bar stat and an analytics
+panel can read the *same* source object and still end up honest and
+dishonest respectively, if only one of the two call sites was updated
+when the transform was added. The brand-bar stats got this right from
+the start; the analytics panel was added later and missed it.
