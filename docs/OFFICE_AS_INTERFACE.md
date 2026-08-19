@@ -16961,3 +16961,86 @@ lets the JS engine's own parser write the boss-facing sentence whenever
 the network hands back something unexpected. The fix for a raw-dump ticket
 isn't always at the screen that shows it; sometimes it's at the one place
 upstream that manufactures the raw text to begin with.
+
+## STOP ALL claimed to pause every running night shift, and never touched one
+
+Three surfaces make the same claim. The topbar button:
+
+    title="Stop everyone mid-job and pause every running night shift"
+
+The command palette:
+
+    { id: 'act.stop-all', label: 'Stop everyone + every night shift', ... }
+
+And `onStopAll` itself, in the confirm dialog and the ticker line it writes
+after:
+
+    `...pause ${running} running mission${running===1?'':'s'}.`
+    `■ STOP ALL — aborted ${inflight} stream${...}, paused ${running} mission${...}.`
+
+`running` was `missions.filter(m => m.status === 'running').length` —
+`missions` is app.jsx's own state, and per the comment already sitting a
+few lines above `onStopAll` (`nightShiftBoard`'s own doc comment, written
+for a different ticket — getting the office floor's bulletin board to show
+night shifts at all), that state "only ever holds in-browser Research
+missions." Server-side Night Shift runs (`night_runner.py`, "close the
+laptop, work continues") live in `nightShiftBoard`, polled from
+`/missions/scheduled` + `/missions/runs` specifically so surfaces above the
+Missions modal could see them running — `onStopAll` was never updated to
+look there. Scheduled a night shift, pressed STOP ALL: the confirm dialog
+said "paused 0 running missions," the ticker agreed, and the mission kept
+running server-side, untouched.
+
+Two more copies of the identical gate compounded it. The button's own
+render condition and the command palette's `anyBusy` prop both checked
+only `agents` + `missions` — so on an office where a night shift was the
+*only* thing running anywhere (no local agent busy, no browser research
+mission active), the one control that claims to stop it didn't even
+render.
+
+**The fix.** `onStopAll` now folds `nightShiftBoard.length` into `running`
+— confirm text, ticker text, and the "Nothing to stop" early-return gate —
+and, the part that actually stops anything, issues `DELETE
+/missions/scheduled/<id>` for each board entry: the same call the Missions
+modal's own ✕ CANCEL already makes (`serve.py`'s `_missions_delete`, whose
+own docstring confirms it flags `_night_abort`, which `run_mission` picks
+up within its next 5s sleep slice). Fire-and-forget on purpose — a failed
+DELETE for one schedule must not stop the rest of STOP ALL from doing its
+job, and the existing 15s poll reconciles the board regardless. The board
+is also cleared optimistically so the floor doesn't keep showing
+"running" for up to 15s after the boss was just told it was paused. Both
+copies of the visibility gate (the button's own condition, and the
+`anyBusy` prop feeding the command palette) gained the same
+`nightShiftBoard.length > 0` check.
+
+**Test coverage.** New:
+`scripts/test_stop_all_stops_the_night_shift_too.py`, 14 checks. Static:
+`onStopAll` references `nightShiftBoard.length`, issues the DELETE, clears
+the board, and both copies of the render gate include the same check.
+Mechanism: `onStopAll`'s real function body is lifted out of `app.jsx` by
+brace-depth (the same lifted-closure technique
+`scripts/test_a_stop_stops_the_outbox_too.py` already uses for this exact
+handler's sibling call, `abortAllAgentRuns`) and driven as a real async
+function with every free variable it closes over stubbed — confirms a
+mixed stop (1 local mission + 2 night shifts) DELETEs both schedules by
+id, clears the board, still pauses the local mission, and writes a ticker
+line naming the true combined count with night shifts called out by name;
+confirms a night-shift-only office (nothing locally busy) still goes
+through the full stop rather than hitting the old "Nothing to stop"
+early-return; confirms truly nothing running still says so and never
+calls confirm.
+
+Fire-tested 4 arms — reverted the running count to local-only, removed the
+DELETE calls, and dropped the night-shift check from each of the two
+render-gate copies — 4/4 caught, post-restore baseline green. Full suite:
+211/211 (up from 210/210; one new file).
+
+**Lesson.** A count and the control gated on it are two copies of the same
+claim, and a third copy — the button's own visibility condition — was a
+fourth. Fixing `onStopAll`'s math alone would have shipped a control that
+tells the truth once it's visible, and stays invisible on exactly the
+office state (a night-shift-only run) where a boss would reach for it
+first. `nightShiftBoard` already existed, already polled, already proven
+correct by the ticket that introduced it — the miss here wasn't building
+new plumbing, it was three call sites that were written before that
+plumbing existed and never revisited once it did.

@@ -1056,13 +1056,26 @@ function App() {
 
   /* Big red button. One click pulls the plug on EVERYTHING that's burning
      tokens or talking to the host computer right now: every in-flight agent
-     stream is aborted, every running mission is paused. Useful when an
-     elevated agent goes off the rails or the API quota is about to run out. */
+     stream is aborted, every running mission is paused — Night Shift
+     schedules included. Useful when an elevated agent goes off the rails or
+     the API quota is about to run out.
+
+     `running` used to count only the browser-only `missions` state, which
+     — per the comment on nightShiftBoard above — never held server-side
+     Night Shift runs at all. The button's own title always said "and pause
+     every running night shift"; measured live, scheduling a night shift and
+     pressing STOP ALL left it running untouched, and the confirm/ticker
+     text both said "paused 0 missions" while it kept burning tokens
+     server-side. Folding nightShiftBoard's count in here — and calling the
+     same DELETE /missions/scheduled/<id> the Missions modal's own ✕ CANCEL
+     already uses to flag serve.py's _night_abort — makes the claim true. */
   const onStopAll = async () => {
     const inflight = agentAbortersRef.current.size;
-    const running = missions.filter(m => m.status === 'running').length;
+    const localRunning = missions.filter(m => m.status === 'running').length;
+    const nightRunning = nightShiftBoard.length;
+    const running = localRunning + nightRunning;
     if (inflight === 0 && running === 0) { say('Nothing to stop', 'STOP'); return; }
-    if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}.`, { danger: true, okLabel: 'Stop all' }))) return;
+    if (!(await window.hqConfirm(`STOP ALL?\n\nThis will stop ${inflight} coworker${inflight===1?'':'s'} mid-reply and pause ${running} running mission${running===1?'':'s'}${nightRunning ? ` (${nightRunning} of them night shift${nightRunning===1?'':'s'})` : ''}.`, { danger: true, okLabel: 'Stop all' }))) return;
     /* One sweep, shared with the composer's ■ Stop and the unmount cleanup.
        This used to be its own copy of the abort loop — which meant it
        cleared the aborter map WITHOUT bumping the stop epoch, and the #98
@@ -1087,8 +1100,22 @@ function App() {
     setMissions(prev => prev.map(m => m.status === 'running'
       ? { ...m, status: 'paused', endedAt: Date.now(),
           pauseNote: 'you stopped this — resume when you want it' } : m));
+    /* Night Shift schedules run server-side, so pausing them here means
+       asking serve.py, not just editing local state. Fire-and-forget: a
+       failed DELETE for one schedule must not stop the rest of STOP ALL
+       from doing its job, and the 15s poll above will reconcile the board
+       either way if one of these doesn't land. Cleared optimistically so
+       the floor doesn't sit there "running" for up to 15s after the boss
+       was just told they were paused. */
+    if (nightShiftBoard.length) {
+      const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
+      nightShiftBoard.forEach(n => {
+        fetch(base + `/missions/scheduled/${n.id}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+      });
+      setNightShiftBoard([]);
+    }
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-      text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}.` }]);
+      text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}${nightRunning ? ` (${nightRunning} night shift${nightRunning===1?'':'s'})` : ''}.` }]);
     say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
   };
 
@@ -6238,7 +6265,7 @@ ${d.text}` : d.text,
       onStandup={onOpenStandup}
       onMemory={() => goTo('memory')}
       onStopAll={onStopAll}
-      anyBusy={agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')}
+      anyBusy={agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running') || nightShiftBoard.length > 0}
       agents={agents}
       chat={chat}
       onDmAgent={(agent) => {
@@ -6441,7 +6468,7 @@ ${d.text}` : d.text,
                 ⚠ ADD AI KEY
               </button>
             )}
-            {(agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running')) && (
+            {(agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running') || nightShiftBoard.length > 0) && (
               <Btn variant="danger" size="sm" onClick={onStopAll} title="Stop everyone mid-job and pause every running night shift">■ STOP ALL</Btn>
             )}
             {/* Activity cluster — bell + receipts paired at top-right.
