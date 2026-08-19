@@ -66,6 +66,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const [nodeCount, setNodeCount] = useSV(0);
   const [shareUrl, setShareUrl] = useSV(null);
   const [sharing, setSharing] = useSV(false);
+  const [shareCopied, setShareCopied] = useSV(false);
   const [edgesHover, setEdgesHover] = useSV(!!persisted.edgesHover); // hide edges until hover
   const edgesHoverRef = React.useRef(edgesHover);
   edgesHoverRef.current = edgesHover;
@@ -266,6 +267,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const publish = React.useCallback(async () => {
     const e = engineRef.current; if (!e) return;
     setSharing(true);
+    setShareCopied(false);
     try {
       const snap = e.exportSnapshot();
       snap.title = sourceRef.current === 'concepts'
@@ -280,7 +282,8 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       if (j && j.viewerUrl) {
         const full = (base || (typeof location !== 'undefined' ? location.origin : '')) + j.viewerUrl;
         setShareUrl(full);
-        try { await navigator.clipboard.writeText(full); } catch (_) {}
+        try { await navigator.clipboard.writeText(full); setShareCopied(true); }
+        catch (_) { setShareCopied(false); }
         // Onboarding: mark "publish your first graph" complete.
         try { localStorage.setItem('cafresohq_hq_v1:publishedGraph', '1'); window.dispatchEvent(new CustomEvent('cafresohq:graph-published')); } catch (_) {}
       }
@@ -487,7 +490,8 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     // Share modal.
     shareUrl && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 420, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
       React.createElement('div', { style: { fontWeight: 600, color: '#F5D25D', marginBottom: 8 } }, '⤴ Public graph published'),
-      React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } }, 'Anyone with this link can view this graph (read-only). Copied to your clipboard.'),
+      React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } },
+        'Anyone with this link can view this graph (read-only). ' + (shareCopied ? 'Copied to your clipboard.' : 'Copy it below — your browser blocked the automatic copy.')),
       React.createElement('input', { readOnly: true, value: shareUrl, onFocus: (e) => e.target.select(), style: { width: '100%', boxSizing: 'border-box', ...ctrlStyle, marginBottom: 10 } }),
       React.createElement('div', { style: { display: 'flex', gap: 8 } },
         React.createElement('button', { onClick: () => window.open(shareUrl, '_blank'), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Open ↗'),

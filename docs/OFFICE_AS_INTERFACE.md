@@ -15780,3 +15780,55 @@ as authoritative (the Gazette's `finishedAt` filter) doesn't
 automatically propagate to every other place that reads the same field
 — each new consumer of `/missions/runs` has to independently remember
 the rule, and two of them didn't.
+
+### The Share modal promised a copy it never made — 2026-08-19
+
+`publish()` (views/graph.jsx) POSTs the laid-out graph snapshot, gets back
+a `viewerUrl`, and then tried to put the full share link on the
+clipboard:
+
+    try { await navigator.clipboard.writeText(full); } catch (_) {}
+
+`navigator.clipboard.writeText` can reject for reasons that have nothing
+to do with the publish itself — no user-activation context, an insecure
+origin, a denied permission, focus lost to another window — and the
+empty `catch (_) {}` swallowed every one of them silently. The modal that
+opens immediately after read, unconditionally:
+
+> Anyone with this link can view this graph (read-only). Copied to your
+> clipboard.
+
+A boss who hit Share, hit a real clipboard failure, and then read
+"Copied to your clipboard" had every reason to alt-tab somewhere else and
+paste — and get nothing, or get whatever was on the clipboard before.
+The one thing on screen claiming success had no connection to whether
+the write actually happened.
+
+**The fix** adds a `shareCopied` flag, reset to false at the start of
+every publish attempt (so a stale `true` from an earlier success can't
+leak into a later failure), set `true` only inside the same `try` as the
+successful write, and `false` in the `catch`. The modal text now branches
+on it: "Copied to your clipboard." on success, "Copy it below — your
+browser blocked the automatic copy." on failure — still true either way,
+and the link itself is right there in the input box regardless.
+
+**Tests.**
+`scripts/test_the_share_modal_promised_a_copy_it_never_made.py` confirms
+the state flag exists, is reset before each attempt, is only set `true`
+inside the successful-write branch (not unconditionally after the
+try/catch), is explicitly set `false` in the catch rather than left to
+an empty handler, and that the modal's copy text branches on it instead
+of asserting success as a hardcoded literal.
+
+Fire-tested with three arms: `shareCopied` set unconditionally right
+after the write attempt (no catch branch), the reset-before-attempt line
+dropped (stale `true` could survive a failed retry), and the modal text
+reverted to the old hardcoded claim. All three caught, post-restore
+baseline green. Full suite: 192/192.
+
+**Lesson.** An empty `catch (_) {}` around a side effect is a decision
+to treat "it worked" and "it silently failed" as the same state — that's
+fine when nothing downstream claims the side effect happened, and a lie
+the moment something does. The clipboard write and the sentence telling
+the boss about it were two different lines of code with no shared
+source of truth between them.
