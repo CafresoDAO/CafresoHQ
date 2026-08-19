@@ -4071,7 +4071,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
      they cannot change about a limit they did not know existed. What is
      true and useful is that the coworker is still mid-job and asking
      again picks it up. */
-  if (onHint) onHint('_(they did as much as they can in one go and stopped there. Ask again and they will carry on from where they left off.)_');
+  if (onHint) onHint('_(I did as much as I can in one go and stopped there. Ask again and I will carry on from where I left off.)_');
 }
 
 async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTool, onHint, maxTokens, peers = [], maxToolHops = MAX_TOOL_HOPS, cwd } = {}) {

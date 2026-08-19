@@ -16028,3 +16028,46 @@ function with the same shape of problem in the same file. Worth
 grepping a file's own `setErr`/error-state call sites whenever one of
 them turns out to be miscategorized, not just fixing the one that was
 reported.
+
+### The CEO described itself in the third person — 2026-08-19
+
+`hq-runtime.jsx`'s `ceoStream` — the CEO/"CafresoHQ" chat streaming
+path — is documented at length, in its own file, as deliberately
+first-person throughout. A comment a few lines above (recounting a
+prior fix to a sibling message) names the exact defect: "'they' is the
+office describing itself in the third person," alongside two other
+things that message got wrong.
+
+That earlier fix didn't reach every message in the same function. The
+per-turn tool-hop-budget-exhausted hint — shown when a coworker or the
+CEO itself runs through all `MAX_TOOL_HOPS` without finishing — still
+read:
+
+    '_(they did as much as they can in one go and stopped there.
+       Ask again and they will carry on from where they left off.)_'
+
+Third person, in the one chat surface the file's own documentation
+repeatedly insists must never use it. `agentStream`, the per-coworker
+equivalent a few lines below, is correctly third-person throughout —
+it IS describing someone else. `ceoStream` is the office talking about
+itself, and needed "I"/"me" the way its sibling messages already do.
+
+**The fix** rewrites the hint in first person: "I did as much as I can
+in one go and stopped there. Ask again and I will carry on from where I
+left off."
+
+**Tests.** `scripts/test_the_ceo_described_itself_in_third_person.py`
+confirms the old "they did"/"they will carry on" phrasing is gone, the
+new first-person text is in place, the earlier-fixed sibling message
+and its explanatory comment are untouched, and `agentStream`'s own
+correctly-third-person message is untouched.
+
+Fire-tested with two arms: fully reverted to the old third-person text,
+and a half-fixed version ("I did" paired with "they will carry on").
+Both caught, post-restore baseline green. Full suite: 197/197.
+
+**Lesson.** A fix that names its own defect in a comment is exactly the
+kind of thing worth grepping the rest of the file for — the same
+sentence explaining what "they" got wrong the first time would have
+caught this second occurrence immediately, thirty lines down, in the
+same function.
