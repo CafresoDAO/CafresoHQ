@@ -3875,8 +3875,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 try:
                     cli = _oci_object_client()
                     cli.delete_object(_oci_vault_namespace, _oci_vault_bucket, _oci_obj_key(rel))
-                except Exception:
-                    pass  # 404 on delete is fine
+                except Exception as e:
+                    # Same not-found classification GET /vault/note (OCI)
+                    # already uses a couple hundred lines up — a `pass` here
+                    # used to swallow EVERY exception, not just "already
+                    # gone": a dead client (bad/expired creds), a wrong
+                    # bucket, a network timeout, a permissions error all hit
+                    # this except too, and every one of them still answered
+                    # `{"deleted": rel, "backend": "oci"}`. A boss deletes a
+                    # note, the Library still has it, and the response they
+                    # got said it worked.
+                    err = str(e)
+                    if not ('404' in err or 'NoSuchKey' in err or 'ObjectNotFound' in err):
+                        return self._send_json(502, {'error': f'oci: {e}'})
+                    # 404 on delete is fine — already gone, same idempotent
+                    # semantics as the local-fs branch below (no-op success
+                    # when target.exists() is already false).
                 return self._send_json(200, {'deleted': rel, 'backend': 'oci'})
             try:
                 target = _vault_resolve(rel)

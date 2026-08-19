@@ -16724,3 +16724,72 @@ control does something nobody wrote down. The reproduction that mattered
 here wasn't a live click race (hard to land reliably even trying); it was
 running the actual `spawnOpenswarmRoster` the click already calls, with
 the actual argument that window produces, and reading off what came out.
+
+## Deleting a note from a broken bucket still said "deleted"
+
+`serve.py`'s `DELETE /vault/note`, OCI Object Storage arm:
+
+    if _vault_backend == 'oci':
+        try:
+            cli = _oci_object_client()
+            cli.delete_object(_oci_vault_namespace, _oci_vault_bucket, _oci_obj_key(rel))
+        except Exception:
+            pass  # 404 on delete is fine
+        return self._send_json(200, {'deleted': rel, 'backend': 'oci'})
+
+The comment names one failure it means to forgive — the object was already
+gone. The `except Exception: pass` forgives all of them: a client that
+can't even construct itself (bad or expired credentials), a bucket that
+doesn't exist, a network timeout, a permissions error nobody granted. Every
+one of those lands in the same except, and every one of them still answered
+`{"deleted": rel, "backend": "oci"}`. A boss deletes a note from the
+Library, the object is still sitting in the bucket, and the response they
+got told them it worked — the delete UI removes the row optimistically on
+that response, so the note disappears from the list while continuing to
+exist, findable again only the next time something re-lists the bucket.
+
+The neighboring door already had the right answer. `GET /vault/note`'s OCI
+arm, a couple hundred lines up in the same file, classifies its caught
+exception before deciding: `'404' in err or 'NoSuchKey' in err or
+'ObjectNotFound' in err` means "not found," anything else is a real error
+reported as a 502 naming what OCI said. `PUT /vault/note`'s OCI arm never
+swallows at all — any exception is a 502. DELETE was the one arm on this
+same resource that treated every failure as success.
+
+**The fix.** DELETE now runs the identical classification GET already
+uses — same three markers, same not-found-is-fine reasoning, everything
+else surfaces as `502 {"error": "oci: <what OCI actually said>"}`.
+Idempotent-delete semantics are preserved for the case the original comment
+named: deleting something already gone is still a plain 200, matching how
+the local-filesystem branch a few lines below has always treated
+`target.exists()` already being false.
+
+**Test coverage.** New: `scripts/test_oci_vault_delete_reports_real_errors.py`,
+10 checks. Static: the bare `except: pass` is gone, the caught exception is
+inspected, a non-404 becomes a 502 naming OCI, and — guarding against the
+two copies drifting apart — DELETE's not-found marker set is asserted
+*equal* to GET's, not just "present." Live, no OCI account needed: this dev
+environment has no `oci` package installed, so `_oci_object_client()` takes
+its own documented `ImportError` branch and raises `RuntimeError('OCI SDK
+not installed...')` — a real, reproducible-today, non-404 failure, the
+same one `scripts/test_a_vault_that_works_is_not_reported_missing.py`
+already measured turning `PUT /vault/note` into a proper 502. Before this
+fix, `DELETE /vault/note` hit that identical exception and answered 200.
+Booted a real `serve.py` subprocess with `CAFRESOHQ_VAULT_BACKEND=oci` and
+a bucket name, sent a real HTTP DELETE, and read the actual response: now
+502, `"oci: OCI SDK not installed — run: pip install oci"` — not a mock, an
+`oci`-SDK-shaped `RuntimeError` this environment produces for real.
+
+Fire-tested 3 arms — reverted to the bare except-pass, dropped one of
+DELETE's three not-found markers so it silently drifts from GET's, and
+defanged the 502 branch back to returning 200 — 3/3 caught, post-restore
+baseline green. Full suite: 208/208 (up from 207/207).
+
+**Lesson.** `except Exception: pass` next to a comment naming exactly one
+forgivable case is worth grepping for on its own — the comment describes
+the author's intent, and the code forgives everything, and the gap between
+those two is invisible until something that isn't the named case actually
+happens. The fix wasn't a new idea; it was three lines this same file
+already had, written for the sibling verb on the same resource, copied
+across with a check making sure the copy can't quietly drift from the
+original.
