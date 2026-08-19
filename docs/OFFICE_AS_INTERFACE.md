@@ -16114,3 +16114,58 @@ sibling path that shares its shape, not just the message-wording bugs.
 `agentStream` and `ceoStream` run the identical hop loop side by side —
 a feature added to one and not mirrored to the other is itself a kind
 of honesty gap once the two paths are expected to behave alike.
+
+### "Clear all" on the notification bell claimed the audit trail was lost — 2026-08-19
+
+The NotificationCenter's confirm dialog (`ui/onboarding.jsx`) read:
+
+    'Clear all notifications? Audit trail is lost.'
+
+Its `onClear`, wired in from `app.jsx`, is:
+
+    onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
+
+Both calls just bump watermark timestamps. `notifClearedAt` has exactly
+one other use anywhere in `app.jsx` — filtering the bell's own derived
+notification list going forward (`if ((e.ts || 0) <= notifClearedAt)
+continue;`). The underlying `approvals`, `receipts`, and `activity`
+state — the actual record the dialog is warning about — is never
+touched. Confirmed live in the browser: clicking through the dialog and
+reopening the bell after a reload shows the same entries still on file
+elsewhere; only the bell itself goes quiet.
+
+What makes this one interesting: the sentence isn't invented out of
+nowhere. `features.jsx`'s ReceiptsModal carries the identical line,
+"Clear all receipts? Audit trail is lost," and there it's true — its
+own `onClear` is `onClearReceipts = () => setReceipts([])`, a real
+delete. The bell's copy reads like it was borrowed from that honest
+sibling without checking whether the bell's own handler did the same
+thing.
+
+**The fix** rewrites the dialog to describe what `onClear` actually
+does: "Clear all notifications? Nothing is deleted — this just clears
+the bell."
+
+**Tests.**
+`scripts/test_clear_all_notifications_claimed_the_audit_trail_was_lost.py`
+confirms the false claim is gone and the honest replacement is in
+place, re-derives the true behavior of `onClear` directly from
+`app.jsx` (so the test fails if that wiring ever starts actually
+deleting something, not just if the copy regresses), and confirms the
+ReceiptsModal's own — correct, for its own `onClear` — warning is
+untouched.
+
+Fire-tested with two arms: fully reverted to the false claim, and a
+half-fix that drops the claim but also drops the reassurance, leaving a
+bare "Clear all notifications?" that still reads as destructive with no
+explanation either way. Both caught, post-restore baseline green. Full
+suite: 199/199.
+
+**Lesson.** Verifying this one live in the browser hit a trap the repo
+already has a comment about: `hq.html` loads a pre-built `dist-ui/`
+bundle that `serve.py` never rebuilds, so a source `.jsx` edit is
+invisible after a plain reload — `npm run build` has to run first. The
+dialog kept showing the old text for several reload attempts before
+that was remembered, exactly the failure mode the existing comment in
+`serve.py` describes happening once already, on 2026-08-14, to someone
+else fixing something else.
