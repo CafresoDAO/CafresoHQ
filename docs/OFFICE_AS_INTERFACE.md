@@ -18256,3 +18256,100 @@ describes gets removed. Where practical, point the second surface at the
 first one instead of retyping it: `onShortcuts` now opens the same panel
 ⌘K does, so there is exactly one shortcuts list left in the app to go
 stale, not two.
+
+## Two "copy to clipboard" buttons flashed success no matter what happened
+
+**Claim vs. reality.** `graph-viewer.js` — the standalone vanilla-JS graph
+viewer served at `/graph-viewer.html`, distinct from the React
+`views/graph.jsx` — has a "Copy link to this node" button
+(`graph-viewer.html:322`, `title="Copy link to the focused node"`). Its
+click handler:
+
+```js
+try { await navigator.clipboard.writeText(link); }
+catch (_) { try { prompt('Copy link to this node:', link); } catch (__) {} }
+const prev = copyBtn.textContent;
+copyBtn.textContent = '✓';
+```
+
+set the ✓ checkmark unconditionally, on every path: a real successful
+write, a rejected write that fell back to a native `prompt()` (which only
+*shows* the link for the visitor to select and copy themselves — it does
+not put anything on the clipboard), or a rejected write whose `prompt()`
+fallback also threw (swallowed by an empty `catch (__) {}`, e.g. headless
+browsers or embedded webviews where `prompt()` itself is unavailable). A
+boss who hit a denied clipboard permission and got the manual-copy dialog
+still saw the same ✓ a moment later — nothing on screen distinguished
+"copied for you" from "here, copy it yourself."
+
+This is the same "fire-and-forget clipboard write, unconditional success
+claim" anti-pattern already fixed three times in this app on 2026-08-19
+(`views/graph.jsx`'s Share modal, `ui/chat.jsx`'s copy buttons,
+`views/projects.jsx`'s `publishOpen()`) — each of those entries' own
+"Lesson" said to grep the repo for the same shape, and that follow-up
+never reached this file. It survived the earlier sweep because it signals
+success via `copyBtn.textContent = '✓'` rather than the string "Copied",
+and lives in a non-React vanilla-JS file a component-level grep wouldn't
+touch.
+
+A second, weaker sibling sat one button over in the very same Share modal
+already patched by the `views/graph.jsx` fix above: the "Copy embed"
+button (`views/graph.jsx:498`) —
+
+```js
+onClick: () => { try { navigator.clipboard.writeText(embed); } catch (_) {} }
+```
+
+— gave no feedback at all, success or failure. Not a false claim, but the
+same fire-and-forget shape: a blocked write (no user-activation, denied
+permission, insecure origin) left the visitor with silence and no way to
+know the embed snippet wasn't on their clipboard, one button away from
+`publish()` in the same file, which already tracks its own copy outcome
+correctly via `shareCopied`.
+
+**Repro.** Open the graph viewer, focus a node, click the ⚲ copy-link
+button with clipboard permission denied (or in a context with no user
+activation) — the button still flashes ✓. In the React graph view, open
+Share, click "Copy embed" with clipboard access blocked — nothing happens
+on screen either way.
+
+**The fix.** `graph-viewer.js`'s handler now tracks a real `copied`
+boolean, set `true` only when `navigator.clipboard.writeText()` actually
+resolves, and shows `⚠` instead of `✓` on every other path (rejected
+write with a working prompt fallback, or rejected write whose fallback
+also threw) — same 1200ms flash-then-revert, honest either way.
+`views/graph.jsx`'s "Copy embed" button now mirrors the `shareCopied`
+pattern already established one function up in the same file: a new
+`embedCopied` state (`null | true | false`) set from the real outcome,
+with the button label itself becoming the feedback ("Copied ✓" / "Copy
+failed" / "Copy embed"), auto-clearing after 1500ms.
+
+**Test coverage.** New:
+`scripts/test_two_copy_buttons_flashed_success_that_never_happened.py`,
+10 checks. Extracts the real `gv-copy-link` click handler from
+`graph-viewer.js` and drives it three ways — successful write, rejected
+write with a working `prompt()` fallback, rejected write whose fallback
+also throws — confirming ✓ only on the first and `⚠` on both others, and
+that the third path doesn't crash the handler. Extracts the real "Copy
+embed" `onClick` body from `views/graph.jsx` and drives it against a
+mocked `navigator.clipboard.writeText`, confirming `embedCopied` lands on
+`true` for a successful write and `false` (not silence) for a blocked
+one, and that the button's label carries a real "Copy failed" state.
+
+Fire-tested 2 arms — reverted `graph-viewer.js`'s handler to the exact
+old unconditional-✓ shape, and reverted `views/graph.jsx`'s "Copy embed"
+button to the exact old silent fire-and-forget shape — 2/2 caught,
+post-restore baseline byte-identical to the pre-edit backups for both
+touched files. Full suite: 224/224 (up from 223/223; one new file).
+
+**Lesson.** The "unconditional success claim on a clipboard write" bug
+doesn't live in one component — it's a shape that reappears anywhere a
+UI reads user intent ("copy X") and assumes the browser granted it,
+without checking. A targeted fix and a targeted regression test pin the
+exact site that got reported; neither generalizes to a sibling in
+different wording, a different file extension, or a different UI
+framework in the same repo. The generalization that actually holds:
+before marking any clipboard-copy fix done, grep for
+`clipboard.writeText` repo-wide (not just inside `.jsx` files) and check
+every call site's success signal is gated on the write's own resolution,
+not assumed.

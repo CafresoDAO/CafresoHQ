@@ -2054,10 +2054,14 @@ async function main() {
     if (trail.length > 1) u.searchParams.set('trail', trail.join('~'));
     else u.searchParams.delete('trail');
     const link = u.toString();
-    try { await navigator.clipboard.writeText(link); }
+    let copied = false;
+    try { await navigator.clipboard.writeText(link); copied = true; }
     catch (_) { try { prompt('Copy link to this node:', link); } catch (__) {} }
     const prev = copyBtn.textContent;
-    copyBtn.textContent = '✓';
+    // Only claim success (✓) when the write actually landed on the
+    // clipboard — the prompt() fallback shows the link for the user to
+    // select+copy themselves, it doesn't copy anything on its own.
+    copyBtn.textContent = copied ? '✓' : '⚠';
     setTimeout(() => { copyBtn.textContent = prev; }, 1200);
   });
 

@@ -67,6 +67,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const [shareUrl, setShareUrl] = useSV(null);
   const [sharing, setSharing] = useSV(false);
   const [shareCopied, setShareCopied] = useSV(false);
+  const [embedCopied, setEmbedCopied] = useSV(null); // null | true | false — real result of the last "Copy embed" click
   const [edgesHover, setEdgesHover] = useSV(!!persisted.edgesHover); // hide edges until hover
   const edgesHoverRef = React.useRef(edgesHover);
   edgesHoverRef.current = edgesHover;
@@ -495,7 +496,12 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       React.createElement('input', { readOnly: true, value: shareUrl, onFocus: (e) => e.target.select(), style: { width: '100%', boxSizing: 'border-box', ...ctrlStyle, marginBottom: 10 } }),
       React.createElement('div', { style: { display: 'flex', gap: 8 } },
         React.createElement('button', { onClick: () => window.open(shareUrl, '_blank'), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Open ↗'),
-        React.createElement('button', { onClick: () => { try { navigator.clipboard.writeText('<iframe src="' + shareUrl + '" width="100%" height="600" style="border:0;border-radius:12px"></iframe>'); } catch (_) {} }, style: { ...ctrlStyle, cursor: 'pointer' } }, 'Copy embed'),
+        React.createElement('button', { onClick: async () => {
+          const embed = '<iframe src="' + shareUrl + '" width="100%" height="600" style="border:0;border-radius:12px"></iframe>';
+          try { await navigator.clipboard.writeText(embed); setEmbedCopied(true); }
+          catch (_) { setEmbedCopied(false); }
+          setTimeout(() => setEmbedCopied(null), 1500);
+        }, style: { ...ctrlStyle, cursor: 'pointer' } }, embedCopied === true ? 'Copied ✓' : embedCopied === false ? 'Copy failed' : 'Copy embed'),
         React.createElement('div', { style: { flex: 1 } }),
         React.createElement('button', { onClick: () => setShareUrl(null), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Close')),
     ),
