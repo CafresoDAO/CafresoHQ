@@ -80,34 +80,45 @@ def _terminal_spawn(self):
     params = urllib.parse.parse_qs(qs)
     cli  = (params.get('cli')  or ['claude'])[0].strip().lower()
     cwd  = (params.get('cwd')  or ['']      )[0].strip()
-    if cli not in ('claude', 'codex'):
-        return self._send_json(400, {'error': 'cli must be claude or codex'})
+    if cli not in ('claude', 'codex', 'hermes', 'gemini'):
+        return self._send_json(400, {'error': 'cli must be claude, codex, hermes, or gemini'})
     if not cwd:
         return self._send_json(400, {'error': 'cwd required'})
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
     if not cwd_path.is_dir():
         return self._send_json(400, {'error': f'directory not found: {cwd}'})
-    bin_ = (self._claudecode_resolve() if cli == 'claude' else self._codex_resolve())
+    if cli == 'claude':
+        bin_ = self._claudecode_resolve()
+    elif cli == 'codex':
+        bin_ = self._codex_resolve()
+    elif cli == 'gemini':
+        bin_ = self._gemini_resolve()
+    else:  # hermes
+        bin_ = self._hermes_resolve()
     if not bin_:
         return self._send_json(503, {'error': f'{cli} CLI not found'})
+    # Hermes' bare binary doesn't open the interactive agent — same reason
+    # _terminal_pty_ws appends this subcommand (see its own comment above).
+    cli_args = [cli, 'chat'] if cli == 'hermes' else [cli]
+    cli_cmd  = ' '.join(cli_args)
     try:
         if sys.platform == 'win32':
             wt  = shutil.which('wt')
             ps  = shutil.which('pwsh') or shutil.which('powershell')
             if wt and ps:
                 subprocess.Popen(
-                    ['wt', '-d', str(cwd_path), ps, '-NoExit', '-Command', cli],
+                    ['wt', '-d', str(cwd_path), ps, '-NoExit', '-Command', cli_cmd],
                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
                 )
             elif ps:
                 subprocess.Popen(
                     [ps, '-NoExit', '-Command',
-                     f'Set-Location "{cwd_path}"; {cli}'],
+                     f'Set-Location "{cwd_path}"; {cli_cmd}'],
                     creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
                 )
             else:
                 subprocess.Popen(
-                    ['cmd', '/k', f'cd /d "{cwd_path}" && {cli}'],
+                    ['cmd', '/k', f'cd /d "{cwd_path}" && {cli_cmd}'],
                     creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
                 )
         elif sys.platform == 'darwin':
@@ -121,7 +132,7 @@ def _terminal_spawn(self):
             osa = shutil.which('osascript')
             if not osa:
                 return self._send_json(503, {'error': 'no terminal emulator found'})
-            shell_cmd = f'cd {shlex.quote(str(cwd_path))} && {shlex.quote(cli)}'
+            shell_cmd = f'cd {shlex.quote(str(cwd_path))} && ' + ' '.join(shlex.quote(a) for a in cli_args)
             as_literal = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
             applescript = (
                 'tell application "Terminal"\n'
@@ -134,7 +145,7 @@ def _terminal_spawn(self):
             launched = False
             for term in ['x-terminal-emulator', 'gnome-terminal', 'kitty', 'xterm']:
                 if shutil.which(term):
-                    subprocess.Popen([term, '-e', cli], cwd=str(cwd_path))
+                    subprocess.Popen([term, '-e'] + cli_args, cwd=str(cwd_path))
                     launched = True
                     break
             if not launched:

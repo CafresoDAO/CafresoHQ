@@ -17854,3 +17854,72 @@ panel can read the *same* source object and still end up honest and
 dishonest respectively, if only one of the two call sites was updated
 when the transform was added. The brand-bar stats got this right from
 the start; the analytics panel was added later and missed it.
+
+## Hermes — the DEFAULT terminal tab — couldn't pop out to a real terminal
+
+Every Project's Terminal panel offers four agent CLIs plus `hqsh`; Hermes is
+the one marked **DEFAULT** in the add-session menu (`views/terminal.jsx`).
+Whichever CLI tab is open, PTY mode shows a `⬡ pop out` button
+(`title="Open in separate terminal window"`) or, on a host without an
+in-app PTY, a fallback screen reading `▶ LAUNCH {CLI} IN TERMINAL` — for
+Hermes that literally renders **"▶ LAUNCH HERMES IN TERMINAL"**. Both call
+the same `launchTerminal()`, which hits `GET /terminal/spawn?cli=...`.
+
+`pty_server.py`'s `_terminal_spawn` — the handler behind that endpoint —
+whitelisted only `cli=claude` or `cli=codex`. Its sibling handler,
+`_terminal_pty_ws` (the embedded in-app PTY WebSocket, five lines of logic
+away in the same file), already accepted all four CLIs, proving the product
+intends Hermes/Gemini to be full terminal citizens — only the native-window
+spawn path was never extended to match when Hermes/Gemini were wired in.
+
+**Repro.** Open a Project → Terminal (defaults to the Hermes tab). Switch to
+PTY mode, click `⬡ pop out`. `GET /terminal/spawn?cli=hermes&cwd=...`
+returned `400 {"error": "cli must be claude or codex"}`, surfaced verbatim
+to the boss as `⚠ cli must be claude or codex`. No terminal window opened.
+Same for the Gemini tab. Claude/Codex worked fine via this same button, and
+Hermes/Gemini's own embedded PTY (`_terminal_pty_ws`) also worked fine —
+narrowing this to exactly one stale whitelist, not a missing integration.
+
+**The fix** has three parts, all mirroring what `_terminal_pty_ws` already
+does: (1) widen the whitelist to `claude`, `codex`, `hermes`, `gemini`, with
+an error message that names all four; (2) replace the old
+`claude`-vs-`codex` ternary with a proper per-CLI dispatch to
+`_claudecode_resolve`/`_codex_resolve`/`_gemini_resolve`/`_hermes_resolve` —
+widening the whitelist alone would have let a resolved-but-wrong `hermes`
+binary silently fall through to the codex resolver; (3) append hermes' own
+`chat` subcommand to the spawned command (`hermes chat`, not bare `hermes`),
+because — as `_terminal_pty_ws`'s own comment already explains — the bare
+Hermes binary doesn't open its interactive agent. That third piece touches
+all three OS branches (Windows wt/pwsh/cmd, macOS AppleScript `do script`,
+Linux `-e` argv), replacing the bare `cli` string used to build each
+platform's launch command with a small `cli_args` list/string.
+
+**Test coverage.** New:
+`scripts/test_native_terminal_launch_supports_hermes_and_gemini.py`, 7
+checks. Imports `serve` for real and drives the actual production-bound
+`serve.Handler._terminal_spawn` (the same object serve.py wires up), with
+`subprocess.Popen`/`shutil.which`/`sys.platform` monkeypatched on the
+`pty_server` module and a fake request-handler `self` exposing the four
+resolver methods. Confirms: Hermes and Gemini now both spawn successfully;
+Claude/Codex are unaffected; an actually-unsupported `cli` still 400s with
+the corrected four-CLI error message; a missing Hermes/Gemini binary 503s
+via its *own* resolver (not silently through `_codex_resolve`); and the
+spawned command includes `hermes chat` on both the macOS and Linux branches,
+while Claude's command is never given a `chat` suffix.
+
+Fire-tested 3 arms — reverted the whitelist to claude/codex-only (the
+original bug), reverted the resolver dispatch to the old ternary, and
+dropped the `chat` subcommand — 3/3 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 221/221 (up from
+220/220; one new file).
+
+**Lesson.** `_terminal_pty_ws` had already solved this exact problem —
+right whitelist, right per-CLI resolver, right `chat` subcommand for
+Hermes — in the same file, a few dozen lines away. `_terminal_spawn` is a
+second, independent code path serving the identical four CLI choices from
+the identical UI, and it drifted out of sync silently: nothing forced the
+two handlers to agree, and the working sibling gave no visible signal that
+its neighbor had fallen behind. Two handlers implementing one promised
+capability need either a shared source of truth for "which CLIs exist," or
+a test that pins them to agree — otherwise the second one only gets fixed
+when someone happens to compare them line by line.
