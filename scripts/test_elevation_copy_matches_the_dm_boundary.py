@@ -2,7 +2,7 @@
 """Granting file & shell access told a boss it isolated the coworker from
 DMs. It doesn't, on purpose.
 
-Three surfaces made the same claim:
+Four surfaces made the same claim:
 
     modals/hire.jsx:693   (hire-form privilege checkbox hint)
         "...DMs blocked, missions opt-in, every action logged."
@@ -11,6 +11,12 @@ Three surfaces made the same claim:
     modals/settings.jsx:1168  (the window.hqConfirm dialog shown on the actual grant)
         "DMs from other agents will be blocked, missions require explicit
          authorization, and every tool call is logged."
+    modals/hire.jsx:399  (the SEPARATE window.hqConfirm shown when building
+    a custom agent from scratch, rather than hiring a detected one — found
+    later, after the first three were already fixed; the original sweep's
+    grep evidently never reached this second confirm dialog in the same
+    file)
+        "· Inter-agent DMs cannot reach them (only your direct dispatches will)."
 
 app.jsx's dispatchToAgent does the opposite, deliberately:
 
@@ -38,12 +44,19 @@ dialog before clicking "Grant access" — the one place this claim matters
 most, since it's the moment they're deciding whether to trust a coworker
 with file/shell access — was told a false safety boundary.
 
-**The fix** rewrites the false clause in all three places to describe the
+**The fix** rewrites the false clause in all four places to describe the
 real one: DMs are still possible, and each handoff is announced in the
 Team thread rather than happening invisibly. The other two clauses on the
 same line ("missions opt-in" / "every action logged") were verified true
 and left alone — missions.jsx:1007 (`if (isElevated && !elevatedAuth)
 return;`) and app.jsx's elevated-audit-trail block are both real.
+
+The fourth surface's false claim ("cannot reach them") used different
+words than the first three ("blocked" / "will be blocked") — different
+enough that the original `FALSE_CLAIM` regex below didn't match it, which
+is exactly why grepping for "blocked" once and fixing every hit it found
+still missed this one. The pattern is widened alongside the fix so a
+fifth rephrasing of the same false claim doesn't get the same free pass.
 
 Run: python3 scripts/test_elevation_copy_matches_the_dm_boundary.py
 """
@@ -68,7 +81,10 @@ def check(name, cond, detail=''):
         FAILS.append(name)
 
 
-FALSE_CLAIM = re.compile(r'DMs?\s+(?:blocked|from other agents will be blocked)', re.I)
+FALSE_CLAIM = re.compile(
+    r'DMs?\s+(?:blocked|from other agents will be blocked|cannot reach|can\'t reach)'
+    r'|(?:cannot|can\'t)\s+reach\s+them\b',
+    re.I)
 
 
 def main():
@@ -88,12 +104,32 @@ def main():
           'Teammates can still send them DMs' in SETTINGS
           and 'noted in the Team thread' in SETTINGS, SETTINGS[:0])
 
+    # hire.jsx has TWO separate places that make this claim — the privilege
+    # hint (line 693, checked above) and a second, independent
+    # window.hqConfirm shown when building a custom agent from scratch
+    # (line ~399). Both need the honest text; a count check catches either
+    # one silently reverting, not just the pair collectively containing it
+    # somewhere.
+    check('both of hire.jsx\'s own DM-boundary claims were fixed, not just one',
+          HIRE.count('Reachable by teammate DMs') == 2,
+          'found %d — the custom-agent-build confirm dialog is a second, '
+          'separate call site from the privilege-checkbox hint; fixing one '
+          'does not fix the other' % HIRE.count('Reachable by teammate DMs'))
+    check('...and the custom-build confirm dialog specifically carries the '
+          'honest bullet',
+          '· Reachable by teammate DMs — each handoff is noted in the Team thread.'
+          in HIRE, HIRE[:0])
+
     # The two OTHER clauses on the same line are true — verify they
     # survived the rewrite rather than getting dropped along with the
-    # false one.
+    # false one. rindex(), not index(): HIRE now carries the fixed claim
+    # TWICE (line ~399 and line 693) and this check is specifically about
+    # the privilege-hint line (693, the later of the two in the file) —
+    # index() would grab the custom-build dialog's own true-but-differently-
+    # worded mission clause instead and fail on unrelated wording.
     check('...and both keep the two TRUE claims on the same line',
           all('missions opt-in' in s or 'missions require explicit authorization' in s
-              for s in [HIRE[HIRE.index('Reachable by teammate DMs'):HIRE.index('Reachable by teammate DMs') + 120],
+              for s in [HIRE[HIRE.rindex('Reachable by teammate DMs'):HIRE.rindex('Reachable by teammate DMs') + 120],
                         SETTINGS[SETTINGS.index('Reachable by teammate DMs'):SETTINGS.index('Reachable by teammate DMs') + 120]])
           and 'every action logged' in HIRE and 'every action logged' in SETTINGS
           and 'every tool call is logged' in SETTINGS,

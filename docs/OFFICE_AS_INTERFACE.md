@@ -17991,3 +17991,75 @@ stops; a codebase with more than one instance of a pattern needs the test
 to say which instance it means, or a second instance can carry the exact
 already-fixed bug indefinitely, invisible to a suite that reads as
 "passing" the whole time.
+
+## The "DMs blocked" fix left a fourth copy of the same false claim standing
+
+A ticket earlier this session (the "Elevation-grant copy claimed DMs get
+blocked" entry above) fixed three surfaces that told a boss teammate DMs
+couldn't reach a coworker with file/shell access — false; `dispatchToAgent`
+deliberately allows and announces exactly that handoff. A fourth surface,
+in the same file, made the identical false claim in different words, and
+survived that fix untouched.
+
+`modals/hire.jsx` has two separate `window.hqConfirm` dialogs that grant
+elevation: one shown when hiring a pre-detected local CLI agent, and a
+second — a different code path — shown in `submit()` when building a
+custom agent from scratch. The first three fixed surfaces were the
+detected-hire hint, the Roster panel, and the settings grant dialog. The
+custom-build dialog, `modals/hire.jsx:399`, still read:
+
+    · Inter-agent DMs cannot reach them (only your direct dispatches will).
+
+"cannot reach" rather than "blocked" — different enough that the original
+fix's own regression test, `FALSE_CLAIM = re.compile(r'DMs?\s+(?:blocked|
+from other agents will be blocked)', re.I)`, never matched it. The original
+sweep evidently checked the file for the string "blocked" and fixed every
+hit, without noticing this second confirm dialog said the same false thing
+in unrelated words a few dozen lines earlier in the same file.
+
+**Repro.** Build a custom agent from scratch, check "🛡 FILE & SHELL
+ACCESS," click Hire — read the "Hire {name} with COMPUTER ACCESS?" dialog's
+first bullet. It claims isolation from teammate DMs that the dispatch code
+doesn't provide, identically to the already-documented bug, on a screen
+the original fix never reached.
+
+**The fix** rewrites the bullet to match the honest wording already used
+at line 693 in the same file: `· Reachable by teammate DMs — each handoff
+is noted in the Team thread.` No application code changed — same as the
+original ticket, only the copy was wrong; the dispatch behavior this
+describes was already correct and already covered by that ticket's
+mechanism check.
+
+**Test coverage.** Extended
+`scripts/test_elevation_copy_matches_the_dm_boundary.py` (2 new checks,
+plus one existing check repointed) rather than a new file, since this is
+the same claim on a fourth surface, not a new bug class. Widened
+`FALSE_CLAIM` to also match "cannot reach" / "can't reach" phrasing, not
+just the original "blocked" wording — so a fifth rephrasing of the same
+false claim doesn't get the same free pass a narrow regex just gave this
+one. Added a count check (`HIRE.count('Reachable by teammate DMs') == 2`)
+so either of hire.jsx's two independent fixes silently reverting gets
+caught individually, not just detected as "the string exists somewhere."
+Repointed the existing "both keep the two TRUE claims" check from
+`.index()` to `.rindex()`, since `HIRE` now carries the honest phrase
+twice and the check is specifically about the later (line 693) occurrence
+— `.index()` would have grabbed the new, differently-worded custom-build
+dialog instead and failed on unrelated wording.
+
+Fire-tested 2 arms — reverted the custom-build dialog to its exact
+original false claim, and separately to a different false phrasing
+("can't reach" instead of "cannot reach," testing that the widened regex
+generalizes rather than just matching the one exact string just fixed) —
+2/2 caught, post-restore baseline byte-identical to the pre-edit backup.
+Full suite: 221/221 (same count — no new file, an existing suite was
+extended).
+
+**Lesson.** Fixing every occurrence of a search string is not the same as
+fixing every occurrence of a claim — the claim can be true or false in
+more words than the ones that were grepped for. This is the third time
+this exact shape has shown up this session (the desktop tour's hire step
+a few entries up was the second): a bug gets fixed at every site a
+targeted search finds, a regression test is written that pins those exact
+sites, and a sibling written in different words — same file, same
+feature, same author's intent — sits outside both the original sweep and
+the test that was supposed to guard it.

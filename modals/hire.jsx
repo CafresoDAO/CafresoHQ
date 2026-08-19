@@ -396,7 +396,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     if (elevated && !(await window.hqConfirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
       `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
-      `· Inter-agent DMs cannot reach them (only your direct dispatches will).\n` +
+      `· Reachable by teammate DMs — each handoff is noted in the Team thread.\n` +
       `· Research missions are blocked unless you explicitly authorize unattended access.\n` +
       `· Every tool call they make will be logged to Receipts.\n` +
       `· Their actions will pause for your approval before executing.\n\n` +
