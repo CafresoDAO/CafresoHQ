@@ -84,7 +84,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
           (ev.shiftKey || term.hasSelection())) {
         const sel = term.getSelection();
         if (sel && sel.trim()) {
-          navigator.clipboard.writeText(sel.trim()).catch(() => {});
+          copyText(sel.trim());
           term.clearSelection();
           return false;
         }

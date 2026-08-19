@@ -791,6 +791,7 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   const [summaryFail, setSummaryFail] = useSF('');
   const [phase, setPhase] = useSF('idle');   // idle | running | summarizing | done
   const [archived, setArchived] = useSF(false);
+  const [copied, setCopied] = useSF(null);   // null | true | false — real result of the last COPY MARKDOWN click
   const [excluded, setExcluded] = useSF(new Set());
   const abortRef = useRF(null);
 
@@ -982,8 +983,9 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   };
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(fullText()); }
-    catch (_e) { /* fall back: select the textarea */ }
+    try { await navigator.clipboard.writeText(fullText()); setCopied(true); }
+    catch (_e) { setCopied(false); }
+    setTimeout(() => setCopied(null), 2200);
   };
 
   const archive = () => {
@@ -1043,7 +1045,9 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
               that door and it is already in this footer, so the sentence
               points at it rather than inventing a second one. */}
           <div className="hint" style={{marginRight: 'auto'}}>{
-            archived ? '✓ saved to your task board'
+            copied === true ? '✓ copied'
+            : copied === false ? 'copy blocked — check browser permission'
+            : archived ? '✓ saved to your task board'
             : phase !== 'done' ? ''
             : summaryFail === 'stopped'
               ? 'you stopped this before the summary — RE-RUN for a full one, or ARCHIVE the reports as they are'

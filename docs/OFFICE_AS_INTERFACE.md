@@ -18353,3 +18353,84 @@ before marking any clipboard-copy fix done, grep for
 `clipboard.writeText` repo-wide (not just inside `.jsx` files) and check
 every call site's success signal is gated on the write's own resolution,
 not assumed.
+
+## Two more clipboard-copy sites skipped the app's own honest-feedback helper
+
+**Claim vs. reality.** #38's own "Lesson" said to grep the repo for
+`clipboard.writeText` before calling a clipboard-copy fix done. Running
+that grep turned up two more unfixed sites in the same pass.
+
+`views/terminal.jsx`'s embedded terminal already has a correct, shared
+`copyText()` helper — flashes `'✓ copied'` on success, `'copy blocked —
+check browser permission'` on failure — used by the mouse-up-copies-
+selection gesture. But the Ctrl/Cmd+Shift+C keyboard shortcut, a few
+lines above that gesture in the exact same file, bypassed it entirely:
+
+```js
+navigator.clipboard.writeText(sel.trim()).catch(() => {});
+```
+
+A raw fire-and-forget write with a silent `.catch(() => {})` — the same
+anti-pattern this app has now fixed five times (three on 2026-08-19, two
+in #38), this time sitting one function away from its own correct fix
+for a different gesture copying the same selection.
+
+`features.jsx`'s StandupModal "COPY MARKDOWN" button was worse: no
+feedback at all, success or failure —
+
+```js
+const copy = async () => {
+  try { await navigator.clipboard.writeText(fullText()); }
+  catch (_e) { /* fall back: select the textarea */ }
+};
+```
+
+— and the catch block's own comment described a fallback (select the
+textarea for the user) that was never implemented; the catch body was
+empty. A boss who clicked COPY MARKDOWN with clipboard access blocked got
+total silence, with a comment that would have told a future reader the
+code did something it didn't.
+
+**Repro.** In an open terminal tab, select text and press Ctrl+Shift+C
+with clipboard permission denied — nothing happens, no flash, unlike the
+same selection copied via mouse-up release (which correctly flashes the
+failure). Open a finished stand-up, click COPY MARKDOWN with clipboard
+access blocked — the button gives no indication anything went wrong.
+
+**The fix.** The keyboard shortcut now calls `copyText(sel.trim())` —
+the same helper the mouse-up gesture already uses — so there is exactly
+one copy implementation left in this file to keep honest, not two. The
+stand-up modal now has its own `copied` state (`null | true | false`),
+surfaced in the same hint strip that already gives real feedback for
+ARCHIVE (`'✓ saved to your task board'`), using the same `'✓ copied'` /
+`'copy blocked — check browser permission'` wording as terminal.jsx's
+`copyText` for consistency across the app.
+
+**Test coverage.** New:
+`scripts/test_copy_shortcuts_that_skipped_the_honest_helper.py`, 12
+checks. Extracts the real `attachCustomKeyEventHandler` callback from
+`views/terminal.jsx` and drives it with a mocked `term`/`navigator`,
+confirming a successful write flashes `'✓ copied'` and a blocked one
+flashes the real failure message — and statically confirms the raw
+`navigator.clipboard.writeText(...).catch(() => {})` shape is gone from
+the handler. Extracts the real `copy()` function from `features.jsx` and
+drives it against a mocked clipboard, confirming `copied` lands `true` on
+success and `false` (not left `undefined`) on failure; confirms the old
+aspirational comment is gone; statically confirms the hint strip renders
+both the success and the failure wording, not just success.
+
+Fire-tested 3 arms — reverted the terminal shortcut to the raw
+fire-and-forget write, reverted `copy()` to the old silent-both-ways
+shape, and reverted the hint strip to drop the copy branches entirely
+(state set but never shown, the "test passes but nobody sees it" trap) —
+3/3 caught, post-restore baseline byte-identical to the pre-edit backups
+for both touched files. Full suite: 225/225 (up from 224/224; one new
+file).
+
+**Lesson.** The grep this entry ran wasn't a one-time cleanup — it's the
+actual generalization #38 asked for, and it paid for itself immediately:
+two real sites, one of them sitting in the same file and same modal-
+adjacent code as an already-correct sibling. When a fix's own lesson
+names a concrete follow-up action ("grep for X repo-wide"), running it
+before moving on is cheaper than waiting for the third bug report to
+notice the same shape again.
