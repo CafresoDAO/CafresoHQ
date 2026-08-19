@@ -18172,3 +18172,87 @@ file (`ui/onboarding.jsx`) with zero producers in the file that actually
 builds the data (`app.jsx`) is a shape worth grepping for on its own:
 search a filter/kind taxonomy for values nothing ever assigns, not just
 search for values the taxonomy is missing.
+
+
+## The command palette's "Keyboard shortcuts" entry invented two shortcuts
+
+Opening the command palette (⌘K), searching Help, and clicking "Keyboard
+shortcuts" popped a toast:
+
+    Cmd/Ctrl-K — palette · / — graph filter · Esc — close · ⌘P — graph palette
+
+Two of the four listed shortcuts never existed anywhere in the live app:
+
+- **`/ — graph filter`**: `views/graph.jsx` has no keydown listener at
+  all (zero `onKeyDown`/`addEventListener('keydown', ...)` in the whole
+  file). The graph's filter box (a plain `<input placeholder="Filter
+  (tag:x type:y -term)">`) is mouse-focus only. The app's real, global
+  `/` handler lives in `app.jsx` and does something unrelated: `else if
+  (e.key === '/') { ...; document.querySelector('.composer
+  textarea')?.focus(); }` — it focuses the chat composer, whether or not
+  the graph view is even open.
+- **`⌘P — graph palette`**: no `'p'`/`'P'`/`KeyP` key handler exists
+  anywhere in the repo — a repo-wide search for every spelling of that
+  check comes back empty. Pressing ⌘P does nothing at all.
+
+**Why this drifted.** The app already has a correct, always-current
+shortcuts surface: `ShortcutHud` (`ui/panels.jsx`), toggled by the real
+⌘K handler in `app.jsx`, whose nine listed entries all correspond to a
+real `e.key === ...` branch a few lines above it in the same file. The
+palette's toast was a *second*, hand-typed shortcuts list living in a
+different file (`app/commands.jsx`) with no mechanism keeping the two in
+sync. An old worktree snapshot under `.claude/worktrees/` still shows a
+graph-view footer hint reading "⌘P palette" next to lasso-select and
+shortest-path controls that no longer exist in the live `views/graph.jsx`
+— the graph command palette this toast described appears to have been
+removed from the graph view at some point, and nobody updated the one
+other place that named it.
+
+**Repro.** Press ⌘K, type "keyboard," click the result. Read the toast.
+Press `/` — the composer gets focus, not any graph filter (and nothing
+happens at all if the graph view isn't open). Press ⌘P — nothing happens.
+Compare against the actual ⌘K-toggled panel, whose list is completely
+different and, checked against `app.jsx`'s key handler, correct.
+
+**The fix** stops maintaining a second shortcuts list by hand. `help.
+shortcuts`'s `run()` no longer builds its own toast string — it now calls
+a new `onShortcuts` prop, threaded through `AppGlobalCommands` the same
+way every other palette action already reaches its handler (`onHire`,
+`onSettings`, `onMissions`, ...), wired in `app.jsx` to `() =>
+setShortcutsOpen(true)` — the exact same state the real ⌘K key already
+toggles. Clicking "Keyboard shortcuts" in the palette now opens the one
+shortcuts panel that's actually kept honest, instead of showing a second
+one that can silently go stale again the next time a shortcut changes.
+
+**Test coverage.** New:
+`scripts/test_shortcuts_command_matches_real_shortcuts.py`, 15 checks.
+Extracts the real `help.shortcuts` command object and drives its `run()`
+against a mock `onShortcuts`/`window.cafresohqToast`, confirming it now
+calls the former and never the latter. Confirms `onShortcuts` is
+destructured, listed in `useCommands`'s dependency array, and wired at
+the real `AppGlobalCommands` call site to `setShortcutsOpen(true)` — via
+regexes specific enough to tell the props-destructuring occurrence apart
+from the dependency-array occurrence (a looser first draft matched
+either one and stayed green with only one of the two actually fixed;
+caught by this file's own fire-test, tightened before committing).
+Locks in the underlying facts the fix relies on, not just the copy:
+`ShortcutHud`'s own nine entries all still map to a real `app.jsx`
+handler, `views/graph.jsx` still has no keydown listener, no `'p'`/`'P'`
+handler exists anywhere, and the real `/` handler still focuses the
+composer.
+
+Fire-tested 4 arms — reverted `help.shortcuts` to the exact old fake
+toast, dropped `onShortcuts` from the props destructuring, dropped it
+from the dependency array, and dropped the wire at the real call site —
+4/4 caught, post-restore baseline byte-identical to the pre-edit backups
+for both touched files. Full suite: 223/223 (up from 222/222; one new
+file).
+
+**Lesson.** A UI string that lists shortcuts, key bindings, or any other
+small enumerable fact is a second copy of something the code already
+knows in one place — and a second copy is a promise to keep two things
+in sync forever, which nobody remembers to do once the feature it
+describes gets removed. Where practical, point the second surface at the
+first one instead of retyping it: `onShortcuts` now opens the same panel
+⌘K does, so there is exactly one shortcuts list left in the app to go
+stale, not two.

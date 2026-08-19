@@ -6336,6 +6336,7 @@ ${d.text}` : d.text,
       onStandup={onOpenStandup}
       onMemory={() => goTo('memory')}
       onStopAll={onStopAll}
+      onShortcuts={() => setShortcutsOpen(true)}
       anyBusy={agents.some(a => a.status === 'busy') || missions.some(m => m.status === 'running') || nightShiftBoard.length > 0}
       agents={agents}
       chat={chat}

@@ -19,6 +19,7 @@ function AppGlobalCommands({
   windowsEnabled, setWindowsEnabled, onOpenWindow,
   workspaces = [], activeWorkspace, onApplyWorkspace, onSaveWorkspace, onDeleteWorkspace,
   onHire, onSettings, onMissions, onWorkflow, onStandup, onMemory, onStopAll,
+  onShortcuts,
   anyBusy,
   agents = [], chat = [], onDmAgent, onJumpToMessage,
   // Phase 2 comms props — open the inbox with a pre-applied filter, or
@@ -217,11 +218,21 @@ function AppGlobalCommands({
       }
     },
 
-    /* Help / discovery. */
+    /* Help / discovery.
+
+       This used to pop its own toast listing four shortcuts, two of which
+       — "/ — graph filter" and "⌘P — graph palette" — never existed
+       anywhere in the app (no keydown listener in views/graph.jsx at all;
+       the real global `/` handler in app.jsx focuses the chat composer,
+       not any graph filter; no 'p'/'P' key handler exists anywhere in the
+       repo). That toast was a second, hand-maintained shortcuts list that
+       drifted the moment the real one changed — ShortcutHud (ui/panels.jsx,
+       opened by the real ⌘K handler this entry's own hint names) is the
+       one place that list is actually kept in sync with app.jsx's key
+       handlers. Opening it instead of a separate toast means there is only
+       one shortcuts list left to go stale. */
     { id: 'help.shortcuts', label: 'Keyboard shortcuts', section: 'Help', icon: '⌨',
-      run: () => window.cafresohqToast && window.cafresohqToast.info(
-        'Cmd/Ctrl-K — palette · / — graph filter · Esc — close · ⌘P — graph palette',
-        { duration: 8000 })
+      run: () => onShortcuts && onShortcuts()
     },
     { id: 'help.tour', label: 'Replay onboarding tour', section: 'Help', icon: '🎓',
       run: () => window.dispatchEvent(new CustomEvent('cafresohq:replayTour'))
@@ -234,6 +245,7 @@ function AppGlobalCommands({
     workspaces, activeWorkspace,
     onApplyWorkspace, onSaveWorkspace, onDeleteWorkspace,
     onHire, onSettings, onMissions, onWorkflow, onStandup, onMemory, onStopAll,
+    onShortcuts,
     agents, chat, onDmAgent, onJumpToMessage,
     onOpenInbox, onRetryFailed, messages,
   ]);
