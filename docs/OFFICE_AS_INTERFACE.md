@@ -17539,3 +17539,85 @@ promise, and only for one of the two mission surfaces the app actually
 has. When a view's copy already generalizes across a distinction
 ("missions," not "in-browser missions"), that's worth treating as a
 spec to grep the data-fetching code against, not just prose.
+
+## A mission auto-paused after three errors kept a perfect streak
+
+`app/experience.jsx`'s own ledger contract is explicit: outcomes are
+`'done'` or `'snag'` — "a failed run — resets the streak" — and a run
+the user stopped is not recorded at all, "walking over to someone's
+desk and taking the folder back is not their failure." Both roster
+surfaces (`views/core.jsx` and `ui/panels.jsx`) show the derived stat
+with the identical promise in the tooltip: "N runs came back empty or
+failed. Runs you stopped yourself are not counted."
+
+The task path draws this distinction correctly: `app.jsx`'s
+`dispatchToAgent` catch block checks the abort controller's own signal
+and only calls `recordXp({outcome:'snag'})` when the run was NOT
+user-stopped. Missions draw the identical distinction in their own
+data model — `pauseNote` for a boss-stop, `lastError` for a real
+failure, wired up in an earlier ticket
+(`scripts/test_a_paused_mission_says_why.py`) — but `missions.jsx`'s
+scheduling loop, which auto-pauses a mission after three consecutive
+errors and stamps `lastError`, never called `recordXp` at all. A
+coworker whose scheduled research mission errored out three times in a
+row and got auto-paused kept an unbroken streak on their card the same
+night their work silently failed — the same failure on a *task* would
+have shown up as a snag and reset it.
+
+A prior ledger entry ("the ledger's snag rule," a few entries up in
+this document) investigated exactly this task-vs-mission asymmetry and
+signed it off as correct — but that investigation checked only
+`dispatchToAgent` (ordinary chat and DMs), proving no real task ever
+routes through it. It never touched `missions.jsx`'s own scheduling
+loop, a completely separate code path where missions actually fail.
+The sign-off was correct about the path it checked and silent about
+the one where the gap actually lived.
+
+**The fix** adds `ctx.recordXp({agentId, kind:'mission', outcome:'snag',
+taskId: m.id, title: m.topic})` to the three-errors auto-pause branch,
+right after `standDown`. No `iterations > 0` guard is needed the way
+the `'done'` branches use one — `errors >= 3` already proves at least
+one iteration was attempted.
+
+**Deliberately out of scope:** the sibling branch a few lines below,
+which fires when the mission's agent no longer exists (`status:
+'error', lastError: 'agent removed'`). Firing a coworker never touches
+`missions` state directly — the next scheduling tick just finds the
+agent gone. That makes this branch a *consequence of a boss action*
+ending the run, not the coworker failing at it — the same shape as a
+plain user-stop, which §5 already keeps off the ledger for the
+identical reason. Recording a snag there would trade one honesty
+defect for a different one: blaming a dismissed coworker for an
+interruption the boss caused. Left alone, and pinned as a deliberate
+boundary rather than a leftover gap.
+
+**Test coverage.** New:
+`scripts/test_mission_failures_write_a_snag.py`, 12 checks. Extracts
+and drives the real auto-pause block from `missions.jsx` plus the real
+`xpRecord`/`xpStats` from `app/experience.jsx` together in one `node
+-e` harness — not restating the ledger math, running it. Confirms:
+the auto-pause now records a snag with the right shape; the mission
+still auto-pauses and the agent still stands down (unchanged
+behavior); driving the real entry through the real ledger functions
+actually flips `xpStats().snags` from 0 to 1 and resets
+`xpStats().streak` to 0 — the roster tooltip's promise, proven against
+the function that backs it, not asserted from the diff. Also locks the
+"agent removed" branch's silence (no `recordXp` in its vicinity) as
+intentional, and pins the call-site count at 4 (3 pre-existing `'done'`
+sites plus this one).
+
+Fire-tested 2 arms — removed the `recordXp` call, and flipped its
+outcome from `'snag'` to `'done'` — 2/2 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 217/217 (up from
+216/216; one new file).
+
+**Lesson.** A prior sign-off that correctly clears one code path can
+read as clearing the whole feature if the write-up doesn't name the
+path it checked. Missions and tasks look like two branches of the same
+job-completion story, but they run through entirely separate files —
+`app.jsx` for tasks, `missions.jsx`'s own scheduling loop for missions
+— and "the asymmetry is fine" turned out to be true for one of those
+files and simply unexamined for the other. When a "checked and it's
+fine" note in this ledger names its own scope that precisely, that is
+worth reading as an invitation to check the sibling path it didn't
+reach, not as the whole question closed.

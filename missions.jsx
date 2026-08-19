@@ -573,10 +573,19 @@ function useMissionRunner(missions, setMissions, ctx) {
       }
 
       /* Three errors in a row → auto-pause so we don't burn cycles on
-         a busted backend. */
+         a busted backend. This is the mission side of the same distinction
+         the task path draws (§5 in app.jsx): `lastError`, not `pauseNote`,
+         is what's stamped here, so it's a real failure, not a boss-stop —
+         and a failed run is a snag on the record (recordXp below). The
+         `errors >= 3` guard already proves at least one iteration was
+         attempted, so no `iterations > 0` gate is needed the way `done`
+         needs one below. */
       if ((m.errors || 0) >= 3) {
         setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'paused', endedAt: Date.now(), lastError: x.lastError || 'too many errors' } : x));
         standDown(m.agentId);
+        if (ctx.recordXp) {
+          ctx.recordXp({ agentId: m.agentId, kind: 'mission', outcome: 'snag', taskId: m.id, title: m.topic });
+        }
         continue;
       }
 
