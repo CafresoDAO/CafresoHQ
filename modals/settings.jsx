@@ -1264,7 +1264,7 @@ function AccountTab({ usageTokens = 0 }) {
       const kill = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && /tourseen|gettingstarted|gsdismissed/i.test(k)) kill.push(k);
+        if (k && /tourseen|gettingstarted|coachseen|firstdeliveryseen/i.test(k)) kill.push(k);
       }
       kill.forEach(k => localStorage.removeItem(k));
       setNote(`✓ onboarding reset (${kill.length} flag${kill.length === 1 ? '' : 's'} cleared) — reload to replay`);
@@ -1435,7 +1435,7 @@ function SystemTab() {
       const kill = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && /tourseen|gettingstarted|gsdismissed/i.test(k)) kill.push(k);
+        if (k && /tourseen|gettingstarted|coachseen|firstdeliveryseen/i.test(k)) kill.push(k);
       }
       kill.forEach(k => localStorage.removeItem(k));
       setNote(`✓ onboarding reset (${kill.length} flag${kill.length === 1 ? '' : 's'} cleared) — reload to replay`);

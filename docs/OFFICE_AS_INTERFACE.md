@@ -15632,3 +15632,57 @@ sources were added without anyone re-checking that the shared row
 component still had something to call; the row didn't complain, it just
 did nothing. A component that accepts an optional handler and no-ops
 without one will hide exactly this gap until someone clicks it live.
+
+### "Reset onboarding" reset half of onboarding — 2026-08-18
+
+Settings has two copies of a "Replay the new-user guide on next reload?"
+button (one per tab that offers it), each backed by its own identical
+`resetOnboarding()`. Both sweep `localStorage` for keys matching
+`/tourseen|gettingstarted|gsdismissed/i`, delete every match, and report
+back `✓ onboarding reset (N flags cleared) — reload to replay`.
+
+The app actually persists **four** onboarding-gating flags, each written
+the same way — `useStored(ks('Name'))` in app.jsx:
+
+    tourSeen              (~line 499)
+    gettingStartedDone    (~line 565, read into the variable `gsDismissed`)
+    firstDeliverySeen     (~line 602)
+    coachSeen             (~line 843)
+
+`tourseen` and `gettingstarted` match the first two. `gsdismissed`
+matches nothing at all — no stored key has ever been named that; it's a
+stale echo of the `gsDismissed` *variable*, not the key it's stored
+under. `coachseen` and `firstdeliveryseen` were never in the pattern.
+So a boss who clicked the button kept every contextual coach mark
+suppressed and never saw the first-delivery beat again on reload — the
+exact "the animation layer says something the underlying state can't
+back up" failure this ledger exists to catch, just triggered by the
+support tooling instead of the product surface.
+
+**The fix**, in both copies:
+
+    /tourseen|gettingstarted|coachseen|firstdeliveryseen/i
+
+Dropped the dead `gsdismissed` term rather than keeping it alongside —
+a pattern with a branch that can never match is itself a small lie
+about what the regex does.
+
+**Tests.** `scripts/test_reset_onboarding_clears_every_flag_it_claims_to.py`
+reads the real flag list out of its own source of truth (every
+`useStored(ks('...'))` call in app.jsx, not a hardcoded list that could
+drift), lifts both `resetOnboarding` bodies by brace-matching, extracts
+each one's kill-regex, and asserts every one of the four flags matches
+it — independently per copy, so a fix to only one of the two duplicated
+functions still fails.
+
+Fire-tested with two arms: both copies reverted to the original
+pattern, and only the first copy reverted (second left fixed). Both
+caught, post-restore baseline green. Full suite: 189/189.
+
+**Lesson.** Onboarding flags accreted one at a time — `tourSeen`,
+`gettingStartedDone`, `firstDeliverySeen`, `coachSeen` — while the one
+place meant to sweep "all of them" was a hand-maintained regex nobody
+came back to update. A duplicate-detection button that lists everything
+it *actually cleared*, or a shared constant both the writers and the
+resetter import from, would have made this the kind of bug that can't
+compile rather than one that has to be clicked to find.
