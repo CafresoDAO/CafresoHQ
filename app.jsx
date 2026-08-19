@@ -25,7 +25,7 @@ const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: u
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
-const { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
+const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
 const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, VIEW_LABELS } = CafresoHQViews;
 
@@ -834,7 +834,6 @@ function App() {
   const experienceRef = useRefA([]);
   useEffectA(() => { experienceRef.current = experience; }, [experience]);
   const [memory, setMemory] = useFileStored(k('memory'), 'memory', 'context', SEED_MEMORY);
-  const [memoryOpen, setMemoryOpen] = useStateA(false);
   const [meetingOpen, setMeetingOpen] = useStateA(false);
   const [meetingParticipants, setMeetingParticipants] = useStateA([]);
   const [meetingPickerOpen, setMeetingPickerOpen] = useStateA(false);
@@ -6867,10 +6866,9 @@ ${d.text}` : d.text,
            landed on ordinary Chat, not the distraction-free quiet room the
            identical floor affordance opens. */
         onSitWithCEO={() => setFocus(true)}
-        onOpenMemory={() => setMemoryOpen(true)}
+        onOpenMemory={() => navTo('memory')}
         onOpenMeeting={onOpenMeeting}
       />
-      <MemoryShelf open={memoryOpen} onClose={()=>setMemoryOpen(false)} memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory}/>
       <MeetingPicker open={meetingPickerOpen} agents={agents} onClose={()=>setMeetingPickerOpen(false)} onStart={onStartMeeting}/>
       {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting} onAdd={onAddToMeeting} onUpdateAgent={onUpdateAgent}/>}
       <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>

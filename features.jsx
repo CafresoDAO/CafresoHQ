@@ -382,46 +382,6 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
   );
 }
 
-/* ---------------- Memory Shelf (opens filing cabinet) ---------------- */
-function MemoryShelf({ open, onClose, memory, onAdd, onRemove }) {
-  const [text, setText] = useSF('');
-  const [tag, setTag] = useSF('NOTE');
-  if (!open) return null;
-  const submit = () => {
-    if (!text.trim()) return;
-    onAdd({ id: 'mem_'+Math.random().toString(36).slice(2,6), tag, text: text.trim(), date: 'Today' });
-    setText('');
-  };
-  return (
-    <OcModal
-      open={open}
-      onClose={onClose}
-      title="📁 MEMORY SHELF"
-      subtitle="What CafresoHQ remembers about you"
-      size="lg"
-    >
-      <div className="memshelf">
-        {memory.map(m => (
-          <div key={m.id} className="memrow">
-            <span className={`memtag tag-${m.tag.toLowerCase()}`}>{m.tag}</span>
-            <div className="memtext">{m.text}</div>
-            <div className="memdate">{m.date}</div>
-            <button className="px-btn ghost" style={{fontSize: 'var(--text-9)', padding: 'var(--sp-2) var(--sp-3)'}} onClick={()=>onRemove(m.id)}>✕</button>
-          </div>
-        ))}
-      </div>
-      <div style={{display: 'flex', gap: 'var(--sp-3)', marginTop: 'var(--sp-5)'}}>
-        <select value={tag} onChange={e=>setTag(e.target.value)} style={{border:'2px solid var(--ink)', padding: 'var(--sp-3) var(--sp-4)', fontFamily:'VT323', fontSize: 16}}>
-          {['NOTE','PREF','PROJECT','PEOPLE','RULE','TONE'].map(t => <option key={t}>{t}</option>)}
-        </select>
-        <input value={text} onChange={e=>setText(e.target.value)} placeholder="New memory…" onKeyDown={e=>e.key==='Enter'&&submit()}
-          style={{flex:1, border:'2px solid var(--ink)', padding: 'var(--sp-3) var(--sp-4)', fontFamily:'VT323', fontSize: 17}}/>
-        <button className="px-btn primary" style={{fontSize: 'var(--text-9)'}} onClick={submit}>REMEMBER</button>
-      </div>
-    </OcModal>
-  );
-}
-
 /* ---------------- Meeting Room ---------------- */
 /* Meeting door picker — the office-floor MEETING ROOM used to seat whoever
    `agents.slice(0, 2)` picked with zero boss input, and the CEO panel's
@@ -1544,6 +1504,6 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-const CafresoHQV2 = { TaskBoard, MemoryShelf, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+const CafresoHQV2 = { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
 
 export { CafresoHQV2 };

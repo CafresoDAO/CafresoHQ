@@ -18434,3 +18434,83 @@ adjacent code as an already-correct sibling. When a fix's own lesson
 names a concrete follow-up action ("grep for X repo-wide"), running it
 before moving on is cheaper than waiting for the third bug report to
 notice the same shape again.
+
+## The CEO Panel's "Memory" action opened a second, uncapped memory list
+
+**Claim vs. reality.** `hq-runtime.jsx` caps what actually reaches a
+prompt — `const MEMORY_PROMPT_CAP = 24;`, used by `memorySummary()`
+(`memory.slice(0, MEMORY_PROMPT_CAP)`). Only two components ever showed
+the boss the full `memory` array: `MemoryPage` (`views/core.jsx`),
+reached from the sidebar/floor cabinet, mobile tab bar, command palette,
+and the real `m` keyboard shortcut, was patched at some point to say so —
+`memory.length > MEM_CAP ? \`${memory.length} saved · the newest ${MEM_CAP}
+go out with every job...\` : ...` — with a comment explaining exactly why:
+*"Below the cap the old unqualified line was true; above it, the boss
+would have been told every note was working when the oldest silently
+weren't."*
+
+`MemoryShelf` (`features.jsx`) never got that memo. It was a completely
+separate modal, reachable only through `CEOPanel`'s `onOpenMemory` prop
+(`app.jsx:6870`, both the mini-office filing-cabinet icon and the "🗂
+Memory" quick action, `ui/panels.jsx:452-455` and `:477-480`), and it
+listed every entry under "What CafresoHQ remembers about you" with no cap
+mentioned anywhere. A boss with more than 24 saved memories who used the
+CEO Panel's own memory affordance — instead of the sidebar, the mobile
+tab bar, the palette, or the `m` key, all four of which route to the
+patched page — saw the unqualified claim the other surface had already
+retired.
+
+This is the same bug class as `onSitWithCEO` — the CEO Panel prop right
+above `onOpenMemory` in `app.jsx`, whose own comment already documents an
+identical incident: *"This used to silently downgrade to the plain
+multi-thread chat panel — found live, clicking the CEO panel's own 'Sit
+1:1' quick action landed on ordinary Chat, not the distraction-free quiet
+room the identical floor affordance opens."* The CEO Panel is where a
+second, divergent implementation of an existing feature keeps quietly
+accumulating, one prop at a time.
+
+**Repro.** Save more than 24 memory entries (either surface writes to
+the same `memory` state, `app.jsx:5287-5288`). Open the sidebar's Memory
+page — it correctly says the newest 24 go out with every job. Open the
+CEO Panel instead and click the filing cabinet or "🗂 Memory" — every
+entry is listed, no cap, no warning.
+
+**The fix** deletes the second surface rather than patching its copy.
+`onOpenMemory` now calls `navTo('memory')`, the exact call every other
+memory entry point already makes — the CEO Panel's cabinet and quick
+action still fire the same prop, they just reach the real page now.
+`MemoryShelf`, and the `memoryOpen`/`setMemoryOpen` state that was the
+only thing that ever opened it, were unreferenced anywhere else in the
+repo (confirmed by grep before touching anything) and are deleted
+outright, along with the export list entry and the destructured import —
+not left behind as dead code for someone to trip over later.
+
+**Test coverage.** New:
+`scripts/test_ceo_panel_memory_action_reaches_the_honest_page.py`, 11
+checks. Confirms `MemoryShelf` and the `memoryOpen` state are gone from
+both files entirely — not just unreached. Confirms every `onOpenMemory`
+call site in `app.jsx` (found via regex, not hand-counted) routes through
+`navTo('memory')` or `goTo('memory')`, none resurrecting a bespoke
+modal-open setter. Locks in the underlying facts the fix leans on:
+`MEMORY_PROMPT_CAP` is still 24 and still enforced in `memorySummary()`,
+`MemoryPage` still discloses it, the real `m` shortcut still routes to
+the same page, and the CEO Panel's two Memory triggers still exist and
+still fire `onOpenMemory` (they weren't accidentally removed along with
+the modal they used to open).
+
+Fire-tested 6 arms — the wiring revert, the dead state's restoration, the
+deleted modal render's restoration, and the `MemoryShelf` symbol's
+restoration in both files' import/export lists — 6/6 caught, post-restore
+baseline byte-identical to the pre-edit backups for both touched files.
+Full suite: 226/226 (up from 225/225; one new file; deleting `MemoryShelf`
+broke nothing else in the suite, confirming the grep for other
+references was accurate).
+
+**Lesson.** The CEO Panel keeps being where a feature's second, unfixed
+copy hides — this is now the second time (after `onSitWithCEO`) a CEO
+Panel prop turned out to open a different implementation than every other
+affordance for the same feature, silently carrying forward whatever that
+implementation's bugs were. When a feature gets patched through its main
+surface, checking whether the CEO Panel has its own private route to the
+same feature is worth doing on the spot, not waiting for the second
+report.
