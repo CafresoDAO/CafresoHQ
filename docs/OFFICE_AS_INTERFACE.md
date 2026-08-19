@@ -18514,3 +18514,80 @@ implementation's bugs were. When a feature gets patched through its main
 surface, checking whether the CEO Panel has its own private route to the
 same feature is worth doing on the spot, not waiting for the second
 report.
+
+## Switching Workspace projects left the old project's file, ledger and status pip on screen
+
+**Claim vs. reality.** `views/projects.jsx`'s `WorkspaceView` — the
+default Projects mode with the file tree, editor and coworker roster on
+one screen — lets the boss switch which project is active from a
+dropdown:
+
+```js
+<select className="ws-projsel" value={project.id} onChange={e => setSelectedId(e.target.value)}>
+```
+
+That was the entire handler. `openFile`, `ledger`, `agentStatus` and
+`pulse` are plain component state with no effect keyed on
+`project.id`/`selectedId`, and `<WorkspaceView>` mounts without a `key`
+in `app.jsx`, so it never remounts on switch either. Every one of those
+four pieces of state renders unconditionally:
+
+- the editor tab shows `baseName(openFile.path)` and the Save button
+  stays live, regardless of whether `openFile.path` is even inside the
+  newly-selected project's folder,
+- `save()` calls `C.toolExec('FILE_WRITE', f.path, ...)` using
+  `openFileRef.current.path` — the OLD project's absolute path — with no
+  re-check against whichever project is selected when Save is clicked,
+- the ledger panel renders `ledger.map(...)` with zero per-project
+  filter, so old activity rows kept showing under the new project,
+- `{err && <div className="ws-err">...}` renders above the file-open
+  gate, so a stale error from the old project's failed read or save
+  outlived the switch even with no file open.
+
+Meanwhile the file tree, the `.ws-env` path label, and the dropdown
+itself all correctly updated to the new project — only these four
+pieces of state didn't get the memo. The sibling "Classic" `ProjectsView`
+in the same file already clears `openFile` on every project-switch path
+(`setSelected`/`setOpenFile` pairs at several call sites); `WorkspaceView`
+never got the equivalent treatment.
+
+**Repro.** Open Project A in Workspace mode, open a file, let it sit
+dirty or let a coworker's write land in the ledger. Switch the dropdown
+to Project B — tree and path label correctly show B, but the editor tab
+and ledger still show A's file and A's activity. Hit Save: it writes to
+A's absolute path, even though every visible cue says B is now active.
+
+**The fix** adds `switchProject()`, reusing the exact never-silently-
+drop-edits contract `flipMode()` (two functions above it in the same
+file) already established for the Workspace/Classic mode toggle: confirm
+first if the open file has unsaved changes, then reset `openFile`,
+`ledger`, `agentStatus`, `pulse`, `err` and `conflict`, and cancel the
+pending pulse/idle timers (so a timer scheduled for the old project's
+path can't fire and mutate state after the switch) — all before actually
+changing `selectedId`. The dropdown's `onChange` now calls
+`switchProject`, not `setSelectedId` directly.
+
+**Test coverage.** New:
+`scripts/test_workspace_project_switch_clears_the_old_projects_state.py`,
+14 checks. Extracts the real `switchProject()` function and drives it
+with mocked setters, confirming: switching to the already-selected
+project is a true no-op; a clean switch resets all six pieces of state,
+cancels exactly the 3 pending timers set up in the mock, and switches
+`selectedId`, all without prompting; a dirty file the boss declines to
+discard blocks the switch entirely (no reset, no project change); a
+dirty file the boss confirms discarding still resets and switches, same
+as the clean path.
+
+Fire-tested 8 arms — bypassing the dropdown's fix entirely, dropping each
+of the six state resets one at a time, dropping the timer cleanup, and
+dropping the dirty-file confirm guard — 8/8 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 227/227 (up from
+226/226; one new file).
+
+**Lesson.** `WorkspaceView` scopes *incoming* events to the selected
+project carefully (the agent-event-bus handler checks `isUnder(d.cwd,
+base)` before touching anything) but had no equivalent scoping for what
+happens to state that already exists at the moment the selection itself
+changes. Filtering new writes into state and clearing old state on a
+context switch are two different disciplines — a view can get the first
+right and still leak through the second.

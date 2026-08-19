@@ -31,6 +31,29 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     if (cur && cur.dirty && !(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
     setMode(m); LSset('mode', m);
   };
+  /* Same never-silently-drop-edits contract, plus: nothing else here was
+     ever scoped to the selected project. openFile, ledger, agentStatus and
+     pulse are plain component state with no effect keyed on project.id, so
+     switching the dropdown left all four showing the OLD project's file,
+     activity and presence pip while the tree, env label and selector all
+     agreed the NEW project was active — and Save wrote openFile's stale
+     absolute path into whichever project that file actually belonged to,
+     regardless of what the toolbar claimed was selected. */
+  const switchProject = async (id) => {
+    if (id === selectedId) return;
+    const cur = openFileRef.current;
+    if (cur && cur.dirty && !(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
+    Object.values(pulseTimers.current).forEach(clearTimeout);
+    pulseTimers.current = {};
+    clearTimeout(idleTimer.current);
+    setOpenFile(null);
+    setLedger([]);
+    setAgentStatus('idle');
+    setPulse(new Set());
+    setErr(null);
+    setConflict(false);
+    setSelectedId(id);
+  };
   /* Same commit step as ProjectsView's — the best-effort mkdir carries the
      same reasoning as there: the first-time boss typing a fresh path has no
      existing folder, and without this the FILES pane's first render is
@@ -578,7 +601,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
         </div>
         {mode === 'workspace' && project && (
           <>
-            <select className="ws-projsel" value={project.id} onChange={e => setSelectedId(e.target.value)}>
+            <select className="ws-projsel" value={project.id} onChange={e => switchProject(e.target.value)}>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <span className="ws-env" title={project.path}><span className="ico">⬡</span> {project.source === 'github' ? 'repo' : 'local'} · {shortPath(project.path) || project.path}</span>
