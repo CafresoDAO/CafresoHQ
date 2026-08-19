@@ -17142,3 +17142,73 @@ why peer-to-peer handoffs to privileged coworkers should work. The gap
 was that three copy surfaces were written before that design landed,
 or copied from each other, and nothing ever checked the claim against
 `dispatchToAgent` until this ticket did.
+
+## The "Research missions" badge said 0 with a night shift running behind the door
+
+Two counters, one gap. The mobile tab bar:
+
+    missionCount={missions.filter(m => m.status === 'running').length}
+
+And the desktop "⌗ ROOMS" menu, right next to the comment that explains
+the whole point of putting counts on this button in the first place —
+*"Counts ride the menu button — folding them away would hide live
+state, which is the opposite of the point"*:
+
+    { key: 'research', label: '🔬 Research missions',
+      count: missions.filter(m=>m.status==='running').length, ... }
+
+Both counted only `missions` — app.jsx's own in-browser Research-mission
+state, per the doc comment sitting a few hundred lines above on its
+sibling, `nightShiftBoard`: `missions` "only ever holds in-browser
+Research missions." Server-side Night Shift runs ("close the laptop,
+work continues") live in `nightShiftBoard`, polled every 15s from
+`/missions/scheduled` + `/missions/runs`. Both buttons open the exact
+same modal — `onOpenResearch`/the menu's `onClick` both call
+`setMissionsOpen(true)` — and that modal renders `<NightShiftSection
+agents={agents} />`. Schedule a night shift with nothing running in the
+browser tab: the badge on the door reads 0, and the room behind it is
+not empty.
+
+This is the third time this exact gap has shipped in this file.
+`onStopAll` (task #22, this session) miscounted the same way and never
+touched a running night shift. `anyBusy` (same ticket) hid the STOP ALL
+button entirely on a night-shift-only office. Both were fixed by folding
+`nightShiftBoard.length` into the count; this ticket is the same fix
+applied to the two counters that were never touched by that pass because
+they live on a different surface (the badge you see before opening
+Missions, not a control inside it).
+
+**The fix** adds `+ nightShiftBoard.length` to both count expressions.
+No component changed — `MobileTabBar` still just renders whatever
+`missionCount` it's handed (`badge: missionCount || 0`); the combining
+logic stays at the call site in `app.jsx`, same as `onStopAll` and
+`anyBusy` already do it, so a future caller with different needs isn't
+stuck with this assumption baked into the component.
+
+**Test coverage.** New:
+`scripts/test_research_badge_counts_night_shift_too.py`, 7 checks.
+Static: both count expressions include `+ nightShiftBoard.length`;
+`onOpenResearch` and the desktop menu item open the same modal;
+`MissionsModal` really does render `NightShiftSection` (corroborating
+the badge undercounts a surface it's the doorway to); `MobileTabBar`'s
+own badge line is unchanged, confirming the fix lives at the call site.
+Mechanism: both count expressions run for real in `node -e` with
+`missions` holding only non-running entries and `nightShiftBoard`
+holding two — confirms a night-shift-only office reads a non-zero badge
+on both surfaces instead of the old false zero.
+
+Fire-tested 2 arms — reverted each count expression back to local-only
+— 2/2 caught, post-restore baseline green. Full suite: 213/213 (up from
+212/212; one new file).
+
+**Lesson.** Same root cause, third appearance in one session. The fix
+pattern (`+ nightShiftBoard.length`) is now established in three places
+in this file and the state itself has existed since the ticket that
+introduced polling for it — the gap was never a missing capability, it
+was call sites written (or copied) before that state existed and never
+revisited once it did. Swept the rest of `app.jsx` for any remaining
+`missions.filter/some(m => m.status === 'running')` after this fix:
+every other site either already folds in `nightShiftBoard` (`anyBusy`,
+both copies) or is `onStopAll`'s `localRunning`, which is deliberately
+local-only because it's combined with `nightRunning` two lines later.
+Nothing left uncounted.

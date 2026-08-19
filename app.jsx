@@ -6334,7 +6334,7 @@ ${d.text}` : d.text,
           onToggleNight={() => setNight(v => !v)}
           night={night}
           inboxCount={inboxActiveCount}
-          missionCount={missions.filter(m => m.status === 'running').length}
+          missionCount={missions.filter(m => m.status === 'running').length + nightShiftBoard.length}
           meetingCount={meetings.length}
         />
       ) : null}
@@ -6403,7 +6403,7 @@ ${d.text}` : d.text,
                 { key: 'standup',  label: '🌅 Stand-up', count: 0,
                   title: 'End-of-day stand-up (U)', onClick: onOpenStandup },
                 { key: 'research', label: '🔬 Research missions',
-                  count: missions.filter(m=>m.status==='running').length,
+                  count: missions.filter(m=>m.status==='running').length + nightShiftBoard.length,
                   title: 'Long-running research missions',
                   onClick: () => setMissionsOpen(true) },
                 { key: 'meeting',  label: '📋 Meeting rooms', count: meetings.length,
