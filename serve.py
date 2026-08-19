@@ -989,6 +989,56 @@ def _vault_entry(rel: str, mtime: int, size: int) -> dict:
     }
 
 
+def _vault_search_hit(rel: str, text: str, ql: str, query: str):
+    """Score one candidate for /vault/search, or None. Shared by every
+    backend arm (fs, oci) so the scoring/snippet logic can't drift between
+    them the way the fs arm's copy used to sit alone, unreachable for a
+    backend that fell through to it by accident instead of by name."""
+    stem = pathlib.PurePosixPath(rel).stem
+    tl = text.lower()
+    title_score = 3 if ql in stem.lower() else 0
+    count = tl.count(ql)
+    if not (title_score or count):
+        return None
+    idx = tl.find(ql)
+    snippet = ''
+    if idx >= 0:
+        s = max(0, idx - 60)
+        e = min(len(text), idx + len(query) + 60)
+        snippet = ('…' if s > 0 else '') + text[s:e].replace('\n', ' ').strip() + ('…' if e < len(text) else '')
+    return {'path': rel, 'title': stem, 'score': title_score + count, 'snippet': snippet}
+
+
+def _oci_vault_search(query: str, ql: str, limit: int) -> dict:
+    """/vault/search's OCI arm, factored out so it's callable (and testable)
+    without a running server — one list_objects call to enumerate the
+    bucket's text-like objects, one get_object per candidate, scored with
+    the exact same _vault_search_hit the fs arm uses."""
+    cli = _oci_object_client()
+    prefix = (_oci_vault_prefix.rstrip('/') + '/') if _oci_vault_prefix else ''
+    resp = cli.list_objects(
+        _oci_vault_namespace, _oci_vault_bucket,
+        prefix=prefix, fields='name', limit=1000)
+    hits = []
+    for obj in resp.data.objects:
+        rel = obj.name[len(prefix):] if prefix else obj.name
+        if not rel or rel.endswith('/'):
+            continue
+        if any(part.startswith('.') for part in rel.split('/')):
+            continue
+        if pathlib.PurePosixPath(rel).suffix.lower() not in _VAULT_TEXT_EXT:
+            continue
+        try:
+            content = cli.get_object(_oci_vault_namespace, _oci_vault_bucket, obj.name).data.content
+        except Exception:
+            continue  # listed but unreadable (e.g. raced a delete) — skip, don't fail the whole search
+        hit = _vault_search_hit(rel, content.decode('utf-8', 'replace'), ql, query)
+        if hit:
+            hits.append(hit)
+    hits.sort(key=lambda h: h['score'], reverse=True)
+    return {'hits': hits[:limit], 'total': len(hits)}
+
+
 # Types a browser can safely render in place. Everything else — decks,
 # documents, archives, and anything unrecognised — is handed back as an
 # attachment, so a filed .html or .svg can never execute at the office's
@@ -1240,11 +1290,15 @@ def _rest_search(query: str, limit: int = 10) -> list:
 # the runtime-mutable config as callables (the vault root can be changed from
 # the UI's vault settings, so a snapshot would go stale).
 import kg_builder
-from kg_builder import _build_graph_fs_cached, _build_graph_rest
+from kg_builder import _build_graph_fs_cached, _build_graph_rest, _build_graph_oci_cached
 kg_builder.init(vault_root=lambda: _vault_root,
                 state_dir=lambda: _hq_state_dir,
                 memory_dir=lambda: _hq_memory_dir,
-                obsidian_request=_obsidian_request)
+                obsidian_request=_obsidian_request,
+                oci_client=_oci_object_client,
+                oci_namespace=lambda: _oci_vault_namespace,
+                oci_bucket=lambda: _oci_vault_bucket,
+                oci_prefix=lambda: _oci_vault_prefix)
 
 
 
@@ -4037,13 +4091,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             limit = int(qs.get('limit', ['10'])[0])
             if not query:
                 return self._send_json(400, {'error': 'missing q'})
+            ql = query.lower()
             if _vault_backend == 'rest':
                 try:
                     return self._send_json(200, {'hits': _rest_search(query, limit)})
                 except Exception as e:
                     return self._send_json(502, {'error': f'obsidian: {e}'})
+            if _vault_backend == 'oci':
+                # Search used to only know 'rest' by name; everything else,
+                # 'oci' included, fell through to the fs walk below reading
+                # _vault_root — usually empty or unrelated to the bucket on
+                # an OCI office, so search silently reported "no results"
+                # for notes that were really there. List/read/write/delete
+                # all branch three ways; this now does too.
+                try:
+                    return self._send_json(200, _oci_vault_search(query, ql, limit))
+                except Exception as e:
+                    return self._send_json(502, {'error': f'oci: {e}'})
             root = pathlib.Path(_vault_root).resolve()
-            ql = query.lower()
             hits = []
             # .html joined .md here first, because _vault_resolve keeps a real
             # extension instead of forcing '.md' onto it (see that function) —
@@ -4068,26 +4133,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     text = p.read_text(encoding='utf-8', errors='replace')
                 except OSError:
                     continue
-                tl = text.lower()
-                title_score = 3 if ql in p.stem.lower() else 0
-                count = tl.count(ql)
-                if not (title_score or count):
-                    continue
-                idx = tl.find(ql)
-                snippet = ''
-                if idx >= 0:
-                    s = max(0, idx - 60)
-                    e = min(len(text), idx + len(query) + 60)
-                    snippet = ('…' if s > 0 else '') + text[s:e].replace('\n', ' ').strip() + ('…' if e < len(text) else '')
-                hits.append({'path': rel, 'title': p.stem,
-                             'score': title_score + count, 'snippet': snippet})
+                hit = _vault_search_hit(rel, text, ql, query)
+                if hit:
+                    hits.append(hit)
             hits.sort(key=lambda h: h['score'], reverse=True)
             return self._send_json(200, {'hits': hits[:limit], 'total': len(hits)})
 
         # ---------- Graph (nodes + wikilink edges) ----------
         if path == '/vault/graph' and method == 'GET':
             try:
-                graph = _build_graph_rest() if _vault_backend == 'rest' else _build_graph_fs_cached()
+                # Three backends write notes (list/read/write/delete all
+                # branch this way); the graph used to only know two — 'rest'
+                # or "assume fs" — so an OCI office got the fs builder
+                # pointed at _vault_root, usually empty or unrelated to the
+                # bucket, and silently saw an empty or wrong graph instead
+                # of its actual notes.
+                if _vault_backend == 'rest':
+                    graph = _build_graph_rest()
+                elif _vault_backend == 'oci':
+                    graph = _build_graph_oci_cached()
+                else:
+                    graph = _build_graph_fs_cached()
                 return self._send_json(200, graph)
             except Exception as e:
                 return self._send_json(502, {'error': str(e)})

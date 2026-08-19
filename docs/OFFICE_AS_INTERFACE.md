@@ -16793,3 +16793,87 @@ happens. The fix wasn't a new idea; it was three lines this same file
 already had, written for the sibling verb on the same resource, copied
 across with a check making sure the copy can't quietly drift from the
 original.
+
+## The Graph and search never looked in the bucket on an OCI office
+
+`_vault_backend` is a three-way switch — `'fs'`, `'rest'`, `'oci'` — and
+`GET /vault/list`, `GET /vault/file`, `PUT /vault/note` and `DELETE
+/vault/note` all branch on it three ways, each with its own OCI arm that
+talks to the bucket. `GET /vault/search` and `GET /vault/graph`, the two
+doors this ticket covers, only ever knew two:
+
+    if _vault_backend == 'rest':
+        ...
+    root = pathlib.Path(_vault_root).resolve()      # search: everything else
+    ...
+    graph = _build_graph_rest() if _vault_backend == 'rest' else _build_graph_fs_cached()
+
+On a fleet/managed deployment with `CAFRESOHQ_VAULT_BACKEND=oci`, every
+note lives in the OCI bucket and `_vault_root` is just whatever local path
+the process happens to have — usually empty, sometimes stale leftovers
+from a previous local run. Neither door crashed on `oci`; both quietly
+took the `else` branch and did their normal filesystem work against that
+unrelated directory. A boss typed a query for a note that was sitting
+right there in the bucket and got "no results." The Library's Graph view —
+the one the standing loop directive named directly ("make sure the Graph
+works for the vault") — drew an empty canvas, or a stale one left over
+from whatever used to be in `_vault_root`, never the bucket's actual
+notes and links. Both looked like ordinary, honest answers: an empty
+search, a sparse graph. Neither was.
+
+**The fix.** Both doors got the third arm the other four already had.
+
+`GET /vault/search` gained `if _vault_backend == 'oci':` ahead of the fs
+walk, calling a new `_oci_vault_search()` (`serve.py`) that lists the
+bucket, fetches each text-like object, and scores it with `_vault_search_hit()`
+— the scoring/snippet logic factored out of the fs loop so both branches
+share one implementation instead of two copies that can drift apart, the
+same lesson task #17 drew from `DELETE /vault/note`'s copy-by-hand
+exception handling.
+
+`GET /vault/graph` gained `elif _vault_backend == 'oci':` calling
+`kg_builder._build_graph_oci_cached()`. `_build_graph_fs()`'s parsing —
+wikilinks, tags, typed edges, the HQ-state overlay — was pulled out into a
+shared `_build_graph_from_raw(raw)` that takes a plain list of `(rel,
+title, text, mtime, size)` tuples. `_build_graph_fs()` now just walks the
+filesystem and feeds it in; the new `_build_graph_oci()` lists the bucket,
+fetches each `.md` object's content, and feeds the identical shape in —
+one parser, two sources, instead of a second hand-written extractor that
+could quietly diverge from the first the next time either one changes. A
+signature-only cache (`_oci_vault_graph_signature()`, hashed from
+`list_objects` metadata — no content fetched) mirrors the fs cache's
+mtime+size approach so the Graph doesn't refetch and reparse the whole
+bucket on every poll.
+
+**Test coverage.** New: `scripts/test_oci_search_and_graph_use_the_bucket.py`,
+18 checks. Static: both handlers are read straight out of `serve.py` and
+asserted to name `'oci'` explicitly (not just `'rest'`) and to call the
+OCI function *before* the point where the old code fell through to the fs
+walk; `kg_builder.py` is asserted to define `_build_graph_from_raw` exactly
+once and have both `_build_graph_fs` and `_build_graph_oci` return through
+it, guarding against the parser drift described above. Mechanism: a fake
+OCI Object Storage client (no `oci` package or real bucket needed) drives
+`_oci_vault_search()` and `_build_graph_oci()`/`_build_graph_oci_cached()`
+directly — confirms the bucket hit is found and ranked correctly, a hidden
+path and a non-text object are excluded, the configured prefix is stripped
+from returned paths, a wikilink resolves into a real edge, a tag is
+picked up, and the cache invalidates when the bucket listing's size
+changes. The sharpest check in the file: `_vault_root` is pointed at a
+decoy local directory seeded with a note containing content that would
+surface if either door still silently fell through to the fs branch —
+every result is asserted to never mention it, direct proof the dispatch
+fix took rather than just existing in the source.
+
+Fire-tested 3 arms — reverted `/vault/search`'s oci dispatch back to
+falling through to the fs walk, reverted `/vault/graph`'s the same way,
+and stubbed `_build_graph_oci()` to return an empty graph instead of
+calling the shared parser — 3/3 caught, post-restore baseline green. Full
+suite: 209/209 (up from 208/208; one new file).
+
+**Lesson.** A backend flag with three real values is a promise every door
+on that resource keeps it three ways. Four of six already did; the other
+two inherited a two-way `if/else` written back when `oci` didn't exist
+yet, and adding a value to an enum doesn't retroactively visit every
+place that already assumed there were only two. The tell was the same
+shape as task #17's: an `else` (or an unnamed default) standing in for a
+backend that has its own real arm everywhere else on the same resource.

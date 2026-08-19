@@ -18,12 +18,19 @@ import urllib.parse
 _cfg = {}
 
 
-def init(*, vault_root, state_dir, memory_dir, obsidian_request):
+def init(*, vault_root, state_dir, memory_dir, obsidian_request,
+         oci_client=None, oci_namespace=lambda: '', oci_bucket=lambda: '',
+         oci_prefix=lambda: ''):
     """Called once by serve.py after its config globals exist. vault_root/
-    state_dir/memory_dir are ZERO-ARG CALLABLES (read fresh on every build);
-    obsidian_request is serve's REST client function."""
+    state_dir/memory_dir/oci_namespace/oci_bucket/oci_prefix are ZERO-ARG
+    CALLABLES (read fresh on every build — the OCI bucket, like the vault
+    root, is settable from the UI); obsidian_request is serve's REST client
+    function; oci_client is serve's _oci_object_client (itself already a
+    zero-arg callable returning the lazily-built SDK client, same shape)."""
     _cfg.update(vault_root=vault_root, state_dir=state_dir,
-                memory_dir=memory_dir, obsidian_request=obsidian_request)
+                memory_dir=memory_dir, obsidian_request=obsidian_request,
+                oci_client=oci_client, oci_namespace=oci_namespace,
+                oci_bucket=oci_bucket, oci_prefix=oci_prefix)
 
 
 import re as _re
@@ -439,30 +446,22 @@ def _norm_link(target: str, all_paths: dict) -> str:
     return by_stem.get(stem, '')
 
 
-def _build_graph_fs() -> dict:
-    """Build a graph from raw .md files under the configured vault directory."""
-    if not _cfg['vault_root']():
-        raise ValueError('vault not configured')
-    root = pathlib.Path(_cfg['vault_root']()).resolve()
-    nodes = []
-    raw = []
+def _build_graph_from_raw(raw) -> dict:
+    """Shared second half of every backend's graph build. `raw` is a list of
+    (rel, title, text, mtime_seconds, size) tuples — that's the ENTIRE
+    contract a backend has to satisfy, whether the text came from a local
+    file read, an Obsidian REST fetch, or an OCI get_object. Wikilink/tag/
+    typed-edge extraction and the HQ-state overlay live here exactly once,
+    so a bug fixed for one backend is fixed for all of them and a fourth
+    backend added later inherits this for free instead of needing its own
+    copy that can drift from this one."""
     by_path = {}
     by_stem = {}
-    for p in root.rglob('*.md'):
-        try:
-            rel = str(p.relative_to(root)).replace('\\', '/')
-        except ValueError:
-            continue
-        if any(part.startswith('.') for part in p.relative_to(root).parts):
-            continue
-        try:
-            text = p.read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            continue
+    for rel, title, _text, _mtime, _size in raw:
         by_path[rel] = True
-        by_stem[p.stem.lower()] = rel
-        raw.append((rel, p.stem, text, p.stat().st_mtime if p.exists() else 0, p.stat().st_size if p.exists() else 0))
+        by_stem[title.lower()] = rel
     all_paths = {'by_path': by_path, 'by_stem': by_stem}
+    nodes = []
     edges = []
     # Dedupe by (source, target, type) so a note can have multiple edge types
     # to the same target (e.g. cited AND related_to) but never duplicates
@@ -507,6 +506,66 @@ def _build_graph_fs() -> dict:
     return {'nodes': nodes, 'edges': edges}
 
 
+def _build_graph_fs() -> dict:
+    """Build a graph from raw .md files under the configured vault directory."""
+    if not _cfg['vault_root']():
+        raise ValueError('vault not configured')
+    root = pathlib.Path(_cfg['vault_root']()).resolve()
+    raw = []
+    for p in root.rglob('*.md'):
+        try:
+            rel = str(p.relative_to(root)).replace('\\', '/')
+        except ValueError:
+            continue
+        if any(part.startswith('.') for part in p.relative_to(root).parts):
+            continue
+        try:
+            text = p.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        raw.append((rel, p.stem, text, p.stat().st_mtime if p.exists() else 0, p.stat().st_size if p.exists() else 0))
+    return _build_graph_from_raw(raw)
+
+
+def _oci_graph_prefix() -> str:
+    raw = _cfg['oci_prefix']()
+    return (raw.rstrip('/') + '/') if raw else ''
+
+
+def _build_graph_oci() -> dict:
+    """The OCI-backend twin of _build_graph_fs — list the bucket's markdown
+    objects, fetch each one's content, and hand the same (rel, title, text,
+    mtime, size) shape to _build_graph_from_raw. Measured need: /vault/graph
+    dispatched on `_vault_backend == 'rest'` else fs, which meant an OCI
+    office — /vault/list, /vault/file and DELETE all correctly branch three
+    ways — got the FS builder pointed at whatever _vault_root happens to be
+    (usually unrelated to the bucket, often nothing), silently returning an
+    empty or wrong graph instead of the bucket's actual notes."""
+    if not (_cfg['oci_namespace']() and _cfg['oci_bucket']()):
+        raise ValueError('OCI vault not configured')
+    cli = _cfg['oci_client']()
+    prefix = _oci_graph_prefix()
+    resp = cli.list_objects(
+        _cfg['oci_namespace'](), _cfg['oci_bucket'](),
+        prefix=prefix, fields='name,size,timeModified', limit=1000)
+    raw = []
+    for obj in resp.data.objects:
+        rel = obj.name[len(prefix):] if prefix else obj.name
+        if not rel or rel.endswith('/') or not rel.endswith('.md'):
+            continue
+        if any(part.startswith('.') for part in rel.split('/')):
+            continue
+        try:
+            content = cli.get_object(
+                _cfg['oci_namespace'](), _cfg['oci_bucket'](), obj.name).data.content
+        except Exception:
+            continue  # listed but unreadable (e.g. raced a delete) — skip it, don't fail the whole graph
+        text = content.decode('utf-8', 'replace')
+        mtime = obj.time_modified.timestamp() if obj.time_modified else 0
+        raw.append((rel, pathlib.PurePosixPath(rel).stem, text, mtime, obj.size or 0))
+    return _build_graph_from_raw(raw)
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Graph build cache (FS backend)
 #
@@ -521,6 +580,26 @@ def _build_graph_fs() -> dict:
 
 _graph_cache = {'sig': None, 'graph': None}
 _graph_cache_lock = threading.Lock()
+_oci_graph_cache = {'sig': None, 'graph': None}
+_oci_graph_cache_lock = threading.Lock()
+
+
+def _hq_state_sig_update(h) -> None:
+    """Fold the hq-state JSON files' (name, mtime, size) into a running
+    hash. The state dir is backend-agnostic — it's not where vault content
+    lives, it's tasks/projects/missions/agents — so every backend's cache
+    signature needs this same contribution. Factored out so 'oci' didn't
+    grow its own hand-copied loop next to fs's, which is exactly the kind
+    of copy that drifts (see the OCI-delete ticket two entries up)."""
+    try:
+        for jp in sorted(_cfg['state_dir']().glob('*.json')):
+            try:
+                st = jp.stat()
+                h.update(('S:%s|%d|%d\n' % (jp.name, int(st.st_mtime), st.st_size)).encode('utf-8'))
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 
 def _vault_graph_signature() -> str:
@@ -546,15 +625,7 @@ def _vault_graph_signature() -> str:
             h.update(('%s|%d|%d\n' % (str(rel).replace('\\', '/'), int(st.st_mtime), st.st_size)).encode('utf-8'))
     except OSError:
         return 'walk-error'
-    try:
-        for jp in sorted(_cfg['state_dir']().glob('*.json')):
-            try:
-                st = jp.stat()
-                h.update(('S:%s|%d|%d\n' % (jp.name, int(st.st_mtime), st.st_size)).encode('utf-8'))
-            except OSError:
-                pass
-    except OSError:
-        pass
+    _hq_state_sig_update(h)
     return h.hexdigest()
 
 
@@ -568,6 +639,46 @@ def _build_graph_fs_cached() -> dict:
     with _graph_cache_lock:
         _graph_cache['sig'] = sig
         _graph_cache['graph'] = graph
+    return graph
+
+
+def _oci_vault_graph_signature() -> str:
+    """Cheap fingerprint of everything _build_graph_oci reads: ONE
+    list_objects call's (name, size, timeModified) per markdown object — no
+    content fetched, same 'stat, don't read' shape as the fs signature —
+    plus the same hq-state contribution every backend's cache uses."""
+    if not (_cfg['oci_namespace']() and _cfg['oci_bucket']()):
+        return 'unconfigured'
+    h = hashlib.sha1()
+    try:
+        cli = _cfg['oci_client']()
+        prefix = _oci_graph_prefix()
+        resp = cli.list_objects(
+            _cfg['oci_namespace'](), _cfg['oci_bucket'](),
+            prefix=prefix, fields='name,size,timeModified', limit=1000)
+        for obj in sorted(resp.data.objects, key=lambda o: o.name):
+            if not obj.name.endswith('.md'):
+                continue
+            tm = obj.time_modified.timestamp() if obj.time_modified else 0
+            h.update(('%s|%d|%d\n' % (obj.name, int(tm), obj.size or 0)).encode('utf-8'))
+    except Exception:
+        return 'list-error'
+    _hq_state_sig_update(h)
+    return h.hexdigest()
+
+
+def _build_graph_oci_cached() -> dict:
+    """_build_graph_oci() with a signature cache — see _build_graph_fs_cached.
+    A repeat call with no bucket changes and no hq-state changes returns
+    instantly instead of re-fetching every markdown object's content."""
+    sig = _oci_vault_graph_signature()
+    with _oci_graph_cache_lock:
+        if _oci_graph_cache['sig'] == sig and _oci_graph_cache['graph'] is not None:
+            return _oci_graph_cache['graph']
+    graph = _build_graph_oci()
+    with _oci_graph_cache_lock:
+        _oci_graph_cache['sig'] = sig
+        _oci_graph_cache['graph'] = graph
     return graph
 
 
