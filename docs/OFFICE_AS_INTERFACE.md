@@ -17376,3 +17376,83 @@ were found by the same sweep for a reason: once one `done`-handling
 stream turns out to skip something its siblings do, the other streams
 are exactly where to look next, not a random sample of the file.
 
+## The Terminal's own Chat/PTY tabs reconnected the PTY every time you switched away and back
+
+Reported directly: "Why does our Terminal pty need to reconnect when
+hopping between tabs? I feel like we should just instantly load back
+into our session and have it persist with all data we've been working
+on. Not just it connecting to a new session all over again." Confirmed
+it happens in floating-window desktop mode too, which ruled out the
+first suspect.
+
+The office already has real session-resume machinery for the terminal:
+each session tab's `sessionId` is a stable UUID in `localStorage`
+(`views/core.jsx`'s `useStoredV`), and `pty_server.py` keeps a registry
+of live shell processes keyed by that id, holding one open for 300s
+after its socket disconnects and replaying up to 512KB of buffered
+output on reattach. Two other places in this app switch between views
+and get full value out of that: the multiple session tabs within one
+terminal (Hermes/Claude/Codex/Gemini — "Session panels — all stay
+mounted, only active is visible") and app.jsx's floating desktop windows
+("Minimized windows stay MOUNTED and hidden via visibility... so
+internal state AND scroll positions survive restore"). Both dodge the
+problem by never unmounting the view they're navigating away from.
+
+`TerminalSession`'s own 💬 Chat / ⚡ PTY sub-tabs — inside every single
+session tab — didn't follow that pattern. They were a plain `termMode
+=== 'chat' ? (<>...chat...</>) : (<div>...PTY...</div>)` ternary.
+`EmbeddedTerminal`, the component owning the WebSocket and the xterm.js
+instance, lived only in the PTY branch. Leaving it for Chat unmounted it
+outright — disposing the socket and the on-screen terminal; switching
+back remounted from zero, ran the full `connect()` handshake again,
+and rebuilt the display from only the server's replay buffer. The
+underlying shell process usually *did* survive server-side, within the
+300s TTL — but nothing the boss actually saw reflected that, which is
+exactly "connecting to a new session all over again." This lives
+entirely inside one session tab, with no dependency on the app-level
+window manager — which is why it reproduced identically in desktop mode.
+
+**The fix** replaces the ternary with the same stay-mounted,
+display-toggle pattern the other two spots already use: both the Chat
+and PTY panels render unconditionally now, with `display: 'none'`
+hiding whichever side is inactive. The PTY side is additionally gated
+behind a `ptyEverOpened` flag — set once, the first time a tab switches
+to PTY, and never cleared — so a session that only ever uses Chat still
+never pays for an idle background shell it never asked for.
+`EmbeddedTerminal`'s `visible` prop changed from bare `visible` to
+`visible && termMode === 'spawn'`: now that it stays mounted while Chat
+is showing, the old bare prop would have fired its focus()-on-visible
+effect and silently stolen keyboard focus out of the Chat textarea.
+
+**Test coverage.** New:
+`scripts/test_terminal_pty_tab_switch_persists.py`, 10 checks. Static:
+the old unmount-on-switch ternary is gone; both panels carry the
+`display: termMode === 'chat' ? ...` toggle; `ptyEverOpened` initializes
+from `termMode === 'spawn'` and its effect only ever sets it `true`; the
+`EmbeddedTerminal` mount is gated by `ptyEverOpened &&`; the `visible`
+prop is the combined expression, not the bare one. Mechanism: the state
+machine restated in `node -e` and driven through two sequences — a tab
+that never opens PTY (confirms `EmbeddedTerminal` never mounts, so
+"stay mounted" didn't become "always mounted") and a tab that opens PTY,
+returns to Chat, and opens PTY again (confirms it stays mounted through
+every later trip back, and that `display` toggling still tracks the
+active side correctly regardless of mount state).
+
+Fire-tested 3 arms — reverted the `visible` prop, ungated the PTY mount
+from `ptyEverOpened`, and reverted the chat display-toggle wrapper —
+3/3 caught, post-restore baseline green (byte-identical diff against
+the pre-edit backup). Full suite: 216/216 (up from 215/215; one new
+file — the dispatchToAgent Activity-feed ticket immediately above
+landed its own new file in the same working tree first, hence the
+baseline here is 215, not 214).
+
+**Lesson.** The same stay-mounted/display-toggle pattern was already
+correct in two places in this exact file tree — this ticket is the
+third. Worth checking, the next time a "why does X lose its state"
+report comes in, whether the answer is architectural (state genuinely
+gone) or presentational (state survived somewhere the user never gets
+to see, because the view holding it was torn down and rebuilt). Here
+the backend had already solved the hard half of the problem — session
+identity, buffered replay, a TTL grace period — and the only thing
+missing was not throwing away the client-side view that would have let
+the boss see the result.

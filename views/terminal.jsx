@@ -355,6 +355,18 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
      existed falls back to 'chat' rather than rendering a tab that's gone. */
   const ptyTabVisible = spawnSupported && (ptySupported || popoutAllowed);
   const termMode = (termModeRaw === 'spawn' && !ptyTabVisible) ? 'chat' : termModeRaw;
+  /* Chat and PTY used to be a plain ternary — switching tabs unmounted
+     whichever side you left, so leaving PTY and coming back tore down and
+     rebuilt the WebSocket and the xterm.js display every time, even though
+     the underlying shell (session_id, keyed server-side) usually survived.
+     Session tabs and desktop windows both dodge this by staying mounted
+     and toggling visibility instead; PTY now does the same. Gated behind
+     "opened at least once" so a tab that only ever uses Chat never pays
+     for an idle background shell it doesn't need. */
+  const [ptyEverOpened, setPtyEverOpened] = React.useState(termMode === 'spawn');
+  React.useEffect(() => {
+    if (termMode === 'spawn') setPtyEverOpened(true);
+  }, [termMode]);
   // Cap persisted history like the main chat's 80-cap — an unbounded
   // orchestrator conversation eventually hits quota and then silently
   // stops persisting anything new.
@@ -666,8 +678,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         </div>
       )}
 
-      {termMode === 'chat' ? (
-        <>
+      <div style={{ display: termMode === 'chat' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           {/* Claude Desktop-style chat messages */}
           <div style={{
             flex: 1, overflowY: 'auto', padding: '20px 20px 8px',
@@ -808,12 +819,13 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
               Enter to send · Shift+Enter for newline
             </div>
           </div>
-        </>
-      ) : (
-        /* Embedded PTY terminal panel */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {ptySupported ? (
-            <EmbeddedTerminal project={project} cli={cli} sessionId={sessionId} visible={visible} />
+      </div>
+      {/* Embedded PTY terminal panel — mounted once opened, then kept alive
+          (not unmounted) so switching back from Chat reattaches instantly
+          instead of reconnecting from scratch. */}
+      <div style={{ display: termMode === 'chat' ? 'none' : 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          {ptyEverOpened && (ptySupported ? (
+            <EmbeddedTerminal project={project} cli={cli} sessionId={sessionId} visible={visible && termMode === 'spawn'} />
           ) : (
             /* Fallback: launch button */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16, background: 'var(--paper)' }}>
@@ -836,7 +848,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
                 boxShadow: '0 2px 8px rgba(124,107,255,0.3)',
               }}>▶ LAUNCH {cli.toUpperCase()} IN TERMINAL</button>
             </div>
-          )}
+          ))}
           {/* Pop-out footer — dark to blend with terminal. Native OS window,
               so it stays behind the same advanced setting as the fallback
               panel's launch button, even though the embedded terminal above
@@ -851,7 +863,6 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             </div>
           )}
         </div>
-      )}
     </div>
   );
 }
