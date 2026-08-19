@@ -16255,3 +16255,58 @@ caught, post-restore baseline green. Full suite: 201/201.
 **Lesson.** When four places in one file agree on what a status means and
 a fifth doesn't, the fifth is not a different design decision — it's the
 one nobody checked against the others.
+
+---
+
+## The HQ sign lost its head the moment the building outgrew the screen
+
+**Reported directly.** The boss: "CafresoHQ is cut up from the top of the
+screen on all builds." Alongside a second ask that turned out to share a
+root cause: don't cap how many coworkers can be hired — let the tower
+resize to fit all of them.
+
+**The roster was already uncapped.** `ui/office.jsx`'s `maxSlots` prop
+(hardcoded to 5 in `app.jsx`) only sizes how many *vacant* placeholder
+desks render when understaffed — `emptySlots = Math.max(0, maxSlots -
+seniorAgents.length)`. `seniorAgents` itself is never sliced, and
+`chunk2(units)` renders one `.px-floor` per pair regardless of count.
+Proved live: hired 6 more coworkers via SEED SWARM (10 total, up from 4),
+and the tower correctly grew to 5 floor-pairs with no cap anywhere in the
+hire flow or the render path. Removed the 6 test hires after confirming.
+
+**The sign clipping was real, and made worse by exactly that scalability.**
+`.px-sign` sits inside `.px-rooftop` (76px), anchored `bottom: 10px`, and
+is 96px tall at desktop scale — 30px of deliberate overshoot above the
+roofline, ordinary for building signage. That overshoot only has sky to
+rise into when `.px-building`'s `margin-top: auto` (which bottom-aligns it
+in `.px-scene`) has room to push the building down. An auto margin
+resolves to 0 the instant the building is taller than the scene — and
+that was already true with the *original* 4 coworkers, let alone a roster
+that's now explicitly meant to grow without bound. At margin-top:0 the
+sign's top 30px render above `.px-scene`'s own top edge and get clipped by
+its `overflow-y`. Measured live with `getBoundingClientRect`: `signTop`
+30px above `sceneTop` — clipped — on every build, confirming "on all
+builds" was accurate, not an exaggeration.
+
+**The fix** reserves that 30px overshoot as permanent `padding-top` on
+`.px-scene`, so the sign's visibility stops depending on whether the
+building happens to fit. Confirmed via the same measurement at both
+desktop (96px sign, 10px clearance after the fix) and the mobile
+breakpoint (72px sign at 0.75 scale, 54px rooftop, 12px clearance).
+
+**Tests.** `scripts/test_the_sign_lost_its_head_when_the_tower_grew.py`
+confirms `.px-scene` still scrolls, reserves at least 30px of top
+padding, and that `.px-building` still bottom-aligns via `margin-top:
+auto` when the building *does* fit — the fix adds headroom, it doesn't
+replace the alignment mechanism.
+
+Fire-tested with two arms: the padding removed entirely, and the padding
+present but too small (12px) to clear the overshoot. Both caught,
+post-restore baseline green. Full suite: 202/202.
+
+**Lesson.** A visual element that's designed to overflow its own
+container (signage rising above a roofline) needs its overshoot budgeted
+into an ancestor's layout explicitly — an auto-margin that "usually"
+leaves enough room silently stops leaving any the moment the content it's
+centering outgrows its box, and here that moment was not an edge case,
+it was the starting state.

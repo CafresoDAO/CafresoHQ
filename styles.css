@@ -10501,6 +10501,20 @@ body.night .px-canopy { filter: brightness(0.55) saturate(0.8); }
   height: 100%;
   display: flex; flex-direction: column; align-items: center;
   overflow-y: auto;
+  /* The HQ sign (.px-sign) is absolutely positioned inside .px-rooftop,
+     anchored to bottom:10px, and stands 30px taller than the 76px rooftop
+     band gives it — by design, a sign is meant to rise above the roofline.
+     That's fine while .px-building's `margin-top: auto` has room to push it
+     down from the scene's top. But an auto margin resolves to 0 the moment
+     the building is taller than the scene (any office with more than a
+     couple of floors — the common case, and the whole point of an
+     uncapped roster), and at margin-top:0 the sign's overshoot pokes above
+     .px-scene's own top edge and is clipped by its overflow-y. Measured
+     live at 4 hired coworkers: the building already overflowed and the top
+     of the sign was already gone. This reserves the sign's overshoot as
+     permanent headroom so scrolling never depends on the building
+     happening to fit. */
+  padding-top: 40px;
 }
 .px-building {
   width: min(880px, 96%);
