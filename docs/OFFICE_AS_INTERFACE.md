@@ -16641,3 +16641,86 @@ number reads from, they can't disagree with each other again — the same
 lesson `app/attention.jsx` encoded for the nav badge, applied to the one
 panel that had grown its own parallel, unscoped counts instead of using
 it.
+
+## SEED SWARM's "no brain, refuse" guard had a three-second hole
+
+`modals/hire.jsx`'s candidate shelf resolves the brain seven openswarm
+specialists will hire onto from the same async front-desk probe the desk
+cards are drawn from — `driverList === null` while probing, an array once
+it resolves. Three states, not two: still checking, found something,
+found nothing. The SEED SWARM tile's own guard, added for exactly this
+kind of thing, only knew about two of them:
+
+    if (!probing && !shelfBrain) { ...warn, no brain yet...; return; }
+
+That reads as "refuse when there's no brain." What it actually does is
+refuse when there's no brain **and probing has finished** — while still
+probing, `!probing` is false, so the whole condition is false, and the
+click sails straight through to `HQ.spawnOpenswarmRoster(currentAgents,
+onHire, shelfBrain)` with `shelfBrain === undefined`. The shelf renders
+with `candidates.length > 0` — and the tile is clickable — the instant
+the modal opens, while "AT THE FRONT DESK — checking who's available on
+this machine…" is still on screen; that's a real few-second window on
+every cold open, not a contrived one.
+
+hq-runtime.jsx's `spawnOpenswarmRoster(existingAgents, addAgent, model)`
+treats a falsy `model` as "keep the template's own value" —
+`...(model ? { model } : {})` — and every OPENSWARM_ROSTER template pins
+`cafresohq:sonnet`. `undefined` (still probing) and the resolved `null`
+("nothing ready") take that exact same falsy branch. The guard was
+supposed to stand between either of those and seven coworkers minted onto
+a hardcoded Claude model regardless of what's actually on the machine —
+and it only stood in front of one of them. Click SEED SWARM in the first
+few seconds after opening the modal and the office hires seven desks onto
+`cafresohq:sonnet` in silence, on a machine that may never have seen
+Claude. This is the exact outcome app/cast.jsx's `candidateBrain()`
+comment already names as the thing a caller must never allow: "a card
+with no brain is not a card that quietly picks Claude." The card obeyed
+that rule. The hire path, for that one window, did not.
+
+**The fix.** `probing` gets its own blocking branch, checked first, with
+its own message ("Still checking what's available on this machine — try
+SEED SWARM again in a moment.") — distinct from the "no brain" warning,
+which now stands alone as `if (!shelfBrain)` and is reached only once
+probing has actually resolved. No path reaches `spawnOpenswarmRoster`
+without a settled answer, found or not. The tile's `title` attribute got
+the same honesty pass — it used to promise "Hire the whole shelf at once"
+unconditionally, including in the window where clicking no longer hires
+anyone.
+
+**Test coverage.** New: `scripts/test_seed_swarm_waits_for_probe.py`, 10
+checks — the probing branch exists and blocks before hiring, its message
+is distinct from the no-brain one, the no-brain check stands alone
+(reached only post-probe), the hire call still forwards the resolved
+`shelfBrain`, the title reflects probing state, and a node harness that
+runs the real, unmodified `spawnOpenswarmRoster` with `model: undefined`
+(the exact call shape a probing-window click used to make) and confirms
+every hire lands on the hardcoded `cafresohq:sonnet` — proving the
+mechanism of harm rather than asserting it. Updated:
+`scripts/test_a_candidate_names_the_brain_it_will_use.py`'s SEED SWARM
+section, which had locked in the literal `!probing && !shelfBrain`
+substring as correct; split into two checks matching the new two-branch
+shape, with a comment pointing at the new file as the one that now owns
+this tile's click handler in full. Both files' extraction of the tile's
+JSX switched from slicing to the next literal `'SEED'` — which the fix's
+own explanatory comment now contains, by name, before the visual label
+does — to a fixed-window slice anchored on the tile's unique `hire-tile`
+class occurrence (`rfind`, since the shelf has two `hire-tile` divs and
+this is the second).
+
+Fire-tested 5 arms against `modals/hire.jsx` — the probing branch
+deleted, its message merged into the no-brain wording, the no-brain check
+re-merged with probing (recreating the exact dead-guard shape this fixes),
+`shelfBrain` dropped from the hire call, the title reverted to
+unconditional — 5/5 caught across both suites, post-restore baseline
+green. Full suite: 207/207 (up from 206/206; one new file).
+
+**Lesson.** `probing`, `null`, and a real value are three states a boss's
+click can land on, and a guard written as one combined boolean condition
+can look like it's handling all three while it's actually only handling
+two — the missing state doesn't show up as a syntax problem or a failing
+existing test, it shows up as a window of real wall-clock time where the
+control does something nobody wrote down. The reproduction that mattered
+here wasn't a live click race (hard to land reliably even trying); it was
+running the actual `spawnOpenswarmRoster` the click already calls, with
+the actual argument that window produces, and reading off what came out.

@@ -524,8 +524,33 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   onClick={async () => {
                     /* Hiring seven coworkers onto a brain that does not
                        exist is seven desks that can never answer, and the
-                       confirm used to promise it cheerfully. */
-                    if (!probing && !shelfBrain) {
+                       confirm used to promise it cheerfully. This guard used
+                       to read `!probing && !shelfBrain` — which only
+                       suppressed the WARNING while still probing, not the
+                       hire itself. A boss who clicked SEED SWARM before the
+                       front-desk probe resolved (driverList still null, a
+                       real window: "checking who's available on this
+                       machine…" is on screen for a few seconds on every
+                       cold open) skipped this check entirely: `shelfBrain`
+                       is `undefined` while probing (line ~317), so below,
+                       `spawnOpenswarmRoster(currentAgents, onHire,
+                       shelfBrain)` passes `model: undefined`, hq-runtime.jsx
+                       treats that as "keep the template's own value" via
+                       `...(model ? { model } : {})`, and every template's
+                       hardcoded `cafresohq:sonnet` goes out the door
+                       whether or not this machine has ever seen Claude —
+                       the exact "quietly picks Claude" outcome
+                       app/cast.jsx's candidateBrain() comment says a caller
+                       must never let an unresolved answer become. Probing
+                       now blocks the hire on its own, before shelfBrain is
+                       ever read. */
+                    if (probing) {
+                      await window.hqConfirm(
+                        `Still checking what's available on this machine — try SEED SWARM again in a moment.`,
+                        { okLabel: 'Got it', hideCancel: true });
+                      return;
+                    }
+                    if (!shelfBrain) {
                       await window.hqConfirm(
                         `There is no brain on this machine yet, so these ${candidates.length} would sit at their desks unable to work.\n\n` +
                         `Add one in Settings → Connections — a free local one (LM Studio, Ollama) is enough — then hire the shelf.`,
@@ -540,7 +565,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     onClose();
                   }}
                   style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
-                  title={`Hire the whole shelf at once: ${candidates.map(c => c.name).join(", ")}`}
+                  title={probing
+                    ? 'Still checking what\'s available on this machine…'
+                    : `Hire the whole shelf at once: ${candidates.map(c => c.name).join(", ")}`}
                 >
                   <div className="plus" style={{ fontSize: 18, lineHeight: 1.2, padding: 8 }}>
                     ⚡<br/>SEED<br/>SWARM<br/>

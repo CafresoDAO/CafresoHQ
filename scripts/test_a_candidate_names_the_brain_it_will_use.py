@@ -270,10 +270,19 @@ console.log(JSON.stringify(R));
           'the boss has to be able to see which brain they are hiring onto')
 
     # ── 6. SEED SWARM refuses rather than hiring seven dead desks ───────
-    seed = HIRE[HIRE.index('hire-tile'):]
-    seed = seed[:seed.index('SEED')]
-    check('the seed tile checks for a brain before promising anything',
-          re.search(r'if \(!probing && !shelfBrain\)', seed),
+    # `rfind`, not the first 'SEED' index — see
+    # scripts/test_seed_swarm_waits_for_probe.py, which owns this tile's
+    # click handler in full (the `!probing && !shelfBrain` combined guard
+    # this section used to assert on was itself the bug that test file
+    # covers: it suppressed the WARNING while probing, not the hire).
+    seed = HIRE[HIRE.rfind('hire-tile'):HIRE.rfind('hire-tile') + 3200]
+    check('the seed tile blocks the hire while still probing',
+          re.search(r'if \(probing\)', seed),
+          'see scripts/test_seed_swarm_waits_for_probe.py — clicking '
+          'before the front-desk probe resolved used to skip the brain '
+          'check entirely')
+    check('...and checks for a brain once probing has finished',
+          re.search(r'if \(!shelfBrain\)', seed),
           'the confirm used to cheerfully offer to hire seven specialists '
           'onto a brain that does not exist')
     check('...and says where to get one',
