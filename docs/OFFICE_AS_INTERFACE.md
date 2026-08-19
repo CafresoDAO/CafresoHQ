@@ -17044,3 +17044,101 @@ first. `nightShiftBoard` already existed, already polled, already proven
 correct by the ticket that introduced it — the miss here wasn't building
 new plumbing, it was three call sites that were written before that
 plumbing existed and never revisited once it did.
+
+## Elevation-grant copy claimed DMs get blocked; dispatch was built to allow them, on purpose
+
+Three surfaces made the same safety claim when a boss gives a coworker
+file and shell access. The hire-form privilege hint:
+
+    Backed by a CafresoHQ session with file and shell access on this
+    machine. DMs blocked, missions opt-in, every action logged.
+
+The Roster config panel, same wording:
+
+    Has file and shell access. DMs blocked, missions opt-in, every
+    action logged.
+
+And the `window.hqConfirm` dialog shown at the moment of the actual
+grant — the one screen a boss reads right before clicking "Grant
+access":
+
+    DMs from other agents will be blocked, missions require explicit
+    authorization, and every tool call is logged.
+
+`app.jsx`'s `dispatchToAgent` does the opposite, deliberately. Its own
+comment names the use case:
+
+    /* DM-chain to elevated agents is allowed — teammates can
+       collaborate with privileged peers (e.g. Selvin for code
+       audits). A brief system note is added to the team thread so
+       the boss can see the handoff. */
+    if (dmFrom && agent.elevated) {
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(${dmFrom.name} → ${agent.name}: handing over, with file and shell access)`,
+        thread: 'team' }]);
+    }
+
+Nothing after that block returns or refuses — dispatch falls straight
+through to the normal send path. `hq-runtime.jsx`'s `DM_TO` tool
+registration carries `requires: () => true`, no elevation gate at all.
+And when a boss *denies* elevation, the system prompt's own fallback
+instruction tells the declined agent to route around it exactly this
+way: `"...or [DM_TO] an elevated teammate who can do it for you, or
+[ACK: blocked: …] if it truly can't be done."` This isn't an oversight
+in the dispatch code — it's a working, designed collaboration feature
+that the elevation-grant copy, on three separate surfaces, never
+caught up to.
+
+**The fix** rewrites the false clause in all three places to describe
+the real boundary: DMs are still reachable, and each handoff is
+announced in the Team thread rather than happening invisibly.
+
+    Reachable by teammate DMs (each handoff noted in Team), missions
+    opt-in, every action logged.
+
+    Teammates can still send them DMs — each handoff is noted in the
+    Team thread — missions require explicit authorization, and every
+    tool call is logged.
+
+The two adjacent claims on the same lines — "missions opt-in" /
+"missions require explicit authorization" and "every action logged" /
+"every tool call is logged" — were checked against the code
+(`missions.jsx`'s `if (isElevated && !elevatedAuth) return;` and
+`app.jsx`'s elevated-agent audit trail) and left untouched; both are
+still true. No application code changed — the dispatch behavior
+already matched the intended design, only the copy was wrong.
+
+**Test coverage.** New:
+`scripts/test_elevation_copy_matches_the_dm_boundary.py`, 13 checks.
+Static: the false "DMs blocked" claim is gone from both `modals/hire.jsx`
+and `modals/settings.jsx`; the honest replacement text is present in
+all three locations; both true adjacent claims survived the rewrite.
+Code-reality checks against `app.jsx`: the `dispatchToAgent`
+allow-and-announce block still exists verbatim; no early `return`
+appears between that block and the send path (which would silently
+turn "allowed" back into "blocked" without this test catching it);
+`DM_TO`'s `requires: () => true` still carries no elevation gate in
+`hq-runtime.jsx`; the denied-elevation fallback text still points
+agents at this exact path. Mechanism: the small allow-block is lifted
+out of `app.jsx` by regex and driven for real in `node -e` against
+three scenarios — a teammate DM to an elevated coworker (expects
+exactly one team-thread note, correct `dmFrom.name → agent.name`
+text), a DM to a non-elevated coworker (expects none), and a boss
+dispatch that isn't a peer DM at all (expects none).
+
+Fire-tested 4 arms — reverted each of the three copy strings back to
+its false original, and separately reverted the `dispatchToAgent`
+allow-block itself to an early `return` (so the code would refuse the
+DM the newly-fixed copy claims it allows) — 4/4 caught, post-restore
+baseline green. Full suite: 212/212 (up from 211/211; one new file).
+
+**Lesson.** A safety claim shown at the exact moment a boss decides
+whether to trust a coworker with file and shell access is the highest-
+stakes copy in the app to get right, and it was wrong in the direction
+that undersells risk rather than oversells it — "DMs blocked" reads as
+reassurance, not caution. The dispatch code itself was never the bug;
+it was built correctly, on purpose, with a comment explaining exactly
+why peer-to-peer handoffs to privileged coworkers should work. The gap
+was that three copy surfaces were written before that design landed,
+or copied from each other, and nothing ever checked the claim against
+`dispatchToAgent` until this ticket did.

@@ -690,7 +690,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 <span>
                   <b style={{color: elevated ? '#c44' : 'inherit'}}>🛡 FILE & SHELL ACCESS</b><br/>
                   <span className="hint" style={{display:'block',marginTop:2}}>
-                    Backed by a CafresoHQ session with file and shell access on this machine. DMs blocked, missions opt-in, every action logged.
+                    Backed by a CafresoHQ session with file and shell access on this machine. Reachable by teammate DMs (each handoff noted in Team), missions opt-in, every action logged.
                   </span>
                 </span>
               </label>

@@ -1157,7 +1157,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                       <div>
                         <div className="lbl" style={{color: sel.elevated ? '#c44' : 'inherit'}}>🛡 File &amp; shell access</div>
                         <div className="sub" style={{maxWidth:240,marginTop:2}}>
-                          Has file and shell access. DMs blocked, missions opt-in, every action logged.
+                          Has file and shell access. Reachable by teammate DMs (noted in Team), missions opt-in, every action logged.
                         </div>
                       </div>
                       <div className={`pxswitch ${sel.elevated?'on':''}`} onClick={async ()=>{
@@ -1165,7 +1165,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                           if (!(await window.hqConfirm(
                             `Grant ${sel.name} COMPUTER ACCESS?\n\n` +
                             `They will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine. ` +
-                            `DMs from other agents will be blocked, missions require explicit authorization, and every tool call is logged.\n\n` +
+                            `Teammates can still send them DMs — each handoff is noted in the Team thread — missions require explicit authorization, and every tool call is logged.\n\n` +
                             `Continue?`, { danger: true, okLabel: 'Grant access' }
                           ))) return;
                         }
