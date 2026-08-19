@@ -251,13 +251,25 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
   const pendingApprovals = React.useMemo(
     () => (approvals || []).filter(p => !selectedAgentId || p.agentId === selectedAgentId),
     [approvals, selectedAgentId]);
+  /* Same scoping `filtered` below applies before it ever reads `tab` — a
+     boss who has clicked one coworker's chip is looking at THEIR inbox, not
+     the whole office's. Without this, clicking Selvin's chip narrowed the
+     row list to Selvin's events while the header ("N events"), the
+     Attention tab's badge and the Done tab's badge kept counting every
+     coworker — a boss reads "Needs attention · 6" over a filtered list of
+     2 and has no way to tell which number lied. */
+  const scopedActivity = React.useMemo(
+    () => selectedAgentId ? activity.filter(e => e.agentId === selectedAgentId) : activity,
+    [activity, selectedAgentId]);
   /* Same rule as the office pill and the nav badge — one shared helper, so
-     the three can't drift apart (app/attention.jsx). */
+     the three can't drift apart (app/attention.jsx). Scoped activity in,
+     already-scoped pendingApprovals in — both arguments now agree on whose
+     inbox this is. */
   const attentionCount = React.useMemo(
-    () => attentionCountOf(activity, pendingApprovals, agents),
-    [activity, pendingApprovals, agents]);
+    () => attentionCountOf(scopedActivity, pendingApprovals, agents),
+    [scopedActivity, pendingApprovals, agents]);
   const doneCount = React.useMemo(
-    () => activity.filter(e => e.action === 'done').length, [activity]);
+    () => scopedActivity.filter(e => e.action === 'done').length, [scopedActivity]);
 
   const counts = React.useMemo(() => {
     const c = new Map();
@@ -270,8 +282,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
      "what needs me", the log still shows every single event that happened,
      so nothing is ever actually hidden from the boss. */
   const filtered = React.useMemo(() => {
-    let xs = activity;
-    if (selectedAgentId) xs = xs.filter(e => e.agentId === selectedAgentId);
+    let xs = scopedActivity;
     if (tab === 'attention') {
       /* onRoster here as well as in the count — if the pill filtered ghosts
          and this list didn't, the badge would say 3 over a list of 15, which
@@ -280,7 +291,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     }
     if (tab === 'done') xs = xs.filter(e => e.action === 'done');
     return xs.map(e => ({ key: e.id, entry: e, count: 1, ids: [e.id] }));
-  }, [activity, selectedAgentId, tab, agents]);
+  }, [scopedActivity, tab, agents]);
 
   /* Opening a group marks every occurrence read, not just the newest —
      otherwise the count would drop by one and the same row would come
@@ -313,7 +324,7 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
     }}>
       <div className="proj-section-head" style={{display:'flex', alignItems:'center', gap:'var(--sp-3)'}}>
         <span style={{flex:1}}>📥 COWORKER INBOX</span>
-        <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{activity.length} event{activity.length===1?'':'s'}</span>
+        <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{scopedActivity.length} event{scopedActivity.length===1?'':'s'}</span>
       </div>
 
       {/* Two-layer tabs */}

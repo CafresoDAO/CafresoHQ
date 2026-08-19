@@ -16583,3 +16583,61 @@ answer in minutes instead of reinventing an iframe-vs-embed decision from
 scratch. And when a test environment can't produce the pixels a fix is
 meant to change, say exactly what was and wasn't confirmed rather than
 letting "the DOM wiring is right" read as "I watched it work."
+
+## AgentInbox's badges kept counting the whole office after a coworker filter narrowed the list
+
+`views/core.jsx`'s `AgentInbox` panel lets a boss click one coworker's
+chip to narrow the inbox to just their events — the row list it actually
+renders (`filtered`) already applied that filter:
+`if (selectedAgentId) xs = xs.filter(e => e.agentId === selectedAgentId)`.
+Three other numbers on the same panel never got the memo:
+
+- the header's "N events" count read raw `activity.length`
+- `attentionCount` (the "Needs attention · N" tab label) was computed
+  from raw `activity`, while the `pendingApprovals` it was combined with
+  in the same call was *already* scoped by `selectedAgentId` — two
+  arguments to one function disagreeing about whose inbox this was
+- `doneCount` (the "Done · N" tab label) read raw
+  `activity.filter(e => e.action === 'done')`
+
+Click a coworker's chip and the row list narrows to their events; the
+three badges above it kept reporting the whole office's totals. A boss
+reads "Needs attention · 6" over a filtered list of 2 with no way to tell
+which number is lying — the same shape of ghost-count bug the office
+pill/nav-badge fix in `app/attention.jsx` already addressed, just on the
+one panel that fix never touched.
+
+**The fix.** One new `scopedActivity` memo — `activity` filtered by
+`selectedAgentId`, computed once — that the header count, `attentionCount`,
+`doneCount`, and `filtered` all now read from, so these four numbers
+cannot drift apart from each other again. `filtered` no longer re-derives
+its own separate `selectedAgentId` filter; that logic lives once. Left
+deliberately untouched: the per-chip `counts` map that builds each
+coworker's own badge on their chip — that map has to span the *whole*
+office regardless of which chip is currently selected, since every chip
+needs its own total, not the currently-selected agent's total.
+
+**Test coverage.** `scripts/test_agent_inbox_scope_matches.py`, 9 checks:
+the `scopedActivity` memo's filter logic, `attentionCount` and `doneCount`
+reading from it instead of raw `activity`, the header reading
+`scopedActivity.length` (and no longer reading unscoped
+`activity.length`), `filtered` starting from `scopedActivity` with its own
+inline filter removed, and — guarding against overcorrection — the
+per-chip `counts` map confirmed still spanning raw `activity`, unscoped.
+Fire-tested with 6 reversion arms — `scopedActivity` falls back to
+always-unscoped, `attentionCount` reverted to raw `activity`, `doneCount`
+reverted to raw `activity`, header reverted to raw `activity.length`,
+`filtered` re-deriving its own unscoped starting point, and (the
+overcorrection check) the per-chip `counts` map wrongly scoped to
+`scopedActivity` — 6/6 caught, post-restore baseline green. Full suite:
+206/206 (up from 205/205).
+
+**Lesson.** A per-agent filter that's correctly applied to the thing a
+boss looks at directly (the row list) can still leave every *summary* of
+that same data unscoped, because each summary is computed independently
+rather than derived from the filtered list. Once one piece of shared
+state (here, `scopedActivity`) is the single source every dependent
+number reads from, they can't disagree with each other again — the same
+lesson `app/attention.jsx` encoded for the nav badge, applied to the one
+panel that had grown its own parallel, unscoped counts instead of using
+it.
