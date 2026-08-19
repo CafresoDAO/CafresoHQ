@@ -17923,3 +17923,71 @@ its neighbor had fallen behind. Two handlers implementing one promised
 capability need either a shared source of truth for "which CLIs exist," or
 a test that pins them to agree — otherwise the second one only gets fixed
 when someone happens to compare them line by line.
+
+## The desktop tour's final step pointed at controls that don't exist
+
+The first-run tour spotlights the exact control each card describes — a
+ring draws around whatever `target` resolves to (`ui/onboarding.jsx`'s
+`resolveSpotlight`). This was already fixed once, on the mobile tour's last
+step, `id: 'hire'`: its old target, `.topbar .px-btn.primary`, never
+matched anything (the topbar's buttons are ghost/danger/plain chips, never
+`primary`), so that step used to render with no ring while the card told
+the boss to tap something in the topbar. The fix pointed it at
+`.mas-plus, .px-room.vacant` — real, live controls — and a regression test,
+`scripts/test_the_office_points_at_controls_it_has.py`, was written to pin
+it.
+
+`app.jsx` returns TWO independent tour-step arrays from the same IIFE — a
+mobile one and, a few dozen lines later, a desktop one — each with its own
+`id: 'hire'` step. The desktop step still carried the original dead target:
+`target: () => document.querySelector('.room.empty') || document.
+querySelector('.topbar .px-btn.primary')`. `.room.empty` is dead legacy
+CSS (`styles.css` still styles it; no JSX renders a bare `.room` class
+anymore — the live markup is `.px-room.vacant`); `.topbar .px-btn.primary`
+is the exact same dead selector the mobile fix already proved matches
+nothing. So the LAST step of the desktop tour — the most action-oriented
+one, "Ready to hire your team?" — always gave up its spotlight silently
+while every other targeted step in the same tour drew a ring.
+
+The regression test written for the mobile fix never caught this: it
+locates the step via `section(strip_jsx_comments(APP), "id: 'hire',",
+'];')`, and `str.find()` matches the FIRST `id: 'hire',` it sees — the
+mobile array. It never advanced far enough to re-check the desktop array
+a few dozen lines below, so the desktop step's copy was never re-verified
+against the fix pattern it needed too.
+
+**Repro.** Load the app at a desktop width (>768px) as a first-run boss,
+or trigger "Replay tour." Advance through every step; on the final "Ready
+to hire your team?" card, no spotlight ring appears anywhere on screen,
+unlike every preceding targeted step.
+
+**The fix** points the desktop step at `.px-room.vacant` (dropping both
+dead selectors rather than ORing the fix in alongside them — leaving a
+dead alternative in place is exactly how the original bug hid, reading as
+"covered" without anyone checking what it actually matched).
+
+**Test coverage.** Extended the existing
+`scripts/test_the_office_points_at_controls_it_has.py` — the file already
+whose whole subject is this exact bug pattern — rather than a new file, so
+one suite owns both siblings. 4 new checks: locates the desktop tour via
+its own `// Desktop tour` marker (bypassing the mobile-array-only `.find()`
+that hid this), confirms the desktop hire step now targets
+`.px-room.vacant`, confirms the dead selectors are gone rather than merely
+supplemented, confirms the card's words still match what's targeted, and
+confirms the targeted class is actually rendered on the floor
+(`ui/office.jsx`).
+
+Fire-tested 2 arms — reverted the desktop target to the original dead
+selectors, and left the dead `.room.empty` selector ORed in alongside the
+fix (a plausible half-fix that would still pass a naive "target contains
+.px-room.vacant" check) — 2/2 caught, post-restore baseline byte-identical
+to the pre-edit backup. Full suite: 221/221 (same count — no new file,
+an existing suite was extended).
+
+**Lesson.** A regression test written against one occurrence of a repeated
+shape (two tour arrays, same step id, same bug) is only as strong as the
+string search that locates its target. `.find()` finds the first match and
+stops; a codebase with more than one instance of a pattern needs the test
+to say which instance it means, or a second instance can carry the exact
+already-fixed bug indefinitely, invisible to a suite that reads as
+"passing" the whole time.

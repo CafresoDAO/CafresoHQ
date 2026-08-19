@@ -211,6 +211,46 @@ check('...and the control it names exists on the floor',
       "className=\"mas-plus\"" in (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8'),
       '— checked against the floor, not against the tour\'s own belief')
 
+# ── 4. the DESKTOP tour's own hire step, checked separately ──────────────
+# app.jsx returns two independent step arrays from one IIFE — a mobile one
+# and, a few dozen lines later, a desktop one — both containing a step with
+# `id: 'hire'`. `section()`'s `.find()` above only ever locates the FIRST
+# occurrence, so every check above passes or fails on the mobile array
+# alone; the desktop step could carry the exact bug just fixed there and
+# none of the above would notice. Found live: the desktop step still read
+# `target: () => document.querySelector('.room.empty') || document.
+# querySelector('.topbar .px-btn.primary')` — `.room.empty` is dead legacy
+# CSS with no matching JSX, and `.topbar .px-btn.primary` is the same dead
+# selector the mobile step used to carry — so the LAST step of the desktop
+# tour always gave up its spotlight silently while every other targeted
+# step in the same tour drew a ring.
+desktop_marker = APP.find('// Desktop tour')
+check('the desktop tour section is findable in app.jsx', desktop_marker > 0,
+      '— every check below reads from this offset; a missing marker would '
+      'leave desktop_step empty and the checks below would vacuously fail, '
+      'not vacuously pass')
+desktop_src = strip_jsx_comments(APP[desktop_marker:]) if desktop_marker > 0 else ''
+desktop_hire = section(desktop_src, "id: 'hire',", '];')
+check('the desktop hire step targets a control that is rendered',
+      '.px-room.vacant' in desktop_hire,
+      '— .px-room.vacant is the vacant-desk unit, rendered on every '
+      'viewport; the step used to target .room.empty (dead CSS, no '
+      'matching JSX) and .topbar .px-btn.primary (matched nothing)')
+check('...and the dead selectors are gone, not just supplemented',
+      '.room.empty' not in desktop_hire
+      and '.topbar .px-btn.primary' not in desktop_hire,
+      '— a target that ORs a real selector with a dead one still resolves '
+      'via the real one, but leaving the dead one in place is exactly how '
+      'this bug hid: it read as covered until someone checked what actually '
+      'matched')
+check('...and its words name the same kind of control',
+      'empty desk' in desktop_hire,
+      '— a spotlight on one control and a sentence about another is the '
+      'same wrong door with a ring around it')
+check('...and the control it names exists on the floor',
+      'className="px-room vacant"' in (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8'),
+      '— checked against the floor, not against the tour\'s own belief')
+
 print()
 if FAILS:
     print(f'FAILED {len(FAILS)} check(s):')

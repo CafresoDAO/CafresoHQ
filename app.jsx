@@ -7123,9 +7123,17 @@ ${d.text}` : d.text,
             },
             {
               id: 'hire',
+              /* Same bug the mobile step had (see that step's own comment
+                 a few dozen lines up): `.room.empty` is dead legacy CSS
+                 with no matching JSX, and `.topbar .px-btn.primary` has
+                 never existed — the topbar's buttons are ghost/danger/plain
+                 chips. Both dead selectors meant this step, the LAST one of
+                 the desktop tour, always gave up its spotlight silently
+                 (see ui/onboarding.jsx's resolveSpotlight) while every
+                 other targeted step in the tour drew a ring. */
               title: 'Ready to hire your team?',
               body: 'Click an empty desk (or press H, or ⌘K → "Hire") to meet the candidates — ready-made specialists like Vera (assistant), Kip (research), and Dax (data) — or build a role from scratch, or seed the whole crew at once. Then drop a task on their desk and watch the office come alive.',
-              target: () => document.querySelector('.room.empty') || document.querySelector('.topbar .px-btn.primary'),
+              target: '.px-room.vacant',
               action: () => goTo('visual'),
             },
           ];
