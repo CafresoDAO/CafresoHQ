@@ -16169,3 +16169,47 @@ dialog kept showing the old text for several reload attempts before
 that was remembered, exactly the failure mode the existing comment in
 `serve.py` describes happening once already, on 2026-08-14, to someone
 else fixing something else.
+
+### The PLACE button did nothing for furniture you already owned — 2026-08-19
+
+`modals/collab.jsx`'s `FurnishModal` gates its button as:
+
+    disabled={!!busyId || isPlaced || (!canBuy && !isOwned)}
+
+For an owned item, `!canBuy && !isOwned` is always false — the button
+stays clickable with no chain connection, correctly, since re-placing
+something already owned is free and needs no purchase. But `buy()`, the
+handler that button calls, opened with:
+
+    if (!canBuy || busyId) return;
+
+which bailed out before ever checking ownership. The one case the
+button's own `disabled` logic deliberately left clickable — an owned
+item, browsing-only mode — was exactly the case where clicking it did
+nothing at all: no error, no toast, no state change. The UI's own
+enablement logic already knew the right answer; the handler just never
+asked it.
+
+**The fix** moves the `alreadyOwned` check ahead of the `canBuy` gate,
+and nests `if (!canBuy) return;` inside the new-purchase branch only —
+so an owned item's free re-place always runs, and only a genuine new
+purchase (which needs the chain) still requires it.
+
+**Tests.**
+`scripts/test_the_place_button_did_nothing_for_owned_furniture.py`
+confirms the unconditional `canBuy` bail is gone, ownership is checked
+first, the sale-only gate is now nested where it belongs, the free
+re-place still runs unconditionally afterward, and the button's own
+`disabled=` expression — the thing that exposed the bug in the first
+place — is untouched.
+
+Fire-tested with two arms: a full revert, and a half-fix that removes
+the outer gate but leaves `canBuy` blocking the owned-item path too
+(same bug, different line). Both caught, post-restore baseline green.
+Full suite: 200/200.
+
+**Lesson.** A `disabled=` expression is itself documentation of intent
+— when a button is deliberately left clickable in some UI state, its
+handler should be read specifically for whether it agrees. Here the two
+had quietly disagreed since whichever commit added the `!isOwned`
+carve-out to the JSX without carrying it into `buy()`.

@@ -701,11 +701,16 @@ function FurnishModal({ agent, onClose, onUpdate }) {
   const current = agent.decor || {};
 
   const buy = async (item) => {
-    if (!canBuy || busyId) return;
+    if (busyId) return;
     const key = `${item.kind}:${item.id}`;
     const alreadyOwned = owned.includes(key);
-    /* Owned items re-place for free; new items go through the signed sale. */
+    /* Owned items re-place for free; new items go through the signed sale.
+       canBuy only gates the sale below — it must NOT gate this whole
+       function, or the PLACE button (which the disabled= prop already
+       leaves clickable for owned items with no chain) does nothing when
+       clicked. */
     if (!alreadyOwned) {
+      if (!canBuy) return;
       setBusyId(key); setNote('Waiting for your approval in the shell…');
       try {
         const res = await chain.shop.furnish({
