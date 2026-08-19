@@ -246,6 +246,23 @@ const ks = (n) => {
   } catch (_) {}
   return STORE_KEY + ':' + n + ':' + slug;
 };
+/* One-time downgrade: windowsEnabled defaulted to true for every boss from
+   day one, and useStored's own write effect persists the initial value
+   ~300ms after mount even with zero interaction — so almost every browser
+   that has ever loaded this app already has an EXPLICIT "true" on disk for
+   this key, not an absence useStored's new `false` default would catch.
+   That recorded "true" is the old code's default, not a real choice: force
+   it off once, gated by a sentinel so a boss who deliberately re-enables it
+   afterward (Settings -> Appearance -> Advanced) keeps that choice on the
+   next reload instead of being fought back to full-page every time. */
+(function _migrateWindowsEnabledDefault(){
+  try {
+    const SENTINEL = STORE_KEY + ':windowsEnabledDefaultV2';
+    if (localStorage.getItem(SENTINEL) != null) return;
+    localStorage.setItem(k('windowsEnabled'), JSON.stringify(false));
+    localStorage.setItem(SENTINEL, '1');
+  } catch (_) {}
+})();
 // Strip ephemeral fields before persisting agents — runtime status/mood
 // reset to a clean baseline on reload so we don't show stale "busy" sprites.
 // Also drop transient sub-agents (spawned via [SPAWN_SUBAGENT]) so they

@@ -16407,3 +16407,102 @@ fix for both. And a hook that reads/writes localStorage is not free to
 import across a module boundary just because the shape is identical:
 check what imports *that* module before reusing it, or a fix for a UI
 default can crash the app it was meant to improve.
+
+## Every app view opened as a floating window by default, on any screen that wasn't a wide monitor
+
+The fix above was the wrong scope. It only touched the Terminal tab's own
+internal pop-out link — a nested control inside one view. The boss came
+back within the hour: "all things are still popping-out as windows. I
+didn't want that. I want the entire screen to switch to that page for
+better viewing when not on desktop."
+
+Reading `app.jsx`: `windowsEnabled` — the flag that decides whether the
+WHOLE app renders as a plain full-page view or as a floating-window desktop
+metaphor (draggable/resizable panels with title-bar chrome, a macOS-style
+dock, minimize/maximize/close) — defaulted to `true` for every boss, on
+every device, from day one. `desktopMode = windowsEnabled && !isNarrowViewport`,
+and `isNarrowViewport` is a 768px `matchMedia` cutoff — so this fired on
+any laptop or modestly-sized browser window, not just wide monitors. The
+only way out was a small unlabeled ⏻ power icon buried in the dock ("Exit
+desktop mode") — undiscoverable, and even once found, one-way: nothing in
+Settings could turn floating windows back off from outside that dock, and
+nothing could turn them back on once exited short of clearing storage.
+
+This is exactly the shape of the fix above, just one layer up: the same
+"advanced, opt-in, off by default" pattern the boss asked for the Terminal
+pop-out, now applied to the app-wide window manager instead of one nested
+control inside it. The earlier fix wasn't wrong, it was scoped to a leaf
+when the complaint was about the tree.
+
+**The fix, three parts:**
+
+1. `app.jsx` — `windowsEnabled`'s `useStored` default flipped from `true`
+   to `false`. Full-page (`renderViewBody(activeView)`) is now what every
+   view gets unless a boss opts in.
+
+2. `app/storage.jsx` — a code-default flip alone changes nothing for a
+   returning boss. `useStored`'s own write effect persists the initial
+   value to localStorage ~300ms after every mount, with zero user
+   interaction required — so almost any browser that has ever loaded this
+   app already has an *explicit* `"true"` on disk for this key, which
+   `raw == null ? fallback() : ...` will never fall through past. Confirmed
+   live on this exact session's own test browser: `windowsEnabled` was
+   already `"true"` before this fix shipped. Added a one-time migration,
+   sentinel-gated (`cafresohq_hq_v1:windowsEnabledDefaultV2`) so it runs
+   exactly once ever, that force-writes the key back to `false`. A boss who
+   deliberately re-enables it afterward keeps that choice on every reload
+   after — the migration doesn't re-fire and fight them.
+
+3. `modals/settings.jsx` + `app.jsx` — a new Settings → Appearance →
+   Advanced toggle, "Desktop window mode," sitting right above the
+   Terminal pop-out toggle from the fix above. `windowsEnabled` /
+   `setWindowsEnabled` are now threaded from `app.jsx` into `<SettingsModal>`
+   as ordinary props (not a shared hook import — no risk of repeating the
+   circular-import crash from the fix above, since these are plain values/
+   setters, not a localStorage-backed hook reused across the modals/views
+   boundary). Indexed in `SETTINGS_INDEX` so it's findable via Settings
+   search too.
+
+The existing dock "Exit desktop mode" button and the mobile switcher's
+"Exit desktop mode" button both still work unchanged — they only ever
+needed to turn the flag off, and still do. What was missing was a way back
+*in* that didn't require reading source or guessing at a dock icon, and a
+default that didn't put a boss into windowed mode before they'd ever
+touched a setting.
+
+**Test coverage.** `scripts/test_windows_enabled_defaults_off.py`, 11
+checks: the `useStored` default is `false` (and not still `true`
+somewhere), the migration exists and is sentinel-gated and writes the
+right key/value, the migration is declared after `const k` (placed before
+it would be a TDZ crash on every page load, the same class of mistake as
+the circular import above — caught by inspection this time, not by
+shipping it), `SettingsModal` accepts the props, `app.jsx`'s call site
+actually passes them (not just declared and dangling), the switch is wired
+to a real `onClick`, its visual state reflects the live prop, and it's
+searchable. Fire-tested with 8 reversion arms — default-back-to-true,
+sentinel removed, migration writes true, props dropped from the signature,
+props dropped from the call site, switch unwired, switch visual hardcoded,
+search index entry removed — 8/8 caught, post-restore baseline green.
+Full suite: 204/204 (up from 203/203).
+
+Verified live: confirmed via `localStorage.getItem` that this session's
+own test browser already carried an explicit `"true"` for this key before
+the fix (proving the migration is load-bearing, not defensive padding);
+after rebuild + reload, the key flipped to `"false"` and the sentinel was
+set; at a genuine 1280×800 desktop viewport, the app rendered full-page
+(nav rail + Chat, no dock, no floating panels) instead of the previous
+window/dock system; opening Terminal from the rail rendered it full-page
+in the main content area, no title-bar chrome; opening Settings and
+clicking the new "Desktop window mode" switch flipped `windowsEnabled` to
+`true` in both the DOM (`pxswitch on`) and localStorage, and the floating-
+window/dock system reappeared exactly as it used to render by default —
+confirming the toggle is a genuine two-way opt-in, not a one-way
+downgrade.
+
+**Lesson.** "It still does the thing I complained about" after a shipped
+fix is worth re-reading as a scope question before a mechanism question —
+the first fix wasn't broken, it was narrower than the complaint. And a
+`useState`-style default that gets *persisted on every mount* (not just
+read) means changing the default in source is invisible to every browser
+that already loaded the old code; the migration has to force the write,
+not just change what a fresh read would return.

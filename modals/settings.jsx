@@ -126,6 +126,7 @@ const SETTINGS_INDEX = [
   { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
   { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
   { tab:'appearance', label:'Terminal pop-out windows', hint:'let a terminal tab open a separate OS window — off by default', kw:'terminal popup pop-out pop out window spawn desktop multitask advanced' },
+  { tab:'appearance', label:'Desktop window mode', hint:'apps open as floating windows instead of full-page — off by default', kw:'desktop window mode floating draggable windowsenabled multitask advanced full page fullpage' },
 ];
 
 /* ── Modules ───────────────────────────────────────────────────────────────
@@ -915,7 +916,7 @@ const DENSITY_PRESETS = [
   { id: 'spacious',    name: 'Spacious' },
 ];
 
-function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab, usageTokens = 0 }) {
+function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanlines, setScanlines, sound, setSound, night, setNight, theme, setTheme, density, setDensity, initialTab, usageTokens = 0, windowsEnabled = false, setWindowsEnabled = () => {} }) {
   // Last-used tab survives reopen (and reload) — small thing, big QoL.
   const [tab, _setTab] = useStateM(() => {
     try {
@@ -1231,6 +1232,13 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
               </div>
               <div className="cb-panel">
                 <h4>ADVANCED</h4>
+                <div className="row-knob">
+                  <div>
+                    <div className="lbl">Desktop window mode</div>
+                    <div className="sub">open apps as draggable, resizable windows over the office floor instead of full-page. Off by default — for multitasking on Desktop/large screens.</div>
+                  </div>
+                  <div className={`pxswitch ${windowsEnabled?'on':''}`} role="switch" aria-checked={windowsEnabled} onClick={()=>setWindowsEnabled(v=>!v)}><div className="nub"/></div>
+                </div>
                 <div className="row-knob">
                   <div>
                     <div className="lbl">Terminal pop-out windows</div>

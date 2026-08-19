@@ -452,7 +452,12 @@ function App() {
      session: which apps are open, their geometry, and z-order. Each entry:
      { view, geometry:{x,y,w,h}, z, minimized }. Keyed by view → at most one
      window per app. */
-  const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), true);
+  /* Default OFF: a boss who has never touched Settings gets the plain
+     full-page view (activeView), not floating windows / the mobile app
+     switcher. Desktop-style windowing is an opt-in, advanced feature —
+     see the migration in app/storage.jsx that forces this off for
+     browsers that already persisted the old `true` default. */
+  const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), false);
   const [openWindows, setOpenWindows] = useFileStored(k('openWindows'), 'state', 'windows', []);
   const winZRef = useRefA(1);
   React.useEffect(() => {
@@ -6670,15 +6675,13 @@ ${d.text}` : d.text,
                     {/* 'terminal' excluded for the same reason MobileTabBar's
                        swipe cycle excludes it (ui/office.jsx): north-star §5
                        parks the PTY terminal off the newcomer path, "stays
-                       in Living Floor desktop mode for devs" — and
-                       windowsEnabled defaults to true for every user, so
-                       mobileMode (windowsEnabled && isNarrowViewport) is the
-                       DEFAULT state for a first-run phone visitor, not an
-                       opt-in. This "Launch" grid is a full app list with
-                       Terminal as one tap among equals — the second door
-                       into it this session, found by reading the same
-                       component class the first door lived in rather than
-                       assuming one fix covered every NAV_ITEMS consumer. */}
+                       in Living Floor desktop mode for devs." windowsEnabled
+                       now defaults to false (a boss must opt into Desktop
+                       window mode in Settings), but this switcher is still
+                       reachable once they do — this "Launch" grid is a full
+                       app list with Terminal as one tap among equals, so the
+                       exclusion has to hold here too, not just on the
+                       default full-page path. */}
                     {NAV_ITEMS.filter(([k]) => k !== 'visual' && k !== 'terminal').map(([k, label]) => (
                       <button key={k} className="hq-switcher-launch" onClick={() => openMobileApp(k)}>
                         <Ico kind={k} size={22} />
@@ -6740,7 +6743,8 @@ ${d.text}` : d.text,
       />
       <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} initialTab={settingsTab} agents={agents} onDismiss={onDismiss} onUpdateAgent={onUpdateAgent}
         scanlines={scanlines} setScanlines={setScanlines} sound={sound} setSound={setSound} night={night} setNight={setNight}
-        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}/>
+        theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} usageTokens={totalTokens}
+        windowsEnabled={windowsEnabled} setWindowsEnabled={setWindowsEnabled}/>
       {/* Mounted only while open: the card holds a job-description DRAFT
           (saved on blur), and an always-mounted panel would resurface an
           abandoned draft on reopen as if it were saved — §4-dishonest. */}
