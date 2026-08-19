@@ -226,7 +226,7 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
 const ACT_ICON = {
   hired: '✦', assigned: '📋', dm: '✉', tool: '⚙', progress: '…',
   done: '✓', failed: '⚠', attention: '⚠', coffee: '☕', meeting: '👥', vault: '✎',
-  blocked: '⛓',
+  blocked: '⛓', mission: '🔬',
 };
 
 /* AgentInbox — the two-layer activity feed. Reads the canonical `activity` log

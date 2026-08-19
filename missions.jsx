@@ -436,6 +436,13 @@ async function runMissionIteration(ctx) {
     ctx.recordXp({ agentId: agent.id, kind: 'mission', outcome: 'done',
                    taskId: mission.id, title: mission.topic });
   }
+  /* Same event, the notification bell's own "🔬 Missions" filter (declared
+     in ui/onboarding.jsx, never populated before this) — see the other
+     three recordXp sites below for the sibling completion paths. */
+  if (completed && ctx.logActivity) {
+    ctx.logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color,
+                       action: 'mission', text: `finished the mission "${mission.topic.slice(0, 60)}"` });
+  }
 
   return { ok: true, completed };
 }
@@ -582,6 +589,11 @@ function useMissionRunner(missions, setMissions, ctx) {
           ctx.recordXp({ agentId: m.agentId, kind: 'mission', outcome: 'done',
                          taskId: m.id, title: m.topic });
         }
+        if (m.iterations > 0 && ctx.logActivity) {
+          const a = ctxWithSetters.agentsRef.current.find(x => x.id === m.agentId);
+          ctx.logActivity({ agentId: m.agentId, agentName: a && a.name, color: a && a.color,
+                             action: 'mission', text: `finished the mission "${m.topic.slice(0, 60)}"` });
+        }
         continue;
       }
 
@@ -598,6 +610,12 @@ function useMissionRunner(missions, setMissions, ctx) {
         standDown(m.agentId);
         if (ctx.recordXp) {
           ctx.recordXp({ agentId: m.agentId, kind: 'mission', outcome: 'snag', taskId: m.id, title: m.topic });
+        }
+        if (ctx.logActivity) {
+          const a = ctxWithSetters.agentsRef.current.find(x => x.id === m.agentId);
+          ctx.logActivity({ agentId: m.agentId, agentName: a && a.name, color: a && a.color,
+                             action: 'mission', priority: 'attention',
+                             text: `hit a snag and paused the mission "${m.topic.slice(0, 60)}"` });
         }
         continue;
       }
@@ -635,6 +653,11 @@ function useMissionRunner(missions, setMissions, ctx) {
             if (latest.iterations > 0 && ctx.recordXp) {
               ctx.recordXp({ agentId: latest.agentId, kind: 'mission', outcome: 'done',
                              taskId: latest.id, title: latest.topic });
+            }
+            if (latest.iterations > 0 && ctx.logActivity) {
+              const a = ctxWithSetters.agentsRef.current.find(x => x.id === latest.agentId);
+              ctx.logActivity({ agentId: latest.agentId, agentName: a && a.name, color: a && a.color,
+                                 action: 'mission', text: `finished the mission "${latest.topic.slice(0, 60)}"` });
             }
             return;
           }

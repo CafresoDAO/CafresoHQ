@@ -77,6 +77,11 @@ let ledger = %s;
 const calls = [];
 const experienceRef = { current: ledger };
 const recordXp = (entry) => { calls.push(entry); ledger = xpRecord(ledger, entry); experienceRef.current = ledger; };
+/* task #36 threaded a logActivity call through this same loop, resolving
+   the run's agent off agentsRef — mocked here so this file keeps testing
+   only what it's about (the XP ledger), same as it did before that fix. */
+const agentsRef = { current: [] };
+const logActivity = () => {};
 %s
 %s
 %s

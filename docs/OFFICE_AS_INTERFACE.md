@@ -18063,3 +18063,112 @@ targeted search finds, a regression test is written that pins those exact
 sites, and a sibling written in different words — same file, same
 feature, same author's intent — sits outside both the original sweep and
 the test that was supposed to guard it.
+
+
+## The bell promised a "🔬 Missions" filter that could never turn on
+
+`ui/onboarding.jsx` declares the notification bell's filter taxonomy:
+
+    const NOTIF_KIND_ICON = { receipt: '📋', agent: '✦', mission: '🔬',
+                               approval: '⚖', system: 'ℹ' };
+    const NOTIF_FILTERS = [ { value: 'all', ... }, ..., { value: 'mission', label: 'Missions' }, ... ];
+
+`app.jsx`'s `mergedNotifications` — the only place anything ever gets
+pushed into the array the bell reads — only ever assigned `kind:
+'approval'`, `'receipt'`, `'system'`, or `'agent'`. `'mission'` was never
+one of them. The filter row's own render gate makes the effect total,
+not partial: `if (f.value !== 'all' && count === 0) return null;` —
+the "Missions" chip could not render even empty, because its count was
+always exactly zero. A category the UI itself declares was permanently
+invisible.
+
+**Repro.** Start a Research Mission, let it run to completion (or force
+three consecutive tool errors to trigger an auto-pause). The mission's
+card shows the finish; the agent's XP ledger records a done/snag (§5).
+Open the bell — nothing about the mission is there, and the "Missions"
+filter never even appears among the chips to click.
+
+**Why the data existed but never reached the bell.** Two earlier tickets
+in this document are close neighbors, checked carefully before writing
+this fix so it isn't the same gap reported twice:
+
+- *"Wire Research Missions into the ticker, Team inbox, and Receipts"*
+  wired a mission's individual **tool calls** (a web search, a vault
+  write mid-run) into `logActivity`/`recordToolReceipt`. That is a
+  different event from a mission **ending** — the four `ctx.recordXp(...)`
+  call sites below were untouched by that fix and still never called
+  `logActivity`.
+- *"Mission auto-pause (3 errors) never records a snag"* and *"Night
+  Shift runs never reach the XP ledger"* wired those same completion
+  events into `recordXp` — the XP ledger, a wholly separate feed from
+  the activity log the bell reads. Recording XP for an event has never
+  implied logging it as activity.
+
+So all five places a mission's outcome (`'done'` or `'snag'`) is computed
+— `runMissionIteration`'s self-complete branch, the scheduling loop's
+deadline check, the fire-time deadline re-check, and the auto-pause
+branch in `missions.jsx`, plus `app.jsx`'s Night Shift poll — already had
+the right data (`agentId`, `outcome`, `title`) sitting right next to a
+`recordXp` call the whole time. None of them ever called `logActivity`,
+the one function that actually feeds the bell, the ticker, and the Team
+inbox.
+
+**The fix** adds a `logActivity({ ..., action: 'mission', ... })` call
+beside each of the five existing `recordXp` calls, under the identical
+guard condition each already used (`completed`, `m.iterations > 0`,
+`latest.iterations > 0`, or unconditional for the auto-pause/error-run
+case) — so nothing changes about *when* a completion is recorded, only
+that it's now also announced. Snag outcomes carry `priority: 'attention'`
+(the same field the "N need you" pill already keys on — a mission
+auto-pause or a failed overnight run now also bumps that count, which it
+never did before either). `mergedNotifications`'s activity loop gained
+one line:
+
+    kind: e.action === 'mission' ? 'mission' : (e.priority === 'attention' ? 'system' : 'agent'),
+
+— checked ahead of the old priority-based fallback, which is otherwise
+unchanged for every non-mission row. `ACT_ICON` (views/core.jsx) and
+`INSPECT_ACT_ICON` (ui/panels.jsx) — the twin maps a prior ticket ("Stale
+activity-icon map (ACT_ICON) missing 4 kinds") explicitly documented
+"must gain the same entry" together — both got `mission: '🔬'`, so a
+mission row reads identically in the Team inbox and the coworker's own
+inspect panel.
+
+**Test coverage.** New: `scripts/test_mission_notifications_reach_the_bell.py`,
+19 checks. Extracts and drives, against `node`, the real source of all
+five completion sites plus `mergedNotifications`'s activity loop —
+mechanism-tests the self-complete path (both completed and
+not-completed, confirming the guard), the auto-pause snag path (full
+side effects: pause + stand-down + XP + activity), and the Night Shift
+poll for both a `done` and a `snag` run; static-checks the two deadline
+sites share the same guard shape as their `recordXp` siblings; drives
+`mergedNotifications`'s kind assignment against four synthetic activity
+rows confirming `action: 'mission'` wins regardless of priority and
+every other combination is unchanged. Confirms both icon maps and the
+onboarding taxonomy declarations (unchanged, consumer side was already
+correct).
+
+One pre-existing file needed a small update, not a new bug: task #30's
+`scripts/test_night_shift_runs_reach_the_xp_ledger.py` extracts the same
+Night Shift poll loop verbatim from app.jsx, and its harness had no
+`agentsRef`/`logActivity` — this fix's new reference to `agentsRef` inside
+that loop threw a bare `ReferenceError` under that test's mock, caught by
+the full suite run before this ticket was committed. Fixed by adding both
+as no-op mocks, matching how the loop's other dependencies are already
+stubbed there; the fix changes nothing about what that file tests.
+
+Fire-tested 8 arms — removed each of the four `missions.jsx` logActivity
+blocks individually, reverted `mergedNotifications`'s kind line, removed
+the Night Shift poll's `logActivity` call, and dropped the mission entry
+from each icon map separately — 8/8 caught, post-restore baseline
+byte-identical to the pre-edit backups for all four touched files. Full
+suite: 222/222 (up from 221/221; one new file).
+
+**Lesson.** `recordXp` and `logActivity` look like they'd naturally travel
+together — both fire "this mission just ended" — but they're two
+independently-wired feeds, and fixing one earlier in this session (tasks
+#29, #30) said nothing about the other. A UI category declared in one
+file (`ui/onboarding.jsx`) with zero producers in the file that actually
+builds the data (`app.jsx`) is a shape worth grepping for on its own:
+search a filter/kind taxonomy for values nothing ever assigns, not just
+search for values the taxonomy is missing.

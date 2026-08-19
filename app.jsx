@@ -1034,6 +1034,14 @@ function App() {
           const outcome = (r.errors > 0) ? 'snag' : ((r.iterations > 0) ? 'done' : null);
           if (!outcome) continue;
           recordXp({ agentId: r.agentId, kind: 'mission', outcome, taskId: r.id, title: r.topic });
+          // Same event, the notification bell's own "🔬 Missions" filter —
+          // declared in ui/onboarding.jsx, never populated before this.
+          const rAgent = agentsRef.current.find(x => x.id === r.agentId);
+          logActivity({ agentId: r.agentId, agentName: rAgent && rAgent.name, color: rAgent && rAgent.color,
+                         action: 'mission', priority: outcome === 'snag' ? 'attention' : 'routine',
+                         text: outcome === 'snag'
+                           ? `hit a snag on the overnight run "${(r.topic || '').slice(0, 60)}"`
+                           : `finished the overnight run "${(r.topic || '').slice(0, 60)}"` });
         }
       } catch (_e) { /* ambient board — a failed poll just leaves the last-known state */ }
     };
@@ -6262,7 +6270,12 @@ ${d.text}` : d.text,
       if (e.action === 'tool') continue;
       out.push({
         id: e.id,
-        kind: e.priority === 'attention' ? 'system' : 'agent',
+        /* A mission's own finish/snag (action:'mission', threaded through
+           missions.jsx and the Night Shift poll above) is the one activity
+           source the "🔬 Missions" filter chip (ui/onboarding.jsx) was
+           declared for and never got — every other activity row still
+           buckets by priority same as before. */
+        kind: e.action === 'mission' ? 'mission' : (e.priority === 'attention' ? 'system' : 'agent'),
         msg: `${e.agentName || 'HQ'} ${e.text}`,
         ts: e.ts,
         unread: e.unread && (e.ts || 0) > notifSeenAt,
