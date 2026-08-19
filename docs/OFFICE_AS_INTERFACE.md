@@ -16310,3 +16310,100 @@ into an ancestor's layout explicitly — an auto-margin that "usually"
 leaves enough room silently stops leaving any the moment the content it's
 centering outgrows its box, and here that moment was not an edge case,
 it was the starting state.
+
+---
+
+## Terminal tabs defaulted into a native OS popup, and on macOS the popup didn't even work
+
+**Reported directly, mid-fix.** The boss, while ticket #12 (below) was
+already in progress: "can we also have the default mode be those tabs
+being full page changes instead of small windows. Lets only allow the
+Windows pop-up version be an advanced feature in settings for users who
+want to multi-task on Desktop or larger screens."
+
+**The default was backwards.** `views/terminal.jsx`'s `TerminalSession`
+persisted a brand-new tab's mode as `'spawn'` — the native-OS-window path
+— not `'chat'`. When the backend PTY bridge isn't available
+(`ptySupported === false`, the common case: it's an HTTP round-trip, not
+a real terminal handle), `'spawn'` mode's *only* offer was a button that
+opens a separate OS window. A fresh tab could dead-end into "leave the
+app" before the boss did anything else in it.
+
+**Ticket #12, folded into the same fix.** The fallback panel's button
+hardcoded "Windows Terminal" as the window it opens, on every OS. Worse:
+`pty_server.py`'s `_terminal_spawn()` backing it had no macOS branch at
+all — its non-Windows path only tries `x-terminal-emulator` /
+`gnome-terminal` / `kitty` / `xterm`, and a live `which` check on this
+exact box (macOS 26.4, `sys.platform == 'darwin'`) confirmed all four are
+absent. So on a Mac, clicking LAUNCH always 503'd with "no terminal
+emulator found" — the label was wrong, and the button it labeled was
+broken.
+
+**The fix, three parts:**
+1. New tabs default to `'chat'` mode — always works, always in-app, no
+   backend PTY or native window required.
+2. The PTY tab itself is now hidden unless it can do something Chat
+   can't: the real embedded terminal (`ptySupported`), or the native
+   window — now gated behind a new advanced setting, `popoutAllowed`
+   (`cafresohq_terminal:popoutAllowed` in localStorage, off by default).
+   A session persisted at `'spawn'` from before this setting existed
+   falls back to `'chat'` rather than rendering a tab that's gone. The
+   embedded terminal's own "⬡ pop out" footer link is gated the same way
+   — it's already in-app and full-page, so it stays visible regardless of
+   the setting, but the button that opens a *separate OS window* from it
+   now requires the opt-in too.
+3. `pty_server.py` gained a real `sys.platform == 'darwin'` branch using
+   `osascript`/Terminal.app, so the feature actually works when a boss
+   opts in on a Mac. `cwd_path` is shell-quoted (`shlex.quote`) for the
+   inner `do script` shell command, and that whole command is separately
+   escaped for the outer AppleScript string literal (backslash and
+   double-quote) — two different quoting contexts, both needed.
+
+**Settings → Appearance → Advanced** got a new "Terminal pop-out windows"
+toggle, off by default, described as: *"let a terminal tab open in a
+separate OS window, for multitasking on Desktop/large screens. Off by
+default — tabs stay full-page in the app."*
+
+**Self-caught during implementation, not shipped.** The toggle was first
+wired with `useStoredV` imported from `views/core.jsx` — the same hook
+`views/terminal.jsx` already uses for this exact kind of localStorage
+state. That import is circular: `views/core.jsx` → `features.jsx` →
+`modals.jsx` (the modals barrel) → back to `modals/settings.jsx`. Loading
+the app after that build hard-crashed on `TypeError: Cannot destructure
+property 'Modal' of 'eo' as it is undefined` — the circular chain left
+`./base.jsx`'s `Modal` export unresolved at module-eval time, before a
+single view could render. Caught via the standard reload-and-check-console
+step, not by the regression test (which only reads source text and
+wouldn't run the bundle). Fixed by reading/writing the same localStorage
+key directly in `modals/settings.jsx` instead of importing the hook
+across that boundary — same key, same `JSON.stringify`/`JSON.parse`
+shape, no cross-barrel import.
+
+**Tests.**
+`scripts/test_terminal_tabs_defaulted_into_a_popup_window.py` — 17 checks:
+the default mode, the `ptyTabVisible` gate and its fallback for
+pre-existing `'spawn'` sessions, both gated buttons, the label fix, the
+darwin branch and its two layers of quoting, `shlex` imported, and —
+guarding against a repeat of the self-caught bug — that `settings.jsx`
+does not import `useStoredV` from `views/core.jsx`.
+
+Fire-tested with 10 arms across `views/terminal.jsx`, `pty_server.py`, and
+`modals/settings.jsx` — default mode reverted, PTY tab visibility
+ungated, pop-out footer ungated, the label reverted, the toggle unwired,
+the circular import reintroduced, the darwin branch disabled, `osascript`
+swapped for an absent binary, `cwd_path` unquoted, and `shlex` unimported.
+10/10 caught, post-restore baseline green. Full suite: 203/203 (up from
+202/202).
+
+Verified live in the browser end to end: a fresh session tab opens on
+Chat; the PTY tab shows the real embedded terminal with no pop-out link
+visible by default; flipping the new Settings toggle and reopening the
+tab makes the pop-out link appear; the app loads clean with no console
+errors post-fix.
+
+**Lesson.** A "small window" complaint and a mislabeled/broken button can
+be the same root cause wearing two descriptions — the fix for one was the
+fix for both. And a hook that reads/writes localStorage is not free to
+import across a module boundary just because the shape is identical:
+check what imports *that* module before reusing it, or a fix for a UI
+default can crash the app it was meant to improve.

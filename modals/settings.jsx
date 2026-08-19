@@ -125,6 +125,7 @@ const SETTINGS_INDEX = [
   { tab:'appearance', label:'Scanline overlay', hint:'soft CRT shimmer', kw:'scanlines crt overlay' },
   { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
   { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
+  { tab:'appearance', label:'Terminal pop-out windows', hint:'let a terminal tab open a separate OS window — off by default', kw:'terminal popup pop-out pop out window spawn desktop multitask advanced' },
 ];
 
 /* ── Modules ───────────────────────────────────────────────────────────────
@@ -931,6 +932,30 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
   const [q, setQ] = useStateM('');
   const [selected, setSelected] = useStateM(agents[0]?.id || null);
   const sel = agents.find(a => a.id === selected) || agents[0];
+  /* Same global localStorage key (and JSON.stringify'd shape) that
+     views/terminal.jsx's useStoredV reads — this is the only place that
+     ever writes it. Read/write it directly with the same JSON encoding
+     rather than importing useStoredV from views/core.jsx: that import
+     chains views/core.jsx -> features.jsx -> modals.jsx (the modals
+     barrel) -> back to this file, and the circular import left `Modal`
+     from './base.jsx' undefined at module-eval time, hard-crashing the
+     whole app on load. Off by default: a fresh terminal tab should
+     always land full-page in the app, not dead-end into a native OS
+     window. Advanced, opt-in, for desktop/large-screen multitasking. */
+  const POPOUT_KEY = 'cafresohq_terminal:popoutAllowed';
+  const [popoutAllowed, setPopoutAllowed] = useStateM(() => {
+    try {
+      const raw = localStorage.getItem(POPOUT_KEY);
+      return raw == null ? false : !!JSON.parse(raw);
+    } catch (_e) { return false; }
+  });
+  const toggleTerminalPopout = () => {
+    setPopoutAllowed(v => {
+      const next = !v;
+      try { localStorage.setItem(POPOUT_KEY, JSON.stringify(next)); } catch (_e) {}
+      return next;
+    });
+  };
 
   // Live status for the nav rail: provider key state, CLI install count,
   // backend reachability. Refetched each time the modal opens.
@@ -1202,6 +1227,16 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                 <div className="row-knob">
                   <div><div className="lbl">Keyboard shortcuts</div><div className="sub">1–8 switch views · S settings · D theme · Ctrl+K palette</div></div>
                   <span className="tiny">press Ctrl+K</span>
+                </div>
+              </div>
+              <div className="cb-panel">
+                <h4>ADVANCED</h4>
+                <div className="row-knob">
+                  <div>
+                    <div className="lbl">Terminal pop-out windows</div>
+                    <div className="sub">let a terminal tab open in a separate OS window, for multitasking on Desktop/large screens. Off by default — tabs stay full-page in the app.</div>
+                  </div>
+                  <div className={`pxswitch ${popoutAllowed?'on':''}`} role="switch" aria-checked={popoutAllowed} onClick={toggleTerminalPopout}><div className="nub"/></div>
                 </div>
               </div>
             </div>

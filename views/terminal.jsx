@@ -332,10 +332,29 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
        and using the CLI's own login — so chat is file-aware and matches PTY.
      - hermes streams Chat through its always-on OpenAI-compatible gateway
        (/hermes/v1/chat/completions); no key needed (server-side auth).
-     Default to the PTY so a new tab opens as a real terminal (a full CLI per
-     tab); Chat is one click away via the Chat/PTY toggle. */
-  const [termModeRaw, setTermMode] = useStoredV(sKey('mode'), 'spawn');  // 'chat' | 'spawn'
-  const termMode = termModeRaw;
+     Default to Chat, not PTY: a fresh tab must always land somewhere that
+     just works full-page in the app. PTY needs a live backend PTY bridge
+     (ptySupported) or, failing that, a native OS terminal window — a "small
+     window" outside the app that's now an opt-in advanced setting (see
+     popoutAllowed below), not something a brand-new tab should dead-end
+     into. Chat has neither dependency and stays one click away regardless. */
+  const [termModeRaw, setTermMode] = useStoredV(sKey('mode'), 'chat');  // 'chat' | 'spawn'
+  /* Native OS terminal windows (Terminal.app/gnome-terminal/Windows Terminal
+     via /terminal/spawn) are the "small window" path — useful for desktop
+     users who want to multitask across real OS windows, but not what a
+     default tab should offer. Off by default; flipped on in Settings →
+     Appearance → Advanced. Global key (not session-scoped) so it matches
+     whatever the Settings toggle last wrote. */
+  const [popoutAllowed] = useStoredV('cafresohq_terminal:popoutAllowed', false);
+  /* The PTY tab earns its place when it can do something Chat can't: the
+     embedded in-app terminal (ptySupported) is always worth it — it's
+     full-page, not a popup. Without that, its only offer is a native OS
+     window, which now requires the advanced setting; with neither, showing
+     the tab would dead-end into "launch a popup" behind a control that
+     isn't there. A session persisted at 'spawn' from before this setting
+     existed falls back to 'chat' rather than rendering a tab that's gone. */
+  const ptyTabVisible = spawnSupported && (ptySupported || popoutAllowed);
+  const termMode = (termModeRaw === 'spawn' && !ptyTabVisible) ? 'chat' : termModeRaw;
   // Cap persisted history like the main chat's 80-cap — an unbounded
   // orchestrator conversation eventually hits quota and then silently
   // stops persisting anything new.
@@ -500,7 +519,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
         borderBottom: '1px solid var(--rule)', background: 'var(--paper-2)',
         minHeight: 44,
       }}>
-        {([['chat', '💬', 'Chat'], ...(spawnSupported ? [['spawn', '⚡', 'PTY']] : [])]
+        {([['chat', '💬', 'Chat'], ...(ptyTabVisible ? [['spawn', '⚡', 'PTY']] : [])]
         ).map(([mode, ico, label]) => (
           <button key={mode} onClick={() => { setTermMode(mode); setErr(null); setSpawnMsg(''); }}
             style={{
@@ -514,7 +533,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             }}
           ><span>{ico}</span><span>{label}</span></button>
         ))}
-        {spawnSupported === false && (
+        {!ptyTabVisible && (
           <span style={{ fontSize: 9, color: 'var(--ink-3)', paddingLeft: 10 }}>chat only</span>
         )}
         <span style={{ flex: 1 }} />
@@ -799,7 +818,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             /* Fallback: launch button */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16, background: 'var(--paper)' }}>
               <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.7 }}>
-                Opens a new <strong style={{ color: 'var(--ink)' }}>Windows Terminal</strong> window running<br/>
+                Opens a new <strong style={{ color: 'var(--ink)' }}>terminal window</strong> running<br/>
                 <code style={{ color: '#7c6bff' }}>{cli}</code> in <code style={{ color: '#7c6bff', opacity: 0.75 }}>{project.path}</code>
               </div>
               {spawnMsg && (
@@ -818,8 +837,11 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
               }}>▶ LAUNCH {cli.toUpperCase()} IN TERMINAL</button>
             </div>
           )}
-          {/* Pop-out footer — dark to blend with terminal */}
-          {ptySupported && (
+          {/* Pop-out footer — dark to blend with terminal. Native OS window,
+              so it stays behind the same advanced setting as the fallback
+              panel's launch button, even though the embedded terminal above
+              it needs no such gate (it's in-app, not a popup). */}
+          {ptySupported && popoutAllowed && (
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#0a0a10', padding: '3px 12px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
               <button onClick={launchTerminal} title="Open in separate terminal window" style={{
                 background: 'transparent', color: '#3a3555', border: 'none',

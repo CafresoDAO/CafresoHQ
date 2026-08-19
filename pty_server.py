@@ -16,6 +16,7 @@ import os
 import pathlib
 import secrets
 import select
+import shlex
 import shutil
 import signal
 import socket
@@ -72,7 +73,8 @@ def _terminal_spawn(self):
     Opens the CLI in a new OS terminal window so the user sees the
     full interactive TUI (welcome screen, coloured prompts, etc.).
     Windows: tries Windows Terminal → pwsh → PowerShell → cmd.
-    Linux/macOS: tries x-terminal-emulator → gnome-terminal → xterm.
+    macOS: osascript → Terminal.app.
+    Linux: tries x-terminal-emulator → gnome-terminal → kitty → xterm.
     """
     qs = urllib.parse.urlparse(self.path).query
     params = urllib.parse.parse_qs(qs)
@@ -108,6 +110,26 @@ def _terminal_spawn(self):
                     ['cmd', '/k', f'cd /d "{cwd_path}" && {cli}'],
                     creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
                 )
+        elif sys.platform == 'darwin':
+            # None of the Linux terminal emulators below ship on stock macOS
+            # (confirmed: x-terminal-emulator/gnome-terminal/kitty/xterm are
+            # all absent), so that loop always fell through to the 503 here —
+            # this actually spawns a window. Terminal.app takes the command
+            # as a shell string via `do script`, so cwd_path is shell-quoted
+            # for that inner shell *and* the whole string is AppleScript-
+            # escaped for the outer `do script "..."` literal.
+            osa = shutil.which('osascript')
+            if not osa:
+                return self._send_json(503, {'error': 'no terminal emulator found'})
+            shell_cmd = f'cd {shlex.quote(str(cwd_path))} && {shlex.quote(cli)}'
+            as_literal = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
+            applescript = (
+                'tell application "Terminal"\n'
+                'activate\n'
+                f'do script "{as_literal}"\n'
+                'end tell'
+            )
+            subprocess.Popen([osa, '-e', applescript])
         else:
             launched = False
             for term in ['x-terminal-emulator', 'gnome-terminal', 'kitty', 'xterm']:
