@@ -1366,10 +1366,13 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       <button className="msg-actions-toggle" onClick={() => setOpenActionsId(prev => prev === m.id ? null : m.id)} title="Actions">{'···'}</button>
                     )}
                     <div className={'msg-actions' + (_isMobileChat && openActionsId === m.id ? ' msg-actions-open' : '')}>
-                      <button title="Copy" onClick={() => {
-                        try { navigator.clipboard.writeText(m.text); }
-                        catch(_e) {}
-                        if (window.cafresohqToast) window.cafresohqToast.success('Copied');
+                      <button title="Copy" onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(m.text);
+                          if (window.cafresohqToast) window.cafresohqToast.success('Copied');
+                        } catch (_e) {
+                          if (window.cafresohqToast) window.cafresohqToast.error("Couldn't copy — try selecting the text instead");
+                        }
                       }}>📋</button>
                       <button title="Quote-reply" onClick={quoteReply}>↩</button>
                       {m.from !== 'user' ? (
@@ -1625,10 +1628,13 @@ function CodeBlock({ lang, body }) {
   const showAll = expanded || lines.length <= COLLAPSE_AFTER;
   const visibleLines = showAll ? lines : lines.slice(0, COLLAPSE_AFTER);
   const hidden = lines.length - visibleLines.length;
-  const copy = () => {
-    try { navigator.clipboard.writeText(body); }
-    catch (_) {}
-    if (window.cafresohqToast) window.cafresohqToast.success('Copied');
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(body);
+      if (window.cafresohqToast) window.cafresohqToast.success('Copied');
+    } catch (_) {
+      if (window.cafresohqToast) window.cafresohqToast.error("Couldn't copy — try selecting the text instead");
+    }
   };
   return (
     <div className="cb-wrap">

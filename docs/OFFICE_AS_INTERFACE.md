@@ -15879,3 +15879,53 @@ screen doesn't propagate to its neighbors by osmosis — `IcpServicesPanel`
 got it right from the start and the two money panels next to it, added
 later, just never checked what the file already imported for this exact
 purpose.
+
+### Chat's Copy buttons said "Copied" whether or not anything got copied — 2026-08-19
+
+Both copy buttons in `ui/chat.jsx` — the per-message Copy action and
+`CodeBlock`'s copy button — called `navigator.clipboard.writeText(...)`
+inside a synchronous try/catch and then, unconditionally and immediately
+after, fired a "Copied" success toast:
+
+    try { navigator.clipboard.writeText(m.text); }
+    catch(_e) {}
+    if (window.cafresohqToast) window.cafresohqToast.success('Copied');
+
+`writeText` returns a Promise. A synchronous try/catch around a call
+whose result is never awaited only catches a synchronous throw (e.g.
+`navigator.clipboard` being undefined) — it does nothing for an async
+rejection, which is exactly how this API fails in an insecure context,
+a popout window without clipboard-write permission (this app explicitly
+supports popouts), or a denied permission prompt. The toast fired
+regardless, so a user who hit a real failure was told "Copied" and
+pasted nothing.
+
+The exact same bug class was fixed hours earlier this same day in
+`views/graph.jsx`'s Share modal — a coincidence of timing, not of cause:
+two different surfaces independently wrote the same fire-and-forget
+clipboard pattern, and fixing one didn't touch the other.
+
+**The fix** awaits the write in both call sites and only fires the
+success toast inside the try that follows a successful await; the catch
+branch now tells the user it didn't work ("Couldn't copy — try selecting
+the text instead") instead of staying silent.
+
+**Tests.**
+`scripts/test_chat_copy_claimed_success_it_never_checked.py` confirms no
+bare fire-and-forget-then-unconditional-toast pattern remains in the
+file, and that both the per-message button and `CodeBlock.copy()` are
+now async, await the write, gate the success toast on that await
+succeeding, and surface a real error toast on the catch path.
+
+Fire-tested with three arms: the per-message button reverted to
+fire-and-forget, `CodeBlock.copy()` reverted to fire-and-forget, and a
+middle case — `copy()` still async but the toast fired unconditionally
+regardless of whether the write settled or rejected. All three caught,
+post-restore baseline green. Full suite: 194/194.
+
+**Lesson.** A fix at one call site of a shared anti-pattern doesn't
+reach its siblings automatically — `views/graph.jsx` and `ui/chat.jsx`
+each wrote `try { clipboard.writeText(...) } catch {}` independently,
+and neither file's fix touched the other. Worth a grep across the repo
+next time this exact shape turns up, not just a fix at the one site that
+prompted the search.
