@@ -135,7 +135,10 @@ def main():
           'delegated flag is what keeps it out of the finder')
     check('the last-ask finder still skips wrappers',
           re.search(r"\.reverse\(\)\.find\(m => m\.from === 'user' && "
-                    r"!m\.delegated\)", bare) is not None)
+                    r"!m\.delegated && \(m\.thread \|\| 'direct'\) === t\)",
+                    bare) is not None,
+          'the #45 fix added per-room scoping to this same finder — the '
+          'skip-wrappers guard must still be the first thing it checks')
     check('an empty hand-off still draws the honest notice, not an invention',
           re.search(r"if \(!brief\.trim\(\)\) \{\s*setChat\(prev => "
                     r"\[\.\.\.prev, \{ id: HQ\.uid\('m'\), from: 'system',"
@@ -170,13 +173,19 @@ def main():
 
     ctm = brace_lift(hq, 'function chatToMessages(chat')
     finder_m = re.search(r"\[\.\.\.chat\]\.reverse\(\)\.find\((m => m\.from"
-                         r" === 'user' && !m\.delegated)\)", app)
+                         r" === 'user' && !m\.delegated && \(m\.thread \|\| "
+                         r"'direct'\) === t)\)", app)
     gate_m = re.search(r"\.some\((m => m\.from === 'user')\)", app)
     js = (
         # stripOfficeVoice scrubs tool-visit echo lines; attribution is
         # untouched by it, so a trim stub keeps this suite about voices.
         'const stripOfficeVoice = (t) => String(t || "").trim();\n'
         + ctm + ';\n'
+        # Every mock message below is untagged, i.e. (m.thread || 'direct')
+        # === 'direct' for all of them — the #45 room-scoping this finder
+        # now does is a no-op across this suite's single-room fixtures, so
+        # pinning it to 'direct' keeps this test about voices, not rooms.
+        + "const t = 'direct';\n"
         + f'const finder = {finder_m.group(1)};\n'
         + f'const gate = {gate_m.group(1)};\n'
         + 'const lastAsk = (chat) => [...chat].reverse().find(finder);\n'

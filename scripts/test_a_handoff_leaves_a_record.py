@@ -87,7 +87,7 @@ def main():
           'assembling its own cause object is the drift this guards')
 
     # ── the delegate region files the lifecycle ─────────────────────────
-    d_at = bare.find('const onDelegate = async (a, typed)')
+    d_at = bare.find('const onDelegate = async (a, typed, thread)')
     d_end = bare.find('const onCoffee = (a)')
     check('the delegate region lifts', -1 < d_at < d_end)
     region = bare[d_at:d_end] if -1 < d_at < d_end else ''

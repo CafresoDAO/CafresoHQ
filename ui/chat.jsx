@@ -1524,7 +1524,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                    mid-reply and the boss chose "Let them finish") puts the
                    typed text back — the gesture was cancelled, not spent. */
                 const typed = input; setShowDelegate(false); setInput('');
-                const ok = await onDelegate(a, typed);
+                const ok = await onDelegate(a, typed, activeThread);
                 if (ok === false) setInput(typed);
               }}>
                 <Sprite data={a.color} scale={1}/>

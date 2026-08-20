@@ -53,7 +53,7 @@ def check(name, cond, detail=''):
 src = APP.read_text(encoding='utf-8')
 print('delegate — the office hands over what was asked, or says there is nothing')
 
-fn = re.search(r'const onDelegate = async \(a, typed\) => \{[\s\S]*?\n  \};', src)
+fn = re.search(r'const onDelegate = async \(a, typed, thread\) => \{[\s\S]*?\n  \};', src)
 check('the delegate path is still where it was', bool(fn),
       'app.jsx: could not find onDelegate')
 body = fn.group(0) if fn else ''

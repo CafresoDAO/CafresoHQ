@@ -56,7 +56,7 @@ def main():
     check('the busy-desk door exists once', bare.count(DOOR) == 1,
           f'{bare.count(DOOR)} sites')
     door_at = bare.find(DOOR)
-    deleg_at = bare.find('const onDelegate = async (a, typed) => {')
+    deleg_at = bare.find('const onDelegate = async (a, typed, thread) => {')
     check('onDelegate is async (the door awaits a dialog)', deleg_at != -1)
     if door_at != -1 and deleg_at != -1:
         brief_guard = bare.find('(nothing to hand ${a.name} yet', deleg_at)
@@ -81,7 +81,7 @@ def main():
 
     # ── the picker keeps the boss's words on decline ────────────────────
     check('the picker restores typed text when the boss declines',
-          'const ok = await onDelegate(a, typed);' in cbare
+          'const ok = await onDelegate(a, typed, activeThread);' in cbare
           and 'if (ok === false) setInput(typed);' in cbare,
           "the old onClick discarded input before onDelegate could answer")
     check('the picker closes before the dialog, not after the stream',

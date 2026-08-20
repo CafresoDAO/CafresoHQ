@@ -18838,3 +18838,100 @@ enough" surface not to obviously need the same treatment. Any component
 that reads the shared `chat` array directly, rather than going through
 `ui/chat.jsx`, is a candidate for this exact gap and is worth grepping
 for.
+
+### The Delegate button's hand-offs silently relocated to the Direct tab — 2026-08-19
+
+The chat composer's Delegate button ("HAND OFF TO…") isn't Direct-only —
+`ui/chat.jsx`'s own `isReadOnly = activeThread === 'team' ||
+activeThread === 'research'` only turns the whole composer (Delegate
+included) off in Team and Research; it's reachable from Direct, any
+project room, and any meeting room. But `app.jsx`'s `onDelegate` handler
+had no idea which of those rooms it was called from:
+
+- With an empty composer, it fell back to "whatever the boss last
+  typed" by scanning the ENTIRE cross-thread `chat` array
+  (`[...chat].reverse().find(m => m.from === 'user' && !m.delegated)`)
+  — not just the active room's — so delegating from a project or
+  meeting room with an empty box could hand off unrelated text typed
+  earlier in Direct.
+- It pushed its own confirmation bubble and the coworker's streaming
+  reply with no `thread` field at all. `ui/chat.jsx`'s `visibleChat`
+  filter treats an untagged message as `'direct'`
+  (`(m.thread || 'direct') === activeThread`), so every hand-off made
+  from a project or meeting room vanished from that room and
+  resurfaced under Direct instead.
+- The DM-continuation dispatch hardcoded `originThread: 'direct'`, so
+  even a genuine depth-cap failure notice for the delegated coworker's
+  own DM chain would misfile into Direct rather than the room the
+  hand-off actually happened in.
+
+`ui/chat.jsx` already carries the fix for exactly this class of bug,
+one button over, on "Ask this again": it scans only the clicked
+message's own thread (`const mThread = m.thread || 'direct';` then
+`(chat[i].thread || 'direct') === mThread`) rather than walking the
+whole array. This is precisely the pattern task #44's ledger entry
+asked to be grepped for elsewhere ("any component that reads the
+shared `chat` array directly, rather than going through `ui/chat.jsx`,
+is a candidate for this exact gap") — a background hunt dispatched for
+that specific purpose found `onDelegate` as the next instance.
+
+**Repro.** Open a project room, delegate a task to a coworker with a
+custom brief. The hand-off confirmation and the coworker's reply never
+appear in the project room — they show up under the Direct tab
+instead.
+
+**The fix** threads the active thread through the one call site
+(`ui/chat.jsx`'s picker now calls `onDelegate(a, typed, activeThread)`)
+into the handler's new signature, `onDelegate = async (a, typed,
+thread) => {`, which resolves `const t = thread || 'direct'` — the
+same fallback convention used everywhere else in the app — and uses
+`t` to scope the last-user scan and tag every message the hand-off
+creates: the confirmation bubble, the coworker's reply, the "nothing
+to hand off yet" notice, the "run was stopped" notice, and the "no
+such teammate is hired" notice, plus `originThread: t` (was `'direct'`)
+in the DM-continuation dispatch.
+
+**Test coverage.** New:
+`scripts/test_delegate_button_was_thread_blind.py`, 15 checks.
+Confirms the call-site change, the handler's new signature and `t`
+resolution, the scoped `lastUser` scan, all five `thread: t`/
+`originThread: t` tag sites, and the old hardcode's removal — then
+drives the real `lastUser` scan expression (lifted verbatim, not
+reimplemented) against a mock chat array mixing a stale direct-thread
+message, a delegated-wrapper message, and a genuine project-thread ask
+in the same project thread, confirming a `direct` scope finds the
+direct message while a `project:p1` scope finds the real project ask
+and correctly skips the delegated-wrapper message sharing that same
+thread.
+
+**Existing tests updated.** Five earlier tickets' tests pin
+`onDelegate`'s exact signature and its last-ask scan expression's exact
+text as regression anchors, and adding the `thread` parameter plus the
+`(m.thread || 'direct') === t` clause broke five literal-string/regex
+matches — none of the behavior underneath: `test_a_handoff_asks_
+before_stopping.py`, `test_a_handoff_leaves_a_record.py`,
+`test_a_stage_direction_is_not_the_boss.py`,
+`test_delegate_says_only_what_was_asked.py`, and
+`test_the_specialist_sees_the_current_conversation.py`. Each was
+updated to match the extended signature/expression, not weakened —
+`test_a_stage_direction_is_not_the_boss.py`'s lifted-harness copy of
+the finder also needed a `const t = 'direct';` defined alongside it,
+since every mock message in that suite is untagged and therefore
+already scopes to `'direct'` — the #45 room-scoping is a no-op across
+its single-room fixtures, so pinning `t` there keeps that suite about
+attribution voice, not rooms. All five pass again, assertions intact.
+
+Fire-tested 4 arms — reverting the call site's `activeThread` arg, the
+scoped `lastUser` condition, one write-side `thread: t` tag, and the
+`originThread: t` dispatch back to its old hardcode — 4/4 caught,
+post-restore baseline byte-identical to both pre-edit backups. Full
+suite: 231/231 (up from 230/230; one new file — the five updated
+suites are part of the same 231, not additions).
+
+**Lesson.** The predicted recurrence from #44's ledger entry landed on
+the first targeted sweep. `chat` has no type-level thread scoping — a
+handler can read or write it without ever being reminded that a
+`thread` field exists — so this gap likely has more instances. Worth
+grepping repo-wide for every `setChat(prev => [...prev,` or
+`chat.reverse().find`/`chat.filter` call site not already confirmed to
+carry a `(m.thread || 'direct')` condition.

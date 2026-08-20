@@ -3987,7 +3987,15 @@ ${d.text}` : d.text,
     };
   }, []);
 
-  const onDelegate = async (a, typed) => {
+  const onDelegate = async (a, typed, thread) => {
+    /* Which room this hand-off happened in — Delegate is reachable from
+       Direct, any project room, and any meeting room (ui/chat.jsx only
+       gates it off in Team/Research), but this handler used to have no
+       idea which one: it read the boss's last message across the WHOLE
+       cross-thread chat array, and filed the hand-off's own bubbles with
+       no thread tag at all, so they only ever surfaced under Direct. Same
+       fix "Ask this again" (ui/chat.jsx) already applies per-message. */
+    const t = thread || 'direct';
     /* What the boss just TYPED wins. This used to read only the last user
        message in chat, so a boss who wrote a request, opened HAND OFF TO…
        and picked a coworker had their text silently dropped and something
@@ -3999,7 +4007,7 @@ ${d.text}` : d.text,
        `(delegated "(delegated "(delegated "(delegated "…" to Nova)" …`
        and the coworker received the stack. Seen on the floor, four deep.
        `delegated: true` marks these so they are never picked up as an ask. */
-    const lastUser = [...chat].reverse().find(m => m.from === 'user' && !m.delegated);
+    const lastUser = [...chat].reverse().find(m => m.from === 'user' && !m.delegated && (m.thread || 'direct') === t);
     const brief = (typed && typed.trim()) || (lastUser ? lastUser.text : '');
     /* With nothing typed and nothing said, there is nothing to hand off,
        and the office must say so rather than invent one.
@@ -4029,7 +4037,7 @@ ${d.text}` : d.text,
        work that does not exist. */
     if (!brief.trim()) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `(nothing to hand ${a.name} yet — type what you'd like them to do, then pick them again.)` }]);
+        text: `(nothing to hand ${a.name} yet — type what you'd like them to do, then pick them again.)`, thread: t }]);
       return;
     }
     /* A hand-off aimed at a desk that is mid-reply. beginAgentRun below
@@ -4066,9 +4074,9 @@ ${d.text}` : d.text,
       body: brief, priority: 'med',
     });
     MessageRegistry.transition(messageId, 'delivered', { by: 'host' });
-    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})` };
+    const userMsg = { id: HQ.uid('m'), from: 'user', name: 'You', delegated: true, text: `(delegated "${brief}" to ${a.name})`, thread: t };
     const agentId = HQ.uid('m');
-    setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true }]);
+    setChat(prev => [...prev, userMsg, { id: agentId, from: 'agent', name: `${a.name} · ${a.role}`, text: '', streaming: true, thread: t }]);
     onUpdateAgent(a.id, { status: 'busy', mood: 'thinking', task: brief.slice(0, 40) });
     say(`Delegated to ${a.name}`, 'HANDOFF');
     let usedTokens = 0;
@@ -4249,7 +4257,7 @@ ${d.text}` : d.text,
        nothing, and the boss hears what the stop ate. */
     if (aborted && dmQueue.length) {
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-        text: `(${a.name} had ${dmQueue.length} note${dmQueue.length === 1 ? '' : 's'} queued for teammates — not sent: the run was stopped.)` }]);
+        text: `(${a.name} had ${dmQueue.length} note${dmQueue.length === 1 ? '' : 's'} queued for teammates — not sent: the run was stopped.)`, thread: t }]);
       dmQueue.length = 0;
     }
     // Continue any DMs the delegated agent initiated to peers.
@@ -4260,12 +4268,14 @@ ${d.text}` : d.text,
         /* parentMessageId chains the child record to the hand-off's own —
            without it every DM a delegated coworker sent started a fresh,
            unlinked thread and "what happened to that hand-off?" lost the
-           trail one hop in. */
+           trail one hop in. originThread: t (not a hardcoded 'direct') so
+           a depth-cap failure notice comes back to the room this hand-off
+           actually happened in. */
         await dispatchToAgent(target, dm.body, { dmFrom: a, dmDepth: 1,
-          originThread: 'direct', originAgentId: a.id, parentMessageId: messageId });
+          originThread: t, originAgentId: a.id, parentMessageId: messageId });
       } else if (!target) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-          text: `(${a.name} tried to DM "${dm.to}" but no such teammate is hired)` }]);
+          text: `(${a.name} tried to DM "${dm.to}" but no such teammate is hired)`, thread: t }]);
       }
     }
   };

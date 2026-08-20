@@ -148,7 +148,7 @@ def main():
     # cannot read the snapshot is a function the panel calls back into later.
     for label, opener in (
         ('the @mention dispatcher', 'const dispatchToAgent = async (agent, prompt, opts = {}) => {'),
-        ('the delegate dispatcher', 'const onDelegate = async (a, typed) => {'),
+        ('the delegate dispatcher', 'const onDelegate = async (a, typed, thread) => {'),
     ):
         body = brace_lift(app, opener)
         check(label + ' reads the ref',
