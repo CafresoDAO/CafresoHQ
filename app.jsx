@@ -6340,14 +6340,21 @@ ${d.text}` : d.text,
       agents={agents}
       chat={chat}
       onDmAgent={(agent) => {
-        // Open chat thread + prefill composer with @-mention
-        goTo('visual');
-        try { localStorage.setItem(k('composer_prefill'), '@' + (agent.name || '') + ' '); } catch(_e) {}
+        // Same cafresohq:set-active-thread + cafresohq:prefill-composer
+        // bridge onAssignTaskToChat/InspectPanel's onMessage already use —
+        // not goTo('visual') (the Office floor, not chat) plus a
+        // localStorage key nothing ever reads.
+        goTo('chat');
+        window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' }));
+        window.dispatchEvent(new CustomEvent('cafresohq:prefill-composer', { detail: '@' + (agent.name || '') + ' ' }));
         if (window.cafresohqToast) window.cafresohqToast.info(`Composer ready for @${agent.name}`);
       }}
       onJumpToMessage={(msg) => {
-        // Switch to chat view and toast the matched line
-        goTo('visual');
+        // goTo('chat'), not goTo('visual') — and land on the message's own
+        // thread so the toast's "From X:" preview corresponds to what's
+        // actually on screen once chat opens.
+        goTo('chat');
+        window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: msg.thread || 'direct' }));
         if (window.cafresohqToast) window.cafresohqToast.info(`From ${msg.name}: ${String(msg.text || '').slice(0, 80)}…`, { duration: 6000 });
       }}
       messages={messages}

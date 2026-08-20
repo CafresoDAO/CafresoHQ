@@ -18679,3 +18679,90 @@ site, grep every other place that touches the same setter before
 declaring the leak closed — exactly the discipline task #38's ledger
 entry already named for `clipboard.writeText`, now confirmed to apply to
 `setSelectedId`/`setSelected` just as much.
+
+### The command palette's "DM @agent" and "jump to message" opened the Office floor, not chat — and could close an already-open chat panel — 2026-08-19
+
+`app/commands.jsx` builds one "DM @Name" palette entry per hired
+coworker and one "jump" entry per of the last 25 chat messages (lines
+137-153), wired to `onDmAgent`/`onJumpToMessage` in `app.jsx`. Both
+handlers called `goTo('visual')` — the Office floor view (`case
+'visual'` in the view switch), a completely different screen from
+`case 'chat'`.
+
+`onDmAgent` additionally wrote
+`localStorage.setItem(k('composer_prefill'), '@' + agent.name + ' ')`.
+A repo-wide grep for `composer_prefill` turned up exactly that one
+line — nothing else in the codebase ever reads it. The real, working
+bridge for this exact feature already exists and is used twice
+elsewhere in the same file: `onAssignTaskToChat` (the Tasks view's "→
+ASSIGN" button) and `InspectPanel`'s `onMessage` action both open chat
+via `window.cafresohqSetChatOpen(true)` /
+`cafresohq:set-active-thread`, and `onAssignTaskToChat` prefills the
+composer by dispatching a `cafresohq:prefill-composer` `CustomEvent`
+that `ui/chat.jsx`'s `ChatPanel` listens for, calling `setInput(text)`
+and focusing the composer. `onDmAgent` reinvented a second, silently
+broken channel sitting right next to two correct ones.
+
+`onJumpToMessage` had the same wrong-view mistake, with no
+`cafresohq:set-active-thread` dispatch at all — so even setting the
+view aside, the referenced message's own thread was never selected.
+`visibleChat` in `ui/chat.jsx` filters strictly by `activeThread`
+(untagged messages default to `'direct'`), so a message that actually
+lives in a `project:<id>`/`meeting:<id>` thread would not even be on
+screen once the panel opened — the toast's "From X: ..." preview was
+the only trace of it.
+
+Worse than a wrong destination: in desktop/windowed mode, `navTo`'s
+`'visual'` branch does `if (view === 'visual') setChatWinOpen(false)`
+— its own comment reads "the office is the wallpaper", and it exists
+specifically to hide the floating chat panel when the boss clicks
+Office. So invoking "DM @agent" from the palette while chat was already
+open actively **closed** it, a beat before toasting "Composer ready for
+@agent". On narrow/mobile viewports the floating `ChatWindow` never
+renders at all (gated on `!isNarrowViewport`), and the full-screen chat
+view needs `activeView === 'chat'` — which `goTo('visual')` never sets
+either, so mobile got no visible path to the composer regardless of
+mode.
+
+**Repro.** Open chat, open the command palette, run "DM @<any hired
+agent>". Chat closes (desktop) or nothing visibly changes (mobile); the
+toast claims the composer is ready; nothing typed lands anywhere,
+because `composer_prefill` is never read.
+
+**The fix** routes both handlers through `goTo('chat')` — the same verb
+the app's own coach-mark's "Open chat" cta and the nav rail's
+`onOpenChat` use, documented at the rail's own call site as "the one
+navigation verb" that "routes chat correctly in BOTH modes" — plus the
+real `cafresohq:set-active-thread`/`cafresohq:prefill-composer` events,
+matching `onAssignTaskToChat`/`onMessage` exactly. `onJumpToMessage` now
+dispatches `cafresohq:set-active-thread` with `msg.thread || 'direct'`
+(the message's own thread, with the same untagged-message fallback
+`visibleChat` itself uses) rather than leaving the thread untouched.
+
+**Test coverage.** New:
+`scripts/test_command_palette_dm_opened_the_office_not_chat.py`, 17
+checks. Confirms the dead `composer_prefill` key is gone; extracts both
+real handler bodies and confirms each calls `goTo('chat')` and not
+`goTo('visual')`; drives both handlers with mocked `goTo`/
+`window.dispatchEvent`/toast, confirming `onDmAgent` fires exactly the
+right `set-active-thread`/`prefill-composer` events with the correct
+`@name` text, and `onJumpToMessage` selects a tagged message's own
+thread (`project:p1`) or falls back to `direct` for an untagged one.
+
+Fire-tested 4 arms — reverting `onDmAgent` to `goTo('visual')` plus the
+dead localStorage write, dropping only its thread-select dispatch,
+reverting `onJumpToMessage` to `goTo('visual')` with no thread dispatch,
+and hardcoding its thread dispatch to `'direct'` regardless of
+`msg.thread` — 4/4 caught, post-restore baseline byte-identical to the
+pre-edit backup. Full suite: 229/229 (up from 228/228; one new file).
+
+**Lesson.** Both broken handlers sat in the same file as two correct
+implementations of the identical feature ("open chat, land on a
+thread, put text in the composer") — `onAssignTaskToChat` and
+`InspectPanel`'s `onMessage`. Neither handler was reusing them; each was
+a fresh, independent reimplementation with its own new (and in this
+case broken) channel. When a feature already has a working
+implementation elsewhere in the same file, a second handler claiming to
+do "the same thing" is worth diffing against it line-for-line before
+trusting it — the working version is usually the fastest way to spot
+what the broken one is missing.
