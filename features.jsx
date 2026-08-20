@@ -700,12 +700,24 @@ function FocusMode({ active, onClose, chat, setChat }) {
         <button className="px-btn secondary" onClick={onClose}>LEAVE ROOM ✕</button>
       </div>
       <div className="focus-chat" ref={ref}>
-        {chat.slice(-12).map(m => (
+        {/* "quiet room · no distractions" is only true if this shows the
+           direct 1:1 alone — chat is the single, app-wide, cross-thread
+           array (team-DM relays, project/meeting rooms, etc. all live in
+           the same list, tagged only by m.thread), so an unfiltered slice
+           surfaced background coworker chatter here right under a "no
+           distractions" banner. Same (m.thread || 'direct') convention
+           ui/chat.jsx's visibleChat already uses for its own Direct tab. */}
+        {chat.filter(m => (m.thread || 'direct') === 'direct').slice(-12).map(m => (
           <div key={m.id} className={`msg ${m.from}`}>
             <div className="who">
               {m.from === 'user'
                 ? <div style={{width:22,height:22,background:'var(--accent-sun)',border:'2px solid var(--ink)',display:'grid',placeItems:'center',fontFamily:'Press Start 2P',fontSize:10}}>B</div>
-                : <Sprite data="cafresohq" scale={1}/>}
+                : m.from === 'ceo'
+                  ? <Sprite data="cafresohq" scale={1}/>
+                  /* A coworker's own direct-thread reply (e.g. a delegated
+                     task) — the CEO's own mascot on it would misattribute
+                     someone else's words as "1:1 WITH CAFRESOHQ". */
+                  : <div style={{width:22,height:22,background:'var(--paper)',border:'2px solid var(--ink)',display:'grid',placeItems:'center',fontFamily:'Press Start 2P',fontSize:10}}>{(m.name || 'A').charAt(0).toUpperCase()}</div>}
             </div>
             <div className="bubble" style={{maxWidth: '70%'}}>
               <div className="name">{m.name}</div>

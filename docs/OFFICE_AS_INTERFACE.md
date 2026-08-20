@@ -18766,3 +18766,75 @@ implementation elsewhere in the same file, a second handler claiming to
 do "the same thing" is worth diffing against it line-for-line before
 trusting it — the working version is usually the fastest way to spot
 what the broken one is missing.
+
+### Focus Mode's "quiet room · no distractions" showed every thread's chatter, wearing the CEO's own icon — 2026-08-19
+
+`features.jsx`'s `FocusMode` — the "1:1 WITH CAFRESOHQ" overlay reached
+from the office sofa, the CEO Panel's "Sit 1:1" quick action, and the
+`f` keyboard shortcut — rendered `chat.slice(-12)` with no thread
+filter at all. `chat` is the single, app-wide, cross-thread message
+array: coworker-to-coworker DM relays, hire proposals, and
+budget/depth-cap notices all get pushed there tagged `thread: 'team'`
+(33 separate call sites in `app.jsx`), alongside `project:<id>` and
+`meeting:<id>` room traffic. None of that is filtered out before it
+lands in a room whose own copy says "no distractions" — a boss who
+steps away and opens the quiet room for a private check-in sees
+whatever background chatter happened to be scrolling by instead.
+
+`ui/chat.jsx` already has the correct pattern for exactly this — its
+`visibleChat` filters by `(m.thread || 'direct') === activeThread` —
+but `FocusMode` never mirrored it; it just took the raw tail of the
+entire array.
+
+Compounding it, the avatar logic drew the CafresoHQ mascot sprite for
+ANY sender that wasn't `from: 'user'` — including real coworkers.
+`from: 'agent'` messages genuinely do land in the (untagged, therefore
+effectively `'direct'`) thread by design: a delegated task's reply
+(`setChat(prev => [...prev, ..., { from: 'agent', name:
+\`${a.name} · ${a.role}\`, ... }])`, no `thread` field) is a real
+coworker speaking, drawn wearing the CEO's own icon inside a room
+titled "1:1 WITH CAFRESOHQ".
+
+**Repro.** Hire two or more agents and let them run for a bit so
+`'team'`-thread relay traffic accumulates. Delegate a task to one
+coworker (lands untagged, in `'direct'`). Sit down for a 1:1 — the
+quiet room shows recent team chatter it has no business showing, and
+the delegated coworker's own reply appears wearing the CafresoHQ
+mascot.
+
+**The fix** filters to `(m.thread || 'direct') === 'direct'` before
+slicing to the last 12, matching `ui/chat.jsx`'s own convention
+exactly, and only shows the CafresoHQ sprite for `m.from === 'ceo'` —
+any other non-user sender that legitimately lands in the direct thread
+(an agent's delegated-task reply) gets a generic first-letter avatar,
+reusing the same visual language as the existing user "B" square,
+instead of the CEO's own icon.
+
+**Test coverage.** New:
+`scripts/test_focus_mode_quiet_room_showed_every_thread.py`, 9 checks.
+Confirms the real filter+slice expression and the CEO-only Sprite
+condition are present in the source, then drives the actual filter
+predicate (lifted verbatim, not reimplemented) against a 7-message mock
+chat spanning `team`/`project`/`meeting`/untagged threads — confirming
+team-thread and project/meeting-thread messages are excluded, the
+untagged user message and the CEO's reply survive, and an untagged
+agent message (the delegated-task case) also survives the filter,
+which is exactly why the avatar fix was necessary on top of the thread
+filter alone.
+
+Fire-tested 2 arms — reverting the thread filter back to a raw
+`chat.slice(-12)`, and reverting the avatar logic back to
+Sprite-for-anything-non-user — 2/2 caught, post-restore baseline
+byte-identical to the pre-edit backup. Full suite: 230/230 (up from
+229/229; one new file).
+
+**Lesson.** `ui/chat.jsx` had already solved "which messages belong in
+this view" correctly, in the same codebase, for the same underlying
+data. `FocusMode` is a second, simpler view over the identical `chat`
+array and needed the identical filter — but because it's a much
+smaller component with its own bespoke rendering (icon avatars instead
+of `ui/chat.jsx`'s text-label `who` column), it read as a "different
+enough" surface not to obviously need the same treatment. Any component
+that reads the shared `chat` array directly, rather than going through
+`ui/chat.jsx`, is a candidate for this exact gap and is worth grepping
+for.
