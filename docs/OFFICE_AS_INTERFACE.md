@@ -18935,3 +18935,64 @@ handler can read or write it without ever being reminded that a
 grepping repo-wide for every `setChat(prev => [...prev,` or
 `chat.reverse().find`/`chat.filter` call site not already confirmed to
 carry a `(m.thread || 'direct')` condition.
+
+## One busy room spent every other room's chat history budget
+
+**Claim vs. reality.** The office keeps every room's transcript —
+Direct, Team, Research, every `project:*` and `meeting:*` room — in ONE
+interleaved array, and both of its size caps were plain slices over
+that shared array:
+
+```js
+// app/storage.jsx — what a reload trusts
+const persistableChat = (xs) => xs.slice(-80).map(...);
+// app.jsx — the live in-memory ceiling
+if (chat.length > 120) setChat(prev => prev.slice(-100));
+```
+
+A slice has no idea threads exist. The newest N messages win no matter
+which room produced them, so the noisiest room spent the entire budget
+and the quiet rooms paid for it with their history.
+
+**Repro.** Measured 2026-08-30 by driving the exact lines above under
+node:
+
+- 20 Direct messages, then a project room streams 90: the saved file
+  held 80 messages — `project:p1: 80, direct: 0`. A reload opened onto
+  an EMPTY Direct room the boss had been talking in that same morning.
+- 40 Direct messages, then the same 90 through the in-memory ceiling:
+  `project:p1: 90, direct: 10` — the live Direct transcript thinning on
+  screen while a meeting ran.
+
+Nothing announced the loss. The room simply had less history than the
+boss remembered, which is the quietest possible lie about the record.
+
+**The fix** is a floor, not a quota. `capChatFair(xs, max, floor = 15)`
+in `app/storage.jsx` still evicts oldest-first — the busy room still
+pays first; it is the one over budget — but skips any message whose
+thread is already down to its last `floor` entries, so a quiet room
+keeps enough of its tail to still read as a conversation. The total may
+exceed `max` by at most threads × floor, bounded by rooms that actually
+have history. The helper returns the SAME array when nothing needs
+dropping so the React setter bails out on reference equality instead of
+looping. Both caps — `persistableChat` and the in-memory ceiling — now
+go through it.
+
+**Test coverage.** New:
+`scripts/test_a_busy_room_does_not_evict_the_quiet_rooms_history.py` —
+5 structural checks (both caps read the helper, no bare slice remains,
+export/import wiring) plus 7 behavioral checks driving the lifted
+helper under node: the measured day now keeps the quiet room at ≥15 on
+both paths, the busy room pays the eviction, kept messages stay in
+order, rooms already at the floor are left alone even over budget, an
+under-budget array comes back reference-identical, and the save cap
+still strips `streaming`/`error`. Fire-tested both arms: reverting the
+save cap to `slice(-80)` fails 3 checks; reverting the ceiling to
+`slice(-100)` fails 2; both restores byte-identical, suite green.
+
+**Lesson.** A cap over a shared structure is a policy decision about
+who loses data, made implicitly. The slice was written when the chat
+had one room; every room added since silently joined a zero-sum budget
+nobody had re-examined. When a structure becomes shared, every
+whole-structure operation on it needs re-reading as a question about
+fairness.

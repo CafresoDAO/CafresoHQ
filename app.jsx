@@ -15,7 +15,7 @@ import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
-import { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
+import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
@@ -1302,8 +1302,11 @@ ${d.text}` : d.text,
   // Hard ceiling on in-memory chat. Streaming setChat calls do prev.map(),
   // which is O(N) per token — keep the array small so that stays cheap.
   // 100 still gives plenty of scrollback (persistableChat caps saves at 80).
+  // Fair eviction, not slice(-100): every room shares this one array, and a
+  // plain slice let the busiest room spend the whole budget — a long meeting
+  // emptied the live Direct transcript on screen.
   useEffectA(() => {
-    if (chat.length > 120) setChat(prev => prev.slice(-100));
+    if (chat.length > 120) setChat(prev => capChatFair(prev, 100));
   }, [chat.length]);
   // Surface localStorage save failures (quota, private mode) as a toast.
   // Throttled so a chatty failure mode doesn't spam.

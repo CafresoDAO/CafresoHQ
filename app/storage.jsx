@@ -286,8 +286,46 @@ const mergeByIdCap = (inMem, fetched, cap = 200) => {
   for (const e of (Array.isArray(inMem) ? inMem : [])) byId.set(e.id, e);
   return [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, cap);
 };
-// Cap chat history at 80 entries so localStorage doesn't bloat.
-const persistableChat = (xs) => xs.slice(-80).map(({ streaming, error, ...rest }) => rest);
+/* Evict oldest-first, but never below `floor` entries per thread.
+   The chat is ONE array interleaving every room (direct, team, project:*,
+   meeting:*, research), and both caps used to be a plain slice(-N) over it —
+   so the budget was shared and the noisiest room spent all of it. Measured:
+   20 direct messages followed by a project room streaming 90 left the saved
+   file with ZERO direct entries; a reload opened onto an empty Direct room
+   the boss had been talking in that same morning. The in-memory ceiling did
+   the same to the live transcript.
+
+   Fairness here is a floor, not a quota: eviction walks oldest-first and
+   skips any message whose thread is already down to its last `floor`
+   entries. A busy room still pays first — it is the one over budget — and a
+   quiet room keeps enough of its tail to still read as a conversation. The
+   total can exceed `max` by at most (threads × floor), which is small and
+   bounded by rooms that actually have history. Returns the SAME array when
+   nothing needs dropping so React state setters can bail out on reference
+   equality. */
+const capChatFair = (xs, max, floor = 15) => {
+  if (!Array.isArray(xs) || xs.length <= max) return xs;
+  const counts = new Map();
+  for (const m of xs) {
+    const t = m.thread || 'direct';
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  const kept = [];
+  let toDrop = xs.length - max;
+  for (const m of xs) {
+    const t = m.thread || 'direct';
+    if (toDrop > 0 && counts.get(t) > floor) {
+      counts.set(t, counts.get(t) - 1);
+      toDrop--;
+      continue;
+    }
+    kept.push(m);
+  }
+  return kept.length === xs.length ? xs : kept;
+};
+// Cap chat history at 80 entries so localStorage doesn't bloat — fairly,
+// per thread, so one busy room can't evict another room's history.
+const persistableChat = (xs) => capChatFair(xs, 80).map(({ streaming, error, ...rest }) => rest);
 
 /* Desk-screen feed: streams an agent's live output tail onto its office
    monitor (OfficeView listens for 'cafresohq:agentScreen'). Throttled to one
@@ -476,4 +514,4 @@ const persistableMessages = (xs) => {
 // the cap two functions up had been quietly disproving. `terminal` states
 // can't be transitioned out of (except via explicit reopen).
 
-export { chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
+export { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
