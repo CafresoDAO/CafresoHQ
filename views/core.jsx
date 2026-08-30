@@ -959,14 +959,22 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
     if (next.has(path)) next.delete(path); else next.add(path);
     return next;
   });
+  /* Rows are divs with onClick, which a keyboard can't reach — Enter/Space
+     activate them the way a click does, and the tree/treeitem roles let a
+     screen reader announce folders as expandable instead of as bare text. */
+  const rowKeys = (fn) => (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+  };
   const renderNode = (n, depth) => {
     if (n.isFolder) {
       const isOpen = expanded.has(n.path);
       return (
         <div key={n.path}>
-          <div className={`tree-row tree-folder ${isOpen?'open':''}`} style={{paddingLeft: 6 + depth * 14}} onClick={()=>toggle(n.path)}>
-            <span className="tree-chev">{isOpen ? '▾' : '▸'}</span>
-            <span className="tree-icon">{isOpen ? '📂' : '📁'}</span>
+          <div className={`tree-row tree-folder ${isOpen?'open':''}`} style={{paddingLeft: 6 + depth * 14}}
+            role="treeitem" aria-expanded={isOpen} tabIndex={0}
+            onClick={()=>toggle(n.path)} onKeyDown={rowKeys(()=>toggle(n.path))}>
+            <span className="tree-chev" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
+            <span className="tree-icon" aria-hidden="true">{isOpen ? '📂' : '📁'}</span>
             <span className="tree-name">{n.name}</span>
           </div>
           {isOpen && n.children.map(c => renderNode(c, depth + 1))}
@@ -988,7 +996,8 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
       <div key={n.path}
         className={`tree-row tree-file ${openPath === n.path ? 'active' : ''}`}
         style={{paddingLeft: 6 + depth * 14 + 14}}
-        onClick={()=>onOpen(n.path)}>
+        role="treeitem" aria-current={openPath === n.path || undefined} tabIndex={0}
+        onClick={()=>onOpen(n.path)} onKeyDown={rowKeys(()=>onOpen(n.path))}>
         <span className="tree-name">{display}</span>
         {isBase && <span className="tree-tag">BASE</span>}
         {binExt && !isBase && <span className="tree-tag">{binExt.toUpperCase()}</span>}
@@ -996,7 +1005,7 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
     );
   };
   return (
-    <div className="tree-root">
+    <div className="tree-root" role="tree" aria-label="Library files">
       {tree.map(c => renderNode(c, 0))}
     </div>
   );

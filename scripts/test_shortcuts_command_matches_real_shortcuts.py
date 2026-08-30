@@ -148,13 +148,28 @@ console.log(JSON.stringify({ called, toasted, label: cmd.label, section: cmd.sec
           all(k == '⌘K' or re.search(r"e\.key === '%s'" % re.escape(k.lower()), app)
               for k in hud_keys),
           hud_keys)
-    check('views/graph.jsx still has no keydown listener of its own — the '
+    # What the removed "/ — graph filter" claim would need is a DOCUMENT-
+    # level keydown listener (a slash typed anywhere on the graph view) or
+    # a '/'-key handler. Element-level onKeyDown props that activate a
+    # focused menu item on Enter/Space are keyboard accessibility, not a
+    # shortcut — they cannot see a '/' typed outside their own element, so
+    # they cannot make the old claim true. Pin the two things that could.
+    check('views/graph.jsx still has no global keydown listener — the '
           '"/ — graph filter" claim would need one and never had one',
-          'onKeyDown' not in graph and "addEventListener('keydown'" not in graph
+          "addEventListener('keydown'" not in graph
           and 'addEventListener("keydown"' not in graph,
-          'views/graph.jsx now has a keydown listener — if a real graph '
-          'filter shortcut was added, this test (and the fix above) should '
-          'be revisited, not just this one check loosened')
+          'views/graph.jsx now has a global keydown listener — if a real '
+          'graph filter shortcut was added, this test (and the fix above) '
+          'should be revisited, not just this one check loosened')
+    check("...and none of its element-level key handlers looks at '/'",
+          not re.search(r"key === '/'|key === \"/\"", graph),
+          "a '/'-branch inside an element handler would be the shortcut "
+          'sneaking back in under the accessibility flag')
+    check('...and its element-level handlers are activation only '
+          '(Enter/Space), which a shortcut cannot ride',
+          all("'Enter'" in m or '"Enter"' in m
+              for m in re.findall(r'onKeyDown: \(ev\) => \{[^\n]*', graph)),
+          re.findall(r'onKeyDown: \(ev\) => \{[^\n]*', graph))
     check("no 'p'/'P'/KeyP handler exists anywhere in app.jsx — the "
           '"⌘P — graph palette" claim never had one either',
           not re.search(r"e\.key\.toLowerCase\(\) === 'p'|e\.key === 'p'|e\.key === 'P'|code === 'KeyP'", app),

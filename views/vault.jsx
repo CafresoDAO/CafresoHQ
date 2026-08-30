@@ -176,6 +176,34 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      genuinely good power feature and it is one tap away — but it cannot be
      the answer to "where is my document". */
   const [vaultTab, setVaultTab] = useSV(_isMobileV ? 'tree' : null); // 'tree' | 'graph' | 'editor'
+  /* Kind filter for the tree — the Library holds notes, decks, documents
+     and research side by side now, and a boss looking for "the deck" should
+     not have to scan past every note to find it. Chips, not a dropdown:
+     one glance shows which kinds exist here at all (a chip only renders
+     when the Library holds at least one file of its kind). The tree is
+     rebuilt from the filtered list, so a folder with nothing matching
+     drops out with its contents — an empty shelf under a filter is
+     noise, not orientation. */
+  const [kindFilter, setKindFilter] = useSV('all');
+  const VAULT_KINDS = [
+    ['all',   'ALL',   () => true],
+    ['notes', 'NOTES', (f) => !f.isBinary],
+    ['decks', 'DECKS', (f) => /\.(pptx?|key|odp)$/i.test(f.path)],
+    ['docs',  'DOCS',  (f) => /\.(docx?|odt|rtf|pages|pdf)$/i.test(f.path)],
+    ['data',  'DATA',  (f) => /\.(xlsx?|ods|numbers|csv|json|base)$/i.test(f.path)],
+    ['media', 'MEDIA', (f) => /\.(png|jpe?g|gif|webp|bmp|avif|svg|mp3|wav|m4a|mp4|mov|webm)$/i.test(f.path)],
+  ];
+  const kindPred = (VAULT_KINDS.find(([id]) => id === kindFilter) || VAULT_KINDS[0])[2];
+  const kindFiles = kindFilter === 'all' ? files : files.filter(kindPred);
+  const kindChips = (
+    <div style={{display:'flex',gap:4,flexWrap:'wrap',padding:'4px 0'}} role="group" aria-label="Filter the Library by kind">
+      {VAULT_KINDS.filter(([id, _l, pred]) => id === 'all' || files.some(pred)).map(([id, label]) => (
+        <button key={id} className={'px-btn ' + (kindFilter === id ? 'primary' : 'ghost')}
+          style={{fontSize:8,padding:'3px 7px'}} aria-pressed={kindFilter === id}
+          onClick={() => setKindFilter(id)}>{label}</button>
+      ))}
+    </div>
+  );
 
   // ── Bridge mode: when running inside the SvelteKit shell iframe, all vault
   // reads/writes go through VaultBridge (postMessage → parent decrypts).
@@ -740,7 +768,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
               </div>
               <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
-                <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
+                <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
                 <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>{'🔎'} SEARCH</button>
               </div>
               {hits ? (
@@ -750,14 +778,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                     <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>{'✕'}</button>
                   </div>
                   {hits.map(h => (
-                    <div key={h.path} className="tree-row tree-file" onClick={()=>{ mobileOpenByPath(h.path); }}>
+                    <div key={h.path} className="tree-row tree-file" role="button" tabIndex={0}
+                      onClick={()=>{ mobileOpenByPath(h.path); }}
+                      onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); mobileOpenByPath(h.path); } }}>
                       <span className="tree-name">{h.title || h.path}</span>
                       <span style={{fontSize:9,opacity:0.6}}>{(h.score*100).toFixed(1)}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <FolderTree files={files} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} />
+                <>
+                  {kindChips}
+                  <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} />
+                </>
               )}
             </div>
           )}
@@ -823,7 +856,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
         </div>
         <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
-          <input style={{width:'100%',boxSizing:'border-box'}} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
+          <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
           <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>🔎 SEARCH</button>
         </div>
         {hits ? (
@@ -833,14 +866,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>✕</button>
             </div>
             {hits.map(h => (
-              <div key={h.path} className="tree-row tree-file" onClick={()=>openByPath(h.path)}>
+              <div key={h.path} className="tree-row tree-file" role="button" tabIndex={0}
+                onClick={()=>openByPath(h.path)}
+                onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); openByPath(h.path); } }}>
                 <span className="tree-name">{h.title || h.path}</span>
                 <span style={{fontSize:9,opacity:0.6}}>{(h.score*100).toFixed(1)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <FolderTree files={files} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} />
+          <>
+            {kindChips}
+            <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} />
+          </>
         )}
       </div>
 
@@ -892,7 +930,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       )}
 
       {graphMinimized && !hasNote && (
-        <div className="vault-graph-pane fullspan" style={{display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}} onClick={() => setGraphMinimized(false)}>
+        <div className="vault-graph-pane fullspan" role="button" tabIndex={0}
+          style={{display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}
+          onClick={() => setGraphMinimized(false)}
+          onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); setGraphMinimized(false); } }}>
           <span style={{fontSize:11,opacity:0.5}}>🧠 LIBRARY GRAPH (click to show)</span>
         </div>
       )}

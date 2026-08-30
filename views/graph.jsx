@@ -362,7 +362,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       React.createElement('button', { onClick: publish, title: 'Publish a shareable public graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, sharing ? 'Publishing…' : '⤴ Share'),
       React.createElement('div', { style: { flex: 1 } }),
       React.createElement('button', { onClick: () => setPanelOpen((v) => !v), style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, panelOpen ? 'Hide analytics ›' : '‹ Analytics'),
-      onMinimize && React.createElement('button', { onClick: onMinimize, style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '✕'),
+      onMinimize && React.createElement('button', { onClick: onMinimize, 'aria-label': 'Minimize graph', title: 'Minimize graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '✕'),
     ),
 
     // Analytics side panel (InfraNodus-style).
@@ -428,7 +428,10 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         (analytics.topInfluential || []).length > 0 && React.createElement(React.Fragment, null,
           React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
           (analytics.topInfluential || []).slice(0, 6).map((t) =>
-            React.createElement('div', { key: t.id, onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); }, title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+            React.createElement('div', { key: t.id, role: 'button', tabIndex: 0,
+              onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); },
+              onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); const e = engineRef.current; if (e) e.focusNode(t.id); } },
+              title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
               '◆ ' + titleFor(t.id)))),
 
         // Topical clusters. Conditional for the same reason as the heading
@@ -481,12 +484,14 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     ),
 
     // Node context menu.
-    ctxMenu && React.createElement('div', { style: { position: 'fixed', left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 170), top: ctxMenu.y, zIndex: 50, background: 'rgba(28,24,16,0.97)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 8, padding: 4, minWidth: 150, font: '12px Inter, sans-serif', color: '#e9e2d4' },
+    ctxMenu && React.createElement('div', { role: 'menu', 'aria-label': 'Node actions', style: { position: 'fixed', left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 170), top: ctxMenu.y, zIndex: 50, background: 'rgba(28,24,16,0.97)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 8, padding: 4, minWidth: 150, font: '12px Inter, sans-serif', color: '#e9e2d4' },
       onMouseLeave: () => setCtxMenu(null) },
       [...(source === 'links' ? [['Open note', () => { onOpenNote && onOpenNote(ctxMenu.id); setCtxMenu(null); }]] : []),
        ['Focus', () => { const e = engineRef.current; if (e) e.focusNode(ctxMenu.id); setCtxMenu(null); }],
        ['Hide node', () => { const e = engineRef.current; if (e) { const s = new Set(e.hidden); s.add(ctxMenu.id); e.setHidden(s); } setCtxMenu(null); }]]
-        .map(([label, fn]) => React.createElement('div', { key: label, onClick: fn, style: { padding: '6px 10px', cursor: 'pointer', borderRadius: 5 }, onMouseEnter: (ev) => ev.currentTarget.style.background = 'rgba(245,210,93,0.14)', onMouseLeave: (ev) => ev.currentTarget.style.background = 'transparent' }, label))),
+        .map(([label, fn]) => React.createElement('div', { key: label, role: 'menuitem', tabIndex: 0, onClick: fn,
+          onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } },
+          style: { padding: '6px 10px', cursor: 'pointer', borderRadius: 5 }, onMouseEnter: (ev) => ev.currentTarget.style.background = 'rgba(245,210,93,0.14)', onMouseLeave: (ev) => ev.currentTarget.style.background = 'transparent' }, label))),
 
     // Share modal.
     shareUrl && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 420, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
