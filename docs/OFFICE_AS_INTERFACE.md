@@ -19652,3 +19652,22 @@ believing it works.
   chart.png — which don't actually collide, because an artifact's
   completion keeps its extension. The test caught my wrong EXPECTATION,
   not wrong code; the fix was a truthful seed (two notes, one stem).
+
+### An Obsidian embed is an image, not a stray '!'
+- **Claim vs. reality**: the vault ships an Obsidian backend, and
+  Obsidian writes every image as `![[file]]` — which the renderer's
+  `[[` arm ate, stranding a '!' beside a chip; the graph filed the
+  relationship as a generic link; the picture never showed.
+- **Fix**: a `![[ ]]` renderer arm that runs first — a target the
+  caller resolves to an image renders through /vault/file, everything
+  else becomes the same door chip a wikilink gets. Resolution is
+  opts.resolveEmbed backed by `_wikiResolvePath`, the ONE matching rule
+  the click-time opener now shares. kg_builder types a '!'-prefixed
+  wikilink as an `embeds` edge, same as `![](src)`.
+- **Test coverage**: `scripts/test_an_obsidian_embed_is_an_image_not_a_stray_bang.py`
+  (12 checks; renderer + resolver node-run, kg run against a tempdir
+  vault; 4 arms fire-tested).
+- **Lesson**: the click-opener and the renderer each had their own
+  copy of "what does this name resolve to" — one rule, two owners, and
+  the embed arm would have made a third. Extract the rule FIRST, then
+  add the feature on top of it.

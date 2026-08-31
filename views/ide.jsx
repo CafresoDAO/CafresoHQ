@@ -28,6 +28,27 @@ function renderMarkdown(text, opts) {
        decoration — carry the target so the caller's click handler can
        open it. Elsewhere (IDE file preview) there is nothing to open
        into, so the plain chip stands and nothing looks clickable. */
+    /* Obsidian-flavored embeds — ![[file]] / ![[file|alt]] — are how the
+       vault's own Obsidian backend writes every image. The bare [[ arm
+       below would eat the brackets and strand the '!'. Resolution needs
+       the file list, which only the caller has: opts.resolveEmbed maps a
+       target to a vault path (the same matching the click-time opener
+       uses). A resolved image renders through /vault/file like any
+       embed; everything else stays a door chip — never a stray '!'. */
+    s = s.replace(/!\[\[(.+?)\]\]/g, (_m, innerTxt) => {
+      const parts = innerTxt.split('|');
+      const target = parts[0].split('#')[0].trim();
+      const shown = (parts[1] || parts[0]).trim();
+      const p = opts.resolveEmbed ? opts.resolveEmbed(target) : null;
+      if (p && /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(p))
+        return '<img class="md-img" src="/vault/file?path='
+             + encodeURIComponent(p).replace(/"/g, '&quot;')
+             + '" alt="' + shown.replace(/"/g, '&quot;') + '" style="max-width:100%">';
+      if (!opts.wikilinks) return '<span class="md-tag">' + innerTxt + '</span>';
+      return '<span class="md-tag md-wikilink" style="cursor:pointer" '
+           + 'title="Open in the Library" data-wikilink="'
+           + target.replace(/"/g, '&quot;') + '">' + shown + '</span>';
+    });
     s = s.replace(/\[\[(.+?)\]\]/g, (_m, innerTxt) => {
       if (!opts.wikilinks) return '<span class="md-tag">' + innerTxt + '</span>';
       const parts = innerTxt.split('|');

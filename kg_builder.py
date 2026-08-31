@@ -413,6 +413,12 @@ def _extract_typed_edges(rel: str, text: str, all_paths: dict):
             tgt = _norm_link(m.group(1), all_paths)
             if not tgt or tgt == rel:
                 continue
+            # Obsidian's ![[file]] is an EMBED, not a mention — same edge
+            # type the ![](src) parser below yields, so the graph doesn't
+            # split one relationship across two names.
+            if m.start() > 0 and line[m.start() - 1] == '!':
+                yield (tgt, 'embeds', 0.95, line.strip())
+                continue
             ctx = {
                 'callout': callout_type,
                 'prefix': prefix,

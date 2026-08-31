@@ -42,8 +42,9 @@ def main():
     j = src.index('const renameNote = async', i)
     body = src[i:j]
 
+    # resolution now flows through the shared _wikiResolvePath rule
     check('a live link still just opens',
-          'if (hit) { await openByPath(hit.path); return; }' in body)
+          'if (hitPath) { await openByPath(hitPath); return; }' in body)
     check('the dead branch asks before creating',
           re.search(r'hqConfirm\(`"\$\{target\}" isn\'t in the Library yet '
                     r'— create it\?`\)', body))

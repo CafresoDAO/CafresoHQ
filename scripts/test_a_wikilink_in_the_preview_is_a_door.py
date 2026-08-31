@@ -83,15 +83,16 @@ def main():
     check('both Library previews pass wikilinks:true and delegate clicks',
           vault.count('onClick={onPreviewClick} dangerouslySetInnerHTML='
                       '{{ __html: renderMarkdown(openNote.content, '
-                      '{ wikilinks: true }) }}') == 2)
+                      '{ wikilinks: true, resolveEmbed:') == 2)
     check('...and the combined handler still opens the door',
           'await openWikilink(e);' in brace_lift(
               vault, 'const onPreviewClick = async (e) =>'))
     handler = brace_lift(vault, 'const openWikilink = async (e) => {')
-    check('the handler resolves by full path or basename, ±.md',
-          "p === lower || p === lower + '.md'" in handler
-          and "base === lower || base === lower + '.md'" in handler)
-    check('a resolved link opens the note', 'openByPath(hit.path)' in handler)
+    # Resolution moved to the shared _wikiResolvePath (the ![[embed]] arm
+    # uses the same rule — test_an_obsidian_embed_… pins its matching).
+    check('the handler resolves through the one shared rule',
+          '_wikiResolvePath(files, target)' in handler)
+    check('a resolved link opens the note', 'openByPath(hitPath)' in handler)
     check('a dead link is said out loud, not swallowed',
           "isn't in the Library yet" in handler)
 

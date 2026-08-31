@@ -97,6 +97,20 @@ const _caretXY = (ta, caret) => {
   return out;
 };
 
+/* The ONE matching rule for resolving a wikilink target to a file —
+   shared by the click-time opener and the renderer's ![[embed]] arm,
+   so what a click opens and what an embed shows can never disagree. */
+const _wikiResolvePath = (files, target) => {
+  const lower = String(target).trim().toLowerCase();
+  const hit = files.find(f => {
+    const p = String(f.path).toLowerCase();
+    const base = p.split('/').pop();
+    return p === lower || p === lower + '.md'
+        || base === lower || base === lower + '.md';
+  });
+  return hit ? hit.path : null;
+};
+
 const _hiddenMsg = (part) =>
   `Hidden files can't be filed here — the Library never lists anything under "${part}". Drop the leading dot so the note stays visible.`;
 
@@ -824,14 +838,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!el) return;
     const target = String(el.getAttribute('data-wikilink') || '').trim();
     if (!target) return;
-    const lower = target.toLowerCase();
-    const hit = files.find(f => {
-      const p = String(f.path).toLowerCase();
-      const base = p.split('/').pop();
-      return p === lower || p === lower + '.md'
-          || base === lower || base === lower + '.md';
-    });
-    if (hit) { await openByPath(hit.path); return; }
+    const hitPath = _wikiResolvePath(files, target);
+    if (hitPath) { await openByPath(hitPath); return; }
     /* A dead link is where the NEXT note gets born in a linked library —
        a toast alone was a dead end. Offer the create; on yes, open the
        same empty dirty buffer newNote opens (the quiet autosave files
@@ -1222,7 +1230,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ) : preview ? (
                 _isHtmlPath(openNote.path)
                   ? <HtmlFramePreview html={openNote.content} />
-                  : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
+                  : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true, resolveEmbed: (tg) => _wikiResolvePath(files, tg) }) }} />
               ) : (
                 <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
               )}
@@ -1310,7 +1318,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           ) : preview ? (
             _isHtmlPath(openNote.path)
               ? <HtmlFramePreview html={openNote.content} />
-              : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
+              : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true, resolveEmbed: (tg) => _wikiResolvePath(files, tg) }) }} />
           ) : (
             <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
           )}
