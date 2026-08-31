@@ -119,6 +119,10 @@ const setSaveState = () => {};
 const refresh = async () => {};
 const CafresoHQClient = { vaultRename: async (a, b) => renames.push([a, b]) };
 const saveNoteRef = { current: async () => {} };
+// newNote now checks the file list before opening a buffer (see
+// test_new_note_wont_pave_over_an_old_one.py); empty list = fresh vault.
+const files = [];
+const openByPath = async (p) => opened.push({ openedExisting: p });
 globalThis.window = globalThis;
 """
 

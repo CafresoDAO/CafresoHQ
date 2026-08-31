@@ -19319,3 +19319,30 @@ on the office-edge exclusion.
 **Lesson.** A confirm dialog is the last honest moment before an
 irreversible act; whatever the system knows about the blast radius
 belongs in that sentence, not in the postmortem.
+
+## New note won't pave over an old one
+
+**Claim vs. reality.** ➕ New note asked for a path and "created" a
+note there. If a note already lived at that path, what it actually
+did was open an EMPTY buffer flagged dirty over it — and the 2.5s
+quiet autosave filed the empty buffer. The existing note's whole
+content, gone in 2.5 seconds, zero keystrokes, no message. Reproduced
+live: seeded clobber-me.md with real content, typed its path into New
+note, and four seconds later the file read back empty.
+
+**Fix.** newNote checks the file list before opening the buffer —
+case-insensitively, because the shipping fs backend sits on a
+case-insensitive disk where the write clobbers either way — and on a
+match says '"x.md" already exists — opening it instead.' and opens
+the real note. The empty dirty buffer now only ever opens at a path
+no file holds. Verified live both ways: existing path warns and opens
+intact past the autosave window; fresh path still creates.
+
+**Test coverage.**
+`scripts/test_new_note_wont_pave_over_an_old_one.py`; fire-tested by
+deleting the guard (5 of 6 checks went red, including the
+guard-precedes-dirty-buffer order pin).
+
+**Lesson.** "Create" at an occupied name is never a create; every
+path the user types is a claim about the world that must be checked
+against it before a dirty buffer — and an autosave — makes it true.

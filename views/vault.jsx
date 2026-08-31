@@ -615,6 +615,17 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     const hidden = _hiddenPart(path);
     if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
     const norm = path.endsWith('.md') ? path : path + '.md';
+    /* An existing path here used to open an EMPTY dirty buffer over the
+       real note, and the 2.5s quiet autosave filed it — the note's whole
+       content gone, zero keystrokes, no message. Reproduced live before
+       this guard. Case-insensitive because the shipping fs backend sits
+       on a case-insensitive disk, where the write clobbers either way. */
+    const existing = files.find(f => String(f.path).toLowerCase() === norm.toLowerCase());
+    if (existing) {
+      say(`"${existing.path}" already exists — opening it instead.`, 'info');
+      await openByPath(existing.path);
+      return;
+    }
     // id is null for new notes — saveNote() will call bridge.create()
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
   };
