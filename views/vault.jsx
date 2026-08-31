@@ -582,7 +582,22 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const deleteNote = async () => {
     const n = openNoteRef.current;
     if (!n) return;
-    if (!(await window.hqConfirm(`Delete "${n.path}"? This cannot be undone.`, { danger: true }))) return;
+    /* Renames follow inbound [[wikilinks]] now; deletes can't — so the
+       confirm names the damage before it happens. The count comes from
+       the graph engine's last snapshot (note→note edges only: office
+       nodes like tasks and receipts aren't wikilinks and can't go
+       dead). Best-effort — with no snapshot the plain confirm stands. */
+    let confirmMsg = `Delete "${n.path}"? This cannot be undone.`;
+    try {
+      const g = window.CafresoHQGraph && window.CafresoHQGraph._lastGraph;
+      const inbound = g ? [...new Set((g.edges || [])
+        .filter(e => String(e.target) === n.path && /\.md$/i.test(String(e.source)))
+        .map(e => String(e.source)))] : [];
+      if (inbound.length) {
+        confirmMsg = `Delete "${n.path}"? ${inbound.length} note${inbound.length === 1 ? '' : 's'} still link${inbound.length === 1 ? 's' : ''} to it — ${inbound.length === 1 ? 'that link goes' : 'those links go'} dead. This cannot be undone.`;
+      }
+    } catch (_e) {}
+    if (!(await window.hqConfirm(confirmMsg, { danger: true }))) return;
     try {
       await CafresoHQClient.vaultDelete(n.path);
       setSaveState('');

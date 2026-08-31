@@ -916,7 +916,11 @@ console.log(JSON.stringify(R));
           bool(re.search(r'const renameNote = async[\s\S]{0,600}await window\.hqPrompt', vault_full_src)),
           'views/vault.jsx: renameNote() must use hqPrompt, not the native window.prompt')
     check('vault "delete" uses the in-app confirm dialog',
-          bool(re.search(r'const deleteNote = async[\s\S]{0,200}await window\.hqConfirm', vault_full_src)),
+          # The window was {0,200} when the confirm was deleteNote's first
+          # act; the inbound-dead-link count (its message is built before
+          # the dialog shows) now sits between them. The intent pinned here
+          # is "hqConfirm, not window.confirm", not "confirm comes first".
+          bool(re.search(r'const deleteNote = async[\s\S]{0,1400}await window\.hqConfirm', vault_full_src)),
           'views/vault.jsx: deleteNote() must use hqConfirm, not the native window.confirm')
     check('no raw window.prompt/window.confirm remain in the vault view',
           not re.search(r'\bwindow\.prompt\(|\bwindow\.confirm\(', vault_full_src),

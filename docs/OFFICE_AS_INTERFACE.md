@@ -19294,3 +19294,28 @@ zero). Fire-tested on the call site and on alias/heading preservation.
 **Lesson.** A move API that only moves is correct for files and wrong
 for notes; the unit of a knowledge base is the name, and whoever moves
 the file owns every pointer to it.
+
+## The delete confirm names the dead links
+
+**Claim vs. reality.** 'Delete "x.md"? This cannot be undone.' — true
+of the file, silent about the graph. Renames follow inbound
+[[wikilinks]] now; deletes can't, so however many notes pointed at the
+deleted one, their links died without a word. The one moment the boss
+could still change their mind, the dialog withheld the one fact that
+might change it.
+
+**Fix.** deleteNote counts inbound note→note edges from the graph
+engine's last snapshot (office edges — tasks, receipts — excluded:
+they aren't wikilinks and can't go dead; sources deduplicated) and the
+confirm says 'Delete "x.md"? 1 note still links to it — that link goes
+dead. This cannot be undone.' Best-effort by construction: no
+snapshot, plain confirm, the delete never blocks. Verified live both
+ways — linked warns with the count, unlinked stays plain.
+
+**Test coverage.**
+`scripts/test_the_delete_confirm_names_the_dead_links.py`; fire-tested
+on the office-edge exclusion.
+
+**Lesson.** A confirm dialog is the last honest moment before an
+irreversible act; whatever the system knows about the blast radius
+belongs in that sentence, not in the postmortem.
