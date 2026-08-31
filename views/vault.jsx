@@ -444,7 +444,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       const newExp = new Set(expanded);
       for (let i = 1; i < parts.length; i++) newExp.add(parts.slice(0, i).join('/'));
       setExpanded(newExp);
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      /* Never setErr here: the view-level error replaces the ENTIRE
+         Library — tree, editor, graph — with "The cabinet won't open",
+         and this catch fires for ONE note that wouldn't open (a stale
+         graph id, a note deleted elsewhere). Driven live: one click on
+         an office node in the links graph blanked the whole room. The
+         room is fine; only this door stuck. */
+      snag("Couldn't open that note", e);
+    }
     setBusy(false);
   };
 
@@ -550,6 +558,17 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
   };
+  /* The links graph draws OFFICE nodes too — agents, tasks, receipts —
+     and clicking one used to feed its id ('agent:…') straight into
+     openByPath, whose 404 hit the view-level error state: one click on a
+     legitimately-drawn node replaced the entire Library (tree, editor,
+     graph) with "The cabinet won't open." Reproduced live. Only an id
+     the file list actually holds is a note this room can open; anything
+     else keeps its engine-side selection highlight and nothing more. */
+  const openGraphNode = (p, open) => {
+    if (files.some(f => f.path === p)) open(p);
+  };
+
   /* A [[wikilink]] in the preview used to render as an inert chip —
      cursor:auto, click swallowed. In a Library whose graph is BUILT from
      these links, the link itself has to be a door. Delegated here (the
@@ -868,7 +887,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
           {vaultTab === 'graph' && (
             <div className="vault-graph-pane fullspan" style={{flex:1,display:'flex',flexDirection:'column',borderLeft:'none'}}>
-              <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={(p) => mobileOpenByPath(p)} onMinimize={() => setVaultTab('tree')} />
+              <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={(p) => openGraphNode(p, mobileOpenByPath)} onMinimize={() => setVaultTab('tree')} />
             </div>
           )}
 
@@ -996,7 +1015,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
       {showGraph && (
         <div className={`vault-graph-pane${!hasNote ? ' fullspan' : ''}`}>
-          <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={p => openByPath(p)} onMinimize={() => setGraphMinimized(true)} />
+          <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={p => openGraphNode(p, openByPath)} onMinimize={() => setGraphMinimized(true)} />
         </div>
       )}
 

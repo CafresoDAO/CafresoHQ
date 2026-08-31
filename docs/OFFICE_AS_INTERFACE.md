@@ -19402,3 +19402,34 @@ previews' delegation, and the dead-link sentence.
 **Lesson.** When every other feature treats a syntax as structure,
 the reading surface must too — a link that renders as decoration
 teaches the user the links are decoration.
+
+## An office node cannot blank the Library
+
+**Claim vs. reality.** The links graph draws agents, tasks and
+receipts beside the notes — the product's own map of the office. And
+clicking one of those nodes destroyed the room that drew it:
+'agent:Llama · Generalist' went straight into openByPath, the 404
+landed in the view-level error state, and the whole Library — tree,
+editor, graph — became "The cabinet won't open." One click on a
+node the product itself rendered, reproduced live.
+
+**Fix.** Two layers, both of which belong. openGraphNode gates both
+GraphView call sites: only an id the file list holds is a note this
+room can open; office nodes keep their selection highlight and
+nothing more. And openByPath's catch is a snag toast now, never
+setErr — the view-level error means THE ROOM is broken, and this
+catch fires for one note that wouldn't open (a stale graph id, a
+note deleted elsewhere; the popout's cafresohq:openNote event rides
+the same path). Verified live: office-node click keeps the view, a
+note still opens, a bad event path toasts while the open note stays.
+
+**Test coverage.**
+`scripts/test_an_office_node_cannot_blank_the_library.py`;
+fire-tested on both call sites, the gate's condition, and the
+catch reverting to setErr.
+
+**Lesson.** Error surfaces have blast radii; match them. A
+view-level error state answers "this room is broken" — routing a
+one-door failure into it converts an inconvenience into an outage,
+and the more faithfully the map draws the office, the more ways
+there are to click something that is not a door.
