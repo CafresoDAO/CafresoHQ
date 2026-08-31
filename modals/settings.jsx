@@ -1384,6 +1384,40 @@ function AccountTab({ usageTokens = 0 }) {
     } catch (er) { setNote('office import failed: ' + er.message); }
   };
 
+  /* Hermes agent-config portability (setup travels; keys never do).
+     Rescued from a settings tab that was defined but never mounted — the
+     client methods and the serve.py endpoints were live the whole time,
+     and this was their only UI. */
+  const hermesInputRef = useRefM(null);
+  const [hermesBusy, setHermesBusy] = useStateM(false);
+  const exportHermesConfig = async () => {
+    try {
+      const data = await CafresoHQClient.hermesExportConfig();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cafresohq-hermes-config.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      setNote('✓ agent config exported (keys not included)');
+    } catch (e) { setNote('agent config export failed: ' + e.message); }
+  };
+  const importHermesConfig = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setHermesBusy(true); setNote('');
+    try {
+      const text = await file.text();
+      const r = await CafresoHQClient.hermesImportConfig(text);
+      setNote(r.restarted
+        ? '✓ config imported — agent reloading (~10s). Re-enter your key in Connections if needed.'
+        : '✓ config written (gateway restart pending)');
+      load();
+    } catch (er) { setNote('agent config import failed: ' + er.message); }
+    setHermesBusy(false);
+  };
+
   const dot = (on) => <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>;
   const uptime = health && health.uptime_seconds
     ? (health.uptime_seconds >= 3600
@@ -1481,179 +1515,24 @@ function AccountTab({ usageTokens = 0 }) {
           <input ref={officeInputRef} type="file" accept=".json" style={{display:'none'}} onChange={importOffice}/>
         </div>
         <div className="hint">Your office lives in this browser. A cleared profile, a new machine, or a different browser starts empty — export before you need it.</div>
-      </div>
-    </div>
-  );
-}
-
-function SystemTab() {
-  const [health, setHealth] = useStateM(null);   // null=loading · false=down · object=ok
-  const [prov, setProv] = useStateM(null);
-  const [busy, setBusy] = useStateM(false);
-  const [note, setNote] = useStateM('');
-  const apiBase = (window._API_BASE || '');
-
-  const load = async () => {
-    setBusy(true);
-    try {
-      const r = await fetch(apiBase + '/health');
-      setHealth(r.ok ? await r.json() : false);
-    } catch (_e) { setHealth(false); }
-    try {
-      const C = CafresoHQClient;
-      if (C.hermesGetProvider) setProv(await C.hermesGetProvider());
-    } catch (_e) { setProv(null); }
-    setBusy(false);
-  };
-  useEffectM(() => { load(); }, []);
-
-  const copyDiag = async () => {
-    const diag = {
-      when: new Date().toISOString(),
-      apiBase: apiBase || '(same origin)',
-      health: health || 'unreachable',
-      provider: prov || 'unknown',
-      ua: navigator.userAgent,
-      url: location.href.split('?')[0],
-    };
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
-      setNote('✓ diagnostics copied — paste into a support chat');
-    } catch (_e) { setNote('copy failed — clipboard blocked'); }
-  };
-
-  // Agent-config portability (Hermes setup travels; keys never do).
-  const importInputRef = useRefM(null);
-  const [importBusy, setImportBusy] = useStateM(false);
-  const exportConfig = async () => {
-    try {
-      const C = CafresoHQClient;
-      const data = await C.hermesExportConfig();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'cafresohq-hermes-config.json';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      setNote('✓ config exported (keys not included)');
-    } catch (e) { setNote('export failed: ' + e.message); }
-  };
-  const importConfig = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    setImportBusy(true); setNote('');
-    try {
-      const text = await file.text();
-      const C = CafresoHQClient;
-      const r = await C.hermesImportConfig(text);
-      setNote(r.restarted
-        ? '✓ config imported — agent reloading (~10s). Re-enter your key in Connections if needed.'
-        : '✓ config written (gateway restart pending)');
-      load();
-    } catch (er) { setNote('import failed: ' + er.message); }
-    setImportBusy(false);
-  };
-
-  const resetOnboarding = async () => {
-    if (!(await window.hqConfirm('Replay the new-user guide on next reload?'))) return;
-    try {
-      const kill = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && /tourseen|gettingstarted|coachseen|firstdeliveryseen/i.test(k)) kill.push(k);
-      }
-      kill.forEach(k => localStorage.removeItem(k));
-      setNote(`✓ onboarding reset (${kill.length} flag${kill.length === 1 ? '' : 's'} cleared) — reload to replay`);
-    } catch (_e) { setNote('reset failed'); }
-  };
-
-  const dot = (on) => (
-    <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>
-  );
-  const yn = (v) => v ? 'yes' : 'no';
-
-  return (
-    <div className="control-board">
-      <div className="cb-panel">
-        <h4>OFFICE CONNECTION</h4>
         <div className="row-knob">
-          <div><div className="lbl">API base</div><div className="sub">where this UI sends requests</div></div>
-          <span className="tiny" style={{maxWidth:220, textAlign:'right', wordBreak:'break-all'}}>{apiBase || '(same origin)'}</span>
+          <div><div className="lbl">Export agent setup</div><div className="sub">your Hermes agent config as a file (keys NOT included)</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={exportHermesConfig}>EXPORT</button>
         </div>
         <div className="row-knob">
-          <div><div className="lbl">Status</div><div className="sub">{health === null ? 'checking…' : health ? 'serving' : 'unreachable'}</div></div>
-          <span>{health === null ? '…' : dot(!!health)}</span>
-        </div>
-        {health && (
-          <>
-            <div className="row-knob">
-              <div><div className="lbl">Runtime</div><div className="sub">where it's running</div></div>
-              <span className="tiny">{health.runtime_env || 'unknown'}{health.auth_required ? ' · key-gated' : ''}</span>
-            </div>
-            <div className="row-knob">
-              <div><div className="lbl">Hermes gateway</div><div className="sub">the built-in brain service</div></div>
-              <span className="tiny">{dot(!!health.hermes)}{yn(!!health.hermes)}</span>
-            </div>
-            <div className="row-knob">
-              <div><div className="lbl">Gemini CLI</div><div className="sub">installed here</div></div>
-              <span className="tiny">{dot(!!health.gemini)}{yn(!!health.gemini)}</span>
-            </div>
-          </>
-        )}
-        <div className="row-knob">
-          <div><div className="lbl">Re-check</div><div className="sub">probe /health again</div></div>
-          <button className="px-btn secondary" disabled={busy} onClick={load}>{busy ? '…' : 'REFRESH'}</button>
-        </div>
-      </div>
-      <div className="cb-panel">
-        <h4>HERMES PROVIDER</h4>
-        <div className="row-knob">
-          <div><div className="lbl">Service</div><div className="sub">what Hermes is using right now</div></div>
-          <span className="tiny">{prov ? prov.provider : '…'}</span>
-        </div>
-        <div className="row-knob">
-          <div><div className="lbl">Model</div><div className="sub">current default</div></div>
-          <span className="tiny" style={{maxWidth:200, textAlign:'right', wordBreak:'break-all'}}>{prov ? (prov.model || 'unknown') : '…'}</span>
-        </div>
-        <div className="row-knob">
-          <div><div className="lbl">Key configured</div><div className="sub">set one in Connections if not</div></div>
-          <span className="tiny">{prov === null ? '…' : <>{dot(!!(prov && prov.configured))}{yn(!!(prov && prov.configured))}</>}</span>
-        </div>
-      </div>
-      <div className="cb-panel">
-        <h4>AGENT CONFIG</h4>
-        <div className="row-knob">
-          <div><div className="lbl">Export setup</div><div className="sub">download your Hermes agent config (keys NOT included)</div></div>
-          <button className="px-btn secondary" onClick={exportConfig}>EXPORT</button>
-        </div>
-        <div className="row-knob">
-          <div><div className="lbl">Import setup</div><div className="sub">apply an exported file or a raw ~/.hermes/config.yaml</div></div>
-          <button className="px-btn secondary" disabled={importBusy}
-            onClick={() => importInputRef.current && importInputRef.current.click()}>
-            {importBusy ? '…' : 'IMPORT'}
+          <div><div className="lbl">Import agent setup</div><div className="sub">apply an exported file or a raw ~/.hermes/config.yaml</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} disabled={hermesBusy}
+            onClick={() => hermesInputRef.current && hermesInputRef.current.click()}>
+            {hermesBusy ? '…' : 'IMPORT'}
           </button>
-          <input ref={importInputRef} type="file" accept=".json,.yaml,.yml,.txt" style={{display:'none'}}
-            onChange={importConfig}/>
+          <input ref={hermesInputRef} type="file" accept=".json,.yaml,.yml,.txt" style={{display:'none'}}
+            onChange={importHermesConfig}/>
         </div>
         <div className="hint">Moving between HQs (or from a local Hermes install)? Export here, import there — then re-enter your key in Connections.</div>
       </div>
-      <div className="cb-panel">
-        <h4>SUPPORT</h4>
-        <div className="row-knob">
-          <div><div className="lbl">Copy diagnostics</div><div className="sub">health + provider snapshot, no keys included</div></div>
-          <button className="px-btn secondary" onClick={copyDiag}>COPY</button>
-        </div>
-        <div className="row-knob">
-          <div><div className="lbl">Reset onboarding</div><div className="sub">replay the new-user tour & checklist</div></div>
-          <button className="px-btn secondary" onClick={resetOnboarding}>RESET</button>
-        </div>
-        {note && <div className="hint" style={{marginTop:6}}>{note}</div>}
-      </div>
     </div>
   );
 }
-
 // Hermes backend services the user can pick (the free LLM behind Hermes). Each
 // row adapts the key field's label / placeholder / "get a free key" link. Gemini
 // direct is the most reliable free tier (≈15 RPM / 1500 per day) — the fix for

@@ -19125,3 +19125,30 @@ search is already a filter, and a half-visible second one stacked on it
 is how "no results" lies get made. New:
 `scripts/test_the_library_can_show_just_the_decks.py` (13 checks, node
 drive of the predicate table).
+
+## A real feature spent its whole life inside a tab that never mounted
+
+**Claim vs. reality.** `modals/settings.jsx` carried `function
+SystemTab()` — ~165 lines with an OFFICE CONNECTION panel, a HERMES
+PROVIDER panel, an AGENT CONFIG panel (Hermes config export/import) and
+a SUPPORT panel. `SETTINGS_TABS` has no entry for it and nothing else
+references it: it was defined and never mounted, found while placing
+the OFFICE BACKUP panel "next to the Hermes export" — in a tab no user
+had ever seen. The client methods (`hermesExportConfig` /
+`hermesImportConfig`) and the serve.py endpoints
+(`/hermes/config/export|import`) were live the entire time; only their
+UI was unreachable.
+
+**The fix** rescues the one feature the live tabs did not already cover
+— the agent-config export/import rows now sit in ACCOUNT → OFFICE
+BACKUP, wired to the same client methods, verified rendering live —
+and deletes SystemTab whole. Its other panels duplicated what ACCOUNT
+and CONNECTIONS already show.
+
+**Test coverage.**
+`scripts/test_the_office_can_leave_the_browser_and_come_back.py` gains
+3 checks: the surface is reachable, wired to the real methods, and the
+dead tab stays deleted.
+
+**Lesson.** "The code for it exists" and "a user can reach it" are
+different claims; only the second one is a feature.

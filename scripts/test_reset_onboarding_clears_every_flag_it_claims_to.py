@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Reset onboarding cleared some flags and quietly left others in place.
 
-Reproduced by reading the source: `resetOnboarding()` (modals/settings.jsx,
-defined twice — once per settings tab that offers the button) sweeps
+Reproduced by reading the source: `resetOnboarding()` (modals/settings.jsx —
+at the time defined twice, once per settings tab that offered the button;
+the second copy died with the never-mounted SystemTab) sweeps
 localStorage for keys matching /tourseen|gettingstarted|gsdismissed/i and
 deletes every match, then tells the user "onboarding reset" with a count.
 
@@ -73,9 +74,16 @@ def main():
           onboarding_keys)
 
     # ── 2. every resetOnboarding copy must clear every one of them ──────────
+    # There used to be two copies — one per settings tab offering the button.
+    # The second lived in `SystemTab`, which turned out to be dead code
+    # (defined, never mounted) and was deleted when its one real feature was
+    # rescued into AccountTab; one copy remains, one button references it.
     starts = [m.start() for m in
               re.finditer(r'const resetOnboarding = async \(\) => ', SETTINGS)]
-    check('found both resetOnboarding copies', len(starts) == 2, starts)
+    check('found the one live resetOnboarding copy', len(starts) == 1, starts)
+    check('exactly one button references it',
+          SETTINGS.count('onClick={resetOnboarding}') == 1,
+          SETTINGS.count('onClick={resetOnboarding}'))
 
     for i, s in enumerate(starts):
         body = lift_from(SETTINGS, s)

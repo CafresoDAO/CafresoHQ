@@ -59,6 +59,22 @@ def main():
     check('the export names its own limit honestly',
           'keys NOT included' in settings)
 
+    # ── the rescued Hermes config surface ───────────────────────────────
+    # The agent-config export/import (client methods + serve.py endpoints,
+    # both live) had its ONLY UI inside `SystemTab`, a component that was
+    # defined but mounted nowhere — a real feature no user could reach.
+    # It lives in AccountTab now, and the dead tab is gone.
+    check('the Hermes agent-config surface is reachable now',
+          'onClick={exportHermesConfig}' in settings
+          and 'onChange={importHermesConfig}' in settings)
+    check('...wired to the real client methods',
+          'CafresoHQClient.hermesExportConfig()' in settings
+          and 'CafresoHQClient.hermesImportConfig(text)' in settings)
+    check('the dead SystemTab stays deleted',
+          'SystemTab' not in settings,
+          '— a defined-but-never-mounted tab is where this feature '
+          'hid unreachable for its whole life')
+
     # ── the contract, structurally ──────────────────────────────────────
     check('the secret stores are blocked by name',
           "OFFICE_EXPORT_BLOCKED = ['cafresohq_agent_keys_v1', 'cafresohq_device_key_v1']" in settings)
