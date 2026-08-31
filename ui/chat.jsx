@@ -1322,8 +1322,13 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             : m.from === 'ceo'
               ? 'CafresoHQ-CEO'
               : (m.name || 'A coworker');
+          /* A failed stream marks its bubble `error: true` (all three
+             dispatch catches do), but nothing ever read the flag — a dead
+             run rendered exactly like a healthy reply, and the only retry
+             lived in the Inbox modal behind a filter. The class gives it a
+             face; the RETRY affordance below gives it a next step. */
           const msgContent = (
-            <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}`}>
+            <div key={m.id} className={`msg ${m.from}${m.pinned ? ' pinned' : ''}${m.error ? ' msg-error' : ''}`}>
               <div className="who" title={_whoLabel}>
                 <span className="who-name">{_whoLabel}</span>
                 {/* m.target already carries its own @ prefix(es) — prefixing
@@ -1331,7 +1336,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                 {m.target ? <span className="who-target">→ {String(m.target).startsWith('@') ? m.target : '@' + m.target}</span> : null}
                 {m.pinned ? <span className="msg-pinned-badge" title="pinned">📌</span> : null}
               </div>
-              <div className="bubble">
+              <div className="bubble" style={m.error ? {borderLeft:'3px solid var(--danger, #c0504d)'} : undefined}>
                 <div className="msg-body">
                   <MessageBody text={m.text} />
                   {m.streaming ? <span className="typing"><span/><span/><span/></span> : null}
@@ -1359,6 +1364,29 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                       {v.body ? <div className="msg-visit-body">{v.body}</div> : null}
                     </div>
                   ))}
+                  {/* RETRY refills the composer with the ask that failed —
+                      it does NOT auto-send, because the bubble above it
+                      usually names a cause (a key, a rate limit) the boss
+                      may need to fix first. Scan scoped to THIS thread,
+                      same as "Ask this again" below. */}
+                  {m.error && !m.streaming ? (
+                    <div className="msg-retry-row" style={{marginTop:6,display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:10,opacity:0.7}}>⚠ this run failed</span>
+                      <button className="px-btn ghost" style={{fontSize:9,padding:'2px 8px'}}
+                        title="Put the ask that failed back in the composer"
+                        onClick={() => {
+                          const mThread = m.thread || 'direct';
+                          const idx = chat.findIndex(x => x.id === m.id);
+                          for (let i = idx - 1; i >= 0; i--) {
+                            if (chat[i].from === 'user' && (chat[i].thread || 'direct') === mThread) {
+                              setInput(chat[i].text);
+                              if (composerRef.current) composerRef.current.focus();
+                              break;
+                            }
+                          }
+                        }}>↻ RETRY</button>
+                    </div>
+                  ) : null}
                 </div>
                 {!m.streaming && m.text ? (
                   <>
