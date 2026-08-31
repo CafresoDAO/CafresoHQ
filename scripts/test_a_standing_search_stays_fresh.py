@@ -96,8 +96,11 @@ def main():
     check('a failed re-run keeps the hits we have',
           run(fn, '["old"]', '"boom"', 'null') == [['server', 'boom']])
 
+    # 3: the bridge refresh arm, the server refresh arm, and the standing
+    # look (the delivery poll) — each path that learns of new files re-runs
+    # the standing search.
     check('both refresh arms (bridge and server) re-run the standing search',
-          vault.count('await _refreshHits();') == 2)
+          vault.count('await _refreshHits();') == 3)
     check('the re-run sits inside refresh, after the files load',
           vault.index('setFiles(await CafresoHQClient.vaultList());')
           < vault.rindex('await _refreshHits();'))

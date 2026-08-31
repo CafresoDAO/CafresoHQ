@@ -448,6 +448,43 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   };
   React.useEffect(() => { refresh(); }, []);
 
+  /* Deliveries land while the boss is LOOKING at this view — coworkers
+     file asynchronously, and the shipping fs backend has no push channel
+     (the bridge shell pushes vault:files:update; the server vault pushed
+     nothing). A boss who left the Library open waiting for a deck saw it
+     only after a manual ↻ or a walk to another view and back.
+
+     A quiet standing look, not a standing refresh: every half-minute the
+     poll fetches the listing and compares it — path+mtime+size — against
+     what this view already shows. Same set → nothing happens: no graph
+     re-layout under the boss's cursor, no hit-list churn. Changed set →
+     the one full propagation (tree, graph, standing search) the manual ↻
+     would have done, and the freshness dot marks what just landed. The
+     body lives in a ref so each poll reads THIS render's files/status,
+     not the mount's. */
+  const _pollRef = React.useRef(null);
+  _pollRef.current = async () => {
+    if (document.hidden) return;                 // nobody is looking
+    if (!status || !status.configured) return;   // no Library to watch
+    try {
+      const fl = await CafresoHQClient.vaultList();
+      const sig = (l) => l.map(f => f.path + '@' + f.mtime + '@' + f.size).sort().join('|');
+      if (sig(fl) === sig(files)) return;
+      setFiles(fl);
+      refreshGraph();
+      await _refreshHits();
+    } catch (_e) { /* a missed look is silence, never an error banner */ }
+  };
+  React.useEffect(() => {
+    if (_bridge) return;   // the shell pushes its own updates
+    const id = setInterval(() => { _pollRef.current && _pollRef.current(); }, 30000);
+    // Coming back to a background browser tab shouldn't cost up to a
+    // half-minute of pretending nothing arrived — look on return, too.
+    const onVis = () => { if (!document.hidden && _pollRef.current) _pollRef.current(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
+
   // Listen for live vault file updates pushed from the parent shell
   React.useEffect(() => {
     if (!_bridge) return;

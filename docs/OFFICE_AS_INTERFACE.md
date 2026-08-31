@@ -19844,3 +19844,33 @@ believing it works.
 - **Lesson**: a new edge TYPE isn't shipped when the builder emits it
   — it's shipped when every consumer downstream knows its name. Walk
   the type to the last renderer before calling the feature done.
+
+### A standing Library notices deliveries (2026-08-31)
+
+- **Claim vs. reality**: the Library is pitched as the room where
+  coworkers file deliveries — but the server-vault view looked at the
+  shelf exactly once, on mount. A deck filed while the boss sat
+  watching never appeared until a manual ↻ or a walk to another view
+  and back. (The bridge shell had live pushes; the shipping fs backend
+  had nothing.) Meanwhile the whole binary pipeline underneath was
+  probed end-to-end and found honest: .pptx/.docx upload with byte-
+  perfect round-trip, extension-preserving rename WITH wikilink
+  rewrite, artifact-typed graph nodes, title search.
+- **Fix**: a quiet standing look in views/vault.jsx — every 30s (and
+  immediately on visibilitychange back into view) fetch the listing
+  and compare path+mtime+size against what the view shows. Unchanged →
+  nothing happens: no graph re-layout under the boss's cursor, no hit
+  churn. Changed → the one full propagation the manual ↻ would do,
+  and the freshness dot marks what landed. Hidden tab or unconfigured
+  Library → not even the fetch; a failed look is silence. The poll
+  body lives in a ref so each tick reads the current render's state.
+- **Test coverage**: `scripts/test_a_standing_library_notices_deliveries.py`
+  (10 checks; poll body node-run with recorder stubs; 3 arms
+  fire-tested). Live: curl-filed note appeared in ~0.6s via the
+  visibility path; interval path refreshed the graph exactly once
+  across two minutes containing one change.
+- **Lesson**: "the view refreshes on every mutation" only counts
+  mutations made THROUGH the view. A room whose premise is other
+  actors filing into it needs a standing look, not just a mount look —
+  and the look must prove quietness (change-detection) as carefully
+  as it proves noticing.
