@@ -454,11 +454,24 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      flush-on-leave below mean typed text can no longer be silently lost. */
   const [saveState, setSaveState] = React.useState('');   // '' | 'saving' | 'saved' | 'error: …'
   const openNoteRef = React.useRef(null);
+  // Per-path signature of the last-saved [[wikilink]] set — see saveNote.
+  const lastLinkSigRef = React.useRef({});
   openNoteRef.current = openNote;
 
   const saveNote = async (opts) => {
     const note = openNoteRef.current;
     if (!note || !note.dirty) return;
+    /* A brand-new note is only ever filed by the QUIET autosave (newNote
+       opens a dirty buffer; nothing else saves it), and quiet used to skip
+       refresh() entirely — so the note existed on the server, sat open in
+       the editor, and appeared in neither the file tree nor the graph
+       until a manual ↻. Driven live: create, type a [[wikilink]], switch
+       to the graph — two nodes, no edge, no tree row. Quiet still skips
+       the refresh for ordinary edits; a save that CREATES the file
+       refreshes everything, and a save whose wikilink set changed
+       refreshes the graph (never mid-prose — the signature only moves
+       when the link structure does). */
+    const creating = _bridge ? !note.id : !files.some(f => f.path === note.path);
     setBusy(true); setSaveState('saving');
     try {
       if (_bridge) {
@@ -475,7 +488,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       setOpenNote(n => (n && n.path === note.path && n.content === note.content)
         ? { ...n, dirty: false } : n);
       setSaveState('saved');
-      if (!(opts && opts.quiet)) await refresh();
+      const linkSig = ((note.content || '').match(/\[\[[^\]]+\]\]/g) || []).sort().join('|');
+      const linksChanged = lastLinkSigRef.current[note.path] !== linkSig;
+      lastLinkSigRef.current[note.path] = linkSig;
+      if (creating || !(opts && opts.quiet)) await refresh();
+      else if (linksChanged) refreshGraph();
     } catch (e) {
       /* The 'error' prefix is load-bearing — saveState is a little state
          machine and the button reads startsWith('error') to switch to

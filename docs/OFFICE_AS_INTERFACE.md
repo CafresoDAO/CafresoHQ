@@ -19234,3 +19234,34 @@ deferred. Fire-tested.
 user mid-instruction, not at the door. And an app-wide idiom list
 ("how do we focus the composer?") is worth grepping before a CTA
 invents its own ending.
+
+## A new note existed on the server and appeared nowhere
+
+**Claim vs. reality.** Create a note with ➕, type a [[wikilink]], look
+at the graph: the note is on the server, the editor says "Saved" — and
+the file tree has no row, the graph has no node, the link has no edge.
+One manual ↻ later everything is there, so resolution (including
+cross-folder wikilinks) was never the problem. The cause is a
+three-line conspiracy: `newNote` only opens a dirty buffer; the ONLY
+save that ever files it is the 2.5s QUIET autosave; and quiet saves
+skipped `refresh()` by design. The flag that keeps ordinary edits from
+churning the room also swallowed the one save that creates a file.
+
+**Fix.** Two precise exceptions in saveNote, quiet otherwise
+preserved: a save that CREATES the file (bridge: no id; REST: path not
+yet in `files`) runs the full refresh — tree and graph; a quiet save
+whose [[wikilink]] set changed refreshes just the graph, keyed by a
+per-path link signature so prose typing never jolts the layout.
+Verified live: create → link → wait out the autosave → row, node, and
+edge all present with zero manual refreshes.
+
+**Test coverage.**
+`scripts/test_a_new_note_tells_the_tree_and_the_graph.py`. The
+fire-test earned its keep on its own test: the signature check
+originally matched only the READ of `lastLinkSigRef` and stayed green
+with the write-back deleted — a bug that would refresh the graph on
+every autosave forever. Pinned both directions.
+
+**Lesson.** A flag added to suppress noise ("don't refresh on every
+autosave") must name what it suppresses; "quiet" silenced creation
+because nobody listed creation as something a quiet save could do.
