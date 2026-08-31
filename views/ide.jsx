@@ -44,9 +44,19 @@ function renderMarkdown(text, opts) {
        note — served through the same /vault/file door the binary preview
        uses (it answers images inline, sandboxed). Elsewhere, and for
        absolute/data URLs, the src stands as written. */
-    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, src) => {
-      const url = (opts.wikilinks && !/^(https?:|data:|\/)/i.test(src))
-        ? '/vault/file?path=' + encodeURIComponent(src) : src;
+    /* Three src spellings, because uploads keep their names and every
+       screenshot's default name has spaces: <angle-bracketed>, %20-encoded
+       (decoded before re-encoding, or the path double-encodes into a dead
+       %2520), and plain. The graph builder and the rename rewriter parse
+       embeds with these same rules — change them together. */
+    /* (The text is entity-escaped before inline() runs, so the angle
+       form arrives as &lt;…&gt; here — the Python parsers see raw <…>.) */
+    s = s.replace(/!\[([^\]]*)\]\((?:&lt;(.+?)&gt;|([^)\s]+))\)/g, (_m, alt, a, b) => {
+      const src = a || b;
+      let dec = src;
+      try { dec = decodeURIComponent(src); } catch (_e) {}
+      const url = (opts.wikilinks && !/^(https?:|data:|\/)/i.test(dec))
+        ? '/vault/file?path=' + encodeURIComponent(dec) : src;
       return '<img class="md-img" src="' + url.replace(/"/g, '&quot;')
            /* No loading="lazy": with no intrinsic size the img lays out
               0×0, never intersects the viewport, and never loads at all

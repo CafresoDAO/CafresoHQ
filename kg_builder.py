@@ -36,7 +36,9 @@ def init(*, vault_root, state_dir, memory_dir, obsidian_request,
 import re as _re
 _WIKILINK_RE = _re.compile(r'\[\[([^\]\|]+?)(?:\|[^\]]*)?\]\]')
 _TAG_RE = _re.compile(r'(?:^|\s)#([A-Za-z0-9_/\-]+)')
-_EMBED_RE = _re.compile(r'!\[[^\]]*\]\(([^)\s]+)\)')
+# Three src spellings — <angle-bracketed>, %-encoded, plain — mirroring
+# the preview renderer and the rename rewriter. Change together.
+_EMBED_RE = _re.compile(r'!\[[^\]]*\]\((?:<([^>]+)>|([^)\s]+))\)')
 
 
 def _graph_node_type(path: str, tags=None) -> str:
@@ -492,7 +494,7 @@ def _build_graph_from_raw(raw, artifacts=()) -> dict:
         # than mentioning it. External/data/rooted srcs aren't Library
         # residents and stay out (mirrors the preview's routing test).
         for m in _EMBED_RE.finditer(text):
-            src = m.group(1)
+            src = urllib.parse.unquote(m.group(1) or m.group(2))
             if _re.match(r'^(https?:|data:|/)', src, _re.IGNORECASE):
                 continue
             tgt = src if src in by_path else by_stem.get(

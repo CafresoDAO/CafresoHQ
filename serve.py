@@ -1187,9 +1187,14 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
     # renaming an embedded chart.png used to leave every note that shows
     # it with a broken image and no message. Scheme'd/rooted srcs aren't
     # Library residents and stand as written.
-    epat = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)\)')
+    # Three src spellings — <angle-bracketed>, %-encoded, plain — mirroring
+    # the preview renderer and the graph builder. Change together. The
+    # replacement wraps a whitespace-bearing destination in <angle
+    # brackets>, the one spelling every parser here accepts for it.
+    epat = re.compile(r'!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)')
     src_rel = src.lstrip('/').replace('\\', '/')
     dst_rel = dst.lstrip('/').replace('\\', '/')
+    dst_written = ('<' + dst_rel + '>') if re.search(r'\s', dst_rel) else dst_rel
     links = files = 0
     for p in root.rglob('*.md'):
         try:
@@ -1206,10 +1211,11 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
             return '[[' + ('/' in target and new_path or new_base) + m.group(2) + ']]'
 
         def _esub(m):
-            if m.group(2) != src_rel:
+            written = m.group(2) or m.group(3)
+            if urllib.parse.unquote(written) != src_rel:
                 return m.group(0)
             hits[0] += 1
-            return '![' + m.group(1) + '](' + dst_rel + ')'
+            return '![' + m.group(1) + '](' + dst_written + ')'
 
         out = epat.sub(_esub, pat.sub(_sub, text))
         if hits[0]:

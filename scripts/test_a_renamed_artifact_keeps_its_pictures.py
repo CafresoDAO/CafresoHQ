@@ -24,6 +24,7 @@ import pathlib
 import re
 import sys
 import tempfile
+import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAILS = []
@@ -56,7 +57,8 @@ def main():
         '[[chart.png]] and plain [link](Research/chart.png)\n')
     (d / 'other.md').write_text('no references here\n')
 
-    ns = {'pathlib': pathlib, 're': re, '_vault_root': str(d)}
+    ns = {'pathlib': pathlib, 're': re, 'urllib': urllib,
+          '_vault_root': str(d)}
     exec(lift(serve, '_vault_rewrite_wikilinks'), ns)
     links, files = ns['_vault_rewrite_wikilinks'](
         'Research/chart.png', 'Research/q3-chart.png')

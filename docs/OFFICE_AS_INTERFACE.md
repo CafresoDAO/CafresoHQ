@@ -19604,3 +19604,13 @@ believing it works.
 **Test coverage.** `scripts/test_search_finds_what_it_cannot_read.py` (7 checks) executes the lifted scorer on name-only candidates — hit, miss, no phantom counts from empty text — and pins both arms' routing, including that the name-only call sits BEFORE the byte-read in each. Fire-tested on three arms: fs branch reverted to a skip, OCI branch reverted, the scorer's title-only path removed — every arm burns.
 
 **Lesson.** "Findable" and "readable" are different promises. The scorer already knew the difference — title_score OR count — but both callers gated candidacy on readability, silently narrowing search to the files the server happened to be able to parse.
+
+### A screenshot's name is not a parse error
+
+**Claim vs. reality.** "Screenshot 2026-08-31 at 08.30.png" is the single most common artifact name there is — uploads keep their names — and all three embed parsers stopped at whitespace. The preview rendered a stray '!' plus a text link; a %20-encoded src double-encoded into a dead /vault/file path (%2520); the graph missed the edge; a rename left the note behind.
+
+**Fix.** All three parsers now accept three src spellings — `<angle-bracketed>`, %-encoded (decoded before re-encoding), plain — and agree with each other: the renderer (which sees entity-escaped text, so its angle arm matches `&lt;…&gt;`), the graph builder, and the rename rewriter, which writes a whitespace-bearing destination back in the angle form every parser accepts and a spaceless one plain. External URLs keep their own written form throughout. Verified live: the uploaded screenshot rendered in the note at natural size, the embeds edge existed, and a rename to "hero shot.png" followed in angle form with the graph edge intact.
+
+**Test coverage.** `scripts/test_a_screenshots_name_is_not_a_parse_error.py` (9 checks) runs all three parsers over the same document: renderer spellings resolve to one single-encoded path, the graph resolves each spelling in its OWN note (a shared note let the angle form mask a broken %-decode — the fire-test caught that and the seed was split), renames follow every spelling in every note and normalize the written form. Fire-tested on four arms across the three parsers — every arm burns.
+
+**Lesson.** When one concept (an embed src) is parsed in three places, the seed document for its test must make each parser and each spelling fail INDEPENDENTLY — bundled seeds let the working arm alibi the broken one.
