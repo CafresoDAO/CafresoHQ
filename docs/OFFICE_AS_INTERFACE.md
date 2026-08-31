@@ -19513,3 +19513,34 @@ slipping after lists, and cells skipping the escaper.
 **Lesson.** "Holds X" quietly promises "renders X the way X is
 written"; every shape the room's own producers emit belongs in the
 renderer of the room that claims to hold it.
+
+## A picture in a note is a picture
+
+**Claim vs. reality.** The Library "holds artifacts" — and a note
+citing one of its own uploaded images showed '!' and a text link
+where the picture belonged. The inline pass only knew [text](url);
+/vault/file had been answering images inline (sandboxed, svg
+excluded) all along. The renderer just never asked.
+
+**Fix.** Images replace BEFORE links. In the Library preview a bare
+relative src routes through /vault/file?path=… — the same door the
+binary preview uses — while absolute http(s)/data:/rooted srcs stand
+as written everywhere (the IDE preview has no vault to resolve
+against). Alt-text quotes are entity-escaped so they cannot break
+the attribute. And no loading="lazy": with no intrinsic size the img
+lays out 0×0, never intersects the viewport, and never loads at all
+— caught live, complete:false forever while a fresh Image() loaded
+the same URL instantly. Verified live: the uploaded png renders in
+the note, no stray '!', plain links untouched.
+
+**Test coverage.**
+`scripts/test_a_picture_in_a_note_is_a_picture.py` (runs the real
+renderer in node, both modes); fire-tested on the arm removed, vault
+routing leaking outside the Library, lazy sneaking back, and alt
+quotes unescaped.
+
+**Lesson.** When a feature half-exists — the server serving what the
+renderer never requests — the gap reads as "unsupported" to the user
+and "done" to both halves' authors; grep for the consumer before
+believing a capability is missing, and for the producer before
+believing it works.

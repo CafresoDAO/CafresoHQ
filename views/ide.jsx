@@ -38,6 +38,22 @@ function renderMarkdown(text, opts) {
            + target.replace(/"/g, '&quot;') + '">' + shown + '</span>';
     });
     s = s.replace(/#([\w-]+)/g, '<span class="md-tag">#$1</span>');
+    /* Images BEFORE links, or ![alt](src) renders as a stray '!' plus a
+       text link. In the Library preview (opts.wikilinks) a bare relative
+       src is a vault file — an uploaded screenshot, a chart beside the
+       note — served through the same /vault/file door the binary preview
+       uses (it answers images inline, sandboxed). Elsewhere, and for
+       absolute/data URLs, the src stands as written. */
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, src) => {
+      const url = (opts.wikilinks && !/^(https?:|data:|\/)/i.test(src))
+        ? '/vault/file?path=' + encodeURIComponent(src) : src;
+      return '<img class="md-img" src="' + url.replace(/"/g, '&quot;')
+           /* No loading="lazy": with no intrinsic size the img lays out
+              0×0, never intersects the viewport, and never loads at all
+              — caught live, complete:false forever. */
+           + '" alt="' + alt.replace(/"/g, '&quot;')
+           + '" style="max-width:100%">';
+    });
     s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
     return s;
   };
