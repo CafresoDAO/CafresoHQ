@@ -52,7 +52,9 @@ def main():
     check('the fs rename calls the rewriter',
           '_vault_rewrite_wikilinks(src, dst)' in serve)
     check('...best-effort, after the move already succeeded',
-          re.search(r'os\.replace[\s\S]{0,900}_vault_rewrite_wikilinks', serve))
+          # the folder arm (test_a_folder_moves_as_one_drawer) now sits
+          # between the move and the single-file rewrite — window widened
+          re.search(r'os\.replace[\s\S]{0,2400}_vault_rewrite_wikilinks', serve))
     check('...and reports what it did',
           "'linksRewritten': rewritten" in serve and "'filesTouched': files_touched" in serve)
     check('the UI tells the boss links followed',

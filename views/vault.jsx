@@ -838,25 +838,40 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      receipt says both. Kept off the bridge vault (no rename door). */
   const moveByDrag = async (src, destFolder) => {
     if (!src) return;
+    // Folder rows drag too. The files list only holds files, so a source
+    // that isn't one but has residents underneath is a folder — the whole
+    // drawer moves through the same rename door, links following per file.
+    const isFolder = !files.some(f => f.path === src)
+      && files.some(f => f.path.startsWith(src + '/'));
     const base = src.split('/').pop();
     const dst = (destFolder ? destFolder + '/' : '') + base;
     if (dst === src) return;
-    if (files.some(f => f.path === dst)) {
+    if (isFolder && (destFolder + '/').startsWith(src + '/')) {
+      say("A folder can't move into itself.", 'error');
+      return;
+    }
+    if (files.some(f => f.path === dst || f.path.startsWith(dst + '/'))) {
       say(`"${dst}" already exists — rename one of them first.`, 'error');
       return;
     }
     const n = openNoteRef.current;
-    if (n && n.path === src && n.dirty) await saveNoteRef.current({ quiet: true });
+    const inside = (p) => p === src || (isFolder && p.startsWith(src + '/'));
+    if (n && inside(n.path) && n.dirty) await saveNoteRef.current({ quiet: true });
     try {
       const res = await CafresoHQClient.vaultRename(src, dst);
-      if (openNoteRef.current && openNoteRef.current.path === src) {
-        setOpenNote(o => o ? { ...o, path: dst } : o);
+      const o0 = openNoteRef.current;
+      if (o0 && inside(o0.path)) {
+        const follow = o0.path === src ? dst : dst + o0.path.slice(src.length);
+        setOpenNote(o => o ? { ...o, path: follow } : o);
       }
       const links = res && res.linksRewritten;
-      say(`Moved to ${destFolder || 'the Library root'}`
+      const what = isFolder
+        ? `Moved ${res && res.moved} file${res && res.moved === 1 ? '' : 's'} to `
+        : 'Moved to ';
+      say(what + (destFolder || 'the Library root')
           + (links > 0 ? ` — ${links} link${links === 1 ? '' : 's'} followed.` : '.'));
       await refresh();
-    } catch (e) { snag("Couldn't move that file", e); }
+    } catch (e) { snag(isFolder ? "Couldn't move that folder" : "Couldn't move that file", e); }
   };
 
   const backlinksRow = backlinks.length ? (

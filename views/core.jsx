@@ -960,17 +960,25 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = n
      drop-to-UPLOAD overlay (which listens for real OS 'Files') never
      mistakes an internal move for an upload. */
   const [dragOverF, setDragOverF] = useSV(null);
+  /* dataTransfer payloads are unreadable during dragover, so the dragged
+     path is mirrored in state — it's how a folder row refuses to claim a
+     drop onto itself or its own children while the drag is still in the
+     air, instead of erroring after the drop. */
+  const [dragSrc, setDragSrc] = useSV(null);
   const _MOVE_T = 'application/x-library-path';
   const dragProps = (path) => onMove ? {
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.setData(_MOVE_T, path);
       e.dataTransfer.effectAllowed = 'move';
+      setDragSrc(path);
     },
+    onDragEnd: () => { setDragSrc(null); setDragOverF(null); },
   } : {};
   const dropProps = (folder) => onMove ? {
     onDragOver: (e) => {
       if (![...(e.dataTransfer.types || [])].includes(_MOVE_T)) return;
+      if (dragSrc && (folder + '/').startsWith(dragSrc + '/')) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
@@ -980,6 +988,9 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = n
     onDrop: (e) => {
       const src = e.dataTransfer.getData(_MOVE_T);
       if (!src) return;
+      // a folder dropped on itself/its children falls through to the
+      // ground below — whose claim is the highlight the boss was shown
+      if ((folder + '/').startsWith(src + '/')) return;
       e.preventDefault();
       e.stopPropagation();
       setDragOverF(null);
@@ -1007,6 +1018,7 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = n
                     ...(dragOverF === n.path ? {outline: '2px dashed var(--accent-sun, #7c6bff)', outlineOffset: -2} : {})}}
             role="treeitem" aria-expanded={isOpen} tabIndex={0}
             {...dropProps(n.path)}
+            {...dragProps(n.path)}
             onClick={()=>toggle(n.path)} onKeyDown={rowKeys(()=>toggle(n.path))}>
             <span className="tree-chev" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
             <span className="tree-icon" aria-hidden="true">{isOpen ? '📂' : '📁'}</span>

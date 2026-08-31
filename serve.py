@@ -1149,6 +1149,24 @@ def _vault_resolve(rel: str) -> pathlib.Path:
     return candidate
 
 
+def _vault_resolve_dir(rel: str) -> pathlib.Path:
+    """_vault_resolve without the '.md' default: the FOLDER spelling of a
+    path, same traversal protection. The rename door needs it — an
+    extensionless source like "Drawer" otherwise resolves to Drawer.md
+    and a whole drawer can never be moved."""
+    if not _vault_root:
+        raise ValueError('vault directory not configured')
+    root = pathlib.Path(_vault_root).resolve()
+    if not root.is_dir():
+        raise ValueError(f'vault directory does not exist: {root}')
+    candidate = (root / rel.lstrip('/').replace('\\', '/')).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise ValueError('path escapes vault directory')
+    return candidate
+
+
 def _vault_rewrite_wikilinks(src: str, dst: str):
     """After a rename src→dst (fs backend), rewrite inbound [[wikilinks]]
     across every .md in the vault so links follow the file. Handles
@@ -1207,8 +1225,13 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
             target = m.group(1).strip()
             if target not in old:
                 return m.group(0)
+            rep = '[[' + ('/' in target and new_path or new_base) + m.group(2) + ']]'
+            if rep == m.group(0):
+                # a folder move keeps basenames: [[alpha]] matches but
+                # doesn't change, and an unchanged link isn't "followed"
+                return rep
             hits[0] += 1
-            return '[[' + ('/' in target and new_path or new_base) + m.group(2) + ']]'
+            return rep
 
         def _esub(m):
             written = m.group(2) or m.group(3)
@@ -1218,7 +1241,10 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
             return '![' + m.group(1) + '](' + dst_written + ')'
 
         out = epat.sub(_esub, pat.sub(_sub, text))
-        if hits[0]:
+        # A folder move keeps every basename: [[brief]] matches its old
+        # variants but rewrites to the identical text. Don't churn the
+        # file's mtime — or the receipt's count — for a no-op.
+        if hits[0] and out != text:
             try:
                 p.write_text(out, encoding='utf-8')
             except Exception:
@@ -4127,13 +4153,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(200, {'from': src, 'to': dst, 'backend': 'oci'})
             try:
                 s_path = _vault_resolve(src)
-                d_path = _vault_resolve(dst)
+                # An extensionless source that isn't a note but IS a folder
+                # means the whole drawer is moving. A note named exactly
+                # like the folder still wins — existing behavior.
+                if (not s_path.exists()
+                        and not pathlib.PurePosixPath(src.strip('/')).suffix):
+                    s_dir = _vault_resolve_dir(src)
+                    if s_dir.is_dir():
+                        s_path = s_dir
+                d_path = (_vault_resolve_dir(dst) if s_path.is_dir()
+                          else _vault_resolve(dst))
             except ValueError as e:
                 return self._send_json(400, {'error': str(e)})
             if not s_path.exists():
                 return self._send_json(404, {'error': 'source not found'})
             if d_path.exists():
                 return self._send_json(409, {'error': 'target already exists'})
+            if s_path.is_dir() and (d_path == s_path
+                                    or s_path in d_path.parents):
+                # refuse before mkdir plants the target INSIDE the source
+                # and os.replace fails halfway
+                return self._send_json(
+                    400, {'error': 'cannot move a folder into itself'})
             try:
                 d_path.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(str(s_path), str(d_path))
@@ -4148,6 +4189,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # the replacement keeps the link's own style (path links stay
             # path links, basename links stay basenames).
             rewritten = files_touched = 0
+            if d_path.is_dir():
+                # A whole drawer moved: every file inside changed its vault
+                # path at once, so the rewrite runs once per moved file —
+                # path links ([[Research/brief]], ![](Research/chart.png))
+                # follow; basename links were never folder-bound and the
+                # identity guard above leaves them untouched.
+                moved = 0
+                s_rel = src.strip('/').replace('\\', '/')
+                d_rel = dst.strip('/').replace('\\', '/')
+                for f in sorted(d_path.rglob('*')):
+                    if not f.is_file():
+                        continue
+                    tail = f.relative_to(d_path).as_posix()
+                    moved += 1
+                    try:
+                        r2, t2 = _vault_rewrite_wikilinks(
+                            s_rel + '/' + tail, d_rel + '/' + tail)
+                        rewritten += r2
+                        files_touched += t2
+                    except Exception:
+                        pass  # best-effort: the move itself already succeeded
+                return self._send_json(200, {'from': src, 'to': dst,
+                                             'folder': True, 'moved': moved,
+                                             'linksRewritten': rewritten,
+                                             'filesTouched': files_touched})
             try:
                 rewritten, files_touched = _vault_rewrite_wikilinks(src, dst)
             except Exception:

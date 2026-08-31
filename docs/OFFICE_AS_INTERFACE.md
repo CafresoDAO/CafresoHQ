@@ -19725,3 +19725,29 @@ believing it works.
   MIME-type gate. The fire-arm that removes the gate is the test's
   most important arm; a feature that works alone can still break its
   neighbor.
+
+### A folder moves as one drawer
+- **Claim vs. reality**: with drag-to-file shipped, dragging a FOLDER
+  looked like it should work — and could never have: _vault_resolve
+  force-appends '.md' to extensionless paths, so the rename door
+  answered "source not found" for every folder ever asked about. Had
+  the move gone through, the per-file rewriter would have silently
+  broken every [[Drawer/alpha]] path link in the Library.
+- **Fix**: the fs arm resolves an extensionless non-note source as a
+  directory (a note named like the folder still wins), refuses a move
+  into the folder's own subtree before mkdir digs the hole, and
+  rewrites links once per moved file; the rewriter's new identity
+  guard keeps unchanged basename links uncounted and mtime-untouched.
+  Folder rows drag like file rows; self/descendant hovers refuse the
+  claim (the ground's highlight is the answer shown), self-drops fall
+  through, and moveByDrag maps a deep open note through the moved
+  prefix. Verified live: Drawer→Research answered "Moved 2 files —
+  2 links followed", citer.md read [[Research/Drawer/alpha]].
+- **Test coverage**: `scripts/test_a_folder_moves_as_one_drawer.py`
+  (26 checks; resolvers + rewriter exec-lifted against a temp vault,
+  mover + tree plumbing node-run with re-render cells; 4 arms
+  fire-tested).
+- **Lesson**: the feature that "should work by symmetry" is exactly
+  the one to probe — the folder drag looked one dragProps spread away,
+  but the server literally could not name a folder. Symmetry in the
+  UI proves nothing about the door behind it.
