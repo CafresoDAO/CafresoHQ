@@ -19485,3 +19485,31 @@ folded-copy snippet, and the empty-needle guard.
 **Lesson.** Text the user typed and text the user stored are the
 same language even when their bytes disagree; normalize at the
 comparison, never in what you show back.
+
+## A research brief renders like one
+
+**Claim vs. reality.** The Library "is where research is held", and
+a research brief's native shapes — the table, the pulled quote, the
+section rule — all fell through renderMarkdown's paragraph arm. A
+markdown table came out as one <p> of pipes per row, '> insight' as
+a literal greater-than, '---' as a paragraph of dashes. The room
+held the research and mangled its reading.
+
+**Fix.** Three new arms in the preview renderer: a real <table>
+inside an overflow-x wrapper (wide data scrolls instead of breaking
+the pane), <blockquote> with inline markdown still live inside it,
+<hr> for rules — checked BEFORE lists, or '- - -' reads as a bullet.
+Inline styles, not styles.css: the preview carries its own table the
+way it carries its own wikilink cursor. Cells run through the same
+inline()/esc() as every other span. Verified live: heading, quote
+with bold intact, bordered 3×2 table, rule and the wikilink door in
+one note.
+
+**Test coverage.**
+`scripts/test_a_research_brief_renders_like_one.py` (runs the real
+renderer in node); fire-tested on each arm removed, the rule arm
+slipping after lists, and cells skipping the escaper.
+
+**Lesson.** "Holds X" quietly promises "renders X the way X is
+written"; every shape the room's own producers emit belongs in the
+renderer of the room that claims to hold it.

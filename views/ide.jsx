@@ -86,6 +86,46 @@ function renderMarkdown(text, opts) {
     const hm = line.match(/^(#{1,6})\s+(.*)/);
     if (hm) { html += '<div class="md-h md-h' + hm[1].length + '">' + inline(hm[2]) + '</div>'; i++; continue; }
 
+    /* Horizontal rule — before lists, or "- - -" reads as a bullet.
+       (A line-0 '---' was already eaten by the frontmatter block.) */
+    if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line)) {
+      html += '<hr class="md-hr" style="border:none;border-top:1px solid rgba(128,128,128,0.4);margin:14px 0">';
+      i++; continue;
+    }
+
+    /* Tables — a research brief's native shape. These used to fall
+       through to the paragraph arm, one <p> of pipes per row. Inline
+       styles, not styles.css: the preview must carry its own table the
+       same way it carries its own wikilink cursor. */
+    if (line.trim().startsWith('|') && i + 1 < lines.length
+        && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+      const cellB = 'border:1px solid rgba(128,128,128,0.35);padding:4px 10px;text-align:left';
+      const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => inline(c.trim()));
+      const head = cells(line).map(c => '<th style="' + cellB + ';font-weight:600">' + c + '</th>').join('');
+      i += 2;
+      let rows = '';
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        rows += '<tr>' + cells(lines[i]).map(c => '<td style="' + cellB + '">' + c + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html += '<div style="overflow-x:auto"><table class="md-table" style="border-collapse:collapse;margin:0 0 14px">'
+            + '<thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      continue;
+    }
+
+    /* Blockquotes */
+    if (line.startsWith('> ') || line.trim() === '>') {
+      const q = [];
+      while (i < lines.length && (lines[i].startsWith('> ') || lines[i].trim() === '>')) {
+        q.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      html += '<blockquote class="md-quote" style="margin:0 0 14px;padding:2px 14px;border-left:3px solid rgba(128,128,128,0.5);opacity:0.9">'
+            + q.map(l => l.trim() === '' ? '' : '<p class="md-p" style="margin:4px 0">' + inline(l) + '</p>').join('')
+            + '</blockquote>';
+      continue;
+    }
+
     /* Unordered lists */
     if (line.startsWith('- ') || line.startsWith('* ')) {
       let items = '';
