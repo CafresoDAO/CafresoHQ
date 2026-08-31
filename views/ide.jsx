@@ -18,6 +18,13 @@ const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 function renderMarkdown(text, opts) {
   if (!text) return '';
   opts = opts || {};
+  /* A Windows-authored (or agent-filed) note arrives with \r\n, and
+     every line-equality below — `line === '---'`, the task-box match —
+     fails against the trailing \r: frontmatter rendered as an <hr> plus
+     bare text, checkboxes as literal "[ ]". One normalization here;
+     togglePreviewTask normalizes ITS walk the same way, or the task
+     numbering the two share would desync and flip the wrong line. */
+  text = String(text).replace(/\r\n?/g, '\n');
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const inline = (s) => {
     s = esc(s);

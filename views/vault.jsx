@@ -923,7 +923,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     const n = Number(box.getAttribute('data-task'));
     const note = openNoteRef.current;
     if (!note || note.binary) return true;
-    const lines = note.content.split('\n');
+    // Same \r\n normalization renderMarkdown applies — the two walks
+    // share their task numbering, and a CRLF note would desync them
+    // (the renderer would skip a frontmatter block this walk didn't).
+    const lines = note.content.replace(/\r\n?/g, '\n').split('\n');
     let k = 0;
     if (lines[0] === '---') {
       k = 1;

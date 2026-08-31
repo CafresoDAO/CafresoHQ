@@ -19687,3 +19687,21 @@ believing it works.
 - **Lesson**: the filter started life inline in a useEffect closure —
   untestable without a browser. Extracting `_backlinkSources` cost four
   lines and bought the whole seed matrix; write the pure part first.
+
+### A Windows note renders like any other
+- **Claim vs. reality**: a CRLF note (Windows-authored, some agents)
+  rendered its frontmatter as an <hr> plus bare text and every
+  checkbox as a literal "[ ]" — every line-equality in the renderer
+  failed against the trailing \r.
+- **Fix**: renderMarkdown normalizes \r\n? to \n up front, and
+  togglePreviewTask normalizes ITS walk identically — the two share
+  task numbering, and fixing only one would let a task-looking line in
+  a CRLF frontmatter block desync the count and flip the wrong line.
+  A toggle writes the note back LF-normalized.
+- **Test coverage**: `scripts/test_a_windows_note_renders_like_any_other.py`
+  (8 checks; renderer + walker node-run over a desync-baiting seed;
+  both arms fire-tested, 6 and 3 checks burning).
+- **Lesson**: my "no literal brackets" assertion failed green code —
+  the yaml decoy inside the frontmatter block is SUPPOSED to render as
+  text. An over-broad negative check indicts the fixture, not the fix;
+  scope negatives to the exact lines that must change.
