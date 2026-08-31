@@ -586,8 +586,22 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       return p === lower || p === lower + '.md'
           || base === lower || base === lower + '.md';
     });
-    if (hit) await openByPath(hit.path);
-    else say(`"${target}" isn't in the Library yet.`, 'error');
+    if (hit) { await openByPath(hit.path); return; }
+    /* A dead link is where the NEXT note gets born in a linked library —
+       a toast alone was a dead end. Offer the create; on yes, open the
+       same empty dirty buffer newNote opens (the quiet autosave files
+       it). A bare name lands beside the note that links to it; a path
+       goes where it says. Hidden parts are refused exactly as newNote
+       refuses them (#140). */
+    const hidden = _hiddenPart(target);
+    if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
+    if (!(await window.hqConfirm(`"${target}" isn't in the Library yet — create it?`))) return;
+    const here = (openNoteRef.current && openNoteRef.current.path.includes('/'))
+      ? openNoteRef.current.path.replace(/\/[^/]*$/, '/') : '';
+    const rel = target.includes('/') ? target : here + target;
+    const norm = rel.endsWith('.md') ? rel : rel + '.md';
+    setOpenNote({ path: norm, id: null, content: '', dirty: true });
+    if (_isMobileV) setVaultTab('editor');
   };
 
   const renameNote = async () => {

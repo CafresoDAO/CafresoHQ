@@ -19433,3 +19433,29 @@ view-level error state answers "this room is broken" — routing a
 one-door failure into it converts an inconvenience into an outage,
 and the more faithfully the map draws the office, the more ways
 there are to click something that is not a door.
+
+## A dead link offers to become a note
+
+**Claim vs. reality.** The preview's wikilinks became doors last tick
+— and a dead one said '"fresh-idea" isn't in the Library yet.' and
+stopped. In a linked library the dead link is where the next note
+gets born: you write [[fresh-idea]] mid-thought and follow it. The
+toast named the gap and offered no way across.
+
+**Fix.** The dead-link branch asks '— create it?' (hqConfirm; a no is
+a no) and on yes opens the same empty dirty buffer newNote opens, so
+the quiet autosave files it. A bare name is born beside the note that
+links to it; a path goes where it says; a hidden part is refused
+exactly as newNote refuses it — BEFORE the confirm, so a refusal is
+never dressed as a question. Verified live: create lands at
+Research/fresh-idea.md beside its linker, [[.drafts/secret]] toasts
+the hidden-folder refusal with zero confirms asked.
+
+**Test coverage.**
+`scripts/test_a_dead_link_offers_to_become_a_note.py`; fire-tested on
+the dead-end toast returning, the guard slipping behind the confirm,
+and bare names dumping at root.
+
+**Lesson.** Naming a gap is half a feature; the other half is the
+bridge. Wherever the product must say "that doesn't exist", ask
+whether the user's very next wish is "then make it".
