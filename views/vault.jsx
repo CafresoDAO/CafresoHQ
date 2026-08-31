@@ -558,11 +558,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   /* File management — upload / rename / delete. Server-vault backends only
      (the encrypted bridge vault manages its own files in the parent shell). */
   const fileInputRef = React.useRef(null);
-  const uploadFiles = async (list) => {
-    if (!list.length) return;
+  const uploadFiles = async (list, dir) => {
+    if (!list.length) return null;
     setBusy(true);
+    let r = null;
     try {
-      const r = await CafresoHQClient.vaultUpload(list);
+      r = await CafresoHQClient.vaultUpload(list, dir);
       await refresh();
       /* A partial upload is a real, mixed outcome, and this sentence is
          composed in app/floor.jsx from the server's own answer — shared with
@@ -572,6 +573,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       if (receipt) say(receipt.text, receipt.tone);
     } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
+    return r;
   };
   const onUpload = async (e) => {
     const list = Array.from(e.target.files || []);
@@ -620,6 +622,48 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       fontFamily:"'Press Start 2P',monospace", fontSize:11, textAlign:'center',
     }}>Drop to file in the Library</div>
   ) : null;
+
+  /* ⌘V with a screenshot on the clipboard used to do NOTHING — the
+     textarea can't take an image, so the single most common way a
+     picture reaches a note was a silent no-op. Now a pasted file is
+     filed beside the open note and its embed (or wikilink, for
+     non-images) lands at the cursor; the buffer goes dirty and the
+     quiet autosave does the rest. Text-only pastes keep the default.
+     The server answers with the path it ACTUALLY saved (sanitized,
+     collision-stepped), so the inserted reference can never dangle;
+     a spacey name is written in the <angle> form every parser reads. */
+  const onEditorPaste = async (e) => {
+    const list = Array.from((e.clipboardData && e.clipboardData.files) || []);
+    if (!list.length) return;
+    e.preventDefault();
+    if (_bridge) {
+      say('Filing a pasted file needs the Library at ai.cafreso.com — this Library is managed by its shell.', 'info');
+      return;
+    }
+    const at = e.target.selectionStart ?? 0;
+    // Clipboard screenshots arrive as an anonymous "image.png" — date it
+    // so ten pastes are ten files a human can tell apart in the tree.
+    const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '.');
+    const named = list.map(f =>
+      (f.type.startsWith('image/') && (!f.name || /^image\.\w+$/i.test(f.name)))
+        ? new File([f], 'Pasted image ' + stamp + '.' + (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg'), { type: f.type })
+        : f);
+    const note = openNoteRef.current;
+    const dir = (note && note.path.includes('/'))
+      ? note.path.replace(/\/[^/]*$/, '') : '';
+    const r = await uploadFiles(named, dir);
+    const saved = (r && r.uploaded) || [];
+    if (!saved.length || !note) return;
+    const refs = saved.map(s => {
+      const p = String(s.path);
+      if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p))
+        return '![](' + (/\s/.test(p) ? '<' + p + '>' : p) + ')';
+      return '[[' + p + ']]';
+    }).join('\n');
+    const cur = openNoteRef.current;
+    const i = Math.min(at, cur.content.length);
+    setOpenNote({ ...cur, content: cur.content.slice(0, i) + refs + cur.content.slice(i), dirty: true });
+  };
   /* The links graph draws OFFICE nodes too — agents, tasks, receipts —
      and clicking one used to feed its id ('agent:…') straight into
      openByPath, whose 404 hit the view-level error state: one click on a
@@ -1040,7 +1084,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                   ? <HtmlFramePreview html={openNote.content} />
                   : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
               ) : (
-                <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
+                <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
               )}
             </div>
           )}
@@ -1127,7 +1171,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ? <HtmlFramePreview html={openNote.content} />
               : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
           ) : (
-            <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
+            <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
           )}
         </div>
       )}

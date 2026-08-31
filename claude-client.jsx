@@ -2121,10 +2121,11 @@ async function generateVideo(path, prompt, opts = {}) {
   return j;
 }
 
-async function vaultUpload(files) {
+async function vaultUpload(files, dir) {
   const fd = new FormData();
   for (const f of files) fd.append('file', f, f.name);
-  const r = await fetch(_API_BASE + '/vault/upload', { method: 'POST', body: fd });
+  const qs = dir ? ('?dir=' + encodeURIComponent(dir)) : '';
+  const r = await fetch(_API_BASE + '/vault/upload' + qs, { method: 'POST', body: fd });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;

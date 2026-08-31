@@ -19614,3 +19614,22 @@ believing it works.
 **Test coverage.** `scripts/test_a_screenshots_name_is_not_a_parse_error.py` (9 checks) runs all three parsers over the same document: renderer spellings resolve to one single-encoded path, the graph resolves each spelling in its OWN note (a shared note let the angle form mask a broken %-decode — the fire-test caught that and the seed was split), renames follow every spelling in every note and normalize the written form. Fire-tested on four arms across the three parsers — every arm burns.
 
 **Lesson.** When one concept (an embed src) is parsed in three places, the seed document for its test must make each parser and each spelling fail INDEPENDENTLY — bundled seeds let the working arm alibi the broken one.
+
+### A pasted screenshot becomes a filed embed
+- **Claim vs. reality**: the Library filed what you dropped and what you
+  picked — but ⌘V with a screenshot on the clipboard, the single most
+  common way a picture reaches a note, was a silent no-op: a textarea
+  can't take an image, and nothing was listening.
+- **Fix**: onEditorPaste on both editor textareas files every pasted
+  file beside the open note (vaultUpload grew `?dir=`), dates anonymous
+  clipboard images ("Pasted image <stamp>"), and inserts the reference
+  at the cursor from the path the server actually saved — angle-form
+  embed for spacey images, wikilink for everything else. Text pastes
+  keep the default; the bridge vault refuses out loud.
+- **Test coverage**: `scripts/test_a_pasted_screenshot_becomes_a_filed_embed.py`
+  (10 checks, node-runs the lifted handler; 4 arms fire-tested).
+- **Lesson**: the first live run uploaded perfectly and inserted
+  nothing — the handler read `r.saved` where the server answers
+  `uploaded`. A reference built from an ASSUMED contract dangles
+  silently; build it from the answer you actually received, and pin
+  that key in the test.
