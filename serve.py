@@ -41,6 +41,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -989,22 +990,53 @@ def _vault_entry(rel: str, mtime: int, size: int) -> dict:
     }
 
 
+def _fold_accents(s: str):
+    """Lowercased, accent-folded copy of `s`, plus a map from each folded
+    index back to the index in `s` it came from.
+
+    The Library holds research in more than one language; 'unicas' has to
+    find 'únicas' (and 'investigacion', 'investigación') or the search
+    quietly splits the vault by keyboard layout. NFD-decompose per source
+    character and drop the combining marks (category Mn); the map is what
+    lets the snippet come from the ORIGINAL text, accents intact, instead
+    of showing the reader a folded copy of their own note."""
+    out, idx = [], []
+    for i, c in enumerate(s):
+        for ch in unicodedata.normalize('NFD', c):
+            if unicodedata.category(ch) == 'Mn':
+                continue
+            for lc in ch.lower():       # a few lowerings expand (e.g. 'İ')
+                out.append(lc)
+                idx.append(i)
+    return ''.join(out), idx
+
+
 def _vault_search_hit(rel: str, text: str, ql: str, query: str):
     """Score one candidate for /vault/search, or None. Shared by every
     backend arm (fs, oci) so the scoring/snippet logic can't drift between
     them the way the fs arm's copy used to sit alone, unreachable for a
-    backend that fell through to it by accident instead of by name."""
+    backend that fell through to it by accident instead of by name.
+
+    `ql` (the pre-lowered query) stays in the signature for those callers
+    but matching is accent-folded now — folding lowers too, so `query` is
+    the only input actually read."""
     stem = pathlib.PurePosixPath(rel).stem
-    tl = text.lower()
-    title_score = 3 if ql in stem.lower() else 0
-    count = tl.count(ql)
+    fq, _ = _fold_accents(query)
+    if not fq:
+        return None
+    ftext, tmap = _fold_accents(text)
+    fstem, _ = _fold_accents(stem)
+    title_score = 3 if fq in fstem else 0
+    count = ftext.count(fq)
     if not (title_score or count):
         return None
-    idx = tl.find(ql)
+    idx = ftext.find(fq)
     snippet = ''
     if idx >= 0:
-        s = max(0, idx - 60)
-        e = min(len(text), idx + len(query) + 60)
+        o_start = tmap[idx]
+        o_end = tmap[idx + len(fq) - 1] + 1
+        s = max(0, o_start - 60)
+        e = min(len(text), o_end + 60)
         snippet = ('…' if s > 0 else '') + text[s:e].replace('\n', ' ').strip() + ('…' if e < len(text) else '')
     return {'path': rel, 'title': stem, 'score': title_score + count, 'snippet': snippet}
 

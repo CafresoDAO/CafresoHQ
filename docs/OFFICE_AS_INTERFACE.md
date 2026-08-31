@@ -19459,3 +19459,29 @@ and bare names dumping at root.
 **Lesson.** Naming a gap is half a feature; the other half is the
 bridge. Wherever the product must say "that doesn't exist", ask
 whether the user's very next wish is "then make it".
+
+## Search speaks both keyboards
+
+**Claim vs. reality.** "Search the Library…" — in whichever of the
+boss's languages, it implied. Matching was a bare substring on
+.lower(): 'unicas' missed 'únicas', 'investigacion' missed
+'investigación'. A vault holding Spanish and English research split
+by keyboard layout, and the half typed on the other one reported
+"0 result(s)" for notes that were really there.
+
+**Fix.** _vault_search_hit accent-folds both sides — NFD, drop the
+combining marks — via _fold_accents, which also returns an index map
+so the snippet still comes from the ORIGINAL text, accents intact:
+the reader is never shown a folded copy of their own note. One shared
+scorer, so the fs and oci arms fold identically; an all-marks query
+folds to an empty needle and is refused rather than matching
+everything. Verified live both directions with the snippet reading
+'Ideas únicas sobre la investigación…'.
+
+**Test coverage.** `scripts/test_search_speaks_both_keyboards.py`
+(runs the real scorer); fire-tested on bare-.lower() matching, the
+folded-copy snippet, and the empty-needle guard.
+
+**Lesson.** Text the user typed and text the user stored are the
+same language even when their bytes disagree; normalize at the
+comparison, never in what you show back.
