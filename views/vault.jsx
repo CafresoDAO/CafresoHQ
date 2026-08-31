@@ -33,6 +33,70 @@ const _hiddenPart = (path) => {
   }
   return null;
 };
+/* Wikilink autocomplete — the linked Library's links were typed from
+   MEMORY: `[[` offered nothing, so every link was an exact-stem recall
+   test, and a typo was a dead link the boss wouldn't see until the
+   graph missed an edge. Three pure pieces (query detection, candidate
+   ranking, insertion) live at module level so the test can run the
+   real code. */
+const _wikiAcQuery = (text, caret) => {
+  // An OPEN [[ before the caret with no closer and no newline — the
+  // char classes are what keep a finished [[link]] from re-arming.
+  const m = /\[\[([^\[\]\n]*)$/.exec(String(text).slice(0, caret));
+  return m ? { q: m[1], start: caret - m[1].length } : null;
+};
+const _wikiAcCandidates = (files, q) => {
+  const ql = String(q).toLowerCase();
+  // Stems shared by two files can't resolve bare — those complete as
+  // full paths, the same tie the graph builder refuses to guess on.
+  const stems = new Map();
+  for (const f of files) {
+    const s = String(f.path).split('/').pop().replace(/\.md$/i, '').toLowerCase();
+    stems.set(s, (stems.get(s) || 0) + 1);
+  }
+  const out = [];
+  for (const f of files) {
+    const path = String(f.path);
+    const base = path.split('/').pop();
+    const stem = base.replace(/\.md$/i, '');
+    if (ql && !stem.toLowerCase().includes(ql) && !path.toLowerCase().includes(ql)) continue;
+    const insert = stems.get(stem.toLowerCase()) > 1 ? path.replace(/\.md$/i, '') : stem;
+    out.push({ insert, label: stem, path, note: /\.(md|markdown)$/i.test(base) });
+  }
+  const rank = (c) => (c.label.toLowerCase().startsWith(ql) ? 0
+    : c.path.toLowerCase().startsWith(ql) ? 1 : 2);
+  out.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
+  return out.slice(0, 8);
+};
+const _wikiAcInsert = (content, caret, start, insert) => {
+  const after = String(content).slice(caret);
+  // Some editors' muscle memory types the ]] first — never double it.
+  const close = after.startsWith(']]') ? '' : ']]';
+  return { content: String(content).slice(0, start) + insert + close + after,
+           caret: start + insert.length + 2 };
+};
+/* Caret pixel position inside a textarea, via a style-mirroring ghost
+   div — a textarea exposes no caret geometry of its own. */
+const _caretXY = (ta, caret) => {
+  const div = document.createElement('div');
+  const cs = getComputedStyle(ta);
+  for (const p of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight',
+                   'letterSpacing', 'padding', 'border', 'boxSizing', 'width'])
+    div.style[p] = cs[p];
+  div.style.position = 'fixed';
+  div.style.visibility = 'hidden';
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.wordWrap = 'break-word';
+  div.textContent = ta.value.slice(0, caret);
+  const span = document.createElement('span');
+  span.textContent = '​';
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const out = { x: span.offsetLeft, y: span.offsetTop };
+  div.remove();
+  return out;
+};
+
 const _hiddenMsg = (part) =>
   `Hidden files can't be filed here — the Library never lists anything under "${part}". Drop the leading dot so the note stays visible.`;
 
@@ -664,6 +728,81 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     const i = Math.min(at, cur.content.length);
     setOpenNote({ ...cur, content: cur.content.slice(0, i) + refs + cur.content.slice(i), dirty: true });
   };
+
+  /* Typing `[[` opens a picker over everything the Library holds —
+     notes by stem, artifacts by name — because a link typed from
+     memory is a dead link waiting to happen. Enter/Tab/click insert
+     the shortest form that resolves (full path when a stem is shared);
+     the buffer goes dirty and the autosave files it like any edit. */
+  const [ac, setAc] = useSV(null);
+  const acRef = useRV(null);
+  acRef.current = ac;
+  const _acUpdate = (ta) => {
+    const hit = _wikiAcQuery(ta.value, ta.selectionStart);
+    const list = hit ? _wikiAcCandidates(files, hit.q) : [];
+    if (!hit || !list.length) { if (acRef.current) setAc(null); return; }
+    const r = ta.getBoundingClientRect();
+    const xy = _caretXY(ta, ta.selectionStart);
+    setAc({ list, sel: 0, start: hit.start,
+            x: Math.max(r.left, Math.min(r.left + xy.x, r.right - 240)),
+            y: Math.min(r.top + xy.y - ta.scrollTop + 20, r.bottom - 10) });
+  };
+  const _acAccept = (i) => {
+    const a = acRef.current;
+    const n = openNoteRef.current;
+    if (!a || !n) return;
+    const ta = document.querySelector('textarea.vault-edit');
+    const res = _wikiAcInsert(n.content, ta ? ta.selectionStart : a.start,
+                              a.start, a.list[i].insert);
+    setOpenNote({ ...n, content: res.content, dirty: true });
+    setAc(null);
+    if (ta) requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(res.caret, res.caret);
+    });
+  };
+  const onEditorKeyDown = (e) => {
+    const a = acRef.current;
+    if (!a) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setAc({ ...a, sel: (a.sel + 1) % a.list.length }); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setAc({ ...a, sel: (a.sel + a.list.length - 1) % a.list.length }); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); _acAccept(a.sel); }
+    // Escape closes the picker ONLY — without the stop, the window-level
+    // Esc handler would close the whole note out from under the boss.
+    else if (e.key === 'Escape') { e.stopPropagation(); setAc(null); }
+  };
+  const editorExtraProps = {
+    onKeyDown: onEditorKeyDown,
+    onKeyUp: (e) => {
+      if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
+      _acUpdate(e.target);
+    },
+    onClick: (e) => _acUpdate(e.target),
+    onBlur: () => setAc(null),
+  };
+  const acBox = ac ? (
+    <div style={{
+      position: 'fixed', left: ac.x, top: ac.y, zIndex: 120, minWidth: 180,
+      maxWidth: 300, background: 'rgba(20,20,31,0.97)', color: '#e8e8f0',
+      border: '1px solid var(--accent-sun, #7c6bff)', fontSize: 11,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.45)', overflow: 'hidden',
+    }}>
+      {ac.list.map((c, i) => (
+        <div key={c.path}
+          onMouseDown={(e) => { e.preventDefault(); _acAccept(i); }}
+          onMouseEnter={() => setAc({ ...ac, sel: i })}
+          style={{ padding: '4px 8px', cursor: 'pointer', display: 'flex',
+                   gap: 6, alignItems: 'center',
+                   background: i === ac.sel ? 'rgba(124,107,255,0.3)' : 'transparent' }}>
+          <span>{c.note ? '📄' : _binKind(c.path.split('/').pop())[1]}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+          <span style={{ opacity: 0.5, marginLeft: 'auto', fontSize: 9, whiteSpace: 'nowrap' }}>
+            {c.path.includes('/') ? c.path.split('/').slice(0, -1).join('/') : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  ) : null;
   /* The links graph draws OFFICE nodes too — agents, tasks, receipts —
      and clicking one used to feed its id ('agent:…') straight into
      openByPath, whose 404 hit the view-level error state: one click on a
@@ -971,6 +1110,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     return (
       <div className="vault-mobile" {...dropZoneProps} style={{display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)',position:'relative'}}>
         {dropHint}
+      {acBox}
         {/* Tab switcher bar */}
         <div style={{
           display:'flex',gap:0,
@@ -1084,7 +1224,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                   ? <HtmlFramePreview html={openNote.content} />
                   : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
               ) : (
-                <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
+                <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
               )}
             </div>
           )}
@@ -1097,6 +1237,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   return (
     <div className="vault-layout-3col" {...dropZoneProps} style={{ gridTemplateColumns: gridCols, position: 'relative' }}>
       {dropHint}
+      {acBox}
       <div className="vault-tree-pane">
         <div className="vault-toolbar">
           <span style={{fontWeight:600,fontSize:11,flex:1}}>{status.name}</span>
@@ -1171,7 +1312,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ? <HtmlFramePreview html={openNote.content} />
               : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
           ) : (
-            <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
+            <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
           )}
         </div>
       )}

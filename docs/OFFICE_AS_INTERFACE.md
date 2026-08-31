@@ -19633,3 +19633,22 @@ believing it works.
   `uploaded`. A reference built from an ASSUMED contract dangles
   silently; build it from the answer you actually received, and pin
   that key in the test.
+
+### Typing a wikilink offers the Library
+- **Claim vs. reality**: the Library's graph is built from [[wikilinks]],
+  and typing one was an exact-stem recall test with no answer key — no
+  picker, no spelling check, and a typo was a dead link discovered only
+  when the graph quietly missed an edge.
+- **Fix**: `[[` opens a picker over everything the Library holds (notes
+  by stem, artifacts by name, folders searchable); Enter/Tab/click
+  insert the shortest form that resolves — bare stem when unique, full
+  path when two notes share it. An existing `]]` is never doubled, and
+  Escape closes the picker without closing the note (stopPropagation
+  before the window-level Esc handler).
+- **Test coverage**: `scripts/test_typing_a_wikilink_offers_the_library.py`
+  (15 checks, node-runs the three lifted pure helpers; 4 arms
+  fire-tested).
+- **Lesson**: my first "shared stem" test seed paired chart.md with
+  chart.png — which don't actually collide, because an artifact's
+  completion keeps its extension. The test caught my wrong EXPECTATION,
+  not wrong code; the fix was a truthful seed (two notes, one stem).
