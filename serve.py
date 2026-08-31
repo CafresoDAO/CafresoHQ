@@ -1150,8 +1150,9 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
     [[target]], [[target|alias]] and [[target#heading]] where target is the
     old basename or the old vault-relative path, with or without .md. The
     replacement keeps each link's own style: a path link gets the new path,
-    a basename link gets the new basename. Returns (links_rewritten,
-    files_touched)."""
+    a basename link gets the new basename. ![alt](src) embeds follow too,
+    matched by exact vault-relative src (how the preview resolves them).
+    Returns (links_rewritten, files_touched) counting both kinds."""
     if not _vault_root:
         return (0, 0)
     root = pathlib.Path(_vault_root).resolve()
@@ -1176,6 +1177,14 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
     new_path = _strip_md(dst)
     new_base = new_path.rsplit('/', 1)[-1]
     pat = re.compile(r'\[\[([^\]\|#]+)((?:#[^\]\|]*)?(?:\|[^\]]*)?)\]\]')
+    # ![](embeds) follow too — the preview serves a bare relative src
+    # through /vault/file by its EXACT vault path, so that's the match:
+    # renaming an embedded chart.png used to leave every note that shows
+    # it with a broken image and no message. Scheme'd/rooted srcs aren't
+    # Library residents and stand as written.
+    epat = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)\)')
+    src_rel = src.lstrip('/').replace('\\', '/')
+    dst_rel = dst.lstrip('/').replace('\\', '/')
     links = files = 0
     for p in root.rglob('*.md'):
         try:
@@ -1191,7 +1200,13 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
             hits[0] += 1
             return '[[' + ('/' in target and new_path or new_base) + m.group(2) + ']]'
 
-        out = pat.sub(_sub, text)
+        def _esub(m):
+            if m.group(2) != src_rel:
+                return m.group(0)
+            hits[0] += 1
+            return '![' + m.group(1) + '](' + dst_rel + ')'
+
+        out = epat.sub(_esub, pat.sub(_sub, text))
         if hits[0]:
             try:
                 p.write_text(out, encoding='utf-8')

@@ -19584,3 +19584,13 @@ believing it works.
 **Test coverage.** `scripts/test_cmd_s_saves_the_note_not_the_page.py` (8 checks) node-runs the lifted handler over seven keystroke cases — meta, ctrl, shift-cased S, bare s, shifted, alted, other-key — and pins the ref indirection and the listener's registration/cleanup pair. Fire-tested on three arms: preventDefault dropped, the modifier gate widened, the whole effect removed — every arm burns.
 
 **Lesson.** A shortcut fix is mostly its NEGATIVE cases — the five keystrokes that must pass through outnumber the two that must not, and widening the gate is the regression a later "handy" edit will actually make.
+
+### A renamed artifact keeps its pictures
+
+**Claim vs. reality.** Renames follow inbound [[wikilinks]] — the honesty ledger already banked that — but `![](embeds)` were never rewritten, and the ✎ rename button is offered on binary files too. Renaming chart.png left every note that SHOWS it with a broken image, the embed edge gone from the graph, and no message anywhere.
+
+**Fix.** `_vault_rewrite_wikilinks` rewrites embeds in the same pass, matched by EXACT vault-relative src — precisely how the preview resolves them through /vault/file — keeping each embed's alt text. Scheme'd and rooted srcs stand as written even when their basename matches: a web URL is not a filing. One deliberate boundary: the stem-form [[chart]] is NOT rewritten for an artifact rename, because a note named chart.md wins that stem and rewriting would corrupt the other resolution. Verified live: rename reported linksRewritten 1, the note's embed names the new path, the external URL beside it untouched, /vault/file serves the moved file.
+
+**Test coverage.** `scripts/test_a_renamed_artifact_keeps_its_pictures.py` (9 checks) executes the lifted rewriter against a seeded temp vault: embed follows with alt intact, same-basename web URL and rooted src untouched, basename wikilink follows, a plain [link]() is not an embed, counts include both kinds, untouched notes never rewritten, and the .md rename path that always worked still works. Fire-tested on three arms: embed pass removed, exact-src match loosened to basename, alt text dropped — every arm burns.
+
+**Lesson.** A fix that follows references must use the RESOLUTION RULE of the surface that displays them — the preview matches exact path, so the rewriter matches exact path. Any looser (basename) and a web URL becomes a filing; any tighter and real embeds are left behind.
