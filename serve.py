@@ -1059,6 +1059,11 @@ def _oci_vault_search(query: str, ql: str, limit: int) -> dict:
         if any(part.startswith('.') for part in rel.split('/')):
             continue
         if pathlib.PurePosixPath(rel).suffix.lower() not in _VAULT_TEXT_EXT:
+            # Same deal as the fs arm: an artifact is findable by NAME —
+            # no get_object, its bytes are never fetched.
+            hit = _vault_search_hit(rel, '', ql, query)
+            if hit:
+                hits.append(hit)
             continue
         try:
             content = cli.get_object(_oci_vault_namespace, _oci_vault_bucket, obj.name).data.content
@@ -4259,13 +4264,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # same pane said no such file existed. One set now, shared with
             # /vault/list and /vault/file, so the two rooms agree.
             for p in root.rglob('*'):
-                if not p.is_file() or p.suffix.lower() not in _VAULT_TEXT_EXT:
+                if not p.is_file():
                     continue
                 try:
                     rel = str(p.relative_to(root)).replace('\\', '/')
                 except ValueError:
                     continue
                 if any(part.startswith('.') for part in p.relative_to(root).parts):
+                    continue
+                if p.suffix.lower() not in _VAULT_TEXT_EXT:
+                    # A deck's bytes can't be read, but its NAME can be
+                    # found — searching "q3" must surface q3-deck.pptx, or
+                    # a filed artifact is findable only by scrolling the
+                    # tree. Name-only scoring, never a read.
+                    hit = _vault_search_hit(rel, '', ql, query)
+                    if hit:
+                        hits.append(hit)
                     continue
                 try:
                     text = p.read_text(encoding='utf-8', errors='replace')

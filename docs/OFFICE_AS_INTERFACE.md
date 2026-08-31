@@ -19594,3 +19594,13 @@ believing it works.
 **Test coverage.** `scripts/test_a_renamed_artifact_keeps_its_pictures.py` (9 checks) executes the lifted rewriter against a seeded temp vault: embed follows with alt intact, same-basename web URL and rooted src untouched, basename wikilink follows, a plain [link]() is not an embed, counts include both kinds, untouched notes never rewritten, and the .md rename path that always worked still works. Fire-tested on three arms: embed pass removed, exact-src match loosened to basename, alt text dropped — every arm burns.
 
 **Lesson.** A fix that follows references must use the RESOLUTION RULE of the surface that displays them — the preview matches exact path, so the rewriter matches exact path. Any looser (basename) and a web URL becomes a filing; any tighter and real embeds are left behind.
+
+### Search finds what it cannot read
+
+**Claim vs. reality.** Both search arms skipped any file outside `_VAULT_TEXT_EXT` outright, so a filed q3-deck.pptx matched nothing — not even a search for its own name. The charter names artifacts as Library residents; a resident search can't surface is filed in a drawer with no label, findable only by scrolling the tree.
+
+**Fix.** A non-text file is now scored by NAME through the same shared `_vault_search_hit` (empty text, so the title arm decides: score 3, empty snippet) and its bytes are never touched — the fs arm skips `read_text`, the OCI arm skips `get_object`. Content search of text files is unchanged, and dotted parts are still skipped before any scoring. Verified live: "q3" and "deck" both surface the deck at score 3, clicking the hit opens the Presentation panel, and a content query still ranks the brief with its snippet intact.
+
+**Test coverage.** `scripts/test_search_finds_what_it_cannot_read.py` (7 checks) executes the lifted scorer on name-only candidates — hit, miss, no phantom counts from empty text — and pins both arms' routing, including that the name-only call sits BEFORE the byte-read in each. Fire-tested on three arms: fs branch reverted to a skip, OCI branch reverted, the scorer's title-only path removed — every arm burns.
+
+**Lesson.** "Findable" and "readable" are different promises. The scorer already knew the difference — title_score OR count — but both callers gated candidacy on readability, silently narrowing search to the files the server happened to be able to parse.
