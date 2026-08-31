@@ -920,6 +920,18 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
 /* ---------------- Obsidian-style folder tree ---------------- */
 /* Build a nested tree from a flat list of {path, title} entries. Folders
    sort first (alphabetical), files after (alphabetical). */
+/* "Did anything land since I last looked?" — the Library is where
+   coworkers file deliveries, and the tree gave no freshness signal at
+   all. True within a day of `now`. Tolerates second-resolution mtimes
+   (a backend that sends 1.7e9 instead of 1.7e12) and a minute of clock
+   skew into the future; no mtime just means no dot. */
+function _isFresh(mtime, now) {
+  if (!mtime) return false;
+  const mt = mtime > 1e12 ? mtime : mtime * 1000;
+  const age = now - mt;
+  return age < 86400000 && age > -60000;
+}
+
 function buildTree(files) {
   const root = { name: '', path: '', children: new Map(), isFolder: true };
   for (const f of files) {
@@ -1047,6 +1059,9 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = n
         {...dragProps(n.path)}
         onClick={()=>onOpen(n.path)} onKeyDown={rowKeys(()=>onOpen(n.path))}>
         <span className="tree-name">{display}</span>
+        {_isFresh(n.mtime, Date.now()) &&
+          <span title="Updated in the last day" aria-label="Updated in the last day"
+            style={{fontSize:7, color:'var(--accent-sun, #7c6bff)', flexShrink:0}}>●</span>}
         {isBase && <span className="tree-tag">BASE</span>}
         {binExt && !isBase && <span className="tree-tag">{binExt.toUpperCase()}</span>}
       </div>

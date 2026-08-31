@@ -19809,3 +19809,22 @@ believing it works.
   synthetic click on ↻ expected the tree and got last tick's search
   results. State that outlives the surface it was made from goes
   stale silently; every sticky pane needs a seat at refresh().
+
+### The tree marks what just landed
+- **Claim vs. reality**: the Library is where coworkers file
+  deliveries, and every row looked the same age — a deck filed a
+  minute ago and a spring-old note were pixel-identical. "Did
+  anything land since I last looked?" had no answer but opening
+  files one by one.
+- **Fix**: files updated within the last day carry a small ● with an
+  accessible "Updated in the last day" label. _isFresh owns the
+  decision: ms mtimes are the contract, second-resolution mtimes are
+  normalized rather than silently never-fresh, a minute of forward
+  clock skew still counts, a far-future mtime is bad data not news,
+  and no mtime means no dot.
+- **Test coverage**: `scripts/test_the_tree_marks_what_just_landed.py`
+  (8 checks; _isFresh node-run; 3 arms fire-tested).
+- **Lesson**: freshness cues die silently on unit mismatches — a
+  backend sending seconds would make the dot simply never appear,
+  which no error, test or boss would ever notice. Normalize units at
+  the decision point, not at every caller.
