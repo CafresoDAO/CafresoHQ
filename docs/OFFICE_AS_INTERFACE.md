@@ -19671,3 +19671,19 @@ believing it works.
   copy of "what does this name resolve to" — one rule, two owners, and
   the embed arm would have made a third. Extract the rule FIRST, then
   add the feature on top of it.
+
+### A note knows who links here
+- **Claim vs. reality**: "what links here" — the question a research
+  library answers constantly — was answerable only by squinting at the
+  graph pane. The knowledge existed as pixels, reachable by no click.
+- **Fix**: every open file carries a "⇐ linked from" row of clickable
+  chips, built by `_backlinkSources` from the graph the room already
+  draws (freshest snapshot first, one vaultGraph fetch as fallback).
+  Note sources only — office nodes aren't wikilinks; self-links and
+  duplicates are noise. Artifacts get the row too: which notes embed
+  this deck is exactly as load-bearing.
+- **Test coverage**: `scripts/test_a_note_knows_who_links_here.py`
+  (9 checks, node-runs the lifted filter; 4 arms fire-tested).
+- **Lesson**: the filter started life inline in a useEffect closure —
+  untestable without a browser. Extracting `_backlinkSources` cost four
+  lines and bought the whole seed matrix; write the pure part first.

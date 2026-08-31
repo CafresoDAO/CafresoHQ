@@ -111,6 +111,21 @@ const _wikiResolvePath = (files, target) => {
   return hit ? hit.path : null;
 };
 
+const _backlinkSources = (g, path) => {
+  const seen = new Set();
+  const out = [];
+  for (const e of (g && g.edges) || []) {
+    if (String(e.target) !== path) continue;
+    const s = String(e.source);
+    // Note sources only — office nodes (agent:…, task:…) aren't
+    // wikilinks; a self-link and a duplicate edge are both noise.
+    if (!/\.(md|markdown)$/i.test(s) || s === path || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+};
+
 const _hiddenMsg = (part) =>
   `Hidden files can't be filed here — the Library never lists anything under "${part}". Drop the leading dot so the note stays visible.`;
 
@@ -794,6 +809,45 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     onClick: (e) => _acUpdate(e.target),
     onBlur: () => setAc(null),
   };
+  /* "What links HERE" — the one question a research library answers
+     constantly, and it was answerable only by squinting at the graph
+     pane. Sources come from the graph the room already draws (freshest
+     snapshot first, one fetch as fallback); artifacts get it too —
+     which notes embed this deck is exactly as load-bearing as which
+     notes cite this note. Note sources only: office nodes (agents,
+     tasks) aren't wikilinks and never made a chip here. */
+  const [backlinks, setBacklinks] = useSV([]);
+  React.useEffect(() => {
+    let dead = false;
+    const path = openNote && openNote.path;
+    if (!path) { setBacklinks([]); return; }
+    (async () => {
+      let g = window.CafresoHQGraph && window.CafresoHQGraph._lastGraph;
+      if (!g && !_bridge) {
+        try { g = await CafresoHQClient.vaultGraph(); } catch (_e) { g = null; }
+      }
+      if (dead) return;
+      setBacklinks(_backlinkSources(g, path));
+    })();
+    return () => { dead = true; };
+  }, [openNote && openNote.path, files]);
+  const backlinksRow = backlinks.length ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                  padding: '4px 10px', fontSize: 10,
+                  borderBottom: '1px solid rgba(124,107,255,0.15)' }}>
+      <span style={{ opacity: 0.55 }}>⇐ linked from</span>
+      {backlinks.map(p => (
+        <span key={p} role="button" tabIndex={0}
+          onClick={() => openByPath(p)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openByPath(p); } }}
+          style={{ cursor: 'pointer', textDecoration: 'underline', opacity: 0.9 }}
+          title={p}>
+          {p.split('/').pop().replace(/\.(md|markdown)$/i, '')}
+        </span>
+      ))}
+    </div>
+  ) : null;
+
   const acBox = ac ? (
     <div style={{
       position: 'fixed', left: ac.x, top: ac.y, zIndex: 120, minWidth: 180,
@@ -1225,6 +1279,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 )}
                 <button className="px-btn ghost" onClick={() => { closeNote(); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
+              {backlinksRow}
               {openNote.binary ? (
                 <FiledFilePanel path={openNote.path} size={openNote.size} />
               ) : preview ? (
@@ -1313,6 +1368,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               style={{fontSize:11}}
             >✕</button>
           </div>
+          {backlinksRow}
           {openNote.binary ? (
             <FiledFilePanel path={openNote.path} size={openNote.size} />
           ) : preview ? (
