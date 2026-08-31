@@ -550,6 +550,27 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
   };
+  /* A [[wikilink]] in the preview used to render as an inert chip —
+     cursor:auto, click swallowed. In a Library whose graph is BUILT from
+     these links, the link itself has to be a door. Delegated here (the
+     preview is dangerouslySetInnerHTML, so the spans carry data-wikilink
+     instead of their own handlers). */
+  const openWikilink = async (e) => {
+    const el = e.target && e.target.closest && e.target.closest('.md-wikilink');
+    if (!el) return;
+    const target = String(el.getAttribute('data-wikilink') || '').trim();
+    if (!target) return;
+    const lower = target.toLowerCase();
+    const hit = files.find(f => {
+      const p = String(f.path).toLowerCase();
+      const base = p.split('/').pop();
+      return p === lower || p === lower + '.md'
+          || base === lower || base === lower + '.md';
+    });
+    if (hit) await openByPath(hit.path);
+    else say(`"${target}" isn't in the Library yet.`, 'error');
+  };
+
   const renameNote = async () => {
     const n = openNoteRef.current;
     if (!n) return;
@@ -880,7 +901,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ) : preview ? (
                 _isHtmlPath(openNote.path)
                   ? <HtmlFramePreview html={openNote.content} />
-                  : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
+                  : <div className="vault-preview" onClick={openWikilink} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
               ) : (
                 <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
               )}
@@ -966,7 +987,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           ) : preview ? (
             _isHtmlPath(openNote.path)
               ? <HtmlFramePreview html={openNote.content} />
-              : <div className="vault-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content) }} />
+              : <div className="vault-preview" onClick={openWikilink} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
           ) : (
             <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
           )}

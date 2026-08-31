@@ -15,15 +15,28 @@ import { CafresoHQClient } from '../claude-client.jsx';
    declines to say so. */
 import { officeCause } from '../app/floor.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
-function renderMarkdown(text) {
+function renderMarkdown(text, opts) {
   if (!text) return '';
+  opts = opts || {};
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const inline = (s) => {
     s = esc(s);
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
     s = s.replace(/`(.+?)`/g, '<code>$1</code>');
-    s = s.replace(/\[\[(.+?)\]\]/g, '<span class="md-tag">$1</span>');
+    /* opts.wikilinks (the Library preview): a [[link]] is a door, not a
+       decoration — carry the target so the caller's click handler can
+       open it. Elsewhere (IDE file preview) there is nothing to open
+       into, so the plain chip stands and nothing looks clickable. */
+    s = s.replace(/\[\[(.+?)\]\]/g, (_m, innerTxt) => {
+      if (!opts.wikilinks) return '<span class="md-tag">' + innerTxt + '</span>';
+      const parts = innerTxt.split('|');
+      const target = parts[0].split('#')[0].trim();
+      const shown = (parts[1] || parts[0]).trim();
+      return '<span class="md-tag md-wikilink" style="cursor:pointer" '
+           + 'title="Open in the Library" data-wikilink="'
+           + target.replace(/"/g, '&quot;') + '">' + shown + '</span>';
+    });
     s = s.replace(/#([\w-]+)/g, '<span class="md-tag">#$1</span>');
     s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
     return s;

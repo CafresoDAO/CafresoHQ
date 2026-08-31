@@ -19374,3 +19374,31 @@ helper's own sidestep).
 system must choose between piling up '(2)' names and silently
 replacing what the user already had, the pile is the honest choice —
 so long as the receipt says which name the work actually landed on.
+
+## A wikilink in the preview is a door
+
+**Claim vs. reality.** The Library's whole story is linked notes: the
+graph is built from [[wikilinks]], renames rewrite them, the delete
+confirm counts them. And clicking one in the preview did nothing —
+renderMarkdown flattened [[target]] to an inert span.md-tag,
+cursor:auto, click swallowed. The product drew the map and bricked up
+every door on it.
+
+**Fix.** renderMarkdown grew {wikilinks:true} — Library previews only;
+the IDE file preview has nothing to open into, so its chips stay
+plain — emitting span.md-wikilink with data-wikilink=TARGET (alias
+and #heading stripped from the target, alias shown as the text).
+vault.jsx delegates clicks on the preview: resolve against the file
+list by full path or basename (±.md), open the note, or '"x" isn't in
+the Library yet.' for a dead link. Verified live: path link
+navigates, [[note|alias]] shows the alias and resolves, dead link
+toasts, zero console errors.
+
+**Test coverage.**
+`scripts/test_a_wikilink_in_the_preview_is_a_door.py` (runs the real
+renderer in node both modes); fire-tested on the renderer's door, the
+previews' delegation, and the dead-link sentence.
+
+**Lesson.** When every other feature treats a syntax as structure,
+the reading surface must too — a link that renders as decoration
+teaches the user the links are decoration.
