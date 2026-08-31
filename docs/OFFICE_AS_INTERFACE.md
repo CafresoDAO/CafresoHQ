@@ -19346,3 +19346,31 @@ guard-precedes-dirty-buffer order pin).
 **Lesson.** "Create" at an occupied name is never a create; every
 path the user types is a claim about the world that must be checked
 against it before a dirty buffer — and an autosave — makes it true.
+
+## An upload steps aside instead of replacing
+
+**Claim vs. reality.** "Filed 1 file in the Library" — and if a file
+already lived at that name, filing it meant destroying the old one.
+Both upload doors (/vault/upload and the Projects tree's /fs/upload)
+ended in a bare write_bytes at the picked name: upload deck.pptx
+twice, the first deck.pptx is gone, no warning, no undo. Reproduced
+live — FIRST VERSION up, SECOND VERSION up under the same name, only
+SECOND VERSION survived.
+
+**Fix.** fs_routes.free_name gives a collision the first free variant
+— name, 'stem (2).ext', 'stem (3).ext', … — and both doors say the
+sidestep through the receipt's existing renamedFrom channel: '"dupe.txt"
+was filed as "dupe (2).txt".', the same sentence a sanitized name
+already gets. rest/oci vault backends keep their own overwrite
+semantics (no per-part existence round-trip). Verified live on both
+doors and in the Library toast.
+
+**Test coverage.**
+`scripts/test_an_upload_steps_aside_instead_of_replacing.py`;
+fire-tested on four arms (each door's call, the receipt wiring, the
+helper's own sidestep).
+
+**Lesson.** Annoyance is recoverable and destruction is not: when a
+system must choose between piling up '(2)' names and silently
+replacing what the user already had, the pile is the honest choice —
+so long as the receipt says which name the work actually landed on.

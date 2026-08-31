@@ -404,6 +404,30 @@ def upload_name(raw):
             'renamedFrom': original if name != original else None}
 
 
+def free_name(name, taken):
+    """The first non-colliding variant of `name`: name, 'stem (2).ext', …
+
+    Both upload doors used to write_bytes straight over whatever already
+    lived at the picked name — upload deck.pptx twice and the first one
+    is gone, silently. A collision now steps aside instead of replacing;
+    the receipt's renamedFrom channel already reads '"x" was filed as
+    "y"', so the sidestep is said in the same sentence a sanitized name
+    already gets. `taken` is the door's own existence check, because the
+    two doors file into different worlds (a project dir, the vault root).
+    """
+    if not taken(name):
+        return name, False
+    if '.' in name.strip('.'):
+        stem, ext = name.rsplit('.', 1)
+        ext = '.' + ext
+    else:
+        stem, ext = name, ''
+    n = 2
+    while taken('%s (%d)%s' % (stem, n, ext)):
+        n += 1
+    return '%s (%d)%s' % (stem, n, ext), True
+
+
 def _fs_upload(self):
     """POST /fs/upload?path=<dir>   (multipart/form-data)
     Drop files into a project's working tree so the agents (FILE_READ /
@@ -470,6 +494,8 @@ def _fs_upload(self):
             errors.append({'path': decided['shown'], 'error': decided['refusal']})
             continue
         fname = decided['name']
+        # A name already on disk steps aside — never silently replaced.
+        fname, collided = free_name(fname, lambda c: (target_dir / c).exists())
         dest = (target_dir / fname).resolve()
         # Defense-in-depth: re-assert the whitelist on the final path even
         # though a sanitized basename can't traverse.
@@ -482,8 +508,10 @@ def _fs_upload(self):
         try:
             dest.write_bytes(data)
             entry = {'path': str(dest), 'name': fname, 'size': len(data)}
-            if decided['renamedFrom']:
-                entry['renamedFrom'] = decided['renamedFrom']
+            if decided['renamedFrom'] or collided:
+                # Whichever name the boss actually picked — pre-sanitize
+                # if sanitizing changed it, pre-sidestep otherwise.
+                entry['renamedFrom'] = decided['renamedFrom'] or decided['name']
             saved.append(entry)
         except Exception as e:
             errors.append({'path': fname, 'error': str(e)})

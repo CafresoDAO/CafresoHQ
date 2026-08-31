@@ -4132,6 +4132,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                    'error': decided['refusal']})
                     continue
                 fname = decided['name']
+                collided = False
+                if _vault_backend not in ('rest', 'oci'):
+                    # fs (the shipping default): a name already filed steps
+                    # aside — never silently replaced. rest/oci can't check
+                    # existence without a round-trip per part and keep their
+                    # backends' own overwrite semantics.
+                    fname, collided = fs_routes.free_name(
+                        fname,
+                        lambda c: _vault_resolve(
+                            (folder + '/' if folder else '') + c).exists())
                 data = part.get_payload(decode=True) or b''
                 rel = (folder + '/' if folder else '') + fname
                 try:
@@ -4150,8 +4160,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_bytes(data)
                     entry = {'path': rel, 'size': len(data)}
-                    if decided['renamedFrom']:
-                        entry['renamedFrom'] = decided['renamedFrom']
+                    if decided['renamedFrom'] or collided:
+                        # Whichever name the boss actually picked — pre-
+                        # sanitize if sanitizing changed it, pre-sidestep
+                        # otherwise.
+                        entry['renamedFrom'] = decided['renamedFrom'] or decided['name']
                     saved.append(entry)
                 except Exception as e:
                     errors.append({'path': rel, 'error': str(e)})
