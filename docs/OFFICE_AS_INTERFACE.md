@@ -19828,3 +19828,19 @@ believing it works.
   backend sending seconds would make the dot simply never appear,
   which no error, test or boss would ever notice. Normalize units at
   the decision point, not at every caller.
+
+### An embed edge wears its own color
+- **Claim vs. reality**: kg_builder types ![[embeds]] as their own
+  edge kind at 0.95 — and the graph palette had no entry, so they
+  fell to the default bucket: a note SHOWING a chart and a note
+  merely linking one were the same stroke. The type existed
+  end-to-end and was invisible at the one place the boss looks.
+- **Fix**: EDGE_TYPE_STYLE carries `embeds` — warm attachment tint,
+  solid, heavier than a plain link. Both renderers read this one map
+  (legacy canvas buckets by it; the sigma engine colors through
+  edgeColorForType), so one entry lights both.
+- **Test coverage**: `scripts/test_an_embed_edge_wears_its_own_color.py`
+  (6 checks; style map + palette fn node-run; 2 arms fire-tested).
+- **Lesson**: a new edge TYPE isn't shipped when the builder emits it
+  — it's shipped when every consumer downstream knows its name. Walk
+  the type to the last renderer before calling the feature done.

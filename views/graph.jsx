@@ -1079,6 +1079,10 @@ const EDGE_TYPE_STYLE = {
   edited_by:     { color: 'rgba(125, 181, 181, 0.7)',dash: [2, 4],  widthMul: 1.0 },
   assigned_to:   { color: 'rgba(125, 181, 181, 0.95)',dash: null,   widthMul: 1.4 },
   reviewed_by:   { color: 'rgba(125, 181, 181, 0.85)',dash: [3, 3], widthMul: 1.1 },
+  /* Obsidian ![[embeds]] — the note SHOWS this artifact (kg_builder
+     types them at 0.95). Warm attachment tint, no dash, heavier than a
+     plain link: the artifact is part of the note, not a mention. */
+  embeds:        { color: 'rgba(196, 149, 106, 0.95)', dash: null,  widthMul: 1.3 },
   notes:         { color: null,                      dash: null,    widthMul: 0.85, alphaMul: 0.7 },
   mentions:      { color: null,                      dash: [2, 5],  widthMul: 0.85, alphaMul: 0.65 },
   exemplifies:   { color: 'rgba(120, 178, 95, 0.85)',dash: [4, 3],  widthMul: 1.1 },
