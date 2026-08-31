@@ -62,6 +62,22 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const [analytics, setAnalytics] = useSV(null);
   const [loading, setLoading] = useSV(true);
   const [panelOpen, setPanelOpen] = useSV(persisted.drawerOpen !== false);
+  /* The analytics panel's `top` used to be a hardcoded 50 — the height of
+     the toolbar when it fits on ONE line. On a phone the toolbar wraps to
+     three lines (~190px), and the panel painted straight through the
+     wrapped controls (zIndex kept them clickable, not readable). Track the
+     toolbar's real bottom edge instead of assuming its height. */
+  const toolbarRef = React.useRef(null);
+  const [panelTop, setPanelTop] = useSV(50);
+  React.useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setPanelTop(el.offsetTop + el.offsetHeight + 6);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [ctxMenu, setCtxMenu] = useSV(null); // { id, x, y }
   const [nodeCount, setNodeCount] = useSV(0);
   const [shareUrl, setShareUrl] = useSV(null);
@@ -336,7 +352,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     // permanently unclickable the moment it opened on an ordinary window
     // width — not a rare narrow-viewport edge case, the default size this
     // was driven at.
-    React.createElement('div', { style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none', zIndex: 2 } },
+    React.createElement('div', { ref: toolbarRef, style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none', zIndex: 2 } },
       React.createElement('input', {
         value: filter, placeholder: source === 'concepts' ? 'Filter concepts' : 'Filter  (tag:x  type:y  -term)',
         onChange: (e) => setFilter(e.target.value),
@@ -366,7 +382,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     ),
 
     // Analytics side panel (InfraNodus-style).
-    panelOpen && React.createElement('div', { style: { position: 'absolute', top: 50, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', zIndex: 1 } },
+    panelOpen && React.createElement('div', { style: { position: 'absolute', top: panelTop, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', zIndex: 1 } },
       React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5D25D' } }, source === 'concepts' ? 'Concept analysis' : 'Graph analysis'),
       source === 'concepts' && conceptMeta && React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginBottom: 8 } }, 'Co-occurrence over ' + conceptMeta.docs + ' note' + (conceptMeta.docs === 1 ? '' : 's')),
       !m && React.createElement('div', { style: { color: '#9b938a' } }, 'Computing…'),

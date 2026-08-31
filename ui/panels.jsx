@@ -514,7 +514,7 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
    would otherwise HIDE their counts, and hiding live state is the thing
    this whole thread of work exists to stop. The button carries the total
    and every row carries its own. */
-function TopbarMenu({ label, title, items }) {
+function TopbarMenu({ label, title, items, className = '' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const btnRef = useRef(null);
@@ -537,7 +537,7 @@ function TopbarMenu({ label, title, items }) {
   const total = live.reduce((n, i) => n + i.count, 0);
 
   return (
-    <div className="topbar-menu" ref={ref}>
+    <div className={'topbar-menu' + (className ? ' ' + className : '')} ref={ref}>
       <button ref={btnRef} className="px-btn ghost sz-sm topbar-menu-btn"
         aria-haspopup="true" aria-expanded={open ? 'true' : 'false'}
         title={total > 0

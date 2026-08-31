@@ -19152,3 +19152,35 @@ dead tab stays deleted.
 
 **Lesson.** "The code for it exists" and "a user can reach it" are
 different claims; only the second one is a feature.
+
+## Chrome positioned by assumption: two mobile overlaps, one habit
+
+**Claim vs. reality.** On a phone the office chrome sat on the work
+twice. (1) The topbar's ⌗ ROOMS pill: every other status-row chip is
+`mobile-hidden`, but the TopbarMenu never got the class — measured at
+375×812 the pill (y=45) floated across the Library's 📁 Files tab
+(y=52), eating its corner and its taps. (2) The graph analytics panel:
+its `top: 50` encoded "the toolbar is one line tall". Phones wrap that
+toolbar to three lines (~246px), and the panel painted straight through
+the wrapped controls — the earlier zIndex fix had made the buttons
+clickable but not readable.
+
+**Fixes.** TopbarMenu accepts a className; the ROOMS call site passes
+`mobile-hidden`, which is honest only because all six of its rooms
+already live in the MobileTabBar's Tools drawer, badges included — the
+pill was a duplicate door parked on someone else's doorway. The panel's
+top is now measured state: a ResizeObserver on the toolbar sets it to
+the toolbar's real bottom edge + 6 (verified live: toolbar bottom 256,
+panel top 262, the Hide-analytics toggle hit-testable; desktop single-
+row layout unchanged). No styles.css touched — both fixes are
+component-level.
+
+**Test coverage.**
+`scripts/test_the_phone_topbar_stays_off_the_librarys_doorway.py` —
+16 checks pinning the className plumbing, the drawer still carrying
+every room the hidden pill offered, and the measured-not-assumed panel
+top. Fire-tested on both arms.
+
+**Lesson.** A hardcoded offset is a claim about someone else's height.
+When the thing below is positioned by the thing above, measure the
+thing above.

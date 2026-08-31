@@ -6484,7 +6484,14 @@ ${d.text}` : d.text,
                 attention; these are rooms and facilities you go to.
                 Counts ride the menu button — folding them away would hide
                 live state, which is the opposite of the point. */}
+            {/* mobile-hidden: on ≤768px this pill overflowed the collapsed
+                topbar and floated ON TOP of whatever view sat below it
+                (measured over the Library's Files tab at 375px). Every one
+                of its six rooms is already in the MobileTabBar's Tools
+                drawer — badges included — so on a phone this was a
+                duplicate door parked on someone else's doorway. */}
             <TopbarMenu
+              className="mobile-hidden"
               label="⌗ ROOMS"
               title="Memory shelf, stand-up, research missions, meeting rooms, workflows"
               items={[

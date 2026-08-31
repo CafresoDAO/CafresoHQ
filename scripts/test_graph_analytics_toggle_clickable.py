@@ -51,7 +51,10 @@ def main():
     src = GRAPH.read_text(encoding='utf-8')
 
     toolbar_m = re.search(
-        r"// Top toolbar\.[\s\S]*?React\.createElement\('div', \{ style: \{([^}]*flexWrap: 'wrap'[^}]*)\}",
+        # `ref: toolbarRef,` sits before style: since the panel-top fix —
+        # the toolbar's bottom edge is measured so the panel can start
+        # below it at any wrap count.
+        r"// Top toolbar\.[\s\S]*?React\.createElement\('div', \{ (?:ref: toolbarRef, )?style: \{([^}]*flexWrap: 'wrap'[^}]*)\}",
         src)
     check('the top toolbar block is found', bool(toolbar_m))
 
