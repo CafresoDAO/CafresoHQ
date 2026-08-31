@@ -1078,6 +1078,42 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
   };
 
+  /* First-run: a brand-new boss used to land on a silently blank tree —
+     three tiny toolbar icons were the only doors in. The welcome names
+     what the Library holds and repeats the two real doors as full-size
+     buttons. Rendered only after status resolved (the !status screen
+     owns the loading moment), and only in place of the TREE — search
+     and toolbar stay. A filter that empties a non-empty Library says
+     so instead, because "blank" reads as "lost your files". */
+  const emptyTreeState = files.length === 0 ? (
+    <div style={{ padding: '18px 14px', fontSize: 11, lineHeight: 1.6 }}>
+      <div style={{ fontSize: 22, marginBottom: 6 }} aria-hidden="true">📓</div>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>Your Library is empty</div>
+      <div style={{ opacity: 0.7, marginBottom: 12 }}>
+        Notes, research, decks, documents and images all live here —
+        and your coworkers file their deliveries here too.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 220 }}>
+        <button className="px-btn primary" onClick={newNote}>➕ Write your first note</button>
+        {!_bridge && (
+          <button className="px-btn secondary"
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}>
+            📤 Upload files
+          </button>
+        )}
+      </div>
+      {!_bridge && (
+        <div style={{ opacity: 0.55, marginTop: 12 }}>
+          …or drop files anywhere in this pane.
+        </div>
+      )}
+    </div>
+  ) : kindFiles.length === 0 ? (
+    <div style={{ padding: '14px', fontSize: 11, opacity: 0.7 }}>
+      Nothing of this kind is filed yet — pick another chip above.
+    </div>
+  ) : null;
+
   /* `openInObsidian` lived here, was REMOVED, and is now back behind the
      gate it always needed. The removal note used to read, in part:
 
@@ -1288,8 +1324,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 </div>
               ) : (
                 <>
-                  {kindChips}
-                  <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />
+                  {files.length > 0 && kindChips}
+                  {emptyTreeState || <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
                 </>
               )}
             </div>
@@ -1379,8 +1415,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           </div>
         ) : (
           <>
-            {kindChips}
-            <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />
+            {files.length > 0 && kindChips}
+            {emptyTreeState || <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
           </>
         )}
       </div>

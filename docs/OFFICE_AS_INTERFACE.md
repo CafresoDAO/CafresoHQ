@@ -19751,3 +19751,23 @@ believing it works.
   the one to probe — the folder drag looked one dragProps spread away,
   but the server literally could not name a folder. Symmetry in the
   UI proves nothing about the door behind it.
+
+### An empty Library greets its first boss
+- **Claim vs. reality**: the first thing a beta tester opens the
+  Library to is nothing — zero files rendered a silently blank tree,
+  and the only doors in were three tiny toolbar icons. Blank reads as
+  broken; after a kind filter, it reads as "lost your files".
+- **Fix**: an empty Library greets — names what lives here (notes,
+  research, decks, documents, images, coworker deliveries) and repeats
+  the two real doors as full-size buttons (new note; upload + the
+  drop-hint only off the bridge vault). A filter that empties a
+  non-empty Library says so instead. Chips hide when there is nothing
+  to filter. Both layouts swap only the TREE for the greeting.
+- **Test coverage**: `scripts/test_an_empty_library_greets_its_first_boss.py`
+  (11 checks; 3 arms fire-tested, including the declaration-order
+  tombstone).
+- **Lesson**: the first cut crashed the whole app on a TDZ
+  ReferenceError — a JSX const evaluates immediately, so it must
+  declare BELOW every handler it names. The crash surfaced as a stuck
+  boot screen with the real error two layers down in the console;
+  "app won't boot" after a UI-only edit means look for exactly this.
