@@ -77,10 +77,16 @@ def main():
           'md-wikilink' not in r['off'] and 'md-tag' in r['off'], r['off'])
 
     # ── structure: the Library preview opens the door ───────────────────
+    # onPreviewClick wraps openWikilink now that task checkboxes share the
+    # delegated click (test_a_checkbox_in_a_note_is_the_task_itself.py);
+    # the door check below pins that the wrap still reaches the handler.
     check('both Library previews pass wikilinks:true and delegate clicks',
-          vault.count('onClick={openWikilink} dangerouslySetInnerHTML='
+          vault.count('onClick={onPreviewClick} dangerouslySetInnerHTML='
                       '{{ __html: renderMarkdown(openNote.content, '
                       '{ wikilinks: true }) }}') == 2)
+    check('...and the combined handler still opens the door',
+          'await openWikilink(e);' in brace_lift(
+              vault, 'const onPreviewClick = async (e) =>'))
     handler = brace_lift(vault, 'const openWikilink = async (e) => {')
     check('the handler resolves by full path or basename, ±.md',
           "p === lower || p === lower + '.md'" in handler

@@ -19544,3 +19544,13 @@ renderer never requests — the gap reads as "unsupported" to the user
 and "done" to both halves' authors; grep for the consumer before
 believing a capability is missing, and for the producer before
 believing it works.
+
+### A checkbox in a note is the task itself
+
+**Claim vs. reality.** The Library holds research and project notes, and a checklist is one of their native shapes — the preview rendered `- [ ] todo` as a literal `[ ] todo` bullet. And even rendered, a checkbox that ignores clicks is a picture of a task, not the task.
+
+**Fix.** renderMarkdown's list arm now emits real checkboxes numbered in order of appearance (`data-task=N`, skipping frontmatter and fenced code); `[x]` renders checked with the text struck through. In the Library the box is live: `togglePreviewTask` walks the source with the renderer's exact rules, flips the one mark byte on task line N, and dirties the buffer so the quiet autosave files it — verified live both directions, click → `[x]` on disk. Outside the Library the box renders disabled. Both preview panes now route clicks through `onPreviewClick`, which tries the task first and then the wikilink door — the door verified still open live.
+
+**Test coverage.** `scripts/test_a_checkbox_in_a_note_is_the_task_itself.py` (10 checks) node-runs the renderer in both modes and the lifted walker against the same document — the fenced decoy must stay untouched when box 2 flips — and pins the combined-handler wiring and its order. `scripts/test_a_wikilink_in_the_preview_is_a_door.py` re-pinned to the new wiring plus a check that the wrap still reaches `openWikilink`. Fire-tested on four arms: renderer task arm removed, walker's fence-skip removed, handler order inverted, panes rewired to the bare wikilink handler — every arm burns.
+
+**Lesson.** When two features share one delegated click, the ORDER is load-bearing and deserves its own pinned check — a wikilink-first handler would swallow every task click silently, and nothing else in the suite would notice.

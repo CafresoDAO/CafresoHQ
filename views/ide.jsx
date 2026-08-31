@@ -81,6 +81,11 @@ function renderMarkdown(text, opts) {
 
   let inCode = false;
   let codeLines = [];
+  /* Task-list checkboxes are numbered in order of appearance; the Library
+     preview's click handler walks the SOURCE with the same rules (skip
+     frontmatter, skip fenced code, `- `/`* ` then `[ ]`/`[x]`) to flip
+     the matching line. Change the detection here and there together. */
+  let taskN = 0;
 
   while (i < lines.length) {
     const line = lines[i];
@@ -146,7 +151,26 @@ function renderMarkdown(text, opts) {
     if (line.startsWith('- ') || line.startsWith('* ')) {
       let items = '';
       while (i < lines.length && (lines[i].startsWith('- ') || lines[i].startsWith('* '))) {
-        items += '<li>' + inline(lines[i].slice(2)) + '</li>';
+        /* A checklist is a research note's native shape; "[ ] todo" as a
+           literal bullet reads like a rendering bug. In the Library
+           (opts.wikilinks) the box is live — clicks are delegated to the
+           preview handler, which rewrites the source line — elsewhere
+           it's shown but disabled. */
+        const tm = lines[i].slice(2).match(/^\[( |x|X)\]\s?(.*)$/);
+        if (tm) {
+          const done = tm[1] !== ' ';
+          items += '<li class="md-task" style="list-style:none">'
+            + '<input type="checkbox" data-task="' + (taskN++) + '"'
+            + (done ? ' checked' : '') + (opts.wikilinks ? '' : ' disabled')
+            + ' style="margin-right:7px;vertical-align:-2px'
+            + (opts.wikilinks ? ';cursor:pointer' : '') + '">'
+            + (done
+                ? '<span style="opacity:0.6;text-decoration:line-through">' + inline(tm[2]) + '</span>'
+                : inline(tm[2]))
+            + '</li>';
+        } else {
+          items += '<li>' + inline(lines[i].slice(2)) + '</li>';
+        }
         i++;
       }
       html += '<ul class="md-ul">' + items + '</ul>';

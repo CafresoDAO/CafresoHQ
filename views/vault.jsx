@@ -604,6 +604,47 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (_isMobileV) setVaultTab('editor');
   };
 
+  /* A checkbox in the preview is the task itself, not a picture of it:
+     clicking box N rewrites task line N in the source and marks the
+     buffer dirty (the quiet autosave files it). The walk mirrors
+     renderMarkdown's numbering exactly — skip a leading frontmatter
+     block, skip fenced code, count only `- `/`* ` lines whose remainder
+     opens with [ ]/[x]. Change the detection here and there together. */
+  const togglePreviewTask = (e) => {
+    const box = e.target;
+    if (!box || box.tagName !== 'INPUT' || box.getAttribute('data-task') == null) return false;
+    const n = Number(box.getAttribute('data-task'));
+    const note = openNoteRef.current;
+    if (!note || note.binary) return true;
+    const lines = note.content.split('\n');
+    let k = 0;
+    if (lines[0] === '---') {
+      k = 1;
+      while (k < lines.length && lines[k] !== '---') k++;
+      if (k < lines.length) k++;
+    }
+    let inCode = false, seen = -1;
+    for (; k < lines.length; k++) {
+      if (lines[k].startsWith('```')) { inCode = !inCode; continue; }
+      if (inCode) continue;
+      if (!(lines[k].startsWith('- ') || lines[k].startsWith('* '))) continue;
+      const m = lines[k].slice(2).match(/^\[( |x|X)\]/);
+      if (!m) continue;
+      seen++;
+      if (seen !== n) continue;
+      // The mark sits at index 3: "- [x] …". Flip only that byte.
+      lines[k] = lines[k].slice(0, 3) + (m[1] === ' ' ? 'x' : ' ') + lines[k].slice(4);
+      setOpenNote({ ...note, content: lines.join('\n'), dirty: true });
+      break;
+    }
+    return true;
+  };
+
+  const onPreviewClick = async (e) => {
+    if (togglePreviewTask(e)) return;
+    await openWikilink(e);
+  };
+
   const renameNote = async () => {
     const n = openNoteRef.current;
     if (!n) return;
@@ -934,7 +975,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ) : preview ? (
                 _isHtmlPath(openNote.path)
                   ? <HtmlFramePreview html={openNote.content} />
-                  : <div className="vault-preview" onClick={openWikilink} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
+                  : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
               ) : (
                 <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
               )}
@@ -1020,7 +1061,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           ) : preview ? (
             _isHtmlPath(openNote.path)
               ? <HtmlFramePreview html={openNote.content} />
-              : <div className="vault-preview" onClick={openWikilink} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
+              : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true }) }} />
           ) : (
             <textarea className="vault-edit" value={openNote.content} onChange={e=>setOpenNote({ ...openNote, content: e.target.value, dirty: true })} />
           )}
