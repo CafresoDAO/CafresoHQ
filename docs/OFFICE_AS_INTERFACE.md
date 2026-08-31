@@ -19554,3 +19554,13 @@ believing it works.
 **Test coverage.** `scripts/test_a_checkbox_in_a_note_is_the_task_itself.py` (10 checks) node-runs the renderer in both modes and the lifted walker against the same document — the fenced decoy must stay untouched when box 2 flips — and pins the combined-handler wiring and its order. `scripts/test_a_wikilink_in_the_preview_is_a_door.py` re-pinned to the new wiring plus a check that the wrap still reaches `openWikilink`. Fire-tested on four arms: renderer task arm removed, walker's fence-skip removed, handler order inverted, panes rewired to the bare wikilink handler — every arm burns.
 
 **Lesson.** When two features share one delegated click, the ORDER is load-bearing and deserves its own pinned check — a wikilink-first handler would swallow every task click silently, and nothing else in the suite would notice.
+
+### A dropped file is filed, not followed
+
+**Claim vs. reality.** The Library is where artifacts get filed, and dragging one onto it is the filing gesture everyone tries first. Nothing in the vault handled a drop, so the browser default fired: the entire app navigated away to the dropped file — open buffer, unsaved keystrokes and all.
+
+**Fix.** Both Library roots (desktop 3-col and mobile) now claim file drags: `preventDefault` whenever `Files` are over them in EVERY backend — the navigation is the trap even where upload isn't — a "Drop to file in the Library" overlay arms while a drag hovers, and a drop files through the same `uploadFiles`/receipt path the 📤 button uses (the handler was extracted so both doors share one). The bridge vault has no upload door, so there the drop is refused out loud. A text-selection drag (no `Files` in types) is ignored entirely. Verified live: dragover arms and prevents, drop lands the file on disk with "Filed 1 file in the Library", overlay disarms after.
+
+**Test coverage.** `scripts/test_a_dropped_file_is_filed_not_followed.py` (10 checks) node-runs the lifted handlers as written — text drags ignored, file drags claimed, the fs drop reaches uploadFiles and disarms, the bridge drop prevented but refused with a toast — and pins both roots spreading `dropZoneProps`, both holding the hint, and the single shared `vaultUpload` call. Fire-tested on four arms: preventDefault removed, the Files-type gate widened, the bridge refusal muted, the desktop root unwired — every arm burns.
+
+**Lesson.** The absence of a handler can be the bug: no code path existed to reproduce or step through, just a browser default waiting. Hunting by gesture — "what does a boss try first?" — finds these where reading the code never will.

@@ -541,9 +541,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   /* File management — upload / rename / delete. Server-vault backends only
      (the encrypted bridge vault manages its own files in the parent shell). */
   const fileInputRef = React.useRef(null);
-  const onUpload = async (e) => {
-    const list = Array.from(e.target.files || []);
-    e.target.value = '';
+  const uploadFiles = async (list) => {
     if (!list.length) return;
     setBusy(true);
     try {
@@ -558,6 +556,53 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (er) { snag("Couldn't add those to the Library", er); }
     setBusy(false);
   };
+  const onUpload = async (e) => {
+    const list = Array.from(e.target.files || []);
+    e.target.value = '';
+    await uploadFiles(list);
+  };
+
+  /* Dragging a file onto the Library used to hand it to the BROWSER —
+     the default drop navigates the whole app away to the dropped file,
+     unsaved keystrokes and all. Both roots preventDefault whenever
+     files are over them, in every backend: the navigation is the trap,
+     the upload is the feature. The bridge vault has no upload door, so
+     there the drop is refused out loud instead of silently eaten. */
+  const [dropArmed, setDropArmed] = useSV(false);
+  const _dragHasFiles = (e) =>
+    e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  const onDragOver = (e) => {
+    if (!_dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = _bridge ? 'none' : 'copy';
+    if (!_bridge && !dropArmed) setDropArmed(true);
+  };
+  const onDragLeave = (e) => {
+    // relatedTarget is inside us while moving between children; only a
+    // real exit (or leaving the window, relatedTarget null) disarms.
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+    setDropArmed(false);
+  };
+  const onDrop = async (e) => {
+    if (!_dragHasFiles(e)) return;
+    e.preventDefault();
+    setDropArmed(false);
+    if (_bridge) {
+      say('Filing by drop needs the Library at ai.cafreso.com — this Library is managed by its shell.', 'info');
+      return;
+    }
+    await uploadFiles(Array.from(e.dataTransfer.files || []));
+  };
+  const dropZoneProps = { onDragOver, onDragLeave, onDrop };
+  const dropHint = dropArmed ? (
+    <div style={{
+      position:'absolute', inset:6, zIndex:60, pointerEvents:'none',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      background:'rgba(124,107,255,0.12)',
+      border:'3px dashed var(--accent-sun, #7c6bff)',
+      fontFamily:"'Press Start 2P',monospace", fontSize:11, textAlign:'center',
+    }}>Drop to file in the Library</div>
+  ) : null;
   /* The links graph draws OFFICE nodes too — agents, tasks, receipts —
      and clicking one used to feed its id ('agent:…') straight into
      openByPath, whose 404 hit the view-level error state: one click on a
@@ -863,7 +908,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       setVaultTab('editor');
     };
     return (
-      <div className="vault-mobile" style={{display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)'}}>
+      <div className="vault-mobile" {...dropZoneProps} style={{display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)',position:'relative'}}>
+        {dropHint}
         {/* Tab switcher bar */}
         <div style={{
           display:'flex',gap:0,
@@ -988,7 +1034,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   /* ---- Desktop: 3-column grid ---- */
   return (
-    <div className="vault-layout-3col" style={{ gridTemplateColumns: gridCols }}>
+    <div className="vault-layout-3col" {...dropZoneProps} style={{ gridTemplateColumns: gridCols, position: 'relative' }}>
+      {dropHint}
       <div className="vault-tree-pane">
         <div className="vault-toolbar">
           <span style={{fontWeight:600,fontSize:11,flex:1}}>{status.name}</span>

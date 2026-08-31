@@ -456,7 +456,10 @@ def source_checks():
           'own count back at them when the server filed none of it')
     do_upload = section(proj, 'const doUpload = ', 'const uploadTo =')
     upload_files = section(proj, 'const res = await CafresoHQClient.fsUpload(', 'setBusy(false)')
-    on_upload = section(vault, 'const onUpload = ', 'const renameNote =')
+    # uploadFiles carries the receipt now; the 📤 button (onUpload) and
+    # the Library drop zone both delegate to it
+    # (test_a_dropped_file_is_filed_not_followed.py pins that sharing).
+    on_upload = section(vault, 'const uploadFiles = ', 'const renameNote =')
     check('the Projects drop zone reads the shared receipt',
           'uploadReceipt(' in do_upload, do_upload[:200])
     check('the Projects tree upload reads it too',
