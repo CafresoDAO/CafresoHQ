@@ -19184,3 +19184,26 @@ top. Fire-tested on both arms.
 **Lesson.** A hardcoded offset is a claim about someone else's height.
 When the thing below is positioned by the thing above, measure the
 thing above.
+
+## The tab icon answers the door
+
+**Claim vs. reality.** hq.html declares favicon-16/32 PNGs, and the
+assets exist — yet every boot logged four "Failed to load resource:
+404" console errors and a pair of `/favicon.ico` 404s in the serve.py
+log. Browsers request `/favicon.ico` unconditionally, whatever the
+link tags say, and serve.py had no route for it: the request fell to
+the gated static fallthrough and died. Found on a routine clean-boot
+console sweep — the only errors on an otherwise green boot.
+
+**Fix.** serve.py answers `/favicon.ico` with the same
+assets/favicon-32.png the page already declares, placed before the
+static fallthrough. Verified live after a server restart: 200,
+image/png, 1082 bytes; /health still green.
+
+**Test coverage.** `scripts/test_the_tab_icon_answers_the_door.py` —
+route exists, artwork agrees with the link tags, file exists, route
+answers before the fallthrough.
+
+**Lesson.** A clean console is a beta deliverable: the first thing a
+beta tester opens is devtools, and four red lines on boot say
+"broken" before the app says anything.

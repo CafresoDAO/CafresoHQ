@@ -1638,6 +1638,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         _p0 = self.path.split('?', 1)[0]
         if _p0 in ('/', '/hq.html', '/index.html'):
             return self._serve_hq_html()
+        if _p0 == '/favicon.ico':
+            # Browsers request this path unconditionally, whatever <link
+            # rel=icon> declares — without a route it 404'd on every boot
+            # (log noise + a console error in devtools).
+            return self._serve_cwd_file(os.path.join('assets', 'favicon-32.png'), 'image/png')
         if _p0 == '/graph-viewer.html':
             return self._serve_cwd_file('graph-viewer.html', 'text/html; charset=utf-8')
         if _p0 == '/graph-viewer.js':
