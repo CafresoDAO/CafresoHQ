@@ -354,6 +354,23 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /* ⌘S/^S is save-note muscle memory in any editor; unhandled, it opened
+     the BROWSER's save-page dialog over the boss mid-keystroke. The quiet
+     autosave already makes the manual save near-redundant — claiming the
+     shortcut is the point, and answering it with the note's own save
+     (a no-op on a clean buffer) instead of the page's. Plain ⌘S only:
+     ⌘⇧S and ⌥ combos stay the browser's. */
+  React.useEffect(() => {
+    const onSaveKey = (e) => {
+      if ((e.key !== 's' && e.key !== 'S') || !(e.metaKey || e.ctrlKey)
+          || e.altKey || e.shiftKey) return;
+      e.preventDefault();
+      saveNoteRef.current();
+    };
+    window.addEventListener('keydown', onSaveKey);
+    return () => window.removeEventListener('keydown', onSaveKey);
+  }, []);
+
   /* Bridge-mode search: VaultBridge has no vault:search message — the shell
      only exposes list/read/write/create/remove — so vaultSearch() was being
      called unconditionally and hitting the LOCAL serve.py /vault/search

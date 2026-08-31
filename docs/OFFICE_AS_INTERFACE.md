@@ -19574,3 +19574,13 @@ believing it works.
 **Test coverage.** `scripts/test_the_graph_knows_what_the_library_holds.py` (10 checks) runs the real builder against seeded temp vaults: artifact nodes, dotted-dir invisibility, path- and stem-resolution, embed dedupe, the note-wins-a-shared-stem rule, signature invalidation, and the false-edge case — an external URL whose basename matches a filed artifact must not fake a filing. Fire-tested on four arms (nodes removed, resolution tables unregistered, scheme gate dropped, signature back to md-only) — the gate arm didn't burn on the first version because the seeds' stems resolved to nothing either way; the seed was sharpened until it did.
 
 **Lesson.** A fire-test that doesn't burn is telling you the check tests the symptom you happened to write down, not the defense. The gate's job is refusing a plausible false match — so the seed must offer one.
+
+### ⌘S saves the note, not the page
+
+**Claim vs. reality.** Save-note muscle memory is universal, and the Library's only keydown listener answered Escape — so ⌘S mid-keystroke popped the browser's save-page dialog over the boss's writing. No data was ever at risk (the quiet autosave files every dirty buffer), which is exactly why the dialog was pure trap: it interrupted the flow to offer something nobody wanted.
+
+**Fix.** A second window keydown effect claims plain ⌘S/^S while the Library is mounted: preventDefault, then the note's own save through `saveNoteRef` (a no-op on a clean buffer). ⌘⇧S, ⌥ combos, other ⌘ shortcuts, and a bare `s` while typing all pass through untouched. Verified live: a dirtied buffer hit disk within a second of the keystroke, `defaultPrevented` true, the shifted combo untouched.
+
+**Test coverage.** `scripts/test_cmd_s_saves_the_note_not_the_page.py` (8 checks) node-runs the lifted handler over seven keystroke cases — meta, ctrl, shift-cased S, bare s, shifted, alted, other-key — and pins the ref indirection and the listener's registration/cleanup pair. Fire-tested on three arms: preventDefault dropped, the modifier gate widened, the whole effect removed — every arm burns.
+
+**Lesson.** A shortcut fix is mostly its NEGATIVE cases — the five keystrokes that must pass through outnumber the two that must not, and widening the gate is the regression a later "handy" edit will actually make.
