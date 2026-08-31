@@ -36,6 +36,7 @@ def init(*, vault_root, state_dir, memory_dir, obsidian_request,
 import re as _re
 _WIKILINK_RE = _re.compile(r'\[\[([^\]\|]+?)(?:\|[^\]]*)?\]\]')
 _TAG_RE = _re.compile(r'(?:^|\s)#([A-Za-z0-9_/\-]+)')
+_EMBED_RE = _re.compile(r'!\[[^\]]*\]\(([^)\s]+)\)')
 
 
 def _graph_node_type(path: str, tags=None) -> str:
@@ -446,7 +447,7 @@ def _norm_link(target: str, all_paths: dict) -> str:
     return by_stem.get(stem, '')
 
 
-def _build_graph_from_raw(raw) -> dict:
+def _build_graph_from_raw(raw, artifacts=()) -> dict:
     """Shared second half of every backend's graph build. `raw` is a list of
     (rel, title, text, mtime_seconds, size) tuples — that's the ENTIRE
     contract a backend has to satisfy, whether the text came from a local
@@ -454,12 +455,20 @@ def _build_graph_from_raw(raw) -> dict:
     typed-edge extraction and the HQ-state overlay live here exactly once,
     so a bug fixed for one backend is fixed for all of them and a fourth
     backend added later inherits this for free instead of needing its own
-    copy that can drift from this one."""
+    copy that can drift from this one.
+
+    `artifacts` is a list of (rel, title, mtime_seconds, size) for the
+    Library's NON-markdown residents — decks, PDFs, images, spreadsheets.
+    They become 'artifact' nodes, [[wikilinks]] resolve to them (notes win
+    a shared stem), and a note's ![](embed) becomes an 'embeds' edge."""
     by_path = {}
     by_stem = {}
     for rel, title, _text, _mtime, _size in raw:
         by_path[rel] = True
         by_stem[title.lower()] = rel
+    for rel, title, _mtime, _size in artifacts:
+        by_path[rel] = True
+        by_stem.setdefault(title.lower(), rel)
     all_paths = {'by_path': by_path, 'by_stem': by_stem}
     nodes = []
     edges = []
@@ -479,11 +488,37 @@ def _build_graph_from_raw(raw) -> dict:
             seen_typed_edge.add(key)
             edges.append(_graph_edge_payload(
                 rel, tgt, edge_type=etype, confidence=conf, source_text=snip))
+        # ![](embed) — the note SHOWS the artifact, which is a stronger tie
+        # than mentioning it. External/data/rooted srcs aren't Library
+        # residents and stay out (mirrors the preview's routing test).
+        for m in _EMBED_RE.finditer(text):
+            src = m.group(1)
+            if _re.match(r'^(https?:|data:|/)', src, _re.IGNORECASE):
+                continue
+            tgt = src if src in by_path else by_stem.get(
+                pathlib.PurePosixPath(src).stem.lower(), '')
+            if not tgt or tgt == rel:
+                continue
+            out_targets.add(tgt)
+            key = (rel, tgt, 'embeds')
+            if key in seen_typed_edge: continue
+            seen_typed_edge.add(key)
+            edges.append(_graph_edge_payload(
+                rel, tgt, edge_type='embeds', source_text=m.group(0)[:120]))
         nodes.append({
             'id': rel, 'title': title, 'path': rel,
             'mtime': int(mtime * 1000), 'size': size,
             'tags': tags[:8], 'outlinks': len(out_targets),
             'type': _graph_node_type(rel, tags),
+            'source': 'markdownvault',
+        })
+
+    for rel, title, mtime, size in artifacts:
+        nodes.append({
+            'id': rel, 'title': title, 'path': rel,
+            'mtime': int(mtime * 1000), 'size': size,
+            'tags': [], 'outlinks': 0,
+            'type': 'artifact',
             'source': 'markdownvault',
         })
 
@@ -507,12 +542,18 @@ def _build_graph_from_raw(raw) -> dict:
 
 
 def _build_graph_fs() -> dict:
-    """Build a graph from raw .md files under the configured vault directory."""
+    """Build a graph from the files under the configured vault directory:
+    .md notes are read and parsed; everything else the Library holds —
+    decks, PDFs, images, spreadsheets — rides along as artifact nodes
+    (stat only, never read)."""
     if not _cfg['vault_root']():
         raise ValueError('vault not configured')
     root = pathlib.Path(_cfg['vault_root']()).resolve()
     raw = []
-    for p in root.rglob('*.md'):
+    artifacts = []
+    for p in root.rglob('*'):
+        if not p.is_file():
+            continue
         try:
             rel = str(p.relative_to(root)).replace('\\', '/')
         except ValueError:
@@ -520,11 +561,18 @@ def _build_graph_fs() -> dict:
         if any(part.startswith('.') for part in p.relative_to(root).parts):
             continue
         try:
-            text = p.read_text(encoding='utf-8', errors='replace')
+            st = p.stat()
         except OSError:
             continue
-        raw.append((rel, p.stem, text, p.stat().st_mtime if p.exists() else 0, p.stat().st_size if p.exists() else 0))
-    return _build_graph_from_raw(raw)
+        if p.suffix.lower() in ('.md', '.markdown'):
+            try:
+                text = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            raw.append((rel, p.stem, text, st.st_mtime, st.st_size))
+        else:
+            artifacts.append((rel, p.stem, st.st_mtime, st.st_size))
+    return _build_graph_from_raw(raw, artifacts=artifacts)
 
 
 def _oci_graph_prefix() -> str:
@@ -603,15 +651,16 @@ def _hq_state_sig_update(h) -> None:
 
 
 def _vault_graph_signature() -> str:
-    """Cheap fingerprint of everything _build_graph_fs reads: each vault .md
-    file's (rel, mtime, size) + the top-level hq-state JSON files. Stat-only,
-    so it's far cheaper than the read+parse a full rebuild does."""
+    """Cheap fingerprint of everything _build_graph_fs reads: each vault
+    file's (rel, mtime, size) — notes AND artifacts, since both are nodes
+    now — + the top-level hq-state JSON files. Stat-only, so it's far
+    cheaper than the read+parse a full rebuild does."""
     if not _cfg['vault_root']():
         return 'unconfigured'
     h = hashlib.sha1()
     root = pathlib.Path(_cfg['vault_root']()).resolve()
     try:
-        for p in sorted(root.rglob('*.md')):
+        for p in sorted(x for x in root.rglob('*') if x.is_file()):
             try:
                 rel = p.relative_to(root)
             except ValueError:

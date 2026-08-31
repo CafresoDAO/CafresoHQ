@@ -921,6 +921,7 @@ function typeColor(type, isDark) {
     mission:        isDark ? '#ffe19a' : '#c08a30',  // gold — running work
     receipt:        isDark ? '#cfcfcf' : '#7a7a7a',  // grey — audit trail / past actions
     'message-thread': isDark ? '#cfb8e8' : '#7d5bb5', // soft violet — comms threads
+    artifact: isDark ? '#9db8c9' : '#4a7089',  // slate — filed decks/PDFs/images
     note:     isDark ? '#d8c9a8' : '#9c8555',
   };
   return colors[t] || colors.note;
