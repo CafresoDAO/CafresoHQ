@@ -938,6 +938,18 @@ def _build_hq_state_graph(all_paths: dict, seen_typed_edge: set) -> tuple:
             for ref in resolve_wikilinks_in(title + '\n' + detail):
                 add_edge(node_id, ref, 'references', 0.9,
                           f'task body mentions [[{pathlib.PurePosixPath(ref).stem}]]')
+            # The filed deliverable. When a coworker's answer lands in the
+            # Library the task record keeps the exact vault path it filed
+            # (artifactPath) — and this builder ignored it, so a done task
+            # and the very note it produced sat on the map as strangers.
+            # Same `produces` type the missions' notesWritten edges wear:
+            # the palette and both renderers already know it by name.
+            artifact = str(t.get('artifactPath') or '').replace('\\', '/').strip().lstrip('/')
+            if artifact and artifact not in all_paths['by_path']:
+                artifact = resolve_path_to_note(artifact)   # moved/renamed since
+            if artifact:
+                add_edge(node_id, artifact, 'produces', 1.0,
+                          f'task delivered {artifact}')
 
     # ── Projects ───────────────────────────────────────────────────────
     projects = _load_hq_state('projects') or []

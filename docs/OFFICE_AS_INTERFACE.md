@@ -19874,3 +19874,26 @@ believing it works.
   actors filing into it needs a standing look, not just a mount look —
   and the look must prove quietness (change-detection) as carefully
   as it proves noticing.
+
+### A task points at what it delivered (2026-08-31)
+
+- **Claim vs. reality**: the map's whole pitch is showing how the
+  office's work hangs together — and the one line that says "this task
+  produced THIS document" was never drawn. When a coworker's answer is
+  filed in the Library the task record keeps the exact vault path
+  (artifactPath); kg_builder ignored the field, so task:tk_fbevo and
+  the research brief it wrote sat one inch apart as strangers.
+  Missions' notesWritten already wired `produces` edges; tasks didn't.
+- **Fix**: the kg_builder task loop now emits artifactPath → a
+  `produces` edge at confidence 1.0 — the mission edges' own type, so
+  the palette and both renderers already know it by name. Slashes are
+  normalized, a path gone stale after a move re-resolves by stem, and
+  a path that resolves nowhere adds nothing.
+- **Test coverage**: `scripts/test_a_task_points_at_what_it_delivered.py`
+  (8 checks; real _build_graph_fs over a tempdir vault + state dir —
+  no lifting; 2 arms fire-tested). Live: the produces edge reached
+  both /vault/graph and the rendered engine snapshot.
+- **Lesson**: when two record systems describe the same event (the
+  task's artifactPath, the note on disk), the graph earns its keep by
+  joining them — an ingester that reads a record but not all of its
+  foreign keys leaves the map's best edges undrawn.
