@@ -19789,3 +19789,23 @@ believing it works.
   gap hides in plain sight — no error, no missing data, just a UI
   that never asked. Diff the response shape against what the row
   actually reads before hunting anywhere deeper.
+
+### A standing search stays fresh
+- **Claim vs. reality**: hits are sticky state — leave the Library,
+  come back, tap ↻, and the old result list still stood, made from a
+  Library that no longer exists. New matches never appeared, and after
+  a drag-move the rows kept PRE-move paths, so a click opened nothing.
+  Everything else refreshed; the one pane the boss was looking at
+  didn't.
+- **Fix**: refresh() re-runs the standing query (hitQ — the query the
+  hits were MADE with) against the fresh Library on both arms, after
+  the file list lands. No standing search → no extra round-trip; a
+  failed re-run keeps the hits we have, because a refresh must never
+  turn a result list into an error screen.
+- **Test coverage**: `scripts/test_a_standing_search_stays_fresh.py`
+  (7 checks; _refreshHits node-run under both arms; 3 arms
+  fire-tested).
+- **Lesson**: found by the verification pass, not the hunt list — a
+  synthetic click on ↻ expected the tree and got last tick's search
+  results. State that outlives the surface it was made from goes
+  stale silently; every sticky pane needs a seat at refresh().

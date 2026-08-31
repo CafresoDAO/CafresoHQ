@@ -400,6 +400,18 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     say(`${what} — ${officeCause((err && err.message) || String(err))}`, 'error');
   };
 
+  /* A standing search must not go stale behind a refresh: hit rows kept
+     pre-move paths after a drag (a click opened nothing) and a matching
+     new file never appeared. Re-run the SAME query the hits were made
+     with (hitQ) against the fresh Library; on failure the old hits stand
+     — a refresh must never turn results into an error screen. */
+  const _refreshHits = async () => {
+    if (hits === null || !hitQ) return;
+    try {
+      setHits(_bridge ? await bridgeSearch(hitQ) : await CafresoHQClient.vaultSearch(hitQ));
+    } catch (_e) { /* keep the hits we have */ }
+  };
+
   const refresh = async () => {
     setErr(null);
     if (_bridge) {
@@ -408,6 +420,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         setFiles(_adaptBridgeFiles(bridgeFiles));
         setStatus({ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' });
         refreshGraph();
+        await _refreshHits();
       } catch (e) {
         setErr(e.message || 'Could not load the Library from shell.');
         setStatus({ configured: false, unavailable: true, error: e.message });
@@ -421,6 +434,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       try {
         setFiles(await CafresoHQClient.vaultList());
         refreshGraph();
+        await _refreshHits();
       } catch (e) {
         setFiles([]);
         setErr(e.message || 'Could not list the Library.');
