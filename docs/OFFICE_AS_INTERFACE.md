@@ -18996,3 +18996,132 @@ had one room; every room added since silently joined a zero-sum budget
 nobody had re-examined. When a structure becomes shared, every
 whole-structure operation on it needs re-reading as a question about
 fairness.
+
+## The Library tree, its search hits, and the graph's menus were mouse-only
+
+**Claim vs. reality.** `views/vault.jsx`, `views/graph.jsx`,
+`views/misc.jsx` and `views/terminal.jsx` contained not one `aria-`
+attribute or `role=` between them (misc and terminal turned out to need
+none — terminal's controls are real `<button>`s with visible text). The
+parts that did need one: every FolderTree folder/file row was a
+`<div onClick>` — unreachable by Tab, silent to a screen reader; the
+Library's search-hit rows (both variants) were the same bare div; the
+minimized-graph restore pane said "(click to show)" to a keyboard that
+could not click it; the graph's context menu and "Most influential"
+rows had no roles and no key handling; the graph's ✕ button had no
+accessible name.
+
+**The fix** applies one recipe everywhere: a role (`treeitem`/`button`/
+`menuitem`), `tabIndex={0}`, and an Enter/Space keydown calling the
+same handler the click calls. Decorative glyphs are `aria-hidden` so a
+reader announces "Research, collapsed", not the Unicode name of a
+chevron. The tree declares `role="tree" aria-label="Library files"`;
+folders announce `aria-expanded`; the open file announces
+`aria-current`; both search inputs carry an `aria-label`.
+
+**Test coverage.** New:
+`scripts/test_the_library_and_graph_answer_the_keyboard.py` — 13 checks
+pinning each role, key handler and label above.
+
+**Lesson.** "It renders and clicks" is a claim about one input device.
+A surface nobody can Tab to is a surface some users don't have.
+
+## A failed stream rendered exactly like a healthy reply
+
+**Claim vs. reality.** All three dispatch catches mark a dead run's
+bubble `error: !aborted` — and nothing ever read the flag. A run that
+died mid-stream wore the same face as a finished answer, and the only
+retry in the product sat in the Inbox modal behind a filter. In the
+transcript, where the boss watched the run die, the way forward was to
+re-type the ask.
+
+**The fix** makes the bubble wear its state (`msg-error` class, red
+left border, driven by the same flag) and adds a RETRY control under
+the error text that refills the composer with the ask that failed —
+the previous user message in THIS thread, using the same scoped scan
+"Ask this again" uses — and focuses the composer. It deliberately does
+NOT auto-send: the error above it usually names a cause (a key, a rate
+limit) the boss may need to fix first.
+
+**Test coverage.** New:
+`scripts/test_a_dead_run_looks_dead_and_offers_a_way_back.py` — pins
+the three writers, both visual readers, the thread-scoped refill, the
+focus, and the absence of an auto-send.
+
+**Lesson.** A flag only one side of the code knows about is a promise
+with no witness. Every state a catch records, some surface must show.
+
+## The whole office lived in one browser profile with no way out
+
+**Claim vs. reality.** Chat, team, tasks and prefs all persist under
+the cafresohq localStorage prefixes. One cleared profile, one new
+machine, one different browser: the office starts empty. Settings
+offered an export for the HERMES config — nothing for the office.
+
+**The fix** adds Settings → OFFICE BACKUP: export the office entries
+as one JSON file, restore from one. The "keys NOT included" contract
+is enforced BOTH directions: the encrypted agent-key blob and the raw
+device AES key are excluded by name on export and refused on import;
+every /key$/i field in the client-settings blob is blanked on export
+and re-blanked on import, so a hand-edited backup can't smuggle a key
+into storage. Import refuses non-backup files, confirms with a danger
+prompt, and reloads so the restored state is what mounts.
+
+**Test coverage.** New:
+`scripts/test_the_office_can_leave_the_browser_and_come_back.py` — 12
+checks: the structural contract plus a node drive of the lifted filter
+and scrubber against a hostile backup carrying a smuggled key blob, a
+foreign key, and a non-string value.
+
+**Lesson.** Persistence that can't be carried is custody, not backup.
+
+## Tripwire: a new unscoped walk of the shared chat array fails the suite
+
+Three shipped defects (#44 Focus Mode, #45 Delegate, #46 the history
+caps) were the same defect: code walking the one interleaved multi-room
+chat array as if it were one conversation. Each fix taught one
+consumer the `(m.thread || 'direct')` convention; new:
+`scripts/test_no_new_walk_of_the_shared_chat_ignores_threads.py`
+teaches the file. Every scan-type read of `chat` in app.jsx and
+ui/chat.jsx must scope by thread, be an id-lookup, or sit on a written
+allowlist (ceoBusy — the CEO is one entity across rooms). The scanner
+lifts the whole chained call by paren matching; an 8-line-window draft
+was fire-tested and let a planted unscoped read pass by sitting near a
+scoped neighbor — adjacency is not scoping — so the window approach
+was replaced, and the planted read now fails with its file and line.
+
+**Lesson.** When the third instance of a defect class ships, the class
+— not the instance — is what needs a test.
+
+## Smoke: every suite read the code as text; none ever compiled it
+
+All 230+ suites parse app.jsx and friends with regexes and node-lifted
+fragments — every one of them can be green while `npm run build` is
+broken, and the browser loads dist-ui/, not the .jsx. New:
+`scripts/test_the_bundle_still_builds_and_boots.py` builds from source
+on every suite run, checks the manifest and every asset it names, and
+greps the minified app bundle for load-bearing markers (createRoot, the
+"direct" thread key, LIBRARY, CafresoHQMessages) — a bundle that built
+but tree-shook the app away fails it. Found and fixed in the writing:
+the manifest's values are lists and its `viewer` entry lives at dist-ui
+root, not bundle/ — assumptions a test that never ran the build would
+have kept forever.
+
+**Lesson.** "The tests pass" and "the app runs" are independent claims
+until at least one test compiles the code the browser will load.
+
+## The Library gained kind chips — and only ever the true ones
+
+The Library files decks, documents, data and research beside the notes
+now; the only ways to find "the deck" were its name or a full-tree
+scan. The tree carries kind chips (ALL · NOTES · DECKS · DOCS · DATA ·
+MEDIA) filtering which files build it. Two properties are load-bearing:
+a chip only renders when the Library holds at least one file of its
+kind — six chips over three notes is five buttons that do nothing —
+and the predicates reuse the same extension families the binary-file
+panel names, so the chip row and the file panel never disagree about
+what a .pptx is. Search hits are deliberately not kind-filtered: a
+search is already a filter, and a half-visible second one stacked on it
+is how "no results" lies get made. New:
+`scripts/test_the_library_can_show_just_the_decks.py` (13 checks, node
+drive of the predicate table).
