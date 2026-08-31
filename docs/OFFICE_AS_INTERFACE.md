@@ -19771,3 +19771,21 @@ believing it works.
   declare BELOW every handler it names. The crash surfaced as a stuck
   boot screen with the real error two layers down in the console;
   "app won't boot" after a UI-only edit means look for exactly this.
+
+### A search hit shows why it matched
+- **Claim vs. reality**: both search arms have always sent a
+  match-centered snippet — the UI dropped it, leaving a bare filename
+  and "300.0": the score is a plain match count that the row
+  multiplied by 100 and dressed as a percent.
+- **Fix**: one shared hitRow for both layouts — title, an honest ×N
+  badge, and the snippet with every case-insensitive occurrence of
+  the query lit up. Highlights split on hitQ, the query the hits were
+  MADE with, so typing after a search doesn't strip them; accent-
+  folded matches the client splitter can't see come back shown but
+  unlit.
+- **Test coverage**: `scripts/test_a_search_hit_shows_why_it_matched.py`
+  (11 checks; splitter node-run; 4 arms fire-tested).
+- **Lesson**: when a row renders less than its endpoint sends, the
+  gap hides in plain sight — no error, no missing data, just a UI
+  that never asked. Diff the response shape against what the row
+  actually reads before hunting anywhere deeper.

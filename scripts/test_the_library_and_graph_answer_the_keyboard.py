@@ -72,20 +72,27 @@ def main():
     check('both search inputs have an accessible name',
           vault.count('aria-label="Search the Library"') == 2,
           vault.count('aria-label="Search the Library"'))
+    # the two inline hit lists collapsed into ONE shared hitRow
+    # (test_a_search_hit_shows_why_it_matched) — same role/tabIndex recipe,
+    # rendered by both layouts
     hit_rows = re.findall(
         r'className="tree-row tree-file" role="button" tabIndex=\{0\}', vault)
     check('both search-hit lists are keyboard-operable (mobile and desktop)',
-          len(hit_rows) == 2, len(hit_rows))
+          len(hit_rows) == 1
+          and 'hits.map(h => hitRow(h, openByPath))' in vault
+          and 'hits.map(h => hitRow(h, mobileOpenByPath))' in vault,
+          len(hit_rows))
     check('the minimized-graph restore pane is a real button now',
           'className="vault-graph-pane fullspan" role="button" tabIndex={0}' in vault,
           '— "(click to show)" must be clickable by keyboard too')
     # Any hit row or restore pane that gained a role must also have keys —
     # a focusable row that swallows Enter is worse than an unfocusable one.
     for label, hay, n in (
-        ('hit rows', vault, 2 + 1),  # 2 hit lists + restore pane
+        ('hit rows', vault, 1 + 1 + 1),  # shared hit row + restore pane
+                                         # + backlink chips (same recipe)
     ):
         keyed = len(re.findall(
-            r"onKeyDown=\{e=>\{ if \(e\.key==='Enter'\|\|e\.key===' '\) \{ e\.preventDefault\(\);", hay))
+            r"onKeyDown=\{e ?=> ?\{ if \(e\.key ?=== ?'Enter' ?\|\| ?e\.key ?=== ?' '\) \{ e\.preventDefault\(\);", hay))
         check(f'every focusable {label} handles Enter/Space', keyed == n,
               [keyed, n])
 

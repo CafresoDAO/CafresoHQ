@@ -111,6 +111,29 @@ const _wikiResolvePath = (files, target) => {
   return hit ? hit.path : null;
 };
 
+/* Split a search snippet into plain/hit segments around every
+   case-insensitive occurrence of the query, so the hit rows can show
+   WHY a result matched instead of a bare title. Accent-folded matches
+   (the server finds those) simply come back unhighlighted — the
+   snippet is still shown. Pure; node-run by the search-snippet test. */
+const _snippetParts = (snippet, q) => {
+  const s = String(snippet || '');
+  if (!s) return [];
+  const needle = String(q || '').trim().toLowerCase();
+  if (!needle) return [{ t: s, hit: false }];
+  const low = s.toLowerCase();
+  const out = [];
+  let i = 0;
+  for (;;) {
+    const j = low.indexOf(needle, i);
+    if (j === -1) { if (i < s.length) out.push({ t: s.slice(i), hit: false }); break; }
+    if (j > i) out.push({ t: s.slice(i, j), hit: false });
+    out.push({ t: s.slice(j, j + needle.length), hit: true });
+    i = j + needle.length;
+  }
+  return out;
+};
+
 const _backlinkSources = (g, path) => {
   const seen = new Set();
   const out = [];
@@ -247,6 +270,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const [files, setFiles] = useSV([]);
   const [q, setQ] = useSV('');
   const [hits, setHits] = useSV(null);
+  const [hitQ, setHitQ] = useSV('');
   const [openNote, setOpenNote] = useSV(null);
   const [busy, setBusy] = useSV(false);
   const [err, setErr] = useSV(null);
@@ -503,9 +527,37 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
        Library. Same distinction saveNote already draws (see its own
        comment) for the same reason: a scoped failure must not evict
        everything the boss can still see and use. */
-    try { setHits(_bridge ? await bridgeSearch(q.trim()) : await CafresoHQClient.vaultSearch(q.trim())); }
+    try {
+      setHits(_bridge ? await bridgeSearch(q.trim()) : await CafresoHQClient.vaultSearch(q.trim()));
+      setHitQ(q.trim());
+    }
     catch (e) { snag('Search failed', e); setHits(null); }
   };
+
+  /* One hit row for both layouts: title, an honest match count (the score
+     IS a count — the old ×100 "percent" showed 300.0), and the server's
+     match-centered snippet with the query lit up. hitQ is the query the
+     hits were MADE with — typing after a search must not strip the
+     highlights out from under the still-shown results. */
+  const hitRow = (h, open) => (
+    <div key={h.path} className="tree-row tree-file" role="button" tabIndex={0}
+      style={{ flexDirection: 'column', alignItems: 'stretch', height: 'auto', padding: '4px 8px', gap: 2 }}
+      onClick={() => open(h.path)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(h.path); } }}>
+      <span style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+        <span className="tree-name">{h.title || h.path}</span>
+        <span style={{ fontSize: 9, opacity: 0.6, whiteSpace: 'nowrap' }}
+          title={`${h.score} match${h.score === 1 ? '' : 'es'}`}>×{h.score}</span>
+      </span>
+      {h.snippet ? (
+        <span style={{ fontSize: 9, opacity: 0.8, lineHeight: 1.5, whiteSpace: 'normal', wordBreak: 'break-word' }}>
+          {_snippetParts(h.snippet, hitQ).map((p, i) => p.hit
+            ? <mark key={i} style={{ background: 'rgba(124,107,255,0.3)', color: 'inherit', borderRadius: 2, padding: '0 1px' }}>{p.t}</mark>
+            : <span key={i}>{p.t}</span>)}
+        </span>
+      ) : null}
+    </div>
+  );
 
   const openByPath = async (path) => {
     if (!path) return;
@@ -1313,14 +1365,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                     {hits.length} result(s)
                     <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>{'✕'}</button>
                   </div>
-                  {hits.map(h => (
-                    <div key={h.path} className="tree-row tree-file" role="button" tabIndex={0}
-                      onClick={()=>{ mobileOpenByPath(h.path); }}
-                      onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); mobileOpenByPath(h.path); } }}>
-                      <span className="tree-name">{h.title || h.path}</span>
-                      <span style={{fontSize:9,opacity:0.6}}>{(h.score*100).toFixed(1)}</span>
-                    </div>
-                  ))}
+                  {hits.map(h => hitRow(h, mobileOpenByPath))}
                 </div>
               ) : (
                 <>
@@ -1404,14 +1449,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               {hits.length} result(s)
               <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>✕</button>
             </div>
-            {hits.map(h => (
-              <div key={h.path} className="tree-row tree-file" role="button" tabIndex={0}
-                onClick={()=>openByPath(h.path)}
-                onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); openByPath(h.path); } }}>
-                <span className="tree-name">{h.title || h.path}</span>
-                <span style={{fontSize:9,opacity:0.6}}>{(h.score*100).toFixed(1)}</span>
-              </div>
-            ))}
+            {hits.map(h => hitRow(h, openByPath))}
           </div>
         ) : (
           <>
