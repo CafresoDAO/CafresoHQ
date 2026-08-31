@@ -19207,3 +19207,30 @@ answers before the fallthrough.
 **Lesson.** A clean console is a beta deliverable: the first thing a
 beta tester opens is devtools, and four red lines on boot say
 "broken" before the app says anything.
+
+## "Say hi to your CEO" — then find the input yourself
+
+**Claim vs. reality.** Getting Started step 3's copy is an instruction
+to type ("Say hi to your CEO — ask for anything"), and its "Open chat"
+CTA navigated to the chat view and stopped: activeElement stayed on
+<body> (verified live). The app already has one idiom for "put the
+boss in the composer" — the global `/` shortcut and the failed-message
+RETRY both focus `.composer textarea` — so the CTA that literally asks
+the boss to type was the one surface not using it.
+
+**Fix.** onChat navigates and then focuses the composer with the same
+selector, deferred a beat for the view mount. Verified live:
+activeElement is the composer textarea after the click. (One stumble
+recorded: a `{/* */}` JSX comment inside the opening tag's prop list
+is a syntax error — inside a tag it reads as a spread. The file's own
+existing prop comments use bare `/* */`, which is the form that
+parses.)
+
+**Test coverage.** `scripts/test_say_hi_lands_ready_to_type.py` —
+navTo preserved, composer focused, same selector as the `/` shortcut,
+deferred. Fire-tested.
+
+**Lesson.** When copy gives an instruction, the click should land the
+user mid-instruction, not at the door. And an app-wide idiom list
+("how do we focus the composer?") is worth grepping before a CTA
+invents its own ending.

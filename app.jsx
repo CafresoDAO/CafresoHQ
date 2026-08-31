@@ -6935,7 +6935,10 @@ ${d.text}` : d.text,
              "New Project →" and, as far as they can see, nothing happens.
              Same failure as the dead attention banner (0d51159) — which is
              why `navTo` exists. */
-          onChat={() => navTo('chat')}
+          /* The step's own copy is "Say hi to your CEO" — so land the boss
+             ready to type, the same focus the `/` shortcut and RETRY give.
+             Deferred a beat: the chat view may still be mounting. */
+          onChat={() => { navTo('chat'); setTimeout(() => { const t = document.querySelector('.composer textarea'); if (t) t.focus(); }, 250); }}
           onTasks={() => navTo('tasks')}
           onProjects={() => navTo('projects')}
           onWatch={() => navTo('visual')}
