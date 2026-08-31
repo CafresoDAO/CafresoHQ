@@ -1314,6 +1314,76 @@ function AccountTab({ usageTokens = 0 }) {
     } catch (_e) { setNote('reset failed'); }
   };
 
+  /* Office backup — the whole browser-side office (chat, team, tasks,
+     prefs) as one JSON file, and back. Everything lives in localStorage
+     under the cafresohq prefixes; one cleared browser profile is the whole
+     office gone, and until this existed there was no way out. Secrets
+     never travel: the encrypted agent-key blob and the raw device AES key
+     are excluded outright, and any *Key field inside the client-settings
+     blob is blanked — the same "keys NOT included" contract the Hermes
+     config export makes. Enforced on BOTH directions, so a hand-edited
+     backup can't smuggle a key into storage either. */
+  const OFFICE_EXPORT_PREFIXES = ['cafresohq_hq_v1:', 'cafresohq:', 'cafresohq_client_v1'];
+  const OFFICE_EXPORT_BLOCKED = ['cafresohq_agent_keys_v1', 'cafresohq_device_key_v1'];
+  const _scrubClientBlob = (raw) => {
+    try {
+      const v = JSON.parse(raw);
+      if (v && typeof v === 'object') {
+        for (const f of Object.keys(v)) if (/key$/i.test(f)) v[f] = '';
+        return JSON.stringify(v);
+      }
+    } catch (_e) {}
+    return raw;
+  };
+  const officeInputRef = useRefM(null);
+  const exportOffice = () => {
+    try {
+      const entries = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || OFFICE_EXPORT_BLOCKED.includes(key)) continue;
+        if (!OFFICE_EXPORT_PREFIXES.some(p => key === p || key.startsWith(p))) continue;
+        const raw = localStorage.getItem(key);
+        entries[key] = key === 'cafresohq_client_v1' ? _scrubClientBlob(raw) : raw;
+      }
+      const data = { format: 'cafresohq-office-backup', version: 1,
+        exportedAt: new Date().toISOString(), entries };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cafresohq-office-backup.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      setNote(`✓ office exported — ${Object.keys(entries).length} entries (keys not included)`);
+    } catch (e) { setNote('office export failed: ' + e.message); }
+  };
+  const importOffice = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setNote('');
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || data.format !== 'cafresohq-office-backup' || !data.entries || typeof data.entries !== 'object') {
+        setNote('import failed: not an office backup file'); return;
+      }
+      const keys = Object.keys(data.entries).filter(key =>
+        !OFFICE_EXPORT_BLOCKED.includes(key)
+        && OFFICE_EXPORT_PREFIXES.some(p => key === p || key.startsWith(p))
+        && typeof data.entries[key] === 'string');
+      if (!keys.length) { setNote('import failed: no office entries in that file'); return; }
+      const when = data.exportedAt ? ` from ${String(data.exportedAt).slice(0, 10)}` : '';
+      if (!(await window.hqConfirm(
+        `Restore ${keys.length} office entries${when}? This REPLACES the matching parts of this office (chat, team, tasks, prefs) and reloads the app.`,
+        { okLabel: 'Replace office', danger: true }))) return;
+      for (const key of keys) {
+        const raw = key === 'cafresohq_client_v1' ? _scrubClientBlob(data.entries[key]) : data.entries[key];
+        localStorage.setItem(key, raw);
+      }
+      window.location.reload();
+    } catch (er) { setNote('office import failed: ' + er.message); }
+  };
+
   const dot = (on) => <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>;
   const uptime = health && health.uptime_seconds
     ? (health.uptime_seconds >= 3600
@@ -1398,6 +1468,19 @@ function AccountTab({ usageTokens = 0 }) {
           <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={resetOnboarding}>RESET</button>
         </div>
         {note && <div className="hint" style={{marginTop:8}}>{note}</div>}
+      </div>
+      <div className="cb-panel">
+        <h4>OFFICE BACKUP</h4>
+        <div className="row-knob">
+          <div><div className="lbl">Export this office</div><div className="sub">chat, team, tasks and prefs as one JSON file (keys NOT included)</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={exportOffice}>EXPORT</button>
+        </div>
+        <div className="row-knob">
+          <div><div className="lbl">Restore an office</div><div className="sub">replaces the matching parts of this office, then reloads</div></div>
+          <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={() => officeInputRef.current && officeInputRef.current.click()}>IMPORT</button>
+          <input ref={officeInputRef} type="file" accept=".json" style={{display:'none'}} onChange={importOffice}/>
+        </div>
+        <div className="hint">Your office lives in this browser. A cleared profile, a new machine, or a different browser starts empty — export before you need it.</div>
       </div>
     </div>
   );
