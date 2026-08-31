@@ -1112,6 +1112,64 @@ def _vault_resolve(rel: str) -> pathlib.Path:
     return candidate
 
 
+def _vault_rewrite_wikilinks(src: str, dst: str):
+    """After a rename src→dst (fs backend), rewrite inbound [[wikilinks]]
+    across every .md in the vault so links follow the file. Handles
+    [[target]], [[target|alias]] and [[target#heading]] where target is the
+    old basename or the old vault-relative path, with or without .md. The
+    replacement keeps each link's own style: a path link gets the new path,
+    a basename link gets the new basename. Returns (links_rewritten,
+    files_touched)."""
+    if not _vault_root:
+        return (0, 0)
+    root = pathlib.Path(_vault_root).resolve()
+
+    def _variants(rel):
+        rel = rel.lstrip('/').replace('\\', '/')
+        base = rel.rsplit('/', 1)[-1]
+        out = set()
+        for n in (rel, base):
+            out.add(n)
+            if n.lower().endswith('.md'):
+                out.add(n[:-3])
+            else:
+                out.add(n + '.md')
+        return out
+
+    def _strip_md(rel):
+        rel = rel.lstrip('/').replace('\\', '/')
+        return rel[:-3] if rel.lower().endswith('.md') else rel
+
+    old = _variants(src)
+    new_path = _strip_md(dst)
+    new_base = new_path.rsplit('/', 1)[-1]
+    pat = re.compile(r'\[\[([^\]\|#]+)((?:#[^\]\|]*)?(?:\|[^\]]*)?)\]\]')
+    links = files = 0
+    for p in root.rglob('*.md'):
+        try:
+            text = p.read_text(encoding='utf-8')
+        except Exception:
+            continue
+        hits = [0]
+
+        def _sub(m):
+            target = m.group(1).strip()
+            if target not in old:
+                return m.group(0)
+            hits[0] += 1
+            return '[[' + ('/' in target and new_path or new_base) + m.group(2) + ']]'
+
+        out = pat.sub(_sub, text)
+        if hits[0]:
+            try:
+                p.write_text(out, encoding='utf-8')
+            except Exception:
+                continue
+            links += hits[0]
+            files += 1
+    return (links, files)
+
+
 # ---- Obsidian Local REST API client -----------------------------------------
 def _obsidian_request(method: str, upstream_path: str,
                       body: bytes = None, extra_headers: dict = None,
@@ -4023,7 +4081,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 os.replace(str(s_path), str(d_path))
             except Exception as e:
                 return self._send_json(500, {'error': str(e)})
-            return self._send_json(200, {'from': src, 'to': dst})
+            # Follow the rename through every inbound [[wikilink]] (fs
+            # backend only — the shipping default). Without this, renaming
+            # a linked note silently broke every link to it: the graph
+            # edge vanished and the linking notes kept a dead target.
+            # Matches [[old]], [[old|alias]] and [[old#heading]] where old
+            # is the source's basename or vault-relative path, .md or not;
+            # the replacement keeps the link's own style (path links stay
+            # path links, basename links stay basenames).
+            rewritten = files_touched = 0
+            try:
+                rewritten, files_touched = _vault_rewrite_wikilinks(src, dst)
+            except Exception:
+                pass  # best-effort: the move itself already succeeded
+            return self._send_json(200, {'from': src, 'to': dst,
+                                         'linksRewritten': rewritten,
+                                         'filesTouched': files_touched})
 
         # ---------- Upload (multipart) ----------
         # The browser-side file picker / drag-drop lands here. Filenames are

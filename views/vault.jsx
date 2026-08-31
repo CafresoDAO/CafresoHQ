@@ -567,8 +567,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
-      await CafresoHQClient.vaultRename(n.path, to.trim());
+      const res = await CafresoHQClient.vaultRename(n.path, to.trim());
       setOpenNote(o => o ? { ...o, path: to.trim() } : o);
+      /* The server rewrites inbound [[wikilinks]] so links follow the
+         file (fs backend). Say so — a silent rename leaves the boss
+         wondering whether their links just died, because everywhere
+         else they would have. */
+      if (res && res.linksRewritten > 0) {
+        say(`Moved — ${res.linksRewritten} link${res.linksRewritten === 1 ? '' : 's'} in ${res.filesTouched} note${res.filesTouched === 1 ? '' : 's'} followed the rename.`);
+      }
       await refresh();
     } catch (e) { snag("Couldn't move that note", e); }
   };

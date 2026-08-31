@@ -19265,3 +19265,32 @@ every autosave forever. Pinned both directions.
 **Lesson.** A flag added to suppress noise ("don't refresh on every
 autosave") must name what it suppresses; "quiet" silenced creation
 because nobody listed creation as something a quiet save could do.
+
+## Links follow a renamed note
+
+**Claim vs. reality.** The ✎ rename in the Library moved the file and
+nothing else: every inbound [[wikilink]] kept the old name, the graph
+edge vanished, and no surface said a word. Driven live — rename a note
+another note links to, and the linking note holds a dead target
+forever. For a product whose Library IS the knowledge graph, every
+rename was a small silent amputation.
+
+**Fix.** `/vault/rename` (fs backend, the shipping default) now
+rewrites inbound links across the vault after the move: [[target]],
+[[target|alias]], [[target#heading]], matched by old basename or old
+path with or without .md, each link keeping its own style (path links
+get the new path, basename links the new basename). Best-effort and
+AFTER the move — a rewrite failure never breaks the rename itself. The
+response reports {linksRewritten, filesTouched} and the UI toasts
+"Moved — 3 links in 2 notes followed the rename." Verified live over
+two renames, including the path-link form and a near-miss name that
+stayed untouched.
+
+**Test coverage.** `scripts/test_links_follow_a_renamed_note.py` —
+lifts the real function into a temp vault via ast and drives all five
+link forms, the near miss, and idempotence (a second pass rewrites
+zero). Fire-tested on the call site and on alias/heading preservation.
+
+**Lesson.** A move API that only moves is correct for files and wrong
+for notes; the unit of a knowledge base is the name, and whoever moves
+the file owns every pointer to it.
