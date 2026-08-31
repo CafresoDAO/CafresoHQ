@@ -19705,3 +19705,23 @@ believing it works.
   the yaml decoy inside the frontmatter block is SUPPOSED to render as
   text. An over-broad negative check indicts the fixture, not the fix;
   scope negatives to the exact lines that must change.
+
+### A row dragged onto a folder is filed there
+- **Claim vs. reality**: the Library is where documents get organized,
+  and the only move door was ✎ rename — retype the full path, spell
+  the folder right. Every file manager does this with a drag.
+- **Fix**: tree rows are draggable; folder rows and the tree ground
+  (the root) are drop targets. The payload rides a custom MIME type so
+  the drop-to-UPLOAD overlay — listening for real OS 'Files' — never
+  mistakes an internal move for an upload, and dragover gates on that
+  type before claiming anything. moveByDrag reuses the ✎ rename door:
+  links follow, collisions are refused before the round-trip, a dirty
+  open source flushes first, the open note's path follows. Off the
+  bridge vault (no rename door there).
+- **Test coverage**: `scripts/test_a_row_dragged_onto_a_folder_is_filed_there.py`
+  (12 checks; mover + tree plumbing both node-run; 4 arms fire-tested).
+- **Lesson**: two drag features now share one surface — internal moves
+  and OS-file uploads — and the ONLY thing keeping them apart is the
+  MIME-type gate. The fire-arm that removes the gate is the test's
+  most important arm; a feature that works alone can still break its
+  neighbor.

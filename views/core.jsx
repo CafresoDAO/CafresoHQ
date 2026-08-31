@@ -952,8 +952,40 @@ function buildTree(files) {
   return sortNode(root).children;
 }
 
-function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
+function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = null }) {
   const tree = useMV(() => buildTree(files), [files]);
+  /* Drag-to-file: with onMove (the Library's server backends), a file
+     row can be dragged onto a folder row — or the tree's empty ground,
+     meaning the root. The payload rides a custom type so the Library's
+     drop-to-UPLOAD overlay (which listens for real OS 'Files') never
+     mistakes an internal move for an upload. */
+  const [dragOverF, setDragOverF] = useSV(null);
+  const _MOVE_T = 'application/x-library-path';
+  const dragProps = (path) => onMove ? {
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.setData(_MOVE_T, path);
+      e.dataTransfer.effectAllowed = 'move';
+    },
+  } : {};
+  const dropProps = (folder) => onMove ? {
+    onDragOver: (e) => {
+      if (![...(e.dataTransfer.types || [])].includes(_MOVE_T)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragOverF !== folder) setDragOverF(folder);
+    },
+    onDragLeave: () => { if (dragOverF === folder) setDragOverF(null); },
+    onDrop: (e) => {
+      const src = e.dataTransfer.getData(_MOVE_T);
+      if (!src) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOverF(null);
+      onMove(src, folder);
+    },
+  } : {};
   const toggle = (path) => setExpanded(prev => {
     const next = new Set(prev);
     if (next.has(path)) next.delete(path); else next.add(path);
@@ -970,8 +1002,11 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
       const isOpen = expanded.has(n.path);
       return (
         <div key={n.path}>
-          <div className={`tree-row tree-folder ${isOpen?'open':''}`} style={{paddingLeft: 6 + depth * 14}}
+          <div className={`tree-row tree-folder ${isOpen?'open':''}`}
+            style={{paddingLeft: 6 + depth * 14,
+                    ...(dragOverF === n.path ? {outline: '2px dashed var(--accent-sun, #7c6bff)', outlineOffset: -2} : {})}}
             role="treeitem" aria-expanded={isOpen} tabIndex={0}
+            {...dropProps(n.path)}
             onClick={()=>toggle(n.path)} onKeyDown={rowKeys(()=>toggle(n.path))}>
             <span className="tree-chev" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
             <span className="tree-icon" aria-hidden="true">{isOpen ? '📂' : '📁'}</span>
@@ -997,6 +1032,7 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
         className={`tree-row tree-file ${openPath === n.path ? 'active' : ''}`}
         style={{paddingLeft: 6 + depth * 14 + 14}}
         role="treeitem" aria-current={openPath === n.path || undefined} tabIndex={0}
+        {...dragProps(n.path)}
         onClick={()=>onOpen(n.path)} onKeyDown={rowKeys(()=>onOpen(n.path))}>
         <span className="tree-name">{display}</span>
         {isBase && <span className="tree-tag">BASE</span>}
@@ -1005,7 +1041,9 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded }) {
     );
   };
   return (
-    <div className="tree-root" role="tree" aria-label="Library files">
+    <div className="tree-root" role="tree" aria-label="Library files"
+      style={dragOverF === '' ? {outline: '2px dashed var(--accent-sun, #7c6bff)', outlineOffset: -2} : undefined}
+      {...dropProps('')}>
       {tree.map(c => renderNode(c, 0))}
     </div>
   );

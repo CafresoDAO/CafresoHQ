@@ -831,6 +831,34 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     })();
     return () => { dead = true; };
   }, [openNote && openNote.path, files]);
+  /* Dragging a row onto a folder files it there — the rename dialog
+     with its path-typing stays for precise moves, but "put this in
+     Research" should be one gesture. Same door as ✎: the server
+     rewrites inbound links and refuses collisions (409), and the
+     receipt says both. Kept off the bridge vault (no rename door). */
+  const moveByDrag = async (src, destFolder) => {
+    if (!src) return;
+    const base = src.split('/').pop();
+    const dst = (destFolder ? destFolder + '/' : '') + base;
+    if (dst === src) return;
+    if (files.some(f => f.path === dst)) {
+      say(`"${dst}" already exists — rename one of them first.`, 'error');
+      return;
+    }
+    const n = openNoteRef.current;
+    if (n && n.path === src && n.dirty) await saveNoteRef.current({ quiet: true });
+    try {
+      const res = await CafresoHQClient.vaultRename(src, dst);
+      if (openNoteRef.current && openNoteRef.current.path === src) {
+        setOpenNote(o => o ? { ...o, path: dst } : o);
+      }
+      const links = res && res.linksRewritten;
+      say(`Moved to ${destFolder || 'the Library root'}`
+          + (links > 0 ? ` — ${links} link${links === 1 ? '' : 's'} followed.` : '.'));
+      await refresh();
+    } catch (e) { snag("Couldn't move that file", e); }
+  };
+
   const backlinksRow = backlinks.length ? (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                   padding: '4px 10px', fontSize: 10,
@@ -1246,7 +1274,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ) : (
                 <>
                   {kindChips}
-                  <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} />
+                  <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />
                 </>
               )}
             </div>
@@ -1337,7 +1365,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         ) : (
           <>
             {kindChips}
-            <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} />
+            <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />
           </>
         )}
       </div>
