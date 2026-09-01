@@ -20456,3 +20456,35 @@ variable's own name and the section's intent) instead of the weaker
 `status !== 'done'`.
 
 Regression test: `scripts/test_workflow_modal_excludes_running_tasks.py`.
+
+## Chat search replies could silently land in the wrong thread
+
+Chat's message search deliberately looks across ALL threads when active
+(`visibleChat`'s filter drops the `t === activeThread` check entirely once
+`searchQuery` is set) — but `quoteReply` and `startDM` used to ignore
+which thread a search hit actually came from. They just populated the
+composer via `setInput`, with no reference to `m.thread`, and Send always
+tags the new message `thread: activeThread` — whatever tab was active
+BEFORE the search.
+
+Concrete failure: browsing DIRECT, searching "budget", finding a hit that
+was actually said in `project:acme`, clicking quote-reply (↩) or DM (💬),
+typing a note, and hitting Send — the reply silently landed in DIRECT,
+not `project:acme`. The project's own agents never saw it; it showed up
+out of context in DIRECT with no error and no visible sign of the
+mismatch. Worse, if the hit lived in the read-only `team`/`research`
+threads, the composer still happily filled — those threads have no
+composer at all once the search clears, so the "reply" would send
+wherever the previous active thread happened to be.
+
+Found by a background hunt agent, pointed specifically at Search or
+mobile layout after both were deferred across several prior ticks.
+
+Fix: a shared `switchToMessageThread` helper — mirroring a pattern this
+same file already used correctly for "Ask this again" (which scopes its
+own backward walk to `m.thread || 'direct'` rather than the interleaved
+chat array) — switches `activeThread` to the hit's own thread and clears
+the search filter before either handler touches the composer, or refuses
+with a toast if the hit's thread is read-only.
+
+Regression test: `scripts/test_chat_search_reply_targets_the_right_thread.py`.

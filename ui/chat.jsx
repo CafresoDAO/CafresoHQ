@@ -1302,13 +1302,41 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               </div>
             );
           }
+          /* Search (line ~200) deliberately looks across ALL threads, so a
+             hit here can belong to a thread other than `activeThread` — the
+             same reason "Ask this again" above scopes its own walk to
+             `m.thread || 'direct'` rather than the chat array's interleaved
+             order. quoteReply/startDM used to skip that scoping entirely:
+             they populated the composer without ever switching threads, so
+             a reply to a search hit from project:acme (found while browsing
+             DIRECT) silently sent as `thread: activeThread` — i.e. DIRECT —
+             landing nowhere near the message it was replying to, with no
+             error and no visible sign of the mismatch. `switchToMessageThread`
+             below is the fix both handlers now share: snap to the hit's own
+             thread (and drop the search filter, since leaving it active
+             would keep showing the cross-thread result list instead of the
+             thread the user just landed in) before touching the composer —
+             or refuse outright if that thread has no composer at all
+             (`team`/`research` are read-only; see `isReadOnly` below). */
+          const switchToMessageThread = () => {
+            const targetThread = m.thread || 'direct';
+            if (targetThread === 'team' || targetThread === 'research') {
+              if (window.cafresohqToast) window.cafresohqToast.warn(
+                "That message is in a read-only thread — there's no composer there to reply from.");
+              return false;
+            }
+            if (targetThread !== activeThread) { setActiveThread(targetThread); setSearchQuery(''); }
+            return true;
+          };
           const quoteReply = () => {
+            if (!switchToMessageThread()) return;
             const quoted = String(m.text).split('\n').map(l => '> ' + l).join('\n');
             setInput((prev) => (prev ? prev + '\n\n' : '') + quoted + '\n\n');
             if (composerRef.current) composerRef.current.focus();
           };
           const startDM = () => {
             if (m.name && m.from !== 'user') {
+              if (!switchToMessageThread()) return;
               const target = agents.find(a => a.id === m.agentId);
               const bareName = target ? target.name : String(m.name).split(' · ')[0];
               setInput((prev) => (prev ? prev + ' ' : '') + `@${bareName} `);
