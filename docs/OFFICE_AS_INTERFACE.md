@@ -20737,3 +20737,37 @@ shell-side confirmation risks introducing the opposite bug, so it's
 deferred for a future tick rather than guessed at here.
 
 Regression test: `scripts/test_payroll_amount_uses_base_units.py`.
+
+## Rejecting a workflow chain-step left the next task silently stuck
+
+When a workflow chain step isn't `autoDispatch`, finishing the prior
+step raises a `kind: 'workflow-step'` approval carrying `taskId` (the
+next task) and `fromAgent` — but no `agentId`. `onApprove` has an
+explicit branch for it (calls `triggerChainStep`). `onReject` had
+explicit branches for `hire-agent`, `hire-assistant`, and
+`grant-elevation` rejections — each releasing a pending slot and
+posting an explanatory team-thread note — but none at all for
+`workflow-step`. Since the approval carries no `agentId`, the generic
+tail (`ap.external && ap.externalId` / `ap.agentId`) never matched
+either: rejecting did nothing beyond the "✕ REJECTED" chat line.
+`nextTask` stayed in `status: 'inbox'` forever with no `stalledNote` —
+indistinguishable on the board from a task nobody had ever gotten to.
+The boss had to remember their own decision, since nothing on the card
+said they'd declined it.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(Night Shift, search, hire/onboarding, export/publish, workflow error
+paths, chat delegate/handoff, calendar recurrence, vault graph, other
+wallet flows).
+
+Fix: added a `workflow-step` branch to `onReject`, mirroring the
+existing hire/elevation branches — sets `stalledNote` on the next task
+(via `ap.taskId`) explaining the boss declined it, and posts a
+team-thread note naming the agent (`ap.fromAgent`) who proposed the
+chain step. Full live simulation (a real two-step workflow chain run to
+completion, then rejected) was impractical within this tick's budget —
+same as the earlier sticky-note eviction fix — so the fire-tested
+regression test is the primary evidence; a lighter smoke check
+confirmed no new console errors from the change.
+
+Regression test: `scripts/test_workflow_step_rejection_leaves_a_note.py`.

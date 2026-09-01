@@ -5926,6 +5926,24 @@ ${d.text}` : d.text,
         }
         return;
       }
+      // Workflow-step rejection: the sibling `if (ap.kind === 'workflow-step')`
+      // branch in onApprove starts the next task via triggerChainStep — this
+      // is the "no" half of that same fork, and until now it had no branch
+      // at all. `nextTask` stayed in `status: 'inbox'` forever with no
+      // stalledNote, indistinguishable on the board from a task nobody had
+      // gotten to yet — the boss has to remember their own decision, because
+      // nothing on the card says they declined it. Same `stalledNote` field
+      // every other "why is this just sitting here" case already uses.
+      if (ap.kind === 'workflow-step') {
+        setTasks(prev => prev.map(t => t.id === ap.taskId
+          ? { ...t, stalledNote: 'you declined to run this step — start it manually when you want it' } : t));
+        const proposer = agents.find(a => a.id === ap.fromAgent);
+        if (proposer) {
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+            text: `Boss declined to run the next step ${proposer.name}'s chain queued up.`, thread: 'team' }]);
+        }
+        return;
+      }
       if (ap.external && ap.externalId) {
         decideExternal(ap.externalId, 'deny', 'rejected by boss in HQ');
       } else if (ap.agentId) {   // same widening as approve: asked ⇒ answered
