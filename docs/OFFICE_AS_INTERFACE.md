@@ -20249,3 +20249,60 @@ inline comments). One purely cosmetic dead ternary was spotted in
 ui/office.jsx (`meetingActive ? meetingIds : meetingIds` — both branches
 identical, no behavioral effect) and flagged as a separate low-priority
 cleanup task rather than treated as this tick's fix.
+
+## Fix: Command Palette's desktop-mode entry went stale after an external toggle (2026-09-01)
+
+The palette's "Enable/Exit desktop (window) mode" entry could show the
+wrong label — and, if clicked, do the opposite of what it said — after
+desktop mode was toggled from Settings instead of from the palette
+itself.
+
+`AppGlobalCommands` (app/commands.jsx) rebuilds its `cmds` array fresh on
+every render, closing over live `windowsEnabled`/`setWindowsEnabled`/
+`onOpenWindow` props, but registers it via `useCommands(cmds, [...])`.
+`useCommands`'s re-registration only fires when something in that deps
+array changes reference — and `windowsEnabled`, `setWindowsEnabled`, and
+`onOpenWindow` were all used inside `cmds` but never listed in the deps
+array. So flipping desktop mode via Settings' own switch changed the
+real state instantly everywhere else, but the palette's registered
+command list stayed frozen at whatever it captured the last time some
+*other* listed dep (theme, density, activeView, etc.) happened to
+change.
+
+Concretely: with the palette showing "Enable desktop (window) mode,"
+toggling desktop mode ON via Settings and reopening the palette (without
+touching any of the actually-listed deps) still showed "Enable desktop
+(window) mode" — clicking it would then have turned desktop mode back
+OFF, the opposite of what the label said. This is the same shape as the
+Team vault-refresh bug fixed earlier this session: a narrow dependency
+array missing a real trigger that a sibling surface changes live.
+
+Found by a background hunt agent scanning the Terminal pane and Command
+Palette (this session's next-least-scrutinized areas after Graph/Team/
+Settings/Office/Chat/Projects/Inbox/CEO-panel/Library/Meetings/Research-
+Missions), confirmed by checking `useCommands`'s re-registration gate
+against the actual deps list.
+
+Fix: added `windowsEnabled, setWindowsEnabled, onOpenWindow` to the
+`useCommands` deps array.
+
+Regression test:
+`scripts/test_command_palette_desktop_mode_label_stays_live.py` (5
+checks) — pins all three added deps and the upstream `tog.desktop`
+command shape this fix depends on. Fire-tested: reverting the deps-array
+addition produced exactly the 3 expected FAILs, restore verified
+byte-identical via `cmp`, re-run confirmed a clean pass.
+
+Live-verified in the browser end-to-end: with the palette reading
+"Enable desktop (window) mode," toggled Desktop window mode ON via
+Settings' own switch (confirmed via the switch's `aria-checked` and the
+`windowsEnabled` localStorage key both flipping to true) — reopening the
+palette with ⌘K now correctly read "Exit desktop (window) mode."
+Toggled back off through the palette itself to restore the app's
+starting state; confirmed via localStorage. Full suite: 281/281 passing
+before and after.
+
+Also this tick: the Terminal pane's own tab-lifecycle behavior (kill vs.
+hide, per-tab state isolation) was checked but no comparably concrete
+issue was found within budget — not ruled fully clean, just not this
+tick's finding. Worth another look in a future tick if time allows.

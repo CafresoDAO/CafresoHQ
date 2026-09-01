@@ -242,6 +242,7 @@ function AppGlobalCommands({
   useCommands(cmds, [
     activeView, night, railCollapsed, chatWinOpen, anyBusy, density, theme,
     navigate, setNight, setRailCollapsed, setChatWinOpen, setDensity, setTheme,
+    windowsEnabled, setWindowsEnabled, onOpenWindow,
     workspaces, activeWorkspace,
     onApplyWorkspace, onSaveWorkspace, onDeleteWorkspace,
     onHire, onSettings, onMissions, onWorkflow, onStandup, onMemory, onStopAll,
