@@ -803,6 +803,23 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   const [excluded, setExcluded] = useSF(new Set());
   const abortRef = useRF(null);
 
+  /* app.jsx renders <StandupModal> unconditionally (`open` just gates the
+     `return null` below) — this component instance never actually unmounts
+     while the app is up, so a cleanup tied to unmount would never fire for
+     the case that matters. `start()`'s per-agent loop and the closing
+     `HQ.ceoStream` call are plain async closures, not tied to React
+     lifecycle at all, so closing the modal mid-run (X, Escape, backdrop —
+     all of which just flip `open` to false) left the stream running
+     invisibly: it kept burning agentStream/ceoStream calls (up to
+     STANDUP_TIMEOUT_MS per agent for a stuck local model) with no UI left to
+     show or stop it, and reopening the modal got a fresh render of the same
+     instance with no way to know a run was still going. Same shape as the
+     Terminal PTY zombie-process leak, recurring here — fix is to abort on
+     the actual open→false edge, not on an unmount that never happens. */
+  useEF(() => {
+    if (!open && abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+  }, [open]);
+
   if (!open) return null;
 
   const participating = agents.filter(a => !excluded.has(a.id));

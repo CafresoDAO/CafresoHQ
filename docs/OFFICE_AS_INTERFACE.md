@@ -20366,3 +20366,35 @@ Found by a background hunt agent scanning previously-uncovered areas
 (Roster/hiring, Approvals, Search, mobile layout, Workflows).
 
 Regression test: `scripts/test_dismissed_coworker_leaves_no_stale_approval.py`.
+
+## Closing the Stand-up mid-run left the reports streaming invisibly
+
+`app.jsx` renders `<StandupModal open={standupOpen} .../>` unconditionally —
+`open` only gates an internal `if (!open) return null`, so the component
+instance never actually unmounts while the app is running. `start()`'s
+per-agent report loop (`HQ.agentStream`) and the closing `HQ.ceoStream`
+summary call are plain async closures with no tie to React lifecycle at
+all, so clicking the modal's X, Escape, or the backdrop — all of which
+just flip `standupOpen` to false — left the run going: burning API calls
+(up to `STANDUP_TIMEOUT_MS` per stuck local model) with no UI left to show
+or stop it. Reopening the modal showed a fresh render of the same
+component instance with no sign a run was still going in the background.
+Same shape as the Terminal PTY zombie-process leak fixed earlier this
+session, recurring here.
+
+Fix: a `useEF` keyed on `[open]` that aborts (and clears) `abortRef.current`
+on the open→false edge — the exact abort path the existing STOP button
+already used, just triggered automatically by closing instead of requiring
+an explicit click first. An unmount-only cleanup (`useEF(..., [])`) would
+not have worked, since this component never truly unmounts.
+
+Verified live in the browser: started a stand-up, closed the modal mid-run
+via CLOSE while a report was actively streaming, reopened it — the header
+read "CLICK START TO GATHER REPORTS" (phase reverted to idle) and the
+in-flight report showed "…(stopped)", the same label the STOP button
+produces.
+
+Found by a background hunt agent scanning previously-uncovered areas
+(Search, mobile layout, Workflow chains, Stand-up).
+
+Regression test: `scripts/test_standup_close_aborts_the_run.py`.
