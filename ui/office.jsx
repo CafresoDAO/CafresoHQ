@@ -447,7 +447,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
     const was = wasMeetingRef.current;
     wasMeetingRef.current = meetingActive;
     if (meetingActive === was) return;
-    const parts = (meetingActive ? meetingIds : meetingIds)
+    const parts = meetingIds
       .map(id => agents.find(a => a.id === id)).filter(Boolean);
     if (!parts.length) return;
     const dir = meetingActive ? 'go' : 'return';
