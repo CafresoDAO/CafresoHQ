@@ -219,6 +219,7 @@ def _export_pdf(self):
         from reportlab.lib.pagesizes import letter  # noqa: PLC0415
         from reportlab.lib.styles import getSampleStyleSheet  # noqa: PLC0415
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer  # noqa: PLC0415
+        from xml.sax.saxutils import escape as _xml_escape  # noqa: PLC0415
     except ImportError:
         return self._send_json(503, {'error': 'install either weasyprint+markdown OR reportlab — run: pip install weasyprint markdown  (or)  pip install reportlab'})
 
@@ -230,16 +231,20 @@ def _export_pdf(self):
         if not s.strip():
             story.append(Spacer(1, 6))
             continue
+        # Paragraph() parses its text as reportlab's own small XML markup
+        # (<b>, <i>, &entities;, …) — raw note text with an unescaped "&" or
+        # "<"/">" silently corrupts instead of erroring: "Q&A" became "Q&A;"
+        # and "<TODO>" vanished outright, with doc.build() still succeeding.
         if s.startswith('# '):
-            story.append(Paragraph(s[2:].strip(), styles['Title']))
+            story.append(Paragraph(_xml_escape(s[2:].strip()), styles['Title']))
         elif s.startswith('## '):
-            story.append(Paragraph(s[3:].strip(), styles['Heading2']))
+            story.append(Paragraph(_xml_escape(s[3:].strip()), styles['Heading2']))
         elif s.startswith('### '):
-            story.append(Paragraph(s[4:].strip(), styles['Heading3']))
+            story.append(Paragraph(_xml_escape(s[4:].strip()), styles['Heading3']))
         elif re.match(r'^\s*[-*•]\s+', s):
-            story.append(Paragraph('• ' + re.sub(r'^\s*[-*•]\s+', '', s), styles['BodyText']))
+            story.append(Paragraph('• ' + _xml_escape(re.sub(r'^\s*[-*•]\s+', '', s)), styles['BodyText']))
         else:
-            story.append(Paragraph(s.strip(), styles['BodyText']))
+            story.append(Paragraph(_xml_escape(s.strip()), styles['BodyText']))
     try:
         doc.build(story)
     except Exception as e:

@@ -20803,3 +20803,42 @@ bullets — a `### ` sub-heading or other markdown under a slide falls
 through to the generic paragraph→bullet branch and renders the literal
 `### ` prefix verbatim in the exported deck. Cosmetic, deferred for a
 future tick.
+
+## The reportlab PDF-export fallback silently mangled "&" and "<...>" in note text
+
+`_export_pdf` (exporters.py) tries weasyprint first — fine, it converts
+markdown to HTML via the `markdown` library, which escapes properly —
+then falls back to reportlab when weasyprint/markdown aren't installed.
+The reportlab path fed each line's raw, unescaped text straight into
+`reportlab.platypus.Paragraph(text, style)`, which parses its input as
+reportlab's own small XML-like markup language (`<b>`, `<i>`,
+`&entities;`, etc.). Unescaped text isn't rejected, it's silently
+mangled: "Q&A session notes" became "Q&A; session notes" (a stray `;`
+injected — "&A " looked like a malformed entity), and "Use the <TODO>
+tag here" became "Use the tag here" — the entire `<TODO>` token
+silently swallowed as an unrecognized tag. `doc.build()` raised no
+exception either way, so the handler still returned 200 with
+`{'renderer': 'reportlab'}`. A user exporting any note with an
+ampersand ("R&D", "Terms & Conditions") or an angle-bracketed
+placeholder/comparison ("<TODO>", "x < 5") on a machine with only
+reportlab installed got a PDF reporting success but silently
+corrupted, discoverable only by actually reading the exported file.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(Night Shift, search, hire/onboarding, export/publish, other approval
+kinds, chat delegate/handoff, calendar recurrence, vault graph, wallet
+flows).
+
+Fix: every `Paragraph(...)` call in the reportlab fallback now escapes
+its text through `xml.sax.saxutils.escape()` first. Verified end to
+end (not just in source): installed reportlab + pdfminer.six in a
+throwaway venv, built a PDF through the exact old unescaped code and
+the new escaped code with the two strings above, and extracted the
+actual PDF text — old: `'Q&A; session notes'` / `'Use the  tag
+here'` (TODO gone); new: `'Q&A session notes'` / `'Use the <TODO> tag
+here'` (both exact). reportlab isn't installed in this repo's normal
+dev environment, so the committed regression test checks the fix's
+shape in source, matching this repo's convention for a dependency not
+present to exercise live.
+
+Regression test: `scripts/test_pdf_export_escapes_reportlab_markup.py`.
