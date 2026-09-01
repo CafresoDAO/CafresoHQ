@@ -514,6 +514,17 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
      coworker has saved nothing, which is the exact shape of dishonesty §4
      forbids. memoryLabel returns null for it and the row disappears. */
   const [vaultPaths, setVaultPaths] = useSV(null);
+
+  /* Refetching only on agents.length meant the count froze the moment this
+     tab mounted: a coworker writing three new notes mid-session — the same
+     writes the Inbox panel right below logs live via `activity` — never
+     moved this number, even while the boss was watching. `activity` is
+     newest-first and already carries a 'vault' action for every write/
+     link/read (app.jsx's onActivity handler); count only the writes, since
+     a link or a read doesn't add a note to the cabinet. */
+  const vaultWriteCount = React.useMemo(() =>
+    activity.reduce((n, e) => n + (e.action === 'vault' && typeof e.text === 'string' && e.text.startsWith('wrote ') ? 1 : 0), 0),
+    [activity]);
   React.useEffect(() => {
     let dead = false;
     (async () => {
@@ -523,7 +534,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
       } catch (_e) { if (!dead) setVaultPaths(null); }
     })();
     return () => { dead = true; };
-  }, [agents.length]);
+  }, [agents.length, vaultWriteCount]);
 
   // The office attention pill / nav badge fires this to force the inbox open.
   React.useEffect(() => {

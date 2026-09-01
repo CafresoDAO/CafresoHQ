@@ -20004,3 +20004,38 @@ believing it works.
   a MutationObserver logging timestamps) caught a real bug that two
   separate manual checks missed for the same reason: both happened to
   land after the (broken) permanent flash had already "settled."
+
+### Team's "Remembers" note count stops freezing mid-session (2026-08-31)
+
+- **Claim vs. reality**: the roster card's "Remembers · N notes" stat is
+  built from one shared `vaultList()` fetch, refetched only when
+  `agents.length` changed — a hire or a dismiss. A coworker's notes
+  (`Agents/<name>/…` in the vault) change constantly while they work — a
+  job finishing, a note appended, a mission writing findings — none of
+  which touch `agents.length`. The Inbox panel on the exact same screen
+  already live-logs every vault write via the `activity` feed, so a boss
+  watching Team could see "wrote Agents/Hermes/some-note.md" scroll by
+  in the Inbox while the "Remembers" count right next to it stayed frozen
+  at whatever it read on mount. Same shape as the vault-standing-search
+  staleness bug fixed for the Library a few commits earlier — sticky
+  client state built from a vault snapshot with no seat at refresh — just
+  never applied here too. Found by a background hunt agent scanning
+  Team/Memory/Terminal (this session's least-scrutinized surfaces per
+  its own prior self-assessment), not by driving the UI directly.
+- **Fix**: derive `vaultWriteCount` from `activity` — counting only
+  entries whose `action` is `'vault'` and whose `text` starts with
+  `"wrote "`, since a link or a read doesn't add a note to the cabinet —
+  and add it to the fetch effect's dependency array alongside
+  `agents.length`. Verified live: with Team mounted, dispatching a
+  synthetic `cafresohq:agentActivity` write event fired a second GET to
+  `/vault/list` without navigating away (confirmed via the network log —
+  one call before the event, two after).
+- **Test coverage**: `scripts/test_team_remembers_count_stays_live.py`
+  (5 checks, source-pattern based; the dependency-array fix itself
+  burned and confirmed caught, then restored clean).
+- **Lesson**: a "fetch once, refetch on roster size change" effect looks
+  complete because it has a dependency array at all — the question worth
+  asking of every such effect is not "does this rerun on SOME change" but
+  "does this rerun on every change that could make its answer stale,"
+  and specifically whether a *sibling* surface on the same screen
+  already has the live signal this one is missing.
