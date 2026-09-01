@@ -20693,3 +20693,47 @@ and closed the modal mid-stream — the in-flight
 `net::ERR_ABORTED` in the network log, with no new console errors.
 
 Regression test: `scripts/test_meeting_room_aborts_on_close.py`.
+
+## A payroll amount typed in Settings paid at 1/10^decimals of what the boss typed
+
+`AgentWalletCard`'s `load()` (modals/settings.jsx) reads payroll's
+`amount` and `lowWatermark` back from `chain().payroll.list()` through
+`fromBaseUnits(value, dec)` — the exact round-trip contract `saveCap`
+already honors on write, via `toBaseUnits(capAmt, dec)`, for the
+sibling `spendCap` field. But `savePay` wrote `amount`/`lowWatermark` as
+raw `parseFloat(...)` floats with no decimal-scaling at all. Typing
+"0.01 ICP per 24h" (8 decimals) sent the float `0.01` where the
+canister expects the base-unit integer `1000000` — off by 10^8. The
+salary/refill would run at an amount indistinguishable from zero, while
+the panel still reported "Payroll saved" as a clean success — no error,
+no hint anything was wrong. This would have surfaced downstream as
+"payroll silently never pays," with nothing pointing back to Settings.
+
+Proven purely from this file's own round-trip — it reads these two
+fields back in base units but was writing them as plain decimal floats
+— regardless of what the shell/canister does elsewhere.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(Night Shift, approval/hire flow, search, Settings, CEO 1:1, export/
+publish, workflow/mission system, chat, vault/Library).
+
+Fix: `savePay` now converts both `amount` and `lowWatermark` through
+`toBaseUnits(..., dec)`, matching `saveCap`'s existing pattern exactly.
+Verified the arithmetic directly: `toBaseUnits('0.01', 8)` now yields
+`"1000000"`, not the old buggy raw `0.01`. Full live UI verification
+wasn't practical — the wallet/payroll card is gated behind a
+money-module flag not enabled in this dev environment, and
+`CafresoHQChain` only responds inside the trusted II-shell iframe — so
+the fire-tested regression test is the primary evidence here.
+
+A related call, `PayrollBudgetPanel.approve()` (same file, ~line 681),
+also passes a raw `parseFloat(amt)` to `chain().payroll.approve(...)`.
+Left untouched: its own comment ("approve() is the ONE real signature
+(shell-confirmed)") suggests it triggers a live ICRC-2 approval signed
+in the shell — the same category as `wallet.fund`/`wallet.send`, which
+also take raw human decimal amounts converted shell-side — rather than
+a plain state-canister field write like `put`. Converting it without
+shell-side confirmation risks introducing the opposite bug, so it's
+deferred for a future tick rather than guessed at here.
+
+Regression test: `scripts/test_payroll_amount_uses_base_units.py`.

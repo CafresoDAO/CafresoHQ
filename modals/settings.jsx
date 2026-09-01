@@ -544,10 +544,11 @@ function AgentWalletCard({ agent }) {
   const savePay = async () => {
     setBusy('pay'); setMsg('');
     try {
+      const dec = WALLET_TOKEN_DECIMALS[payTok] ?? 8;
       await chain().payroll.put({
-        agentId, token: payTok, amount: parseFloat(payAmt) || 0,
+        agentId, token: payTok, amount: toBaseUnits(payAmt, dec),
         periodSecs: Math.max(60, Math.round(parseFloat(payHrs || '0') * 3600)),
-        lowWatermark: payMode === 'refill' ? (parseFloat(payWm) || 0) : 0,
+        lowWatermark: payMode === 'refill' ? toBaseUnits(payWm, dec) : '0',
         mode: payMode, active: true,
       });
       setMsg('Payroll saved — first run in one period. Make sure a payroll budget is signed below.');
