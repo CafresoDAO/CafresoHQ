@@ -106,6 +106,10 @@ def main():
     def drive_workspace():
         harness = """
 const C = { fsMkdir: async () => ({ existed: false }) };
+// The sandbox preflight is its own tested unit (see
+// test_the_add_project_door_checks_the_reading_door.py) — here it waves
+// the add through so the reset behavior under test is reachable.
+const _addRefusedOutsideSandbox = async () => false;
 const calls = {
   setProjects: [], setSelectedId: [], setShowAdd: [], toasts: [],
   setOpenFile: [], setLedger: [], setAgentStatus: [], setPulse: [],
@@ -177,6 +181,9 @@ const commitProject = async ({ name, path, source }) => {
     def drive_classic(toast_available=True):
         harness = """
 const CafresoHQClient = { fsMkdir: async () => ({ existed: false }) };
+// Preflight stubbed open — its own behavior is covered by
+// test_the_add_project_door_checks_the_reading_door.py.
+const _addRefusedOutsideSandbox = async () => false;
 const calls = {
   setProjects: [], setSelected: [], setOpenFile: [], setShowAdd: [],
   toastMsgs: [],
@@ -185,6 +192,7 @@ const setProjects = (fn) => calls.setProjects.push(typeof fn === 'function' ? fn
 const setSelected = (v) => calls.setSelected.push(v);
 const setOpenFile = (v) => calls.setOpenFile.push(v);
 const setShowAdd = (v) => calls.setShowAdd.push(v);
+const toast = () => {};   // only the refused branch speaks through it
 const window = { cafresohqToast: %s };
 const commitProject = async ({ name, path, source }) => {
 %s

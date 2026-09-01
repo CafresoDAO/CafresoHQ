@@ -19923,3 +19923,34 @@ believing it works.
   not the promise — the surface that OFFERS the action has to stop
   offering it where it can't deliver, or the guard just converts an
   error into a lie.
+
+### The add-project door checks the reading door (2026-08-31)
+
+- **Claim vs. reality**: "Create your first project" accepted any path,
+  mkdir'd it, and filed the project — then, for a folder outside
+  CAFRESOHQ_ALLOWED_DIRS, every click in the boss's own FILES tree
+  answered a raw "path is outside CAFRESOHQ_ALLOWED_DIRS". The split
+  is deliberate server-side (the keyless reading doors are sandboxed
+  in every mode; the key-gated coworker tools honor unrestricted local
+  dev — so coworkers could build in a folder the boss couldn't read
+  along in), but the ADD door checked nothing and the refusal leaked
+  an env var. Walked into it live: project added from the Workspace
+  modal, tree listed (tools/exec), README click 403'd (/fs/file).
+- **Fix**: one shared preflight (_addRefusedOutsideSandbox) called by
+  BOTH commit steps — the first patch fixed only ProjectsView's copy
+  and the live retry sailed through WorkspaceView's, which is the one
+  the front door opens. A 403 from /fs/browse refuses the add out
+  loud while the modal is still open — pointing at 📁 Browse, which
+  resolves through the same guard, instead of naming the env var
+  (test_add_project_speaks_plainly pins that vocabulary out of this
+  file's boss-facing text; two of its harnesses needed the preflight
+  stubbed). An unreachable server is not a verdict. The editor's
+  leftover-project error says what to do instead of leaking the name.
+- **Test coverage**: `scripts/test_the_add_project_door_checks_the_reading_door.py`
+  (7 checks; the preflight brace-lifted and node-run at 403/200/throw;
+  2 arms fire-tested). Live: outside path refused with modal open,
+  inside path added, editor message humanized.
+- **Lesson**: when the same file defines the same step twice for two
+  sibling views, a fix that greps to one hit isn't landed — count the
+  definitions before believing the patch, and share the helper so the
+  next fix can't miss one.

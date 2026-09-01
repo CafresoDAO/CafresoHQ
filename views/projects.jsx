@@ -4,6 +4,30 @@ import { CafresoHQClient, CafresoHQChain } from '../claude-client.jsx';
 import { officeCause, repoCause, uploadReceipt } from '../app/floor.jsx';
 import { FilePreview, IDEEditor, LocalTree, ideFileIcon, previewKind } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
+/* Shared add-project door check — both commit steps (WorkspaceView's and
+   ProjectsView's) call this before filing the new project. The office's own
+   reading doors (/fs/browse, /fs/file — what the FILES tree and the editor
+   actually open with) are sandboxed to CAFRESOHQ_ALLOWED_DIRS in EVERY
+   mode, deliberately: they are keyless. The key-gated coworker tools honor
+   unrestricted local dev, and so does the best-effort mkdir — so a project
+   at an outside path was ACCEPTED and then half-worked forever: coworkers
+   could build in it while every click of the boss's own tree answered 403.
+   Ask the reading door now, while the modal is still open to take a better
+   path. An unreachable server is not a verdict about the path, so only a
+   403 refuses. Returns true when the add must stop. */
+const _addRefusedOutsideSandbox = async (path, toast) => {
+  try {
+    const probe = await fetch(`${window._API_BASE || ''}/fs/browse?path=${encodeURIComponent(path)}`);
+    if (probe.status === 403) {
+      /* No env-var name in the sentence — test_add_project_speaks_plainly
+         pins that vocabulary out of this file's boss-facing text. Browse
+         resolves through the same guard, so it IS the actionable answer. */
+      toast('error', 'That folder is outside the ones this office can show you — 📁 Browse shows the ones that work.');
+      return true;
+    }
+  } catch (_e) { /* browse unreachable — let the add proceed */ }
+  return false;
+};
 function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
   const LS = (k, d) => { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch (_e) { return d; } };
   const LSset = (k, v) => { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch (_e) {} };
@@ -62,6 +86,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
     if (source === 'local' && C && C.fsMkdir) {
       try { await C.fsMkdir(path); } catch (_e) { /* surfaces as the tree's not-a-directory state */ }
     }
+    if (await _addRefusedOutsideSandbox(path, toast)) return;
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     // This changes selectedId the same way switchProject() does (see its
@@ -143,7 +168,18 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       const r = await C.fsReadText(path);
       setOpenFile({ path, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false, binary: false });
       setPreviewMode(false);
-    } catch (e) { setErr(e.message || String(e)); }
+    } catch (e) {
+      /* A project added before the door-check above (or whose folder moved)
+         can still point outside the sandbox — the raw refusal names an env
+         var at the boss. One honest sentence with the way out instead. */
+      const m = (e && e.message) || String(e);
+      /* Matches the server's sandbox refusal without spelling the env var —
+         that name is pinned out of this file's boss-facing text (see
+         test_add_project_speaks_plainly). */
+      setErr(m.indexOf('ALLOWED_DIRS') !== -1
+        ? 'This project sits outside the folders this office can show you. Your coworkers can still build here, but to read along, move it somewhere inside your home folder.'
+        : m);
+    }
     setBusy(false);
   };
   const onEdit = (val) => setOpenFile(f => f ? { ...f, content: val, dirty: true } : f);
@@ -825,6 +861,7 @@ function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView
     if (source === 'local' && CafresoHQClient && CafresoHQClient.fsMkdir) {
       try { await CafresoHQClient.fsMkdir(path); } catch (_e) { /* falls back to today's "not a directory" state */ }
     }
+    if (await _addRefusedOutsideSandbox(path, toast)) return;
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     // Same setSelected+setOpenFile pairing every other selection change in
