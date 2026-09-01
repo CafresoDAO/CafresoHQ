@@ -157,8 +157,24 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
 
   const submit = () => {
     if (!text.trim()) return;
-    onAdd({ id: 'mem_'+Math.random().toString(36).slice(2,6), tag, text: text.trim(), date: 'Today' });
+    onAdd({ id: 'mem_'+Math.random().toString(36).slice(2,6), tag, text: text.trim(), date: Date.now() });
     setText('');
+  };
+
+  /* `date` used to be persisted as the literal string 'Today' — every entry,
+     forever, no matter when it was actually added. Now it's a real
+     timestamp, formatted at render time (same pattern as AgentInbox's
+     fmtAgo a few hundred lines below). A non-numeric `date` on an
+     already-saved entry falls back to a plain label instead of crashing
+     into `Invalid Date`. */
+  const fmtMemDate = (d) => {
+    if (typeof d !== 'number') return 'Unknown';
+    const dt = Date.now() - d;
+    if (dt < 60_000) return 'Just now';
+    if (dt < 3_600_000) return Math.floor(dt / 60_000) + 'm ago';
+    if (dt < 86_400_000) return Math.floor(dt / 3_600_000) + 'h ago';
+    if (dt < 7 * 86_400_000) return Math.floor(dt / 86_400_000) + 'd ago';
+    return new Date(d).toLocaleDateString();
   };
 
   return (
@@ -207,7 +223,7 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
           <div key={m.id} className="memrow">
             <span className={`memtag tag-${m.tag.toLowerCase()}`}>{m.tag}</span>
             <div className="memtext">{m.text}</div>
-            <div className="memdate">{m.date}</div>
+            <div className="memdate">{fmtMemDate(m.date)}</div>
             {onPin && <button className="px-btn ghost" style={{fontSize:8,padding:'4px 6px'}} title="Pin to corkboard" onClick={()=>onPin({ kind:'memory', text: `[${m.tag}] ${m.text}`, sourceId: m.id })}>📌</button>}
             <button className="px-btn ghost" style={{fontSize:8,padding:'4px 6px'}} onClick={()=>onRemove(m.id)}>✕</button>
           </div>

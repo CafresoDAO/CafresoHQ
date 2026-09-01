@@ -20515,3 +20515,26 @@ depend on a toggle button that may be off-screen. Live-verified at a
 horizontal scroll, and the ✕ closes it back to the roster.
 
 Regression test: `scripts/test_team_inbox_panel_mobile_layout.py`.
+
+## Memory-shelf entries were permanently labelled "Today," no matter when they were actually added
+
+`MemoryPage.submit()` built every new memory record with a hardcoded
+literal string `date: 'Today'` — not a timestamp — and `onAddMemory`
+(app.jsx) persisted it exactly as given. There was no other writer of
+`.date` anywhere in the memory pipeline. A note added a month ago and one
+added five seconds ago rendered an identical `memdate` of "Today,"
+forever — a boss scanning the shelf for what changed recently had no way
+to tell an old rule from a fresh one.
+
+Found by a background hunt agent sweeping previously-uncovered areas
+(Calendar, Library/Graph, Meetings, Memory, Night Shift, search).
+
+Fix: `submit()` now stores `date: Date.now()` — a real timestamp — and a
+new `fmtMemDate` helper (mirroring the fmtAgo pattern AgentInbox already
+uses a few hundred lines below in the same file) formats it at render
+time: "Just now", "Xm/Xh/Xd ago", or a real date past a week. A
+non-numeric `date` on an already-saved pre-fix entry falls back to a
+plain "Unknown" label instead of crashing into `Invalid Date`.
+Live-verified: adding a note now shows "JUST NOW" immediately.
+
+Regression test: `scripts/test_memory_entry_date_is_a_real_timestamp.py`.
