@@ -20538,3 +20538,26 @@ plain "Unknown" label instead of crashing into `Invalid Date`.
 Live-verified: adding a note now shows "JUST NOW" immediately.
 
 Regression test: `scripts/test_memory_entry_date_is_a_real_timestamp.py`.
+
+## A CEO-desk sticky note could be silently evicted by ambient agent activity
+
+`pins` holds both corkboard/receipt pins AND the boss's manually typed
+sticky notes (`onAddSticky`) in one array. `onPin`'s truncation used to
+be `.slice(0, 18)` on the WHOLE merged array, regardless of `kind` — and
+every agent deliverable (VAULT_NEW, EXPORT_PPTX, GENERATE_IMAGE, etc.)
+quietly calls `onPin(..., { quiet: true })` during ordinary, frequent
+agent work. Once 18 receipts had landed after a sticky note, the very
+next quiet receipt pin would bump the sticky clean out of the array —
+no toast, no warning, no undo, indistinguishable from background noise
+from unrelated agents' work.
+
+Found by a background hunt agent sweeping previously-uncovered areas.
+
+Fix: `onPin` now pulls stickies out of the merged list before capping,
+caps only the non-sticky (receipt/corkboard) entries at 18, and
+recombines both groups — a sticky note can now only ever be removed by
+the boss's own ✕ (`onRemoveSticky`), never by ambient agent activity.
+Live-verified: added a sticky note through the real "+ NOTE" flow and
+confirmed it renders on the CEO desk as before.
+
+Regression test: `scripts/test_sticky_note_survives_receipt_pin_cap.py`.

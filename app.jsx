@@ -1083,7 +1083,21 @@ function App() {
       if (!quiet) say('Already pinned', 'PIN');
       return;
     }
-    setPins(prev => [{ id: HQ.uid('pin'), addedAt: Date.now(), ...pin }, ...prev].slice(0, 18));
+    /* `pins` holds both corkboard/receipt pins AND the CEO desk's manually
+       typed sticky notes (onAddSticky, below) in one array. The old
+       `.slice(0, 18)` capped the WHOLE merged array by recency regardless
+       of kind — so a quiet, automatic receipt pin from ordinary agent work
+       (every deliverable auto-pins here) could silently evict a boss's own
+       sticky note once 18 receipts had landed after it, with no toast, no
+       undo, nothing distinguishing it from background noise. Cap only the
+       receipt/corkboard entries; a sticky note is only ever removed by the
+       boss's own ✕ (onRemoveSticky). */
+    setPins(prev => {
+      const next = [{ id: HQ.uid('pin'), addedAt: Date.now(), ...pin }, ...prev];
+      const stickies = next.filter(p => p.kind === 'sticky');
+      const others = next.filter(p => p.kind !== 'sticky').slice(0, 18);
+      return [...others, ...stickies];
+    });
     if (!quiet) say('Pinned to corkboard', 'PIN');
   };
   const onUnpin = (id) => setPins(prev => prev.filter(p => p.id !== id));
