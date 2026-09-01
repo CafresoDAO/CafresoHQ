@@ -20488,3 +20488,30 @@ the search filter before either handler touches the composer, or refuses
 with a toast if the hit's thread is read-only.
 
 Regression test: `scripts/test_chat_search_reply_targets_the_right_thread.py`.
+
+## TeamView's coworker inbox panel broke mobile layout and had no way out
+
+The 📥 coworker-inbox side panel next to the staff roster was an inline
+`style={{width: 360, flexShrink: 0}}` div with no className, sitting
+inside a flex row alongside `.team-grid`. Neither of styles.css's mobile
+breakpoints (`@media (max-width: 768px)`, `@media (max-width: 640px)`)
+could reach an unclassed inline style — so opening the panel on a real
+phone viewport dragged the whole TeamView row into horizontal overflow.
+AgentInbox itself had no dismiss control, so the only way out was the
+same 📥 INBOX toggle button that had just scrolled off-screen.
+
+Found by a background hunt agent sweeping previously-uncovered mobile
+layout (Library/Calendar/Team/Meetings were named as candidates).
+
+Fix: the wrapper now uses `className="team-inbox-panel"` instead of the
+inline style; `.team-inbox-panel` carries the desktop 360px width as a
+real, targetable rule; the 768px breakpoint widens it to 100%; the 640px
+breakpoint turns it into a fixed full-screen overlay (`position: fixed;
+inset: 0`) instead of a flex sibling fighting `.team-grid` for space.
+AgentInbox also gained an `onClose` prop, rendered as a ✕ button in its
+own header, wired to `setShowInbox(false)` — a way out that doesn't
+depend on a toggle button that may be off-screen. Live-verified at a
+375×812 mobile viewport: the panel now fills the screen with no
+horizontal scroll, and the ✕ closes it back to the roster.
+
+Regression test: `scripts/test_team_inbox_panel_mobile_layout.py`.

@@ -5905,7 +5905,21 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
   .team-ceo-role { font-size: 11px; }
   .team-ceo-chip { font-size: 9px; padding: 2px 6px; }
   .team-ceo-arrow { font-size: 22px; }
+
+  /* Full-width stacked panel instead of a fixed 360px sidebar that used to
+     drag the whole row into horizontal scroll on a phone. */
+  .team-inbox-panel { width: 100%; }
 }
+
+/* Coworker inbox side panel (TeamView) — was an inline width:360/flexShrink:0
+   style with no className, so neither of this file's mobile breakpoints
+   could reach it: on a phone it forced the whole TeamView row into
+   horizontal overflow, with no in-panel close control other than the same
+   📥 toggle button that had just scrolled off-screen. Moved to a real class
+   so mobile can make it full-width/stacked instead, and the panel now gets
+   its own ✕ (see AgentInbox's onClose) as a way out that isn't off-screen. */
+.team-inbox-panel { width: 360px; flex-shrink: 0; display: flex; }
+.team-inbox-close { margin-left: auto; }
 
 /* Team grid */
 .team-grid {
@@ -7597,6 +7611,18 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     overflow: auto;
   }
 
+  /* Coworker inbox as a full-screen overlay rather than a flex sibling of
+     .team-grid — at this width there's no room for both side by side, and
+     a plain width:100% would just fight .team-grid for space. The ✕ in
+     AgentInbox's header (onClose) is the way out. */
+  .team-inbox-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    width: 100%;
+    background: var(--paper);
+  }
+
   /* Office: mobile-friendly flow layout — rooms stack vertically as
      compact horizontal cards instead of absolute-positioned grid. */
   .mobile-agent-strip { display: block; position: sticky; top: 0; z-index: 10; background: var(--paper); border-bottom: 1px solid var(--rule); padding: 6px 0; }
@@ -7964,7 +7990,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Reserve space at the bottom so the tab bar doesn't cover content.
      Apply clearance on scrollable content containers, not on .app/.main. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .team-view {
+  .view, .view-projects, .vault-view, .team-view, .view-tasks {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 
@@ -8263,7 +8289,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
 
   /* Content views: clear the larger tab bar + home indicator */
   .view, .view-projects, .vault-view, .vault-view.unified,
-  .team-view, .mobile-chat-view {
+  .team-view, .mobile-chat-view, .view-tasks {
     padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
   }
 }

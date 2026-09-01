@@ -248,7 +248,7 @@ const ACT_ICON = {
    (passed as a prop; app.jsx is the single source of truth — no own listener).
    Tabs split routine flow from items that NEED THE USER and from completions;
    each row drills down to its detail + jump links. */
-function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
+function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry, onClose }) {
   const [tab, setTab] = useSV('attention');   // 'attention' | 'all' | 'done'
   const [expandedId, setExpandedId] = useSV(null);
 
@@ -340,6 +340,9 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
       <div className="proj-section-head" style={{display:'flex', alignItems:'center', gap:'var(--sp-3)'}}>
         <span style={{flex:1}}>📥 COWORKER INBOX</span>
         <span style={{fontSize:'var(--text-9)', opacity:0.7}}>{scopedActivity.length} event{scopedActivity.length===1?'':'s'}</span>
+        {onClose && (
+          <button className="px-btn ghost team-inbox-close" onClick={onClose} title="Close inbox">✕</button>
+        )}
       </div>
 
       {/* Two-layer tabs */}
@@ -739,7 +742,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
           </div>
         </div>
         {showInbox && (
-          <div style={{width: 360, flexShrink: 0, display: 'flex'}}>
+          <div className="team-inbox-panel">
             <AgentInbox
               agents={agents}
               activity={activity}
@@ -751,6 +754,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
               onApprove={onApprove}
               onReject={onReject}
               onRetry={onRetry}
+              onClose={() => setShowInbox(false)}
             />
           </div>
         )}
