@@ -1285,6 +1285,18 @@ function ProjectTerminal({ project, visible }) {
     // that blanked the whole page when a tab was closed.
     setSessions(next);
     if (activeId === id && next.length) setActiveId(next[next.length - 1].id);
+    /* "End session" used to only close the client socket, which the
+       backend treats as a disconnect, not a kill (_PTY_SESSION_TTL keeps
+       the PTY alive for up to 5 minutes so a dropped connection can
+       reconnect). That's right for a network blip; it's wrong for an
+       explicit close click, which has no way back to this tab anyway —
+       so ask the backend to end the process now instead of leaving it
+       to the reaper. Best-effort: a session that was never PTY-backed
+       (e.g. a plain hqsh tab) just gets a harmless 200 back. */
+    if (closing && closing.sessionId) {
+      fetch((window._API_BASE || '') + '/terminal/kill?session_id=' + encodeURIComponent(closing.sessionId))
+        .catch(() => {});
+    }
     /* Clear this session's persistent state so localStorage doesn't bloat over
        time. msgs can be hundreds of KB after a long conversation. */
     if (closing && pid) {

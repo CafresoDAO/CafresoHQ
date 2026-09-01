@@ -617,6 +617,41 @@ def _terminal_status(self):
         'pty_supported':   pty_ok,
     })
 
+def _terminal_kill(self):
+    """Terminate a PTY session NOW, for an explicit "End session" click.
+
+    The reaper's 300s grace (_PTY_SESSION_TTL) exists so a dropped
+    WebSocket — a network blip, a mobile client backgrounding the tab —
+    doesn't kill a long-running CLI session the user still means to come
+    back to. But the frontend's tab-close button used that exact same
+    soft-detach path (just closing the socket), so a session the user
+    explicitly ended kept its PTY/CLI process alive server-side for up
+    to 5 minutes with no way for the client to ask for it sooner — the
+    UI's own "End session" label promised something the client had no
+    way to actually request. This is the one route that lets it ask.
+    """
+    qs = urllib.parse.urlparse(self.path).query
+    params = urllib.parse.parse_qs(qs)
+    session_id = (params.get('session_id') or [''])[0].strip()
+    if not session_id:
+        return self._send_json(400, {'error': 'session_id required'})
+    with _PTY_SESSIONS_LK:
+        sess = _PTY_SESSIONS.pop(session_id, None)
+    if sess is None:
+        # Already reaped, never existed, or not a PTY-backed session
+        # (e.g. a non-persistent stream tab) — nothing to do, not an error.
+        return self._send_json(200, {'ok': True, 'killed': False})
+    sess['stop'].set()
+    for k in ('pty_proc', 'proc'):
+        try: sess.get(k) and sess[k].terminate()
+        except Exception: pass
+    with sess['sock_lk']:
+        sock = sess.get('sock')
+    if sock is not None:
+        try: sock.close()
+        except Exception: pass
+    return self._send_json(200, {'ok': True, 'killed': True})
+
 def _terminal_stream(self):
     """Stream an agentic CLI session scoped to a project directory.
 

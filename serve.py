@@ -1749,6 +1749,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._agent_drivers()
         if self.path == '/terminal/status':
             return self._terminal_status()
+        if self.path.startswith('/terminal/kill'):
+            return self._terminal_kill()
         if self.path == '/terminal/nonce':
             return self._terminal_nonce()
         if self.path.startswith('/terminal/spawn'):
@@ -3345,6 +3347,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _terminal_nonce  = pty_server._terminal_nonce
     _terminal_pty_ws = pty_server._terminal_pty_ws
     _terminal_status = pty_server._terminal_status
+    _terminal_kill   = pty_server._terminal_kill
     _terminal_stream = pty_server._terminal_stream
 
     def _app_origins(self):

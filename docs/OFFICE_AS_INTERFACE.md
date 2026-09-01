@@ -20306,3 +20306,32 @@ Also this tick: the Terminal pane's own tab-lifecycle behavior (kill vs.
 hide, per-tab state isolation) was checked but no comparably concrete
 issue was found within budget — not ruled fully clean, just not this
 tick's finding. Worth another look in a future tick if time allows.
+
+## Terminal: "End session" left the PTY alive for up to 5 minutes
+
+Closing a Terminal tab ("End session") only ever tore down the client
+WebSocket. The backend's `_PTY_SESSIONS` dict treats a socket close as
+a disconnect, not a kill — `_PTY_SESSION_TTL` (300s) deliberately keeps
+the PTY process alive so a dropped connection can reconnect, and only
+the background `_pty_reaper` thread (runs every 30s) ever calls
+`.terminate()`, and only once a session is past its `expires` stamp.
+
+That grace period is the right behavior for an actual network blip.
+But clicking "End session" removes the tab from the UI for good —
+there is no way back to reconnect to it — so every explicit close was
+leaving its PTY process running and idle for up to 5 extra minutes,
+one zombie process per closed tab.
+
+Fix: added a `_terminal_kill(self)` handler in `pty_server.py` that
+pops the session out of `_PTY_SESSIONS` (so the reaper can never race
+it) and terminates it immediately, wired up as `GET /terminal/kill` in
+`serve.py`. `views/terminal.jsx`'s `closeSession` now fires that
+request (best-effort, fire-and-forget) whenever the closed tab carried
+a real `sessionId`; a plain gateway-backed tab with no local PTY just
+gets a harmless `{ok: true, killed: false}` back.
+
+Verified live in the browser: opened a real PTY-backed "hqsh" tab,
+closed it, and watched the network panel — `GET
+/terminal/kill?session_id=<id>` fired and returned 200 OK.
+
+Regression test: `scripts/test_terminal_close_kills_pty_session.py`.
