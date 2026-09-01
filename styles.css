@@ -7990,7 +7990,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Reserve space at the bottom so the tab bar doesn't cover content.
      Apply clearance on scrollable content containers, not on .app/.main. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .team-view, .view-tasks {
+  .view, .view-projects, .vault-view, .view-team, .view-tasks {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 
@@ -8289,7 +8289,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
 
   /* Content views: clear the larger tab bar + home indicator */
   .view, .view-projects, .vault-view, .vault-view.unified,
-  .team-view, .mobile-chat-view, .view-tasks {
+  .view-team, .mobile-chat-view, .view-tasks {
     padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
   }
 }

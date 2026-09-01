@@ -20595,3 +20595,34 @@ network request (200 OK, correct session_id) and that every localStorage
 key for that project's terminal state was gone afterward.
 
 Regression test: `scripts/test_delete_project_kills_its_terminal_sessions.py`.
+
+## TeamView's staff roster was unclickable behind the mobile tab bar — CSS named the wrong class
+
+The two mobile media-query blocks in styles.css that reserve bottom
+clearance for the fixed tab bar named an explicit selector `.team-view`
+in both the base (72px) and standalone/PWA (80px) blocks. But TeamView
+actually renders `<div className="view-team" ...>` — the reverse word
+order. No element anywhere in the codebase ever had class `team-view`,
+so this selector had matched nothing since it was written: the staff
+roster got zero reserved space above the fixed mobile tab bar.
+
+Measured live at 390×700: after scrolling `.team-grid` to its max
+scrollTop, the last coworker card's rect overlapped the fixed
+`.mobile-tabbar` — `document.elementFromPoint` at the card's bottom edge
+resolved to the tab bar, not the card. A tap there would activate
+whatever tab bar item sat underneath instead of opening that coworker's
+inspect panel.
+
+Same class of bug, same fix shape, as the Tasks board's own tab-bar
+clearance bug fixed earlier (`.view-tasks` missing from the same
+selector lists).
+
+Found by a background hunt agent sweeping previously-uncovered areas.
+
+Fix: renamed the selector in both clearance blocks (styles.css) from
+`.team-view` to `.view-team` to match the actual className TeamView
+renders. Live-verified at 390×700: the last roster card's bottom edge
+now sits above the tab bar's top edge, and a hit-test at that edge
+resolves to the card itself.
+
+Regression test: `scripts/test_team_mobile_tabbar_clearance.py`.
