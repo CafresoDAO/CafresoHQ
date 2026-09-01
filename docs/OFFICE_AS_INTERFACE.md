@@ -20626,3 +20626,39 @@ now sits above the tab bar's top edge, and a hit-test at that edge
 resolves to the card itself.
 
 Regression test: `scripts/test_team_mobile_tabbar_clearance.py`.
+
+## Memory and Calendar unreachable behind the mobile tab bar
+
+The same two mobile clearance selector lists in styles.css (base
+`@media (max-width: 768px)` at 72px, standalone/PWA
+`@media all and (display-mode: standalone)` at 80px) never named
+`.view-memory` or `.view-calendar` — not a reversed word order like the
+TeamView bug just before this one, simply omitted entirely. MemoryPage
+renders `<div className="view-memory">` and CalendarView renders
+`<div className="view-calendar">` (both in views/core.jsx); on mobile
+neither view reserved any space above the fixed `.mobile-tabbar`, so
+each view's last row sat directly behind it.
+
+Found by a background hunt agent, after two consecutive tab-bar-
+clearance bugs of the identical shape (Tasks, then TeamView) prompted
+an explicit check for more instances of the same pattern — which paid
+off here.
+
+Fix: added `.view-memory, .view-calendar` to both clearance selector
+lists in styles.css. Live-verified at 375×812: both views now report
+`padding-bottom: 72px` via getComputedStyle.
+
+Regression test: `scripts/test_memory_calendar_mobile_tabbar_clearance.py`.
+
+While investigating, also checked the hunt agent's bonus note that
+`.vault-view`/`.view-vault` (present in some of the same selector lists,
+plus a few unrelated rules elsewhere in styles.css at lines 6716, 6718,
+8230, 10106, 10108) might be a similar stale-selector bug relative to
+vault.jsx's real render classes (`vault-mobile`, `vault-layout-3col`).
+Confirmed via grep across every `.jsx` file that neither `view-vault`
+nor `vault-view` is ever rendered as a className anywhere in the
+codebase — those rules are vestigial dead CSS from a prior vault
+rendering path, not a live clearance bug (nothing renders the class, so
+nothing can be overlapped). Left untouched; a future tick could delete
+them as dead-code cleanup, but that's a different task shape than this
+bug pattern.
