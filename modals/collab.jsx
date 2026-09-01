@@ -21,8 +21,19 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
   /* A task already claimed by another workflow (t.workflowId) has its
      chainTo/dependsOn pointing at THAT workflow's neighbors — adding it
      to a second one here would silently overwrite those links with no
-     warning, breaking the first workflow without ever saying so. */
-  const inboxTasks = tasks.filter(t => t.status !== 'done' && !t.workflowId && !steps.includes(t.id));
+     warning, breaking the first workflow without ever saying so.
+
+     `status === 'inbox'`, not `!== 'done'`: the latter also let in a task
+     that's already `doing` — an agent actively running it right now. Chain
+     a running task in as, say, step 2 and Create wires it up with
+     `dependsOn: [step1.id]` as if it were still queued, but nothing ever
+     gated its start on step 1 — it's already off running under its own
+     steam, decoupled from the sequence the workflow claims to enforce. If
+     it finishes before step 1, app.jsx's chain-advance fires step 3
+     immediately with step 1 still unfinished; if step 1 finishes first,
+     the hand-off silently no-ops (nextTask.status !== 'inbox') with no
+     error and no sign to the boss that the chain never actually took. */
+  const inboxTasks = tasks.filter(t => t.status === 'inbox' && !t.workflowId && !steps.includes(t.id));
   const addStep = (taskId) => setSteps(s => [...s, taskId]);
   const removeStep = (taskId) => setSteps(s => s.filter(id => id !== taskId));
   const moveUp = (i) => { if (i === 0) return; const s = [...steps]; [s[i-1], s[i]] = [s[i], s[i-1]]; setSteps(s); };

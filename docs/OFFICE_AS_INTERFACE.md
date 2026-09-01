@@ -20427,3 +20427,32 @@ a link, so a chain wired to a since-deleted step gets a visible trace
 instead of quietly going nowhere.
 
 Regression test: `scripts/test_delete_task_scrubs_dangling_chain_links.py`.
+
+## WorkflowModal let you chain a task that's already running
+
+`WorkflowModal`'s "AVAILABLE TASKS" list (modals/collab.jsx) was built with
+`tasks.filter(t => t.status !== 'done' && ...)` — excluding only finished
+tasks, which also let in a task with `status === 'doing'`: one an agent is
+actively running right now, indistinguishable in the picker from a
+genuinely queued inbox task.
+
+Chaining an already-running task into a new workflow (say, as step 2 of
+A → B → C, with B already `doing`) wires it up via `onSave` with
+`dependsOn: [A.id]`, implying it should wait for A — but B was never
+gated on anything; it's already running under its own steam. Two silent
+breaks followed: if B finishes before A, app.jsx's chain-advance fires C
+immediately with A still unfinished, violating the sequential guarantee
+the whole feature promises; if A finishes first, the hand-off to B
+silently no-ops (`nextTask.status === 'inbox'` fails since B is `doing`),
+with no error and no sign to the boss the chain never actually took. The
+modal's own status-summary panel would still render a plausible
+"1/3 done · 1 in progress" for this broken chain.
+
+Found by a background hunt agent scanning previously-uncovered areas
+(Search, mobile layout, the Workflow-building modal).
+
+Fix: `inboxTasks` now filters on `status === 'inbox'` (matching the
+variable's own name and the section's intent) instead of the weaker
+`status !== 'done'`.
+
+Regression test: `scripts/test_workflow_modal_excludes_running_tasks.py`.
