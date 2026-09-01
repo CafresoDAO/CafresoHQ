@@ -20335,3 +20335,34 @@ closed it, and watched the network panel — `GET
 /terminal/kill?session_id=<id>` fired and returned 200 OK.
 
 Regression test: `scripts/test_terminal_close_kills_pty_session.py`.
+
+## Firing a coworker left their pending approval cards stale in the tray
+
+An agent's pending hire-agent, hire-assistant, and grant-elevation proposals
+are tracked two ways: the visible card in the Approvals tray (`approvals`
+state) and a same-agent-only guard (`pendingHiresRef` /
+`pendingAssistantHiresRef` / `pendingElevationRef`, each a `Set` of agent
+ids) so an agent can't stack multiple outstanding requests of the same kind.
+A code comment on `pendingElevationRef` already claimed both are "released
+when the boss approves OR rejects the entry, and also when the agent is
+dismissed (handled in onDismiss)" — but `onDismiss` never actually touched
+either one.
+
+Concretely: an agent requests file/shell elevation, its card appears in the
+tray, and the boss fires that agent before acting on the card. The stale
+card survives. If the boss later clicks Approve on it anyway, the shared
+"✓ APPROVED — ..." chat line always fires first — but the kind-specific
+branch does `agents.find(a => a.id === requestedBy)`, finds nothing (the
+agent's gone), and silently skips the actual grant/hire. The boss is told
+it worked; nothing happened, and nothing said otherwise.
+
+Fix: `onDismiss` now filters `approvals` for any card whose `agentId` (or
+`fromAgent`, for workflow-step cards) is in the `leaving` set being purged,
+and releases all three pending-ref guards for every leaving id — the same
+place every other trace of a dismissed coworker (in-flight tasks, roster
+entry) already gets cleaned up.
+
+Found by a background hunt agent scanning previously-uncovered areas
+(Roster/hiring, Approvals, Search, mobile layout, Workflows).
+
+Regression test: `scripts/test_dismissed_coworker_leaves_no_stale_approval.py`.

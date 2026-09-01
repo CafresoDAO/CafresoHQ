@@ -1532,6 +1532,22 @@ ${d.text}` : d.text,
     setTasks(prev => prev.map(t => (t.assignedTo && leaving.has(t.assignedTo))
       ? { ...applyStatus(t, t.status === 'doing' ? 'inbox' : t.status), assignedTo: null }
       : t));
+    /* Approval cards (hire/elevation/awaiting-stamp/workflow-step) are keyed
+       to the coworker who raised them — `agentId` for all but workflow-step,
+       which uses `fromAgent`. A card left in the tray for someone who no
+       longer works here isn't just clutter: clicking Approve on a stale
+       grant-elevation or hire-agent card looks like it worked (the ✓
+       APPROVED chat line always fires) while the actual grant/hire silently
+       no-ops because `agents.find(...)` comes back empty. Drop those cards
+       — and their pending-request guards, so a reused id is never seen as
+       "already has one outstanding" for an agent that's gone — right here,
+       the same place every other trace of a dismissed coworker gets purged. */
+    setApprovals(prev => prev.filter(p => !leaving.has(p.agentId) && !leaving.has(p.fromAgent)));
+    leaving.forEach(lid => {
+      pendingHiresRef.current.delete(lid);
+      pendingAssistantHiresRef.current.delete(lid);
+      pendingElevationRef.current.delete(lid);
+    });
     if (cascadeAction === 'dismiss') {
       // Abort + remove all assistants in one pass.
       for (const x of assistants) abortAgentRun(x.id);
