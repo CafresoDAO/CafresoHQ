@@ -859,6 +859,23 @@ function App() {
   const goTo = React.useCallback((view) => {
     if (navToRef.current) navToRef.current(view);
   }, []);
+  /* Calendar draws a task row for every task on the books — the same rows
+     TaskBoard draws — but had no door on it at all: mission rows here at
+     least say "wraps up"/"finished", a task row was pixel-inert. Clicking
+     one did nothing, which is the exact silent-no-op shape #140's own menu
+     item and Add-project's mkdir both turned out to have. The one existing
+     "go look at tasks" door (AgentInbox's "Open task board →") only opens
+     the BOARD, never the one task that prompted the click — fine when
+     there's one task on the books, useless the moment there are twenty.
+     goToTask remembers which one, so TaskBoard can find, expand and flash
+     that exact card once it mounts; consumeHighlight (below) clears it so
+     a later visit to Tasks doesn't re-trigger the flash on a stale id. */
+  const [highlightTaskId, setHighlightTaskId] = useStateA(null);
+  const goToTask = React.useCallback((taskId) => {
+    setHighlightTaskId(taskId);
+    goTo('tasks');
+  }, [goTo]);
+  const consumeHighlightTask = React.useCallback(() => setHighlightTaskId(null), []);
   /* "Has the boss delegated a task?" — asked by the coach mark below and by
      the Getting Started checklist, and it has to be ONE question or the two
      surfaces disagree about what the boss has done.
@@ -6067,6 +6084,8 @@ ${d.text}` : d.text,
              office out-tray. Same handler the out-tray drop uses, so
              START and a desk-drop are the identical code path. */
           onStartTask={onTaskDropOnAgent}
+          highlightTaskId={highlightTaskId}
+          onConsumeHighlight={consumeHighlightTask}
         />;
       case 'memory':
         return <MemoryPage memory={memory} onAdd={onAddMemory} onRemove={onRemoveMemory} onPin={onPin} />;
@@ -6076,6 +6095,7 @@ ${d.text}` : d.text,
         return <VaultView agents={agents} onOpenSettings={() => { setSettingsOpen(true); }} />;
       case 'calendar':
         return <CalendarView tasks={tasks} agents={agents} missions={missions}
+                 onOpenTask={goToTask}
                  nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;
       case 'projects':
         return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={goTo} />;

@@ -19954,3 +19954,53 @@ believing it works.
   sibling views, a fix that greps to one hit isn't landed — count the
   definitions before believing the patch, and share the helper so the
   next fix can't miss one.
+
+### Calendar's task rows open the right task now (2026-08-31)
+
+- **Claim vs. reality**: Calendar drew a row for every task on the
+  books, same shape as a Task Board row, but wired nothing to it — no
+  onClick, no role, no cursor. Mission rows right next to it at least
+  say "wraps up" or "finished"; a task row was pixel-inert. The one
+  existing "go look at tasks" door (AgentInbox's "Open task board →")
+  only opens the board, never the one task that prompted the click —
+  fine with one task on the books, useless the moment there are twenty.
+  Third instance this session of the same bug class: a surface DRAWS
+  an entity but wires no working action to it (Graph's "Open note" on
+  unopenable nodes; Add-project accepting paths the reading door
+  couldn't serve; now this).
+- **Fix**: a click on a Calendar task row (onClick/onKeyDown/role/
+  tabIndex, wired through a new `onOpenTask` prop) sets `highlightTaskId`
+  and reuses the existing `goTo('tasks')` — deliberately not threaded
+  through `goTo`'s own signature, which has many other call sites.
+  TasksView clears the search query and forces "show completed" on
+  whenever a valid highlighted task arrives, so a stale filter can't
+  hide the very card the click was meant to land on. TaskBoard expands
+  the matching card, scrolls it into view, and applies a brief flash
+  outline, then calls `onConsumeHighlight` so a later plain visit to
+  Tasks doesn't replay the flash on a stale id. Live testing surfaced a
+  real bug in the first pass: the flash-clear timer and the
+  highlight-consume call were scheduled in the SAME effect, keyed off
+  `highlightTaskId`. Consuming the highlight flips that back to null
+  almost immediately, rerunning the effect's own cleanup — which
+  cancelled the flash-clear timer along with everything else. The
+  outline lit up once and stayed lit forever; nothing ever turned it
+  back off. Splitting the flash-clear into its own effect keyed on
+  `flashId` (independent of `highlightTaskId`'s lifecycle) fixed it.
+- **Test coverage**: `scripts/test_calendar_task_row_opens_the_right_card.py`
+  (18 checks, source-pattern based across app.jsx/views/core.jsx/
+  features.jsx; 2 arms fire-tested — the merged-effect regression and
+  the row's onClick wiring, both burned and confirmed caught, both
+  restored clean). Live-verified in the browser end to end: clicking
+  the one real task's Calendar row navigates to Tasks, the correct
+  card expands and flashes, the flash clears on its own a few seconds
+  later (measured via a MutationObserver timestamp — direct polling
+  was misleading, since the tool round-trip between click and check
+  was itself often longer than the flash duration), and a plain
+  revisit to Tasks does not replay the flash.
+- **Lesson**: a "does it look right" screenshot taken a beat after the
+  click can't tell a fix that self-corrects from one that never
+  changes state at all — this one looked identical either way in a
+  single freeze-frame. Instrumenting the actual state transition (here,
+  a MutationObserver logging timestamps) caught a real bug that two
+  separate manual checks missed for the same reason: both happened to
+  land after the (broken) permanent flash had already "settled."

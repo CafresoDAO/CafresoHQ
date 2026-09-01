@@ -283,15 +283,21 @@ console.log(JSON.stringify(R));
 
     # ── The plumbing: app.jsx must actually hand both night-shift sources
     #    to the view whose fold logic now expects them ────────────────────
+    # A later tick added `onOpenTask` to the same signature/call site (the
+    # Calendar-task-row highlight fix) — checked here as substrings rather
+    # than one contiguous literal so an unrelated new prop landing between
+    # these two doesn't false-fail this file, per this file's own stated
+    # philosophy above: this harness changes with the shipped fold, not
+    # the other way around.
+    cal_sig_line = next((l for l in core.splitlines() if l.startswith('function CalendarView(')), '')
     check('CalendarView\'s own signature accepts both night-shift props — '
           'the fold logic above references them, so a signature without '
           'them would ReferenceError at runtime even if the body were '
           'otherwise correct',
-          'function CalendarView({ tasks, agents, missions = [], '
-          'nightShiftBoard = [], nightShiftRuns = [] }) {' in core,
+          'nightShiftBoard = []' in cal_sig_line and 'nightShiftRuns = []' in cal_sig_line,
           'views/core.jsx: CalendarView signature missing the new params')
     check('CalendarView is passed both night-shift props',
-          'nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;' in app,
+          'nightShiftBoard={nightShiftBoard}' in app and 'nightShiftRuns={nightShiftRuns}' in app,
           'app.jsx: CalendarView call site still only passes tasks/agents/missions')
     check("the schedule poll now carries what a running entry needs to be "
           "dated (agentId, startedAt from the schedule's own lastRunAt, "

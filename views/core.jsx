@@ -81,9 +81,22 @@ const VIEW_LABELS = {
 };
 
 /* ---------------- Tasks (full board with filter + search) ---------------- */
-function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, onDropTaskOnAgent, onAssign, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [] }) {
+function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, onDropTaskOnAgent, onAssign, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {
   const [q, setQ] = useSV('');
   const [showDone, setShowDone] = useSV(true);
+
+  /* A calendar click on a DONE task, arriving with the board's own search
+     box full of yesterday's query or "show completed" left unchecked from
+     a prior visit, would have the highlight target filtered clean out of
+     `filtered` — flash code with nothing to flash. Whichever filter would
+     hide the requested task, drop it, so the door calendar rows open
+     always actually lands on the card. */
+  React.useEffect(() => {
+    if (!highlightTaskId) return;
+    if (!tasks.some(t => t.id === highlightTaskId)) return;
+    setQ('');
+    setShowDone(true);
+  }, [highlightTaskId]);
 
   const filtered = useMV(() => {
     const needle = q.trim().toLowerCase();
@@ -127,6 +140,8 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, on
         onMakeRoomFromTask={onMakeRoomFromTask}
         onStartTask={onStartTask}
         experience={experience}
+        highlightTaskId={highlightTaskId}
+        onConsumeHighlight={onConsumeHighlight}
       />
     </div>
   );
@@ -750,7 +765,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
    belong here as well, but they live behind the container bridge; they are
    not local state this view can read honestly, so they are left out rather
    than faked.) */
-function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [] }) {
+function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [], onOpenTask = null }) {
   const groups = useMV(() => {
     const out = new Map();
     /* officeDate, not toISOString — the office runs on the BOSS'S clock.
@@ -898,8 +913,19 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
               }
               const t = entry.task;
               const a = agents.find(x => x.id === t.assignedTo);
+              /* Mission rows above have no door either, but a running or
+                 finished mission has no board to jump to — a task does,
+                 and TaskBoard already knows how to find/expand/flash one
+                 specific card (see goToTask in app.jsx). Keyboard-operable
+                 like every other clickable row this office ships: role,
+                 tabIndex, Enter/Space. */
               return (
-                <div key={t.id} className={`cal-item status-${t.status}`}>
+                <div key={t.id} className={`cal-item status-${t.status}`}
+                  role={onOpenTask ? 'button' : undefined}
+                  tabIndex={onOpenTask ? 0 : undefined}
+                  style={onOpenTask ? { cursor: 'pointer' } : undefined}
+                  onClick={onOpenTask ? () => onOpenTask(t.id) : undefined}
+                  onKeyDown={onOpenTask ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenTask(t.id); } } : undefined}>
                   <div className="cal-time">{time}</div>
                   <div className="cal-title">{t.title}</div>
                   <div className="cal-meta">

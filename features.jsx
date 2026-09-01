@@ -75,11 +75,45 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
    office is new. `totalCount` is the unfiltered figure and is the only
    thing allowed to trigger onboarding — otherwise a search matching
    nothing would greet an established boss with "No tasks yet". */
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [] }) {
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {
   const officeIsNew = (totalCount === null ? tasks.length : totalCount) === 0;
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
   const [expanded, setExpanded] = useSF({});
+
+  /* A calendar row's whole point is landing the boss on THE task that
+     prompted the click, not just the board it lives on — the Calendar's
+     own mission rows and the pre-existing "Open task board →" door both
+     stopped at "here's the board, go find it". Expand the matching card
+     (so its detail is what they see, not a title they have to click
+     again) and scroll it into view; a brief flash class says WHICH card
+     this was, since a fresh scroll position alone reads as "did it move
+     the page or did nothing happen". Consumed once so a later visit to
+     Tasks (no fresh click) doesn't replay the flash on a stale id. */
+  const [flashId, setFlashId] = useSF(null);
+  useEF(() => {
+    if (!highlightTaskId) return;
+    if (!tasks.some(t => t.id === highlightTaskId)) return;   // filtered out or gone
+    setExpanded(prev => ({ ...prev, [highlightTaskId]: true }));
+    setFlashId(highlightTaskId);
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-task-id="${highlightTaskId}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    // Consuming the highlight is intentionally its own effect (below), keyed
+    // on flashId rather than highlightTaskId: onConsumeHighlight clears the
+    // PARENT's highlightTaskId prop almost immediately, which reruns this
+    // effect's cleanup. If the flash-clear timer lived in *this* effect,
+    // that cleanup would cancel it before it ever fired — the outline
+    // would light up once and then never turn off.
+    const t2 = setTimeout(() => onConsumeHighlight && onConsumeHighlight(), 50);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t2); };
+  }, [highlightTaskId]);
+  useEF(() => {
+    if (!flashId) return;
+    const t1 = setTimeout(() => setFlashId(null), 2600);
+    return () => clearTimeout(t1);
+  }, [flashId]);
   const cols = [
     ['inbox', 'INBOX'],
     ['doing', 'DOING'],
@@ -116,7 +150,9 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
               {tasks.filter(t=>t.status===key).map(t => {
                 const a = agents.find(x=>x.id===t.assignedTo);
                 return (
-                  <div key={t.id} className={`task-card pri-${t.priority}${expanded[t.id] ? ' expanded' : ''}`}
+                  <div key={t.id} data-task-id={t.id}
+                       className={`task-card pri-${t.priority}${expanded[t.id] ? ' expanded' : ''}${flashId===t.id ? ' tc-highlight-flash' : ''}`}
+                       style={flashId===t.id ? { outline: '3px solid var(--ink)', outlineOffset: 2, transition: 'outline-color 2.4s ease', animation: 'none' } : undefined}
                        draggable
                        onDragStart={e=>{ e.dataTransfer.setData('task', t.id); onDragStart && onDragStart(t); }}
                        onClick={()=>setExpanded(prev=>({...prev, [t.id]: !prev[t.id]}))}>
