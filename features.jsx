@@ -491,6 +491,16 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
   const abortRef = useRF(null);
   const stop = () => { if (abortRef.current) abortRef.current.abort(); };
 
+  /* Unlike StandupModal (rendered unconditionally, gated by `open`),
+     app.jsx only mounts <MeetingRoom> while `meetingOpen` is true — so this
+     DOES unmount on close (✕, Escape, backdrop). Without this cleanup the
+     per-attendee turn loop in `moderate` kept running as an orphaned
+     closure after close: still calling onUpdateAgent(busy→idle) against
+     the live agents state, invisible to the boss, unstoppable by STOP ALL
+     (which only sweeps app.jsx's own agentAbortersRef, never this local
+     controller). Same shape as the StandupModal leak just above. */
+  useEF(() => () => { if (abortRef.current) abortRef.current.abort(); }, []);
+
   const moderate = async () => {
     if (!input.trim() || streaming) return;
     const you = input.trim();

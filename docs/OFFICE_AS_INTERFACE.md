@@ -20662,3 +20662,34 @@ rendering path, not a live clearance bug (nothing renders the class, so
 nothing can be overlapped). Left untouched; a future tick could delete
 them as dead-code cleanup, but that's a different task shape than this
 bug pattern.
+
+## The Meeting Room kept talking after the boss closed it
+
+`MeetingRoom` (features.jsx) runs a sequential per-attendee turn loop
+(`moderate`) against its own local `abortRef`/`AbortController`. Unlike
+`StandupModal` — rendered unconditionally and gated only by an `open`
+prop, with a fix that aborts on the open→false edge — app.jsx only
+mounts `<MeetingRoom>` while `meetingOpen` is true
+(`{meetingOpen && <MeetingRoom .../>}`), so closing the meeting (✕,
+Escape, backdrop) genuinely unmounts it. But `moderate`'s turn loop and
+the closing CEO-synthesis stream are plain async closures, not tied to
+React lifecycle: closing the meeting mid-turn left the stream running
+invisibly, still flipping the agent's floor status busy→idle against
+live app state with no UI left to show or stop it — and since this
+controller was never registered with app.jsx's `agentAbortersRef`, STOP
+ALL couldn't reach it either.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(Meetings/Rooms, Night Shift, approval/hire flow, search, Settings,
+notifications, CEO 1:1, export/publish).
+
+Fix: added a plain unmount cleanup effect right after MeetingRoom's
+`abortRef` declaration — `useEF(() => () => { if (abortRef.current)
+abortRef.current.abort(); }, []);` — mirroring StandupModal's fix,
+adapted to MeetingRoom's different (conditional-mount) lifecycle shape.
+Live-verified: started a meeting with Codex + Llama, sent a message,
+and closed the modal mid-stream — the in-flight
+`ollama/v1/chat/completions` request immediately showed
+`net::ERR_ABORTED` in the network log, with no new console errors.
+
+Regression test: `scripts/test_meeting_room_aborts_on_close.py`.
