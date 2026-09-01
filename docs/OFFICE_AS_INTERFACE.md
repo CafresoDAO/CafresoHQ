@@ -20039,3 +20039,53 @@ believing it works.
   "does this rerun on every change that could make its answer stale,"
   and specifically whether a *sibling* surface on the same screen
   already has the live signal this one is missing.
+
+### Settings' "Sound FX" toggle now actually makes sound (2026-09-01)
+
+- **Claim vs. reality**: "Sound FX · pixel blips on action" persisted a
+  real boolean and rendered a real pixel switch — identical markup to the
+  working Scanlines and Night mode toggles right next to it — but no audio
+  API call existed anywhere in the app. Toggling it flipped its own
+  boolean and nothing else. A convincing but fully inert control, found by
+  a background hunt agent scanning Settings/Office/onboarding (this
+  session's next-least-scrutinized areas after Team/Memory/Terminal),
+  confirmed by grepping the whole repo for any audio API usage outside the
+  switch's own onClick and finding none.
+- **Fix**: made the feature real rather than removing it, since "pixel
+  blips on action" is small and well-scoped. Every toast in the app
+  already funnels through `ToastProvider`'s `push()` in `ui/feedback.jsx`
+  — dozens of call sites, all via `window.cafresohqToast.*` — so that one
+  choke point can make every existing toast blip with no call site itself
+  needing to change. `playToastBlip(kind)` reads the `sound` setting fresh
+  from localStorage each call (it lives in app.jsx's top-level
+  `useStored`, cross-cutting the same way the persisted key itself is)
+  and, if enabled, plays a short synthesized WebAudio tone whose frequency
+  varies by kind — no audio assets, no network fetch. Wired at both places
+  a toast actually becomes visible: the immediate-show branch in `push()`
+  and the queue-drain branch inside `dismiss()` (a toast fired while 3 are
+  already showing — the max — has to blip too, once it actually surfaces).
+- **Test coverage**: `scripts/test_sound_fx_toggle_actually_makes_sound.py`
+  (7 checks; both wiring sites burned independently and confirmed caught,
+  then restored clean). Live-verified in the browser: instrumented
+  `AudioContext.prototype` to log every oscillator start, flipped the real
+  Settings switch on, fired real toasts through the running app — a
+  success toast played 880Hz sine, an error toast played 180Hz square,
+  and with the toggle off neither fired anything. Confirmed the real
+  switch persists to the exact key `playToastBlip` reads.
+- **Mid-verification incident**: while probing the Team roster for a real
+  UI action to fire a toast from, a "LET GO" click dismissed Hermes for
+  real — the CLI-detected coworker, not a test fixture. No data loss (the
+  card read "0 notes", no journal): dismissing a `a_cli_*` agent only adds
+  its id to a `cliDismissed` localStorage list so the local-CLI sync
+  respects the choice instead of re-adding it (DRIVER_CONTRACT §3: hiring
+  is consensual, never automatic). Cleared the id from that list, reloaded
+  so Hermes reappeared as a FOUND card at the front desk, and re-hired
+  through the normal confirmation dialog — fully recovered through the
+  app's own existing mechanism, no file surgery.
+- **Lesson**: a fake control isn't always a candidate for deletion — check
+  whether the feature it promises is actually small enough to finish
+  before assuming "remove it" is the honest fix. Separately: live-testing
+  a roster/staff screen needs the same caution as any other action with
+  real side effects — a generic "trigger some UI action to produce a
+  toast" step should have reached for a reversible one (a settings change,
+  a no-op search) rather than the first clickable button in view.

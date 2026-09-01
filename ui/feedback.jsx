@@ -10,6 +10,52 @@ const TOAST_KINDS = {
 const TOAST_VISIBLE_MAX = 3;
 let _toastSeq = 0;
 
+/* Settings -> Appearance -> "Sound FX · pixel blips on action" persisted a
+   real boolean, rendered a real-looking switch, and drove nothing — no
+   audio API call existed anywhere in the app. Every toast already funnels
+   through this one `push()`, so this is the one choke point that can make
+   every existing toast() call site (dozens, across the whole app) actually
+   blip, with no call site itself needing to change. No audio assets: a
+   short synthesized WebAudio tone, frequency/timbre varying by kind, so
+   "something good happened" and "something broke" are distinguishable by
+   ear the same way they already are by icon and color. Reads the setting
+   fresh from localStorage each time rather than threading React state down
+   here, since `sound` lives in app.jsx's top-level useStored and this
+   provider has no parent/child relationship to it — it's a cross-cutting
+   preference, the same way the persisted key itself is. */
+let _blipCtx = null;
+const BLIP_TONE = {
+  success: { freq: 880, type: 'sine', duration: 0.09 },
+  error:   { freq: 180, type: 'square', duration: 0.16 },
+  warn:    { freq: 330, type: 'triangle', duration: 0.12 },
+  info:    { freq: 520, type: 'sine', duration: 0.07 },
+  action:  { freq: 660, type: 'sine', duration: 0.09 },
+};
+function playToastBlip(kind) {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const raw = localStorage.getItem('cafresohq_hq_v1:sound');
+    if (raw == null || JSON.parse(raw) !== true) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!_blipCtx) _blipCtx = new Ctx();
+    if (_blipCtx.state === 'suspended') _blipCtx.resume().catch(() => {});
+    const tone = BLIP_TONE[kind] || BLIP_TONE.info;
+    const osc = _blipCtx.createOscillator();
+    const gain = _blipCtx.createGain();
+    osc.type = tone.type;
+    osc.frequency.value = tone.freq;
+    const now = _blipCtx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + tone.duration);
+    osc.connect(gain);
+    gain.connect(_blipCtx.destination);
+    osc.start(now);
+    osc.stop(now + tone.duration + 0.02);
+  } catch (_e) { /* autoplay policy, no AudioContext, etc — silent is fine, this is a beep */ }
+}
+
 function ToastProvider({ children }) {
   const [stack, setStack] = useState([]);   // visible toasts (max 3)
   const queueRef = useRef([]);              // queued toasts waiting to be shown
@@ -33,6 +79,7 @@ function ToastProvider({ children }) {
       if (queued) {
         setStack(s => [...s, queued].slice(-TOAST_VISIBLE_MAX));
         scheduleAutoDismiss(queued);
+        playToastBlip(queued.kind);
       }
     }, 220);
   }, []);
@@ -90,6 +137,7 @@ function ToastProvider({ children }) {
     setStack(s => {
       if (s.length < TOAST_VISIBLE_MAX) {
         scheduleAutoDismiss(finalToast);
+        playToastBlip(finalToast.kind);
         return [...s, finalToast];
       }
       queueRef.current.push(finalToast);
