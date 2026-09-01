@@ -834,6 +834,28 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     // Drop its keep-alive terminal mount too, or the PTY stays connected to a
     // project that no longer exists (and the list grows forever).
     setOpenedTerminals(prev => prev.filter(id => id !== p.id));
+    /* Unmounting <ProjectTerminal> above only drops the React component —
+       it doesn't touch the PTY sessions ProjectTerminal was keeping alive
+       server-side. closeSession (terminal.jsx) already does this exact
+       cleanup per-tab on an explicit close click; do the same for every
+       session this project had open, all at once, since the project (and
+       every tab in it) is going away for good. Best-effort: a session
+       that was never PTY-backed just gets a harmless 200 back. */
+    try {
+      const sessKey = `cafresohq_terminal:sessions:${p.id}`;
+      const raw = localStorage.getItem(sessKey);
+      const sessions = raw ? JSON.parse(raw) : [];
+      (Array.isArray(sessions) ? sessions : []).forEach(s => {
+        if (s && s.sessionId) {
+          fetch(`${window._API_BASE || ''}/terminal/kill?session_id=${encodeURIComponent(s.sessionId)}`).catch(() => {});
+          ['mode', 'msgs', 'model', 'auth'].forEach(suffix => {
+            localStorage.removeItem(`cafresohq_terminal:${suffix}:${p.id}:${s.sessionId}`);
+          });
+        }
+      });
+      localStorage.removeItem(sessKey);
+      localStorage.removeItem(`cafresohq_terminal:active:${p.id}`);
+    } catch (_e) { /* localStorage/JSON failures here must never block the delete */ }
     if (selected === p.id) { setSelected(null); setOpenFile(null); }
     if (window.cafresohqToast) window.cafresohqToast.info(`Deleted project "${p.name}"`);
   };

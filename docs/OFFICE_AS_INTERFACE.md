@@ -20561,3 +20561,37 @@ Live-verified: added a sticky note through the real "+ NOTE" flow and
 confirmed it renders on the CEO desk as before.
 
 Regression test: `scripts/test_sticky_note_survives_receipt_pin_cap.py`.
+
+## Deleting a project left its terminal PTY sessions running and their storage orphaned forever
+
+`deleteProject` (views/projects.jsx) only filtered the project out of
+`projects` and dropped its id from `openedTerminals` — the comment right
+above that second line even said the intent was "or the PTY stays
+connected to a project that no longer exists," but removing the id from
+`openedTerminals` only unmounts the React `<ProjectTerminal>` component.
+It never called `/terminal/kill` for any of that project's sessionIds.
+The only place that ever hit `/terminal/kill` was `closeSession` inside
+`ProjectTerminal` (terminal.jsx), which fires solely on an explicit
+tab-close click — unmounting the component doesn't invoke it. Worse,
+`closeSession`'s localStorage cleanup (mode/msgs/model/auth per session,
+which can be hundreds of KB after a long conversation) never ran either,
+and the project's own `cafresohq_terminal:sessions:<id>` /
+`:active:<id>` keys were never removed — orphaned in localStorage
+forever, one set per deleted project.
+
+Found by a background hunt agent sweeping previously-uncovered areas
+(Calendar, Library/Graph, Meetings, Night Shift, Settings, notifications,
+CEO 1:1, drag-and-drop task assignment).
+
+Fix: `deleteProject` now reads the project's persisted session list from
+`cafresohq_terminal:sessions:<p.id>`, fires `/terminal/kill` for every
+sessionId (best-effort, mirroring `closeSession`'s own kill call),
+removes each session's mode/msgs/model/auth localStorage keys, and
+finally removes the project's own `sessions`/`active` keys — all wrapped
+so a localStorage/JSON failure can never block the delete itself.
+Live-verified: created a project, opened a terminal tab (real PTY
+session), deleted the project, and confirmed both the `/terminal/kill`
+network request (200 OK, correct session_id) and that every localStorage
+key for that project's terminal state was gone afterward.
+
+Regression test: `scripts/test_delete_project_kills_its_terminal_sessions.py`.
