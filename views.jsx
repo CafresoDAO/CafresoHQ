@@ -690,6 +690,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openByPath = async (path) => {
     if (!path) return;
+    // The neural-web graph mixes real note nodes with HQ-state "entity" nodes
+    // (missions, agents, threads, tasks, receipts…) whose id is `scheme:id`,
+    // NOT a vault path. Clicking one used to fetch it as a `.md` and 404 with a
+    // scary error. Route those to their home view instead — never read as a file.
+    const scheme = (/^([a-z]+):/.exec(path) || [])[1];
+    if (scheme && scheme !== 'http' && scheme !== 'https') {
+      window.dispatchEvent(new CustomEvent('cafresohq:openEntity', { detail: { kind: scheme, id: path } }));
+      return;
+    }
     // Binary files (images, video, audio) can't open in the text editor
     const fileMeta = files.find(f => f.path === path);
     if (fileMeta?.isBinary) {
