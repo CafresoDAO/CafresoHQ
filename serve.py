@@ -701,8 +701,37 @@ def _night_scan():
             s['lastRunAt'] = now_ms
             if s.get('recurrence') == 'daily':
                 nxt = int(s.get('nextRunAt', now_ms) or now_ms)
+                # Advance by one LOCAL calendar day at a FIXED local hour,
+                # not a chained fixed 86,400,000ms offset. The schedule's
+                # time-of-day (e.g. missions.jsx's default "2:00 AM") is a
+                # local wall-clock hour, and a constant ms offset does not
+                # preserve that across a DST transition — a day with a
+                # spring-forward or fall-back in it is 23 or 25 real hours
+                # long locally, not 24. Chaining +86_400_000 silently
+                # drifted the anchor by exactly one hour at every DST
+                # boundary, forever, with the Night Shift card still
+                # showing a plausible-looking (but now wrong) "next: ..."
+                # time. The intended hour/minute is captured ONCE, the
+                # first time this schedule is seen, and reused on every
+                # advance — re-deriving it from `nxt` itself each time
+                # would still drift, because `nxt` gets forced onto a
+                # different hour on whichever single calendar day the
+                # target hour doesn't exist (spring-forward) or is
+                # ambiguous (fall-back), and reading the hour back off
+                # that one shifted value would lock the schedule onto the
+                # shifted hour for good. time.mktime normalizes an
+                # overflowed tm_mday (next month/year) the same way C
+                # does, and tm_isdst=-1 lets it resolve DST correctly for
+                # the new date.
+                if 'dailyHour' not in s:
+                    lt0 = time.localtime(nxt / 1000)
+                    s['dailyHour'], s['dailyMinute'] = lt0.tm_hour, lt0.tm_min
                 while nxt <= now_ms:
-                    nxt += 86_400_000
+                    lt = time.localtime(nxt / 1000)
+                    nxt = int(time.mktime((
+                        lt.tm_year, lt.tm_mon, lt.tm_mday + 1,
+                        s['dailyHour'], s['dailyMinute'], 0, 0, 0, -1,
+                    )) * 1000)
                 s['nextRunAt'] = nxt
             else:
                 s['enabled'] = False

@@ -20842,3 +20842,63 @@ shape in source, matching this repo's convention for a dependency not
 present to exercise live.
 
 Regression test: `scripts/test_pdf_export_escapes_reportlab_markup.py`.
+
+## Night Shift's daily recurrence silently drifted an hour at every DST transition
+
+`_night_scan` (serve.py) advanced a `daily`-recurrence schedule's
+`nextRunAt` by chaining a fixed `+= 86_400_000` (24h in ms) off the
+previous UTC epoch timestamp. But the schedule's time-of-day — e.g.
+missions.jsx's own default, "2:00 AM" via `nextTwoAm()`'s
+`d.setHours(2, 0, 0, 0)` — is a LOCAL wall-clock hour, not a UTC one. A
+calendar day containing a DST transition is 23 or 25 real hours long,
+not 24, so a constant ms offset silently drifted the schedule's local
+time-of-day by exactly one hour at every DST boundary, forever — with
+the Night Shift card still showing a plausible-looking "next: <date>,
+X:XX AM" computed straight off the drifted timestamp. A boss had no way
+to notice their "2 AM" job now fired at 1 AM (or 3 AM) until they
+happened to be awake to see it run at the wrong time.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(Night Shift, search, hire/onboarding, export/publish, other approval
+kinds, chat delegate/handoff, calendar recurrence, vault graph, wallet
+flows).
+
+Fix, and a caught false start: the first fix attempt re-derived the
+next occurrence's local hour/minute from `time.localtime()` on the
+*previous* run's own `nextRunAt` on every advance. That looked correct
+and even passed an initial "lands on 2 AM the day after a spring-
+forward anchor" check — but direct multi-day experimentation proved it
+was functionally identical to the original bug: the transition day
+itself unavoidably forces `nextRunAt` onto 3:00 AM (2:00 AM doesn't
+exist that day), and re-deriving the hour from that already-shifted
+value on the *next* day's advance means it never returns to 2:00 AM —
+drifting permanently, just with the onset deferred by one day.
+
+The actual fix captures the schedule's intended local hour/minute ONCE
+— the first time `_night_scan` sees a schedule missing `dailyHour`/
+`dailyMinute`, reading them off that schedule's current `nextRunAt` —
+and persists them on the schedule dict. Every subsequent advance
+reconstructs "next calendar day at the intended hour/minute" via
+`time.mktime(...)` with `tm_isdst=-1` (so the correct UTC offset for
+the new date's DST state is picked up automatically), using that FIXED
+intended hour/minute rather than re-reading it off the mutating `nxt`.
+Verified via direct experimentation in both directions: the transition
+day itself unavoidably lands at 3:00 AM either way (correctness-
+neutral, since 2:00 AM doesn't exist that day), but with the intended
+hour stored separately the very next normal day correctly returns to
+and stays at 2:00 AM — where the naive re-derive-from-`nxt` version
+(and the original `+= 86_400_000` bug) stay stuck at 3:00 AM forever.
+
+serve.py's `_night_loop` background thread starts unconditionally at
+module import time, so — matching this repo's existing convention for
+this file (e.g. `test_a_running_mission_looked_finished.py`) — the
+regression test exercises the corrected/flawed/original arithmetic
+standalone (reproducing all three against a real `America/New_York`
+spring-forward transition via `TZ` + `time.tzset()`, checking the
+SECOND daily occurrence after the transition rather than the first,
+since the first is forced onto the shifted hour regardless of
+correctness) and separately confirms serve.py's own source stores
+`dailyHour`/`dailyMinute` and uses them (not `lt.tm_hour`/`lt.tm_min`)
+in its `time.mktime(...)` reconstruction.
+
+Regression test: `scripts/test_night_shift_daily_recurrence_survives_dst.py`.
