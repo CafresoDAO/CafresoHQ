@@ -1309,7 +1309,9 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           };
           const startDM = () => {
             if (m.name && m.from !== 'user') {
-              setInput((prev) => (prev ? prev + ' ' : '') + `@${m.name} `);
+              const target = agents.find(a => a.id === m.agentId);
+              const bareName = target ? target.name : String(m.name).split(' · ')[0];
+              setInput((prev) => (prev ? prev + ' ' : '') + `@${bareName} `);
               if (composerRef.current) composerRef.current.focus();
             }
           };

@@ -20089,3 +20089,55 @@ believing it works.
   real side effects — a generic "trigger some UI action to produce a
   toast" step should have reached for a reversible one (a settings change,
   a no-op search) rather than the first clickable button in view.
+
+## Fix: Chat's swipe-to-DM inserted the display label, not the bare name (2026-09-01)
+
+Swiping left on a coworker's message bubble (mobile width, ≤768px) and
+tapping the 💬 DM action inserted `@Nano · Generalist ` into the composer
+instead of `@Nano `. `ui/chat.jsx`'s `startDM` closure mentioned `m.name`
+directly, but for any agent-authored message `m.name` is the *display
+label* app.jsx builds for the "who" column — `` `${agent.name} · ${agent.role}` ``
+— not the bare roster name.
+
+This wasn't just cosmetic. `send()` resolves outgoing mentions via
+`HQ.extractAllMentions(text, agents.map(a => a.name))`, whose roster is
+bare names only. `"@Nano · Generalist ..."` still matches `@Nano` as a
+valid mention (the match rule only requires whitespace/end after the
+name, and `·` qualifies), but everything from `· Generalist` onward —
+including the literal word "Generalist" — became the delivered message
+body instead of getting parsed as part of the mention. So the DM routed
+to the right coworker, but every message sent this way arrived prefixed
+with a stray role fragment glued onto the front.
+
+Found by a background hunt agent scanning the Projects/Workspace and
+Chat surfaces (this session's next-least-scrutinized areas after
+Team/Settings/Office), confirmed by tracing `m.name`'s construction in
+app.jsx (`agentId: agent.id` is set as a sibling field at the exact same
+call site) and by hand-tracing `extractAllMentions`'s parse behavior on
+the corrupted string.
+
+Fix: `startDM` now looks up the dispatching agent by `m.agentId` in the
+`agents` roster `ChatPanel` already receives as a prop, and mentions
+`agent.name` — the bare name — instead of the raw label. A fallback
+(`String(m.name).split(' · ')[0]`) covers a message from an agent no
+longer on the roster, so it degrades to a plausible bare name instead of
+producing an unresolvable mention.
+
+Regression test: `scripts/test_chat_swipe_dm_uses_bare_name.py` (7
+checks) — pins the `agentId` lookup, the bare-name mention, the
+departed-coworker fallback, and the two upstream fields (app.jsx's
+paired `name`/`agentId`, `ChatPanel`'s `agents` prop) this fix depends
+on. Fire-tested: reverting the fix produced exactly the 4 expected
+FAILs (lookup, bare mention, fallback, "no longer raw m.name"), restore
+verified byte-identical via `cmp`, re-run confirmed a clean pass.
+
+Live UI verification was blocked this tick by a stuck browser pane —
+screenshots rendered correctly throughout, but every click/computer
+action timed out ("Browser pane is currently hidden") regardless of
+viewport preset or re-selecting the tab. This reproduced identically on
+both mobile and desktop viewports and before any interaction with this
+fix's own surface, so it reads as an environment/pane issue rather than
+something this change caused. Verified instead by static inspection: the
+`agentId` field's construction, `ChatPanel`'s `agents` prop, and the
+absence of any other `startDM`-shaped call site still using the raw
+`m.name`. Full suite passed clean before and after.
