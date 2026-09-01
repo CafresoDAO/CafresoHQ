@@ -20771,3 +20771,35 @@ regression test is the primary evidence; a lighter smoke check
 confirmed no new console errors from the change.
 
 Regression test: `scripts/test_workflow_step_rejection_leaves_a_note.py`.
+
+## Library's mobile view was the one primary tab missing its tab-bar clearance
+
+Same shape as the Memory/Calendar omission just above, a third time.
+`VaultView`'s actual mobile root (views/vault.jsx) renders
+`className="vault-mobile"` — not `.vault-view`/`.view-vault`, already
+confirmed dead/unused class names. `.vault-mobile` never appeared in
+either mobile clearance selector list in styles.css at all. Library is
+one of only five primary destinations on the mobile bottom tab bar
+(Chat, Office, Team, Library, Projects); Team and Projects — rendered
+right alongside it on the same tab bar — already had clearance, but
+Library did not, so its last file-tree rows / note text sat directly
+under the fixed `.mobile-tabbar`.
+
+Found by a background hunt agent, after this exact selector-list-
+omission shape had already recurred twice (TeamView's reversed name,
+then Memory+Calendar's outright omission) — worth an explicit sweep for
+every other primary mobile-tab destination, which paid off a third
+time here.
+
+Fix: added `.vault-mobile` to both clearance selector lists in
+styles.css. Live-verified at 375×812: Library's mobile root now reports
+`padding-bottom: 72px` via getComputedStyle.
+
+Regression test: `scripts/test_vault_mobile_tabbar_clearance.py`.
+
+A lower-confidence runner-up was also flagged: exporters.py's
+`_export_pptx` only special-cases `## ` headers and `- `/`* `/`• `
+bullets — a `### ` sub-heading or other markdown under a slide falls
+through to the generic paragraph→bullet branch and renders the literal
+`### ` prefix verbatim in the exported deck. Cosmetic, deferred for a
+future tick.
