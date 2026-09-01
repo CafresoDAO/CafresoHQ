@@ -20193,3 +20193,59 @@ showing "Notifications (2 unread)" (2 pending receipts), clicked a
 single receipt row — Receipts modal opened as before, and reopening the
 bell showed "Notifications (0 unread)". Full suite: 279/279 passing
 before and after.
+
+## Fix: Resuming a paused Research Mission drifted its deadline (2026-09-01)
+
+Pausing and resuming a Research Mission silently pushed its deadline
+forward — sometimes by a few minutes, sometimes by discarding the
+mission's entire elapsed budget outright.
+
+`onResumeMission` (app.jsx) shifts `startedAt` forward by "however long
+the mission sat paused" so the deadline (`startedAt + durationMs`, read
+by `fmtRemaining` and the auto-stop check in missions.jsx) stays
+anchored to real running time. The true pause instant is `m.endedAt` —
+both pause paths (the per-card ■ STOP in `onStopMission`, and the
+auto-pause-on-3-errors path in missions.jsx) stamp it with `Date.now()`
+the moment the mission actually stops. But the resume math read
+`m.lastIterationAt` instead — the timestamp of the last COMPLETED
+iteration, which can be up to a full `intervalMs` older than the actual
+stop click. Every pause/resume cycle donated that iteration-to-stop-
+click gap to the mission as bonus paused time, pushing the deadline
+further out each cycle. The severe case: a mission paused before its
+first iteration ever completed had no `lastIterationAt` at all, so the
+fallback (`m.startedAt`) made the shift equal to the mission's entire
+age — resume reset the clock to "started right now," discarding 100% of
+whatever budget had already elapsed. Nothing in the UI flagged this —
+the card just showed RUNNING with a plausible countdown, so the drift
+was invisible until a mission configured for exactly 1 hour kept running
+noticeably longer across pause/resume cycles.
+
+Found by a background hunt agent scanning the Research Mission lifecycle
+(this session's next-least-scrutinized area after Graph/Team/Settings/
+Office/Chat/Projects/Inbox/CEO-panel/Library/Meetings), confirmed by
+tracing which field each pause path actually stamps (`endedAt`) versus
+which field resume actually read (`lastIterationAt`).
+
+Fix: `onResumeMission`'s shift now reads `m.endedAt` (falling back to
+`m.startedAt` only for the unreachable case of a mission resumed without
+ever having been paused) instead of `m.lastIterationAt`.
+
+Regression test: `scripts/test_mission_resume_uses_true_pause_instant.py`
+(5 checks) — pins the corrected field read, confirms `onStopMission`
+still stamps `endedAt` (the field this fix depends on), and runs the
+actual shift arithmetic on a simulated start/iterate/pause/resume
+timeline to confirm the fixed formula lands on the exact real paused
+span (60) rather than the iteration-gap-inflated value the old formula
+produced (66). Fire-tested: reverting the fix produced exactly the 2
+expected FAILs, restore verified byte-identical via `cmp`, re-run
+confirmed a clean pass. Verified via direct arithmetic simulation rather
+than a live real-time wait, since the bug only manifests over real
+elapsed minutes. Full suite: 280/280 passing before and after.
+
+Also this tick: a background hunt of the Library (formerly Vault) view
+and Meetings/Rooms came back clean — both already show extensive,
+specific prior hardening against this exact class of bug (see their own
+inline comments). One purely cosmetic dead ternary was spotted in
+ui/office.jsx (`meetingActive ? meetingIds : meetingIds` — both branches
+identical, no behavioral effect) and flagged as a separate low-priority
+cleanup task rather than treated as this tick's fix.

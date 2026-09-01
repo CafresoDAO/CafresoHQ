@@ -1120,7 +1120,14 @@ function App() {
     setMissions(prev => prev.map(m => m.id === id
       ? { ...m, status: 'running', errors: 0, endedAt: null,
           pauseNote: null, lastError: '',
-          startedAt: m.startedAt + (Date.now() - (m.lastIterationAt || m.startedAt)) }
+          /* Shift startedAt forward by the real paused span so the
+             deadline stays anchored to actual running time. That span is
+             now - m.endedAt (the true pause instant onStopMission and the
+             auto-pause-on-errors path both stamp) — NOT now - lastIterationAt,
+             which is up to a full intervalMs older and silently donated the
+             iteration-to-stop-click gap to the mission as extra time on
+             every pause/resume cycle. */
+          startedAt: m.startedAt + (Date.now() - (m.endedAt || m.startedAt)) }
       : m));
   const onClearMission = (id) =>
     setMissions(prev => prev.filter(m => m.id !== id));
