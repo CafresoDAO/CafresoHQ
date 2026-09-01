@@ -20141,3 +20141,55 @@ something this change caused. Verified instead by static inspection: the
 `agentId` field's construction, `ChatPanel`'s `agents` prop, and the
 absence of any other `startDM`-shaped call site still using the raw
 `m.name`. Full suite passed clean before and after.
+
+## Fix: Notification Center rows navigated but never marked themselves read (2026-09-01)
+
+Clicking an individual notification in the bell's Notification Center —
+a receipt row, an activity row, an approval row — correctly navigated
+(opened the Receipts modal, jumped to Team's attention inbox, jumped to
+Visual/Office) but never marked itself read. Only two paths ever
+cleared unread state: closing the whole panel (✕/backdrop) and "Mark all
+read". So a boss triaging notifications one at a time by clicking them —
+the obvious interaction — saw the bell's badge count sit frozen, and
+that same row still rendered unread on reopening the panel, even though
+they'd just acted on exactly the thing it was flagging.
+
+Root cause: unread-ness for receipts/activity isn't tracked per item —
+it's a single `notifSeenAt` watermark (unread if the item arrived after
+that timestamp) plus a per-activity-entry `unread` flag, both only ever
+cleared by `onClose`/`onMarkAllRead` in app.jsx's `mergedNotifications`
+builder. Every row's own `onClick` called `setNotifOpen(false)` and
+navigated, but skipped that clearing entirely.
+
+Found by a background hunt agent scanning the Inbox/notifications and
+CEO 1:1 panel surfaces (this session's next-least-scrutinized areas
+after Team/Settings/Office/Chat/Projects), confirmed by tracing exactly
+which `onClick` closures touched `notifSeenAt`/`activity` and which
+didn't — the CEO 1:1 panel itself checked out clean (`onSitWithCEO`
+opens a real focus surface; "1:1s available" is static descriptive
+copy, not a claimed live count, so not a bug).
+
+Fix: factored the shared "mark seen" side effect into one
+`markNotifsSeen` callback (bump `notifSeenAt`, clear `unread` on
+non-attention activity entries — attention-priority rows correctly stay
+flagged until resolved via the Team inbox, unchanged) and call it from
+the receipt and activity row `onClick`s. Approval rows are untouched —
+an approval's unread status means "still pending a decision", not
+"unseen", so clicking one shouldn't clear it. `onClose`/`onMarkAllRead`
+now delegate to the same shared callback instead of duplicating its
+body.
+
+Regression test: `scripts/test_notification_click_marks_read.py` (6
+checks) — pins the shared callback's shape, both fixed onClick sites,
+the untouched approval onClick, the simplified onClose/onMarkAllRead
+wiring, and the useMemo dependency array. Fire-tested: reverting the
+receipt-row fix alone produced exactly the 1 expected FAIL, restore
+verified byte-identical via `cmp`, re-run confirmed a clean pass.
+
+Live-verified in the browser (click interaction had recovered from an
+earlier stuck-pane state this session — screenshots had kept working
+throughout, clicks resumed working on a fresh navigate): with the bell
+showing "Notifications (2 unread)" (2 pending receipts), clicked a
+single receipt row — Receipts modal opened as before, and reopening the
+bell showed "Notifications (0 unread)". Full suite: 279/279 passing
+before and after.

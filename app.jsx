@@ -6254,6 +6254,18 @@ ${d.text}` : d.text,
     if (activeWorkspace === id) setActiveWorkspace(null);
   }, [setSavedWorkspaces, activeWorkspace, setActiveWorkspace]);
 
+  /* Bumping notifSeenAt + clearing non-attention activity's unread flag is
+     how a receipt/activity row becomes "read" — there's no per-item read
+     state, just this one watermark, so reading is opening it. Every row's
+     onClick used to skip this and only navigate (setNotifOpen(false)), so
+     the badge count never moved until the boss hit "Mark all read" or
+     closed the panel — clicking a specific notification looked like it
+     did nothing to the count that brought them there. */
+  const markNotifsSeen = useCallbackA(() => {
+    setNotifSeenAt(Date.now());
+    setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false }));
+  }, [setNotifSeenAt, setActivity]);
+
   /* Merge receipts + agent-activity feed + pending approvals into a single
      notifications array for the bell. unread = received after notifSeenAt. */
   const mergedNotifications = useMemoA(() => {
@@ -6291,7 +6303,7 @@ ${d.text}` : d.text,
            pressed. The receipt's own detail lives in the tray this same
            event feeds (ReceiptTray/ReceiptsModal below), so that is
            where a click on it goes. */
-        onClick: () => { setNotifOpen(false); setReceiptsOpen(true); },
+        onClick: () => { setNotifOpen(false); setReceiptsOpen(true); markNotifsSeen(); },
       });
     }
     /* Live event feed — sourced from the canonical activity log, minus
@@ -6320,11 +6332,11 @@ ${d.text}` : d.text,
            (views/core.jsx) already owns this exact activity feed with
            expand + Retry; open the same door the "N need you" pill
            opens (openAttention, below) instead of a second, dead one. */
-        onClick: () => { setNotifOpen(false); openAttention(); },
+        onClick: () => { setNotifOpen(false); openAttention(); markNotifsSeen(); },
       });
     }
     return out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  }, [approvals, receipts, activity, notifSeenAt, notifClearedAt]);
+  }, [approvals, receipts, activity, notifSeenAt, notifClearedAt, markNotifsSeen]);
 
   /* Ticker reads the canonical log — newest-first, routine + attention. */
   const tickerItems = useMemoA(
@@ -6927,9 +6939,9 @@ ${d.text}` : d.text,
       <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)} onResend={resendMessage}/>
       <NotificationCenter
         open={notifOpen}
-        onClose={() => { setNotifOpen(false); setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}
+        onClose={() => { setNotifOpen(false); markNotifsSeen(); }}
         notifications={mergedNotifications}
-        onMarkAllRead={() => { setNotifSeenAt(Date.now()); setActivity(xs => xs.map(x => x.priority === 'attention' ? x : { ...x, unread: false })); }}
+        onMarkAllRead={markNotifsSeen}
         onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
         emptyHint="Nothing pending. Approvals, your team's activity, and receipts will land here."
       />
