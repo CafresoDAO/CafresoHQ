@@ -19897,3 +19897,29 @@ believing it works.
   task's artifactPath, the note on disk), the graph earns its keep by
   joining them — an ingester that reads a record but not all of its
   foreign keys leaves the map's best edges undrawn.
+
+### The map menu offers doors that open (2026-08-31)
+
+- **Claim vs. reality**: the graph's right-click menu put "Open note"
+  on every links-graph node — including task:, agent: and receipt:
+  nodes, where the click silently did nothing (the Library-side
+  openGraphNode guard refuses ids the file list doesn't hold; it
+  protects the view but leaves the menu lying). A menu item that
+  no-ops teaches the boss the menu can't be trusted. Found while
+  probing what a task node's click should do after the produces edge
+  landed.
+- **Fix**: the open item now appears only when the node record
+  carries a path — the /vault/graph contract gives every Library file
+  its rel path and every hq-state node '' (verified live against the
+  rendered engine's node data). A filed deck reads "Open file", not
+  "Open note". Office nodes keep Focus and Hide, which work.
+- **Test coverage**: `scripts/test_the_map_menu_offers_doors_that_open.py`
+  (6 checks; the menu array expression bracket-lifted and node-run
+  against note/deck/task/missing/concepts inputs; 2 arms fire-tested).
+  Live verification of the RENDERED menu was partial: sigma's captor
+  ignores synthetic contextmenu events, so the data contract was
+  verified live and the menu logic on lifted source.
+- **Lesson**: guarding a dead end at the handler fixes the crash but
+  not the promise — the surface that OFFERS the action has to stop
+  offering it where it can't deliver, or the guard just converts an
+  error into a lie.

@@ -502,7 +502,15 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     // Node context menu.
     ctxMenu && React.createElement('div', { role: 'menu', 'aria-label': 'Node actions', style: { position: 'fixed', left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 170), top: ctxMenu.y, zIndex: 50, background: 'rgba(28,24,16,0.97)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 8, padding: 4, minWidth: 150, font: '12px Inter, sans-serif', color: '#e9e2d4' },
       onMouseLeave: () => setCtxMenu(null) },
-      [...(source === 'links' ? [['Open note', () => { onOpenNote && onOpenNote(ctxMenu.id); setCtxMenu(null); }]] : []),
+      /* Only a node that IS a Library file gets the open item. The links
+         graph draws office nodes too (task:, agent:, receipt: — path '')
+         and offering "Open note" on one was a menu item that silently did
+         nothing: the Library-side guard (openGraphNode) refuses ids its
+         file list doesn't hold. The node record itself says which it is,
+         and a filed deck opens as a file, not a "note". */
+      [...(source === 'links' && (rawRef.current.byId[ctxMenu.id] || {}).path
+          ? [[/\.(md|markdown)$/i.test(rawRef.current.byId[ctxMenu.id].path) ? 'Open note' : 'Open file',
+              () => { onOpenNote && onOpenNote(ctxMenu.id); setCtxMenu(null); }]] : []),
        ['Focus', () => { const e = engineRef.current; if (e) e.focusNode(ctxMenu.id); setCtxMenu(null); }],
        ['Hide node', () => { const e = engineRef.current; if (e) { const s = new Set(e.hidden); s.add(ctxMenu.id); e.setHidden(s); } setCtxMenu(null); }]]
         .map(([label, fn]) => React.createElement('div', { key: label, role: 'menuitem', tabIndex: 0, onClick: fn,
