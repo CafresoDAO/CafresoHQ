@@ -4672,7 +4672,35 @@ ${d.text}` : d.text,
        IS this task's. The abort branch then does its usual work; the task it
        would return to inbox is already gone, and that map is a no-op. */
     if (running) abortAgentRun(t.assignedTo);
-    setTasks(prev => prev.filter(x => x.id !== id));
+    /* A deleted task can still be a live link in someone else's workflow:
+       another card's `chainTo` may point AT this id (the predecessor that
+       hands off to it), or another card's `dependsOn` may point HERE (a
+       successor waiting on this one to finish). Neither pointer was ever
+       cleaned up — the predecessor's chain-advance check
+       (`tasksRef.current.find(t => t.id === task.chainTo)`, above) would
+       silently find nothing and skip the whole chain-advance block with no
+       stalledNote and no activity row, and a successor's `dependsOn` would
+       carry a dangling id forever (`!dep` in that same block's blockedBy
+       filter never resolves), holding it in the inbox with no way to ever
+       become unblocked. Scrub both here, the same place every other trace
+       of a deleted task already gets cleaned up, and say so once so the
+       break isn't invisible. */
+    let brokeChain = false;
+    setTasks(prev => prev
+      .filter(x => x.id !== id)
+      .map(x => {
+        let next = x;
+        if (next.chainTo === id) { brokeChain = true; next = { ...next, chainTo: null }; }
+        if (next.dependsOn && next.dependsOn.includes(id)) {
+          brokeChain = true;
+          next = { ...next, dependsOn: next.dependsOn.filter(d => d !== id) };
+        }
+        return next;
+      }));
+    if (brokeChain) {
+      logActivity({ action: 'failed', priority: 'attention',
+        text: `deleting "${t.title.slice(0, 30)}" broke a workflow chain link — check any steps that were waiting on it` });
+    }
     say(running ? `Deleted "${t.title.slice(0, 30)}" and stopped the run` : `Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };
   /* taskFresh: a task created in THIS tick (starter cards) isn't in the

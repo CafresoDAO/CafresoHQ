@@ -20398,3 +20398,32 @@ Found by a background hunt agent scanning previously-uncovered areas
 (Search, mobile layout, Workflow chains, Stand-up).
 
 Regression test: `scripts/test_standup_close_aborts_the_run.py`.
+
+## Deleting a workflow-chain task left dangling chainTo/dependsOn pointers
+
+`task.dependsOn` is read in exactly one place in the whole codebase — the
+success handler that fires right after a chain predecessor finishes, just
+before `triggerChainStep`, which looks up `task.chainTo` in `tasksRef` and
+filters `nextTask.dependsOn` for any dep not yet `done`. `onDeleteTask`
+never scrubbed other tasks' `chainTo`/`dependsOn` references to the id it
+was removing, which left two silent breaks:
+
+1. Task A `chainTo` Task B. Delete B. When A finishes, the lookup for
+   `task.chainTo` finds nothing — the entire chain-advance block (the same
+   block that already has a stalledNote/activity-row path for a dangling
+   *dependsOn* entry) is skipped outright. No note, no row, no trace.
+2. Task C `dependsOn` [B]. Delete B. B can never become `status: 'done'`
+   again, so C's `blockedBy` filter treats the missing dep as permanently
+   unmet — C sits in the inbox forever with no way for the boss to unblock
+   it short of editing state directly.
+
+Found by a background hunt agent scanning previously-uncovered areas
+(Search, Workflow chains, mobile layout).
+
+Fix: `onDeleteTask` now scrubs both pointers on every other task when a
+task is deleted — nulls a dangling `chainTo`, filters the dangling id out
+of any `dependsOn` array — and logs one activity row if it actually broke
+a link, so a chain wired to a since-deleted step gets a visible trace
+instead of quietly going nowhere.
+
+Regression test: `scripts/test_delete_task_scrubs_dangling_chain_links.py`.
