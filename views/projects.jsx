@@ -28,7 +28,7 @@ const _addRefusedOutsideSandbox = async (path, toast) => {
   } catch (_e) { /* browse unreachable — let the add proceed */ }
   return false;
 };
-function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, onSwitchView }) {
+function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
   const LS = (k, d) => { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch (_e) { return d; } };
   const LSset = (k, v) => { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch (_e) {} };
   const baseName = (p) => String(p || '').split(/[\/\\]/).pop();
@@ -664,7 +664,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
       </div>
 
       {mode === 'classic' ? (
-        <div className="ws-classic"><ProjectsView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={onSwitchView} /></div>
+        <div className="ws-classic"><ProjectsView projects={projects} setProjects={setProjects} agents={agents} onSwitchView={onSwitchView} /></div>
       ) : !project ? (
         /* This is where the onboarding checklist's "New Project →" lands,
            and it used to read "No project yet — switch to [Classic] to
@@ -749,7 +749,7 @@ function WorkspaceView({ projects, setProjects, agents = [], tasks, onAddTask, o
   );
 }
 
-function ProjectsView({ projects, setProjects, onSave, agents = [], onSwitchView }) {
+function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
   const [selected, setSelected] = useSV(null);
   const [openFile, setOpenFile] = useSV(null);
   const [previewMode, setPreviewMode] = useSV(false);

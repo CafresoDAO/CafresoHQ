@@ -6121,7 +6121,7 @@ ${d.text}` : d.text,
                  onOpenTask={goToTask}
                  nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;
       case 'projects':
-        return <WorkspaceView projects={projects} setProjects={setProjects} tasks={tasks} agents={agents} onAddTask={onAddTask} onSwitchView={goTo} />;
+        return <WorkspaceView projects={projects} setProjects={setProjects} agents={agents} onSwitchView={goTo} />;
       case 'terminal':
         return <TerminalView />;
       default:
