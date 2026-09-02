@@ -4181,7 +4181,7 @@ ${d.text}` : d.text,
        finished. `buf` is safe to read here — unlike the @mention path it is
        never rewritten with the cleaned text on this dispatch. */
     const honestyFor = (raw) => (HQ.honestyNotes
-      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: a.name,
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agentsRef.current.map(x => x.name), self: a.name,
           visits: toolVisits })
       : []);
     let honesty = null;
@@ -4239,7 +4239,7 @@ ${d.text}` : d.text,
             }
           }
         },
-        peers: agents.filter(x => x.id !== a.id),
+        peers: agentsRef.current.filter(x => x.id !== a.id),
         chat: recentChat,
         signal: controller.signal,
       });

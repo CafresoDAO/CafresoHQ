@@ -21222,3 +21222,53 @@ genuine-execution Node test is the verification standard, the same one
 applied to the Night Shift DST, PTY-reconnect, and stale-closure fixes.
 
 Regression test: `scripts/test_bridge_vault_search_folds_accents_like_server.py`.
+
+## onDelegate (the "Hand off to…" button) had the same stale-agents-closure bug as dispatchToAgent
+
+`onDelegate` (app.jsx) is a plain, non-memoized async arrow function
+recreated every render — the same shape as `dispatchToAgent`, and
+subject to the same staleness hazard, but it was never given the same
+fix. It can sit through a confirm dialog (`await window.hqConfirm(...)`,
+shown when the target coworker's desk is already mid-reply) and then a
+potentially long-running `await HQ.agentStream(...)` call. Two reads
+inside it used the plain `agents` closure instead of `agentsRef.current`:
+
+    const honestyFor = (raw) => (HQ.honestyNotes
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), ... })
+      : []);
+    ...
+    peers: agents.filter(x => x.id !== a.id),
+
+`honestyFor` is actually called AFTER the `agentStream` await resolves
+(the `honesty = honestyFor(buf)` call sites further down in the same
+function), so a roster change during the stream made its "roster"
+argument stale by the time it ran. `peers` is read at call time, which
+is itself already downstream of the confirm-dialog await and the full
+render-to-click gap.
+
+Concrete sequence: boss delegates a brief to Vera while she happens to
+also be mid-reply elsewhere — the confirm dialog appears, the boss
+takes a moment to answer it, and in that window a new coworker (Nano)
+is hired or an existing one (Kenji) is dismissed. Vera's dispatch
+proceeds with a peer list frozen at the stale snapshot: Nano is
+invisible to her for the whole run (she can't `[DM_TO: Nano]` even if
+the boss's brief asked her to loop him in), and Kenji still appears as
+a live peer to address even though he's gone.
+
+Found by a background hunt agent sweeping previously-unswept areas,
+steered toward other instances of the stale-closure-over-state pattern
+in async dispatch code outside `dispatchToAgent` — a direct parallel in
+the sibling "Hand off to…" dispatch path.
+
+Fix: both reads now use `agentsRef.current` instead of the plain
+`agents` closure. Verified by extracting the actual two lines from
+source and genuinely executing them via Node: with a stale snapshot
+(Kenji present, Nano absent) versus a live ref (Kenji dismissed, Nano
+hired), both the honesty-notes roster and the agentStream peers list
+now correctly reflect the live roster. Same timing-dependent-race
+category as the dispatchToAgent fixes (holding a confirm dialog open or
+a stream in flight while concurrently mutating the roster isn't
+practically triggerable on demand in the UI), so the genuine-execution
+Node test is the verification here rather than a live browser repro.
+
+Regression test: `scripts/test_delegate_reads_live_agents_not_stale_closure.py`.
