@@ -604,6 +604,14 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
         updateById(ph.id, { streaming: false });
       }
     }
+    if (controller.signal.aborted) {
+      /* Same gap as the stand-up's identical round-robin loop: `break`
+         above only resolves the seat whose turn was in flight. Every seat
+         still queued behind it keeps its seeded `streaming: true` bubble
+         bouncing forever — nothing else in this function ever reaches
+         them once STOP fires. */
+      setMsgs(m => m.map(x => x.streaming ? { ...x, streaming: false, text: (x.text ? x.text + ' ' : '') + '…(stopped)' } : x));
+    }
 
     let buf = '';
     if (!controller.signal.aborted) {
@@ -923,7 +931,19 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
         setReports(prev => prev.map(r => r.agentId === a.id
           ? { ...r, streaming: false, error: !label, text: label ? (buf + ' ' + label) : `⚠ ${snagSentence(err && err.message || String(err))}` }
           : r));
-        if (userStopped) { clearTimeout(timeoutId); controller.signal.removeEventListener('abort', onParentAbort); setPhase('idle'); abortRef.current = null; return; }
+        if (userStopped) {
+          clearTimeout(timeoutId); controller.signal.removeEventListener('abort', onParentAbort);
+          /* The loop below never reaches the agents still in the queue —
+             their row was seeded above with `streaming: true` and nothing
+             else ever flips it. Without this, STOP mid-run leaves every
+             not-yet-reached coworker's card bouncing "typing" forever,
+             even though nothing is running and the footer already shows
+             ▶ START again. */
+          setReports(prev => prev.map(r => r.streaming
+            ? { ...r, streaming: false, text: (r.text ? r.text + ' ' : '') + '…(stopped)' }
+            : r));
+          setPhase('idle'); abortRef.current = null; return;
+        }
         // Skip to next agent on per-agent timeout instead of hanging.
       } finally {
         clearTimeout(timeoutId);

@@ -21708,3 +21708,41 @@ Regression test: `scripts/test_a_recovered_vault_write_is_not_still_an_outage.py
 (a new `drive()` harness variant taking a LIST of per-attempt vault
 statuses, since the existing test's harness only supports one status
 for an entire run).
+
+### STOP mid-round left every not-yet-reached coworker "typing" forever (2026-09-02)
+
+`StandupModal.start()` and `MeetingRoom.moderate()` (`features.jsx`) both
+seed one placeholder row per participant UP FRONT, all `streaming: true`,
+then process them one at a time in a `for` loop. Hitting STOP mid-round
+correctly rewrote the row for the coworker who was actually mid-flight
+(`…(stopped)`, `streaming: false`) — but then StandupModal's catch block
+did a bare `return` and MeetingRoom's did a `break`, and neither loop ever
+reaches the participants still queued behind the one that stopped. Their
+placeholder rows keep the `streaming: true` they were seeded with, and
+nothing else in either function ever touches them again.
+
+`phase`/`streaming` (the run-level flag) correctly flips back to idle, so
+the footer shows ▶ START again and the input re-enables — but the
+leftover rows keep rendering the three-dot "typing" indicator with empty
+text, exactly as if those coworkers were still composing, even though
+nothing is running and no request was ever sent to them. Reproduced live:
+hired 3 coworkers, started a stand-up (Codex errored immediately, Llama
+began streaming), hit STOP while Llama was mid-flight — before this fix,
+Hermes's row (never reached) kept bouncing "typing" indefinitely even
+after the footer showed ▶ START again; rebuilding with the fix and
+repeating the same stop resolved every row cleanly. A boss glancing at
+the floor at that moment gets a false read of who is actually busy, and
+the only way to clear the stuck row is to start a fresh round (which
+wipes `reports`/`msgs` from scratch) or close the modal.
+
+MeetingRoom's queued CEO placeholder (added before the round even starts,
+resolved only after the participant loop finishes) had the identical gap:
+an aborted round skipped straight past it with no cleanup, leaving the
+moderator's own seat stuck typing too.
+
+Fix: on the stopped/aborted branch in each function, resolve every row
+still marked `streaming: true` (the ones the loop never reached) to
+`streaming: false` with the same `…(stopped)` label the mid-flight row
+already got, instead of leaving them at their initial seed state.
+
+Regression test: `scripts/test_a_stopped_round_leaves_no_stuck_typing_bubble.py`.
