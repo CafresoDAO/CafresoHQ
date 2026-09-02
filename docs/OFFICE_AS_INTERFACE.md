@@ -21746,3 +21746,47 @@ still marked `streaming: true` (the ones the loop never reached) to
 already got, instead of leaving them at their initial seed state.
 
 Regression test: `scripts/test_a_stopped_round_leaves_no_stuck_typing_bubble.py`.
+
+### Double-clicking a toast's ✕ silently evicted a still-visible one (2026-09-02)
+
+`ToastProvider.dismiss(id)` (`ui/feedback.jsx`) had no guard against being
+called twice for the same toast, and nothing stops it from being called
+twice: the ✕ button never disables itself during the 220ms exit
+animation (`.is-leaving` is CSS-only, no `pointer-events: none`), so a
+double-click — or a click racing the toast's own auto-dismiss timer
+firing at nearly the same moment — calls `dismiss()` twice before either
+call's delayed `setTimeout` has fired. Both calls scheduled their own
+independent `setTimeout`, and BOTH unconditionally did
+`queueRef.current.shift()`: one user action (one click, however doubled)
+drained TWO toasts off the pending queue instead of one, and the second
+dequeue's `[...stack, queued].slice(-TOAST_VISIBLE_MAX)` evicted whichever
+toast was oldest in the visible stack — a toast the user never touched,
+whose own auto-dismiss timer was still running, vanishing from the
+screen with no dismissal of its own. On a surface whose entire job is to
+be a reliable record of "something happened," that's a silent loss, not
+a cosmetic glitch.
+
+Fix: a `dismissingRef` Set guards re-entry — a second `dismiss(id)` call
+for an id already mid-exit is a no-op, so exactly one queue slot is
+consumed per toast actually dismissed once.
+
+This confirms a low-confidence lead flagged in an earlier tick and never
+independently verified until now.
+
+Live verification was attempted but abandoned as impractical: this
+session's Browser pane is backgrounded relative to the OS, and Chrome
+clamps timers in background tabs to roughly 1-second granularity —
+directly calling the exposed `window.cafresohqToast.dismiss(id)` and
+checking before/after windows shorter than that showed toasts "surviving"
+past their real 220ms exit delay or "vanishing" past their real 3500ms
+duration, artifacts of the clamp rather than the fix. The race this bug
+depends on is *sub*-220ms, well inside where that clamp corrupts timing,
+so the browser can't be trusted to reproduce or disprove it here. The
+genuine-execution Node test (which reimplements `dismiss`'s real logic
+with minimal useState/useRef stand-ins, since actual React hooks can't
+run outside a component tree under plain Node) fire-tested correctly —
+reproducing the exact regression pre-fix (both queued toasts drained,
+the untouched one evicted) and passing clean post-fix — and is the
+reliable proof for this one.
+
+Regression test: `scripts/test_toast_dismiss_double_click_does_not_evict_a_live_toast.py`.

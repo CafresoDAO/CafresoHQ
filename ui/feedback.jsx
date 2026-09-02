@@ -60,8 +60,21 @@ function ToastProvider({ children }) {
   const [stack, setStack] = useState([]);   // visible toasts (max 3)
   const queueRef = useRef([]);              // queued toasts waiting to be shown
   const timersRef = useRef(new Map());      // id → timeout handle
+  const dismissingRef = useRef(new Set());  // ids already mid-exit-animation
 
   const dismiss = React.useCallback((id) => {
+    /* The ✕ button (below) never disables itself during the 220ms exit
+       animation — `.is-leaving` is CSS-only, no pointer-events:none — so a
+       double-click, or a click racing the toast's own auto-dismiss timer,
+       calls dismiss() twice for the same id. Both calls used to schedule
+       their own setTimeout, and both unconditionally shifted one entry off
+       the queue: one user dismissal drained two queued toasts, and the
+       second's `[...stack, queued].slice(-TOAST_VISIBLE_MAX)` could evict a
+       toast that was still visible with its own auto-dismiss timer still
+       running — an active, unread notification disappearing with no
+       dismissal of its own. Guard re-entry per id instead. */
+    if (dismissingRef.current.has(id)) return;
+    dismissingRef.current.add(id);
     setStack(s => {
       const next = s.map(t => t.id === id ? { ...t, leaving: true } : t);
       return next;
@@ -74,6 +87,7 @@ function ToastProvider({ children }) {
     }
     /* after exit animation, drop it from stack and pull next from queue */
     setTimeout(() => {
+      dismissingRef.current.delete(id);
       setStack(s => s.filter(t => t.id !== id));
       const queued = queueRef.current.shift();
       if (queued) {
