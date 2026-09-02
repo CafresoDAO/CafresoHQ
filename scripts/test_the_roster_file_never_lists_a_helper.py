@@ -126,7 +126,7 @@ def main():
         'const localStorage = { setItem: (k, v) => { sinks.ls = v; } };\n'
         'const clearTimeout = () => {};\n'
         'const setTimeout = (fn) => { fn(); return 1; };\n'
-        'const fetch = (url, opts) => { sinks.put = opts.body; return { catch: () => {} }; };\n'
+        'const fetch = (url, opts) => { sinks.put = opts.body; return Promise.resolve({ ok: true, status: 200 }); };\n'
         'const console = { warn: () => {} };\n'
         # persistableAgents lifted straight from the storage module.
         'PERSISTABLE\n'

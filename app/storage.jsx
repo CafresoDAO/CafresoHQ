@@ -170,11 +170,22 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     if (!hydratedRef.current) return;
     clearTimeout(writeRef.current);
     writeRef.current = setTimeout(() => {
+      /* Unlike the localStorage.setItem above, a failed PUT here used to
+         vanish into a bare .catch(() => {}) — the UI looked fine (localStorage
+         already has the edit) but the on-disk record silently kept its old
+         contents, so the NEXT session's mount-fetch above adopts the stale
+         file and the edit reverts with zero warning. Surface it the same way
+         the localStorage failure a few lines up already does. */
       fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(out),
-      }).catch(() => {});
+      }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      }).catch(err => {
+        console.warn('[cafresohq] file save failed for', fileScope + '/' + fileName, err);
+        try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err, target: 'file' } })); } catch (_e) {}
+      });
     }, 1500);
   }, [lsKey, fileScope, fileName, sensitive, persistTransform]);
 

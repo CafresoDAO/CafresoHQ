@@ -1354,6 +1354,12 @@ ${d.text}` : d.text,
       const now = Date.now();
       if (now - lastShown < 10_000) return;
       lastShown = now;
+      if (e.detail && e.detail.target === 'file') {
+        // The office's own disk write failed — this session's copy is fine,
+        // but the file another session/reload would read is stale.
+        say('⚠ Office file save failed — this change may not survive a reload elsewhere', 'STORAGE');
+        return;
+      }
       const reason = e.detail && e.detail.error && e.detail.error.name === 'QuotaExceededError'
         ? 'storage full'
         : 'save failed';

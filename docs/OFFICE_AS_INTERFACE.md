@@ -21477,3 +21477,57 @@ path (an actual publish, which mints a real public canister link) was
 left to the genuine-execution test rather than triggered live.
 
 Regression test: `scripts/test_graph_publish_reports_failure_instead_of_console_warn.py`.
+
+### useFileStored's disk-write failures were silently dropped (2026-09-02)
+
+`persist()` (app/storage.jsx) is the single write chokepoint behind
+`useFileStored` — nearly every durable entity in the app (agents,
+tasks, projects, memory/context, receipts, missions, workflows,
+meetings, messages, windows…) goes through it. It writes to
+localStorage immediately (and already reports failure there —
+`cafresohq:storage-error`, caught and toasted by app.jsx), then,
+debounced 1.5s, PUTs the same value to disk via serve.py's
+`/hq/<scope>/<name>` route. That second write used to be:
+
+    fetch(`${window._API_BASE || ''}/hq/${fileScope}/${fileName}`, {
+      method: 'PUT', ...
+    }).catch(() => {});
+
+No `res.ok` check, and a network failure was discarded outright. The
+concrete failure scenario: the boss edits a task or hires an agent —
+localStorage updates instantly so the UI looks fine — but if the PUT
+fails (server mid-restart, disk full, a permissions hiccup), the
+on-disk file silently keeps its old contents with zero warning. The
+next time that file is read (a fresh session, or this same session's
+own mount-fetch merge a few lines above) adopts the stale file over
+local state and the edit just reverts, with no error ever having been
+shown to explain why. This is the same fire-and-forget-swallows-failure
+shape fixed twice already this session (`decideExternal` in app.jsx,
+`publish()` in views/graph.jsx) — found by a hunt agent looking for
+other instances, and the highest-blast-radius one yet since almost
+every entity type in the app goes through this one function.
+
+Fix: the PUT now checks `res.ok` and dispatches the SAME
+`cafresohq:storage-error` window event the localStorage failure a few
+lines above already uses, tagged `target: 'file'` so app.jsx's existing
+listener (which throttles to one toast per 10s and already handles the
+localStorage case) can say something honest and distinct — "⚠ Office
+file save failed — this change may not survive a reload elsewhere" —
+instead of the localStorage-specific wording, which would be actively
+wrong here (localStorage did not fail).
+
+Fixing this surfaced a knock-on breakage in a pre-existing, unrelated
+test: `scripts/test_the_roster_file_never_lists_a_helper.py`'s own
+hand-mocked `fetch` returned `{ catch: () => {} }` (no `.then`), which
+broke once `persist()` started chaining `.then(r => {...}).catch(err =>
+{...})` on the fetch result instead of a bare `.catch`. Fixed the mock
+to a real thenable (`Promise.resolve({ ok: true, status: 200 })`).
+
+Live-verified by monkey-patching `window.fetch` to fail every `/hq/`
+PUT with a 500 in a real browser session, adding a task (routes through
+`useFileStored`'s debounced disk write), and confirming both the
+console warning (`[cafresohq] file save failed for state/tasks`) and
+the "STORAGE ⚠ Office file save failed — this change may not survive a
+reload elsewhere" toast appeared.
+
+Regression test: `scripts/test_file_persist_reports_failure_instead_of_silent_drop.py`.
