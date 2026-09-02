@@ -5595,13 +5595,24 @@ ${d.text}` : d.text,
     };
   }, []);
 
-  const decideExternal = (externalId, decision, reason) => {
+  /* This POST is the ONLY thing that tells claude_approval_hook.py's
+     long-poll what the boss actually decided — if it never arrives, the
+     hook doesn't hear "denied", it just sits blocked until its own
+     30-minute timeout and auto-denies on its own, no matter what the boss
+     clicked. That silent divergence (chat says "✓ APPROVED", the receipt
+     says approved, the external tool gets denied 30 minutes later with no
+     warning anywhere) is exactly the silent-drop this file's honesty rule
+     exists to rule out elsewhere (see the `publish` branch below, which
+     awaits and reports its own outcome) — this call used to swallow every
+     failure with `.catch(() => {})` and tell the boss nothing. Now it
+     rejects on both a network failure AND a non-2xx response, so the
+     caller can report the mismatch instead of hiding it. */
+  const decideExternal = (externalId, decision, reason) =>
     fetch((window._API_BASE || '') + '/approvals/external/decide', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: externalId, decision, reason: reason || '' }),
-    }).catch(() => {});
-  };
+    }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); });
   const recordReceipt = (ap, decision) => {
     if (!ap) return;
     const r = {
@@ -5851,7 +5862,22 @@ ${d.text}` : d.text,
         return;
       }
       if (ap.external && ap.externalId) {
-        decideExternal(ap.externalId, 'allow', 'approved by boss in HQ');
+        /* Async and reported on failure — same rigor as the publish branch
+           above, for the same reason: the receipt just recorded 'approved'
+           as final, and the boss's chat already reads "✓ APPROVED". If
+           this POST doesn't land, that record is wrong — the external tool
+           call itself will auto-deny on a 30-minute timeout, the opposite
+           of what the boss just saw. */
+        (async () => {
+          try {
+            await decideExternal(ap.externalId, 'allow', 'approved by boss in HQ');
+          } catch (err) {
+            setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: `⚠ Your approval didn't reach the waiting tool call — ${officeCause(err && err.message || String(err))}. It will auto-deny after its own timeout unless you retry.` }]);
+            settleReceipt(rcId, 'failed',
+              `Approval never reached the external tool call — ${officeCause(err && err.message || String(err))}. It auto-denies on timeout.`);
+          }
+        })();
       } else if (ap.agentId) {
         /* Was `ap.elevated && ap.agentId` — so an ORDINARY coworker who
            asked for a stamp never heard the answer. Watched live: Gemma
@@ -5910,7 +5936,7 @@ ${d.text}` : d.text,
   const onReject = (id) => {
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
-    recordReceipt(ap, 'rejected');
+    const rcId = recordReceipt(ap, 'rejected');
     if (ap) {
       /* Office voice — same reasoning as the APPROVED line above. */
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ', text: `✕ REJECTED — ${ap.title}` }]);
@@ -5973,7 +5999,21 @@ ${d.text}` : d.text,
         return;
       }
       if (ap.external && ap.externalId) {
-        decideExternal(ap.externalId, 'deny', 'rejected by boss in HQ');
+        /* Same rigor as onApprove's mirror of this branch — see its
+           comment. A dropped "deny" is the less dangerous direction (the
+           tool call auto-denies on timeout either way), but the boss's
+           receipt would still silently claim a decision that never
+           reached the waiting tool call. */
+        (async () => {
+          try {
+            await decideExternal(ap.externalId, 'deny', 'rejected by boss in HQ');
+          } catch (err) {
+            setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: `⚠ Your rejection didn't reach the waiting tool call — ${officeCause(err && err.message || String(err))}. It will auto-deny on its own timeout regardless.` }]);
+            settleReceipt(rcId, 'failed',
+              `Rejection never reached the external tool call — ${officeCause(err && err.message || String(err))}. It auto-denies on timeout regardless.`);
+          }
+        })();
       } else if (ap.agentId) {   // same widening as approve: asked ⇒ answered
         /* Same correction as approve, and this is the side that was
            actually caught in the act — see the long note there. "Stand

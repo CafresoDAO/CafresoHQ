@@ -21312,3 +21312,51 @@ copies of the closure now agree, plus a genuine Node execution of the
 `agentsRef.current.map(...)` shape.
 
 Regression test: `scripts/test_honesty_notes_roster_reads_live_agents_in_remaining_dispatch_paths.py`.
+
+## A failed external-approval decision was silently swallowed, contradicting the audit trail
+
+`decideExternal` (app.jsx) is the only thing that tells
+`claude_approval_hook.py`'s long-poll (`/approvals/external/wait`) what
+the boss decided for an external (Claude Code PreToolUse hook) approval.
+It was fire-and-forget:
+
+    const decideExternal = (externalId, decision, reason) => {
+      fetch(...).catch(() => {});
+    };
+
+Called with no await from `onApprove`/`onReject`'s `ap.external`
+branches, with no retry and no error surfaced anywhere. If the POST
+failed — a transient localhost hiccup, the server mid-restart, both
+realistic for a locally-run dev server — the failure vanished into the
+empty catch. Meanwhile the receipt was already recorded as
+'approved'/'rejected' as final (`recordReceipt` runs before this
+branch), and chat already showed "✓ APPROVED — …". On the backend, the
+hook's long-poll never received the decision, so it waits out its own
+30-minute timeout and auto-DENIES the tool call regardless of what the
+boss actually clicked — silently contradicting the audit trail the boss
+is looking at, with no warning for up to half an hour.
+
+This was a direct asymmetry with the `publish` branch in the same
+function, which awaits its own async call and reports success/failure
+explicitly via chat + `settleReceipt` — the standard this codebase
+applies everywhere except here.
+
+Found by a background hunt agent looking for "assumes a network/IPC
+call always succeeds" bugs.
+
+Fix: `decideExternal` now rejects on both a network failure and a
+non-2xx response (it used to only guard the network case, and even
+then only to discard it). Both `onApprove`'s and `onReject`'s
+`ap.external` branches now await it inside an async IIFE (matching the
+`publish` branch's shape) and, on failure, post a one-sentence chat
+warning via `officeCause` and call `settleReceipt(rcId, 'failed', ...)`
+so the receipt no longer silently claims a decision that never arrived.
+`onReject` also now captures `recordReceipt`'s return value as `rcId`
+(previously discarded — needed for the new `settleReceipt` call).
+`approvals` is plain in-memory `useState`, not persisted, and
+reproducing this requires either the real Claude Code hook bridge or
+injecting directly into React state — not practically fakeable from
+outside, so verification here is the source-shape regression test
+rather than a live browser repro.
+
+Regression test: `scripts/test_decide_external_reports_failure_instead_of_silent_drop.py`.
