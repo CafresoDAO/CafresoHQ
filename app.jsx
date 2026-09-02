@@ -1582,6 +1582,35 @@ ${d.text}` : d.text,
       ? { ...p, agentIds: p.agentIds.filter(pid => !leaving.has(pid)) } : p));
     setMeetings(prev => prev.map(m => (m.agentIds || []).some(mid => leaving.has(mid))
       ? { ...m, agentIds: m.agentIds.filter(mid => !leaving.has(mid)) } : m));
+    /* A mission belongs to ONE researcher — `agentId`, not a roster — so
+       there is nothing to filter down to: when they leave, the mission is
+       over. Nothing here released it, and the runner only notices at the
+       next iteration, which is `intervalMs` away (half an hour is an
+       ordinary setting). Until then every surface guessed, and each
+       guessed differently. Measured live on a mission whose researcher had
+       been let go: the card read RUNNING · (UNKNOWN) · "59M LEFT" ·
+       "next round in 28m", counted in "1 running", and offered ■ STOP. Put
+       through a reload instead, the scrub paused it and it read "paused on
+       reload — resume to continue" over a ▶ RESUME that could only start a
+       round with nobody to run it.
+
+       `error` with a reason is the answer the runner itself already gives
+       this case (missions.jsx, `'agent removed'`) — this just gives it now,
+       from the place that knows, instead of half an hour later from the
+       place that finds out. It also picks the one status whose card offers
+       CLEAR alone: no countdown, no RESUME that dead-ends. `done` missions
+       are history and are left alone; `pauseNote` is cleared because a
+       stale "resume to continue" under a ⚠ is the same false way forward
+       in smaller type. */
+    const strandedMissions = missions.filter(
+      m => leaving.has(m.agentId) && (m.status === 'running' || m.status === 'paused'));
+    if (strandedMissions.length) {
+      const stranded = new Set(strandedMissions.map(m => m.id));
+      setMissions(prev => prev.map(m => stranded.has(m.id)
+        ? { ...m, status: 'error', endedAt: m.endedAt || Date.now(), pauseNote: null,
+            lastError: `${m.agentName || a.name} was let go — this mission has no researcher` }
+        : m));
+    }
     if (cascadeAction === 'dismiss') {
       // Abort + remove all assistants in one pass.
       for (const x of assistants) abortAgentRun(x.id);
@@ -1603,6 +1632,18 @@ ${d.text}` : d.text,
       // No assistants — straightforward dismissal.
       setAgents(prev => prev.filter(x => x.id !== id));
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `${a.name} has been let go.` }]);
+    }
+    /* Every other way a mission stops says so out loud — the runner logs
+       "finished the mission" and "hit a snag and paused the mission". This
+       one ended research the boss started, so it does not get to be the
+       quiet one. The notes already written are still in the vault, and the
+       sentence says so: what stopped is the mission, not the work. */
+    if (strandedMissions.length) {
+      const n = strandedMissions.length;
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
+        text: `${n === 1 ? 'Their research mission' : `Their ${n} research missions`} stopped — `
+            + `${n === 1 ? 'it has' : 'they have'} no researcher now. `
+            + `Anything already written is still in the library.` }]);
     }
     say(`${a.name} let go`, 'BYE');
   };

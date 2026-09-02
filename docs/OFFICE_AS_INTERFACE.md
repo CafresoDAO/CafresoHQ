@@ -22238,3 +22238,62 @@ loosened until green. One of those updates was itself wrong on the first try:
 `\b(ranOutOfHops|driverError)\b` matched `streamResult.driverError` on the
 right-hand side, so `return { note: … }` — the exact shape the check exists to
 forbid — passed it. Requiring the reason as a *key* is what makes it bite.
+
+### Tick 31 — a mission outlived the coworker running it
+
+Letting a coworker go left their research mission running. Measured live on a
+fresh office, mission owned by Llama, then **LET GO**:
+
+> `Audit the vendor contracts` · **RUNNING** · `(UNKNOWN) · research/` ·
+> `59M LEFT` · `⏳ next round in 28m · last ran 52s ago` · `■ STOP`
+
+counted in **ACTIVE RESEARCH · 1 running**. It would never run another round —
+the runner resolves the agent at fire time and bails — and that is `intervalMs`
+away, half an hour being an ordinary setting. When it finally happened the
+mission flipped to `error` **silently**: no chat line, no activity entry, no XP
+record, unlike every other way a mission stops (the runner logs "finished the
+mission" and "hit a snag and paused the mission").
+
+Put through a reload instead of a dismissal, the reload scrub paused the same
+mission and the card read *"paused on reload — resume to continue"* over a
+**▶ RESUME** button. Pressing it — verified live — put the card straight back to
+**RUNNING · (UNKNOWN) · 59M LEFT**. The office was inviting the boss to restart
+research that had nobody to do it.
+
+`onDismiss` purges tasks, approvals, projects and meetings for a leaving
+coworker; the comment there already argues why that belongs in the dismissal
+rather than the abort path ("whoever is leaving has to be the one to release
+it"). Missions were the one thing it never touched, so every surface downstream
+had to guess, and each guessed differently — `(UNKNOWN)` as the researcher, a
+live countdown, or a RESUME that dead-ends.
+
+Fixed in that same place. A mission belongs to ONE researcher (`agentId`, not a
+roster), so there is nothing to filter down to: when they leave, it is over.
+`error` with a reason is the answer the runner itself already gives this case,
+just given now, by the code that knows, instead of half an hour later by the
+code that finds out — and it is the one status whose card offers CLEAR alone,
+with no countdown and no dead-end button. `done` missions are left as history;
+`pauseNote` is cleared, because a stale "resume to continue" under a ⚠ is the
+same false way forward in smaller type. The CEO says it out loud, and says the
+notes already written are still in the library, so "stopped" is not read as
+"lost". After:
+
+> **ERROR** · `(UNKNOWN) · research/` · `⚠ Llama was let go — this mission has
+> no researcher` · `CLEAR`, and **0 running**.
+
+The test lifts the close-out and the CEO sentence out of `app.jsx` and runs both
+under Node — running and paused both close, `done` and other people's missions
+do not, an existing `endedAt` is not overwritten, and the plural agrees with
+itself at n=3. Fire-tested: with the fix stashed it fails on exactly those
+checks. Sixth comment-contamination guard this run, and this time the decoy
+assertion was rewritten to measure the strip across the whole file rather than
+by one quoted phrase — the phrase lived in the fix's own comment, so rewording
+that comment would have disarmed the guard while leaving it green.
+
+Also ruled out, not reported: the Claude hire card looked completely dead
+(click, no dialog, no DOM change) — that was the Browser pane sitting at a 0×0
+viewport, where `innerText` does not grow for newly rendered nodes. The
+elevated-hire confirm works. `/hq/state/agents` reading `null` while agents
+existed was the wrong scope — the roster persists under `memory`, and
+`agents.json` and `hq-agents.md` agree with each other on both hire and
+dismissal.
