@@ -1611,6 +1611,46 @@ ${d.text}` : d.text,
             lastError: `${m.agentName || a.name} was let go — this mission has no researcher` }
         : m));
     }
+    /* Night shifts are the same fact one layer down, and the layer is what
+       makes them worse: a research mission lives in this tab, so closing it
+       ends the argument. A night shift is a row in serve.py's
+       scheduled-missions.json, run by night_runner.py in its own process.
+       Dismissing someone did not touch it. Reproduced live: hired Llama,
+       scheduled a daily sweep, pressed LET GO — the office went to 0 hired
+       and the schedule sat there `enabled: true` with `nextRunAt` set for
+       the next night. It would wake at 1am, spend an hour and real tokens
+       on their brain, and file notes in the vault under the name of someone
+       who does not work here — with the tab shut and nobody watching.
+
+       `nightShiftBoard` cannot answer this: it is filtered to schedules
+       RUNNING RIGHT NOW, so it holds none of the ones that matter most. Ask
+       the server for the list instead. The DELETE is the one STOP ALL and
+       the modal's own ✕ CANCEL already use, and it does both halves — drops
+       the row and flags an in-flight run to stop.
+
+       Fire-and-forget, off the dismissal's critical path: the roster should
+       not wait on the network, and one failed DELETE must not swallow the
+       rest. The board is cleared optimistically for the same reason STOP
+       ALL clears it — so the floor does not keep showing a dismissed
+       coworker at work for up to 15s. */
+    (async () => {
+      try {
+        const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
+        const res = await fetch(base + '/missions/scheduled', { credentials: 'include' });
+        const body = await res.json();
+        const theirs = (body.schedules || []).filter(s => s && leaving.has(s.agentId));
+        if (!theirs.length) return;
+        setNightShiftBoard(prev => prev.filter(n => !leaving.has(n.agentId)));
+        await Promise.all(theirs.map(s => fetch(
+          base + `/missions/scheduled/${s.id}`,
+          { method: 'DELETE', credentials: 'include' }).catch(() => {})));
+        const n = theirs.length;
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
+          text: `${n === 1 ? 'Their night shift was' : `Their ${n} night shifts were`} `
+              + `cancelled — ${n === 1 ? 'it was' : 'they were'} booked to run on this `
+              + `machine tonight with nobody here to do the work.` }]);
+      } catch (_e) { /* the office is offline; the schedule outlives the tab either way */ }
+    })();
     if (cascadeAction === 'dismiss') {
       // Abort + remove all assistants in one pass.
       for (const x of assistants) abortAgentRun(x.id);

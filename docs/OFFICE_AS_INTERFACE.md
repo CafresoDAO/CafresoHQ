@@ -22297,3 +22297,49 @@ elevated-hire confirm works. `/hq/state/agents` reading `null` while agents
 existed was the wrong scope — the roster persists under `memory`, and
 `agents.json` and `hq-agents.md` agree with each other on both hire and
 dismissal.
+
+### Tick 32 — a night shift outlived the office that booked it
+
+Tick 31's fix had two siblings. **Workflows** turned out clean: they chain
+*tasks*, and tasks are already released on dismissal, so the fix was inherited.
+**Night shifts** were not, and the layer they live on is what makes them worse.
+
+A research mission lives in the tab, so closing it ends the argument. A night
+shift is a row in `serve.py`'s `scheduled-missions.json`, run by
+`night_runner.py` in its own process. Dismissing someone never touched it.
+Reproduced live on a fresh office — hired Llama, POSTed a daily sweep to
+`/missions/schedule`, pressed **LET GO**:
+
+> the office read **0 hired**, and the schedule sat there `enabled: true` with
+> `nextRunAt` set for the next night.
+
+It would wake at 1am, spend an hour and real tokens on their brain, and file
+notes in the vault under the name of someone who does not work here — with the
+tab shut and nobody watching. Every other end-of-life path in this codebase is
+about state the browser owns; this one survives the browser entirely.
+
+The board mirror cannot answer the question. `nightShiftBoard` is filtered to
+schedules **running right now**, so it holds none of the ones that matter most —
+the ones booked for tonight. A fix that filtered it would cancel nothing in the
+ordinary case and still look right, which is why the test pins where the list
+comes from and not just that a DELETE happens.
+
+So the list is asked of the server, and the DELETE is the one STOP ALL and the
+modal's own ✕ CANCEL already use — it drops the row *and* flags an in-flight run
+to stop. Fire-and-forget, off the dismissal's critical path: the roster must not
+wait on the network, and one failed DELETE must not swallow the rest. The board
+is cleared optimistically for the same reason STOP ALL clears it, so the floor
+does not keep showing a dismissed coworker at work for up to 15s.
+
+Verified live with three schedules for the leaver and one for someone else: all
+three cancelled, the fourth untouched, and the CEO said *"Their 3 night shifts
+were cancelled — they were booked to run on this machine tonight with nobody
+here to do the work."*
+
+The test lifts the async cancel out of `app.jsx` and runs it under Node against
+a stubbed server — selectivity, the cascade case (two ids leaving at once), the
+optimistic board clear, both plurals, and three failure modes that matter
+because this runs *during* a dismissal: an unreachable server, a malformed
+listing, and a refused DELETE must none of them throw into `onDismiss` and
+strand the rest of the cascade. Fire-tested: with the fix stashed it fails on
+exactly the expected checks.
