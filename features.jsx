@@ -1061,6 +1061,12 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       priority: 'med',
       assignedTo: null,
       createdAt: Date.now(),
+      /* Archived straight into DONE, so it needs the finish stamp the two
+         agent completion paths carry — without it the card renders a bare
+         "✓ finished" with no time. No `completedBy`: a stand-up is the
+         whole team's, and finishedLabel's caller already falls back to no
+         name rather than crediting someone who did not finish it. */
+      completedAt: Date.now(),
     });
     setArchived(true);
   };

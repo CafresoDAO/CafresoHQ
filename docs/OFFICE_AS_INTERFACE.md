@@ -22128,3 +22128,75 @@ comment-contamination catch this run.
 Both halves fire-tested independently: with the fix stashed the helper is
 missing; with the helper present but one tile reverted to a bare `onClick`, the
 sweep names that tile.
+
+---
+
+## Tick 29 — the core loop works; the card that records it could not say who or when
+
+This tick began as an end-to-end run of the whole new-user path against a real
+brain, and that part is worth recording as a result in its own right: on a fresh
+isolated office, hiring Llama **from the keyboard** (Tick 28's fix, re-verified
+on clean state), picking the "Research brief" starter, and letting Ollama's
+llama3.1 actually do the work — the task was created, assigned, run, completed
+in ~70s, filed to the cabinet as well-formed markdown with a title and byline,
+announced through the FIRST DELIVERY sheet, opened from that sheet, and the
+Getting Started checklist advanced 2/6 → 4/6. **The core loop works.**
+
+Three candidate bugs were ruled out along the way, all by checking rather than
+reporting:
+
+- `app/storage.jsx` fetches `/hq/state/*` with no `credentials`, which looks
+  exactly like the vault bug. It isn't: `claude-client.jsx` installs a global
+  `window.fetch` wrapper adding credentials for API-origin requests.
+- Every event in the activity feed rendered **twice**. The store held five
+  entries with five distinct ids and one output file, so the work ran once — and
+  the DOM path is `.ticker > .ticker-track`, where `segment('a')` +
+  `segment('b', true)` is the deliberate seamless-marquee duplication.
+- The three starter cards looked emoji-labelled. They are proper `<button>`s
+  with `aria-pressed`, and the emoji carries `aria-hidden="true"` — the
+  "bare emoji" reading was an artefact of a probe that sampled only the first
+  line of `innerText`.
+
+**The real find.** `app/worklog.jsx` has a `finishedLabel(task)` whose own
+comment records the fix it belongs to: `completedAt` and `completedBy` "were
+both stamped on the record by the done handler and read by nothing", so a
+finished card "could not say who finished it or when". The read side was duly
+built — `features.jsx` renders `✓ <name> finished this · <when>`. But of the
+three sites that put a TASK into `done`, only one ever stamped.
+
+The one that did not is the path the great majority of tasks actually take:
+`app.jsx`'s stream-end handler, where a run that came back having produced
+something writes `applyStatus(t, produced ? 'done' : 'doing')`. Measured on the
+live run above — `result` and `artifactPath` were both written, `completedAt`
+and `completedBy` were absent, and the DONE card on the board rendered a bare
+**`✓ finished`**: no name, no time. The third site, the stand-up card in
+`features.jsx`, is built as a literal straight into `done` and was unstamped for
+the same reason.
+
+Both now stamp. The not-produced branch **clears** them, for the same reason
+`applyStatus` clears `startedAt` on the way out of `doing`: that branch reopens
+the card, and the renderer appends `when` regardless of status, so a stamp left
+from an earlier finish would hang a stale "· 5m ago" off a card that is back in
+progress.
+
+Verified by re-running the entire flow on a second clean office with the rebuilt
+bundle: `completedAt=1788376410032`, `completedBy=a_local_ollama`, and the card
+now reads **`✓ Llama finished this · just now`**.
+
+Regression test:
+`scripts/test_a_finished_card_says_who_finished_it_and_when.py` (new).
+`finishedLabel` is lifted and **run under Node** (silent without a stamp — it
+must never guess from `createdAt`; silent for an explicitly cleared one;
+"just now" without the "ago"; "ago" for older finishes), then the source is swept
+so every `applyStatus(…, 'done')` stamps. Comments are stripped first and the
+test asserts that stripping actually removed something — the fix's own comment
+discusses `completedAt` at length and would satisfy a naive proximity search,
+letting a genuinely unstamped site pass. Fifth comment-contamination guard this
+run. Fire-tested: with the fix stashed it names both unstamped sites while the
+already-correct `app.jsx:2896` stays green.
+
+Also captured, not fixed: a sweep found **71** `<div onClick>` elements app-wide
+with no `tabIndex` and no `role` — Tick 28's bug class is systemic. Two of them
+are the tool checkboxes and avatar picker on the new-hire form, so tools still
+cannot be granted to a new coworker without a mouse. Spun off as its own task
+rather than half-done here.

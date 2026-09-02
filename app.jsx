@@ -5097,8 +5097,29 @@ ${d.text}` : d.text,
          [TASK_BLOCKED] handler above — tasks.json has no blocked column,
          and inventing one here would put a card in a lane the board
          cannot render. */
+      /* `completedAt`/`completedBy` are what let a finished card say who
+         finished it and when (app/worklog.jsx finishedLabel, rendered by
+         features.jsx). The [TASK_DONE] handler above stamps them; this
+         path — a run that simply came back having produced something, and
+         the way the great majority of tasks actually finish — never did.
+         Measured end-to-end on a fresh office: Llama completed a starter
+         brief, filed it to the cabinet, and its DONE card read a bare
+         "✓ finished" with no name and no time, because both stamps were
+         absent. The read side of that feature was built; only one of its
+         write sites ever had it.
+
+         Cleared on the not-produced branch for the same reason
+         applyStatus clears `startedAt` on the way out of `doing`: this
+         branch REOPENS the card, and `when` is appended by the renderer
+         whatever the status is, so a stamp left over from an earlier
+         finish would hang a stale "· 5m ago" off a card that is back in
+         progress. */
       setTasks(prev => prev.map(t => t.id === taskId
-        ? { ...applyStatus(t, produced ? 'done' : 'doing'), result: cleanBuf.slice(0, 600) } : t));
+        ? { ...applyStatus(t, produced ? 'done' : 'doing'),
+            result: cleanBuf.slice(0, 600),
+            ...(produced
+                ? { completedAt: Date.now(), completedBy: agent.id }
+                : { completedAt: null, completedBy: null }) } : t));
       /* Filing happens BEFORE the row that says the turn finished, because
          that row now makes a claim the filing can settle. `deliveryFiled` is
          what tells the guards to stay quiet about an unclosed [VAULT_NEW]
