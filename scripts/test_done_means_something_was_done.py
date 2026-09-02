@@ -120,8 +120,15 @@ def main():
     # the comment above the gate names `hasSubstance(cleanBuf)` to explain
     # what it cannot see, and a bare count found the documentation and
     # reported a second gate that is not there.
+    # #128: a fourth value, for the same reason as the third — a CLI driver
+    # that never started (`env: node: No such file or directory`) arrives as
+    # an error banner, and a banner IS substance, so the buffer cannot see
+    # that one either. Anchor on the decision, not on which branch happens
+    # to be written first; pinning the first branch is what made this check
+    # object to a change that left every invariant it names intact.
     check('the run decides once whether anything was produced',
-          re.search(r"const shortfall = ending && ending\.ranOutOfHops \? 'ranout'", block)
+          re.search(r"const shortfall = [\s\S]{0,240}?"
+                    r"ending\.ranOutOfHops \? 'ranout'", block)
           and re.search(r'const produced = !shortfall;', block)
           and len(re.findall(r'hasSubstance\(',
                              re.sub(r'/\*[\s\S]*?\*/', '', block))) == 1,

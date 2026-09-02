@@ -1013,6 +1013,45 @@ async function agentDrivers(probe) {
   } catch (_e) { return { drivers: [] }; }
 }
 
+/* The three CLI stream clients (/claudecode, /cafresohq, /codex) all speak the
+   same OpenAI-shaped delta frames, and all three read `delta.content` while
+   dropping `delta.type`. pty_server.py marks a driver failure as
+   `type: 'error'` on the delta — so "⚠ Codex exited 127: env: node: No such
+   file or directory" arrived here as ordinary output text. Downstream every
+   "did this run produce anything?" check then saw substance: the card went to
+   DONE and the board rendered "✓ Codex finished this" directly above the error,
+   certifying a job that never ran.
+
+   Measured on a fresh office by taking the hire board's own invitation — it
+   labels Codex WON'T START and still says "You can still hire them and try",
+   so this is the first thing a new boss sees down that path.
+
+   The text still reaches the screen; the boss needs to read it. What changes is
+   that the failure is ALSO carried back, so a caller can tell an error apart
+   from work. /terminal/stream already forwarded `delta.type` — these three are
+   what it was missing.
+
+   One reader for all three rather than the same fix pasted three times: #80,
+   one question answered once. `state` is the caller's mutable box, since
+   parseSSE hands each frame to a fresh callback invocation. */
+function readCliDelta(j, { onToken, onUsage }, state) {
+  const delta = j.choices && j.choices[0] && j.choices[0].delta;
+  const tok = delta && delta.content;
+  if (tok) {
+    /* First error wins: a driver that fails often repeats itself on the way
+       down, and the first line is the one that names the cause. */
+    if (delta.type === 'error' && !state.driverError) state.driverError = String(tok).trim();
+    onToken(tok);
+  }
+  if (j.usage && onUsage) {
+    onUsage({
+      input: j.usage.prompt_tokens || 0,
+      output: j.usage.completion_tokens || 0,
+      total: j.usage.total_tokens || 0,
+    });
+  }
+}
+
 /* Claude Code (Pro/Max subscription) — proxy spawns the local `claude` CLI
    and translates its stream-json output into the OpenAI-compat SSE shape,
    so we can reuse parseSSE here. */
@@ -1034,21 +1073,12 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     const t = await res.text();
     throw new Error(`Claude Code ${res.status}: ${t.slice(0, 400)}`);
   }
+  const state = { driverError: null };
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
-    try {
-      const j = JSON.parse(data);
-      const tok = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-      if (tok) onToken(tok);
-      if (j.usage && onUsage) {
-        onUsage({
-          input: j.usage.prompt_tokens || 0,
-          output: j.usage.completion_tokens || 0,
-          total: j.usage.total_tokens || 0,
-        });
-      }
-    } catch (_e) {}
+    try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
+  return state.driverError ? { driverError: state.driverError } : undefined;
 }
 
 /* Same as streamClaudeCode but hits /cafresohq/stream — proxy spawns the
@@ -1082,21 +1112,12 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     const t = await res.text();
     throw new Error(`CafresoHQ ${res.status}: ${t.slice(0, 400)}`);
   }
+  const state = { driverError: null };
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
-    try {
-      const j = JSON.parse(data);
-      const tok = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-      if (tok) onToken(tok);
-      if (j.usage && onUsage) {
-        onUsage({
-          input: j.usage.prompt_tokens || 0,
-          output: j.usage.completion_tokens || 0,
-          total: j.usage.total_tokens || 0,
-        });
-      }
-    } catch (_e) {}
+    try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
+  return state.driverError ? { driverError: state.driverError } : undefined;
 }
 
 async function cafresohqStatus() {
@@ -1131,21 +1152,12 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     const t = await res.text();
     throw new Error(`Codex ${res.status}: ${t.slice(0, 400)}`);
   }
+  const state = { driverError: null };
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
-    try {
-      const j = JSON.parse(data);
-      const tok = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-      if (tok) onToken(tok);
-      if (j.usage && onUsage) {
-        onUsage({
-          input: j.usage.prompt_tokens || 0,
-          output: j.usage.completion_tokens || 0,
-          total: j.usage.total_tokens || 0,
-        });
-      }
-    } catch (_e) {}
+    try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
+  return state.driverError ? { driverError: state.driverError } : undefined;
 }
 
 async function codexStatus() {

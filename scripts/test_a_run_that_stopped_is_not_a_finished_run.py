@@ -134,11 +134,23 @@ def main():
     # Absent means "not cut short", so every OTHER way out of this function
     # has to stay absent. A future early return that carried a value would
     # be read by the board as an ending it is not.
-    code_returns = re.findall(r'return \{', stream)
-    check('...and no other exit returns anything',
-          len(code_returns) == 1,
+    # #128 added a second one: a CLI driver that never started. That is
+    # exactly the case this guards — a run that did NOT finish on its own —
+    # so the rule is not "there is one" but "every value that comes back
+    # NAMES the reason". A bare `return {}` or one carrying only output
+    # would still be read as an ordinary ending, which is the real hazard.
+    code_returns = re.findall(r'return \{([^}]*)\}', stream)
+    check('...and every other exit that returns a value says WHY it stopped',
+          code_returns and all(
+              # As a KEY. Matching the bare word found `streamResult
+              # .driverError` on the right-hand side, so `return { note:
+              # streamResult.driverError }` — a value the board reads as an
+              # ordinary ending — passed the check written to forbid it.
+              re.search(r'\b(ranOutOfHops|driverError)\s*:', r)
+              for r in code_returns),
           [code_returns, '— the board reads a missing return as "the run '
-           'finished on its own", which is safe only while it is true'])
+           'finished on its own", which is safe only while a returned '
+           'value always means the opposite'])
 
     # ── 2. the promise splits on what the caller passed ──────────────────
     hints = re.findall(r"'_\(they did as much as they can[^']*'", tail)
@@ -240,7 +252,10 @@ def main():
     # The real expression, lifted rather than retyped: a copy here would
     # keep passing after the original changed, which is the whole failure
     # this suite exists to catch.
-    start = APP.index("const shortfall = ending && ending.ranOutOfHops")
+    # Located by the assignment, not by its first branch: #128 put a new
+    # branch in front and this lift raised ValueError, failing the suite on
+    # a change that left the lifted expression's behaviour intact.
+    start = APP.index("const shortfall = ")
     gate = APP[start:APP.index('const produced = !shortfall;', start)
                + len('const produced = !shortfall;')]
     js = (brace_lift(ARTIFACTS, 'function hasSubstance(text) {') + '\n'

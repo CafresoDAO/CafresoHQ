@@ -96,7 +96,13 @@ def main():
     # the content half is decided, and still decided once.
     check('the run asks whether anything has substance, not whether the '
           'string is long',
-          re.search(r"const shortfall = ending && ending\.ranOutOfHops \? 'ranout'\s*\n"
+          # #128 added a fourth value ahead of the other two (a driver that
+          # never started reports an error banner, which reads as substance).
+          # The half this check owns is the tail: hasSubstance is where the
+          # content question is asked, and it is asked once — so match that,
+          # not the running list of things the buffer cannot see.
+          re.search(r"const shortfall = [\s\S]{0,240}?"
+                    r"ending\.ranOutOfHops \? 'ranout'\s*\n"
                     r"\s*: hasSubstance\(cleanBuf\) \? '' : 'empty';", app)
           and re.search(r'const produced = !shortfall;', app),
           '— !!cleanBuf.trim() is true for "Here is what I did:"')

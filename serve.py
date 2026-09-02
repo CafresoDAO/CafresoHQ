@@ -2413,7 +2413,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         'completion_tokens': ev['outTokens'],
                         'total_tokens':      ev['inTokens'] + ev['outTokens']}})
                 elif et == 'error':
+                    # 'type': 'error' is what tells the browser this frame is a
+                    # FAILURE and not output. Without it the driver's own
+                    # "exited 127: env: node: No such file or directory" arrived
+                    # as ordinary text, every downstream "did this run produce
+                    # anything?" check counted it as substance, and the task
+                    # card went green in DONE reading "\u2713 Codex finished this"
+                    # directly above the error. pty_server.py's sse_delta has
+                    # always carried this marker; this newer driver-based route
+                    # dropped it, and the docstring above ("error\u2192\u26a0 content
+                    # frame") recorded the flattening as if it were the design.
                     write_sse({'choices': [{'index': 0, 'delta': {
+                        'type': 'error',
                         'content': f"\n\n\u26a0 {err_label} error: {ev['message']}"}}]})
                 elif et == 'tool_call' and render_tools:
                     args = ev['args']

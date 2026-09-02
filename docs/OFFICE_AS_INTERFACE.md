@@ -22200,3 +22200,41 @@ with no `tabIndex` and no `role` — Tick 28's bug class is systemic. Two of the
 are the tool checkboxes and avatar picker on the new-hire form, so tools still
 cannot be granted to a new coworker without a mouse. Spun off as its own task
 rather than half-done here.
+
+### Tick 30 — a driver that never started is not a finished job
+
+The hire board labels Codex **WON'T START** and then adds "You can still hire
+them and try". Taking it at its word on a fresh office: the task landed in
+**DONE** reading `✓ Codex finished this · just now` — directly above
+`⚠ Codex error: exited 127: env: node: No such file or directory`. The office
+was certifying a job whose CLI never ran, on the very path its own UI invites a
+new boss down.
+
+Two independent gaps, and fixing either alone leaves it broken — which is what
+happened mid-fix: the client was patched first and the card still went green,
+because the frame carried no marker to read.
+
+1. `serve.py`'s `_agent_stream_legacy` flattened the driver's failure into a
+   plain content frame. `pty_server.py`'s `sse_delta` has always sent
+   `'type': 'error'`; the newer driver-based route dropped it, and the route's
+   own docstring recorded the flattening as the design (`error→⚠ content frame`).
+2. The three CLI stream clients in `claude-client.jsx` read `delta.content` and
+   dropped `delta.type`. `/terminal/stream` already forwarded it; those three
+   did not. Replaced by one shared `readCliDelta` — the three parse blocks were
+   byte-identical, which is how the marker went missing from all three at once.
+
+With the marker gone the error banner **is** substance by every measure the app
+has, so `hasSubstance(cleanBuf)` said the run delivered. The failure now travels
+back through `hq-runtime`'s `agentStream` return and outranks the content
+question in `app.jsx`'s shortfall gate, and `floor.jsx` says *"could not start
+work on …"* rather than reusing "came back with nothing", which blames the
+coworker for the machine. Live-verified: the task now stays parked in **doing**.
+
+Three existing tests failed on this change, all pinning the literal *first
+branch* of the shortfall gate while the invariants they actually name were
+untouched. Updated to anchor on the decision rather than on which shortfall was
+written first, and each fire-tested against a genuine break so none was merely
+loosened until green. One of those updates was itself wrong on the first try:
+`\b(ranOutOfHops|driverError)\b` matched `streamResult.driverError` on the
+right-hand side, so `return { note: … }` — the exact shape the check exists to
+forbid — passed it. Requiring the reason as a *key* is what makes it bite.

@@ -5059,7 +5059,15 @@ ${d.text}` : d.text,
          without a delivery — "with nothing" is a lie about a run that came
          back with four paragraphs. Everything that decides rather than
          describes still reads `produced`. */
-      const shortfall = ending && ending.ranOutOfHops ? 'ranout'
+      /* `driverError` is checked FIRST and ahead of hasSubstance, because a
+         failed driver is the one shortfall that arrives WITH text. The error
+         banner ("⚠ Codex exited 127: env: node: No such file or directory")
+         is substance by every measure this function has, so the run read as
+         a delivery: the card went green in DONE and the board rendered
+         "✓ Codex finished this · just now" directly over the error. The
+         office certified a job whose CLI never started. */
+      const shortfall = ending && ending.driverError ? 'error'
+        : ending && ending.ranOutOfHops ? 'ranout'
         : hasSubstance(cleanBuf) ? '' : 'empty';
       const produced = !shortfall;
       /* `recent` fell back to the task TITLE on an empty run, so the

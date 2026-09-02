@@ -4213,7 +4213,7 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
   const KNOWN_MARKERS = Object.keys(TOOL_REGISTRY).map(k => TOOL_REGISTRY[k].name);
   for (let hop = 0; hop < maxToolHops; hop++) {
     let buf = '';
-    await CafresoHQClient.stream({
+    const streamResult = await CafresoHQClient.stream({
       system: sys,
       messages,
       model: resolveModel(agent.model),
@@ -4227,6 +4227,16 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
       elevated: !!agent.elevated,
       cwd,
     });
+    /* A driver that failed is done — there is no point spending the
+       remaining hops on a CLI that will not start. Return rather than break
+       so the caller gets the reason: every other exit from this function is
+       the model stopping on its own, and `ranOutOfHops` next to it is the
+       existing shape for "this run did not end normally, and here is why".
+       Whatever the driver managed to say has already gone out through
+       onToken, so nothing the boss should see is lost by leaving here. */
+    if (streamResult && streamResult.driverError) {
+      return { driverError: streamResult.driverError };
+    }
     // ACK markers are status-update only — they should NOT halt the stream
     // for a tool round-trip. The host extracts them from `buf` after the
     // stream completes and routes to MessageRegistry.transition().

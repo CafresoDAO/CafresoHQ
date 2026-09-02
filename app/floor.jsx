@@ -672,6 +672,13 @@ function shortfallLine(kind, subject) {
   if (kind === 'ranout') {
     return s ? `stopped part-way through "${s}"` : 'stopped part-way through';
   }
+  /* A driver that would not start is not the same shortfall as a coworker who
+     came back empty, and saying "came back with nothing" over an "⚠ Codex
+     exited 127" banner blames the coworker for the machine. The distinction
+     is the boss's next move: one of these is retried, the other is repaired. */
+  if (kind === 'error') {
+    return s ? `could not start work on "${s}"` : 'could not start work';
+  }
   return s ? `came back from "${s}" with nothing` : 'came back with nothing';
 }
 
