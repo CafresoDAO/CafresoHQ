@@ -21403,3 +21403,43 @@ deliberately left unfixed this tick to keep scope manageable; a good
 candidate for a future pass.
 
 Regression test: `scripts/test_graph_filter_folds_accents_like_vault_search.py`.
+
+### Classic Projects mode's Save silently clobbered a coworker's edit (2026-09-02)
+
+The "Classic" Projects view (`views/projects.jsx`'s
+`ProjectsView`) has always been a separate, fully user-reachable mode —
+a visible "Workspace / Classic" toggle whose tooltip says "The original
+Projects view", not a deprecated path. It had its own, entirely
+separate `readFile`/`saveFile` pair that never captured a file's
+mtime/hash on open and never re-checked before writing — unlike
+`WorkspaceView`'s `save()`, which was built specifically so "a live
+agent write never clobbers your unsaved edits" (its own in-code
+comment). A boss in Classic mode could open a file a coworker was
+actively writing to, edit it, click Save, and silently overwrite the
+coworker's work with no warning, no reload option, no error.
+
+Fix: `readFile` now uses `CafresoHQClient.fsReadText` (which, as a
+bonus, also fixes FILE_READ's 8000-char truncation — Classic mode used
+to load large files half-open) to capture mtime/hash, mirroring
+`WorkspaceView`'s `openPath`. `saveFile` now re-stats before writing and
+sets a `conflict` flag instead of clobbering, exactly mirroring
+`WorkspaceView`'s own `save()`. Both of ProjectsView's Save-button sites
+(mobile editor, desktop split editor) got the same "⚠ Your coworker
+changed this file… [Reload] [Keep mine]" banner WorkspaceView already
+shows.
+
+Live verification caught a SECOND bug in the first pass at this fix:
+both buttons were still `onClick={saveFile}`, so React handed `saveFile`
+the click event as its `force` argument — truthy, so `!force` was
+always false and the brand-new conflict check silently never ran. This
+was invisible to the source-shape test until a check for the exact
+`onClick={saveFile}` (vs `onClick={() => saveFile()}`) shape was added.
+Caught by: creating a real local project + file, editing it in the
+browser, overwriting the file on disk from a shell (simulating a
+coworker's write) mid-edit, then clicking Save and watching it clobber
+anyway despite the "correct" conflict-check code sitting right there
+unreached. Fixed, then re-verified end-to-end live: the conflict banner
+now appears and blocks the write; "Reload" discards the boss's edit for
+the coworker's; "Keep mine" force-writes through.
+
+Regression test: `scripts/test_classic_projects_save_no_longer_clobbers_a_coworkers_edit.py`.

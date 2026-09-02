@@ -752,6 +752,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
 function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
   const [selected, setSelected] = useSV(null);
   const [openFile, setOpenFile] = useSV(null);
+  const [conflict, setConflict] = useSV(false);
   const [previewMode, setPreviewMode] = useSV(false);
   const [busy, setBusy] = useSV(false);
   const [err, setErr] = useSV(null);
@@ -916,7 +917,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
   };
 
   const readFile = async (path) => {
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setConflict(false);
     const kind = previewKind(path);
     const isBinary = kind === 'image' || kind === 'pdf';
     setPreviewMode(isBinary);   // binary auto-previews; text lands in the editor
@@ -927,24 +928,39 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
       return;
     }
     try {
-      const text = await CafresoHQClient.toolExec('FILE_READ', path);
-      setOpenFile({
-        path,
-        content: typeof text === 'string' ? text : String(text || ''),
-        dirty: false,
-      });
+      // fsReadText (not FILE_READ, which truncates at 8000 chars) also hands
+      // back the mtime/hash saveFile needs for its own conflict check —
+      // same contract WorkspaceView's openPath uses.
+      const r = await CafresoHQClient.fsReadText(path);
+      setOpenFile({ path, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false });
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
   };
 
-  const saveFile = async () => {
+  /* Conflict-safe save, mirroring WorkspaceView's save(): re-stat before
+     writing so a coworker's concurrent edit is never silently clobbered —
+     this view used to skip that check entirely. */
+  const saveFile = async (force) => {
     if (!openFile) return;
     setBusy(true); setErr(null);
     try {
+      if (!force && openFile.hash) {
+        try {
+          const st = await CafresoHQClient.fsStat(openFile.path);
+          if (st && st.hash && st.hash !== openFile.hash) { setConflict(true); setBusy(false); return; }
+        } catch (_e) {}
+      }
       await CafresoHQClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
-      setOpenFile({ ...openFile, dirty: false });
+      let nh = openFile.hash, nm = openFile.mtime;
+      try { const st2 = await CafresoHQClient.fsStat(openFile.path); if (st2 && st2.ok) { nh = st2.hash; nm = st2.mtime; } } catch (_e) {}
+      setOpenFile(o => (o && o.path === openFile.path) ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
+      setConflict(false);
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
+  };
+  const reloadOpenClassic = async (path) => {
+    try { const r = await CafresoHQClient.fsReadText(path); setOpenFile(o => (o && o.path === path) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o); } catch (_e) {}
+    setConflict(false);
   };
 
   /* Join a dir + name using whichever separator the dir already uses (so
@@ -1256,10 +1272,16 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
                 <button className={`px-btn ${!previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(false)}>Code</button>
                 <button className={`px-btn ${previewMode ? 'primary' : 'secondary'}`} style={{fontSize:10, padding:'5px 10px'}} onClick={() => setPreviewMode(true)}>Preview</button>
               </span>
-              <button className="px-btn primary" style={{fontSize:11,padding:'6px 14px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
+              <button className="px-btn primary" style={{fontSize:11,padding:'6px 14px'}} onClick={() => saveFile()} disabled={!openFile.dirty || busy}>
                 {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
               </button>
             </div>
+            {conflict && (
+              <div className="ws-conflict">⚠ Your coworker changed this file while you had edits.
+                <button onClick={() => reloadOpenClassic(openFile.path)}>Reload</button>
+                <button onClick={() => saveFile(true)}>Keep mine</button>
+              </div>
+            )}
             {previewMode
               ? <FilePreview file={openFile} />
               : <IDEEditor
@@ -1545,10 +1567,16 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
                       {openFile.content.split('\n').length} ln · {openFile.content.length} ch · {ideLangFromPath(openFile.path).toUpperCase()}
                     </span>
                   )}
-                  <button className="px-btn primary" style={{fontSize: 10, padding: '3px 10px'}} onClick={saveFile} disabled={!openFile.dirty || busy}>
+                  <button className="px-btn primary" style={{fontSize: 10, padding: '3px 10px'}} onClick={() => saveFile()} disabled={!openFile.dirty || busy}>
                     {busy ? 'Saving…' : openFile.dirty ? 'Save' : 'Saved'}
                   </button>
                 </div>
+                {conflict && (
+                  <div className="ws-conflict">⚠ Your coworker changed this file while you had edits.
+                    <button onClick={() => reloadOpenClassic(openFile.path)}>Reload</button>
+                    <button onClick={() => saveFile(true)}>Keep mine</button>
+                  </div>
+                )}
                 {previewMode
                   ? <FilePreview file={openFile} />
                   : <IDEEditor
