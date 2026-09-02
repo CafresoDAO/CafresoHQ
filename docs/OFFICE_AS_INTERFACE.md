@@ -21570,3 +21570,49 @@ accented-titled node stayed lit, confirming the fold actually drives
 the live search, not just the extracted-logic test.
 
 Regression test: `scripts/test_graph_viewer_search_folds_accents.py`.
+
+### Approval-box truncation sliced off the tail — the exact bug the cap was raised to prevent (2026-09-02)
+
+`app/approvals.jsx`'s `formatToolInput` renders the ONE consent surface
+in the app: the box a boss reads before clicking Approve/Reject on an
+elevated agent tool call. Its own header comment documents a real prior
+bug — a command padded with harmless filler that ends in `rm -rf
+/important`, titled "Harmless cleanup" by its author, rendered as a
+wall of padding with the dangerous tail cut off — and says the fix was
+raising the truncation cap from 400 to 8000 chars. But `clip` still did:
+
+    return t.length > APPROVAL_VALUE_CAP
+      ? t.slice(0, APPROVAL_VALUE_CAP) + ' …(truncated)'
+      : t;
+
+`.slice(0, CAP)` keeps the head and drops the tail — the exact
+direction the comment says caused the original bug, just requiring a
+bigger payload to trigger. Any tool-call argument over 8000 chars (a
+write payload, a generated script, a heredoc — ordinary sizes for a
+coding agent, not a pathological edge case) with its dangerous part at
+the end gets that part silently stripped from what the boss is asked
+to approve. The existing test suite (`scripts/test_approvals.py`) never
+caught this: its "keeps the tail" case used a buried string under 8000
+chars (so truncation never fired), and its "past the cap" case used
+uniform filler with nothing to check for at the tail — the two
+properties were never tested together.
+
+Fix: `clip` now keeps BOTH ends and elides the middle — half the cap
+from the head, half from the tail, with a `…(N chars omitted)…` marker
+between them — instead of slicing off everything past the head. Added
+a test case to `scripts/test_approvals.py` that buries a dangerous
+command past the 8000-char cap (not just past the old 400-char one)
+and asserts the tail, the head, AND the omission marker all survive
+together — closing the exact coverage gap that let this regress
+unnoticed at the bigger threshold.
+
+Live-verified by monkey-patching `window.fetch` to answer
+`/approvals/external/list` with a synthetic pending Bash approval whose
+`command` buried `rm -rf /important` past the 8000-char cap, in a real
+browser session — the rendered approval card showed both `echo
+start;…` at the start and `…rm -rf /important` at the end, with a
+`…(531 chars omitted)…` marker between them, confirming the real
+ApprovalTray render path (not just the extracted-logic test) now shows
+the dangerous tail.
+
+Regression test: `scripts/test_approvals.py` (extended, not new).

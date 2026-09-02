@@ -34,11 +34,18 @@ function formatToolInput(input) {
   const keys = Object.keys(input);
   if (!keys.length) return '';
 
+  /* Past the cap, keep BOTH ends and elide the middle. Slicing off the tail
+     (the first cut's approach, and this file's own approach until this fix)
+     recreates the exact bug documented above at a bigger threshold: a
+     buried `rm -rf /important` living past char 8000 would still vanish
+     from the approval box, unmarked as anything but "the end got cut". */
   const clip = (s) => {
     const t = String(s);
-    return t.length > APPROVAL_VALUE_CAP
-      ? t.slice(0, APPROVAL_VALUE_CAP) + ' …(truncated)'
-      : t;
+    if (t.length <= APPROVAL_VALUE_CAP) return t;
+    const head = Math.ceil(APPROVAL_VALUE_CAP / 2);
+    const tail = APPROVAL_VALUE_CAP - head;
+    const omitted = t.length - head - tail;
+    return t.slice(0, head) + ` …(${omitted} chars omitted)… ` + t.slice(t.length - tail);
   };
 
   const lead = APPROVAL_LEAD_KEYS.filter(k => keys.includes(k));

@@ -75,8 +75,19 @@ R.buriedVerbatim = R.buriedOut === buried;
 // Past the cap, output is truncated but SAYS so — never silently.
 const huge = 'y'.repeat(APPROVAL_VALUE_CAP + 50);
 R.hugeOut       = formatToolInput({ command: huge });
-R.hugeMarked    = /…\(truncated\)$/.test(R.hugeOut);
+R.hugeMarked    = /…\(\d+ chars omitted\)…/.test(R.hugeOut);
 R.hugeShorter   = R.hugeOut.length < huge.length + 30;
+
+// THE property the cap itself must not break: a dangerous tail buried past
+// the 8000-char cap (not just past the old 400-char one) must still
+// survive — this is the exact bug the cap-raise comment above describes,
+// just re-triggered at the new threshold if truncation ever slices the
+// tail off instead of the middle.
+const buriedPastCap = 'echo start; ' + 'x'.repeat(APPROVAL_VALUE_CAP + 500) + '; rm -rf /important';
+R.buriedPastCapOut      = formatToolInput({ command: buriedPastCap });
+R.buriedPastCapKeptTail = R.buriedPastCapOut.indexOf('rm -rf /important') !== -1;
+R.buriedPastCapKeptHead = R.buriedPastCapOut.indexOf('echo start;') !== -1;
+R.buriedPastCapMarked   = /…\(\d+ chars omitted\)…/.test(R.buriedPastCapOut);
 
 // Nested objects survive as real JSON rather than "[object Object]".
 R.nested        = formatToolInput({ tool: 'x', opts: { deep: [1, 2] } });
@@ -121,6 +132,16 @@ def main():
           out['hugeMarked'], repr(out['hugeOut'][-40:]))
     check('...and actually shortens rather than only labelling',
           out['hugeShorter'])
+
+    check('a dangerous tail buried PAST the 8000-char cap still survives '
+          '— slicing off the tail here would silently recreate the exact '
+          'bug the cap-raise comment describes, just at a bigger threshold',
+          out['buriedPastCapKeptTail'], repr(out['buriedPastCapOut'][-60:]))
+    check('...and the head survives too — the middle is what gets elided, '
+          'not either end',
+          out['buriedPastCapKeptHead'], repr(out['buriedPastCapOut'][:60]))
+    check('...and the elision is marked, never silent',
+          out['buriedPastCapMarked'])
 
     check('nested values render as JSON, never [object Object]',
           out['nestedNoJunk'], repr(out['nested']))
