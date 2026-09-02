@@ -21134,3 +21134,51 @@ the UI), so the genuine-execution Node test is the verification here
 rather than a live browser repro.
 
 Regression test: `scripts/test_dispatch_prompt_context_reads_live_agents_and_tasks.py`.
+
+## The notification bell's "Clear all" never actually cleared receipts
+
+`mergedNotifications` (app.jsx) builds the bell's list from three
+sources: approvals, receipts, and the activity log. The activity-log
+loop filters out anything at or before the `notifClearedAt` watermark:
+
+    for (const e of activity) {
+      if ((e.ts || 0) <= notifClearedAt) continue;
+      ...
+    }
+
+The receipts loop, a few lines above it, had no such filter — it only
+gated `unread` on `notifSeenAt`, never dropped old rows on
+`notifClearedAt`. The bell's clear-all handler only bumps the two
+watermarks (`setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now());`)
+and never touches the separate `receipts` array (that's only emptied by
+the unrelated `onClearReceipts`, wired to the ReceiptsModal tray, not
+the bell). So clicking "Clear all" correctly hid activity-log rows but
+left every past approval/rejection/publish receipt sitting in the bell
+forever, marked read — the list never returned to the "you're all
+caught up" empty state its own confirm dialog promises ("Nothing is
+deleted — this just clears the bell").
+
+Found by a background hunt agent sweeping previously-unswept areas
+(notifications/bell UI) — an asymmetry between two loops building the
+same output array in the same function, one filtered by the clear
+watermark, the other not.
+
+Fix: the receipts loop now applies the same `notifClearedAt` filter as
+the activity loop. Verified live in the browser: seeded a fresh receipt
+via localStorage, confirmed it appeared in the bell (Receipts · 3),
+clicked "Clear all", confirmed the bell dropped to "Nothing pending"
+with zero rows across every category — and confirmed the underlying
+`cafresohq_hq_v1:receipts` record in localStorage still held all 3
+receipts afterward (nothing deleted, only filtered from the bell's
+view, exactly matching the confirm dialog's own wording).
+
+An older regression test
+(`scripts/test_clear_all_notifications_claimed_the_audit_trail_was_lost.py`)
+asserted `notifClearedAt` had exactly one functional use in the file —
+that assumption no longer holds now that a second filter site exists,
+so its check was updated to assert the more durable invariant it was
+actually protecting: every functional use of `notifClearedAt` is a
+filter-continue on a derived list, never a delete of the underlying
+state.
+
+Regression test: `scripts/test_notification_bell_clear_all_clears_receipts_too.py`.

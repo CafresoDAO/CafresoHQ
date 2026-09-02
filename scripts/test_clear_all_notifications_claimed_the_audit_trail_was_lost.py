@@ -57,8 +57,17 @@ def main():
     wiring = re.search(r"onClear=\{\(\) => \{ setNotifClearedAt\(Date\.now\(\)\); setNotifSeenAt\(Date\.now\(\)\); \}\}", APP)
     check('app.jsx onClear still only bumps notifClearedAt/notifSeenAt (the fix must describe reality, not change it)',
           wiring is not None)
-    check('notifClearedAt has exactly one use beyond its own declaration — filtering the derived list, not deleting state',
-          APP.count('notifClearedAt') == 4)  # declaration (var + storage key) + the filter + the useMemo dep
+    # notifClearedAt now filters BOTH the activity loop and the receipts loop
+    # of mergedNotifications (a later fix closed the gap where receipts
+    # ignored the watermark entirely) — but every functional use is still a
+    # `<= notifClearedAt) continue` filter on a derived list, never a delete
+    # of the underlying approvals/receipts/activity state arrays.
+    filter_uses = re.findall(r"if \(\(.*?\) <= notifClearedAt\) continue;", APP)
+    check('every functional use of notifClearedAt is a filter-continue on '
+          'a derived list (not a delete of the underlying state) — this is '
+          'still true even though a later fix added a second such filter '
+          '(receipts, alongside the original activity-log one)',
+          len(filter_uses) == 2, filter_uses)
 
     # The sibling ReceiptsModal dialog, where the identical old sentence is
     # actually true (setReceipts([]) really deletes), must stay untouched.

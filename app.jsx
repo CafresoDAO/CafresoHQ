@@ -6393,8 +6393,14 @@ ${d.text}` : d.text,
         onClick: () => { setNotifOpen(false); goTo('visual'); },
       });
     }
-    /* Receipts → mark as unread until notifSeenAt threshold. */
+    /* Receipts → mark as unread until notifSeenAt threshold. Filtered by
+       the same notifClearedAt watermark as the activity feed below —
+       otherwise the bell's "Clear all" (which only bumps the watermarks,
+       never touches the separate `receipts` array) leaves every past
+       receipt sitting in the bell forever, contradicting its own
+       confirmation copy ("this just clears the bell"). */
     for (const r of receipts) {
+      if ((r.decidedAt || 0) <= notifClearedAt) continue;
       out.push({
         id: 'r-' + r.id,
         kind: 'receipt',
