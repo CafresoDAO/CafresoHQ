@@ -21182,3 +21182,43 @@ filter-continue on a derived list, never a delete of the underlying
 state.
 
 Regression test: `scripts/test_notification_bell_clear_all_clears_receipts_too.py`.
+
+## The encrypted bridge vault's search silently missed accented notes
+
+`views/vault.jsx`'s `bridgeSearch` — used only when a `VaultBridge` is
+present (the encrypted shell holding the boss's actual identity-linked
+notes, which has no vault:search message of its own, so search has to
+be scored client-side) — carried a comment claiming it "Mirrors
+serve.py's own /vault/search scoring... so results rank the same either
+way." It didn't: `bridgeSearch` matched with plain `.toLowerCase()`,
+while serve.py's `_vault_search_hit` (shared by every backend arm)
+folds accents first via `_fold_accents` — NFD-decomposing each
+character and dropping the combining marks — specifically so
+'investigacion' finds 'investigación' rather than the search quietly
+splitting the vault by keyboard layout.
+
+Concretely: a note containing "investigación" was findable by typing
+"investigacion" against the server-backed vault, but returned zero hits
+against the bridge vault — silently, with no error or fallback notice —
+for the more security-conscious, identity-holding path of the two.
+
+Found by a background hunt agent sweeping previously-unswept areas,
+directly falsifying the "mirrors serve.py" claim in bridgeSearch's own
+comment by diffing it against serve.py's actual implementation.
+
+Fix: added `_foldAccents` to `views/vault.jsx`, a JS port of serve.py's
+`_fold_accents` (NFD-decompose, drop U+0300-U+036F combining marks,
+track an index map back to the original text so the snippet shown still
+has the boss's own accents intact). `bridgeSearch` now folds the query,
+each candidate's title, and each candidate's body through it before
+scoring. Verified by extracting the actual helper from source and
+genuinely executing it via Node: an accented and unaccented spelling
+now fold to the identical string, and the snippet-recovery path still
+returns the ORIGINAL accented substring, not a folded copy. `_bridge`
+only exists behind `VaultBridge.isAvailable()`, a postMessage bridge to
+the encrypted parent shell not reachable from the standalone dev-server
+preview, so live browser verification isn't practical here — the
+genuine-execution Node test is the verification standard, the same one
+applied to the Night Shift DST, PTY-reconnect, and stale-closure fixes.
+
+Regression test: `scripts/test_bridge_vault_search_folds_accents_like_server.py`.

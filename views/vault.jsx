@@ -33,6 +33,28 @@ const _hiddenPart = (path) => {
   }
   return null;
 };
+/* Accent-folded copy of `s`, plus a map from each folded index back to
+   the code-point index in `s` it came from. Mirrors serve.py's own
+   _fold_accents exactly (NFD-decompose per source character, drop the
+   combining marks) so bridgeSearch below ranks the same as the server
+   arm it's meant to mirror: 'unicas' has to find 'únicas' whichever
+   vault backend answered the query, or search quietly splits by
+   keyboard layout depending on which arm is live. The map is what lets
+   the snippet come from the ORIGINAL text, accents intact. */
+const _foldAccents = (s) => {
+  const out = [], idx = [];
+  const chars = Array.from(String(s || ''));
+  chars.forEach((c, i) => {
+    for (const ch of c.normalize('NFD')) {
+      if (/[\u0300-\u036f]/.test(ch)) continue;
+      for (const lc of ch.toLowerCase()) {
+        out.push(lc);
+        idx.push(i);
+      }
+    }
+  });
+  return [out.join(''), idx];
+};
 /* Wikilink autocomplete — the linked Library's links were typed from
    MEMORY: `[[` offered nothing, so every link was an exact-stem recall
    test, and a typo was a dead link the boss wouldn't see until the
@@ -548,21 +570,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      nothing telling the boss their real notes were never even looked at —
      exactly the silent-wrong-answer failure the vetKeys trust story can't
      afford. Mirrors serve.py's own /vault/search scoring (title match worth
-     3, then raw occurrence count) so results rank the same either way. */
+     3, then raw occurrence count, accent-folded via _foldAccents above so
+     'unicas' finds 'únicas' on this arm exactly as it does on the server
+     arm — the two had silently diverged: this arm matched on plain
+     .toLowerCase(), so an accented note was findable through the server
+     vault but invisible through the encrypted bridge one, the more
+     security-conscious of the two paths). */
   const bridgeSearch = async (query) => {
-    const ql = query.toLowerCase();
+    const [fq] = _foldAccents(query);
+    if (!fq) return [];
     const candidates = files.filter(f => !f.isBinary);
     const results = await Promise.all(candidates.map(async (f) => {
       let text;
       try { text = await _bridge.read(f.id); } catch (_e) { return null; }
-      const tl = String(text || '').toLowerCase();
-      const titleScore = f.title && f.title.toLowerCase().includes(ql) ? 3 : 0;
-      const count = ql ? tl.split(ql).length - 1 : 0;
+      const [ftext, tmap] = _foldAccents(text);
+      const [ftitle] = _foldAccents(f.title);
+      const titleScore = ftitle.includes(fq) ? 3 : 0;
+      const count = ftext.split(fq).length - 1;
       if (!titleScore && !count) return null;
-      const idx = tl.indexOf(ql);
+      const idx = ftext.indexOf(fq);
       let snippet = '';
       if (idx >= 0) {
-        const s = Math.max(0, idx - 60), e = Math.min(text.length, idx + query.length + 60);
+        const oStart = tmap[idx], oEnd = tmap[idx + fq.length - 1] + 1;
+        const s = Math.max(0, oStart - 60), e = Math.min(text.length, oEnd + 60);
         snippet = (s > 0 ? '…' : '') + text.slice(s, e).replace(/\n/g, ' ').trim() + (e < text.length ? '…' : '');
       }
       return { path: f.path, title: f.title, score: titleScore + count, snippet };
