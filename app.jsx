@@ -2308,7 +2308,13 @@ ${d.text}` : d.text,
                    : (humanText ? `picked up "${humanText.slice(0, 48)}…"` : 'picked up a job'),
     });
 
-    const peers = agents.filter(a => a.id !== agent.id);
+    /* This dispatch can sit through the busy-desk wait loop above for
+       minutes — read agentsRef/tasksRef (kept live by effects) for every
+       prompt-context list below, not the plain `agents`/`tasks` closure
+       this function captured at the render that started it. The
+       recipient-existence check a few lines up already had to do this
+       for the same reason; these lists were missed. */
+    const peers = agentsRef.current.filter(a => a.id !== agent.id);
     const peerList = peers.map(p => `${p.name} (${p.role}${p.elevated ? ' · elevated' : ''})`).join(', ');
     /* Senior agents need to know about their permanent assistants
        explicitly so they don't waste a SPAWN_SUBAGENT call (transient,
@@ -2319,7 +2325,7 @@ ${d.text}` : d.text,
        then later spawned a transient sub-agent ALSO called Cartographer
        because his prompt didn't tell him about the existing one.
        The roster section below is now top-of-prompt and bold. */
-    const myAssistants = agents.filter(a => a.reportsTo === agent.id);
+    const myAssistants = agentsRef.current.filter(a => a.reportsTo === agent.id);
     const assistantNote = myAssistants.length ? (
       `\n\nYOUR ASSISTANTS (report to YOU — prefer DM_TO over SPAWN_SUBAGENT for ongoing work):\n` +
       myAssistants.map(a =>
@@ -2347,7 +2353,7 @@ ${d.text}` : d.text,
       if (!proj) return '';
       if (proj.path) projectCwd = proj.path;
       const teammates = (proj.agentIds || [])
-        .map(aid => agents.find(a => a.id === aid))
+        .map(aid => agentsRef.current.find(a => a.id === aid))
         .filter(a => a && a.id !== agent.id)
         .map(a => `${a.name} (${a.role})`);
       return `\n\n📁 ACTIVE PROJECT: ${proj.name}\n` +
@@ -2369,7 +2375,7 @@ ${d.text}` : d.text,
          [TASK_PROGRESS: <id>: <one-line>]                → progress note
          [TASK_BLOCKED: <id>: <what's blocking>]          → status:blocked
        The host extracts these post-stream and updates tasks.json. */
-    const myTasks = (tasks || []).filter(t =>
+    const myTasks = (tasksRef.current || []).filter(t =>
       t.assignedTo === agent.id && t.status !== 'done');
     const taskNote = myTasks.length ? (
       `\n\n📋 YOUR OPEN TASKS (these are your standing assignments — keep them in mind every turn):\n` +

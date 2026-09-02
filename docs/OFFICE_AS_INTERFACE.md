@@ -21087,3 +21087,50 @@ verification here, the same standard applied to the Night Shift DST and
 PTY-reconnect fixes.
 
 Regression test: `scripts/test_assistant_hire_cap_reads_live_agents_not_stale_closure.py`.
+
+## dispatchToAgent's prompt-context lists (peers, assistants, teammates, tasks) also read stale closures
+
+A distinct instance of the same bug shape as the assistant-hire cap fix
+above, in the same function, four lines further down. Right after the
+ref-based "did they leave while we waited?" recipient-existence check
+(`if (!(agentsRef.current || []).some(x => x.id === agent.id))`), the
+code goes on to build the new agent's prompt context — peers, own
+assistants, project teammates, open tasks — using the plain (stale)
+`agents`/`tasks` closures instead of the refs it just proved were
+necessary:
+
+    const peers = agents.filter(a => a.id !== agent.id);
+    const myAssistants = agents.filter(a => a.reportsTo === agent.id);
+    const teammates = (proj.agentIds || []).map(aid => agents.find(...));
+    const myTasks = (tasks || []).filter(t => t.assignedTo === agent.id && t.status !== 'done');
+
+Concrete sequence: dispatch a note to an agent whose desk is busy. The
+busy-desk wait loop can run for minutes. While it waits, the boss can
+hire a new coworker, dismiss one, add/remove a project teammate, or
+reassign/complete a task. When the wait ends, the prompt context built
+reflects the roster/board as it was when the wait STARTED, not when the
+message is actually delivered: a dismissed coworker can still be listed
+as a live peer or assistant to DM, a newly hired coworker is invisible,
+a newly added project teammate is missing from "Other coworkers on this
+project", and a task already completed (or reassigned elsewhere) is
+still listed under "YOUR OPEN TASKS," prompting duplicate or
+contradictory work.
+
+Found by a background hunt agent sweeping previously-unswept areas for
+stale-closure-over-state bugs, specifically steered toward this exact
+function since it already had one confirmed instance of the pattern.
+
+Fix: all four reads now use `agentsRef.current`/`tasksRef.current`
+instead of the plain `agents`/`tasks` closures. Verified by extracting
+the actual four lines from source (not hand-copied duplicates) and
+genuinely executing them via Node: with a stale snapshot (a dismissed
+peer still present, a new assistant/teammate missing, a completed task
+still marked open) versus a live ref reflecting the actual current
+state, all four lists now correctly reflect the live state — before the
+fix they reflected the stale one. Same timing-dependent-race category
+as the assistant-hire cap fix (holding a desk busy while concurrently
+mutating roster/task state isn't practically triggerable on demand in
+the UI), so the genuine-execution Node test is the verification here
+rather than a live browser repro.
+
+Regression test: `scripts/test_dispatch_prompt_context_reads_live_agents_and_tasks.py`.
