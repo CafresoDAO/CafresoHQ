@@ -21616,3 +21616,55 @@ ApprovalTray render path (not just the extracted-logic test) now shows
 the dangerous tail.
 
 Regression test: `scripts/test_approvals.py` (extended, not new).
+
+### Server-authenticated cloud coworkers (Groq, Gemini) read as brainless (2026-09-02)
+
+`modals/hire.jsx`'s FRONT_DESK offers Groq, Gemini (CLI), and Gemini-API
+front-desk cards only once the server itself reports
+`det.authenticated` for that driver — the boss never types a key for
+these into the app at all. Once hired, `app/cast.jsx`'s
+`agentBrainReady()` checks whether that coworker is actually usable by
+building a probe from the agent's own model prefix (`parseModelId`)
+and calling `claude-client.jsx`'s `hasUsableKey(probe)`. But
+`hasUsableKey`'s switch had no case for `'gemini'`, `'groq'`, or
+`'gemini-api'` at all, and its `'openrouter'` case fell into the SAME
+default branch as the bare `'hermes'` fallback:
+
+    case 'hermes':
+    case 'openrouter':
+    default:           return !!s.openrouterKey || !!_managedBrain;
+
+`s.openrouterKey` is an unrelated setting — a Hermes-internal backend
+key the boss can type into Settings → Providers so the shared,
+in-house Hermes brain rides OpenRouter. It has nothing to do with a
+per-agent coworker whose model is already pinned to
+`groq:...`/`gemini-api:...`/`openrouter:...` and whose credential lives
+server-side, authenticated before the hire card was ever shown. Result:
+hire a Groq or Gemini-API coworker on an office with no managed brain
+and no Hermes-internal OpenRouter key, and that fully-functional
+coworker reads as brainless — `officeHasBrain()`'s pinned "⚠ ADD AI
+KEY" alarm stays lit, `routeOut()`/`handoffHint()` skip it when
+suggesting who else can help, and hire.jsx's inline brain-picker
+warning falsely tells the boss to go add a key that isn't needed.
+
+Fix: added explicit cases for `'gemini'`, `'groq'`, `'gemini-api'`, and
+`'openrouter'` returning `true` unconditionally, matching the existing
+`'claudecode'`/`'codex'` cases — all are offered only after server-side
+authentication, so there's nothing left to check client-side. The
+`'openrouter'` case needed one more check before folding it in: the
+GLOBAL "Brain (this browser)" selector (modals/providers.jsx) has no
+`openrouter` option at all (lmstudio/ollama/anthropic/google/claudecode/
+hermes/codex only), so the string can only ever reach `hasUsableKey` as
+a per-agent-pinned model prefix — never as the bare global setting —
+meaning this fix can't shadow the legitimate `s.openrouterKey` gate,
+which only ever fires from the `'hermes'`/default branch.
+
+Live-verified by monkey-patching `window.fetch` to report an
+authenticated Groq driver from `/agent/drivers`, then driving the real
+Hire modal end-to-end in a browser session: the front desk rendered a
+real "Groq FOUND GENERALIST … HIRE ✓" card, hiring it added a working
+coworker to the Staff Roster, and no "ADD AI KEY" alarm ever appeared —
+then let go and the browser session restored to a clean, unpatched
+state.
+
+Regression test: `scripts/test_hasusablekey_covers_server_authed_providers.py`.

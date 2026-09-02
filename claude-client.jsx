@@ -368,11 +368,17 @@ function hasUsableKey(s) {
     case 'lmstudio':   return !!s.lmstudioModel;   // local — "ready" = a model picked
     case 'ollama':     return !!s.ollamaModel;
     case 'claudecode':                              // CLI-backed, no key entered in the UI
-    case 'codex':      return true;
+    case 'codex':
+    case 'gemini':      // Gemini CLI, Groq, Gemini-API and a per-agent-pinned OpenRouter
+    case 'groq':        // coworker (modals/hire.jsx's FRONT_DESK cloud cards) are only ever
+    case 'gemini-api':  // offered once the server reports det.authenticated — nothing left
+    case 'openrouter': return true;  // to check client-side. 'openrouter' HERE is always the
+                        // per-agent model prefix, never the global Brain selector (it has no
+                        // "openrouter" option), so this can't shadow the s.openrouterKey
+                        // Hermes-backend gate below, which only fires from the default case.
     case 'hermes':                                  // default — Cafreso's managed Gemma 4
                                                     // makes hermes usable with zero keys;
                                                     // an OpenRouter key stays an upgrade.
-    case 'openrouter':
     default:           return !!s.openrouterKey || !!_managedBrain;
   }
 }
