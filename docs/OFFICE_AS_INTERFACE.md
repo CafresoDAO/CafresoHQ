@@ -21272,3 +21272,43 @@ practically triggerable on demand in the UI), so the genuine-execution
 Node test is the verification here rather than a live browser repro.
 
 Regression test: `scripts/test_delegate_reads_live_agents_not_stale_closure.py`.
+
+## The honesty-notes roster still read a stale `agents` closure in the app's other two dispatch paths
+
+Same bug shape as the two fixes above it, a fourth and fifth time.
+`dispatchToAgent` (the @mention path) and `onTaskDropOnAgent` (the
+task-drop path) each define their own copy of the `honestyFor` closure:
+
+    const honestyFor = (raw) => (HQ.honestyNotes
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), ... })
+      : []);
+
+`honestyFor` is only CALLED after `await HQ.agentStream(...)` resolves
+— a call that can run for a long time — so a roster change (hire or
+dismiss) mid-stream made its `roster` argument stale by the time it
+ran. `onDelegate`'s identical closure was already fixed in the previous
+tick; these two were missed, even though every OTHER roster/peer/task
+list in these same two functions (`peers`, `myAssistants`, project
+teammates, `myTasks`) had already been converted to
+`agentsRef.current`/`tasksRef.current`.
+
+`HQ.honestyNotes` (hq-runtime.jsx) uses `roster` to decide whether a
+name mentioned in a reply is a real teammate. With a stale roster, a
+reply naming a coworker dismissed mid-stream still passes the roster
+check — the exact "claimed a handoff to someone who isn't real" guard
+this mechanism exists for silently fails to catch it — and a reply
+naming a coworker hired mid-stream can get incorrectly flagged as not a
+real teammate.
+
+Found by a background hunt agent that, having already found this exact
+shape three times, went looking for any remaining instance of the same
+closure across the app's other dispatch paths.
+
+Fix: both remaining `roster: agents.map(...)` reads now use
+`agentsRef.current.map(...)`, matching the already-fixed `onDelegate`
+sibling. Same timing-dependent-race category as the prior three fixes
+in this family — verified via source-shape checks confirming all three
+copies of the closure now agree, plus a genuine Node execution of the
+`agentsRef.current.map(...)` shape.
+
+Regression test: `scripts/test_honesty_notes_roster_reads_live_agents_in_remaining_dispatch_paths.py`.

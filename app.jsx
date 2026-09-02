@@ -2531,7 +2531,7 @@ ${d.text}` : d.text,
        turn where the office had just told the boss "nothing was saved to
        their memory" is the office's own ledger contradicting the office. */
     const honestyFor = (raw) => (HQ.honestyNotes
-      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name,
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agentsRef.current.map(x => x.name), self: agent.name,
           visits: toolVisits })
       : []);
     let honesty = null;
@@ -4938,7 +4938,7 @@ ${d.text}` : d.text,
        cabinet-write notes must stay quiet or they contradict three surfaces
        that are telling the boss the truth. */
     const honestyFor = (raw) => (HQ.honestyNotes
-      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agents.map(x => x.name), self: agent.name,
+      ? HQ.honestyNotes(raw, { delivered: dmQueue.length, roster: agentsRef.current.map(x => x.name), self: agent.name,
           skipKinds: deliveryFiled ? ['VAULT_NEW', 'VAULT_APPEND'] : undefined, visits: toolVisits })
       : []);
     let honesty = null;
