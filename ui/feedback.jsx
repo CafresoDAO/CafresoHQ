@@ -374,10 +374,15 @@ function CommandPaletteProvider({ children }) {
         const lbl = (c.label || '').toLowerCase();
         const sect = (c.section || '').toLowerCase();
         let score = 0;
+        // Word-start must be checked BEFORE plain substring: a match at the
+        // start of any word is necessarily also a substring match, so with
+        // the reverse order the substring branch always fired first and the
+        // word-start score (meant to outrank a mid-word substring hit) was
+        // unreachable dead code.
         if (lbl.startsWith(q)) score = 100;
+        else if (lbl.split(/\s+/).some(w => w.startsWith(q))) score = 80;
         else if (lbl.includes(q)) score = 60;
         else if (sect.includes(q)) score = 30;
-        else if (lbl.split(/\s+/).some(w => w.startsWith(q))) score = 80;
         return { c, score };
       })
       .filter(x => x.score > 0)

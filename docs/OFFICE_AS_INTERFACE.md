@@ -20972,3 +20972,41 @@ immediately and after React's re-render) that it stayed at the left
 edge instead of snapping back to its pre-drag position.
 
 Regression test: `scripts/test_window_drag_to_edge_zero_snaps_back.py`.
+
+## Command Palette search never gave a word-boundary match its intended ranking boost
+
+`CommandPaletteProvider`'s `filtered` memo (ui/feedback.jsx) scores each
+candidate command with an if/else-if chain documented as "prefix >
+substring > none":
+
+    if (lbl.startsWith(q)) score = 100;
+    else if (lbl.includes(q)) score = 60;
+    else if (sect.includes(q)) score = 30;
+    else if (lbl.split(/\s+/).some(w => w.startsWith(q))) score = 80;
+
+The intent is that a query matching the START of a word inside a
+label (e.g. typing "team" for "Change Team Roster") outranks a query
+that only matches mid-word, anywhere in the label (score 60). But any
+label where a word starts with `q` also, necessarily, contains `q` as
+a substring — `lbl.includes(q)` is a strict superset of the word-start
+condition, and it's earlier in the chain, so it always fired first.
+The final `else if` for score 80 was unreachable dead code for every
+non-empty query. A command matching at a word boundary was scored
+identically to one matching only mid-word inside a longer, unrelated
+word, and could sort below it.
+
+Found by a background hunt agent sweeping previously-unswept areas,
+looking specifically for branch-ordering bugs similar in spirit to the
+window-drag-to-edge-zero fix above.
+
+Fix: reordered the chain so the word-start check runs BEFORE the plain
+substring check, making it reachable and correctly ranked between the
+full-label-prefix match (100) and a bare substring match (60). Verified
+by extracting the actual scoring snippet from source and genuinely
+executing it via Node against four cases (word-start-only, mid-word-
+substring-only, full-label-prefix, section-only) — the word-start case
+("Change Team Roster" / query "team") now scores 80 as intended, was
+60 before the fix. Live-verified in the browser too: Cmd+K → "team"
+correctly surfaces both matching commands.
+
+Regression test: `scripts/test_command_palette_word_start_outranks_substring.py`.
