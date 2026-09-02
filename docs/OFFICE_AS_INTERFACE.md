@@ -21892,3 +21892,44 @@ path), so live browser verification was skipped in favor of the genuine-
 execution test against the real function.
 
 Regression test: `scripts/test_fs_collect_enforces_allowed_dirs.py`.
+
+## Tick 25 — a self-completed mission left its coworker stuck "on mission" forever
+
+`useMissionRunner`'s scheduling effect (`missions.jsx`) sends a coworker
+back to their desk via `standDown(agentId)` — `status: 'idle', mood:
+'idle', task: 'standing by'` — from four call sites: time-budget expired
+(the scheduling sweep and the fire-time re-check), the error-streak
+auto-pause, and the agent-removed guard. The comment above `standDown`
+names these as "the four stop paths" that need the coworker's
+`status: 'active' · task: 'on mission'` cleared.
+
+But there is a fifth way a mission stops running: `allowSelfComplete` — a
+real, user-facing checkbox in the mission-creation modal — lets a
+coworker declare their own research finished early by emitting
+`[MISSION_COMPLETE]`, honored once at least 60% of the planned iterations
+have run. That decision is made INSIDE `runMissionIteration`, which
+returns `{ ok: true, completed }` — but `fire()`, the scheduling effect's
+per-mission tick, called `await runMissionIteration(...)` and discarded
+the return value entirely. The mission card correctly flipped to "done,"
+but nothing ever told the coworker's desk card the same thing: it stayed
+`active`/"on mission," counted in the header's "N WORKING" tally and lit
+on the rooftop, until the user manually reassigned them — the exact
+invariant the standDown comment claims is covered for all four OTHER
+reasons, silently missing the fifth.
+
+Fix: `fire()` now captures `runMissionIteration`'s return value and calls
+`standDown(m.agentId)` when `result.completed` is true — wiring the one
+return-value-carried stop reason to the same helper the other four
+already use. Purely additive: all four pre-existing `standDown()` call
+sites, and `runMissionIteration`'s own return shape, are unchanged.
+
+Verified by genuinely executing the extracted fixed snippet (the await +
+completed check + standDown call, pulled from the real source, not
+hand-copied) against both a self-completed and a still-running mocked
+result: `standDown` fires exactly once for the completed case and not at
+all for the ordinary-iteration case. Live browser verification was
+skipped — triggering this path for real needs a mission to run at least
+60% of a multi-minute/hour schedule, which isn't practical to exercise
+live; `npm run build` succeeded and the full test suite passed.
+
+Regression test: `scripts/test_a_self_completed_mission_stands_its_coworker_down.py`.

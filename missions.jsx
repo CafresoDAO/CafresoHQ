@@ -668,7 +668,18 @@ function useMissionRunner(missions, setMissions, ctx) {
             standDown(m.agentId);
             return;
           }
-          await runMissionIteration({ ...ctxWithSetters, mission: latest, agent, signal: controller.signal });
+          const result = await runMissionIteration({ ...ctxWithSetters, mission: latest, agent, signal: controller.signal });
+          /* The self-declared-complete stop (allowSelfComplete + the
+             [MISSION_COMPLETE] marker) is a FIFTH way a mission stops
+             running, alongside the four standDown() call sites above — but
+             it's decided INSIDE runMissionIteration, not here, and its
+             return value used to be discarded entirely. The agent came back
+             `{ completed: true }` while still standing at their desk
+             captioned "on mission", the same invariant the comment above
+             standDown() claims is fixed for all four OTHER stop reasons. */
+          if (result && result.completed) {
+            standDown(m.agentId);
+          }
         } catch (err) {
           /* Bug-of-bugs: anything thrown by runMissionIteration after the
              agentStream try/catch (e.g., a missing dependency) used to
